@@ -57,3 +57,23 @@ export interface SyncState {
   agent_count: number;
   last_synced_at: number | null;
 }
+
+export type CommandStatusValue =
+  | 'pending_approval'
+  | 'executing'
+  | 'completed'
+  | 'denied'
+  | 'failed';
+
+export interface PendingCommand {
+  command_id: string;
+  origin_device: string;
+  command_type: string;
+  payload: unknown;
+}
+
+export interface CommandResultResponse {
+  command_id: string;
+  status: CommandStatusValue;
+  payload: unknown;
+}

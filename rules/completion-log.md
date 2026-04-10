@@ -633,3 +633,52 @@ All CRDTs use HLC (Hybrid Logical Clock) timestamps with site tiebreaker for det
 - AppendLog: binary search insert + duplicate check makes `apply()` O(log n)
 - OR-Set: concurrent add + remove resolves to add-wins for unobserved tags, matching standard OR-Set semantics
 - All CRDTs implement `snapshot_ops()` for full state transfer to new peers
+
+---
+
+## Chunk 023 — Remote Command Routing
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Allow a secondary device (e.g. phone) to send commands to a primary device (e.g. PC)
+via a command envelope protocol. Target device runs permission checks — first remote
+command from an unknown device requires explicit user approval. Results are returned
+to the originating device.
+
+### Architecture
+- `src-tauri/src/routing/command_envelope.rs` — `CommandEnvelope` (command_id, origin_device, target_device, command_type, payload, status), `CommandResult` (success/denied/failed constructors), `CommandStatus` enum (PendingApproval, Executing, Completed, Denied, Failed). 7 unit tests.
+- `src-tauri/src/routing/permission.rs` — `PermissionPolicy` (Allow/Deny/Ask), `PermissionStore` (per-device policy map, pending command set, approve/deny with remember/block). 10 unit tests.
+- `src-tauri/src/routing/router.rs` — `CommandRouter` handles incoming envelopes: wrong target → deny, allowed device → execute, blocked → deny, unknown → pending. Executes ping, list_agents, send_message stubs. approve/deny pending commands with policy memory. 14 unit tests.
+- `src-tauri/src/commands/routing.rs` — 5 Tauri commands: `list_pending_commands`, `approve_remote_command`, `deny_remote_command`, `set_device_permission`, `get_device_permissions`.
+- `AppState` extended with `command_router: TokioMutex<CommandRouter>`. Router initialised in `setup()` with device_id from identity.
+
+### Files Created
+**Rust:**
+- `src-tauri/src/routing/mod.rs` — re-exports
+- `src-tauri/src/routing/command_envelope.rs` (7 tests)
+- `src-tauri/src/routing/permission.rs` (10 tests)
+- `src-tauri/src/routing/router.rs` (14 tests)
+- `src-tauri/src/commands/routing.rs` — 5 Tauri commands
+
+**Frontend:**
+- `src/stores/routing.ts` — Pinia routing store (fetchPendingCommands, approveCommand, denyCommand, setDevicePermission, getDevicePermissions)
+- `src/stores/routing.test.ts` — 10 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/mod.rs` — added `routing` module
+- `src-tauri/src/lib.rs` — added routing module, extended AppState with command_router, setup() initialisation, 5 new commands registered
+- `src/types/index.ts` — added `CommandStatusValue`, `PendingCommand`, `CommandResultResponse` types
+
+### Test Results
+- **Rust:** 31 new unit tests in the routing module (command_envelope: 7, permission: 10, router: 14)
+- **Vitest:** 13 test files, 111 tests, all passing (10 new routing store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- Unknown devices default to "Ask" — first remote command goes to pending queue
+- `approve(remember=true)` sets the device to "Allow" for all future commands
+- `deny(block=true)` sets the device to "Deny" permanently
+- CommandRouter has stub execute() for ping, list_agents, send_message — production will delegate to the real orchestrator
+- Phase 2 is now complete (chunks 020–023)

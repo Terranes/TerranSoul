@@ -113,9 +113,14 @@ and transport fallback. 4 Tauri commands, 31 Rust tests, 11 Vitest tests.
 Append-only log (conversation), LWW register (character selection), OR-Set (agent status).
 HLC timestamps with site tiebreaker. 37 Rust tests, 8 Vitest tests.
 
+✅ Chunk 023 — Remote Command Routing — see `rules/completion-log.md`
+
+Command envelope, permission management (Allow/Deny/Ask), router with pending approval queue.
+5 Tauri commands, 31 Rust tests, 10 Vitest tests.
+
 ### Next Chunk
 
-**Chunk 023** — Remote Command Routing (Phase 2)
+**Chunk 030** — Package Manifest Format (Phase 3)
 
 ---
 
@@ -124,9 +129,7 @@ HLC timestamps with site tiebreaker. 37 Rust tests, 8 Vitest tests.
 > **Goal:** TerranSoul on all devices behaves like "one assistant."
 > Pair devices, sync conversations, route commands remotely.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 023 | **Remote Command Routing** — Allow a secondary device (phone) to send a command to the primary device (PC). Implement command envelope: `{command_id, origin_device, target_device, payload}`. Implement permission check on target device (user must approve first remote command). Return result to originating device. | `not-started` |
+✅ Phase 2 complete — see completion-log.md
 
 ---
 
