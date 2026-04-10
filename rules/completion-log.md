@@ -395,3 +395,74 @@ to auto-load VRM models when path changes. Display character name and author fro
 - In full Tauri desktop mode, this should be replaced with `@tauri-apps/plugin-dialog` for native file picker
 - VRM path is persisted in Rust `AppState` via `load_vrm` command
 - `instructions/` folder added at project root with 3 documentation files
+
+---
+
+## Chunk 008 — Tauri IPC Bridge Integration Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Write integration tests that mock the Tauri IPC `invoke()` function and test the
+conversation and character stores end-to-end. Verify round-trip message flow, error
+handling, isThinking lifecycle, sentiment propagation, and conversation history.
+
+### Architecture
+- `vi.mock('@tauri-apps/api/core')` replaces `invoke()` with a Vitest mock function
+- Each test configures `mockInvoke` with `mockResolvedValueOnce` / `mockRejectedValueOnce`
+- Tests use real Pinia stores (via `setActivePinia(createPinia())`)
+- No Tauri runtime needed — pure JavaScript-level integration testing
+
+### Changes
+
+**New files:**
+- `src/stores/conversation.test.ts` — 8 tests: send message round-trip, custom agent routing, error handling, isThinking lifecycle, getConversation, getConversation error, sentiment preservation, multiple message ordering
+- `src/stores/character.test.ts` — 4 tests: loadVrm success, loadVrm error, clear state before load, resetCharacter
+
+### Test Results
+- **Vitest:** 9 test files, 73 tests, all passing (12 new store integration tests)
+- **Build:** ✅ clean
+
+### Notes
+- In Tauri v2, `@tauri-apps/api/mocks` from v1 is not available — using `vi.mock()` directly
+- Tests verify the full store lifecycle: user message → invoke → response → store update
+- The `isThinking` lifecycle test uses a deferred promise to observe mid-flight state
+
+---
+
+## Chunk 009 — Playwright E2E Test Infrastructure
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Install Playwright with Chromium browser, create E2E tests that run against the Vite
+dev server, and add a `playwright-e2e` CI job that runs after `build-and-test`.
+
+### Architecture
+- `@playwright/test` 1.59.1 with Chromium headless shell
+- `playwright.config.ts` — baseURL `http://localhost:1420`, auto-starts Vite dev server
+- Tests run against pure frontend (no Tauri backend) — `invoke()` errors handled gracefully
+- CI job: `playwright-e2e` depends on `build-and-test`, installs Chromium with deps, uploads report artifact
+
+### Changes
+
+**New files:**
+- `playwright.config.ts` — Chromium project, Vite webServer, GitHub reporter in CI
+- `e2e/app.spec.ts` — 6 E2E tests: app loads, chat input, send message, 3D canvas, state badge, model panel toggle
+
+**Modified files:**
+- `package.json` — Added `test:e2e` script, `@playwright/test` devDependency
+- `.github/workflows/terransoul-ci.yml` — Added `playwright-e2e` job (needs build-and-test, installs Chromium, runs tests, uploads report)
+
+### Test Results
+- **Playwright:** 6 tests, all passing (~8.8s)
+- **Vitest:** 9 test files, 73 tests, all passing (no regression)
+- **Build:** ✅ clean
+
+### Notes
+- E2E tests run against Vite dev server only — no Tauri runtime required
+- When `invoke()` fails (no backend), the conversation store catches errors and displays "Error: ..." messages — tests verify this graceful degradation
+- Playwright report uploaded as CI artifact for debugging failures
+- `--with-deps` flag installs Chromium OS dependencies in CI
