@@ -7,6 +7,13 @@
  */
 import { test, expect } from '@playwright/test';
 
+/** Timeout for messages to appear in the chat (accounts for invoke error path). */
+const MESSAGE_TIMEOUT = 5_000;
+/** Timeout for assistant response after sending (longer for error fallback). */
+const RESPONSE_TIMEOUT = 10_000;
+/** Timeout for UI panels to animate into view. */
+const PANEL_TIMEOUT = 2_000;
+
 test.describe('TerranSoul App', () => {
   test('app loads and shows main layout', async ({ page }) => {
     await page.goto('/');
@@ -55,12 +62,12 @@ test.describe('TerranSoul App', () => {
 
     // User message should appear in the message list
     const userMsg = page.locator('.message-row.user').first();
-    await expect(userMsg).toBeVisible({ timeout: 5000 });
+    await expect(userMsg).toBeVisible({ timeout: MESSAGE_TIMEOUT });
     await expect(userMsg).toContainText('hello world');
 
     // An assistant response should eventually appear (either real or error)
     const assistantMsg = page.locator('.message-row.assistant').first();
-    await expect(assistantMsg).toBeVisible({ timeout: 10000 });
+    await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
 
     // Input should be cleared after sending
     await expect(input).toHaveValue('');
@@ -101,7 +108,7 @@ test.describe('TerranSoul App', () => {
 
     // Click toggle — panel should appear
     await toggleBtn.click();
-    await expect(page.locator('.model-panel')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('.model-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
 
     // Panel should have "3D Models" header
     await expect(page.locator('.panel-header h3')).toContainText('3D Models');
