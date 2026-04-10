@@ -251,3 +251,35 @@ Add Vitest tests for `character-animator.ts` covering all state transitions and 
 ### Notes
 - Rust async tests use `#[tokio::test]` with real async `respond()` calls (500ms+ simulated delay)
 - Character animator tests use real `THREE.Group` instances in jsdom — basic transforms work without WebGL
+
+---
+
+## Chunk 006 — Rust Chat Commands — Unit Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add unit tests for `commands/chat.rs`: `send_message` success, empty input validation,
+conversation ordering, custom agent ID. Refactor commands to be testable without Tauri runtime.
+
+### Architecture
+- Extracted `process_message(&str, Option<&str>, &AppState)` — core logic, testable without `tauri::State`
+- Extracted `fetch_conversation(&AppState)` — core logic, testable directly
+- `send_message` and `get_conversation` Tauri commands now delegate to these functions
+- Added empty/whitespace input validation returning `Err("Message cannot be empty")`
+
+### Changes
+
+**Modified files:**
+- `src-tauri/src/commands/chat.rs` — Refactored into `process_message` + `fetch_conversation` helper functions; Tauri commands delegate to helpers; added empty input validation; added 8 tests
+- `src/renderer/character-animator.test.ts` — Fixed unused variable warnings from vue-tsc
+
+### Test Results
+- **Rust:** 15 tests passing (7 stub_agent + 8 chat commands)
+- **Vitest:** 6 test files, 47 tests, all passing
+- **New chat command tests:** success, empty input, whitespace, message pairing, conversation ordering, empty conversation, custom agent ID, timestamp ordering
+
+### Notes
+- `process_message` and `fetch_conversation` take `&AppState` directly — no Tauri runtime needed
+- Empty/whitespace input now returns an error instead of sending to agent

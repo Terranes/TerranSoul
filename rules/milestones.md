@@ -57,6 +57,11 @@ Safe loader returns null on error (capsule fallback). 12 VRM loader tests.
 7 Rust tests for stub_agent (name, hello, hi, sad, happy, neutral). 9 Vitest tests for
 character-animator (state transitions, animations, error handling). Total: 16 new tests.
 
+✅ Chunk 006 — Rust Chat Commands — Unit Tests — see `rules/completion-log.md`
+
+8 Rust tests for chat commands. Refactored to extract testable `process_message` and
+`fetch_conversation` functions. Added empty input validation.
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -67,7 +72,7 @@ character-animator (state transitions, animations, error handling). Total: 16 ne
 
 ### Next Chunk
 
-**Chunk 006** — Rust Chat Commands — Unit Tests
+**Chunk 007** — Agent Orchestrator Hardening
 
 ---
 
@@ -75,7 +80,7 @@ character-animator (state transitions, animations, error handling). Total: 16 ne
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |
+| 007 | **Agent Orchestrator Hardening** — Add `AgentProvider` trait to `src-tauri/src/agent/mod.rs`. Implement `AgentOrchestrator::dispatch()` using the trait (not a direct `StubAgent` reference). Add health-check ping method to `AgentProvider`. Write unit tests for orchestrator routing. Target: ≥ 4 Rust tests. | `not-started` |
 | 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
 | 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |

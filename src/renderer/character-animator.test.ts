@@ -21,7 +21,6 @@ describe('CharacterAnimator', () => {
     const group = makePlaceholder();
     animator.setPlaceholder(group);
     animator.update(1.0);
-    const posAfterIdle = group.position.y;
 
     animator.setState('thinking');
     animator.update(0.016);
@@ -40,8 +39,6 @@ describe('CharacterAnimator', () => {
     // Run idle for some time
     animator.setState('idle');
     animator.update(0.5);
-    const idleY = group.position.y;
-    const idleRotY = group.rotation.y;
 
     // Reset and run thinking
     const group2 = makePlaceholder();
