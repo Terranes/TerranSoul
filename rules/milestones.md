@@ -30,6 +30,13 @@
 Rust backend: chat/agent/character commands, stub agent, orchestrator.
 `npm run build` and `cargo check` both pass.
 
+✅ CI Restructure — see `rules/completion-log.md`
+
+Consolidated 5 separate CI jobs (frontend-build, rust-build, tauri-build, vitest, playwright-e2e)
+into 3 jobs (build-and-test, vitest, playwright-e2e). Removed `pull_request` trigger to eliminate
+double-firing on copilot branches. Added `paths` filter so CI only runs when source files change.
+Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/My3DLearning/blob/main/.github/workflows/eip-ci.yml).
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -48,15 +55,16 @@ Rust backend: chat/agent/character commands, stub agent, orchestrator.
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 002 | **Chat UI Polish & Vitest Component Tests** — Refine `ChatMessageList`, `ChatInput`, `TypingIndicator`, `AgentBadge` visual styles. Add Vitest + @vue/test-utils. Write component tests for all 4 chat components (render, props, emit, disabled state). Target: ≥ 12 component tests passing. | `not-started` |
+| 002 | **Chat UI Polish & Vitest Component Tests** — Refine `ChatMessageList`, `ChatInput`, `TypingIndicator`, `AgentBadge` visual styles. Add Vitest + @vue/test-utils. Write component tests for all 4 chat components (render, props, emit, disabled state). Add `npm run test` script. Target: ≥ 12 component tests passing. CI `vitest` job will automatically pick these up. | `not-started` |
 | 003 | **Three.js Scene Polish + WebGPU Detection** — Enhance `scene.ts`: attempt `WebGPURenderer` via `navigator.gpu` detection; fall back to `WebGLRenderer`. Add resize observer so canvas adapts to window resizes. Add `renderer.info` debug overlay toggled by `Ctrl+D`. Verify 60fps on desktop with the capsule placeholder. | `not-started` |
 | 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
 | 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |
 | 007 | **Agent Orchestrator Hardening** — Add `AgentProvider` trait to `src-tauri/src/agent/mod.rs`. Implement `AgentOrchestrator::dispatch()` using the trait (not a direct `StubAgent` reference). Add health-check ping method to `AgentProvider`. Write unit tests for orchestrator routing. Target: ≥ 4 Rust tests. | `not-started` |
 | 008 | **Tauri IPC Bridge Integration Tests** — Wire up the frontend conversation store to use real `invoke()` calls against the Rust backend. Use `@tauri-apps/api/mocks` to mock the IPC layer in Vitest. Write integration tests that simulate a full send → response round-trip. Target: ≥ 4 integration tests. | `not-started` |
-| 009 | **Character Reactions — Full Integration** — Connect `character-animator.ts` update loop to the Three.js clock delta. Implement per-state visual animations: idle (subtle sway), thinking (head bob), talking (mouth-open BlendShape if VRM loaded, else scale pulse), happy (bounce), sad (droop). Verify animations play correctly at 60fps. | `not-started` |
-| 010 | **VRM Import + Character Selection UI** — Add `CharactersView.vue` (import VRM file via Tauri file dialog, list imported characters, set active character). Wire `load_vrm` Tauri command to persist the VRM path in app state. Show character name and thumbnail in the viewport overlay. | `not-started` |
+| 009 | **Playwright E2E Test Infrastructure** — Install `@playwright/test`. Create `playwright.config.ts` (baseURL: Vite dev server, projects: chromium). Write first E2E tests: app loads, chat input visible, send a message and receive stub agent response, 3D viewport canvas renders. CI `playwright-e2e` job will automatically detect and run these. Target: ≥ 4 E2E tests passing in CI. | `not-started` |
+| 010 | **Character Reactions — Full Integration** — Connect `character-animator.ts` update loop to the Three.js clock delta. Implement per-state visual animations: idle (subtle sway), thinking (head bob), talking (mouth-open BlendShape if VRM loaded, else scale pulse), happy (bounce), sad (droop). Verify animations play correctly at 60fps. | `not-started` |
+| 011 | **VRM Import + Character Selection UI** — Add `CharactersView.vue` (import VRM file via Tauri file dialog, list imported characters, set active character). Wire `load_vrm` Tauri command to persist the VRM path in app state. Show character name and thumbnail in the viewport overlay. | `not-started` |
 
 ---
 

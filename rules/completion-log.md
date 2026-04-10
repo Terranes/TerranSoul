@@ -76,3 +76,33 @@ all core Vue components, and a stub local agent.
 - VRM import UI (file picker + selection) deferred to Chunk 010
 
 ---
+
+## CI Restructure — Consolidate Jobs & Eliminate Double-Firing
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Reduce GitHub Actions usage from ~10 jobs per push (5 jobs × 2 triggers) to 3 jobs × 1 trigger.
+Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/My3DLearning/blob/main/.github/workflows/eip-ci.yml).
+
+### Problem
+- CI triggered on both `push` and `pull_request` → double-fired on every copilot branch push with an open PR
+- 5 separate jobs (`frontend-build`, `rust-build`, `tauri-build`, `vitest`, `playwright-e2e`) ran independently, with `tauri-build` duplicating setup from `frontend-build` and `rust-build`
+
+### Changes
+1. **Removed `pull_request` trigger** — push-only avoids double-firing on copilot branches
+2. **Added `paths` filter** — CI only runs when source files, configs, or the workflow itself change (not on README/docs-only changes)
+3. **Consolidated `frontend-build` + `rust-build` + `tauri-build` into single `build-and-test` job** — one runner installs system deps, Node.js, and Rust once; runs frontend build, cargo check/test/clippy, and `npx tauri build` sequentially
+4. **Kept `vitest` as independent parallel job** — fast, no system deps needed
+5. **Kept `playwright-e2e` gated on `build-and-test` + `vitest`** — only runs after both pass
+
+### Files Modified
+- `.github/workflows/terransoul-ci.yml` — full restructure
+
+### Result
+- Jobs per push: 5 → 3 (`build-and-test`, `vitest`, `playwright-e2e`)
+- Workflow runs per push: 2 → 1 (no more push+PR duplication)
+- Total CI jobs per push: ~10 → 3
+
+---
