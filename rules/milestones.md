@@ -30,6 +30,13 @@
 Rust backend: chat/agent/character commands, stub agent, orchestrator.
 `npm run build` and `cargo check` both pass.
 
+✅ CI Restructure — see `rules/completion-log.md`
+
+Consolidated 5 separate CI jobs (frontend-build, rust-build, tauri-build, vitest, playwright-e2e)
+into 3 jobs (build-and-test, vitest, playwright-e2e). Removed `pull_request` trigger to eliminate
+double-firing on copilot branches. Added `paths` filter so CI only runs when source files change.
+Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/My3DLearning/blob/main/.github/workflows/eip-ci.yml).
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
