@@ -4,6 +4,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::agent::stub_agent::StubAgent;
+use crate::agent::AgentProvider;
 use crate::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

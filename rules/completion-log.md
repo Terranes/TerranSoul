@@ -283,3 +283,40 @@ conversation ordering, custom agent ID. Refactor commands to be testable without
 ### Notes
 - `process_message` and `fetch_conversation` take `&AppState` directly — no Tauri runtime needed
 - Empty/whitespace input now returns an error instead of sending to agent
+
+---
+
+## Chunk 007 — Agent Orchestrator Hardening
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add `AgentProvider` trait for pluggable agent implementations. Refactor orchestrator to use
+trait-based dispatch with agent registry. Add health-check method. Write unit tests with MockAgent.
+
+### Architecture
+- `AgentProvider` trait — `id()`, `name()`, `respond()`, `health_check()` (async_trait)
+- `StubAgent` implements `AgentProvider` — existing behavior preserved
+- `AgentOrchestrator` — holds `HashMap<String, Arc<dyn AgentProvider>>`, supports `register()`, `dispatch()`, `health_check()`, `list_agents()`
+- `dispatch()` now returns `Result<(String, String), String>` — errors on unknown agent ID
+- "auto" and empty agent_id route to default agent ("stub")
+
+### Changes
+
+**Modified files:**
+- `src-tauri/Cargo.toml` — Added `async-trait = "0.1"`
+- `src-tauri/src/agent/mod.rs` — Added `AgentProvider` trait definition with `async_trait`
+- `src-tauri/src/agent/stub_agent.rs` — Implemented `AgentProvider` for `StubAgent`; extracted `classify()` method; added `health_check()` returning true; `Sentiment` now derives `Clone, PartialEq, Eq, Debug`
+- `src-tauri/src/orchestrator/agent_orchestrator.rs` — Rewritten with agent registry (`HashMap<String, Arc<dyn AgentProvider>>`); `dispatch()` returns `Result`; added `register()`, `get_agent()`, `health_check()`, `list_agents()`; 8 tests with `MockAgent`
+- `src-tauri/src/commands/chat.rs` — Added `use crate::agent::AgentProvider` for trait method resolution
+
+### Test Results
+- **Rust:** 23 tests passing (7 stub_agent + 8 chat + 8 orchestrator)
+- **Vitest:** 6 test files, 47 tests, all passing
+- **Clippy:** ✅ 0 warnings
+
+### Notes
+- `async_trait` crate used for trait-based async dispatch
+- MockAgent in tests verifies dispatch routing, health checks, and agent registration
+- Agent registry enables future hot-plugging of real agents (OpenAI, local models, etc.)

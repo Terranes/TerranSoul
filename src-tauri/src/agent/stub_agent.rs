@@ -1,5 +1,9 @@
+use async_trait::async_trait;
 use tokio::time::{sleep, Duration};
 
+use super::AgentProvider;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Sentiment {
     Happy,
     Neutral,
@@ -15,18 +19,7 @@ impl StubAgent {
         Self { id: id.to_string() }
     }
 
-    pub fn name(&self) -> &str {
-        match self.id.as_str() {
-            "stub" => "TerranSoul",
-            other => other,
-        }
-    }
-
-    pub async fn respond(&self, message: &str) -> (String, Sentiment) {
-        // Simulate network / model latency
-        let delay_ms = 500 + (message.len() as u64 % 500);
-        sleep(Duration::from_millis(delay_ms)).await;
-
+    fn classify(&self, message: &str) -> (String, Sentiment) {
         let lower = message.to_lowercase();
 
         if lower.contains("hello") || lower.contains("hi") || lower.starts_with("hey") {
@@ -50,6 +43,32 @@ impl StubAgent {
                 Sentiment::Neutral,
             )
         }
+    }
+}
+
+#[async_trait]
+impl AgentProvider for StubAgent {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        match self.id.as_str() {
+            "stub" => "TerranSoul",
+            other => other,
+        }
+    }
+
+    async fn respond(&self, message: &str) -> (String, Sentiment) {
+        // Simulate network / model latency
+        let delay_ms = 500 + (message.len() as u64 % 500);
+        sleep(Duration::from_millis(delay_ms)).await;
+
+        self.classify(message)
+    }
+
+    async fn health_check(&self) -> bool {
+        true
     }
 }
 
