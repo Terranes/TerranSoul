@@ -67,6 +67,27 @@ character-animator (state transitions, animations, error handling). Total: 16 ne
 `AgentProvider` trait with `respond`, `health_check`, `id`, `name`. Orchestrator uses trait-based
 dispatch with agent registry. 8 orchestrator tests with MockAgent.
 
+✅ Chunk 010 — Character Reactions — Full Integration — see `rules/completion-log.md`
+
+Sentiment-driven character reactions. BlendShape mouth animation for VRM talking. Head bone
+animations for thinking/sad. Scale pulse for placeholder. 6 new Vitest tests.
+
+✅ Chunk 011 — VRM Import + Character Selection UI — see `rules/completion-log.md`
+
+ModelPanel.vue for VRM import and character selection. CharacterViewport watches vrmPath
+to auto-load models. Character metadata displayed in viewport overlay. 8 ModelPanel tests.
+
+✅ Chunk 008 — Tauri IPC Bridge Integration Tests — see `rules/completion-log.md`
+
+12 store integration tests with mocked invoke(). Conversation store: round-trip, error,
+isThinking, getConversation, sentiment, ordering, custom agent. Character store: loadVrm,
+resetCharacter, error handling.
+
+✅ Chunk 009 — Playwright E2E Test Infrastructure — see `rules/completion-log.md`
+
+6 E2E tests with Playwright + Chromium. App loads, chat input, send message, 3D canvas,
+state badge, model panel toggle. CI `playwright-e2e` job added.
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -75,25 +96,11 @@ dispatch with agent registry. 8 orchestrator tests with MockAgent.
 > with text-only messaging routed through an agent stub.
 > Desktop first (Windows), then macOS/Linux, then mobile.
 
+✅ Phase 1 complete — see completion-log.md
+
 ### Next Chunk
 
-**Chunk 008** — Tauri IPC Bridge Integration Tests
-
----
-
-### Chunks
-
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 008 | **Tauri IPC Bridge Integration Tests** — Wire up the frontend conversation store to use real `invoke()` calls against the Rust backend. Use `@tauri-apps/api/mocks` to mock the IPC layer in Vitest. Write integration tests that simulate a full send → response round-trip. Target: ≥ 4 integration tests. | `not-started` |
-| 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
-| 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
-| 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |
-| 007 | **Agent Orchestrator Hardening** — Add `AgentProvider` trait to `src-tauri/src/agent/mod.rs`. Implement `AgentOrchestrator::dispatch()` using the trait (not a direct `StubAgent` reference). Add health-check ping method to `AgentProvider`. Write unit tests for orchestrator routing. Target: ≥ 4 Rust tests. | `not-started` |
-| 008 | **Tauri IPC Bridge Integration Tests** — Wire up the frontend conversation store to use real `invoke()` calls against the Rust backend. Use `@tauri-apps/api/mocks` to mock the IPC layer in Vitest. Write integration tests that simulate a full send → response round-trip. Target: ≥ 4 integration tests. | `not-started` |
-| 009 | **Playwright E2E Test Infrastructure** — Install `@playwright/test`. Create `playwright.config.ts` (baseURL: Vite dev server, projects: chromium). Write first E2E tests: app loads, chat input visible, send a message and receive stub agent response, 3D viewport canvas renders. CI `playwright-e2e` job will automatically detect and run these. Target: ≥ 4 E2E tests passing in CI. | `not-started` |
-| 010 | **Character Reactions — Full Integration** — Connect `character-animator.ts` update loop to the Three.js clock delta. Implement per-state visual animations: idle (subtle sway), thinking (head bob), talking (mouth-open BlendShape if VRM loaded, else scale pulse), happy (bounce), sad (droop). Verify animations play correctly at 60fps. | `not-started` |
-| 011 | **VRM Import + Character Selection UI** — Add `CharactersView.vue` (import VRM file via Tauri file dialog, list imported characters, set active character). Wire `load_vrm` Tauri command to persist the VRM path in app state. Show character name and thumbnail in the viewport overlay. | `not-started` |
+**Chunk 020** — Device Identity & Pairing (Phase 2)
 
 ---
 

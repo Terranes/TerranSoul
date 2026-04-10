@@ -4,3 +4,5 @@ dist/
 *.local
 src-tauri/target/
 src-tauri/gen/
+test-results/
+playwright-report/

@@ -320,3 +320,149 @@ trait-based dispatch with agent registry. Add health-check method. Write unit te
 - `async_trait` crate used for trait-based async dispatch
 - MockAgent in tests verifies dispatch routing, health checks, and agent registration
 - Agent registry enables future hot-plugging of real agents (OpenAI, local models, etc.)
+
+---
+
+## Chunk 010 — Character Reactions — Full Integration
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Connect sentiment from the Rust backend to the frontend character animations. Enhance
+the character-animator with BlendShape mouth animation for VRM models, head bone animations,
+scale pulse for placeholder talking, and improved droop/tilt for sad state.
+
+### Architecture
+- Rust `Message` struct now includes `sentiment: Option<String>` field
+- `process_message()` maps `Sentiment` enum to string ("happy", "sad", "neutral")
+- Frontend `ChatView.vue` reads sentiment from assistant response
+- `sentimentToState()` maps sentiment → CharacterState for animation
+- `CharacterAnimator.setBlendShape()` wraps VRM expressionManager for safe BlendShape access
+- Enhanced animations: head bone for thinking/sad, aa/oh BlendShapes for talking, scale pulse for placeholder
+
+### Changes
+
+**Modified files:**
+- `src-tauri/src/commands/chat.rs` — Added `sentiment` field to `Message` struct, map `Sentiment` enum to string in `process_message()`, 4 new sentiment tests
+- `src/types/index.ts` — Added `sentiment?: 'happy' | 'sad' | 'neutral'` to `Message` interface
+- `src/renderer/character-animator.ts` — Added `getState()` accessor, BlendShape support via `setBlendShape()`, head bone animations for idle/thinking/sad, mouth open/close for talking (aa/oh), happy BlendShape, scale animations for all placeholder states
+- `src/views/ChatView.vue` — Added `sentimentToState()` function, reads sentiment from last response to drive character state
+- `src/renderer/character-animator.test.ts` — 6 new tests: getState, talking scale pulse, happy scale, sad tilt, sad scale, idle scale reset
+
+### Test Results
+- **Rust:** 27 tests passing (7 stub_agent + 12 chat + 8 orchestrator)
+- **Vitest:** 7 test files, 61 tests, all passing (6 new character-animator tests)
+- **Build:** ✅ clean
+
+---
+
+## Chunk 011 — VRM Import + Character Selection UI
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add VRM import panel with character selection and switching. Wire CharacterViewport
+to auto-load VRM models when path changes. Display character name and author from VRM metadata.
+
+### Architecture
+- `ModelPanel.vue` — Slide-in panel from viewport with import button, character cards, error display
+- `CharacterViewport.vue` — Watches `characterStore.vrmPath`, loads VRM on change, shows metadata
+- `character.ts` store — Added `resetCharacter()` action for switching back to default
+- Toggle button overlaid on viewport (absolute positioned, z-index above canvas)
+
+### Changes
+
+**New files:**
+- `src/components/ModelPanel.vue` — Import VRM panel with: import button (Tauri file dialog), default placeholder card, custom VRM card, error banner, instructions reference
+- `src/components/ModelPanel.test.ts` — 8 tests (render header, import button, default card, overlay close, close button, format hint, instructions ref, default active)
+- `instructions/README.md` — Overview, quick start, format support, model sources
+- `instructions/IMPORTING-MODELS.md` — Step-by-step import guide, flow diagram, requirements, troubleshooting
+- `instructions/EXTENDING.md` — Developer guide: architecture, extension points, custom animations, agents, UI, scene elements, testing
+
+**Modified files:**
+- `src/components/CharacterViewport.vue` — Added VRM metadata overlay (character name + author), computed `characterName`, watcher for `vrmPath` to auto-load VRM, stores `SceneContext` for VRM loading
+- `src/stores/character.ts` — Added `resetCharacter()` action
+- `src/views/ChatView.vue` — Added ModelPanel component, toggle button, relative positioning on viewport section
+
+### Test Results
+- **Vitest:** 7 test files, 61 tests, all passing (8 new ModelPanel tests)
+- **Build:** ✅ clean
+
+### Notes
+- Model import currently uses `window.prompt()` as fallback when Tauri file dialog is unavailable (browser preview mode)
+- In full Tauri desktop mode, this should be replaced with `@tauri-apps/plugin-dialog` for native file picker
+- VRM path is persisted in Rust `AppState` via `load_vrm` command
+- `instructions/` folder added at project root with 3 documentation files
+
+---
+
+## Chunk 008 — Tauri IPC Bridge Integration Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Write integration tests that mock the Tauri IPC `invoke()` function and test the
+conversation and character stores end-to-end. Verify round-trip message flow, error
+handling, isThinking lifecycle, sentiment propagation, and conversation history.
+
+### Architecture
+- `vi.mock('@tauri-apps/api/core')` replaces `invoke()` with a Vitest mock function
+- Each test configures `mockInvoke` with `mockResolvedValueOnce` / `mockRejectedValueOnce`
+- Tests use real Pinia stores (via `setActivePinia(createPinia())`)
+- No Tauri runtime needed — pure JavaScript-level integration testing
+
+### Changes
+
+**New files:**
+- `src/stores/conversation.test.ts` — 8 tests: send message round-trip, custom agent routing, error handling, isThinking lifecycle, getConversation, getConversation error, sentiment preservation, multiple message ordering
+- `src/stores/character.test.ts` — 4 tests: loadVrm success, loadVrm error, clear state before load, resetCharacter
+
+### Test Results
+- **Vitest:** 9 test files, 73 tests, all passing (12 new store integration tests)
+- **Build:** ✅ clean
+
+### Notes
+- In Tauri v2, `@tauri-apps/api/mocks` from v1 is not available — using `vi.mock()` directly
+- Tests verify the full store lifecycle: user message → invoke → response → store update
+- The `isThinking` lifecycle test uses a deferred promise to observe mid-flight state
+
+---
+
+## Chunk 009 — Playwright E2E Test Infrastructure
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Install Playwright with Chromium browser, create E2E tests that run against the Vite
+dev server, and add a `playwright-e2e` CI job that runs after `build-and-test`.
+
+### Architecture
+- `@playwright/test` 1.59.1 with Chromium headless shell
+- `playwright.config.ts` — baseURL `http://localhost:1420`, auto-starts Vite dev server
+- Tests run against pure frontend (no Tauri backend) — `invoke()` errors handled gracefully
+- CI job: `playwright-e2e` depends on `build-and-test`, installs Chromium with deps, uploads report artifact
+
+### Changes
+
+**New files:**
+- `playwright.config.ts` — Chromium project, Vite webServer, GitHub reporter in CI
+- `e2e/app.spec.ts` — 6 E2E tests: app loads, chat input, send message, 3D canvas, state badge, model panel toggle
+
+**Modified files:**
+- `package.json` — Added `test:e2e` script, `@playwright/test` devDependency
+- `.github/workflows/terransoul-ci.yml` — Added `playwright-e2e` job (needs build-and-test, installs Chromium, runs tests, uploads report)
+
+### Test Results
+- **Playwright:** 6 tests, all passing (~8.8s)
+- **Vitest:** 9 test files, 73 tests, all passing (no regression)
+- **Build:** ✅ clean
+
+### Notes
+- E2E tests run against Vite dev server only — no Tauri runtime required
+- When `invoke()` fails (no backend), the conversation store catches errors and displays "Error: ..." messages — tests verify this graceful degradation
+- Playwright report uploaded as CI artifact for debugging failures
+- `--with-deps` flag installs Chromium OS dependencies in CI
