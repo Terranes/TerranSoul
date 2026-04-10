@@ -466,3 +466,62 @@ dev server, and add a `playwright-e2e` CI job that runs after `build-and-test`.
 - When `invoke()` fails (no backend), the conversation store catches errors and displays "Error: ..." messages — tests verify this graceful degradation
 - Playwright report uploaded as CI artifact for debugging failures
 - `--with-deps` flag installs Chromium OS dependencies in CI
+
+---
+
+## Chunk 020 — Device Identity & Pairing
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Implement per-device Ed25519 identity (generated on first launch, persisted to app data dir),
+QR-code-based pairing handshake (SVG QR encoding device_id + public key), and a trusted device
+list (persisted as JSON in app data dir).
+
+### Architecture
+- `src-tauri/src/identity/device.rs` — `DeviceIdentity` wraps `ed25519_dalek::SigningKey` with a UUID device_id. `DeviceInfo` (serialisable) exposes device_id, base64 public key, and name.
+- `src-tauri/src/identity/key_store.rs` — `load_or_generate_identity(data_dir)`: loads from `device_key.json` if present, otherwise generates and persists.
+- `src-tauri/src/identity/qr.rs` — `generate_pairing_qr(info)`: encodes JSON payload `{app, v, device_id, pub_key, name}` as an SVG QR code via the `qrcode` crate.
+- `src-tauri/src/identity/trusted_devices.rs` — `TrustedDevice` struct; `add/remove/load/save_trusted_devices` functions operating on `Vec<TrustedDevice>` and `trusted_devices.json`.
+- `src-tauri/src/commands/identity.rs` — 5 Tauri commands: `get_device_identity`, `get_pairing_qr`, `list_trusted_devices`, `add_trusted_device_cmd`, `remove_trusted_device_cmd`.
+- `AppState` extended with `device_identity: Mutex<Option<DeviceIdentity>>` and `trusted_devices: Mutex<Vec<TrustedDevice>>`.
+- Identity is initialised in `setup()` before the window opens.
+
+### New Dependencies
+- `ed25519-dalek = { version = "2", features = ["rand_core"] }` — Ed25519 key pair generation
+- `rand_core = { version = "0.6", features = ["getrandom"] }` — `OsRng` for key generation
+- `qrcode = "0.14"` — SVG QR code rendering
+- `base64 = "0.22"` — encoding key bytes for transport/display
+- `tempfile = "3"` (dev-only) — temp dirs for key_store and trusted_devices tests
+
+### Files Created
+**Rust:**
+- `src-tauri/src/identity/mod.rs`
+- `src-tauri/src/identity/device.rs` (6 unit tests)
+- `src-tauri/src/identity/key_store.rs` (2 unit tests)
+- `src-tauri/src/identity/qr.rs` (2 unit tests)
+- `src-tauri/src/identity/trusted_devices.rs` (6 unit tests)
+- `src-tauri/src/commands/identity.rs`
+
+**Frontend:**
+- `src/stores/identity.ts` — Pinia identity store (loadIdentity, loadPairingQr, loadTrustedDevices, addTrustedDevice, removeTrustedDevice, clearError)
+- `src/stores/identity.test.ts` — 9 Vitest tests
+- `src/views/PairingView.vue` — QR display, identity info, trusted device list with remove buttons
+
+### Files Modified
+- `src-tauri/Cargo.toml` — new deps + dev-dep
+- `src-tauri/src/commands/mod.rs` — added `identity` module
+- `src-tauri/src/lib.rs` — added identity module, extended AppState, setup() initialisation, 5 new commands registered
+- `src-tauri/src/commands/chat.rs` — updated `make_state()` test helper to use `AppState::for_test()`
+- `src/types/index.ts` — added `DeviceInfo` and `TrustedDevice` interfaces
+
+### Test Results
+- **Rust:** 16 new unit tests in the identity module (device: 6, key_store: 2, qr: 2, trusted_devices: 6)
+- **Vitest:** 10 test files, 82 tests, all passing (9 new identity store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- Key storage uses a file-based approach (`device_key.json` in app data dir) — a production upgrade path to OS keychain via the `keyring` crate is straightforward by swapping the storage layer.
+- QR payload is compact JSON: `{"app":"TerranSoul","v":1,"device_id":"…","pub_key":"…","name":"…"}`
+- `AppState::for_test()` is `#[cfg(test)]`-gated to keep test ergonomics clean without polluting production API

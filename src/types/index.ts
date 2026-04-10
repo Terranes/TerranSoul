@@ -22,3 +22,16 @@ export interface VrmMetadata {
   author: string;
   license: string;
 }
+
+export interface DeviceInfo {
+  device_id: string;
+  public_key_b64: string;
+  name: string;
+}
+
+export interface TrustedDevice {
+  device_id: string;
+  name: string;
+  public_key_b64: string;
+  paired_at: number;
+}
