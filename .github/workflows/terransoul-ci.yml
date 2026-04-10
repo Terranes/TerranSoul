@@ -3,30 +3,6 @@ name: TerranSoul CI
 on:
   push:
     branches: [main, 'copilot/**']
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'tsconfig.node.json'
-      - 'vite.config.ts'
-      - 'vitest.config.ts'
-      - '.github/workflows/terransoul-ci.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'tsconfig.node.json'
-      - 'vite.config.ts'
-      - 'vitest.config.ts'
-      - '.github/workflows/terransoul-ci.yml'
 
 jobs:
   # ── Build + Lint + Test ─────────────────────────────────────────────────────
