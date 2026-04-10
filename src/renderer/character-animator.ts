@@ -23,6 +23,10 @@ export class CharacterAnimator {
     this.elapsed = 0;
   }
 
+  getState(): CharacterState {
+    return this.state;
+  }
+
   update(delta: number) {
     this.elapsed += delta;
     const t = this.elapsed;
@@ -38,24 +42,75 @@ export class CharacterAnimator {
   private applyVRMAnimation(t: number) {
     if (!this.vrm) return;
     const hips = this.vrm.humanoid.getNormalizedBoneNode('hips');
-    if (!hips) return;
+    const head = this.vrm.humanoid.getNormalizedBoneNode('head');
 
     switch (this.state) {
       case 'idle':
-        hips.position.y = Math.sin(t * 0.8) * 0.01;
+        if (hips) {
+          hips.position.y = Math.sin(t * 0.8) * 0.01;
+        }
+        if (head) {
+          head.rotation.x = Math.sin(t * 0.6) * 0.02;
+          head.rotation.z = Math.sin(t * 0.4) * 0.01;
+        }
+        this.setBlendShape('aa', 0);
         break;
+
       case 'thinking':
-        hips.position.y = Math.sin(t * 2.0) * 0.015;
+        if (hips) {
+          hips.position.y = Math.sin(t * 2.0) * 0.015;
+        }
+        if (head) {
+          head.rotation.x = -0.1 + Math.sin(t * 1.5) * 0.05;
+          head.rotation.z = Math.sin(t * 0.8) * 0.03;
+        }
+        this.setBlendShape('aa', 0);
         break;
+
       case 'talking':
-        hips.position.y = Math.sin(t * 4.0) * 0.012;
+        if (hips) {
+          hips.position.y = Math.sin(t * 4.0) * 0.012;
+        }
+        if (head) {
+          head.rotation.x = Math.sin(t * 3.0) * 0.03;
+        }
+        {
+          const mouthOpen = (Math.sin(t * 8.0) + 1.0) * 0.5;
+          this.setBlendShape('aa', mouthOpen * 0.6);
+          this.setBlendShape('oh', mouthOpen * 0.2);
+        }
         break;
+
       case 'happy':
-        hips.position.y = Math.abs(Math.sin(t * 5.0)) * 0.03;
+        if (hips) {
+          hips.position.y = Math.abs(Math.sin(t * 5.0)) * 0.03;
+        }
+        if (head) {
+          head.rotation.z = Math.sin(t * 3.0) * 0.04;
+        }
+        this.setBlendShape('aa', 0);
+        this.setBlendShape('happy', 0.8);
         break;
+
       case 'sad':
-        hips.position.y = Math.sin(t * 0.5) * 0.005;
+        if (hips) {
+          hips.position.y = Math.sin(t * 0.5) * 0.005;
+        }
+        if (head) {
+          head.rotation.x = 0.15 + Math.sin(t * 0.3) * 0.02;
+        }
+        this.setBlendShape('aa', 0);
+        this.setBlendShape('happy', 0);
         break;
+    }
+  }
+
+  private setBlendShape(name: string, value: number) {
+    if (!this.vrm) return;
+    try {
+      this.vrm.expressionManager?.setValue(name, value);
+    } catch {
+      // BlendShape not available on this model — silently ignore
     }
   }
 
@@ -66,22 +121,35 @@ export class CharacterAnimator {
       case 'idle':
         this.placeholder.position.y = Math.sin(t * 0.8) * 0.03;
         this.placeholder.rotation.y = Math.sin(t * 0.4) * 0.1;
+        this.placeholder.scale.setScalar(1.0);
         break;
+
       case 'thinking':
         this.placeholder.rotation.y += 0.02;
         this.placeholder.position.y = Math.sin(t * 2.0) * 0.04;
+        this.placeholder.scale.setScalar(1.0);
         break;
+
       case 'talking':
-        this.placeholder.position.y = Math.sin(t * 6.0) * 0.025;
-        this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.04;
+        {
+          const pulse = 1.0 + Math.sin(t * 8.0) * 0.04;
+          this.placeholder.position.y = Math.sin(t * 6.0) * 0.025;
+          this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.04;
+          this.placeholder.scale.setScalar(pulse);
+        }
         break;
+
       case 'happy':
         this.placeholder.position.y = Math.abs(Math.sin(t * 5.0)) * 0.08;
         this.placeholder.rotation.z = Math.sin(t * 5.0) * 0.08;
+        this.placeholder.scale.setScalar(1.0 + Math.abs(Math.sin(t * 5.0)) * 0.05);
         break;
+
       case 'sad':
-        this.placeholder.position.y = -Math.abs(Math.sin(t * 0.5)) * 0.02;
+        this.placeholder.position.y = -Math.abs(Math.sin(t * 0.5)) * 0.04;
         this.placeholder.rotation.z = Math.sin(t * 0.5) * 0.02;
+        this.placeholder.rotation.x = 0.1;
+        this.placeholder.scale.setScalar(0.95 + Math.sin(t * 0.3) * 0.02);
         break;
     }
   }

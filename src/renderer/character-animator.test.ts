@@ -16,6 +16,15 @@ describe('CharacterAnimator', () => {
     expect(Math.abs(group.position.y)).toBeLessThan(0.1);
   });
 
+  it('getState returns current state', () => {
+    const animator = new CharacterAnimator();
+    expect(animator.getState()).toBe('idle');
+    animator.setState('thinking');
+    expect(animator.getState()).toBe('thinking');
+    animator.setState('happy');
+    expect(animator.getState()).toBe('happy');
+  });
+
   it('setState changes state and resets elapsed time', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();
@@ -65,6 +74,17 @@ describe('CharacterAnimator', () => {
     expect(typeof group.rotation.z).toBe('number');
   });
 
+  it('talking state applies scale pulse on placeholder', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('talking');
+    animator.update(0.2);
+    // Scale pulse: 1.0 + sin(t*8) * 0.04, so scale should be near 1.0
+    expect(group.scale.x).toBeGreaterThan(0.9);
+    expect(group.scale.x).toBeLessThan(1.1);
+  });
+
   it('happy state produces bounce animation', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();
@@ -75,6 +95,16 @@ describe('CharacterAnimator', () => {
     expect(group.position.y).toBeGreaterThanOrEqual(0);
   });
 
+  it('happy state applies scale increase', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('happy');
+    animator.update(0.1);
+    // Happy: 1.0 + abs(sin(t*5)) * 0.05
+    expect(group.scale.x).toBeGreaterThanOrEqual(1.0);
+  });
+
   it('sad state produces droop animation', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();
@@ -83,6 +113,33 @@ describe('CharacterAnimator', () => {
     animator.update(0.5);
     // Sad uses -abs(sin) so position.y should be <= 0
     expect(group.position.y).toBeLessThanOrEqual(0);
+  });
+
+  it('sad state tilts forward (rotation.x)', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('sad');
+    animator.update(0.3);
+    expect(group.rotation.x).toBeGreaterThan(0);
+  });
+
+  it('sad state scales down slightly', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('sad');
+    animator.update(0.3);
+    expect(group.scale.x).toBeLessThan(1.0);
+  });
+
+  it('idle state resets scale to 1.0', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('idle');
+    animator.update(0.1);
+    expect(group.scale.x).toBeCloseTo(1.0, 2);
   });
 
   it('transitions idle → thinking → talking → idle', () => {

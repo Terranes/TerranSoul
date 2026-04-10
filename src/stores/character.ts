@@ -34,5 +34,11 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, setState, setMetadata, setLoadError, loadVrm };
+  function resetCharacter() {
+    vrmPath.value = undefined;
+    vrmMetadata.value = undefined;
+    loadError.value = undefined;
+  }
+
+  return { state, vrmPath, vrmMetadata, loadError, setState, setMetadata, setLoadError, loadVrm, resetCharacter };
 });

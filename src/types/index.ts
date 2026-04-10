@@ -3,6 +3,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   agentName?: string;
+  sentiment?: 'happy' | 'sad' | 'neutral';
   timestamp: number;
 }
 

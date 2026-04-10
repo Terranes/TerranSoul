@@ -13,6 +13,7 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub agent_name: Option<String>,
+    pub sentiment: Option<String>,
     pub timestamp: u64,
 }
 
@@ -37,6 +38,7 @@ pub async fn process_message(
         role: "user".to_string(),
         content: message.to_string(),
         agent_name: None,
+        sentiment: None,
         timestamp: now_ms(),
     };
 
@@ -46,13 +48,20 @@ pub async fn process_message(
     }
 
     let agent = StubAgent::new(agent_id.unwrap_or("stub"));
-    let (content, _sentiment) = agent.respond(message).await;
+    let (content, sentiment) = agent.respond(message).await;
+
+    let sentiment_str = match sentiment {
+        crate::agent::stub_agent::Sentiment::Happy => "happy",
+        crate::agent::stub_agent::Sentiment::Sad => "sad",
+        crate::agent::stub_agent::Sentiment::Neutral => "neutral",
+    };
 
     let response = Message {
         id: Uuid::new_v4().to_string(),
         role: "assistant".to_string(),
         content,
         agent_name: Some(agent.name().to_string()),
+        sentiment: Some(sentiment_str.to_string()),
         timestamp: now_ms(),
     };
 
@@ -165,6 +174,39 @@ mod tests {
         assert!(result.is_ok());
         let response = result.unwrap();
         assert_eq!(response.agent_name.as_deref(), Some("custom"));
+    }
+
+    #[tokio::test]
+    async fn send_message_returns_happy_sentiment_for_hello() {
+        let state = make_state();
+        let result = process_message("hello", None, &state).await;
+        let response = result.unwrap();
+        assert_eq!(response.sentiment.as_deref(), Some("happy"));
+    }
+
+    #[tokio::test]
+    async fn send_message_returns_sad_sentiment() {
+        let state = make_state();
+        let result = process_message("I am sad today", None, &state).await;
+        let response = result.unwrap();
+        assert_eq!(response.sentiment.as_deref(), Some("sad"));
+    }
+
+    #[tokio::test]
+    async fn send_message_returns_neutral_sentiment() {
+        let state = make_state();
+        let result = process_message("tell me about weather", None, &state).await;
+        let response = result.unwrap();
+        assert_eq!(response.sentiment.as_deref(), Some("neutral"));
+    }
+
+    #[tokio::test]
+    async fn user_message_has_no_sentiment() {
+        let state = make_state();
+        let _ = process_message("hello", None, &state).await;
+        let conv = fetch_conversation(&state);
+        assert!(conv[0].sentiment.is_none());
+        assert!(conv[1].sentiment.is_some());
     }
 
     #[tokio::test]

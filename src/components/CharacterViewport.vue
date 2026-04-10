@@ -1,7 +1,10 @@
 <template>
   <div class="viewport-wrapper">
     <canvas ref="canvasRef" class="viewport-canvas" />
-    <div class="character-name-overlay">TerranSoul</div>
+    <div class="character-name-overlay">{{ characterName }}</div>
+    <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
+      <span>by {{ characterStore.vrmMetadata.author }}</span>
+    </div>
     <div class="state-badge" :class="characterStore.state">
       {{ characterStore.state }}
     </div>
@@ -15,10 +18,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
-import { initScene, type RendererInfo, type RendererType } from '../renderer/scene';
-import { createPlaceholderCharacter } from '../renderer/vrm-loader';
+import { initScene, type RendererInfo, type RendererType, type SceneContext } from '../renderer/scene';
+import { createPlaceholderCharacter, loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -27,9 +30,14 @@ const showDebug = ref(false);
 const rendererType = ref<RendererType>('webgl');
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 
+const characterName = computed(() => {
+  return characterStore.vrmMetadata?.title ?? 'TerranSoul';
+});
+
 let animFrameId = 0;
 let disposeScene: (() => void) | null = null;
 let getRendererInfo: (() => RendererInfo) | null = null;
+let sceneCtx: SceneContext | null = null;
 const animator = new CharacterAnimator();
 
 function handleKeyDown(e: KeyboardEvent) {
@@ -44,6 +52,7 @@ onMounted(async () => {
   if (!canvas) return;
 
   const ctx = await initScene(canvas);
+  sceneCtx = ctx;
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
   rendererType.value = ctx.rendererType;
@@ -76,6 +85,21 @@ watch(
   () => characterStore.state,
   (newState) => animator.setState(newState),
 );
+
+// Watch for VRM path changes and load the model
+watch(
+  () => characterStore.vrmPath,
+  async (newPath) => {
+    if (!newPath || !sceneCtx) return;
+    const result = await loadVRMSafe(sceneCtx.scene, newPath);
+    if (result) {
+      animator.setVRM(result.vrm);
+      characterStore.setMetadata(result.metadata);
+    } else {
+      characterStore.setLoadError('Failed to load VRM model');
+    }
+  },
+);
 </script>
 
 <style scoped>
@@ -102,6 +126,16 @@ watch(
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   pointer-events: none;
   letter-spacing: 0.05em;
+}
+
+.character-meta-overlay {
+  position: absolute;
+  top: 34px;
+  left: 16px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  letter-spacing: 0.02em;
 }
 
 .state-badge {
