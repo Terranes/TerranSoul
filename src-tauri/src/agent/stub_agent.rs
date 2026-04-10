@@ -52,3 +52,60 @@ impl StubAgent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_returns_terransoul_for_stub_id() {
+        let agent = StubAgent::new("stub");
+        assert_eq!(agent.name(), "TerranSoul");
+    }
+
+    #[test]
+    fn name_returns_custom_id() {
+        let agent = StubAgent::new("custom-agent");
+        assert_eq!(agent.name(), "custom-agent");
+    }
+
+    #[tokio::test]
+    async fn respond_hello_returns_happy() {
+        let agent = StubAgent::new("stub");
+        let (response, sentiment) = agent.respond("hello").await;
+        assert!(response.contains("TerranSoul"));
+        assert!(matches!(sentiment, Sentiment::Happy));
+    }
+
+    #[tokio::test]
+    async fn respond_hi_returns_happy() {
+        let agent = StubAgent::new("stub");
+        let (response, sentiment) = agent.respond("Hi there").await;
+        assert!(response.contains("TerranSoul"));
+        assert!(matches!(sentiment, Sentiment::Happy));
+    }
+
+    #[tokio::test]
+    async fn respond_sad_returns_sad() {
+        let agent = StubAgent::new("stub");
+        let (response, sentiment) = agent.respond("I am sad today").await;
+        assert!(response.contains("I'm sorry"));
+        assert!(matches!(sentiment, Sentiment::Sad));
+    }
+
+    #[tokio::test]
+    async fn respond_happy_returns_happy() {
+        let agent = StubAgent::new("stub");
+        let (response, sentiment) = agent.respond("I am happy!").await;
+        assert!(response.contains("wonderful"));
+        assert!(matches!(sentiment, Sentiment::Happy));
+    }
+
+    #[tokio::test]
+    async fn respond_neutral_returns_neutral() {
+        let agent = StubAgent::new("stub");
+        let (response, sentiment) = agent.respond("Tell me about the weather").await;
+        assert!(response.contains("still learning"));
+        assert!(matches!(sentiment, Sentiment::Neutral));
+    }
+}

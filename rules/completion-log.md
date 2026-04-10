@@ -223,3 +223,31 @@ supporting both VRM 0.0 and VRM 1.0 formats. Write Vitest unit tests for loader 
 - VRM 1.0 uses `name`, `authors[]`, `licenseUrl`; VRM 0.0 uses `title`, `author`, `licenseName`
 - `loadVRMSafe` logs errors and returns null — callers use capsule placeholder as fallback
 - Three.js GLTFLoader not testable in jsdom; tests focus on metadata extraction and validation logic
+
+---
+
+## Chunk 005 — Character State Machine Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add Rust unit tests for `stub_agent.rs` covering all keyword branches and the neutral fallback.
+Add Vitest tests for `character-animator.ts` covering all state transitions and animation behaviors.
+
+### Changes
+
+**Modified files:**
+- `src-tauri/src/agent/stub_agent.rs` — Added `#[cfg(test)]` module with 7 tests: name resolution (2), keyword branches (hello, hi, sad, happy, neutral)
+
+**New files:**
+- `src/renderer/character-animator.test.ts` — 9 Vitest tests: default idle, setState resets, thinking vs idle, talking animation, happy bounce, sad droop, full transition chain, no-op update, setPlaceholder behavior
+
+### Test Results
+- **Rust:** 7 tests passing (stub_agent)
+- **Vitest:** 6 test files, 47 tests, all passing (9 new character-animator tests)
+- **Total new tests this chunk:** 16
+
+### Notes
+- Rust async tests use `#[tokio::test]` with real async `respond()` calls (500ms+ simulated delay)
+- Character animator tests use real `THREE.Group` instances in jsdom — basic transforms work without WebGL

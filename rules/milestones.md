@@ -52,6 +52,11 @@ WebGPU chunk is code-split via dynamic import.
 Hardened vrm-loader.ts with error handling, progress callback, VRM 0.0/1.0 metadata extraction.
 Safe loader returns null on error (capsule fallback). 12 VRM loader tests.
 
+✅ Chunk 005 — Character State Machine Tests — see `rules/completion-log.md`
+
+7 Rust tests for stub_agent (name, hello, hi, sad, happy, neutral). 9 Vitest tests for
+character-animator (state transitions, animations, error handling). Total: 16 new tests.
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -62,7 +67,7 @@ Safe loader returns null on error (capsule fallback). 12 VRM loader tests.
 
 ### Next Chunk
 
-**Chunk 005** — Character State Machine Tests
+**Chunk 006** — Rust Chat Commands — Unit Tests
 
 ---
 
@@ -70,7 +75,7 @@ Safe loader returns null on error (capsule fallback). 12 VRM loader tests.
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
+| 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |
 | 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
 | 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |
