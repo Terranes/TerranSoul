@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+#[cfg(debug_assertions)]
 use tauri::Manager;
 
 pub mod agent;
@@ -30,10 +31,10 @@ pub fn run() {
             list_agents,
             load_vrm,
         ])
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(debug_assertions)]
             {
-                let window = app.get_webview_window("main").unwrap();
+                let window = _app.get_webview_window("main").unwrap();
                 window.open_devtools();
             }
             Ok(())

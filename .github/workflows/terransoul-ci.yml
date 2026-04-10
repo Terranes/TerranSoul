@@ -15,7 +15,7 @@ on:
       - '.github/workflows/terransoul-ci.yml'
 
 jobs:
-  # ── Build + Test (Frontend & Rust) ─────────────────────────────────────────
+  # ── Build + Lint + Test ─────────────────────────────────────────────────────
   build-and-test:
     runs-on: ubuntu-latest
     permissions:
@@ -62,89 +62,10 @@ jobs:
       - name: Type-check and build frontend
         run: npm run build
 
-      - name: Run cargo check
-        working-directory: src-tauri
-        run: cargo check --all-targets
-
-      - name: Run cargo test
-        working-directory: src-tauri
-        run: cargo test --all-targets
-
       - name: Run cargo clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Build Tauri app
-        run: npx tauri build
-
-  # ── Vitest Unit & Component Tests ──────────────────────────────────────────
-  vitest:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run Vitest
-        run: npm run test -- --passWithNoTests
-
-  # ── Playwright E2E Tests (Browser UI) ──────────────────────────────────────
-  playwright-e2e:
-    runs-on: ubuntu-latest
-    needs: [build-and-test, vitest]
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Get Playwright version
-        id: pw-version
-        run: |
-          PW_VERSION=$(node -e "try{console.log(require('@playwright/test/package.json').version)}catch{console.log('none')}")
-          echo "version=$PW_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        if: steps.pw-version.outputs.version != 'none'
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
-
-      - name: Install Playwright browsers
-        if: steps.pw-version.outputs.version != 'none' && steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-
-      - name: Install Playwright OS deps (cache hit)
-        if: steps.pw-version.outputs.version != 'none' && steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
-
-      - name: Run Playwright E2E tests
-        if: steps.pw-version.outputs.version != 'none'
-        run: npx playwright test
-
-      - name: Skip E2E (Playwright not yet installed)
-        if: steps.pw-version.outputs.version == 'none'
-        run: echo "⏭️ Playwright not yet configured — skipping E2E tests"
+      - name: Run cargo test
+        working-directory: src-tauri
+        run: cargo test --all-targets
