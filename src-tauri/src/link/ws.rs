@@ -3,13 +3,12 @@
 /// This is the fallback when QUIC is not available (e.g. restrictive NATs).
 /// Messages are JSON text frames.
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tokio_tungstenite::{tungstenite::Message as WsMsg, WebSocketStream, MaybeTlsStream};
+use tokio_tungstenite::tungstenite::Message as WsMsg;
 
 use super::{LinkMessage, LinkStatus, LinkTransport, PeerAddr};
 

@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::routing::command_envelope::{CommandResult, CommandStatus};
+use crate::routing::command_envelope::CommandResult;
 use crate::routing::permission::PermissionPolicy;
 use crate::AppState;
 

@@ -1,7 +1,7 @@
 /// Command router — receives remote command envelopes, runs permission
 /// checks, executes allowed commands, and produces results.
 use super::command_envelope::{CommandEnvelope, CommandResult, CommandStatus};
-use super::permission::{PermissionPolicy, PermissionStore};
+use super::permission::PermissionStore;
 
 /// Routes remote commands through permission checks and execution.
 pub struct CommandRouter {
@@ -132,6 +132,7 @@ impl CommandRouter {
 mod tests {
     use super::*;
     use super::super::command_envelope::CommandEnvelope;
+    use super::super::permission::PermissionPolicy;
 
     fn make_router() -> CommandRouter {
         CommandRouter::new("pc-device")

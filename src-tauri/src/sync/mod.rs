@@ -9,7 +9,7 @@ pub type SiteId = String;
 
 /// Lamport-style logical timestamp.
 /// Monotonically increasing per-site; ties broken by `SiteId`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct HLC {
     pub counter: u64,
     pub site_ord: u32,

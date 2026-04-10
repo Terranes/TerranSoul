@@ -1,8 +1,6 @@
 /// Link manager — high-level API that wraps a `LinkTransport` with
 /// reconnection logic, status tracking, and the ability to swap
 /// between QUIC (primary) and WebSocket (fallback).
-use std::sync::Arc;
-
 use tokio::sync::Mutex;
 
 use super::{LinkMessage, LinkPeer, LinkStatus, LinkTransport, PeerAddr};
@@ -277,7 +275,6 @@ mod tests {
 
     #[tokio::test]
     async fn manager_send_delegates_to_transport() {
-        let mock = Arc::new(MockTransport::new());
         // We need to put mock in the manager, so we create a new one
         let mgr = LinkManager::with_transport(Box::new(MockTransport::new()), TransportKind::Quic);
         let msg = test_msg();
@@ -326,7 +323,7 @@ mod tests {
         }
         // Next reconnect should switch to WebSocket
         // (the WsTransport will fail to connect to 127.0.0.1:4433 since nothing is listening)
-        let result = mgr.reconnect(&test_addr()).await;
+        let _result = mgr.reconnect(&test_addr()).await;
         // We switched transport kind even if connect fails
         assert_eq!(mgr.transport_kind(), TransportKind::WebSocket);
     }

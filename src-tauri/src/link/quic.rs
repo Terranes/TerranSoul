@@ -117,7 +117,6 @@ impl QuicTransport {
 
 /// Write a length-prefixed frame (4-byte big-endian length + payload).
 async fn write_frame(stream: &mut quinn::SendStream, data: &[u8]) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
     let len = (data.len() as u32).to_be_bytes();
     stream.write_all(&len).await.map_err(|e| e.to_string())?;
     stream.write_all(data).await.map_err(|e| e.to_string())?;
@@ -126,7 +125,6 @@ async fn write_frame(stream: &mut quinn::SendStream, data: &[u8]) -> Result<(), 
 
 /// Read a length-prefixed frame.
 async fn read_frame(stream: &mut quinn::RecvStream) -> Result<Vec<u8>, String> {
-    use tokio::io::AsyncReadExt;
     let mut len_buf = [0u8; 4];
     stream
         .read_exact(&mut len_buf)
