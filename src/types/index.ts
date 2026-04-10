@@ -50,3 +50,10 @@ export interface LinkStatusResponse {
   peer: LinkPeer | null;
   server_port: number | null;
 }
+
+export interface SyncState {
+  conversation_count: number;
+  character_selection: string | null;
+  agent_count: number;
+  last_synced_at: number | null;
+}

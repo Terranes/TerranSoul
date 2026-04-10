@@ -583,3 +583,53 @@ Link manager with reconnection logic and transport fallback.
 - Frame size limit: 16 MiB to prevent memory exhaustion
 - `LinkManager::with_transport()` enables full unit testing with `MockTransport`
 - QUIC → WebSocket fallback is automatic after `max_reconnect_attempts` (default 5)
+
+---
+
+## Chunk 022 — CRDT Sync Engine
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Implement CRDT-based data synchronisation for cross-device sync:
+- Append-only log (conversation history)
+- Last-Write-Wins register (character selection)
+- OR-Set (agent status map)
+
+All CRDTs use HLC (Hybrid Logical Clock) timestamps with site tiebreaker for deterministic ordering.
+
+### Architecture
+- `src-tauri/src/sync/mod.rs` — `HLC` (counter + site_ord), `SyncOp` (crdt_id, kind, hlc, site, payload), `CrdtState` trait (apply, snapshot_ops), `SiteId` type. 6 unit tests.
+- `src-tauri/src/sync/append_log.rs` — `AppendLog` CRDT: ordered by HLC, idempotent duplicate rejection via binary search insert. 9 unit tests incl. concurrent edit convergence.
+- `src-tauri/src/sync/lww_register.rs` — `LwwRegister` CRDT: last write wins, tiebreak by higher site_ord. 11 unit tests incl. concurrent edit convergence.
+- `src-tauri/src/sync/or_set.rs` — `OrSet` CRDT: observed-remove semantics, each add creates a unique tag (HLC + site), remove only removes observed tags. Concurrent add + remove → add wins for unseen tags. 11 unit tests incl. add-wins-concurrent test.
+- Frontend `src/stores/sync.ts` — Pinia store mirroring CRDT summary (conversationCount, characterSelection, agentCount, lastSyncedAt).
+- Frontend `src/stores/sync.test.ts` — 8 Vitest tests.
+
+### Files Created
+**Rust:**
+- `src-tauri/src/sync/mod.rs` — HLC + SyncOp + CrdtState trait (6 tests)
+- `src-tauri/src/sync/append_log.rs` — Append-only log CRDT (9 tests)
+- `src-tauri/src/sync/lww_register.rs` — LWW register CRDT (11 tests)
+- `src-tauri/src/sync/or_set.rs` — OR-Set CRDT (11 tests)
+
+**Frontend:**
+- `src/stores/sync.ts` — Pinia sync store
+- `src/stores/sync.test.ts` — 8 Vitest tests
+
+### Files Modified
+- `src-tauri/src/lib.rs` — added `sync` module
+- `src/types/index.ts` — added `SyncState` interface
+
+### Test Results
+- **Rust:** 37 new unit tests in the sync module (mod: 6, append_log: 9, lww_register: 11, or_set: 11)
+- **Vitest:** 12 test files, 101 tests, all passing (8 new sync store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- No external CRDT crate used — minimal custom implementation avoids dependency bloat
+- HLC ordering: `(counter, site_ord)` — deterministic total order across all devices
+- AppendLog: binary search insert + duplicate check makes `apply()` O(log n)
+- OR-Set: concurrent add + remove resolves to add-wins for unobserved tags, matching standard OR-Set semantics
+- All CRDTs implement `snapshot_ops()` for full state transfer to new peers

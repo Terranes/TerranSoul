@@ -8,6 +8,7 @@ pub mod commands;
 pub mod identity;
 pub mod link;
 pub mod orchestrator;
+pub mod sync;
 
 use commands::{
     agent::list_agents,

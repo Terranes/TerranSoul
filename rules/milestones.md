@@ -108,9 +108,14 @@ Ed25519 key pair per-device, file-backed key storage, QR SVG pairing code, trust
 QUIC primary + WebSocket fallback behind `LinkTransport` trait. Link manager with auto-reconnect
 and transport fallback. 4 Tauri commands, 31 Rust tests, 11 Vitest tests.
 
+✅ Chunk 022 — CRDT Sync Engine — see `rules/completion-log.md`
+
+Append-only log (conversation), LWW register (character selection), OR-Set (agent status).
+HLC timestamps with site tiebreaker. 37 Rust tests, 8 Vitest tests.
+
 ### Next Chunk
 
-**Chunk 022** — CRDT Sync Engine (Phase 2)
+**Chunk 023** — Remote Command Routing (Phase 2)
 
 ---
 
@@ -121,7 +126,6 @@ and transport fallback. 4 Tauri commands, 31 Rust tests, 11 Vitest tests.
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 022 | **CRDT Sync Engine** — Implement CRDT-based sync for: conversation log (append-only log), character selection (last-write-wins register), agent status map (OR-Set). Use `crdts` crate or implement minimal LWW/OR-Set. Write unit tests for merge correctness (concurrent edits on 2 devices). | `not-started` |
 | 023 | **Remote Command Routing** — Allow a secondary device (phone) to send a command to the primary device (PC). Implement command envelope: `{command_id, origin_device, target_device, payload}`. Implement permission check on target device (user must approve first remote command). Return result to originating device. | `not-started` |
 
 ---
