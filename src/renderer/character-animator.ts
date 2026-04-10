@@ -74,11 +74,8 @@ export class CharacterAnimator {
         if (head) {
           head.rotation.x = Math.sin(t * 3.0) * 0.03;
         }
-        {
-          const mouthOpen = (Math.sin(t * 8.0) + 1.0) * 0.5;
-          this.setBlendShape('aa', mouthOpen * 0.6);
-          this.setBlendShape('oh', mouthOpen * 0.2);
-        }
+        this.setBlendShape('aa', ((Math.sin(t * 8.0) + 1.0) * 0.5) * 0.6);
+        this.setBlendShape('oh', ((Math.sin(t * 8.0) + 1.0) * 0.5) * 0.2);
         break;
 
       case 'happy':
@@ -131,12 +128,9 @@ export class CharacterAnimator {
         break;
 
       case 'talking':
-        {
-          const pulse = 1.0 + Math.sin(t * 8.0) * 0.04;
-          this.placeholder.position.y = Math.sin(t * 6.0) * 0.025;
-          this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.04;
-          this.placeholder.scale.setScalar(pulse);
-        }
+        this.placeholder.position.y = Math.sin(t * 6.0) * 0.025;
+        this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.04;
+        this.placeholder.scale.setScalar(1.0 + Math.sin(t * 8.0) * 0.04);
         break;
 
       case 'happy':

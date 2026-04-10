@@ -67,17 +67,8 @@ async function handleImport() {
   isLoading.value = true;
   characterStore.setLoadError(undefined);
   try {
-    // Use Tauri file dialog to pick a VRM file
-    const { open } = await import('@tauri-apps/plugin-shell');
-    // Fallback: prompt for path if file dialog isn't available
-    // In production, this uses Tauri's dialog plugin
-    void open; // plugin-shell doesn't have open dialog; use invoke
-    const path = window.prompt('Enter the path to a .vrm file:');
-    if (path) {
-      await characterStore.loadVrm(path);
-    }
-  } catch {
-    // If Tauri dialog is not available (e.g., browser preview), use prompt fallback
+    // TODO: Replace with @tauri-apps/plugin-dialog for native file picker in production.
+    // Currently uses window.prompt() as a fallback for browser preview mode.
     const path = window.prompt('Enter the path to a .vrm file:');
     if (path) {
       await characterStore.loadVrm(path);

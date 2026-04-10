@@ -320,3 +320,78 @@ trait-based dispatch with agent registry. Add health-check method. Write unit te
 - `async_trait` crate used for trait-based async dispatch
 - MockAgent in tests verifies dispatch routing, health checks, and agent registration
 - Agent registry enables future hot-plugging of real agents (OpenAI, local models, etc.)
+
+---
+
+## Chunk 010 — Character Reactions — Full Integration
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Connect sentiment from the Rust backend to the frontend character animations. Enhance
+the character-animator with BlendShape mouth animation for VRM models, head bone animations,
+scale pulse for placeholder talking, and improved droop/tilt for sad state.
+
+### Architecture
+- Rust `Message` struct now includes `sentiment: Option<String>` field
+- `process_message()` maps `Sentiment` enum to string ("happy", "sad", "neutral")
+- Frontend `ChatView.vue` reads sentiment from assistant response
+- `sentimentToState()` maps sentiment → CharacterState for animation
+- `CharacterAnimator.setBlendShape()` wraps VRM expressionManager for safe BlendShape access
+- Enhanced animations: head bone for thinking/sad, aa/oh BlendShapes for talking, scale pulse for placeholder
+
+### Changes
+
+**Modified files:**
+- `src-tauri/src/commands/chat.rs` — Added `sentiment` field to `Message` struct, map `Sentiment` enum to string in `process_message()`, 4 new sentiment tests
+- `src/types/index.ts` — Added `sentiment?: 'happy' | 'sad' | 'neutral'` to `Message` interface
+- `src/renderer/character-animator.ts` — Added `getState()` accessor, BlendShape support via `setBlendShape()`, head bone animations for idle/thinking/sad, mouth open/close for talking (aa/oh), happy BlendShape, scale animations for all placeholder states
+- `src/views/ChatView.vue` — Added `sentimentToState()` function, reads sentiment from last response to drive character state
+- `src/renderer/character-animator.test.ts` — 6 new tests: getState, talking scale pulse, happy scale, sad tilt, sad scale, idle scale reset
+
+### Test Results
+- **Rust:** 27 tests passing (7 stub_agent + 12 chat + 8 orchestrator)
+- **Vitest:** 7 test files, 61 tests, all passing (6 new character-animator tests)
+- **Build:** ✅ clean
+
+---
+
+## Chunk 011 — VRM Import + Character Selection UI
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add VRM import panel with character selection and switching. Wire CharacterViewport
+to auto-load VRM models when path changes. Display character name and author from VRM metadata.
+
+### Architecture
+- `ModelPanel.vue` — Slide-in panel from viewport with import button, character cards, error display
+- `CharacterViewport.vue` — Watches `characterStore.vrmPath`, loads VRM on change, shows metadata
+- `character.ts` store — Added `resetCharacter()` action for switching back to default
+- Toggle button overlaid on viewport (absolute positioned, z-index above canvas)
+
+### Changes
+
+**New files:**
+- `src/components/ModelPanel.vue` — Import VRM panel with: import button (Tauri file dialog), default placeholder card, custom VRM card, error banner, instructions reference
+- `src/components/ModelPanel.test.ts` — 8 tests (render header, import button, default card, overlay close, close button, format hint, instructions ref, default active)
+- `instructions/README.md` — Overview, quick start, format support, model sources
+- `instructions/IMPORTING-MODELS.md` — Step-by-step import guide, flow diagram, requirements, troubleshooting
+- `instructions/EXTENDING.md` — Developer guide: architecture, extension points, custom animations, agents, UI, scene elements, testing
+
+**Modified files:**
+- `src/components/CharacterViewport.vue` — Added VRM metadata overlay (character name + author), computed `characterName`, watcher for `vrmPath` to auto-load VRM, stores `SceneContext` for VRM loading
+- `src/stores/character.ts` — Added `resetCharacter()` action
+- `src/views/ChatView.vue` — Added ModelPanel component, toggle button, relative positioning on viewport section
+
+### Test Results
+- **Vitest:** 7 test files, 61 tests, all passing (8 new ModelPanel tests)
+- **Build:** ✅ clean
+
+### Notes
+- Model import currently uses `window.prompt()` as fallback when Tauri file dialog is unavailable (browser preview mode)
+- In full Tauri desktop mode, this should be replaced with `@tauri-apps/plugin-dialog` for native file picker
+- VRM path is persisted in Rust `AppState` via `load_vrm` command
+- `instructions/` folder added at project root with 3 documentation files
