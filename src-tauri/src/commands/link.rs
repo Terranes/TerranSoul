@@ -23,7 +23,7 @@ pub async fn get_link_status(state: State<'_, AppState>) -> Result<LinkStatusRes
         status: mgr.status(),
         transport,
         peer,
-        server_port: state.link_server_port.lock().await.clone(),
+        server_port: *state.link_server_port.lock().await,
     })
 }
 

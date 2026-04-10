@@ -115,6 +115,12 @@ impl QuicTransport {
     }
 }
 
+impl Default for QuicTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Write a length-prefixed frame (4-byte big-endian length + payload).
 async fn write_frame(stream: &mut quinn::SendStream, data: &[u8]) -> Result<(), String> {
     let len = (data.len() as u32).to_be_bytes();
