@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
+use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
 pub mod commands;
 pub mod identity;
+pub mod link;
 pub mod orchestrator;
 
 use commands::{
@@ -15,6 +17,7 @@ use commands::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
     },
+    link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
 
@@ -23,6 +26,8 @@ pub struct AppState {
     pub vrm_path: Mutex<Option<String>>,
     pub device_identity: Mutex<Option<identity::DeviceIdentity>>,
     pub trusted_devices: Mutex<Vec<identity::TrustedDevice>>,
+    pub link_manager: TokioMutex<link::manager::LinkManager>,
+    pub link_server_port: TokioMutex<Option<u16>>,
 }
 
 impl AppState {
@@ -32,6 +37,8 @@ impl AppState {
             vrm_path: Mutex::new(None),
             device_identity: Mutex::new(None),
             trusted_devices: Mutex::new(Vec::new()),
+            link_manager: TokioMutex::new(link::manager::LinkManager::new()),
+            link_server_port: TokioMutex::new(None),
         }
     }
 
@@ -57,6 +64,10 @@ pub fn run() {
             list_trusted_devices,
             add_trusted_device_cmd,
             remove_trusted_device_cmd,
+            get_link_status,
+            start_link_server,
+            connect_to_peer,
+            disconnect_link,
         ])
         .setup(|app| {
             let data_dir = app

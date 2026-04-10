@@ -525,3 +525,61 @@ list (persisted as JSON in app data dir).
 - Key storage uses a file-based approach (`device_key.json` in app data dir) — a production upgrade path to OS keychain via the `keyring` crate is straightforward by swapping the storage layer.
 - QR payload is compact JSON: `{"app":"TerranSoul","v":1,"device_id":"…","pub_key":"…","name":"…"}`
 - `AppState::for_test()` is `#[cfg(test)]`-gated to keep test ergonomics clean without polluting production API
+
+---
+
+## Chunk 021 — Link Transport Layer
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Implement the peer-to-peer transport layer for TerranSoul Link cross-device communication.
+QUIC as primary transport, WebSocket as fallback. Abstract behind a `LinkTransport` trait.
+Link manager with reconnection logic and transport fallback.
+
+### Architecture
+- `src-tauri/src/link/mod.rs` — `LinkTransport` async trait, `LinkMessage`, `LinkStatus`, `LinkPeer`, `PeerAddr` types. 6 unit tests for type serialisation.
+- `src-tauri/src/link/quic.rs` — `QuicTransport` using `quinn` crate. Self-signed TLS certs via `rcgen`. Length-prefixed JSON frames over bidirectional QUIC streams. Server cert verification skipped (trust via device pairing). 9 unit tests.
+- `src-tauri/src/link/ws.rs` — `WsTransport` using `tokio-tungstenite`. JSON text frames. 6 unit tests.
+- `src-tauri/src/link/manager.rs` — `LinkManager` wraps a `LinkTransport` with connect/reconnect/send/recv/disconnect. Auto-fallback from QUIC → WebSocket after max reconnect attempts. Configurable `max_reconnect_attempts`. `with_transport()` constructor for testability. 10 unit tests with `MockTransport`.
+- `src-tauri/src/commands/link.rs` — 4 Tauri commands: `get_link_status`, `start_link_server`, `connect_to_peer`, `disconnect_link`.
+- `AppState` extended with `link_manager: TokioMutex<LinkManager>` and `link_server_port: TokioMutex<Option<u16>>` (tokio Mutex for async commands).
+
+### New Dependencies
+- `quinn = "0.11"` — QUIC transport
+- `rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }` — TLS for QUIC
+- `rcgen = "0.13"` — self-signed certificate generation
+- `rustls-pemfile = "2"` — PEM parsing
+- `tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }` — WebSocket transport
+- `futures-util = "0.3"` — stream/sink combinators for WebSocket
+
+### Files Created
+**Rust:**
+- `src-tauri/src/link/mod.rs` — `LinkTransport` trait + shared types (6 tests)
+- `src-tauri/src/link/quic.rs` — QUIC transport (9 tests)
+- `src-tauri/src/link/ws.rs` — WebSocket transport (6 tests)
+- `src-tauri/src/link/manager.rs` — Link manager with reconnection (10 tests)
+- `src-tauri/src/commands/link.rs` — 4 Tauri commands
+
+**Frontend:**
+- `src/stores/link.ts` — Pinia link store (fetchStatus, startServer, connectToPeer, disconnect, clearError)
+- `src/stores/link.test.ts` — 11 Vitest tests
+
+### Files Modified
+- `src-tauri/Cargo.toml` — 6 new dependencies (quinn, rustls, rcgen, rustls-pemfile, tokio-tungstenite, futures-util)
+- `src-tauri/src/commands/mod.rs` — added `link` module
+- `src-tauri/src/lib.rs` — added link module, extended AppState with TokioMutex fields, 4 new commands registered
+- `src/types/index.ts` — added `LinkStatusValue`, `LinkPeer`, `LinkStatusResponse` types
+
+### Test Results
+- **Rust:** 31 new unit tests in the link module (mod: 6, quic: 9, ws: 6, manager: 10)
+- **Vitest:** 11 test files, 93 tests, all passing (11 new link store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- Self-signed certificates are used for QUIC TLS — trust is established via device pairing (Ed25519 identity from Chunk 020), not PKI
+- Messages are framed as length-prefixed JSON (QUIC) or text frames (WebSocket) — both use `LinkMessage` JSON
+- Frame size limit: 16 MiB to prevent memory exhaustion
+- `LinkManager::with_transport()` enables full unit testing with `MockTransport`
+- QUIC → WebSocket fallback is automatic after `max_reconnect_attempts` (default 5)

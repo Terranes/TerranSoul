@@ -35,3 +35,18 @@ export interface TrustedDevice {
   public_key_b64: string;
   paired_at: number;
 }
+
+export type LinkStatusValue = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
+export interface LinkPeer {
+  device_id: string;
+  name: string;
+  addr: string;
+}
+
+export interface LinkStatusResponse {
+  status: LinkStatusValue;
+  transport: string;
+  peer: LinkPeer | null;
+  server_port: number | null;
+}

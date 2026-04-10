@@ -103,9 +103,14 @@ state badge, model panel toggle. CI `playwright-e2e` job added.
 Ed25519 key pair per-device, file-backed key storage, QR SVG pairing code, trusted device list.
 5 Tauri commands, 16 Rust tests, 9 Vitest tests.
 
+✅ Chunk 021 — Link Transport Layer — see `rules/completion-log.md`
+
+QUIC primary + WebSocket fallback behind `LinkTransport` trait. Link manager with auto-reconnect
+and transport fallback. 4 Tauri commands, 31 Rust tests, 11 Vitest tests.
+
 ### Next Chunk
 
-**Chunk 021** — Link Transport Layer (Phase 2)
+**Chunk 022** — CRDT Sync Engine (Phase 2)
 
 ---
 
@@ -116,7 +121,6 @@ Ed25519 key pair per-device, file-backed key storage, QR SVG pairing code, trust
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 021 | **Link Transport Layer** — Implement QUIC transport using `quinn` crate (primary). Implement WebSocket+TLS fallback using `tokio-tungstenite`. Abstract behind a `LinkTransport` trait. Write unit tests for connection establishment and reconnect logic. | `not-started` |
 | 022 | **CRDT Sync Engine** — Implement CRDT-based sync for: conversation log (append-only log), character selection (last-write-wins register), agent status map (OR-Set). Use `crdts` crate or implement minimal LWW/OR-Set. Write unit tests for merge correctness (concurrent edits on 2 devices). | `not-started` |
 | 023 | **Remote Command Routing** — Allow a secondary device (phone) to send a command to the primary device (PC). Implement command envelope: `{command_id, origin_device, target_device, payload}`. Implement permission check on target device (user must approve first remote command). Return result to originating device. | `not-started` |
 
