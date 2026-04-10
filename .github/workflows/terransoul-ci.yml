@@ -12,6 +12,7 @@ on:
       - 'tsconfig.json'
       - 'tsconfig.node.json'
       - 'vite.config.ts'
+      - 'vitest.config.ts'
       - '.github/workflows/terransoul-ci.yml'
 
 jobs:
@@ -85,3 +86,25 @@ jobs:
       - name: Run cargo test
         working-directory: src-tauri
         run: cargo test --all-targets
+
+  # ── Vitest (frontend component tests) ──────────────────────────────────────
+  vitest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run Vitest
+        run: npm run test

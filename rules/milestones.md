@@ -37,6 +37,11 @@ into 3 jobs (build-and-test, vitest, playwright-e2e). Removed `pull_request` tri
 double-firing on copilot branches. Added `paths` filter so CI only runs when source files change.
 Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/My3DLearning/blob/main/.github/workflows/eip-ci.yml).
 
+✅ Chunk 002 — Chat UI Polish & Vitest Component Tests — see `rules/completion-log.md`
+
+Polished visual styles for all 4 chat components. Added Vitest + @vue/test-utils + jsdom.
+26 component tests across 4 test files. `npm run test` passes. CI `vitest` job added.
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -47,7 +52,7 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 
 ### Next Chunk
 
-**Chunk 002** — Chat UI Polish & Vitest Component Tests
+**Chunk 003** — Three.js Scene Polish + WebGPU Detection
 
 ---
 
@@ -55,7 +60,6 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 002 | **Chat UI Polish & Vitest Component Tests** — Refine `ChatMessageList`, `ChatInput`, `TypingIndicator`, `AgentBadge` visual styles. Add Vitest + @vue/test-utils. Write component tests for all 4 chat components (render, props, emit, disabled state). Add `npm run test` script. Target: ≥ 12 component tests passing. CI `vitest` job will automatically pick these up. | `not-started` |
 | 003 | **Three.js Scene Polish + WebGPU Detection** — Enhance `scene.ts`: attempt `WebGPURenderer` via `navigator.gpu` detection; fall back to `WebGLRenderer`. Add resize observer so canvas adapts to window resizes. Add `renderer.info` debug overlay toggled by `Ctrl+D`. Verify 60fps on desktop with the capsule placeholder. | `not-started` |
 | 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |

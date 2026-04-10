@@ -106,3 +106,48 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 - Total CI jobs per push: ~10 → 3
 
 ---
+
+## Chunk 002 — Chat UI Polish & Vitest Component Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Polish visual styles for all 4 chat components. Add Vitest + @vue/test-utils testing infrastructure.
+Write comprehensive component tests for ChatInput, ChatMessageList, TypingIndicator, and AgentBadge.
+Add `npm run test` script. Add `vitest` CI job.
+
+### Architecture
+- Vitest 4.1 with jsdom environment for Vue component testing
+- @vue/test-utils 2.4 for Vue component mounting
+- Separate `vitest.config.ts` using `@vitejs/plugin-vue`
+- Tests colocated with components (`*.test.ts` alongside `*.vue`)
+
+### Changes
+
+**New files:**
+- `vitest.config.ts` — Vitest configuration (jsdom environment, globals)
+- `src/components/AgentBadge.test.ts` — 3 tests (render, class, different names)
+- `src/components/TypingIndicator.test.ts` — 3 tests (container, dot count, element type)
+- `src/components/ChatInput.test.ts` — 9 tests (render, disabled, empty, enabled, emit, clear, disabled submit, whitespace, placeholder)
+- `src/components/ChatMessageList.test.ts` — 11 tests (empty, user class, assistant class, content, order, typing on, typing off, badge, no badge for user, default agent, timestamp)
+
+**Modified files:**
+- `package.json` — Added `test` and `test:watch` scripts; added vitest, @vue/test-utils, jsdom devDependencies
+- `src/components/AgentBadge.vue` — Added dot indicator before badge text, improved spacing
+- `src/components/TypingIndicator.vue` — Added background bubble, adjusted dot sizing and color
+- `src/components/ChatInput.vue` — Added focus ring glow, active press scale, improved padding and transitions
+- `src/components/ChatMessageList.vue` — Added gradient to user bubbles, subtle shadow, adjusted spacing and border-radius
+- `.github/workflows/terransoul-ci.yml` — Added `vitest` job (parallel, no system deps needed), added `vitest.config.ts` to paths filter
+
+### Test Results
+- 4 test files, 26 tests, all passing
+- AgentBadge: 3 tests
+- TypingIndicator: 3 tests
+- ChatInput: 9 tests
+- ChatMessageList: 11 tests
+
+### Notes
+- Tests use jsdom environment — no browser needed for CI
+- `vitest` CI job runs independently of `build-and-test` (no system deps required)
+- Vitest globals enabled for cleaner test syntax

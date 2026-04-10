@@ -42,25 +42,26 @@ function handleSubmit() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .chat-input {
   flex: 1;
-  padding: 9px 14px;
+  padding: 10px 16px;
   border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.07);
   color: #e8e8f0;
   font-size: 0.9rem;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .chat-input:focus {
   border-color: #6c63ff;
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
 }
 
 .chat-input::placeholder {
@@ -68,7 +69,7 @@ function handleSubmit() {
 }
 
 .chat-input:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -84,15 +85,20 @@ function handleSubmit() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.2s, opacity 0.2s;
+  transition: background 0.2s, opacity 0.2s, transform 0.15s;
 }
 
 .send-btn:hover:not(:disabled) {
   background: #8078ff;
+  transform: scale(1.05);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .send-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 </style>
