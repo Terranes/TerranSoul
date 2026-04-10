@@ -5,45 +5,71 @@
     <div class="state-badge" :class="characterStore.state">
       {{ characterStore.state }}
     </div>
+    <div v-if="showDebug" class="debug-overlay">
+      <span>{{ rendererType.toUpperCase() }}</span>
+      <span>▲ {{ debugInfo.triangles }}</span>
+      <span>⬡ {{ debugInfo.calls }} draws</span>
+      <span>⚙ {{ debugInfo.programs }} progs</span>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
-import { initScene } from '../renderer/scene';
+import { initScene, type RendererInfo, type RendererType } from '../renderer/scene';
 import { createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
+const showDebug = ref(false);
+const rendererType = ref<RendererType>('webgl');
+const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 
 let animFrameId = 0;
 let disposeScene: (() => void) | null = null;
+let getRendererInfo: (() => RendererInfo) | null = null;
 const animator = new CharacterAnimator();
 
-onMounted(() => {
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key === 'd') {
+    e.preventDefault();
+    showDebug.value = !showDebug.value;
+  }
+}
+
+onMounted(async () => {
   const canvas = canvasRef.value;
   if (!canvas) return;
 
-  const { renderer, scene, camera, clock, dispose } = initScene(canvas);
-  disposeScene = dispose;
+  const ctx = await initScene(canvas);
+  disposeScene = ctx.dispose;
+  getRendererInfo = ctx.getRendererInfo;
+  rendererType.value = ctx.rendererType;
 
-  const placeholder = createPlaceholderCharacter(scene);
+  const placeholder = createPlaceholderCharacter(ctx.scene);
   animator.setPlaceholder(placeholder);
 
   function loop() {
     animFrameId = requestAnimationFrame(loop);
-    const delta = clock.getDelta();
+    const delta = ctx.clock.getDelta();
     animator.update(delta);
-    renderer.render(scene, camera);
+    ctx.renderer.render(ctx.scene, ctx.camera);
+
+    if (showDebug.value && getRendererInfo) {
+      debugInfo.value = getRendererInfo();
+    }
   }
   loop();
+
+  window.addEventListener('keydown', handleKeyDown);
 });
 
 onUnmounted(() => {
   cancelAnimationFrame(animFrameId);
   disposeScene?.();
+  window.removeEventListener('keydown', handleKeyDown);
 });
 
 watch(
@@ -112,5 +138,22 @@ watch(
 .state-badge.sad {
   background: rgba(160, 100, 200, 0.35);
   color: #d4a0ff;
+}
+
+.debug-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  gap: 10px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  font-size: 0.7rem;
+  font-family: 'Courier New', monospace;
+  color: #7ef5a0;
+  pointer-events: none;
+  letter-spacing: 0.02em;
 }
 </style>

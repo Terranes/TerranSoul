@@ -106,3 +106,217 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 - Total CI jobs per push: ~10 → 3
 
 ---
+
+## Chunk 002 — Chat UI Polish & Vitest Component Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Polish visual styles for all 4 chat components. Add Vitest + @vue/test-utils testing infrastructure.
+Write comprehensive component tests for ChatInput, ChatMessageList, TypingIndicator, and AgentBadge.
+Add `npm run test` script. Add `vitest` CI job.
+
+### Architecture
+- Vitest 4.1 with jsdom environment for Vue component testing
+- @vue/test-utils 2.4 for Vue component mounting
+- Separate `vitest.config.ts` using `@vitejs/plugin-vue`
+- Tests colocated with components (`*.test.ts` alongside `*.vue`)
+
+### Changes
+
+**New files:**
+- `vitest.config.ts` — Vitest configuration (jsdom environment, globals)
+- `src/components/AgentBadge.test.ts` — 3 tests (render, class, different names)
+- `src/components/TypingIndicator.test.ts` — 3 tests (container, dot count, element type)
+- `src/components/ChatInput.test.ts` — 9 tests (render, disabled, empty, enabled, emit, clear, disabled submit, whitespace, placeholder)
+- `src/components/ChatMessageList.test.ts` — 11 tests (empty, user class, assistant class, content, order, typing on, typing off, badge, no badge for user, default agent, timestamp)
+
+**Modified files:**
+- `package.json` — Added `test` and `test:watch` scripts; added vitest, @vue/test-utils, jsdom devDependencies
+- `src/components/AgentBadge.vue` — Added dot indicator before badge text, improved spacing
+- `src/components/TypingIndicator.vue` — Added background bubble, adjusted dot sizing and color
+- `src/components/ChatInput.vue` — Added focus ring glow, active press scale, improved padding and transitions
+- `src/components/ChatMessageList.vue` — Added gradient to user bubbles, subtle shadow, adjusted spacing and border-radius
+- `.github/workflows/terransoul-ci.yml` — Added `vitest` job (parallel, no system deps needed), added `vitest.config.ts` to paths filter
+
+### Test Results
+- 4 test files, 26 tests, all passing
+- AgentBadge: 3 tests
+- TypingIndicator: 3 tests
+- ChatInput: 9 tests
+- ChatMessageList: 11 tests
+
+### Notes
+- Tests use jsdom environment — no browser needed for CI
+- `vitest` CI job runs independently of `build-and-test` (no system deps required)
+- Vitest globals enabled for cleaner test syntax
+
+---
+
+## Chunk 003 — Three.js Scene Polish + WebGPU Detection
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Enhance the Three.js scene with WebGPU renderer detection and fallback to WebGL.
+Replace window resize listener with ResizeObserver for accurate per-element resize handling.
+Add renderer.info debug overlay toggled by Ctrl+D.
+
+### Architecture
+- Async `initScene()` — attempts WebGPU first via `navigator.gpu` check and dynamic import
+- Dynamic `import('three/webgpu')` — code-split into separate chunk, only loaded if WebGPU available
+- ResizeObserver — watches canvas parent element for resize instead of global window event
+- Debug overlay — shows renderer type, triangle count, draw calls, and shader programs
+
+### Changes
+
+**Modified files:**
+- `src/renderer/scene.ts` — Made `initScene` async; added WebGPU detection via `navigator.gpu` + dynamic import of `three/webgpu`; fallback to WebGLRenderer; replaced `window.addEventListener('resize')` with `ResizeObserver`; added `RendererType`, `RendererInfo` types and `getRendererInfo()` helper; zero-guard on resize dimensions
+- `src/components/CharacterViewport.vue` — Updated to `async onMounted` for async `initScene()`; added `Ctrl+D` keyboard handler to toggle debug overlay; added reactive `showDebug`, `rendererType`, `debugInfo` refs; renders debug overlay with renderer type, triangles, draw calls, shader programs; cleans up keydown listener in `onUnmounted`
+
+### Build Results
+- `npm run build`: ✅ passes, WebGPU renderer code-split into `three.webgpu-*.js` chunk (537 KB)
+- `npm run test`: ✅ 26 tests passing (no regressions)
+
+### Notes
+- WebGPU renderer chunk is only downloaded at runtime when `navigator.gpu` exists
+- In jsdom tests, WebGPU is not available — WebGL fallback path is always used
+- Debug overlay is invisible by default; toggle with Ctrl+D during development
+
+---
+
+## Chunk 004 — VRM Model Loading & Fallback
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Harden vrm-loader.ts with robust error handling for corrupt/missing VRM files.
+Add loading progress callback. Extract and expose VRM metadata (title, author, license)
+supporting both VRM 0.0 and VRM 1.0 formats. Write Vitest unit tests for loader error paths.
+
+### Architecture
+- `loadVRM()` — validates path input, throws on empty/null path, throws if GLTF has no VRM data
+- `loadVRMSafe()` — wraps loadVRM in try/catch, returns null on error (caller falls back to capsule)
+- `extractVrmMetadata()` — handles VRM 1.0 (name, authors, licenseUrl) and VRM 0.0 (title, author, licenseName)
+- `ProgressCallback` type — (loaded, total) callback fired during XHR loading
+- `VrmMetadata` interface added to types/index.ts
+- Character store extended with `vrmMetadata`, `loadError`, `setMetadata`, `setLoadError`
+
+### Changes
+
+**New files:**
+- `src/renderer/vrm-loader.test.ts` — 12 tests (VRM 1.0 extraction, VRM 0.0 extraction, null meta, empty meta, path validation, safe loader error handling)
+
+**Modified files:**
+- `src/renderer/vrm-loader.ts` — Added input validation, error boundaries, `loadVRMSafe()`, `extractVrmMetadata()`, `ProgressCallback` type, `VrmLoadResult` interface
+- `src/types/index.ts` — Added `VrmMetadata` interface (title, author, license)
+- `src/stores/character.ts` — Added `vrmMetadata`, `loadError` refs; `setMetadata()`, `setLoadError()` actions
+
+### Test Results
+- 5 test files, 38 tests, all passing
+- VRM loader: 12 tests (8 metadata + 4 error path)
+
+### Notes
+- VRM 1.0 uses `name`, `authors[]`, `licenseUrl`; VRM 0.0 uses `title`, `author`, `licenseName`
+- `loadVRMSafe` logs errors and returns null — callers use capsule placeholder as fallback
+- Three.js GLTFLoader not testable in jsdom; tests focus on metadata extraction and validation logic
+
+---
+
+## Chunk 005 — Character State Machine Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add Rust unit tests for `stub_agent.rs` covering all keyword branches and the neutral fallback.
+Add Vitest tests for `character-animator.ts` covering all state transitions and animation behaviors.
+
+### Changes
+
+**Modified files:**
+- `src-tauri/src/agent/stub_agent.rs` — Added `#[cfg(test)]` module with 7 tests: name resolution (2), keyword branches (hello, hi, sad, happy, neutral)
+
+**New files:**
+- `src/renderer/character-animator.test.ts` — 9 Vitest tests: default idle, setState resets, thinking vs idle, talking animation, happy bounce, sad droop, full transition chain, no-op update, setPlaceholder behavior
+
+### Test Results
+- **Rust:** 7 tests passing (stub_agent)
+- **Vitest:** 6 test files, 47 tests, all passing (9 new character-animator tests)
+- **Total new tests this chunk:** 16
+
+### Notes
+- Rust async tests use `#[tokio::test]` with real async `respond()` calls (500ms+ simulated delay)
+- Character animator tests use real `THREE.Group` instances in jsdom — basic transforms work without WebGL
+
+---
+
+## Chunk 006 — Rust Chat Commands — Unit Tests
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add unit tests for `commands/chat.rs`: `send_message` success, empty input validation,
+conversation ordering, custom agent ID. Refactor commands to be testable without Tauri runtime.
+
+### Architecture
+- Extracted `process_message(&str, Option<&str>, &AppState)` — core logic, testable without `tauri::State`
+- Extracted `fetch_conversation(&AppState)` — core logic, testable directly
+- `send_message` and `get_conversation` Tauri commands now delegate to these functions
+- Added empty/whitespace input validation returning `Err("Message cannot be empty")`
+
+### Changes
+
+**Modified files:**
+- `src-tauri/src/commands/chat.rs` — Refactored into `process_message` + `fetch_conversation` helper functions; Tauri commands delegate to helpers; added empty input validation; added 8 tests
+- `src/renderer/character-animator.test.ts` — Fixed unused variable warnings from vue-tsc
+
+### Test Results
+- **Rust:** 15 tests passing (7 stub_agent + 8 chat commands)
+- **Vitest:** 6 test files, 47 tests, all passing
+- **New chat command tests:** success, empty input, whitespace, message pairing, conversation ordering, empty conversation, custom agent ID, timestamp ordering
+
+### Notes
+- `process_message` and `fetch_conversation` take `&AppState` directly — no Tauri runtime needed
+- Empty/whitespace input now returns an error instead of sending to agent
+
+---
+
+## Chunk 007 — Agent Orchestrator Hardening
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Add `AgentProvider` trait for pluggable agent implementations. Refactor orchestrator to use
+trait-based dispatch with agent registry. Add health-check method. Write unit tests with MockAgent.
+
+### Architecture
+- `AgentProvider` trait — `id()`, `name()`, `respond()`, `health_check()` (async_trait)
+- `StubAgent` implements `AgentProvider` — existing behavior preserved
+- `AgentOrchestrator` — holds `HashMap<String, Arc<dyn AgentProvider>>`, supports `register()`, `dispatch()`, `health_check()`, `list_agents()`
+- `dispatch()` now returns `Result<(String, String), String>` — errors on unknown agent ID
+- "auto" and empty agent_id route to default agent ("stub")
+
+### Changes
+
+**Modified files:**
+- `src-tauri/Cargo.toml` — Added `async-trait = "0.1"`
+- `src-tauri/src/agent/mod.rs` — Added `AgentProvider` trait definition with `async_trait`
+- `src-tauri/src/agent/stub_agent.rs` — Implemented `AgentProvider` for `StubAgent`; extracted `classify()` method; added `health_check()` returning true; `Sentiment` now derives `Clone, PartialEq, Eq, Debug`
+- `src-tauri/src/orchestrator/agent_orchestrator.rs` — Rewritten with agent registry (`HashMap<String, Arc<dyn AgentProvider>>`); `dispatch()` returns `Result`; added `register()`, `get_agent()`, `health_check()`, `list_agents()`; 8 tests with `MockAgent`
+- `src-tauri/src/commands/chat.rs` — Added `use crate::agent::AgentProvider` for trait method resolution
+
+### Test Results
+- **Rust:** 23 tests passing (7 stub_agent + 8 chat + 8 orchestrator)
+- **Vitest:** 6 test files, 47 tests, all passing
+- **Clippy:** ✅ 0 warnings
+
+### Notes
+- `async_trait` crate used for trait-based async dispatch
+- MockAgent in tests verifies dispatch routing, health checks, and agent registration
+- Agent registry enables future hot-plugging of real agents (OpenAI, local models, etc.)

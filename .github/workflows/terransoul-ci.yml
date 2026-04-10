@@ -3,16 +3,6 @@ name: TerranSoul CI
 on:
   push:
     branches: [main, 'copilot/**']
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'tsconfig.json'
-      - 'tsconfig.node.json'
-      - 'vite.config.ts'
-      - '.github/workflows/terransoul-ci.yml'
 
 jobs:
   # ── Build + Lint + Test ─────────────────────────────────────────────────────
@@ -85,3 +75,6 @@ jobs:
       - name: Run cargo test
         working-directory: src-tauri
         run: cargo test --all-targets
+
+      - name: Run Vitest
+        run: npm run test

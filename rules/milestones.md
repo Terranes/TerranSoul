@@ -37,6 +37,36 @@ into 3 jobs (build-and-test, vitest, playwright-e2e). Removed `pull_request` tri
 double-firing on copilot branches. Added `paths` filter so CI only runs when source files change.
 Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/My3DLearning/blob/main/.github/workflows/eip-ci.yml).
 
+✅ Chunk 002 — Chat UI Polish & Vitest Component Tests — see `rules/completion-log.md`
+
+Polished visual styles for all 4 chat components. Added Vitest + @vue/test-utils + jsdom.
+26 component tests across 4 test files. `npm run test` passes. CI `vitest` job added.
+
+✅ Chunk 003 — Three.js Scene Polish + WebGPU Detection — see `rules/completion-log.md`
+
+WebGPU renderer with WebGL fallback. ResizeObserver for canvas resize. Debug overlay (Ctrl+D).
+WebGPU chunk is code-split via dynamic import.
+
+✅ Chunk 004 — VRM Model Loading & Fallback — see `rules/completion-log.md`
+
+Hardened vrm-loader.ts with error handling, progress callback, VRM 0.0/1.0 metadata extraction.
+Safe loader returns null on error (capsule fallback). 12 VRM loader tests.
+
+✅ Chunk 005 — Character State Machine Tests — see `rules/completion-log.md`
+
+7 Rust tests for stub_agent (name, hello, hi, sad, happy, neutral). 9 Vitest tests for
+character-animator (state transitions, animations, error handling). Total: 16 new tests.
+
+✅ Chunk 006 — Rust Chat Commands — Unit Tests — see `rules/completion-log.md`
+
+8 Rust tests for chat commands. Refactored to extract testable `process_message` and
+`fetch_conversation` functions. Added empty input validation.
+
+✅ Chunk 007 — Agent Orchestrator Hardening — see `rules/completion-log.md`
+
+`AgentProvider` trait with `respond`, `health_check`, `id`, `name`. Orchestrator uses trait-based
+dispatch with agent registry. 8 orchestrator tests with MockAgent.
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -47,7 +77,7 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 
 ### Next Chunk
 
-**Chunk 002** — Chat UI Polish & Vitest Component Tests
+**Chunk 008** — Tauri IPC Bridge Integration Tests
 
 ---
 
@@ -55,8 +85,7 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 002 | **Chat UI Polish & Vitest Component Tests** — Refine `ChatMessageList`, `ChatInput`, `TypingIndicator`, `AgentBadge` visual styles. Add Vitest + @vue/test-utils. Write component tests for all 4 chat components (render, props, emit, disabled state). Add `npm run test` script. Target: ≥ 12 component tests passing. CI `vitest` job will automatically pick these up. | `not-started` |
-| 003 | **Three.js Scene Polish + WebGPU Detection** — Enhance `scene.ts`: attempt `WebGPURenderer` via `navigator.gpu` detection; fall back to `WebGLRenderer`. Add resize observer so canvas adapts to window resizes. Add `renderer.info` debug overlay toggled by `Ctrl+D`. Verify 60fps on desktop with the capsule placeholder. | `not-started` |
+| 008 | **Tauri IPC Bridge Integration Tests** — Wire up the frontend conversation store to use real `invoke()` calls against the Rust backend. Use `@tauri-apps/api/mocks` to mock the IPC layer in Vitest. Write integration tests that simulate a full send → response round-trip. Target: ≥ 4 integration tests. | `not-started` |
 | 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
 | 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |

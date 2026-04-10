@@ -50,10 +50,10 @@ watch(() => props.isThinking, scrollToBottom);
 .message-list {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   scroll-behavior: smooth;
 }
 
@@ -81,8 +81,8 @@ watch(() => props.isThinking, scrollToBottom);
 }
 
 .bubble {
-  padding: 9px 14px;
-  border-radius: 16px;
+  padding: 10px 14px;
+  border-radius: 18px;
   line-height: 1.5;
   font-size: 0.9rem;
   word-break: break-word;
@@ -90,32 +90,33 @@ watch(() => props.isThinking, scrollToBottom);
 }
 
 .message-row.user .bubble {
-  background: #6c63ff;
+  background: linear-gradient(135deg, #6c63ff 0%, #5a52e0 100%);
   color: #fff;
   border-bottom-right-radius: 4px;
+  box-shadow: 0 1px 3px rgba(108, 99, 255, 0.25);
 }
 
 .message-row.assistant .bubble {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #e8e8f0;
   border-bottom-left-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .timestamp {
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.3);
   padding: 0 4px;
 }
 
 .msg-enter-active,
 .msg-leave-active {
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
 }
 
 .msg-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(10px);
 }
 
 .msg-leave-to {

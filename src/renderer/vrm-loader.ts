@@ -1,18 +1,80 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, type VRM } from '@pixiv/three-vrm';
+import type { VrmMetadata } from '../types';
 
-export async function loadVRM(scene: THREE.Scene, path: string): Promise<VRM> {
+export type ProgressCallback = (loaded: number, total: number) => void;
+
+export interface VrmLoadResult {
+  vrm: VRM;
+  metadata: VrmMetadata;
+}
+
+export function extractVrmMetadata(vrm: VRM): VrmMetadata {
+  const meta = vrm.meta;
+  if (!meta) {
+    return { title: 'Unknown', author: 'Unknown', license: 'Unknown' };
+  }
+
+  if (meta.metaVersion === '1') {
+    return {
+      title: meta.name || 'Unknown',
+      author: meta.authors?.[0] || 'Unknown',
+      license: meta.licenseUrl || 'Unknown',
+    };
+  }
+
+  if (meta.metaVersion === '0') {
+    return {
+      title: meta.title || 'Unknown',
+      author: meta.author || 'Unknown',
+      license: meta.licenseName || meta.otherLicenseUrl || 'Unknown',
+    };
+  }
+
+  return { title: 'Unknown', author: 'Unknown', license: 'Unknown' };
+}
+
+export async function loadVRM(
+  scene: THREE.Scene,
+  path: string,
+  onProgress?: ProgressCallback,
+): Promise<VrmLoadResult> {
+  if (!path || typeof path !== 'string') {
+    throw new Error('VRM path must be a non-empty string');
+  }
+
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
 
-  const gltf = await loader.loadAsync(path);
-  const vrm: VRM = gltf.userData.vrm;
+  const gltf = await loader.loadAsync(path, (event) => {
+    if (onProgress && event.lengthComputable) {
+      onProgress(event.loaded, event.total);
+    }
+  });
+
+  const vrm: VRM | undefined = gltf.userData.vrm;
+  if (!vrm) {
+    throw new Error('File loaded but does not contain valid VRM data');
+  }
 
   vrm.scene.rotation.y = Math.PI;
   scene.add(vrm.scene);
 
-  return vrm;
+  return { vrm, metadata: extractVrmMetadata(vrm) };
+}
+
+export async function loadVRMSafe(
+  scene: THREE.Scene,
+  path: string,
+  onProgress?: ProgressCallback,
+): Promise<VrmLoadResult | null> {
+  try {
+    return await loadVRM(scene, path, onProgress);
+  } catch (error) {
+    console.error('VRM load failed, using placeholder:', error);
+    return null;
+  }
 }
 
 export function createPlaceholderCharacter(scene: THREE.Scene): THREE.Group {
