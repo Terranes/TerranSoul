@@ -122,8 +122,5 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Install Tauri CLI
-        run: npm install @tauri-apps/cli
-
       - name: Build Tauri app
         run: npx tauri build
