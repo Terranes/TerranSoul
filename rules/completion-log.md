@@ -184,3 +184,42 @@ Add renderer.info debug overlay toggled by Ctrl+D.
 - WebGPU renderer chunk is only downloaded at runtime when `navigator.gpu` exists
 - In jsdom tests, WebGPU is not available — WebGL fallback path is always used
 - Debug overlay is invisible by default; toggle with Ctrl+D during development
+
+---
+
+## Chunk 004 — VRM Model Loading & Fallback
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Harden vrm-loader.ts with robust error handling for corrupt/missing VRM files.
+Add loading progress callback. Extract and expose VRM metadata (title, author, license)
+supporting both VRM 0.0 and VRM 1.0 formats. Write Vitest unit tests for loader error paths.
+
+### Architecture
+- `loadVRM()` — validates path input, throws on empty/null path, throws if GLTF has no VRM data
+- `loadVRMSafe()` — wraps loadVRM in try/catch, returns null on error (caller falls back to capsule)
+- `extractVrmMetadata()` — handles VRM 1.0 (name, authors, licenseUrl) and VRM 0.0 (title, author, licenseName)
+- `ProgressCallback` type — (loaded, total) callback fired during XHR loading
+- `VrmMetadata` interface added to types/index.ts
+- Character store extended with `vrmMetadata`, `loadError`, `setMetadata`, `setLoadError`
+
+### Changes
+
+**New files:**
+- `src/renderer/vrm-loader.test.ts` — 12 tests (VRM 1.0 extraction, VRM 0.0 extraction, null meta, empty meta, path validation, safe loader error handling)
+
+**Modified files:**
+- `src/renderer/vrm-loader.ts` — Added input validation, error boundaries, `loadVRMSafe()`, `extractVrmMetadata()`, `ProgressCallback` type, `VrmLoadResult` interface
+- `src/types/index.ts` — Added `VrmMetadata` interface (title, author, license)
+- `src/stores/character.ts` — Added `vrmMetadata`, `loadError` refs; `setMetadata()`, `setLoadError()` actions
+
+### Test Results
+- 5 test files, 38 tests, all passing
+- VRM loader: 12 tests (8 metadata + 4 error path)
+
+### Notes
+- VRM 1.0 uses `name`, `authors[]`, `licenseUrl`; VRM 0.0 uses `title`, `author`, `licenseName`
+- `loadVRMSafe` logs errors and returns null — callers use capsule placeholder as fallback
+- Three.js GLTFLoader not testable in jsdom; tests focus on metadata extraction and validation logic

@@ -15,3 +15,9 @@ export interface Agent {
   status: 'running' | 'stopped' | 'installing';
   capabilities: string[];
 }
+
+export interface VrmMetadata {
+  title: string;
+  author: string;
+  license: string;
+}
