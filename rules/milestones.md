@@ -42,6 +42,11 @@ Modeled after [devstress/My3DLearning eip-ci.yml](https://github.com/devstress/M
 Polished visual styles for all 4 chat components. Added Vitest + @vue/test-utils + jsdom.
 26 component tests across 4 test files. `npm run test` passes. CI `vitest` job added.
 
+✅ Chunk 003 — Three.js Scene Polish + WebGPU Detection — see `rules/completion-log.md`
+
+WebGPU renderer with WebGL fallback. ResizeObserver for canvas resize. Debug overlay (Ctrl+D).
+WebGPU chunk is code-split via dynamic import.
+
 ---
 
 ## Phase 1 — Chat-First, 3D Character, Text Only
@@ -52,7 +57,7 @@ Polished visual styles for all 4 chat components. Added Vitest + @vue/test-utils
 
 ### Next Chunk
 
-**Chunk 003** — Three.js Scene Polish + WebGPU Detection
+**Chunk 004** — VRM Model Loading & Fallback
 
 ---
 
@@ -60,7 +65,7 @@ Polished visual styles for all 4 chat components. Added Vitest + @vue/test-utils
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 003 | **Three.js Scene Polish + WebGPU Detection** — Enhance `scene.ts`: attempt `WebGPURenderer` via `navigator.gpu` detection; fall back to `WebGLRenderer`. Add resize observer so canvas adapts to window resizes. Add `renderer.info` debug overlay toggled by `Ctrl+D`. Verify 60fps on desktop with the capsule placeholder. | `not-started` |
+| 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 004 | **VRM Model Loading & Fallback** — Harden `vrm-loader.ts`: handle corrupt/missing VRM files gracefully (error boundary → capsule fallback). Add loading progress callback. Expose loaded VRM metadata (title, author, license) to the character store. Write Vitest unit tests for the loader error paths. | `not-started` |
 | 005 | **Character State Machine Tests** — Add `#[tokio::test]` Rust unit tests for `stub_agent.rs` (all 4 keyword branches + neutral). Add Vitest tests for `character-animator.ts` state transitions (idle→thinking→talking→idle, happy, sad). Target: ≥ 8 tests. | `not-started` |
 | 006 | **Rust Chat Commands — Unit Tests** — Add `#[tokio::test]` tests for `commands/chat.rs`: `send_message` with stub agent (success, empty input error), `get_conversation` ordering. Mock `AppState` via trait injection. Target: ≥ 6 Rust tests. | `not-started` |

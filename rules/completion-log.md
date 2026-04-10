@@ -151,3 +151,36 @@ Add `npm run test` script. Add `vitest` CI job.
 - Tests use jsdom environment — no browser needed for CI
 - `vitest` CI job runs independently of `build-and-test` (no system deps required)
 - Vitest globals enabled for cleaner test syntax
+
+---
+
+## Chunk 003 — Three.js Scene Polish + WebGPU Detection
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Enhance the Three.js scene with WebGPU renderer detection and fallback to WebGL.
+Replace window resize listener with ResizeObserver for accurate per-element resize handling.
+Add renderer.info debug overlay toggled by Ctrl+D.
+
+### Architecture
+- Async `initScene()` — attempts WebGPU first via `navigator.gpu` check and dynamic import
+- Dynamic `import('three/webgpu')` — code-split into separate chunk, only loaded if WebGPU available
+- ResizeObserver — watches canvas parent element for resize instead of global window event
+- Debug overlay — shows renderer type, triangle count, draw calls, and shader programs
+
+### Changes
+
+**Modified files:**
+- `src/renderer/scene.ts` — Made `initScene` async; added WebGPU detection via `navigator.gpu` + dynamic import of `three/webgpu`; fallback to WebGLRenderer; replaced `window.addEventListener('resize')` with `ResizeObserver`; added `RendererType`, `RendererInfo` types and `getRendererInfo()` helper; zero-guard on resize dimensions
+- `src/components/CharacterViewport.vue` — Updated to `async onMounted` for async `initScene()`; added `Ctrl+D` keyboard handler to toggle debug overlay; added reactive `showDebug`, `rendererType`, `debugInfo` refs; renders debug overlay with renderer type, triangles, draw calls, shader programs; cleans up keydown listener in `onUnmounted`
+
+### Build Results
+- `npm run build`: ✅ passes, WebGPU renderer code-split into `three.webgpu-*.js` chunk (537 KB)
+- `npm run test`: ✅ 26 tests passing (no regressions)
+
+### Notes
+- WebGPU renderer chunk is only downloaded at runtime when `navigator.gpu` exists
+- In jsdom tests, WebGPU is not available — WebGL fallback path is always used
+- Debug overlay is invisible by default; toggle with Ctrl+D during development
