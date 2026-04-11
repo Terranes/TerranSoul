@@ -52,17 +52,19 @@ After the test completes, the video will be at `recording/validation.webm`.
 
 ## Running in CI
 
-The `TerranSoul CI` workflow includes a **validation-recording** job that:
+A dedicated **Validation Recording** workflow
+(`.github/workflows/validation-recording.yml`) handles this:
 
-1. Runs after the `build-and-test` job passes.
-2. Executes `npm run test:validate` which runs the Playwright validation test
+1. Triggers only on push to `main` (i.e., after a PR is merged).
+2. Builds the frontend and backend.
+3. Executes `npm run test:validate` which runs the Playwright validation test
    with video recording.
-3. Copies the video to `recording/validation.webm`.
-4. Commits and pushes the updated video back to the branch.
+4. Copies the video to `recording/validation.webm`.
+5. Commits and pushes the updated video back to the branch.
 
-This happens automatically **only when code is pushed to `main`** (i.e., after a
-PR is merged). It does not run on feature branches or pull requests — only on
-the merged result on `main`.
+This workflow is **separate** from the main `TerranSoul CI` workflow so it does
+not appear (even as "skipped") on pull request checks. It only runs on the
+merged result on `main`.
 
 ---
 

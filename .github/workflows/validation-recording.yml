@@ -1,17 +1,17 @@
-name: TerranSoul CI
+name: Validation Recording
 
 on:
   push:
-    branches: [main, 'copilot/**']
-  pull_request:
     branches: [main]
 
 jobs:
-  # ── Build + Lint + Test ─────────────────────────────────────────────────────
-  build-and-test:
+  # ── Self-Validation Video Recording ────────────────────────────────────────
+  # Runs only on push to main (i.e., after a PR is merged).
+  # Separated from TerranSoul CI so it does not appear as "skipped" on PRs.
+  validation-recording:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -28,7 +28,6 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          # Restore cached .deb files if available
           if [ -d ~/apt-cache ]; then
             sudo cp ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
           fi
@@ -41,7 +40,6 @@ jobs:
             libgtk-3-dev \
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
-          # Save .deb files for next run
           mkdir -p ~/apt-cache
           cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
 
@@ -70,47 +68,21 @@ jobs:
       - name: Type-check and build frontend
         run: npm run build
 
-      - name: Run cargo clippy
-        working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Run cargo test
-        working-directory: src-tauri
-        run: cargo test --all-targets
-
-      - name: Run Vitest
-        run: npm run test
-
-  # ── Playwright E2E ──────────────────────────────────────────────────────────
-  playwright-e2e:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install frontend dependencies
-        run: npm ci
-
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Run Playwright tests
-        run: npm run test:e2e
+      - name: Run self-validation and record video
+        run: npm run test:validate
 
-      - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 14
+      - name: Commit validation video to recording/
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add recording/validation.webm
+          if git diff --cached --quiet; then
+            echo "No video changes to commit"
+          else
+            git commit -m "chore: update self-validation recording [skip ci]"
+            git pull --rebase || true
+            git push
+          fi
