@@ -9,6 +9,8 @@ export interface Message {
 
 export type CharacterState = 'idle' | 'thinking' | 'talking' | 'happy' | 'sad';
 
+export type AnimationPersona = 'cool' | 'cute';
+
 export interface Agent {
   id: string;
   name: string;

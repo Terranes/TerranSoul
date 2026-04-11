@@ -70,9 +70,9 @@ describe('ModelPanel', () => {
     expect(wrapper.text()).toContain('instructions/');
   });
 
-  it('first model card is active by default (model1 selected)', () => {
+  it('second model card is active by default (model2 selected)', () => {
     const wrapper = mount(ModelPanel);
     const cards = wrapper.findAll('.model-card');
-    expect(cards[0].classes()).toContain('active');
+    expect(cards[1].classes()).toContain('active');
   });
 });

@@ -210,6 +210,10 @@ terransoul stop <agent-name>
 - [Node.js](https://nodejs.org/) ≥ 20
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
 - [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+- [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (Windows only)
+- VBScript feature enabled (Windows only)
+
+> **Quick setup with Copilot:** Open GitHub Copilot Chat and type `/setup-prerequisites` to automatically check and install all prerequisites.
 
 ### Development
 

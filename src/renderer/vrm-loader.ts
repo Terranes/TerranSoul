@@ -10,6 +10,66 @@ export interface VrmLoadResult {
   metadata: VrmMetadata;
 }
 
+/**
+ * Set the normalized bone rotations into a natural relaxed standing pose.
+ * Call this before vrm.update() to reset bones from T-pose/A-pose.
+ * Does NOT call vrm.update() — the caller is responsible for that.
+ */
+export function setNaturalBonePose(vrm: VRM): void {
+  const bone = (name: string) => vrm.humanoid?.getNormalizedBoneNode(name);
+
+  // Arms down — rotate upper arms ~70° toward body
+  const leftUpperArm = bone('leftUpperArm');
+  if (leftUpperArm) {
+    leftUpperArm.rotation.set(0, 0, 1.1); // Z+ = toward body for left
+  }
+  const rightUpperArm = bone('rightUpperArm');
+  if (rightUpperArm) {
+    rightUpperArm.rotation.set(0, 0, -1.1); // Z- = toward body for right
+  }
+
+  // Slight bend in elbows so arms don't look stiff
+  const leftLowerArm = bone('leftLowerArm');
+  if (leftLowerArm) {
+    leftLowerArm.rotation.set(0, 0, 0.15);
+  }
+  const rightLowerArm = bone('rightLowerArm');
+  if (rightLowerArm) {
+    rightLowerArm.rotation.set(0, 0, -0.15);
+  }
+
+  // Relax shoulders slightly
+  const leftShoulder = bone('leftShoulder');
+  if (leftShoulder) {
+    leftShoulder.rotation.set(0, 0, 0.05);
+  }
+  const rightShoulder = bone('rightShoulder');
+  if (rightShoulder) {
+    rightShoulder.rotation.set(0, 0, -0.05);
+  }
+
+  // Head straight
+  const head = bone('head');
+  if (head) {
+    head.rotation.set(0, 0, 0);
+  }
+
+  // Spine straight
+  const spine = bone('spine');
+  if (spine) {
+    spine.rotation.set(0, 0, 0);
+  }
+}
+
+/**
+ * Apply a natural relaxed standing pose and push it to the raw skeleton.
+ * Use this once after loading. The animator uses setNaturalBonePose() per frame.
+ */
+export function applyNaturalPose(vrm: VRM): void {
+  setNaturalBonePose(vrm);
+  vrm.update(0);
+}
+
 export function extractVrmMetadata(vrm: VRM): VrmMetadata {
   const meta = vrm.meta;
   if (!meta) {
@@ -58,8 +118,10 @@ export async function loadVRM(
     throw new Error('File loaded but does not contain valid VRM data');
   }
 
-  vrm.scene.rotation.y = Math.PI;
   scene.add(vrm.scene);
+
+  // Apply a natural relaxed pose so the character doesn't stand in T-pose
+  applyNaturalPose(vrm);
 
   return { vrm, metadata: extractVrmMetadata(vrm) };
 }

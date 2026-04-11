@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
@@ -102,6 +104,40 @@ pub fn run() {
             // We use blocking_lock since we're in synchronous setup code.
             *state.command_router.blocking_lock() =
                 routing::CommandRouter::new(&device_id);
+
+            // System tray with Show/Hide + Quit
+            let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_hide, &quit])?;
+
+            TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("TerranSoul")
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show_hide" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
 
             #[cfg(debug_assertions)]
             {

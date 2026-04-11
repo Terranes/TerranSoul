@@ -67,21 +67,21 @@ describe('conversation store — IPC integration', () => {
     expect(store.messages[1].agentName).toBe('custom');
   });
 
-  it('sendMessage error: pushes error message and clears isThinking', async () => {
+  it('sendMessage error: uses persona fallback and clears isThinking', async () => {
     mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'));
 
     const store = useConversationStore();
-    await store.sendMessage('fail');
+    await store.sendMessage('hello');
 
     // isThinking should be cleared
     expect(store.isThinking).toBe(false);
 
-    // Two messages: user + error
+    // Two messages: user + persona fallback
     expect(store.messages).toHaveLength(2);
     expect(store.messages[1].role).toBe('assistant');
-    expect(store.messages[1].content).toContain('Error:');
-    expect(store.messages[1].content).toContain('Backend unavailable');
-    expect(store.messages[1].agentName).toBe('System');
+    expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.messages[1].sentiment).toBe('happy'); // "hello" triggers happy
+    expect(store.messages[1].content).not.toContain('Error:');
   });
 
   it('isThinking toggles during sendMessage lifecycle', async () => {

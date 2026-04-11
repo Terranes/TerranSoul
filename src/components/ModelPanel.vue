@@ -1,6 +1,6 @@
 <template>
-  <div class="model-panel-overlay" @click.self="$emit('close')">
-    <div class="model-panel">
+  <div class="model-panel-overlay" @click.stop.self="$emit('close')">
+    <div class="model-panel" @click.stop>
       <div class="panel-header">
         <h3>3D Models</h3>
         <button class="close-btn" @click="$emit('close')" aria-label="Close">&times;</button>

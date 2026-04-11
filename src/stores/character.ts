@@ -9,6 +9,7 @@ export const useCharacterStore = defineStore('character', () => {
   const vrmPath = ref<string | undefined>(undefined);
   const vrmMetadata = ref<VrmMetadata | undefined>(undefined);
   const loadError = ref<string | undefined>(undefined);
+  const isLoading = ref(true);
   const selectedModelId = ref<string>(DEFAULT_MODEL_ID);
   const defaultModels = ref<DefaultModel[]>(DEFAULT_MODELS);
 
@@ -27,13 +28,14 @@ export const useCharacterStore = defineStore('character', () => {
   async function loadVrm(path: string) {
     loadError.value = undefined;
     vrmMetadata.value = undefined;
+    isLoading.value = true;
+    // Set the path immediately so the viewport watcher can start loading via Three.js
+    vrmPath.value = path;
+    // Notify the backend (fire-and-forget; the real 3D load happens in the viewport)
     try {
       await invoke('load_vrm', { path });
-      vrmPath.value = path;
-    } catch (err) {
-      const message = String(err);
-      loadError.value = message;
-      console.error('Failed to load VRM:', message);
+    } catch {
+      // Backend not available (e.g. pure browser dev) — frontend loading still works
     }
   }
 
@@ -48,12 +50,17 @@ export const useCharacterStore = defineStore('character', () => {
     await selectModel(DEFAULT_MODEL_ID);
   }
 
+  function setLoaded() {
+    isLoading.value = false;
+  }
+
   function resetCharacter() {
     vrmPath.value = undefined;
     vrmMetadata.value = undefined;
     loadError.value = undefined;
+    isLoading.value = false;
     selectedModelId.value = DEFAULT_MODEL_ID;
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, selectedModelId, defaultModels, setState, setMetadata, setLoadError, loadVrm, selectModel, loadDefaultModel, resetCharacter };
+  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, setState, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter };
 });
