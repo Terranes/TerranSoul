@@ -77,3 +77,18 @@ export interface CommandResultResponse {
   status: CommandStatusValue;
   payload: unknown;
 }
+
+export type InstallType = 'binary' | 'wasm' | 'sidecar';
+
+export interface ManifestInfo {
+  name: string;
+  version: string;
+  description: string;
+  capabilities: string[];
+  sensitive_capabilities: string[];
+  install_type: InstallType;
+  ipc_protocol_version: number;
+  author: string | null;
+  license: string | null;
+  homepage: string | null;
+}

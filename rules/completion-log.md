@@ -682,3 +682,50 @@ to the originating device.
 - `deny(block=true)` sets the device to "Deny" permanently
 - CommandRouter has stub execute() for ping, list_agents, send_message — production will delegate to the real orchestrator
 - Phase 2 is now complete (chunks 020–023)
+
+---
+
+## Chunk 030 — Package Manifest Format
+
+**Date:** 2026-04-11
+**Status:** ✅ Done
+
+### Goal
+Define the agent package manifest schema that every TerranSoul agent must include.
+Implement a manifest parser with full validation in Rust, expose Tauri commands for
+the frontend to parse and validate manifests, and add TypeScript types and a Pinia store.
+
+### Architecture
+- Manifest schema: `AgentManifest` struct with name, version, description, system_requirements,
+  install_method, capabilities, ipc_protocol_version, and optional homepage/license/author/sha256
+- `SystemRequirements`: min_ram_mb, os targets, arch targets, gpu_required
+- `InstallMethod`: tagged enum — Binary (url), Wasm (url), Sidecar (path)
+- `Capability`: 7 variants — chat, filesystem, clipboard, network, remote_exec, character,
+  conversation_history. Sensitive caps (filesystem, clipboard, network, remote_exec) require consent.
+- Validation: name format (lowercase, alphanum+hyphens, 1–64 chars), semver version,
+  non-empty description, supported IPC protocol range, SHA-256 format
+- 3 Tauri commands: parse_agent_manifest, validate_agent_manifest, get_ipc_protocol_range
+
+### Files Created
+**Rust (src-tauri/src/)**
+- `package_manager/mod.rs` — Module re-exports
+- `package_manager/manifest.rs` — AgentManifest, SystemRequirements, InstallMethod, Capability,
+  OsTarget, ArchTarget, ManifestError, parse/validate/serialize functions, 28 unit tests
+- `commands/package.rs` — ManifestInfo, parse_agent_manifest, validate_agent_manifest,
+  get_ipc_protocol_range Tauri commands
+
+### Files Modified
+**Rust (src-tauri/src/)**
+- `lib.rs` — Added `package_manager` module, imported and registered 3 new commands
+- `commands/mod.rs` — Added `package` module
+
+**Frontend (src/)**
+- `types/index.ts` — Added ManifestInfo and InstallType types
+- `stores/package.ts` — Pinia store: parseManifest, validateManifest, getIpcProtocolRange, clearManifest, clearError
+- `stores/package.test.ts` — 10 Vitest tests
+
+### Test Counts
+- **Rust:** 169 total (28 new manifest tests)
+- **Vitest:** 14 test files, 126 tests (10 new package store tests)
+- **Clippy:** 0 warnings
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors

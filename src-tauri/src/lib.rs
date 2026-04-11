@@ -8,6 +8,7 @@ pub mod commands;
 pub mod identity;
 pub mod link;
 pub mod orchestrator;
+pub mod package_manager;
 pub mod routing;
 pub mod sync;
 
@@ -20,6 +21,7 @@ use commands::{
         remove_trusted_device_cmd,
     },
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
+    package::{get_ipc_protocol_range, parse_agent_manifest, validate_agent_manifest},
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions,
         list_pending_commands, set_device_permission,
@@ -81,6 +83,9 @@ pub fn run() {
             deny_remote_command,
             set_device_permission,
             get_device_permissions,
+            parse_agent_manifest,
+            validate_agent_manifest,
+            get_ipc_protocol_range,
         ])
         .setup(|app| {
             let data_dir = app
