@@ -7,7 +7,7 @@
  * so stakeholders can visually confirm the app's health.
  *
  * Run locally:  npm run test:validate
- * Run in CI:    triggered automatically via the terransoul-ci.yml workflow
+ * Run in CI:    triggered automatically via the validation-recording.yml workflow
  */
 import { test, expect } from '@playwright/test';
 

@@ -22,7 +22,7 @@ jobs:
         id: cache-apt
         with:
           path: ~/apt-cache
-          key: apt-tauri-${{ runner.os }}-${{ hashFiles('.github/workflows/terransoul-ci.yml') }}
+          key: apt-tauri-${{ runner.os }}-${{ hashFiles('.github/workflows/validation-recording.yml') }}
 
       - name: Install system dependencies (Tauri / WebKit)
         env:
