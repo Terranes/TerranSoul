@@ -19,7 +19,9 @@ This guide explains how developers can extend TerranSoul with custom models, new
 │                                             │
 │  Stores (Pinia)                             │
 │    ├── conversation.ts (messages, IPC)      │
-│    └── character.ts (state, VRM path)       │
+│    ├── character.ts (state, VRM path,       │
+│    │                  default model select) │
+│    └── config/default-models.ts (registry)  │
 ├─────────────────────────────────────────────┤
 │              Tauri IPC Bridge               │
 ├─────────────────────────────────────────────┤
@@ -144,16 +146,34 @@ npm run build  # Runs vue-tsc first, then vite build
 
 ## File Structure for Custom Models
 
-If you want to ship default models with TerranSoul, place them in a `models/` directory:
+Default models shipped with TerranSoul are stored in the `public/models/default/` directory so Vite serves them as static assets. The current bundled models are:
 
 ```
-models/
-  default/
-    placeholder.vrm    # Default character (optional, built-in capsule used if absent)
-  community/
-    character-a.vrm    # Community-contributed models
-    character-b.vrm
+public/
+  models/
+    default/
+      Model1.vrm          # Default character (loaded on startup)
+      Model2.vrm          # Additional bundled character
 ```
+
+The model registry is defined in `src/config/default-models.ts`:
+
+```ts
+export const DEFAULT_MODELS: DefaultModel[] = [
+  { id: 'model1', name: 'Model 1', path: '/models/default/Model1.vrm' },
+  { id: 'model2', name: 'Model 2', path: '/models/default/Model2.vrm' },
+];
+
+export const DEFAULT_MODEL_ID = 'model1';
+```
+
+**To add a new default model:**
+
+1. Place the `.vrm` file in `public/models/default/`
+2. Add an entry to the `DEFAULT_MODELS` array in `src/config/default-models.ts`
+3. Optionally change `DEFAULT_MODEL_ID` to set a different startup default
+
+The Model Panel displays a dropdown (`<select>`) and clickable model cards for all registered default models. Users can also still import custom VRM files via the **Import VRM Model** button.
 
 The Rust backend persists the selected VRM path in `AppState.vrm_path`. In a future version, this will be saved to disk so your selection persists across app restarts.
 
@@ -176,4 +196,4 @@ If you create a VRM model for TerranSoul:
 1. Ensure it has the recommended BlendShapes (`aa`, `oh`, `happy`)
 2. Include proper metadata (title, author, license)
 3. Test all 5 animation states by sending chat messages that trigger each sentiment
-4. Submit via pull request with the model in the `models/community/` directory
+4. Submit via pull request with the model in the `public/models/default/` directory and register it in `src/config/default-models.ts`

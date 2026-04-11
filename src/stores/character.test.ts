@@ -53,7 +53,7 @@ describe('character store — IPC integration', () => {
     expect(store.vrmPath).toBe('/models/new.vrm');
   });
 
-  it('resetCharacter clears all state', () => {
+  it('resetCharacter clears all state and resets selectedModelId', () => {
     const store = useCharacterStore();
     store.setState('happy');
     store.setMetadata({ title: 'Test', author: 'Author', license: 'MIT' });
@@ -64,5 +64,43 @@ describe('character store — IPC integration', () => {
     expect(store.vrmPath).toBeUndefined();
     expect(store.vrmMetadata).toBeUndefined();
     expect(store.loadError).toBeUndefined();
+    expect(store.selectedModelId).toBe('model1');
+  });
+
+  it('selectModel loads the correct default model path', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    const store = useCharacterStore();
+    await store.selectModel('model2');
+
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Model2.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Model2.vrm');
+    expect(store.selectedModelId).toBe('model2');
+  });
+
+  it('selectModel ignores unknown model ids', async () => {
+    const store = useCharacterStore();
+    await store.selectModel('nonexistent');
+
+    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(store.vrmPath).toBeUndefined();
+  });
+
+  it('loadDefaultModel loads model1 by default', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    const store = useCharacterStore();
+    await store.loadDefaultModel();
+
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Model1.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Model1.vrm');
+    expect(store.selectedModelId).toBe('model1');
+  });
+
+  it('defaultModels contains the bundled model list', () => {
+    const store = useCharacterStore();
+    expect(store.defaultModels.length).toBeGreaterThanOrEqual(2);
+    expect(store.defaultModels[0].id).toBe('model1');
+    expect(store.defaultModels[1].id).toBe('model2');
   });
 });

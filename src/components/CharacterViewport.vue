@@ -60,6 +60,9 @@ onMounted(async () => {
   const placeholder = createPlaceholderCharacter(ctx.scene);
   animator.setPlaceholder(placeholder);
 
+  // Auto-load the default VRM model
+  characterStore.loadDefaultModel();
+
   function loop() {
     animFrameId = requestAnimationFrame(loop);
     const delta = ctx.clock.getDelta();

@@ -2,12 +2,15 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { CharacterState, VrmMetadata } from '../types';
+import { DEFAULT_MODELS, DEFAULT_MODEL_ID, type DefaultModel } from '../config/default-models';
 
 export const useCharacterStore = defineStore('character', () => {
   const state = ref<CharacterState>('idle');
   const vrmPath = ref<string | undefined>(undefined);
   const vrmMetadata = ref<VrmMetadata | undefined>(undefined);
   const loadError = ref<string | undefined>(undefined);
+  const selectedModelId = ref<string>(DEFAULT_MODEL_ID);
+  const defaultModels = ref<DefaultModel[]>(DEFAULT_MODELS);
 
   function setState(newState: CharacterState) {
     state.value = newState;
@@ -34,11 +37,23 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
+  async function selectModel(modelId: string) {
+    const model = DEFAULT_MODELS.find(m => m.id === modelId);
+    if (!model) return;
+    selectedModelId.value = modelId;
+    await loadVrm(model.path);
+  }
+
+  async function loadDefaultModel() {
+    await selectModel(DEFAULT_MODEL_ID);
+  }
+
   function resetCharacter() {
     vrmPath.value = undefined;
     vrmMetadata.value = undefined;
     loadError.value = undefined;
+    selectedModelId.value = DEFAULT_MODEL_ID;
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, setState, setMetadata, setLoadError, loadVrm, resetCharacter };
+  return { state, vrmPath, vrmMetadata, loadError, selectedModelId, defaultModels, setState, setMetadata, setLoadError, loadVrm, selectModel, loadDefaultModel, resetCharacter };
 });
