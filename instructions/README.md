@@ -9,6 +9,7 @@ This folder contains guides for working with 3D models in TerranSoul.
 | [Importing Models](./IMPORTING-MODELS.md) | How to import VRM models into TerranSoul and use them as your AI character |
 | [Extending](./EXTENDING.md) | How developers can add custom models, create new character behaviors, and build extensions |
 | [iOS Testing](./IOS-TESTING.md) | How to test TerranSoul on an iPhone via TestFlight with automated CI builds |
+| [Self-Validation](./SELF-VALIDATION.md) | Automated video recording that proves TerranSoul is working as expected |
 
 ## Quick Start
 

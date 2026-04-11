@@ -114,3 +114,41 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # ── Self-Validation Video Recording ────────────────────────────────────────
+  validation-recording:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run self-validation and record video
+        run: npm run test:validate
+
+      - name: Commit validation video to recording/
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add recording/validation.webm
+          if git diff --cached --quiet; then
+            echo "No video changes to commit"
+          else
+            git commit -m "chore: update self-validation recording [skip ci]"
+            git push
+          fi
