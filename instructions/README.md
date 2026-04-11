@@ -11,10 +11,10 @@ This folder contains guides for working with 3D models in TerranSoul.
 
 ## Quick Start
 
-1. Launch TerranSoul
-2. Click the **ℹ** button in the top-right of the 3D viewport
-3. Click **Import VRM Model**
-4. Select a `.vrm` file from your computer
+1. Launch TerranSoul — **Model 1** loads automatically as the default character
+2. Click the **ℹ** button in the top-right of the 3D viewport to open the Model Panel
+3. Use the **Default Model** dropdown to switch between bundled models (Model 1, Model 2)
+4. Or click **Import VRM Model** to load a custom `.vrm` file from your computer
 5. Your character appears in the viewport and reacts to chat messages
 
 ## What is VRM?
@@ -27,7 +27,16 @@ TerranSoul supports:
 
 ## Default Character
 
-When no VRM model is loaded, TerranSoul displays a built-in placeholder character (a capsule figure with eyes). This placeholder supports all animation states:
+TerranSoul ships with two bundled VRM models in `public/models/default/`:
+
+| Model | File | Description |
+|-------|------|-------------|
+| Model 1 | `Model1.vrm` | Default character (loaded on startup) |
+| Model 2 | `Model2.vrm` | Additional bundled character |
+
+You can switch between them using the dropdown in the Model Panel. The default model registry is defined in `src/config/default-models.ts`.
+
+If a VRM model fails to load, TerranSoul falls back to a built-in placeholder character (a capsule figure with eyes). This placeholder supports all animation states:
 
 - **Idle** — Gentle sway and rotation
 - **Thinking** — Spinning with bobbing motion

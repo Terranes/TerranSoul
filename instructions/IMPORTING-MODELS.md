@@ -16,7 +16,28 @@ This guide explains how to import VRM models into TerranSoul for use as your AI 
 - A `.vrm` file (see [Where to Find Models](#where-to-find-models))
 - TerranSoul running on your desktop
 
-## Step-by-Step Import
+## Built-in Default Models
+
+TerranSoul ships with two bundled VRM models that are available out of the box:
+
+| Model | File | Description |
+|-------|------|-------------|
+| Model 1 | `public/models/default/Model1.vrm` | Default character (loaded on startup) |
+| Model 2 | `public/models/default/Model2.vrm` | Additional bundled character |
+
+You can switch between default models using the **dropdown** in the Model Panel, or by clicking the corresponding model card.
+
+## Switching Between Default Models
+
+### 1. Open the Model Panel
+
+Click the **ℹ** button in the top-right corner of the 3D viewport (next to the state badge).
+
+### 2. Use the Dropdown or Click a Model Card
+
+Select a model from the **Default Model** dropdown, or click a model card in the list. The selected model will load immediately in the viewport.
+
+## Importing a Custom VRM Model
 
 ### 1. Open the Model Panel
 
@@ -45,9 +66,9 @@ After loading:
   - **Happy** — Bouncing with head tilts
   - **Sad** — Head droops forward
 
-### 5. Switch Back to Default
+### 5. Switch Back to a Default Model
 
-To switch back to the built-in placeholder character, open the Model Panel and click the **Default Placeholder** card.
+To switch back to a bundled default model, open the Model Panel and select a model from the **Default Model** dropdown or click the corresponding model card.
 
 ## How the Model is Used
 
