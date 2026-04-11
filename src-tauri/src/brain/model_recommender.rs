@@ -49,7 +49,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
         ModelRecommendation {
             model_tag: "gemma3:27b".to_string(),
             display_name: "Gemma 3 27B".to_string(),
-            description: "Previous-gen flagship. Still excellent reasoning and coding. Requires 32 GB+ RAM.".to_string()
+            description: "Previous-gen flagship. Still excellent reasoning and coding. Requires 32 GB+ RAM.".to_string(),
             required_ram_mb: 32_768,
             is_top_pick: false,
         },
