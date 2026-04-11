@@ -55,7 +55,13 @@ async function onBrainDone() {
 }
 
 onMounted(async () => {
-  await brain.loadActiveBrain();
+  try {
+    await brain.loadActiveBrain();
+  } catch {
+    // No Tauri backend available (dev server / E2E tests) — skip the setup wizard.
+    skipSetup.value = true;
+    return;
+  }
   // If brain is already set, skip the onboarding.
   if (brain.hasBrain) {
     skipSetup.value = true;
