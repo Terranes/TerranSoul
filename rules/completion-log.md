@@ -869,3 +869,80 @@ A **MemoryView** with three tabs:
 - **Rust:** 14 new tests (12 memory/store + 4 brain_memory) — 245 total
 - **Vitest:** 10 new tests in memory.test.ts — 153 total
 - **Clippy:** 0 warnings
+
+---
+
+## Chunk 032 — Agent Registry
+
+### Summary
+Stands up a minimal in-process axum HTTP server that serves an official agent catalog. 
+`HttpRegistry` implements `RegistrySource` via reqwest, replacing `MockRegistry` in `AppState`.
+
+### Endpoints
+- `GET /agents` — list all agent manifests
+- `GET /agents/:name` — single manifest (404 if not found)
+- `GET /agents/:name/download` — placeholder binary bytes
+- `GET /search?q=` — case-insensitive search on name + description
+
+### Official Catalog (3 agents)
+| Agent | Capabilities |
+|-------|-------------|
+| `stub-agent` | chat |
+| `openclaw-bridge` | chat, file_read, network |
+| `claude-cowork` | chat, file_read, file_write, network |
+
+### Files Added / Modified
+- `src-tauri/src/registry_server/catalog.rs` — 3 official agent manifests
+- `src-tauri/src/registry_server/server.rs` — axum router + start() → (port, JoinHandle)
+- `src-tauri/src/registry_server/http_registry.rs` — HttpRegistry (reqwest-backed RegistrySource)
+- `src-tauri/src/registry_server/mod.rs`
+- `src-tauri/src/commands/registry.rs` — 4 Tauri commands
+- `src-tauri/src/lib.rs` — package_registry → Box<dyn RegistrySource>, registry_server_handle field
+- `src/types/index.ts` — AgentSearchResult type
+- `src/stores/package.ts` — searchAgents, startRegistryServer, stopRegistryServer, getRegistryServerPort
+- `src/stores/package.test.ts` — 8 new tests
+- `src-tauri/Cargo.toml` — axum 0.8.4
+
+### New Tauri Commands
+`start_registry_server` · `stop_registry_server` · `get_registry_server_port` · `search_agents`
+
+### Test Counts
+- **Rust:** 8 new tests (server routes + HttpRegistry) — 265 total
+- **Vitest:** 8 new tests in package.test.ts — 174 total
+
+---
+
+## Chunk 033 — Agent Sandboxing
+
+### Summary
+Runs community agents inside a wasmtime 36.0.7 (Cranelift) WASM sandbox with a
+capability-gated host API. Each capability (FileRead, FileWrite, Clipboard, Network,
+ProcessSpawn) requires explicit user consent recorded on disk before the host function
+will execute.
+
+### Architecture
+- `CapabilityStore` — JSON-backed HashMap of (agent_name, capability) → bool; auto-saves
+- `HostContext` — holds agent name + Arc<Mutex<CapabilityStore>>; `check_capability` returns
+  Err if not granted
+- `WasmRunner` — wasmtime Engine (Cranelift, not Winch); links host functions; calls `run()→i32`
+- Security guarantee: host functions return error code before touching OS if capability missing
+
+### Files Added / Modified
+- `src-tauri/src/sandbox/capability.rs` — Capability enum + CapabilityStore
+- `src-tauri/src/sandbox/host_api.rs` — HostContext + file read/write stubs
+- `src-tauri/src/sandbox/wasm_runner.rs` — WasmRunner (Engine + Linker + Module)
+- `src-tauri/src/sandbox/mod.rs`
+- `src-tauri/src/commands/sandbox.rs` — 5 Tauri commands
+- `src-tauri/src/lib.rs` — capability_store: TokioMutex<CapabilityStore>
+- `src/types/index.ts` — CapabilityName + ConsentInfo types
+- `src/stores/sandbox.ts` + `src/stores/sandbox.test.ts`
+- `src-tauri/Cargo.toml` — wasmtime 36.0.7 (default-features=false, cranelift+runtime)
+
+### New Tauri Commands
+`grant_agent_capability` · `revoke_agent_capability` · `list_agent_capabilities`
+`clear_agent_capabilities` · `run_agent_in_sandbox`
+
+### Test Counts
+- **Rust:** 12 new tests (capability grant/revoke/enforce + wasm runner) — 265 total
+- **Vitest:** 12 new tests in sandbox.test.ts — 174 total
+- **Clippy:** 0 warnings

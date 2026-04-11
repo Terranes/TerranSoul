@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 033** — Agent Sandboxing (Phase 3)
+**Chunk 034** — Agent Marketplace UI (Phase 3)
 
 ---
 
@@ -169,7 +169,17 @@ AgentManifest schema, parser, validation, 3 Tauri commands, Pinia store.
 RegistrySource trait, MockRegistry, PackageInstaller, SHA-256 verification.
 4 new Tauri commands, 24 new Rust tests, 8 new Vitest tests.
 
+✅ Chunk 032 — Agent Registry — see `rules/completion-log.md`
+
+axum 0.8 in-process registry server, HttpRegistry, 3 official agents (stub-agent, openclaw-bridge, claude-cowork).
+4 Tauri commands, 8 Rust tests, 8 Vitest tests.
+
+✅ Chunk 033 — Agent Sandboxing — see `rules/completion-log.md`
+
+wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostContext + capability-gated host API, WasmRunner.
+5 Tauri commands, 12 Rust tests, 12 Vitest tests.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 032 | **Agent Registry** — Stand up a minimal registry server (Rust `axum`) that serves manifest JSON and binary downloads. Implement `terransoul search <query>` command. Host official agents (stub, OpenClaw bridge). | `completed` |
-| 033 | **Agent Sandboxing** — Run community agents inside a WASM sandbox (via `wasmtime`). Expose a capability-gated host API: file access, clipboard, network — each requires explicit user consent recorded in settings. Write security tests verifying capability enforcement. | `completed` |
+| 034 | **Agent Marketplace UI** — Marketplace view listing registry agents with install/update/remove actions, capability consent dialog before install, sandboxed agent status badges. | `not-started` |
+| 035 | **Agent-to-Agent Messaging** — Allow installed agents to pass messages to each other via the command router. Agents can subscribe to message topics and the orchestrator fans out. | `not-started` |
