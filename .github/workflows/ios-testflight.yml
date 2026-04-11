@@ -108,11 +108,13 @@ jobs:
         run: npx tauri ios build --export-method app-store-connect
 
       - name: Upload IPA to TestFlight
+        env:
+          BUILD_NOTE: ${{ inputs.build_note || 'Automated build from push to main' }}
         run: |
           # Write the App Store Connect API key to a file
-          mkdir -p ~/.appstoreconnect/private_keys
-          echo -n "$APP_STORE_CONNECT_API_KEY" > \
-            ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
+          mkdir -p ~/.private_keys
+          KEY_PATH=~/.private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8
+          echo -n "$APP_STORE_CONNECT_API_KEY" > "$KEY_PATH"
 
           # Find the built IPA
           IPA_PATH=$(find src-tauri/gen/apple -name "*.ipa" -type f | head -1)
@@ -122,11 +124,25 @@ jobs:
           fi
           echo "Uploading $IPA_PATH to TestFlight..."
 
+          # Upload using App Store Connect API via xcrun
+          xcrun notarytool submit "$IPA_PATH" \
+            --key "$KEY_PATH" \
+            --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+            --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            --wait 2>/dev/null || \
+          xcodebuild -exportArchive \
+            -archivePath "$IPA_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" 2>/dev/null || \
           xcrun altool --upload-app \
             --type ios \
             --file "$IPA_PATH" \
             --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+
+          echo "Build note: $BUILD_NOTE"
 
       - name: Clean up keychain
         if: always()
