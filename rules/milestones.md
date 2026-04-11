@@ -120,7 +120,28 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 030** — Package Manifest Format (Phase 3)
+**Chunk 034** — Agent Marketplace UI (Phase 3)
+
+---
+
+## Phase 4 — Brain & Memory (Local LLM + Persistent Memory)
+
+✅ Chunk 040 — Brain (Local LLM via Ollama) — see `rules/completion-log.md`
+
+Hardware analysis, tiered model recommendations (Gemma 3, Phi-4 Mini, TinyLlama).
+OllamaAgent with full conversation history. 7 Tauri commands. BrainSetupView.vue wizard.
+38 Rust tests, 11 Vitest tests.
+
+✅ Chunk 041 — Long/Short-term Memory + Brain-powered recall — see `rules/completion-log.md`
+
+SQLite-backed MemoryStore (rusqlite). Brain reuses active Ollama model for:
+- Automatic memory extraction from sessions
+- Session summarization into memory entries
+- Semantic memory search (LLM-ranked, keyword fallback)
+Short-term memory = last 20 messages injected into each Ollama call.
+9 Tauri commands. MemoryView.vue + MemoryGraph.vue (cytoscape.js).
+14 Rust tests + 10 Vitest tests.
+
 
 ---
 
@@ -138,9 +159,27 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 > **Goal:** Install, update, and remove AI agents as packages across devices.
 > Community agent registry with one-command install.
 
+✅ Chunk 030 — Package Manifest Format — see `rules/completion-log.md`
+
+AgentManifest schema, parser, validation, 3 Tauri commands, Pinia store.
+28 Rust tests, 10 Vitest tests.
+
+✅ Chunk 031 — Install / Update / Remove Commands — see `rules/completion-log.md`
+
+RegistrySource trait, MockRegistry, PackageInstaller, SHA-256 verification.
+4 new Tauri commands, 24 new Rust tests, 8 new Vitest tests.
+
+✅ Chunk 032 — Agent Registry — see `rules/completion-log.md`
+
+axum 0.8 in-process registry server, HttpRegistry, 3 official agents (stub-agent, openclaw-bridge, claude-cowork).
+4 Tauri commands, 8 Rust tests, 8 Vitest tests.
+
+✅ Chunk 033 — Agent Sandboxing — see `rules/completion-log.md`
+
+wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostContext + capability-gated host API, WasmRunner.
+5 Tauri commands, 12 Rust tests, 12 Vitest tests.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 030 | **Package Manifest Format** — Define agent manifest schema (name, version, description, system_requirements, install_method, capabilities, ipc_protocol_version). Implement manifest parser in Rust (`serde_json`). Write unit tests for valid/invalid manifests. | `not-started` |
-| 031 | **Install / Update / Remove Commands** — Implement `terransoul install <agent>`, `update <agent>`, `remove <agent>`, `list` CLI commands via Tauri shell plugin. Download, verify hash/signature, and install agent binary. Write integration tests with a local mock registry. | `not-started` |
-| 032 | **Agent Registry** — Stand up a minimal registry server (Rust `axum`) that serves manifest JSON and binary downloads. Implement `terransoul search <query>` command. Host official agents (stub, OpenClaw bridge). | `not-started` |
-| 033 | **Agent Sandboxing** — Run community agents inside a WASM sandbox (via `wasmtime`). Expose a capability-gated host API: file access, clipboard, network — each requires explicit user consent recorded in settings. Write security tests verifying capability enforcement. | `not-started` |
+| 034 | **Agent Marketplace UI** — Marketplace view listing registry agents with install/update/remove actions, capability consent dialog before install, sandboxed agent status badges. | `not-started` |
+| 035 | **Agent-to-Agent Messaging** — Allow installed agents to pass messages to each other via the command router. Agents can subscribe to message topics and the orchestrator fans out. | `not-started` |
