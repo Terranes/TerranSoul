@@ -98,9 +98,29 @@ state badge, model panel toggle. CI `playwright-e2e` job added.
 
 ✅ Phase 1 complete — see completion-log.md
 
+✅ Chunk 020 — Device Identity & Pairing — see `rules/completion-log.md`
+
+Ed25519 key pair per-device, file-backed key storage, QR SVG pairing code, trusted device list.
+5 Tauri commands, 16 Rust tests, 9 Vitest tests.
+
+✅ Chunk 021 — Link Transport Layer — see `rules/completion-log.md`
+
+QUIC primary + WebSocket fallback behind `LinkTransport` trait. Link manager with auto-reconnect
+and transport fallback. 4 Tauri commands, 31 Rust tests, 11 Vitest tests.
+
+✅ Chunk 022 — CRDT Sync Engine — see `rules/completion-log.md`
+
+Append-only log (conversation), LWW register (character selection), OR-Set (agent status).
+HLC timestamps with site tiebreaker. 37 Rust tests, 8 Vitest tests.
+
+✅ Chunk 023 — Remote Command Routing — see `rules/completion-log.md`
+
+Command envelope, permission management (Allow/Deny/Ask), router with pending approval queue.
+5 Tauri commands, 31 Rust tests, 10 Vitest tests.
+
 ### Next Chunk
 
-**Chunk 020** — Device Identity & Pairing (Phase 2)
+**Chunk 030** — Package Manifest Format (Phase 3)
 
 ---
 
@@ -109,12 +129,7 @@ state badge, model panel toggle. CI `playwright-e2e` job added.
 > **Goal:** TerranSoul on all devices behaves like "one assistant."
 > Pair devices, sync conversations, route commands remotely.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 020 | **Device Identity & Pairing** — Generate Ed25519 key pair per device on first launch (stored in OS keychain via Tauri `keyring` plugin). Implement QR-code-based pairing handshake (display QR on one device, scan on another). Persist trusted device list. | `not-started` |
-| 021 | **Link Transport Layer** — Implement QUIC transport using `quinn` crate (primary). Implement WebSocket+TLS fallback using `tokio-tungstenite`. Abstract behind a `LinkTransport` trait. Write unit tests for connection establishment and reconnect logic. | `not-started` |
-| 022 | **CRDT Sync Engine** — Implement CRDT-based sync for: conversation log (append-only log), character selection (last-write-wins register), agent status map (OR-Set). Use `crdts` crate or implement minimal LWW/OR-Set. Write unit tests for merge correctness (concurrent edits on 2 devices). | `not-started` |
-| 023 | **Remote Command Routing** — Allow a secondary device (phone) to send a command to the primary device (PC). Implement command envelope: `{command_id, origin_device, target_device, payload}`. Implement permission check on target device (user must approve first remote command). Return result to originating device. | `not-started` |
+✅ Phase 2 complete — see completion-log.md
 
 ---
 

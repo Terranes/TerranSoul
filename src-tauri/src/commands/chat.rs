@@ -98,15 +98,10 @@ pub fn get_conversation(state: State<'_, AppState>) -> Vec<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
     fn make_state() -> AppState {
-        AppState {
-            conversation: Mutex::new(Vec::new()),
-            vrm_path: Mutex::new(None),
-        }
+        AppState::for_test()
     }
-
     #[tokio::test]
     async fn send_message_success() {
         let state = make_state();

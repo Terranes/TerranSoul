@@ -466,3 +466,219 @@ dev server, and add a `playwright-e2e` CI job that runs after `build-and-test`.
 - When `invoke()` fails (no backend), the conversation store catches errors and displays "Error: ..." messages — tests verify this graceful degradation
 - Playwright report uploaded as CI artifact for debugging failures
 - `--with-deps` flag installs Chromium OS dependencies in CI
+
+---
+
+## Chunk 020 — Device Identity & Pairing
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Implement per-device Ed25519 identity (generated on first launch, persisted to app data dir),
+QR-code-based pairing handshake (SVG QR encoding device_id + public key), and a trusted device
+list (persisted as JSON in app data dir).
+
+### Architecture
+- `src-tauri/src/identity/device.rs` — `DeviceIdentity` wraps `ed25519_dalek::SigningKey` with a UUID device_id. `DeviceInfo` (serialisable) exposes device_id, base64 public key, and name.
+- `src-tauri/src/identity/key_store.rs` — `load_or_generate_identity(data_dir)`: loads from `device_key.json` if present, otherwise generates and persists.
+- `src-tauri/src/identity/qr.rs` — `generate_pairing_qr(info)`: encodes JSON payload `{app, v, device_id, pub_key, name}` as an SVG QR code via the `qrcode` crate.
+- `src-tauri/src/identity/trusted_devices.rs` — `TrustedDevice` struct; `add/remove/load/save_trusted_devices` functions operating on `Vec<TrustedDevice>` and `trusted_devices.json`.
+- `src-tauri/src/commands/identity.rs` — 5 Tauri commands: `get_device_identity`, `get_pairing_qr`, `list_trusted_devices`, `add_trusted_device_cmd`, `remove_trusted_device_cmd`.
+- `AppState` extended with `device_identity: Mutex<Option<DeviceIdentity>>` and `trusted_devices: Mutex<Vec<TrustedDevice>>`.
+- Identity is initialised in `setup()` before the window opens.
+
+### New Dependencies
+- `ed25519-dalek = { version = "2", features = ["rand_core"] }` — Ed25519 key pair generation
+- `rand_core = { version = "0.6", features = ["getrandom"] }` — `OsRng` for key generation
+- `qrcode = "0.14"` — SVG QR code rendering
+- `base64 = "0.22"` — encoding key bytes for transport/display
+- `tempfile = "3"` (dev-only) — temp dirs for key_store and trusted_devices tests
+
+### Files Created
+**Rust:**
+- `src-tauri/src/identity/mod.rs`
+- `src-tauri/src/identity/device.rs` (6 unit tests)
+- `src-tauri/src/identity/key_store.rs` (2 unit tests)
+- `src-tauri/src/identity/qr.rs` (2 unit tests)
+- `src-tauri/src/identity/trusted_devices.rs` (6 unit tests)
+- `src-tauri/src/commands/identity.rs`
+
+**Frontend:**
+- `src/stores/identity.ts` — Pinia identity store (loadIdentity, loadPairingQr, loadTrustedDevices, addTrustedDevice, removeTrustedDevice, clearError)
+- `src/stores/identity.test.ts` — 9 Vitest tests
+- `src/views/PairingView.vue` — QR display, identity info, trusted device list with remove buttons
+
+### Files Modified
+- `src-tauri/Cargo.toml` — new deps + dev-dep
+- `src-tauri/src/commands/mod.rs` — added `identity` module
+- `src-tauri/src/lib.rs` — added identity module, extended AppState, setup() initialisation, 5 new commands registered
+- `src-tauri/src/commands/chat.rs` — updated `make_state()` test helper to use `AppState::for_test()`
+- `src/types/index.ts` — added `DeviceInfo` and `TrustedDevice` interfaces
+
+### Test Results
+- **Rust:** 16 new unit tests in the identity module (device: 6, key_store: 2, qr: 2, trusted_devices: 6)
+- **Vitest:** 10 test files, 82 tests, all passing (9 new identity store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- Key storage uses a file-based approach (`device_key.json` in app data dir) — a production upgrade path to OS keychain via the `keyring` crate is straightforward by swapping the storage layer.
+- QR payload is compact JSON: `{"app":"TerranSoul","v":1,"device_id":"…","pub_key":"…","name":"…"}`
+- `AppState::for_test()` is `#[cfg(test)]`-gated to keep test ergonomics clean without polluting production API
+
+---
+
+## Chunk 021 — Link Transport Layer
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Implement the peer-to-peer transport layer for TerranSoul Link cross-device communication.
+QUIC as primary transport, WebSocket as fallback. Abstract behind a `LinkTransport` trait.
+Link manager with reconnection logic and transport fallback.
+
+### Architecture
+- `src-tauri/src/link/mod.rs` — `LinkTransport` async trait, `LinkMessage`, `LinkStatus`, `LinkPeer`, `PeerAddr` types. 6 unit tests for type serialisation.
+- `src-tauri/src/link/quic.rs` — `QuicTransport` using `quinn` crate. Self-signed TLS certs via `rcgen`. Length-prefixed JSON frames over bidirectional QUIC streams. Server cert verification skipped (trust via device pairing). 9 unit tests.
+- `src-tauri/src/link/ws.rs` — `WsTransport` using `tokio-tungstenite`. JSON text frames. 6 unit tests.
+- `src-tauri/src/link/manager.rs` — `LinkManager` wraps a `LinkTransport` with connect/reconnect/send/recv/disconnect. Auto-fallback from QUIC → WebSocket after max reconnect attempts. Configurable `max_reconnect_attempts`. `with_transport()` constructor for testability. 10 unit tests with `MockTransport`.
+- `src-tauri/src/commands/link.rs` — 4 Tauri commands: `get_link_status`, `start_link_server`, `connect_to_peer`, `disconnect_link`.
+- `AppState` extended with `link_manager: TokioMutex<LinkManager>` and `link_server_port: TokioMutex<Option<u16>>` (tokio Mutex for async commands).
+
+### New Dependencies
+- `quinn = "0.11"` — QUIC transport
+- `rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }` — TLS for QUIC
+- `rcgen = "0.13"` — self-signed certificate generation
+- `rustls-pemfile = "2"` — PEM parsing
+- `tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }` — WebSocket transport
+- `futures-util = "0.3"` — stream/sink combinators for WebSocket
+
+### Files Created
+**Rust:**
+- `src-tauri/src/link/mod.rs` — `LinkTransport` trait + shared types (6 tests)
+- `src-tauri/src/link/quic.rs` — QUIC transport (9 tests)
+- `src-tauri/src/link/ws.rs` — WebSocket transport (6 tests)
+- `src-tauri/src/link/manager.rs` — Link manager with reconnection (10 tests)
+- `src-tauri/src/commands/link.rs` — 4 Tauri commands
+
+**Frontend:**
+- `src/stores/link.ts` — Pinia link store (fetchStatus, startServer, connectToPeer, disconnect, clearError)
+- `src/stores/link.test.ts` — 11 Vitest tests
+
+### Files Modified
+- `src-tauri/Cargo.toml` — 6 new dependencies (quinn, rustls, rcgen, rustls-pemfile, tokio-tungstenite, futures-util)
+- `src-tauri/src/commands/mod.rs` — added `link` module
+- `src-tauri/src/lib.rs` — added link module, extended AppState with TokioMutex fields, 4 new commands registered
+- `src/types/index.ts` — added `LinkStatusValue`, `LinkPeer`, `LinkStatusResponse` types
+
+### Test Results
+- **Rust:** 31 new unit tests in the link module (mod: 6, quic: 9, ws: 6, manager: 10)
+- **Vitest:** 11 test files, 93 tests, all passing (11 new link store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- Self-signed certificates are used for QUIC TLS — trust is established via device pairing (Ed25519 identity from Chunk 020), not PKI
+- Messages are framed as length-prefixed JSON (QUIC) or text frames (WebSocket) — both use `LinkMessage` JSON
+- Frame size limit: 16 MiB to prevent memory exhaustion
+- `LinkManager::with_transport()` enables full unit testing with `MockTransport`
+- QUIC → WebSocket fallback is automatic after `max_reconnect_attempts` (default 5)
+
+---
+
+## Chunk 022 — CRDT Sync Engine
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Implement CRDT-based data synchronisation for cross-device sync:
+- Append-only log (conversation history)
+- Last-Write-Wins register (character selection)
+- OR-Set (agent status map)
+
+All CRDTs use HLC (Hybrid Logical Clock) timestamps with site tiebreaker for deterministic ordering.
+
+### Architecture
+- `src-tauri/src/sync/mod.rs` — `HLC` (counter + site_ord), `SyncOp` (crdt_id, kind, hlc, site, payload), `CrdtState` trait (apply, snapshot_ops), `SiteId` type. 6 unit tests.
+- `src-tauri/src/sync/append_log.rs` — `AppendLog` CRDT: ordered by HLC, idempotent duplicate rejection via binary search insert. 9 unit tests incl. concurrent edit convergence.
+- `src-tauri/src/sync/lww_register.rs` — `LwwRegister` CRDT: last write wins, tiebreak by higher site_ord. 11 unit tests incl. concurrent edit convergence.
+- `src-tauri/src/sync/or_set.rs` — `OrSet` CRDT: observed-remove semantics, each add creates a unique tag (HLC + site), remove only removes observed tags. Concurrent add + remove → add wins for unseen tags. 11 unit tests incl. add-wins-concurrent test.
+- Frontend `src/stores/sync.ts` — Pinia store mirroring CRDT summary (conversationCount, characterSelection, agentCount, lastSyncedAt).
+- Frontend `src/stores/sync.test.ts` — 8 Vitest tests.
+
+### Files Created
+**Rust:**
+- `src-tauri/src/sync/mod.rs` — HLC + SyncOp + CrdtState trait (6 tests)
+- `src-tauri/src/sync/append_log.rs` — Append-only log CRDT (9 tests)
+- `src-tauri/src/sync/lww_register.rs` — LWW register CRDT (11 tests)
+- `src-tauri/src/sync/or_set.rs` — OR-Set CRDT (11 tests)
+
+**Frontend:**
+- `src/stores/sync.ts` — Pinia sync store
+- `src/stores/sync.test.ts` — 8 Vitest tests
+
+### Files Modified
+- `src-tauri/src/lib.rs` — added `sync` module
+- `src/types/index.ts` — added `SyncState` interface
+
+### Test Results
+- **Rust:** 37 new unit tests in the sync module (mod: 6, append_log: 9, lww_register: 11, or_set: 11)
+- **Vitest:** 12 test files, 101 tests, all passing (8 new sync store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- No external CRDT crate used — minimal custom implementation avoids dependency bloat
+- HLC ordering: `(counter, site_ord)` — deterministic total order across all devices
+- AppendLog: binary search insert + duplicate check makes `apply()` O(log n)
+- OR-Set: concurrent add + remove resolves to add-wins for unobserved tags, matching standard OR-Set semantics
+- All CRDTs implement `snapshot_ops()` for full state transfer to new peers
+
+---
+
+## Chunk 023 — Remote Command Routing
+
+**Date:** 2026-04-10
+**Status:** ✅ Done
+
+### Goal
+Allow a secondary device (e.g. phone) to send commands to a primary device (e.g. PC)
+via a command envelope protocol. Target device runs permission checks — first remote
+command from an unknown device requires explicit user approval. Results are returned
+to the originating device.
+
+### Architecture
+- `src-tauri/src/routing/command_envelope.rs` — `CommandEnvelope` (command_id, origin_device, target_device, command_type, payload, status), `CommandResult` (success/denied/failed constructors), `CommandStatus` enum (PendingApproval, Executing, Completed, Denied, Failed). 7 unit tests.
+- `src-tauri/src/routing/permission.rs` — `PermissionPolicy` (Allow/Deny/Ask), `PermissionStore` (per-device policy map, pending command set, approve/deny with remember/block). 10 unit tests.
+- `src-tauri/src/routing/router.rs` — `CommandRouter` handles incoming envelopes: wrong target → deny, allowed device → execute, blocked → deny, unknown → pending. Executes ping, list_agents, send_message stubs. approve/deny pending commands with policy memory. 14 unit tests.
+- `src-tauri/src/commands/routing.rs` — 5 Tauri commands: `list_pending_commands`, `approve_remote_command`, `deny_remote_command`, `set_device_permission`, `get_device_permissions`.
+- `AppState` extended with `command_router: TokioMutex<CommandRouter>`. Router initialised in `setup()` with device_id from identity.
+
+### Files Created
+**Rust:**
+- `src-tauri/src/routing/mod.rs` — re-exports
+- `src-tauri/src/routing/command_envelope.rs` (7 tests)
+- `src-tauri/src/routing/permission.rs` (10 tests)
+- `src-tauri/src/routing/router.rs` (14 tests)
+- `src-tauri/src/commands/routing.rs` — 5 Tauri commands
+
+**Frontend:**
+- `src/stores/routing.ts` — Pinia routing store (fetchPendingCommands, approveCommand, denyCommand, setDevicePermission, getDevicePermissions)
+- `src/stores/routing.test.ts` — 10 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/mod.rs` — added `routing` module
+- `src-tauri/src/lib.rs` — added routing module, extended AppState with command_router, setup() initialisation, 5 new commands registered
+- `src/types/index.ts` — added `CommandStatusValue`, `PendingCommand`, `CommandResultResponse` types
+
+### Test Results
+- **Rust:** 31 new unit tests in the routing module (command_envelope: 7, permission: 10, router: 14)
+- **Vitest:** 13 test files, 111 tests, all passing (10 new routing store tests)
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+### Notes
+- Unknown devices default to "Ask" — first remote command goes to pending queue
+- `approve(remember=true)` sets the device to "Allow" for all future commands
+- `deny(block=true)` sets the device to "Deny" permanently
+- CommandRouter has stub execute() for ping, list_agents, send_message — production will delegate to the real orchestrator
+- Phase 2 is now complete (chunks 020–023)
