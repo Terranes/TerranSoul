@@ -11,7 +11,9 @@ pub mod link;
 pub mod memory;
 pub mod orchestrator;
 pub mod package_manager;
+pub mod registry_server;
 pub mod routing;
+pub mod sandbox;
 pub mod sync;
 
 use commands::{
@@ -36,9 +38,16 @@ use commands::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
         remove_agent, update_agent, validate_agent_manifest,
     },
+    registry::{
+        get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
+    },
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions,
         list_pending_commands, set_device_permission,
+    },
+    sandbox::{
+        clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
+        revoke_agent_capability, run_agent_in_sandbox,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -52,7 +61,7 @@ pub struct AppState {
     pub link_server_port: TokioMutex<Option<u16>>,
     pub command_router: TokioMutex<routing::CommandRouter>,
     pub package_installer: TokioMutex<package_manager::PackageInstaller>,
-    pub package_registry: TokioMutex<package_manager::MockRegistry>,
+    pub package_registry: TokioMutex<Box<dyn package_manager::RegistrySource + Send + Sync>>,
     /// Name of the active Ollama brain model (e.g. "gemma3:4b"), or None for stub agent.
     pub active_brain: Mutex<Option<String>>,
     /// Shared reqwest client for all Ollama HTTP calls.
@@ -61,6 +70,10 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// Persistent long-term memory store (SQLite).
     pub memory_store: Mutex<memory::MemoryStore>,
+    /// Running registry server handle and bound port, if started.
+    pub registry_server_handle: TokioMutex<Option<(u16, tokio::task::JoinHandle<()>)>>,
+    /// Per-agent sandbox capability consents.
+    pub capability_store: TokioMutex<sandbox::CapabilityStore>,
 }
 
 impl AppState {
@@ -79,11 +92,13 @@ impl AppState {
             link_server_port: TokioMutex::new(None),
             command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
             package_installer: TokioMutex::new(package_manager::PackageInstaller::new(data_dir)),
-            package_registry: TokioMutex::new(package_manager::MockRegistry::new()),
+            package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(active_brain),
             ollama_client: reqwest::Client::new(),
             data_dir: data_dir.to_path_buf(),
             memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
+            registry_server_handle: TokioMutex::new(None),
+            capability_store: TokioMutex::new(sandbox::CapabilityStore::new(data_dir)),
         }
     }
 
@@ -101,11 +116,13 @@ impl AppState {
             package_installer: TokioMutex::new(package_manager::PackageInstaller::new(
                 std::path::Path::new("."),
             )),
-            package_registry: TokioMutex::new(package_manager::MockRegistry::new()),
+            package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(None),
             ollama_client: reqwest::Client::new(),
             data_dir: std::path::PathBuf::from("."),
             memory_store: Mutex::new(memory::MemoryStore::in_memory()),
+            registry_server_handle: TokioMutex::new(None),
+            capability_store: TokioMutex::new(sandbox::CapabilityStore::in_memory()),
         }
     }
 }
@@ -158,6 +175,15 @@ pub fn run() {
             extract_memories_from_session,
             summarize_session,
             semantic_search_memories,
+            start_registry_server,
+            stop_registry_server,
+            get_registry_server_port,
+            search_agents,
+            grant_agent_capability,
+            revoke_agent_capability,
+            list_agent_capabilities,
+            run_agent_in_sandbox,
+            clear_agent_capabilities,
         ])
         .setup(|app| {
             let data_dir = app

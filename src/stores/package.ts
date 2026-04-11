@@ -1,13 +1,15 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { ManifestInfo, InstalledAgentInfo } from '../types';
+import type { AgentSearchResult, ManifestInfo, InstalledAgentInfo } from '../types';
 
 export const usePackageStore = defineStore('package', () => {
   const currentManifest = ref<ManifestInfo | null>(null);
   const installedAgents = ref<InstalledAgentInfo[]>([]);
   const error = ref<string | null>(null);
   const isLoading = ref(false);
+  const registryPort = ref<number | null>(null);
+  const searchResults = ref<AgentSearchResult[]>([]);
 
   async function parseManifest(json: string): Promise<ManifestInfo | null> {
     isLoading.value = true;
@@ -113,11 +115,64 @@ export const usePackageStore = defineStore('package', () => {
     error.value = null;
   }
 
+  async function searchAgents(query: string): Promise<AgentSearchResult[]> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const results = await invoke<AgentSearchResult[]>('search_agents', { query });
+      searchResults.value = results;
+      return results;
+    } catch (err) {
+      error.value = String(err);
+      return [];
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function startRegistryServer(): Promise<number | null> {
+    try {
+      const port = await invoke<number>('start_registry_server');
+      registryPort.value = port;
+      error.value = null;
+      return port;
+    } catch (err) {
+      error.value = String(err);
+      return null;
+    }
+  }
+
+  async function stopRegistryServer(): Promise<boolean> {
+    try {
+      await invoke('stop_registry_server');
+      registryPort.value = null;
+      error.value = null;
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
+  async function getRegistryServerPort(): Promise<number | null> {
+    try {
+      const port = await invoke<number | null>('get_registry_server_port');
+      registryPort.value = port;
+      error.value = null;
+      return port;
+    } catch (err) {
+      error.value = String(err);
+      return null;
+    }
+  }
+
   return {
     currentManifest,
     installedAgents,
     error,
     isLoading,
+    registryPort,
+    searchResults,
     parseManifest,
     validateManifest,
     getIpcProtocolRange,
@@ -127,5 +182,9 @@ export const usePackageStore = defineStore('package', () => {
     fetchInstalledAgents,
     clearManifest,
     clearError,
+    searchAgents,
+    startRegistryServer,
+    stopRegistryServer,
+    getRegistryServerPort,
   };
 });

@@ -110,7 +110,7 @@ pub async fn install_agent(
     let mut installer = state.package_installer.lock().await;
     let registry = state.package_registry.lock().await;
     let result = installer
-        .install(&agent_name, &*registry)
+        .install(&agent_name, &**registry)
         .await
         .map_err(|e| e.to_string())?;
     Ok(InstalledAgentInfo::from(&result))
@@ -125,7 +125,7 @@ pub async fn update_agent(
     let mut installer = state.package_installer.lock().await;
     let registry = state.package_registry.lock().await;
     let result = installer
-        .update(&agent_name, &*registry)
+        .update(&agent_name, &**registry)
         .await
         .map_err(|e| e.to_string())?;
     Ok(InstalledAgentInfo::from(&result))

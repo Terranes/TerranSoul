@@ -6,4 +6,6 @@ pub mod identity;
 pub mod link;
 pub mod memory;
 pub mod package;
+pub mod registry;
 pub mod routing;
+pub mod sandbox;

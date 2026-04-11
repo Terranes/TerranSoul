@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { usePackageStore } from './package';
-import type { ManifestInfo, InstalledAgentInfo } from '../types';
+import type { AgentSearchResult, ManifestInfo, InstalledAgentInfo } from '../types';
 
 const mockInvoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
@@ -208,5 +208,104 @@ describe('package store — IPC integration', () => {
     await store.parseManifest('good');
     expect(store.error).toBeNull();
     expect(store.currentManifest).toEqual(sampleManifest);
+  });
+});
+
+// ── Registry server tests ─────────────────────────────────────────────────────
+
+const sampleSearchResult: AgentSearchResult = {
+  name: 'stub-agent',
+  version: '1.0.0',
+  description: 'Built-in TerranSoul stub agent for testing',
+  capabilities: ['chat'],
+  homepage: 'https://terranes.dev/agents/stub',
+};
+
+describe('package store — registry server', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('initial state: registryPort null, searchResults empty', () => {
+    const store = usePackageStore();
+    expect(store.registryPort).toBeNull();
+    expect(store.searchResults).toHaveLength(0);
+  });
+
+  it('startRegistryServer returns port and updates registryPort', async () => {
+    mockInvoke.mockResolvedValueOnce(12345);
+    const store = usePackageStore();
+    const port = await store.startRegistryServer();
+    expect(mockInvoke).toHaveBeenCalledWith('start_registry_server');
+    expect(port).toBe(12345);
+    expect(store.registryPort).toBe(12345);
+    expect(store.error).toBeNull();
+  });
+
+  it('startRegistryServer sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('server error'));
+    const store = usePackageStore();
+    const port = await store.startRegistryServer();
+    expect(port).toBeNull();
+    expect(store.error).toContain('server error');
+  });
+
+  it('stopRegistryServer clears registryPort', async () => {
+    mockInvoke.mockResolvedValueOnce(12345);
+    const store = usePackageStore();
+    await store.startRegistryServer();
+    expect(store.registryPort).toBe(12345);
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    const result = await store.stopRegistryServer();
+    expect(mockInvoke).toHaveBeenCalledWith('stop_registry_server');
+    expect(result).toBe(true);
+    expect(store.registryPort).toBeNull();
+  });
+
+  it('stopRegistryServer sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('stop error'));
+    const store = usePackageStore();
+    const result = await store.stopRegistryServer();
+    expect(result).toBe(false);
+    expect(store.error).toContain('stop error');
+  });
+
+  it('getRegistryServerPort returns null when not running', async () => {
+    mockInvoke.mockResolvedValueOnce(null);
+    const store = usePackageStore();
+    const port = await store.getRegistryServerPort();
+    expect(mockInvoke).toHaveBeenCalledWith('get_registry_server_port');
+    expect(port).toBeNull();
+    expect(store.registryPort).toBeNull();
+  });
+
+  it('getRegistryServerPort returns port when running', async () => {
+    mockInvoke.mockResolvedValueOnce(8080);
+    const store = usePackageStore();
+    const port = await store.getRegistryServerPort();
+    expect(port).toBe(8080);
+    expect(store.registryPort).toBe(8080);
+  });
+
+  it('searchAgents returns results and updates searchResults', async () => {
+    mockInvoke.mockResolvedValueOnce([sampleSearchResult]);
+    const store = usePackageStore();
+    const results = await store.searchAgents('stub');
+    expect(mockInvoke).toHaveBeenCalledWith('search_agents', { query: 'stub' });
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual(sampleSearchResult);
+    expect(store.searchResults).toHaveLength(1);
+    expect(store.isLoading).toBe(false);
+  });
+
+  it('searchAgents returns empty array and sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('search error'));
+    const store = usePackageStore();
+    const results = await store.searchAgents('foo');
+    expect(results).toHaveLength(0);
+    expect(store.error).toContain('search error');
+    expect(store.isLoading).toBe(false);
   });
 });

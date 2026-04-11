@@ -171,5 +171,5 @@ RegistrySource trait, MockRegistry, PackageInstaller, SHA-256 verification.
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 032 | **Agent Registry** — Stand up a minimal registry server (Rust `axum`) that serves manifest JSON and binary downloads. Implement `terransoul search <query>` command. Host official agents (stub, OpenClaw bridge). | `not-started` |
-| 033 | **Agent Sandboxing** — Run community agents inside a WASM sandbox (via `wasmtime`). Expose a capability-gated host API: file access, clipboard, network — each requires explicit user consent recorded in settings. Write security tests verifying capability enforcement. | `not-started` |
+| 032 | **Agent Registry** — Stand up a minimal registry server (Rust `axum`) that serves manifest JSON and binary downloads. Implement `terransoul search <query>` command. Host official agents (stub, OpenClaw bridge). | `completed` |
+| 033 | **Agent Sandboxing** — Run community agents inside a WASM sandbox (via `wasmtime`). Expose a capability-gated host API: file access, clipboard, network — each requires explicit user consent recorded in settings. Write security tests verifying capability enforcement. | `completed` |

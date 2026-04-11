@@ -151,3 +151,28 @@ export interface NewMemory {
   memory_type: MemoryType;
 }
 
+// ── Registry ──────────────────────────────────────────────────────────────────
+
+export interface AgentSearchResult {
+  name: string;
+  version: string;
+  description: string;
+  capabilities: string[];
+  homepage: string | null;
+}
+
+// ── Sandbox ───────────────────────────────────────────────────────────────────
+
+export type CapabilityName =
+  | 'file_read'
+  | 'file_write'
+  | 'clipboard'
+  | 'network'
+  | 'process_spawn';
+
+export interface ConsentInfo {
+  agent_name: string;
+  capability: CapabilityName;
+  granted: boolean;
+}
+
