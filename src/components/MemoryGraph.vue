@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
-import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
+import cytoscape, { type Core, type ElementDefinition, type NodeSingular } from 'cytoscape';
 import type { MemoryEntry } from '../types';
 
 const props = defineProps<{ memories: MemoryEntry[] }>();
@@ -68,8 +68,8 @@ function init() {
         style: {
           label: 'data(label)',
           'background-color': 'data(colour)',
-          width: (el) => 20 + (el.data('importance') as number) * 8,
-          height: (el) => 20 + (el.data('importance') as number) * 8,
+          width: (el: NodeSingular) => 20 + (el.data('importance') as number) * 8,
+          height: (el: NodeSingular) => 20 + (el.data('importance') as number) * 8,
           color: '#f1f5f9',
           'font-size': '11px',
           'text-valign': 'bottom',
