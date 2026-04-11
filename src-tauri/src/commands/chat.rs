@@ -60,8 +60,25 @@ pub async fn process_message(
     let (agent_name, content, sentiment) = {
         let brain = app_state.active_brain.lock().map_err(|e| e.to_string())?;
         if let Some(ref model) = *brain {
+            // Build short-term memory: last 20 conversation messages as history pairs.
+            let history: Vec<(String, String)> = {
+                let conv = app_state.conversation.lock().map_err(|e| e.to_string())?;
+                conv.iter()
+                    .rev()
+                    .take(20)
+                    .rev()
+                    .map(|m| (m.role.clone(), m.content.clone()))
+                    .collect()
+            };
+
+            // Retrieve relevant long-term memories.
+            let memories: Vec<String> = {
+                let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+                mem_store.relevant_for(message, 5)
+            };
+
             let agent = OllamaAgent::new(model);
-            let (text, sent) = agent.respond(message).await;
+            let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
             (agent.name().to_string(), text, sent)
         } else {
             let agent = StubAgent::new(agent_id.unwrap_or("stub"));

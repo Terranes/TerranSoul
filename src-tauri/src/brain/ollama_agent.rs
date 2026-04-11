@@ -185,7 +185,80 @@ impl AgentProvider for OllamaAgent {
         }
     }
 
-    async fn health_check(&self) -> bool {
+    /// Respond with full conversation history and injected long-term memories.
+    ///
+    /// `history` is a slice of (role, content) pairs ordered oldest-first.
+    /// `memories` is a list of memory strings to inject into the system prompt.
+    pub async fn respond_contextual(
+        &self,
+        message: &str,
+        history: &[(String, String)],
+        memories: &[String],
+    ) -> (String, Sentiment) {
+        let system_content = if memories.is_empty() {
+            SYSTEM_PROMPT.to_string()
+        } else {
+            let mem_block = memories.join("\n- ");
+            format!("{SYSTEM_PROMPT}\n\n[LONG-TERM MEMORY]\n- {mem_block}\n[/LONG-TERM MEMORY]")
+        };
+
+        let mut messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: system_content,
+        }];
+
+        for (role, content) in history {
+            messages.push(ChatMessage {
+                role: role.clone(),
+                content: content.clone(),
+            });
+        }
+
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: message.to_string(),
+        });
+
+        let body = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            stream: false,
+        };
+
+        match self
+            .client
+            .post(&self.chat_url())
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => match resp.json::<ChatResponse>().await {
+                Ok(chat) => {
+                    let sentiment = Self::infer_sentiment(&chat.message.content);
+                    (chat.message.content, sentiment)
+                }
+                Err(e) => (
+                    format!("I received a response but couldn't parse it ({}). Please try again.", e),
+                    Sentiment::Neutral,
+                ),
+            },
+            Ok(resp) => {
+                let status = resp.status();
+                (
+                    format!(
+                        "My brain returned an error (HTTP {}). Is the model '{}' installed? Try: `ollama pull {}`",
+                        status, self.model, self.model
+                    ),
+                    Sentiment::Sad,
+                )
+            }
+            Err(_) => (
+                "My brain (Ollama) is not reachable right now. Please make sure Ollama is running: https://ollama.ai".to_string(),
+                Sentiment::Sad,
+            ),
+        }
+    }
+
         self.client
             .get(&self.tags_url())
             .send()
@@ -220,21 +293,14 @@ pub async fn check_status(client: &Client, base_url: &str) -> OllamaStatus {
 /// List all locally installed Ollama models.
 pub async fn list_models(client: &Client, base_url: &str) -> Vec<OllamaModelEntry> {
     let url = format!("{base_url}/api/tags");
-    client
-        .get(&url)
-        .send()
-        .await
-        .ok()
-        .and_then(|r| {
-            if r.status().is_success() {
-                Some(r)
-            } else {
-                None
-            }
-        })
-        .and_then(|r| futures_util::executor::block_on(r.json::<TagsResponse>()).ok())
-        .map(|t| t.models)
-        .unwrap_or_default()
+    match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => resp
+            .json::<TagsResponse>()
+            .await
+            .map(|t| t.models)
+            .unwrap_or_default(),
+        _ => vec![],
+    }
 }
 
 /// Pull an Ollama model, consuming the streaming response.

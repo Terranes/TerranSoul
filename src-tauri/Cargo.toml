@@ -29,6 +29,7 @@ rcgen = "0.13"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 sysinfo = "0.32"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -8,6 +8,7 @@ pub mod brain;
 pub mod commands;
 pub mod identity;
 pub mod link;
+pub mod memory;
 pub mod orchestrator;
 pub mod package_manager;
 pub mod routing;
@@ -26,6 +27,10 @@ use commands::{
         remove_trusted_device_cmd,
     },
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
+    memory::{
+        add_memory, delete_memory, get_memories, get_relevant_memories, get_short_term_memory,
+        search_memories, update_memory,
+    },
     package::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
         remove_agent, update_agent, validate_agent_manifest,
@@ -53,6 +58,8 @@ pub struct AppState {
     pub ollama_client: reqwest::Client,
     /// Application data directory for persisting settings and installed agents.
     pub data_dir: PathBuf,
+    /// Persistent long-term memory store (SQLite).
+    pub memory_store: Mutex<memory::MemoryStore>,
 }
 
 impl AppState {
@@ -71,13 +78,30 @@ impl AppState {
             active_brain: Mutex::new(active_brain),
             ollama_client: reqwest::Client::new(),
             data_dir: data_dir.to_path_buf(),
+            memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
         }
     }
 
-    /// Convenience constructor for unit tests that only exercise chat/character logic.
+    /// Convenience constructor for unit tests.
     #[cfg(test)]
     pub fn for_test() -> Self {
-        Self::new(std::path::Path::new("."))
+        AppState {
+            conversation: Mutex::new(Vec::new()),
+            vrm_path: Mutex::new(None),
+            device_identity: Mutex::new(None),
+            trusted_devices: Mutex::new(Vec::new()),
+            link_manager: TokioMutex::new(link::manager::LinkManager::new()),
+            link_server_port: TokioMutex::new(None),
+            command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
+            package_installer: TokioMutex::new(package_manager::PackageInstaller::new(
+                std::path::Path::new("."),
+            )),
+            package_registry: TokioMutex::new(package_manager::MockRegistry::new()),
+            active_brain: Mutex::new(None),
+            ollama_client: reqwest::Client::new(),
+            data_dir: std::path::PathBuf::from("."),
+            memory_store: Mutex::new(memory::MemoryStore::in_memory()),
+        }
     }
 }
 
@@ -119,6 +143,13 @@ pub fn run() {
             set_active_brain,
             get_active_brain,
             clear_active_brain,
+            add_memory,
+            get_memories,
+            search_memories,
+            update_memory,
+            delete_memory,
+            get_relevant_memories,
+            get_short_term_memory,
         ])
         .setup(|app| {
             let data_dir = app
@@ -137,8 +168,6 @@ pub fn run() {
             let devices = load_trusted_devices(&data_dir);
             *state.trusted_devices.lock().unwrap() = devices;
 
-            // Initialize the command router with this device's identity.
-            // We use blocking_lock since we're in synchronous setup code.
             *state.command_router.blocking_lock() =
                 routing::CommandRouter::new(&device_id);
 
