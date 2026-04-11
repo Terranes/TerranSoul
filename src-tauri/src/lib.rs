@@ -4,6 +4,7 @@ use tauri::Manager;
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
+pub mod brain;
 pub mod commands;
 pub mod identity;
 pub mod link;
@@ -14,6 +15,10 @@ pub mod sync;
 
 use commands::{
     agent::list_agents,
+    brain::{
+        check_ollama_status, clear_active_brain, get_active_brain, get_ollama_models,
+        get_system_info, pull_ollama_model, recommend_brain_models, set_active_brain,
+    },
     character::load_vrm,
     chat::{get_conversation, send_message},
     identity::{
@@ -42,10 +47,17 @@ pub struct AppState {
     pub command_router: TokioMutex<routing::CommandRouter>,
     pub package_installer: TokioMutex<package_manager::PackageInstaller>,
     pub package_registry: TokioMutex<package_manager::MockRegistry>,
+    /// Name of the active Ollama brain model (e.g. "gemma3:4b"), or None for stub agent.
+    pub active_brain: Mutex<Option<String>>,
+    /// Shared reqwest client for all Ollama HTTP calls.
+    pub ollama_client: reqwest::Client,
+    /// Application data directory for persisting settings and installed agents.
+    pub data_dir: PathBuf,
 }
 
 impl AppState {
     fn new(data_dir: &std::path::Path) -> Self {
+        let active_brain = brain::load_brain(data_dir);
         AppState {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
@@ -56,6 +68,9 @@ impl AppState {
             command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
             package_installer: TokioMutex::new(package_manager::PackageInstaller::new(data_dir)),
             package_registry: TokioMutex::new(package_manager::MockRegistry::new()),
+            active_brain: Mutex::new(active_brain),
+            ollama_client: reqwest::Client::new(),
+            data_dir: data_dir.to_path_buf(),
         }
     }
 
@@ -96,6 +111,14 @@ pub fn run() {
             update_agent,
             remove_agent,
             list_installed_agents,
+            get_system_info,
+            recommend_brain_models,
+            check_ollama_status,
+            get_ollama_models,
+            pull_ollama_model,
+            set_active_brain,
+            get_active_brain,
+            clear_active_brain,
         ])
         .setup(|app| {
             let data_dir = app
