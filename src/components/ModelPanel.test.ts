@@ -30,11 +30,22 @@ describe('ModelPanel', () => {
     expect(btn.text()).toContain('Import VRM Model');
   });
 
-  it('renders default placeholder card', () => {
+  it('renders model select dropdown with default models', () => {
     const wrapper = mount(ModelPanel);
-    const card = wrapper.find('.model-card.default');
-    expect(card.exists()).toBe(true);
-    expect(card.text()).toContain('Default Placeholder');
+    const select = wrapper.find('.model-select');
+    expect(select.exists()).toBe(true);
+    const options = select.findAll('option');
+    expect(options.length).toBeGreaterThanOrEqual(2);
+    expect(options[0].text()).toBe('Model 1');
+    expect(options[1].text()).toBe('Model 2');
+  });
+
+  it('renders model cards for default models', () => {
+    const wrapper = mount(ModelPanel);
+    const cards = wrapper.findAll('.model-card');
+    expect(cards.length).toBeGreaterThanOrEqual(2);
+    expect(cards[0].text()).toContain('Model 1');
+    expect(cards[1].text()).toContain('Model 2');
   });
 
   it('emits close on overlay click', async () => {
@@ -59,9 +70,9 @@ describe('ModelPanel', () => {
     expect(wrapper.text()).toContain('instructions/');
   });
 
-  it('default placeholder card is active when no VRM loaded', () => {
+  it('first model card is active by default (model1 selected)', () => {
     const wrapper = mount(ModelPanel);
-    const card = wrapper.find('.model-card.default');
-    expect(card.classes()).toContain('active');
+    const cards = wrapper.findAll('.model-card');
+    expect(cards[0].classes()).toContain('active');
   });
 });

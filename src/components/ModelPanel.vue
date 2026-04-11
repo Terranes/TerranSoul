@@ -7,6 +7,25 @@
       </div>
 
       <div class="panel-body">
+        <div class="model-select-section">
+          <label class="select-label" for="model-select">Default Model</label>
+          <select
+            id="model-select"
+            class="model-select"
+            :value="characterStore.selectedModelId"
+            :disabled="isLoading"
+            @change="handleModelChange"
+          >
+            <option
+              v-for="model in characterStore.defaultModels"
+              :key="model.id"
+              :value="model.id"
+            >
+              {{ model.name }}
+            </option>
+          </select>
+        </div>
+
         <div class="import-section">
           <button class="import-btn" @click="handleImport" :disabled="isLoading">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -22,20 +41,25 @@
         </div>
 
         <div class="models-list">
-          <div class="model-card default" :class="{ active: !characterStore.vrmPath }" @click="resetToDefault">
-            <div class="model-icon">🤖</div>
+          <div
+            v-for="model in characterStore.defaultModels"
+            :key="model.id"
+            class="model-card"
+            :class="{ active: characterStore.selectedModelId === model.id && !customVrmActive }"
+            @click="handleSelectModel(model.id)"
+          >
+            <div class="model-icon">👤</div>
             <div class="model-info">
-              <span class="model-name">Default Placeholder</span>
-              <span class="model-author">Built-in capsule character</span>
+              <span class="model-name">{{ model.name }}</span>
+              <span class="model-author">{{ model.path }}</span>
             </div>
           </div>
 
           <div
-            v-if="characterStore.vrmPath"
-            class="model-card"
-            :class="{ active: true }"
+            v-if="customVrmActive"
+            class="model-card active"
           >
-            <div class="model-icon">👤</div>
+            <div class="model-icon">📁</div>
             <div class="model-info">
               <span class="model-name">{{ characterStore.vrmMetadata?.title ?? 'Custom VRM' }}</span>
               <span class="model-author">{{ characterStore.vrmMetadata?.author ?? 'Unknown author' }}</span>
@@ -55,13 +79,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useCharacterStore } from '../stores/character';
+import { DEFAULT_MODELS } from '../config/default-models';
 
 defineEmits<{ close: [] }>();
 
 const characterStore = useCharacterStore();
 const isLoading = ref(false);
+
+const customVrmActive = computed(() => {
+  if (!characterStore.vrmPath) return false;
+  return !DEFAULT_MODELS.some(m => m.path === characterStore.vrmPath);
+});
+
+async function handleModelChange(event: Event) {
+  const target = event.target as HTMLSelectElement;
+  isLoading.value = true;
+  characterStore.setLoadError(undefined);
+  try {
+    await characterStore.selectModel(target.value);
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+async function handleSelectModel(modelId: string) {
+  isLoading.value = true;
+  characterStore.setLoadError(undefined);
+  try {
+    await characterStore.selectModel(modelId);
+  } finally {
+    isLoading.value = false;
+  }
+}
 
 async function handleImport() {
   isLoading.value = true;
@@ -76,10 +127,6 @@ async function handleImport() {
   } finally {
     isLoading.value = false;
   }
-}
-
-function resetToDefault() {
-  characterStore.resetCharacter();
 }
 </script>
 
@@ -187,6 +234,49 @@ function resetToDefault() {
   font-size: 0.7rem;
   color: rgba(255, 255, 255, 0.35);
   text-align: center;
+}
+
+.model-select-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.select-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.model-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8e8f0;
+  font-size: 0.85rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='%23888'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.model-select:focus {
+  border-color: rgba(108, 99, 255, 0.6);
+}
+
+.model-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-select option {
+  background: #1a1a2e;
+  color: #e8e8f0;
 }
 
 .error-banner {
