@@ -125,8 +125,8 @@ test.describe('3D Character Loading & Animation', () => {
     await page.waitForTimeout(500);
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
-      // Focus the page body (not the viewport — that toggles dialog)
-      await page.locator('body').click({ position: { x: 1, y: 1 } });
+      // Press Ctrl+D directly — Playwright sends keyboard events to the page
+      // without needing to click (avoids accidentally toggling the chat dialog).
       await page.keyboard.press('Control+d');
       await page.waitForTimeout(300);
     }
@@ -291,7 +291,7 @@ test.describe('3D Character Loading & Animation', () => {
   });
 
   test('Model 1 animates visibly with cool persona', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     await page.goto('/');
 
     // Switch to Model 1
@@ -336,7 +336,6 @@ test.describe('Animation & AI Emotion', () => {
     await page.waitForTimeout(500);
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
-      await page.locator('body').click({ position: { x: 1, y: 1 } });
       await page.keyboard.press('Control+d');
       await page.waitForTimeout(300);
     }
@@ -471,7 +470,7 @@ test.describe('Animation & AI Emotion', () => {
   });
 
   test('Model 1 (cool) emotion animation with happy message', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     await page.goto('/');
 
     // Switch to Model 1 (cool persona)

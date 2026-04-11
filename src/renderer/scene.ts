@@ -47,7 +47,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     rendererType = 'webgl';
   }
 
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
@@ -106,7 +106,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     if (w === 0 || h === 0) return;
-    renderer.setSize(w, h);
+    renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   });
