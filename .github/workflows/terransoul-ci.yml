@@ -116,10 +116,11 @@ jobs:
           retention-days: 14
 
   # ── Self-Validation Video Recording ────────────────────────────────────────
+  # Only runs after a PR is merged to main (push event on main branch).
   validation-recording:
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
 

@@ -60,8 +60,9 @@ The `TerranSoul CI` workflow includes a **validation-recording** job that:
 3. Copies the video to `recording/validation.webm`.
 4. Commits and pushes the updated video back to the branch.
 
-This happens automatically on every push to `main` or `copilot/**` branches and
-on pull requests targeting `main`.
+This happens automatically **only when code is pushed to `main`** (i.e., after a
+PR is merged). It does not run on feature branches or pull requests — only on
+the merged result on `main`.
 
 ---
 
