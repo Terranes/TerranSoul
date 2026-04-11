@@ -2,9 +2,6 @@ name: TerranSoul CI
 
 on:
   push:
-    branches: [main, 'copilot/**']
-  pull_request:
-    branches: [main]
 
 jobs:
   # ── Build + Lint + Test ─────────────────────────────────────────────────────

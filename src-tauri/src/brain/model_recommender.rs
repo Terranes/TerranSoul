@@ -49,21 +49,21 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
         ModelRecommendation {
             model_tag: "gemma3:27b".to_string(),
             display_name: "Gemma 3 27B".to_string(),
-            description: "Previous-gen flagship. Still excellent reasoning and coding. Requires 32 GB+ RAM.".to_string(),
+            description: "Previous-gen flagship. Still excellent reasoning and coding. Requires 32 GB+ RAM.".to_string()
             required_ram_mb: 32_768,
             is_top_pick: false,
         },
         ModelRecommendation {
             model_tag: "gemma3:12b".to_string(),
             display_name: "Gemma 3 12B".to_string(),
-            description: "Solid balance of quality and speed. Strong instruction-following. Requires 16 GB+ RAM.".to_string(),
+            description: "Excellent balance of quality and speed. Strong instruction-following. Requires 16 GB+ RAM.".to_string(),
             required_ram_mb: 16_384,
             is_top_pick: false,
         },
         ModelRecommendation {
             model_tag: "gemma3:4b".to_string(),
             display_name: "Gemma 3 4B".to_string(),
-            description: "Fast and capable previous-gen model. Requires 8 GB+ RAM.".to_string(),
+            description: "Fast and capable. Great for everyday chat and software recommendations. Requires 8 GB+ RAM.".to_string(),
             required_ram_mb: 8_192,
             is_top_pick: false,
         },
@@ -77,7 +77,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
         ModelRecommendation {
             model_tag: "gemma3:1b".to_string(),
             display_name: "Gemma 3 1B".to_string(),
-            description: "Ultra-lightweight. Runs on almost any machine. Basic conversation quality. Requires 4 GB+ RAM.".to_string(),
+            description: "Ultra-lightweight Gemma. Runs on almost any machine. Basic conversation quality. Requires 4 GB+ RAM.".to_string(),
             required_ram_mb: 4_096,
             is_top_pick: false,
         },
