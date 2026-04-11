@@ -56,36 +56,45 @@ pub async fn process_message(
         conv.push(user_msg);
     }
 
+    // Clone model name before any await so the MutexGuard is not held across .await.
+    let model_opt: Option<String> = {
+        app_state.active_brain.lock().map_err(|e| e.to_string())?.clone()
+    };
+
     // Route through the active brain (Ollama) if one is configured; otherwise use StubAgent.
-    let (agent_name, content, sentiment) = {
-        let brain = app_state.active_brain.lock().map_err(|e| e.to_string())?;
-        if let Some(ref model) = *brain {
-            // Build short-term memory: last 20 conversation messages as history pairs.
-            let history: Vec<(String, String)> = {
-                let conv = app_state.conversation.lock().map_err(|e| e.to_string())?;
-                conv.iter()
-                    .rev()
-                    .take(20)
-                    .rev()
-                    .map(|m| (m.role.clone(), m.content.clone()))
-                    .collect()
-            };
+    let (agent_name, content, sentiment) = if let Some(ref model) = model_opt {
+        // Build short-term memory: last 20 conversation messages as history pairs.
+        let history: Vec<(String, String)> = {
+            let conv = app_state.conversation.lock().map_err(|e| e.to_string())?;
+            conv.iter()
+                .rev()
+                .take(20)
+                .rev()
+                .map(|m| (m.role.clone(), m.content.clone()))
+                .collect()
+        }; // lock released before await
 
-            // Retrieve relevant long-term memories.
-            let memories: Vec<String> = {
-                let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
-                mem_store.relevant_for(message, 5)
-            };
+        // Pre-load memory entries so no MutexGuard is held across the async LLM call.
+        let memory_entries: Vec<crate::memory::MemoryEntry> = {
+            let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+            mem_store.get_all().unwrap_or_default()
+        }; // lock released before await
 
-            let agent = OllamaAgent::new(model);
-            let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
-            (agent.name().to_string(), text, sent)
-        } else {
-            let agent = StubAgent::new(agent_id.unwrap_or("stub"));
-            let name = agent.name().to_string();
-            let (text, sent) = agent.respond(message).await;
-            (name, text, sent)
-        }
+        let memories: Vec<String> =
+            crate::memory::brain_memory::semantic_search_entries(model, message, &memory_entries, 5)
+                .await
+                .into_iter()
+                .map(|e| e.content)
+                .collect();
+
+        let agent = OllamaAgent::new(model);
+        let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
+        (agent.name().to_string(), text, sent)
+    } else {
+        let agent = StubAgent::new(agent_id.unwrap_or("stub"));
+        let name = agent.name().to_string();
+        let (text, sent) = agent.respond(message).await;
+        (name, text, sent)
     };
 
     let response = Message {

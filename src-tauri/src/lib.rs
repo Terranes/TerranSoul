@@ -28,8 +28,9 @@ use commands::{
     },
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
     memory::{
-        add_memory, delete_memory, get_memories, get_relevant_memories, get_short_term_memory,
-        search_memories, update_memory,
+        add_memory, delete_memory, extract_memories_from_session, get_memories,
+        get_relevant_memories, get_short_term_memory, search_memories,
+        semantic_search_memories, summarize_session, update_memory,
     },
     package::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
@@ -63,6 +64,10 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Create a new `AppState` bound to `data_dir`, which is used to persist
+    /// settings (active brain model) and the long-term memory database.
+    /// In production this is the Tauri app-data directory; for tests use
+    /// [`AppState::for_test`] instead.
     fn new(data_dir: &std::path::Path) -> Self {
         let active_brain = brain::load_brain(data_dir);
         AppState {
@@ -150,6 +155,9 @@ pub fn run() {
             delete_memory,
             get_relevant_memories,
             get_short_term_memory,
+            extract_memories_from_session,
+            summarize_session,
+            semantic_search_memories,
         ])
         .setup(|app| {
             let data_dir = app

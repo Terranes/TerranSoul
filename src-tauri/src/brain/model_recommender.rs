@@ -76,11 +76,11 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
         },
     ];
 
-    // Filter to models that fit in available RAM (with 1 GB headroom for the OS).
-    let headroom_mb = total_ram_mb.saturating_sub(1_024);
+    // Filter to models that fit in available RAM.
+    // Use total_ram_mb directly; model sizes are already conservative estimates.
     let mut candidates: Vec<ModelRecommendation> = all
         .into_iter()
-        .filter(|m| m.required_ram_mb <= headroom_mb)
+        .filter(|m| m.required_ram_mb <= total_ram_mb)
         .collect();
 
     // If everything was filtered out (very little RAM), include TinyLlama regardless.

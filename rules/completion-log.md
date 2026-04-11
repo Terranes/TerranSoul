@@ -777,3 +777,95 @@ persistence of installed agent manifests and binaries.
 - **Vitest:** 14 test files, 134 tests (18 package store tests, 8 new)
 - **Clippy:** 0 warnings
 - **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+---
+
+## Chunk 040 — Brain (Local LLM via Ollama)
+
+### Summary
+Adds a local LLM "brain" to TerranSoul powered by Ollama. The first time the app
+launches (no brain configured), a 5-step onboarding wizard analyses the user's hardware
+(RAM, CPU, OS) and recommends the best model tier:
+
+| RAM | Top pick |
+|-----|---------|
+| < 4 GB | TinyLlama |
+| 4–8 GB | Gemma 3 1B |
+| 8–16 GB | Gemma 3 4B ⭐ |
+| 16–32 GB | Gemma 3 12B |
+| 32 GB+ | Gemma 3 27B |
+
+Once configured, all chat messages are routed through the active Ollama model.
+
+### Files Added / Modified
+- `src-tauri/src/brain/system_info.rs` — sysinfo-based hardware detection + RAM tier
+- `src-tauri/src/brain/model_recommender.rs` — tiered model recommendations
+- `src-tauri/src/brain/brain_store.rs` — persist/load active model from disk
+- `src-tauri/src/brain/ollama_agent.rs` — OllamaAgent (AgentProvider + respond_contextual + extract/summarize helpers)
+- `src-tauri/src/brain/mod.rs`
+- `src-tauri/src/commands/brain.rs` — 7 Tauri commands
+- `src-tauri/src/commands/chat.rs` — route through OllamaAgent when brain set
+- `src-tauri/src/lib.rs` — active_brain + ollama_client + data_dir in AppState
+- `src/views/BrainSetupView.vue` — 5-step wizard
+- `src/stores/brain.ts` + `src/stores/brain.test.ts`
+- `src/types/index.ts` — SystemInfo, ModelRecommendation, OllamaStatus, OllamaModelEntry types
+- `src-tauri/Cargo.toml` — sysinfo, reqwest (json+stream), futures-util
+
+### New Tauri Commands
+`get_system_info` · `recommend_brain_models` · `check_ollama_status` · `get_ollama_models`
+`pull_ollama_model` · `set_active_brain` · `get_active_brain` · `clear_active_brain`
+
+### Test Counts
+- **Rust:** 38 new tests in brain module (245 total)
+- **Vitest:** 11 new tests in brain.test.ts (153 total)
+
+---
+
+## Chunk 041 — Long/Short-term Memory + Brain-powered Recall
+
+### Summary
+Adds a SQLite-backed memory system that the brain model actively manages:
+
+**Short-term memory:** The last 20 conversation messages are passed as context to every
+Ollama call, giving the brain a working memory of the current session.
+
+**Long-term memory:** Persistent facts/preferences/context stored in `memory.db`.
+The brain reuses the active Ollama model for three memory operations:
+
+1. **Extract** — After a session, Ollama identifies and stores memorable facts
+2. **Summarize** — Ollama produces a 1–3 sentence session summary as a memory entry
+3. **Semantic search** — Ollama ranks stored memories by relevance (keyword fallback when offline)
+
+Before every assistant reply, the most relevant long-term memories are retrieved (via
+semantic or keyword search) and injected into the Ollama system prompt — giving TerranSoul
+genuine recall of past conversations.
+
+### Memory Visualization
+A **MemoryView** with three tabs:
+- **List** — searchable, filterable memory cards with manual add/edit/delete
+- **Graph** — cytoscape.js network where nodes = memories, edges = shared tags
+- **Session** — the live short-term memory window
+
+### Files Added / Modified
+- `src-tauri/src/memory/store.rs` — SQLite CRUD + keyword search (MemoryStore)
+- `src-tauri/src/memory/brain_memory.rs` — async LLM helpers (extract_facts, summarize, semantic_search_entries)
+- `src-tauri/src/memory/mod.rs`
+- `src-tauri/src/commands/memory.rs` — 9 Tauri commands
+- `src-tauri/src/commands/chat.rs` — inject memories into every Ollama call
+- `src-tauri/src/lib.rs` — memory_store in AppState
+- `src/views/MemoryView.vue` — 3-tab memory manager
+- `src/components/MemoryGraph.vue` — cytoscape.js knowledge graph
+- `src/stores/memory.ts` + `src/stores/memory.test.ts`
+- `src/App.vue` — brain-gated routing + Memory nav tab
+- `src-tauri/Cargo.toml` — rusqlite (bundled)
+- `package.json` — cytoscape + @types/cytoscape
+
+### New Tauri Commands
+`add_memory` · `get_memories` · `search_memories` · `update_memory` · `delete_memory`
+`get_relevant_memories` · `get_short_term_memory` · `extract_memories_from_session`
+`summarize_session` · `semantic_search_memories`
+
+### Test Counts
+- **Rust:** 14 new tests (12 memory/store + 4 brain_memory) — 245 total
+- **Vitest:** 10 new tests in memory.test.ts — 153 total
+- **Clippy:** 0 warnings

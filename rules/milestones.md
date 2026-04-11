@@ -120,7 +120,28 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 032** — Agent Registry (Phase 3)
+**Chunk 033** — Agent Sandboxing (Phase 3)
+
+---
+
+## Phase 4 — Brain & Memory (Local LLM + Persistent Memory)
+
+✅ Chunk 040 — Brain (Local LLM via Ollama) — see `rules/completion-log.md`
+
+Hardware analysis, tiered model recommendations (Gemma 3, Phi-4 Mini, TinyLlama).
+OllamaAgent with full conversation history. 7 Tauri commands. BrainSetupView.vue wizard.
+38 Rust tests, 11 Vitest tests.
+
+✅ Chunk 041 — Long/Short-term Memory + Brain-powered recall — see `rules/completion-log.md`
+
+SQLite-backed MemoryStore (rusqlite). Brain reuses active Ollama model for:
+- Automatic memory extraction from sessions
+- Session summarization into memory entries
+- Semantic memory search (LLM-ranked, keyword fallback)
+Short-term memory = last 20 messages injected into each Ollama call.
+9 Tauri commands. MemoryView.vue + MemoryGraph.vue (cytoscape.js).
+14 Rust tests + 10 Vitest tests.
+
 
 ---
 

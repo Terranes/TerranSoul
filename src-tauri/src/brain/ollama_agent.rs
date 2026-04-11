@@ -9,8 +9,6 @@ use crate::agent::AgentProvider;
 pub const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
 
 /// System prompt injected into every Ollama conversation.
-///
-/// Gives the brain its TerranSoul identity and knowledge of available packages.
 const SYSTEM_PROMPT: &str = r#"You are TerranSoul, a friendly AI companion with a 3D character avatar. You live inside the TerranSoul desktop app and serve as the user's intelligent assistant.
 
 Your capabilities:
@@ -23,9 +21,10 @@ Available packages you can recommend:
 - **Claude Cowork** (model tag: "claude-cowork"): A collaborative AI workspace powered by Anthropic's Claude. Perfect for document analysis, long-context reasoning, and team workflows.
 - **stub-agent**: The built-in lightweight agent. Always available offline.
 
-When recommending a package, mention its name and briefly explain why it suits the user's request. Keep responses concise and warm. You can suggest that the user visit the Package Manager tab to install recommended tools."#;
+When recommending a package, mention its name and briefly explain why it suits the user's request. Keep responses concise and warm."#;
 
-/// Request body for Ollama's chat completion endpoint.
+// ── Ollama API types ───────────────────────────────────────────────────────────
+
 #[derive(Serialize)]
 struct ChatRequest {
     model: String,
@@ -33,43 +32,37 @@ struct ChatRequest {
     stream: bool,
 }
 
-/// A single message in an Ollama conversation.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
 }
 
-/// Response from Ollama's /api/chat endpoint (non-streaming).
 #[derive(Deserialize)]
 struct ChatResponse {
     message: ChatMessage,
 }
 
-/// Response from Ollama's /api/tags endpoint.
-#[derive(Deserialize)]
-pub struct TagsResponse {
-    pub models: Vec<OllamaModelEntry>,
-}
-
-/// Entry in Ollama's model list.
 #[derive(Deserialize, Serialize, Clone)]
 pub struct OllamaModelEntry {
     pub name: String,
     pub size: u64,
 }
 
-/// Status of the local Ollama service.
+#[derive(Deserialize)]
+pub struct TagsResponse {
+    pub models: Vec<OllamaModelEntry>,
+}
+
 #[derive(Serialize)]
 pub struct OllamaStatus {
     pub running: bool,
     pub model_count: usize,
 }
 
+// ── OllamaAgent ────────────────────────────────────────────────────────────────
+
 /// An AI agent backed by a locally running Ollama language model.
-///
-/// Routes all messages to the specified Ollama model via the REST API.
-/// Falls back to a helpful error message when Ollama is unreachable.
 pub struct OllamaAgent {
     model: String,
     base_url: String,
@@ -77,7 +70,7 @@ pub struct OllamaAgent {
 }
 
 impl OllamaAgent {
-    /// Create an agent that talks to the given Ollama model.
+    /// Create an agent that talks to the given Ollama model on localhost.
     pub fn new(model: &str) -> Self {
         Self::with_url(model, OLLAMA_BASE_URL)
     }
@@ -99,7 +92,7 @@ impl OllamaAgent {
         format!("{}/api/tags", self.base_url)
     }
 
-    /// Infer a simple sentiment from the response text.
+    /// Infer a simple sentiment label from the response text.
     fn infer_sentiment(text: &str) -> Sentiment {
         let lower = text.to_lowercase();
         if lower.contains("sorry")
@@ -121,7 +114,210 @@ impl OllamaAgent {
             Sentiment::Neutral
         }
     }
+
+    /// Build the full message list from system prompt + optional memory block + history + current message.
+    fn build_messages(
+        &self,
+        message: &str,
+        history: &[(String, String)],
+        memories: &[String],
+    ) -> Vec<ChatMessage> {
+        let system_content = if memories.is_empty() {
+            SYSTEM_PROMPT.to_string()
+        } else {
+            let mem_block = memories.join("\n- ");
+            format!("{SYSTEM_PROMPT}\n\n[LONG-TERM MEMORY]\n- {mem_block}\n[/LONG-TERM MEMORY]")
+        };
+
+        let mut msgs = vec![ChatMessage {
+            role: "system".to_string(),
+            content: system_content,
+        }];
+
+        for (role, content) in history {
+            msgs.push(ChatMessage {
+                role: role.clone(),
+                content: content.clone(),
+            });
+        }
+
+        msgs.push(ChatMessage {
+            role: "user".to_string(),
+            content: message.to_string(),
+        });
+
+        msgs
+    }
+
+    /// Send `messages` to Ollama and decode the assistant reply.
+    async fn call(&self, messages: Vec<ChatMessage>) -> (String, Sentiment) {
+        let body = ChatRequest {
+            model: self.model.clone(),
+            messages,
+            stream: false,
+        };
+
+        match self.client.post(self.chat_url()).json(&body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<ChatResponse>().await {
+                    Ok(chat) => {
+                        let sentiment = Self::infer_sentiment(&chat.message.content);
+                        (chat.message.content, sentiment)
+                    }
+                    Err(e) => (
+                        format!(
+                            "I received a response but couldn't parse it ({}). Please try again.",
+                            e
+                        ),
+                        Sentiment::Neutral,
+                    ),
+                }
+            }
+            Ok(resp) => (
+                format!(
+                    "My brain returned an error (HTTP {}). Is the model '{}' installed? Try: `ollama pull {}`",
+                    resp.status(),
+                    self.model,
+                    self.model
+                ),
+                Sentiment::Sad,
+            ),
+            Err(_) => (
+                "My brain (Ollama) is not reachable right now. Please make sure Ollama is running: https://ollama.ai"
+                    .to_string(),
+                Sentiment::Sad,
+            ),
+        }
+    }
+
+    /// Respond with full conversation history and injected long-term memories.
+    ///
+    /// `history` is a slice of (role, content) pairs ordered oldest-first.
+    /// `memories` is a list of long-term memory strings to inject into the system prompt.
+    pub async fn respond_contextual(
+        &self,
+        message: &str,
+        history: &[(String, String)],
+        memories: &[String],
+    ) -> (String, Sentiment) {
+        let msgs = self.build_messages(message, history, memories);
+        self.call(msgs).await
+    }
+
+    /// Ask the brain to extract memorable facts from a conversation.
+    ///
+    /// Returns a list of short fact strings (one per line) or an empty vec on failure.
+    pub async fn extract_memories(&self, conversation_text: &str) -> Vec<String> {
+        let prompt = format!(
+            "Read this conversation and extract up to 5 important facts worth remembering \
+            about the user (preferences, goals, personal details, ongoing projects). \
+            Reply with ONLY a bullet list, one fact per line, starting each line with '- '. \
+            If there is nothing worth remembering, reply with exactly: NONE\n\n{conversation_text}"
+        );
+
+        let msgs = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You are a memory extraction assistant. Extract concise facts about the user from conversations.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ];
+
+        let (reply, _) = self.call(msgs).await;
+        if reply.trim() == "NONE" || reply.trim().is_empty() {
+            return vec![];
+        }
+
+        reply
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim().trim_start_matches("- ").trim();
+                if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            })
+            .collect()
+    }
+
+    /// Ask the brain to summarize a conversation into a single memory entry.
+    pub async fn summarize_conversation(&self, conversation_text: &str) -> Option<String> {
+        let prompt = format!(
+            "Summarize this conversation in 1-3 sentences, focusing on what the user \
+            was trying to accomplish and any conclusions reached. Be concise.\n\n{conversation_text}"
+        );
+
+        let msgs = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You are a concise summarizer. Summarize conversations into 1-3 sentences.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ];
+
+        let (reply, _) = self.call(msgs).await;
+        let clean = reply.trim().to_string();
+        if clean.is_empty() { None } else { Some(clean) }
+    }
+
+    /// Ask the brain which stored memories are most relevant to a query.
+    ///
+    /// `candidates` is a list of (id, content) pairs.  
+    /// Returns the ids of the top relevant entries.
+    pub async fn semantic_relevant_ids(
+        &self,
+        query: &str,
+        candidates: &[(i64, String)],
+        limit: usize,
+    ) -> Vec<i64> {
+        if candidates.is_empty() {
+            return vec![];
+        }
+
+        let numbered = candidates
+            .iter()
+            .enumerate()
+            .map(|(i, (_, content))| format!("{}. {}", i + 1, content))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let prompt = format!(
+            "Given this user query:\n\"{query}\"\n\n\
+            Which of the following memories are most relevant? \
+            Reply with ONLY the numbers of the top {limit} relevant ones, \
+            comma-separated (e.g. \"1,3,5\"). If none are relevant, reply \"NONE\".\n\n{numbered}"
+        );
+
+        let msgs = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You select the most relevant memories from a list. Reply with numbers only.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ];
+
+        let (reply, _) = self.call(msgs).await;
+        if reply.trim() == "NONE" {
+            return vec![];
+        }
+
+        reply
+            .split(',')
+            .filter_map(|s| s.trim().parse::<usize>().ok())
+            .filter(|&n| n >= 1 && n <= candidates.len())
+            .take(limit)
+            .map(|n| candidates[n - 1].0)
+            .collect()
+    }
 }
+
+// ── AgentProvider trait impl ───────────────────────────────────────────────────
 
 #[async_trait]
 impl AgentProvider for OllamaAgent {
@@ -134,139 +330,21 @@ impl AgentProvider for OllamaAgent {
     }
 
     async fn respond(&self, message: &str) -> (String, Sentiment) {
-        let body = ChatRequest {
-            model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: SYSTEM_PROMPT.to_string(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: message.to_string(),
-                },
-            ],
-            stream: false,
-        };
-
-        match self
-            .client
-            .post(&self.chat_url())
-            .json(&body)
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<ChatResponse>().await {
-                    Ok(chat) => {
-                        let sentiment = Self::infer_sentiment(&chat.message.content);
-                        (chat.message.content, sentiment)
-                    }
-                    Err(e) => (
-                        format!("I received a response but couldn't parse it ({}). Please try again.", e),
-                        Sentiment::Neutral,
-                    ),
-                }
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                (
-                    format!(
-                        "My brain returned an error (HTTP {}). Is the model '{}' installed? Try: `ollama pull {}`",
-                        status, self.model, self.model
-                    ),
-                    Sentiment::Sad,
-                )
-            }
-            Err(_) => (
-                "My brain (Ollama) is not reachable right now. Please make sure Ollama is running: https://ollama.ai".to_string(),
-                Sentiment::Sad,
-            ),
-        }
+        let msgs = self.build_messages(message, &[], &[]);
+        self.call(msgs).await
     }
 
-    /// Respond with full conversation history and injected long-term memories.
-    ///
-    /// `history` is a slice of (role, content) pairs ordered oldest-first.
-    /// `memories` is a list of memory strings to inject into the system prompt.
-    pub async fn respond_contextual(
-        &self,
-        message: &str,
-        history: &[(String, String)],
-        memories: &[String],
-    ) -> (String, Sentiment) {
-        let system_content = if memories.is_empty() {
-            SYSTEM_PROMPT.to_string()
-        } else {
-            let mem_block = memories.join("\n- ");
-            format!("{SYSTEM_PROMPT}\n\n[LONG-TERM MEMORY]\n- {mem_block}\n[/LONG-TERM MEMORY]")
-        };
-
-        let mut messages = vec![ChatMessage {
-            role: "system".to_string(),
-            content: system_content,
-        }];
-
-        for (role, content) in history {
-            messages.push(ChatMessage {
-                role: role.clone(),
-                content: content.clone(),
-            });
-        }
-
-        messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: message.to_string(),
-        });
-
-        let body = ChatRequest {
-            model: self.model.clone(),
-            messages,
-            stream: false,
-        };
-
-        match self
-            .client
-            .post(&self.chat_url())
-            .json(&body)
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => match resp.json::<ChatResponse>().await {
-                Ok(chat) => {
-                    let sentiment = Self::infer_sentiment(&chat.message.content);
-                    (chat.message.content, sentiment)
-                }
-                Err(e) => (
-                    format!("I received a response but couldn't parse it ({}). Please try again.", e),
-                    Sentiment::Neutral,
-                ),
-            },
-            Ok(resp) => {
-                let status = resp.status();
-                (
-                    format!(
-                        "My brain returned an error (HTTP {}). Is the model '{}' installed? Try: `ollama pull {}`",
-                        status, self.model, self.model
-                    ),
-                    Sentiment::Sad,
-                )
-            }
-            Err(_) => (
-                "My brain (Ollama) is not reachable right now. Please make sure Ollama is running: https://ollama.ai".to_string(),
-                Sentiment::Sad,
-            ),
-        }
-    }
-
+    async fn health_check(&self) -> bool {
         self.client
-            .get(&self.tags_url())
+            .get(self.tags_url())
             .send()
             .await
             .map(|r| r.status().is_success())
             .unwrap_or(false)
     }
 }
+
+// ── Module-level helpers ───────────────────────────────────────────────────────
 
 /// Check whether the local Ollama service is running.
 pub async fn check_status(client: &Client, base_url: &str) -> OllamaStatus {
@@ -303,8 +381,7 @@ pub async fn list_models(client: &Client, base_url: &str) -> Vec<OllamaModelEntr
     }
 }
 
-/// Pull an Ollama model, consuming the streaming response.
-/// Resolves when the download is complete or on error.
+/// Pull an Ollama model, consuming the streaming progress response.
 pub async fn pull_model(client: &Client, base_url: &str, model_name: &str) -> Result<(), String> {
     #[derive(Serialize)]
     struct PullRequest<'a> {
@@ -330,14 +407,14 @@ pub async fn pull_model(client: &Client, base_url: &str, model_name: &str) -> Re
         ));
     }
 
-    // Drain the streaming response (each line is a JSON progress update).
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
         chunk.map_err(|e| format!("stream error: {e}"))?;
     }
-
     Ok(())
 }
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -357,26 +434,70 @@ mod tests {
 
     #[test]
     fn infer_sentiment_sorry_is_sad() {
-        assert_eq!(OllamaAgent::infer_sentiment("I'm sorry, I can't help with that."), Sentiment::Sad);
+        assert_eq!(
+            OllamaAgent::infer_sentiment("I'm sorry, I can't help with that."),
+            Sentiment::Sad
+        );
     }
 
     #[test]
     fn infer_sentiment_happy_keywords() {
-        assert_eq!(OllamaAgent::infer_sentiment("I'm happy to help you with that!"), Sentiment::Happy);
-        assert_eq!(OllamaAgent::infer_sentiment("Of course! Let me explain."), Sentiment::Happy);
+        assert_eq!(
+            OllamaAgent::infer_sentiment("I'm happy to help you with that!"),
+            Sentiment::Happy
+        );
+        assert_eq!(
+            OllamaAgent::infer_sentiment("Of course! Let me explain."),
+            Sentiment::Happy
+        );
     }
 
     #[test]
     fn infer_sentiment_neutral_default() {
-        assert_eq!(OllamaAgent::infer_sentiment("The capital of France is Paris."), Sentiment::Neutral);
+        assert_eq!(
+            OllamaAgent::infer_sentiment("The capital of France is Paris."),
+            Sentiment::Neutral
+        );
+    }
+
+    #[test]
+    fn build_messages_no_history_no_memory() {
+        let agent = OllamaAgent::new("gemma3:4b");
+        let msgs = agent.build_messages("hello", &[], &[]);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "system");
+        assert_eq!(msgs[1].role, "user");
+        assert_eq!(msgs[1].content, "hello");
+    }
+
+    #[test]
+    fn build_messages_injects_memories() {
+        let agent = OllamaAgent::new("gemma3:4b");
+        let mems = vec!["User likes Python".to_string()];
+        let msgs = agent.build_messages("tell me about coding", &[], &mems);
+        assert!(msgs[0].content.contains("LONG-TERM MEMORY"));
+        assert!(msgs[0].content.contains("User likes Python"));
+    }
+
+    #[test]
+    fn build_messages_includes_history() {
+        let agent = OllamaAgent::new("gemma3:4b");
+        let history = vec![
+            ("user".to_string(), "previous question".to_string()),
+            ("assistant".to_string(), "previous answer".to_string()),
+        ];
+        let msgs = agent.build_messages("follow-up", &history, &[]);
+        // system + 2 history + current user
+        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs[1].content, "previous question");
+        assert_eq!(msgs[2].content, "previous answer");
+        assert_eq!(msgs[3].content, "follow-up");
     }
 
     #[tokio::test]
     async fn health_check_fails_gracefully_when_no_server() {
-        // Port 19999 is almost certainly not running Ollama.
         let agent = OllamaAgent::with_url("gemma3:4b", "http://127.0.0.1:19999");
-        let healthy = agent.health_check().await;
-        assert!(!healthy, "should return false when Ollama is unreachable");
+        assert!(!agent.health_check().await);
     }
 
     #[tokio::test]
@@ -385,13 +506,13 @@ mod tests {
         let (response, sentiment) = agent.respond("hello").await;
         assert!(
             response.contains("not reachable") || response.contains("ollama.ai"),
-            "unexpected response: {response}"
+            "unexpected: {response}"
         );
         assert_eq!(sentiment, Sentiment::Sad);
     }
 
     #[tokio::test]
-    async fn check_status_returns_not_running_when_no_server() {
+    async fn check_status_not_running_when_no_server() {
         let client = Client::new();
         let status = check_status(&client, "http://127.0.0.1:19999").await;
         assert!(!status.running);

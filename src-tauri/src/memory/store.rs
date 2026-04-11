@@ -102,7 +102,10 @@ impl MemoryStore {
     /// Falls back to an in-memory database if the file cannot be opened.
     pub fn new(data_dir: &Path) -> Self {
         let conn = Connection::open(data_dir.join("memory.db"))
-            .unwrap_or_else(|_| Connection::open_in_memory().expect("in-memory db"));
+            .unwrap_or_else(|_| {
+                Connection::open_in_memory()
+                    .expect("Failed to create in-memory SQLite fallback database")
+            });
         conn.execute_batch(SCHEMA)
             .expect("memory schema init failed");
         MemoryStore { conn }
@@ -110,7 +113,8 @@ impl MemoryStore {
 
     /// Create an in-memory store (for tests).
     pub fn in_memory() -> Self {
-        let conn = Connection::open_in_memory().expect("in-memory db");
+        let conn = Connection::open_in_memory()
+            .expect("Failed to create in-memory SQLite database");
         conn.execute_batch(SCHEMA).expect("memory schema init");
         MemoryStore { conn }
     }

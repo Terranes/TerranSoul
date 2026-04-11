@@ -99,3 +99,55 @@ export interface InstalledAgentInfo {
   description: string;
   install_path: string;
 }
+
+// ── Brain / Ollama ────────────────────────────────────────────────────────────
+
+export interface SystemInfo {
+  total_ram_mb: number;
+  ram_tier_label: string;
+  cpu_cores: number;
+  cpu_name: string;
+  os_name: string;
+  arch: string;
+}
+
+export interface ModelRecommendation {
+  model_tag: string;
+  display_name: string;
+  description: string;
+  required_ram_mb: number;
+  is_top_pick: boolean;
+}
+
+export interface OllamaStatus {
+  running: boolean;
+  model_count: number;
+}
+
+export interface OllamaModelEntry {
+  name: string;
+  size: number;
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+export type MemoryType = 'fact' | 'preference' | 'context' | 'summary';
+
+export interface MemoryEntry {
+  id: number;
+  content: string;
+  tags: string;
+  importance: number;
+  memory_type: MemoryType;
+  created_at: number;
+  last_accessed: number | null;
+  access_count: number;
+}
+
+export interface NewMemory {
+  content: string;
+  tags: string;
+  importance: number;
+  memory_type: MemoryType;
+}
+
