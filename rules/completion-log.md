@@ -729,3 +729,51 @@ the frontend to parse and validate manifests, and add TypeScript types and a Pin
 - **Vitest:** 14 test files, 126 tests (10 new package store tests)
 - **Clippy:** 0 warnings
 - **TypeScript:** `vue-tsc --noEmit` passes with 0 errors
+
+---
+
+## Chunk 031 — Install / Update / Remove Commands
+
+**Date:** 2026-04-11
+**Status:** ✅ Done
+
+### Goal
+Implement agent install, update, remove, and list commands. Registry client trait with mock
+implementation for testing. SHA-256 hash verification for downloaded binaries. File-backed
+persistence of installed agent manifests and binaries.
+
+### Architecture
+- `RegistrySource` trait: async fetch_manifest, download_binary, search. Allows swapping real
+  HTTP registry for mock in tests.
+- `MockRegistry`: in-memory HashMap-backed registry for testing.
+- `PackageInstaller`: manages `agents/` directory. On install: fetch manifest → download binary →
+  verify SHA-256 → write manifest.json + agent.bin. On update: check version, re-download if newer.
+  On remove: delete agent directory. Reloads installed manifests from disk on construction.
+- Pure-Rust SHA-256 implementation (no new crate dependency) for hash verification.
+- 4 new Tauri commands: install_agent, update_agent, remove_agent, list_installed_agents.
+- AppState gains `package_installer` and `package_registry` TokioMutex fields.
+  `AppState::new()` now takes `data_dir: &Path`.
+
+### Files Created
+**Rust (src-tauri/src/)**
+- `package_manager/registry.rs` — RegistrySource trait, RegistryError, MockRegistry (8 tests)
+- `package_manager/installer.rs` — PackageInstaller, InstalledAgent, InstallerError, SHA-256
+  digest, filesystem persistence (16 tests)
+
+### Files Modified
+**Rust (src-tauri/src/)**
+- `package_manager/mod.rs` — Added registry and installer re-exports
+- `commands/package.rs` — Added InstalledAgentInfo, install_agent, update_agent, remove_agent,
+  list_installed_agents Tauri commands
+- `lib.rs` — AppState gains 2 new fields, `new()` takes data_dir, 4 new commands registered
+
+**Frontend (src/)**
+- `types/index.ts` — Added InstalledAgentInfo interface
+- `stores/package.ts` — Added installAgent, updateAgent, removeAgent, fetchInstalledAgents, installedAgents ref
+- `stores/package.test.ts` — Expanded to 18 tests (8 new)
+
+### Test Counts
+- **Rust:** 193 total (24 new: 8 registry + 16 installer)
+- **Vitest:** 14 test files, 134 tests (18 package store tests, 8 new)
+- **Clippy:** 0 warnings
+- **TypeScript:** `vue-tsc --noEmit` passes with 0 errors

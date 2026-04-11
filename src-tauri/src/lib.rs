@@ -21,7 +21,10 @@ use commands::{
         remove_trusted_device_cmd,
     },
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
-    package::{get_ipc_protocol_range, parse_agent_manifest, validate_agent_manifest},
+    package::{
+        get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
+        remove_agent, update_agent, validate_agent_manifest,
+    },
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions,
         list_pending_commands, set_device_permission,
@@ -37,10 +40,12 @@ pub struct AppState {
     pub link_manager: TokioMutex<link::manager::LinkManager>,
     pub link_server_port: TokioMutex<Option<u16>>,
     pub command_router: TokioMutex<routing::CommandRouter>,
+    pub package_installer: TokioMutex<package_manager::PackageInstaller>,
+    pub package_registry: TokioMutex<package_manager::MockRegistry>,
 }
 
 impl AppState {
-    fn new() -> Self {
+    fn new(data_dir: &std::path::Path) -> Self {
         AppState {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
@@ -49,13 +54,15 @@ impl AppState {
             link_manager: TokioMutex::new(link::manager::LinkManager::new()),
             link_server_port: TokioMutex::new(None),
             command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
+            package_installer: TokioMutex::new(package_manager::PackageInstaller::new(data_dir)),
+            package_registry: TokioMutex::new(package_manager::MockRegistry::new()),
         }
     }
 
     /// Convenience constructor for unit tests that only exercise chat/character logic.
     #[cfg(test)]
     pub fn for_test() -> Self {
-        Self::new()
+        Self::new(std::path::Path::new("."))
     }
 }
 
@@ -63,7 +70,6 @@ impl AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             send_message,
             get_conversation,
@@ -86,6 +92,10 @@ pub fn run() {
             parse_agent_manifest,
             validate_agent_manifest,
             get_ipc_protocol_range,
+            install_agent,
+            update_agent,
+            remove_agent,
+            list_installed_agents,
         ])
         .setup(|app| {
             let data_dir = app
@@ -93,6 +103,7 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
+            app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
 
             let identity = load_or_generate_identity(&data_dir)

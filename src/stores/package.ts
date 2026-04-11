@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { ManifestInfo } from '../types';
+import type { ManifestInfo, InstalledAgentInfo } from '../types';
 
 export const usePackageStore = defineStore('package', () => {
   const currentManifest = ref<ManifestInfo | null>(null);
+  const installedAgents = ref<InstalledAgentInfo[]>([]);
   const error = ref<string | null>(null);
   const isLoading = ref(false);
 
@@ -49,6 +50,60 @@ export const usePackageStore = defineStore('package', () => {
     }
   }
 
+  async function installAgent(agentName: string): Promise<InstalledAgentInfo | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const result = await invoke<InstalledAgentInfo>('install_agent', { agentName });
+      await fetchInstalledAgents();
+      return result;
+    } catch (err) {
+      error.value = String(err);
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function updateAgent(agentName: string): Promise<InstalledAgentInfo | null> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const result = await invoke<InstalledAgentInfo>('update_agent', { agentName });
+      await fetchInstalledAgents();
+      return result;
+    } catch (err) {
+      error.value = String(err);
+      return null;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function removeAgent(agentName: string): Promise<boolean> {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      await invoke('remove_agent', { agentName });
+      await fetchInstalledAgents();
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function fetchInstalledAgents(): Promise<void> {
+    try {
+      installedAgents.value = await invoke<InstalledAgentInfo[]>('list_installed_agents');
+      error.value = null;
+    } catch (err) {
+      error.value = String(err);
+    }
+  }
+
   function clearManifest() {
     currentManifest.value = null;
     error.value = null;
@@ -60,11 +115,16 @@ export const usePackageStore = defineStore('package', () => {
 
   return {
     currentManifest,
+    installedAgents,
     error,
     isLoading,
     parseManifest,
     validateManifest,
     getIpcProtocolRange,
+    installAgent,
+    updateAgent,
+    removeAgent,
+    fetchInstalledAgents,
     clearManifest,
     clearError,
   };

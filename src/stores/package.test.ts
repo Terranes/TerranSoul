@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { usePackageStore } from './package';
-import type { ManifestInfo } from '../types';
+import type { ManifestInfo, InstalledAgentInfo } from '../types';
 
 const mockInvoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
@@ -25,15 +25,23 @@ const sampleManifest: ManifestInfo = {
   homepage: null,
 };
 
+const sampleInstalled: InstalledAgentInfo = {
+  name: 'stub-agent',
+  version: '1.0.0',
+  description: 'A stub agent for testing',
+  install_path: '/data/agents/stub-agent',
+};
+
 describe('package store — IPC integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
   });
 
-  it('initial state: no manifest, no error, not loading', () => {
+  it('initial state: no manifest, no installed, no error, not loading', () => {
     const store = usePackageStore();
     expect(store.currentManifest).toBeNull();
+    expect(store.installedAgents).toHaveLength(0);
     expect(store.error).toBeNull();
     expect(store.isLoading).toBe(false);
   });
@@ -94,6 +102,80 @@ describe('package store — IPC integration', () => {
     const store = usePackageStore();
     const range = await store.getIpcProtocolRange();
     expect(range).toBeNull();
+    expect(store.error).toContain('backend error');
+  });
+
+  it('installAgent calls invoke and refreshes list', async () => {
+    mockInvoke
+      .mockResolvedValueOnce(sampleInstalled)       // install_agent
+      .mockResolvedValueOnce([sampleInstalled]);     // list_installed_agents
+    const store = usePackageStore();
+    const result = await store.installAgent('stub-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('install_agent', { agentName: 'stub-agent' });
+    expect(result).toEqual(sampleInstalled);
+    expect(store.installedAgents).toHaveLength(1);
+    expect(store.isLoading).toBe(false);
+  });
+
+  it('installAgent sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('already installed'));
+    const store = usePackageStore();
+    const result = await store.installAgent('stub-agent');
+    expect(result).toBeNull();
+    expect(store.error).toContain('already installed');
+  });
+
+  it('updateAgent calls invoke and refreshes list', async () => {
+    const updated: InstalledAgentInfo = { ...sampleInstalled, version: '2.0.0' };
+    mockInvoke
+      .mockResolvedValueOnce(updated)               // update_agent
+      .mockResolvedValueOnce([updated]);             // list_installed_agents
+    const store = usePackageStore();
+    const result = await store.updateAgent('stub-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('update_agent', { agentName: 'stub-agent' });
+    expect(result).toEqual(updated);
+  });
+
+  it('updateAgent sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('not installed'));
+    const store = usePackageStore();
+    const result = await store.updateAgent('stub-agent');
+    expect(result).toBeNull();
+    expect(store.error).toContain('not installed');
+  });
+
+  it('removeAgent calls invoke and refreshes list', async () => {
+    mockInvoke
+      .mockResolvedValueOnce(undefined)   // remove_agent
+      .mockResolvedValueOnce([]);         // list_installed_agents
+    const store = usePackageStore();
+    const result = await store.removeAgent('stub-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('remove_agent', { agentName: 'stub-agent' });
+    expect(result).toBe(true);
+    expect(store.installedAgents).toHaveLength(0);
+  });
+
+  it('removeAgent sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('not installed'));
+    const store = usePackageStore();
+    const result = await store.removeAgent('nonexistent');
+    expect(result).toBe(false);
+    expect(store.error).toContain('not installed');
+  });
+
+  it('fetchInstalledAgents populates list', async () => {
+    mockInvoke.mockResolvedValueOnce([sampleInstalled]);
+    const store = usePackageStore();
+    await store.fetchInstalledAgents();
+    expect(mockInvoke).toHaveBeenCalledWith('list_installed_agents');
+    expect(store.installedAgents).toHaveLength(1);
+    expect(store.installedAgents[0]).toEqual(sampleInstalled);
+  });
+
+  it('fetchInstalledAgents sets error on failure', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('backend error'));
+    const store = usePackageStore();
+    await store.fetchInstalledAgents();
     expect(store.error).toContain('backend error');
   });
 

@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 031** — Install / Update / Remove Commands (Phase 3)
+**Chunk 032** — Agent Registry (Phase 3)
 
 ---
 
@@ -143,8 +143,12 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 AgentManifest schema, parser, validation, 3 Tauri commands, Pinia store.
 28 Rust tests, 10 Vitest tests.
 
+✅ Chunk 031 — Install / Update / Remove Commands — see `rules/completion-log.md`
+
+RegistrySource trait, MockRegistry, PackageInstaller, SHA-256 verification.
+4 new Tauri commands, 24 new Rust tests, 8 new Vitest tests.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 031 | **Install / Update / Remove Commands** — Implement `terransoul install <agent>`, `update <agent>`, `remove <agent>`, `list` CLI commands via Tauri shell plugin. Download, verify hash/signature, and install agent binary. Write integration tests with a local mock registry. | `not-started` |
 | 032 | **Agent Registry** — Stand up a minimal registry server (Rust `axum`) that serves manifest JSON and binary downloads. Implement `terransoul search <query>` command. Host official agents (stub, OpenClaw bridge). | `not-started` |
 | 033 | **Agent Sandboxing** — Run community agents inside a WASM sandbox (via `wasmtime`). Expose a capability-gated host API: file access, clipboard, network — each requires explicit user consent recorded in settings. Write security tests verifying capability enforcement. | `not-started` |

@@ -92,3 +92,10 @@ export interface ManifestInfo {
   license: string | null;
   homepage: string | null;
 }
+
+export interface InstalledAgentInfo {
+  name: string;
+  version: string;
+  description: string;
+  install_path: string;
+}

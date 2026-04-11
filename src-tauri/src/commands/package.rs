@@ -1,5 +1,8 @@
 use serde::Serialize;
+use tauri::State;
+
 use crate::package_manager;
+use crate::AppState;
 
 /// Frontend-facing manifest summary returned from Tauri commands.
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +57,26 @@ impl From<&package_manager::AgentManifest> for ManifestInfo {
     }
 }
 
+/// Frontend-facing installed agent summary.
+#[derive(Debug, Clone, Serialize)]
+pub struct InstalledAgentInfo {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub install_path: String,
+}
+
+impl From<&package_manager::InstalledAgent> for InstalledAgentInfo {
+    fn from(a: &package_manager::InstalledAgent) -> Self {
+        InstalledAgentInfo {
+            name: a.name.clone(),
+            version: a.version.clone(),
+            description: a.description.clone(),
+            install_path: a.install_path.clone(),
+        }
+    }
+}
+
 /// Parse and validate a manifest JSON string, returning a summary for the frontend.
 #[tauri::command]
 pub async fn parse_agent_manifest(json: String) -> Result<ManifestInfo, String> {
@@ -76,4 +99,59 @@ pub async fn get_ipc_protocol_range() -> Result<(u32, u32), String> {
         package_manager::MIN_IPC_PROTOCOL_VERSION,
         package_manager::MAX_IPC_PROTOCOL_VERSION,
     ))
+}
+
+/// Install an agent from the mock registry.
+#[tauri::command]
+pub async fn install_agent(
+    agent_name: String,
+    state: State<'_, AppState>,
+) -> Result<InstalledAgentInfo, String> {
+    let mut installer = state.package_installer.lock().await;
+    let registry = state.package_registry.lock().await;
+    let result = installer
+        .install(&agent_name, &*registry)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(InstalledAgentInfo::from(&result))
+}
+
+/// Update an installed agent to the latest version.
+#[tauri::command]
+pub async fn update_agent(
+    agent_name: String,
+    state: State<'_, AppState>,
+) -> Result<InstalledAgentInfo, String> {
+    let mut installer = state.package_installer.lock().await;
+    let registry = state.package_registry.lock().await;
+    let result = installer
+        .update(&agent_name, &*registry)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(InstalledAgentInfo::from(&result))
+}
+
+/// Remove an installed agent.
+#[tauri::command]
+pub async fn remove_agent(
+    agent_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut installer = state.package_installer.lock().await;
+    installer
+        .remove(&agent_name)
+        .map_err(|e| e.to_string())
+}
+
+/// List all installed agents.
+#[tauri::command]
+pub async fn list_installed_agents(
+    state: State<'_, AppState>,
+) -> Result<Vec<InstalledAgentInfo>, String> {
+    let installer = state.package_installer.lock().await;
+    Ok(installer
+        .list_installed()
+        .iter()
+        .map(InstalledAgentInfo::from)
+        .collect())
 }
