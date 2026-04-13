@@ -1370,3 +1370,85 @@ and automatically fall back to the next healthy provider on HTTP 429 or quota ex
 - **Rust:** 23 new tests (provider_rotator) — 387 total
 - **Vitest:** 24 new tests (12 provider-health, 7 free-api-client, 5 conversation) — 296 total across 25 files
 - **Build:** `npm run build` ✓, `cargo test --lib` ✓, `cargo clippy` ✓
+
+---
+
+## Chunk 060 — Voice Abstraction Layer + Open-LLM-VTuber Integration
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Complete the Voice Abstraction Layer (Phase 6) with frontend voice setup wizard and
+Open-LLM-VTuber integration. Users can choose their preferred voice provider — same
+philosophy as the brain system where users pick their own LLM model.
+
+### Architecture
+
+**Rust — Voice Provider Catalogue** (`src-tauri/src/voice/mod.rs`):
+- Added Open-LLM-VTuber as both ASR and TTS provider in the catalogue.
+- ASR providers: stub, web-speech, whisper-api, sidecar-asr, open-llm-vtuber (5 total).
+- TTS providers: stub, edge-tts, openai-tts, sidecar-tts, open-llm-vtuber (5 total).
+- All existing Tauri commands (list_asr_providers, list_tts_providers, get_voice_config,
+  set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
+  clear_voice_config) already wired and registered.
+
+**TypeScript — Types** (`src/types/index.ts`):
+- `VoiceProviderInfo` interface matching Rust struct.
+- `VoiceConfig` interface matching Rust VoiceConfig.
+
+**TypeScript — Voice Store** (`src/stores/voice.ts`):
+- `useVoiceStore` Pinia store wrapping all voice Tauri commands.
+- Fallback provider catalogues for browser-side use when Tauri unavailable.
+- Computed: `hasVoice`, `isTextOnly`, `selectedAsrProvider`, `selectedTtsProvider`.
+- Actions: `initialise`, `setAsrProvider`, `setTtsProvider`, `setApiKey`,
+  `setEndpointUrl`, `clearConfig`.
+
+**TypeScript — Open-LLM-VTuber Client** (`src/utils/ollv-client.ts`):
+- `OllvClient` WebSocket client implementing Open-LLM-VTuber's protocol.
+- Outgoing messages: text-input, mic-audio-data, mic-audio-end, interrupt-signal.
+- Incoming messages: audio (with lip-sync volumes), user-input-transcription,
+  full-text, conversation-chain-start/end, interrupt-signal, control.
+- `OllvClient.healthCheck()` static method for connection verification.
+- Default URL: `ws://localhost:12393/client-ws`.
+- All message types fully typed with TypeScript interfaces.
+
+**Vue — VoiceSetupView** (`src/views/VoiceSetupView.vue`):
+- Step-by-step wizard mirroring BrainSetupView.vue UX pattern.
+- Step 0: Choose voice mode (Open-LLM-VTuber recommended, Browser, Cloud API, Text Only).
+- Step 1A: Open-LLM-VTuber config with WebSocket URL + health check.
+- Step 1B: Browser voice (Web Speech API).
+- Step 1C: Cloud API with API key and ASR/TTS checkboxes.
+- Done screen with confirmation.
+- Install instructions for Open-LLM-VTuber included.
+
+**App Integration** (`src/App.vue`):
+- Added 🎤 Voice tab to navigation.
+- VoiceSetupView mounted when voice tab is active.
+- Returns to chat tab on completion.
+
+### Open-LLM-VTuber Integration Details
+- Studied Open-LLM-VTuber's WebSocket protocol (websocket_handler.py).
+- Frontend sends text or audio via WS, server processes through its LLM/TTS/ASR pipeline.
+- Server returns audio with lip-sync volumes for mouth animation.
+- Supports 18+ TTS engines (Edge, OpenAI, ElevenLabs, CosyVoice, etc.).
+- Supports 7+ ASR engines (Faster Whisper, Groq, sherpa-onnx, etc.).
+- Each client gets unique context and can connect independently.
+
+### Files Created
+- `src/stores/voice.ts` — Pinia store for voice configuration
+- `src/stores/voice.test.ts` — 12 tests for voice store
+- `src/utils/ollv-client.ts` — Open-LLM-VTuber WebSocket client
+- `src/utils/ollv-client.test.ts` — 19 tests for OLLV client
+- `src/views/VoiceSetupView.vue` — Voice setup wizard
+
+### Files Modified
+- `src-tauri/src/voice/mod.rs` — Added open-llm-vtuber to ASR + TTS catalogues
+- `src/types/index.ts` — VoiceProviderInfo + VoiceConfig interfaces
+- `src/App.vue` — Added Voice tab + VoiceSetupView integration
+- `rules/milestones.md` — Marked chunk 060 done, updated Next Chunk to 061
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 060)
+- **Vitest:** 31 new tests (12 voice store, 19 OLLV client) — 329 total across 27 files
+- **Build:** `npm run build` ✓

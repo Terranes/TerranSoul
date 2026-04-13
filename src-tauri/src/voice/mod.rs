@@ -138,6 +138,14 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             requires_api_key: false,
             requires_sidecar: true,
         },
+        VoiceProviderInfo {
+            id: "open-llm-vtuber".into(),
+            display_name: "Open-LLM-VTuber".into(),
+            description: "Connect to a running Open-LLM-VTuber server. Supports 7+ ASR engines via WebSocket.".into(),
+            kind: "sidecar".into(),
+            requires_api_key: false,
+            requires_sidecar: true,
+        },
     ]
 }
 
@@ -172,6 +180,14 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             id: "sidecar-tts".into(),
             display_name: "Sidecar TTS (Python)".into(),
             description: "Local Python sidecar for engines like VibeVoice or sherpa-onnx.".into(),
+            kind: "sidecar".into(),
+            requires_api_key: false,
+            requires_sidecar: true,
+        },
+        VoiceProviderInfo {
+            id: "open-llm-vtuber".into(),
+            display_name: "Open-LLM-VTuber".into(),
+            description: "Connect to a running Open-LLM-VTuber server. Supports 18+ TTS engines via WebSocket.".into(),
             kind: "sidecar".into(),
             requires_api_key: false,
             requires_sidecar: true,

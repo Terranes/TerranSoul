@@ -28,6 +28,7 @@
         <ChatView v-show="activeTab === 'chat'" />
         <MemoryView v-if="activeTab === 'memory'" />
         <MarketplaceView v-if="activeTab === 'marketplace'" />
+        <VoiceSetupView v-if="activeTab === 'voice'" @done="activeTab = 'chat'" />
       </main>
     </template>
   </div>
@@ -40,9 +41,10 @@ import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import BrainSetupView from './views/BrainSetupView.vue';
+import VoiceSetupView from './views/VoiceSetupView.vue';
 
 const brain = useBrainStore();
-const activeTab = ref<'chat' | 'memory' | 'marketplace'>('chat');
+const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice'>('chat');
 const skipSetup = ref(false);
 
 const hasBrain = computed(() => brain.hasBrain);
@@ -51,6 +53,7 @@ const tabs = [
   { id: 'chat' as const, icon: '💬', label: 'Chat' },
   { id: 'memory' as const, icon: '🧠', label: 'Memory' },
   { id: 'marketplace' as const, icon: '🏪', label: 'Marketplace' },
+  { id: 'voice' as const, icon: '🎤', label: 'Voice' },
 ];
 
 async function onBrainDone() {
