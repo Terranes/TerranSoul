@@ -4,12 +4,14 @@ import type { AnimationPersona, CharacterState } from '../types';
 
 // ── JSON animation data types ────────────────────────────────────────
 
-/** A single bone track: Euler rotations at specific times. */
+/** A single bone track: Euler rotations and/or positions at specific times. */
 interface BoneTrack {
   bone: string;
   times: number[];
   /** [x, y, z] Euler rotations (radians) per keyframe. */
-  rotations: [number, number, number][];
+  rotations?: [number, number, number][];
+  /** [x, y, z] local-space positions per keyframe (e.g. hips vertical bob). */
+  positions?: [number, number, number][];
 }
 
 interface ClipData {
@@ -84,14 +86,32 @@ function buildClip(vrm: VRM, name: string, clipData: ClipData): THREE.AnimationC
     const node = vrm.humanoid?.getNormalizedBoneNode(boneName);
     if (!node) continue;
 
-    const quatValues = eulerToQuatArray(t.rotations);
-    tracks.push(
-      new THREE.QuaternionKeyframeTrack(
-        `${node.name}.quaternion`,
-        t.times,
-        quatValues,
-      ),
-    );
+    // Rotation track (Euler → Quaternion)
+    if (t.rotations && t.rotations.length > 0) {
+      const quatValues = eulerToQuatArray(t.rotations);
+      tracks.push(
+        new THREE.QuaternionKeyframeTrack(
+          `${node.name}.quaternion`,
+          t.times,
+          quatValues,
+        ),
+      );
+    }
+
+    // Position track (for hips vertical bob, etc.)
+    if (t.positions && t.positions.length > 0) {
+      const posValues: number[] = [];
+      for (const [x, y, z] of t.positions) {
+        posValues.push(x, y, z);
+      }
+      tracks.push(
+        new THREE.VectorKeyframeTrack(
+          `${node.name}.position`,
+          t.times,
+          posValues,
+        ),
+      );
+    }
   }
 
   return new THREE.AnimationClip(name, clipData.duration, tracks);
