@@ -275,6 +275,21 @@ watch(
   color: #d4a0ff;
 }
 
+.state-badge.angry {
+  background: rgba(255, 80, 60, 0.35);
+  color: #ff8a80;
+}
+
+.state-badge.relaxed {
+  background: rgba(80, 200, 180, 0.35);
+  color: #80e8d0;
+}
+
+.state-badge.surprised {
+  background: rgba(255, 180, 50, 0.35);
+  color: #ffc850;
+}
+
 .debug-overlay {
   position: absolute;
   bottom: 10px;

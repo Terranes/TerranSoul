@@ -1,5 +1,11 @@
 <template>
   <div class="message-list" ref="listRef">
+    <!-- Welcome state when no messages yet -->
+    <div v-if="messages.length === 0 && !isThinking" class="welcome-state">
+      <div class="welcome-icon">💬</div>
+      <p class="welcome-title">Welcome to TerranSoul</p>
+      <p class="welcome-hint">Type a message below to start chatting with your AI companion.</p>
+    </div>
     <TransitionGroup name="msg">
       <div
         v-for="msg in messages"
@@ -121,5 +127,38 @@ watch(() => props.isThinking, scrollToBottom);
 
 .msg-leave-to {
   opacity: 0;
+}
+
+/* Welcome / empty state */
+.welcome-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.welcome-icon {
+  font-size: 2.2rem;
+  margin-bottom: 4px;
+}
+
+.welcome-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e8e8f0;
+}
+
+.welcome-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.45);
+  max-width: 260px;
+  line-height: 1.4;
 }
 </style>

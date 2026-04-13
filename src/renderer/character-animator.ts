@@ -14,11 +14,14 @@ function smoothStep(current: number, target: number, speed: number, delta: numbe
 // ── Expression targets per state (persona-agnostic — expressions don't
 //    change much between personas). ──────────────────────────────────
 const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
-  idle:     { relaxed: 0.25 },
-  thinking: { neutral: 0.3 },
-  talking:  { relaxed: 0.15 },
-  happy:    { happy: 0.7, relaxed: 0.2 },
-  sad:      { sad: 0.6 },
+  idle:      { relaxed: 0.25 },
+  thinking:  { neutral: 0.3 },
+  talking:   { relaxed: 0.15 },
+  happy:     { happy: 0.7, relaxed: 0.2 },
+  sad:       { sad: 0.6 },
+  angry:     { angry: 0.7 },
+  relaxed:   { relaxed: 0.6, happy: 0.15 },
+  surprised: { surprised: 0.8 },
 };
 
 /**
@@ -301,7 +304,7 @@ export class CharacterAnimator {
   }
 
   private clearExpressionTargets() {
-    for (const name of ['aa', 'oh', 'happy', 'sad', 'angry', 'relaxed', 'neutral']) {
+    for (const name of ['aa', 'oh', 'happy', 'sad', 'angry', 'relaxed', 'surprised', 'neutral']) {
       this.expressionTargets.set(name, 0);
     }
   }
@@ -357,6 +360,24 @@ export class CharacterAnimator {
         this.placeholder.rotation.z = Math.sin(t * 0.5) * 0.02;
         this.placeholder.rotation.x = 0.1;
         this.placeholder.scale.setScalar(0.95 + Math.sin(t * 0.3) * 0.02);
+        break;
+
+      case 'angry':
+        this.placeholder.position.y = Math.sin(t * 8.0) * 0.015;
+        this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.06;
+        this.placeholder.scale.setScalar(1.0 + Math.abs(Math.sin(t * 4.0)) * 0.03);
+        break;
+
+      case 'relaxed':
+        this.placeholder.position.y = Math.sin(t * 0.5) * 0.02;
+        this.placeholder.rotation.y = Math.sin(t * 0.3) * 0.06;
+        this.placeholder.scale.setScalar(1.0);
+        break;
+
+      case 'surprised':
+        this.placeholder.position.y = Math.max(0, Math.sin(t * 3.0)) * 0.06;
+        this.placeholder.rotation.z = Math.sin(t * 4.0) * 0.05;
+        this.placeholder.scale.setScalar(1.0 + Math.abs(Math.sin(t * 3.0)) * 0.06);
         break;
     }
   }

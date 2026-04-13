@@ -24,8 +24,9 @@ pub mod voice;
 use commands::{
     agent::list_agents,
     brain::{
-        check_ollama_status, clear_active_brain, get_active_brain, get_ollama_models,
-        get_system_info, pull_ollama_model, recommend_brain_models, set_active_brain,
+        check_ollama_status, clear_active_brain, get_active_brain, get_brain_mode,
+        get_ollama_models, get_system_info, list_free_providers, pull_ollama_model,
+        recommend_brain_models, set_active_brain, set_brain_mode,
     },
     character::load_vrm,
     chat::{get_conversation, send_message},
@@ -82,6 +83,8 @@ pub struct AppState {
     pub package_registry: TokioMutex<Box<dyn package_manager::RegistrySource + Send + Sync>>,
     /// Name of the active Ollama brain model (e.g. "gemma3:4b"), or None for stub agent.
     pub active_brain: Mutex<Option<String>>,
+    /// Three-tier brain mode configuration (free API / paid API / local Ollama).
+    pub brain_mode: Mutex<Option<brain::BrainMode>>,
     /// Shared reqwest client for all Ollama HTTP calls.
     pub ollama_client: reqwest::Client,
     /// Application data directory for persisting settings and installed agents.
@@ -107,6 +110,7 @@ impl AppState {
     /// [`AppState::for_test`] instead.
     fn new(data_dir: &std::path::Path) -> Self {
         let active_brain = brain::load_brain(data_dir);
+        let brain_mode = brain::brain_config::load(data_dir);
         AppState {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
@@ -118,6 +122,7 @@ impl AppState {
             package_installer: TokioMutex::new(package_manager::PackageInstaller::new(data_dir)),
             package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(active_brain),
+            brain_mode: Mutex::new(brain_mode),
             ollama_client: reqwest::Client::new(),
             data_dir: data_dir.to_path_buf(),
             memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
@@ -145,6 +150,7 @@ impl AppState {
             )),
             package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(None),
+            brain_mode: Mutex::new(None),
             ollama_client: reqwest::Client::new(),
             data_dir: std::path::PathBuf::from("."),
             memory_store: Mutex::new(memory::MemoryStore::in_memory()),
@@ -226,6 +232,9 @@ pub fn run() {
             get_all_monitors,
             set_pet_mode_bounds,
             send_message_stream,
+            list_free_providers,
+            get_brain_mode,
+            set_brain_mode,
             list_asr_providers,
             list_tts_providers,
             get_voice_config,

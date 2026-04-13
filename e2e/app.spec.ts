@@ -187,7 +187,7 @@ test.describe('3D Character Loading & Animation', () => {
     await expect(selector).toBeVisible();
 
     const options = selector.locator('option');
-    await expect(options).toHaveCount(4);
+    await expect(options).toHaveCount(2);
 
     // Default selection should be Annabelle
     await expect(selector).toHaveValue('annabelle');
@@ -475,5 +475,157 @@ test.describe('Animation & AI Emotion', () => {
     // Should transition to happy state (cool-happy: confident lean)
     await expect(badge).toContainText('happy', { timeout: 10_000 });
     await expect(badge).toContainText('idle', { timeout: 10_000 });
+  });
+
+  test('angry message triggers angry emotion on character', async ({ page }) => {
+    await page.goto('/');
+
+    const badge = page.locator('.state-badge');
+    const input = page.locator('.chat-input');
+    const sendBtn = page.locator('.send-btn');
+
+    await expect(badge).toContainText('idle');
+
+    await input.fill('I am so angry and frustrated!');
+    await sendBtn.click();
+
+    await expect(badge).toContainText('angry', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+  });
+
+  test('relaxed message triggers relaxed emotion on character', async ({ page }) => {
+    await page.goto('/');
+
+    const badge = page.locator('.state-badge');
+    const input = page.locator('.chat-input');
+    const sendBtn = page.locator('.send-btn');
+
+    await expect(badge).toContainText('idle');
+
+    await input.fill('I want to relax and feel calm');
+    await sendBtn.click();
+
+    await expect(badge).toContainText('relaxed', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+  });
+
+  test('surprised message triggers surprised emotion on character', async ({ page }) => {
+    await page.goto('/');
+
+    const badge = page.locator('.state-badge');
+    const input = page.locator('.chat-input');
+    const sendBtn = page.locator('.send-btn');
+
+    await expect(badge).toContainText('idle');
+
+    await input.fill('Wow that is so surprising!');
+    await sendBtn.click();
+
+    await expect(badge).toContainText('surprised', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+  });
+
+  test('all 8 emotion states cycle correctly across messages', async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.goto('/');
+
+    const badge = page.locator('.state-badge');
+    const input = page.locator('.chat-input');
+    const sendBtn = page.locator('.send-btn');
+
+    // happy → idle
+    await input.fill('Hey there!');
+    await sendBtn.click();
+    await expect(badge).toContainText('happy', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+
+    // sad → idle
+    await input.fill('That makes me sad');
+    await sendBtn.click();
+    await expect(badge).toContainText('sad', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+
+    // angry → idle
+    await input.fill('I am so frustrated and angry');
+    await sendBtn.click();
+    await expect(badge).toContainText('angry', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+
+    // relaxed → idle
+    await input.fill('Let me relax a bit');
+    await sendBtn.click();
+    await expect(badge).toContainText('relaxed', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+
+    // surprised → idle
+    await input.fill('Wow that is amazing!');
+    await sendBtn.click();
+    await expect(badge).toContainText('surprised', { timeout: 5_000 });
+    await expect(badge).toContainText('idle', { timeout: 10_000 });
+
+    // happy again
+    await input.fill('Actually, I feel awesome!');
+    await sendBtn.click();
+    await expect(badge).toContainText('happy', { timeout: 5_000 });
+  });
+});
+
+// ── Free LLM Brain Auto-Configuration ──────────────────────────────────
+//
+// NOTE: We intentionally keep only ONE test here to avoid spamming free LLM
+// providers during CI/CD runs. All assertions that verify free-API
+// auto-configuration are combined into this single test case.
+
+test.describe('Free LLM Brain', () => {
+  test('auto-configures free API, skips Ollama setup, and enables chat', async ({ page }) => {
+    await page.goto('/');
+
+    // 1. App should skip the brain setup wizard and show chat view directly
+    const chatView = page.locator('.chat-view');
+    await expect(chatView).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.brain-setup')).not.toBeVisible();
+
+    // 2. No "Ollama not running" error or brain setup card should appear
+    await expect(page.locator('text=Ollama not running')).not.toBeVisible();
+    await expect(page.locator('.brain-inline')).not.toBeVisible();
+
+    // 3. Brain store should report free_api mode via Pinia state
+    const brainState = await page.evaluate(() => {
+      const app = (document.querySelector('#app') as any)?.__vue_app__;
+      if (!app) return null;
+      const pinia = app.config.globalProperties.$pinia;
+      if (!pinia) return null;
+      const s = pinia.state.value.brain;
+      if (!s) return null;
+      return {
+        hasBrain: s.activeBrain !== null || s.brainMode !== null,
+        brainMode: s.brainMode,
+        freeProviders: s.freeProviders?.length ?? 0,
+      };
+    });
+    expect(brainState).not.toBeNull();
+    expect(brainState!.hasBrain).toBe(true);
+    expect(brainState!.brainMode).not.toBeNull();
+    expect(brainState!.brainMode.mode).toBe('free_api');
+    expect(brainState!.freeProviders).toBeGreaterThan(0);
+
+    // 4. Chat input should be usable — send a message and get a response
+    const input = page.locator('.chat-input');
+    await expect(input).toBeVisible();
+    await expect(input).toBeEnabled();
+
+    await input.fill('hello');
+    const sendBtn = page.locator('.send-btn');
+    await expect(sendBtn).toBeEnabled();
+    await sendBtn.click();
+
+    const userMsg = page.locator('.message-row.user').first();
+    await expect(userMsg).toBeVisible({ timeout: MESSAGE_TIMEOUT });
+    await expect(userMsg).toContainText('hello');
+
+    const assistantMsg = page.locator('.message-row.assistant').first();
+    await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
+    // Response should NOT mention Ollama — free API path is active
+    await expect(assistantMsg).not.toContainText('Ollama');
   });
 });

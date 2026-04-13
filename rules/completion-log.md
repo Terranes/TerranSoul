@@ -1161,3 +1161,136 @@ display. Map to VRM expressions. Support optional motion tags `[motion:wave]`.
 ### Test Counts (Phase 5 total)
 - **Rust:** 25 new tests (window 4 + streaming 4 + emotion 18) — 305 total
 - **Vitest:** 46 new tests (window 15 + streaming 11 + emotion 20) — 246 total across 22 files
+
+---
+
+## Chunk 055 — Free LLM API Provider Registry & OpenAI-Compatible Client
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Curate a free LLM API provider catalogue from awesome-free-llm-apis. Build a generic
+OpenAI-compatible chat client that works for all providers (POST `/v1/chat/completions`
+with SSE streaming). Create a three-tier `BrainMode` enum (FreeApi / PaidApi / LocalOllama)
+with JSON persistence and legacy migration from `active_brain.txt`.
+
+### Architecture
+- `brain/free_api.rs` — `FreeProvider` struct with `id`, `display_name`, `base_url`, `model`,
+  `rpm_limit`, `rpd_limit`, `requires_api_key`, `notes`. Curated catalogue of 8 providers:
+  Groq, Cerebras, SiliconFlow, Mistral, GitHub Models, OpenRouter, NVIDIA NIM, Google Gemini.
+- `brain/openai_client.rs` — `OpenAiClient` with `chat()` (non-streaming) and `chat_stream()`
+  (SSE streaming with callback). Handles `data: {...}` SSE lines and `data: [DONE]` sentinel.
+  Bearer auth when API key provided. Works with any OpenAI-compatible endpoint.
+- `brain/brain_config.rs` — `BrainMode` enum with serde tagged JSON (`"mode":"free_api"` /
+  `"mode":"paid_api"` / `"mode":"local_ollama"`). `load()` checks new `brain_config.json`
+  first, falls back to legacy `active_brain.txt` for migration. `save()` writes JSON.
+  `clear()` removes both new and legacy config files.
+- `commands/brain.rs` — `list_free_providers`, `get_brain_mode`, `set_brain_mode` Tauri commands.
+  `set_brain_mode` also updates legacy `active_brain` field for backwards compatibility.
+- `AppState` gains `brain_mode: Mutex<Option<BrainMode>>` field, loaded on startup.
+- Frontend `types/index.ts` — `FreeProvider` and `BrainMode` TypeScript types.
+- Frontend `stores/brain.ts` — `fetchFreeProviders()`, `loadBrainMode()`, `setBrainMode()`.
+  `hasBrain` computed now considers `brainMode` in addition to `activeBrain`.
+
+### Files Created
+- `src-tauri/src/brain/free_api.rs` — Free provider catalogue + 8 Rust tests
+- `src-tauri/src/brain/openai_client.rs` — OpenAI-compatible client + 11 Rust tests
+- `src-tauri/src/brain/brain_config.rs` — BrainMode config + 12 Rust tests
+
+### Files Modified
+- `src-tauri/src/brain/mod.rs` — Added free_api, openai_client, brain_config modules
+- `src-tauri/src/commands/brain.rs` — Added 3 new Tauri commands + 2 Rust tests
+- `src-tauri/src/lib.rs` — Registered new commands, added brain_mode to AppState
+- `src/types/index.ts` — Added FreeProvider, BrainMode types
+- `src/stores/brain.ts` — Added three-tier brain methods
+- `src/stores/brain.test.ts` — Added 9 new Vitest tests
+
+### New Tauri Commands
+`list_free_providers` · `get_brain_mode` · `set_brain_mode`
+
+### Test Counts (Phase 5.5 — Chunk 055)
+- **Rust:** 33 new tests (free_api 8 + openai_client 11 + brain_config 12 + commands 2) — 361 total
+- **Vitest:** 9 new tests — 264 total across 23 files
+
+---
+
+## Chunk 056+057 — Streaming BrainMode Routing, Auto-Selection & Wizard Redesign
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Route `send_message_stream` through BrainMode (free API SSE / paid API SSE / Ollama NDJSON).
+Auto-configure free API when Tauri backend is unavailable (zero-setup). Redesign the brain
+setup wizard as a three-tier selector (Free Cloud API / Paid Cloud API / Local Ollama).
+Write a single consolidated E2E test for free LLM brain (to avoid spamming free providers in CI/CD).
+
+### Architecture
+- `streaming.rs` — Refactored into helper functions: `stream_openai_api()` (SSE for free/paid),
+  `stream_ollama()` (NDJSON for local), `emit_stub_response()` (no brain fallback),
+  `store_assistant_message()` (shared). Routes via `brain_mode` → `active_brain` → stub.
+- `brain.ts` — `autoConfigureFreeApi()` sets `brainMode` to free_api/groq with fallback provider
+  list. `isFreeApiMode` computed. `initialise()` catches Tauri errors and auto-defaults.
+  `FALLBACK_FREE_PROVIDERS` constant for offline use.
+- `App.vue` — `onMounted` catches `loadActiveBrain()` failure and calls `autoConfigureFreeApi()`,
+  then also tries `loadBrainMode()`. Skips setup when any brain mode is configured.
+- `BrainSetupView.vue` — Three-tier wizard: Step 0 (choose tier), Step 1A (free provider list),
+  Step 1B (paid API credentials), Step 1C (local hardware analysis), Steps 2-5 (local flow).
+  Free API tier is pre-selected and highlighted with "Instant — no setup" badge.
+- `ChatView.vue` — Inline brain card now shows "☁️ Use Free Cloud API (no setup)" button above
+  the local Ollama section. Ollama warning only shown when local models are available.
+
+### Files Modified
+- `src-tauri/src/commands/streaming.rs` — Three-tier routing + 3 new Rust tests
+- `src/stores/brain.ts` — autoConfigureFreeApi(), isFreeApiMode, FALLBACK_FREE_PROVIDERS
+- `src/stores/brain.test.ts` — 5 new Vitest tests for auto-configure behavior
+- `src/App.vue` — Auto-configure free API on Tauri failure
+- `src/views/BrainSetupView.vue` — Three-tier wizard redesign
+- `src/views/ChatView.vue` — Free API quick-start in inline brain card
+- `e2e/app.spec.ts` — 1 consolidated E2E test (intentionally 1 test to avoid spamming free LLM providers in CI/CD)
+
+### Test Counts (Phase 5.5 — Chunks 056+057)
+- **Rust:** 3 new tests (streaming routing) — 364 total
+- **Vitest:** 5 new tests (auto-configure) — 269 total across 23 files
+- **E2E:** 1 new test (free LLM brain) — 28 total (27 existing + 1 new)
+
+---
+
+## Chunk 058 — Emotion Expansion & UI Fixes
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Extend the character emotion system from 5 states to 8 (adding angry, relaxed, surprised).
+Fix VRM thumbnail cropping in model panel. Add welcome/empty state to chat. Focus on
+different emotions and animations when the brain is installed.
+
+### Architecture
+- `types/index.ts` — CharacterState expanded: `'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised'`. Message sentiment expanded to include all 6 emotion tags.
+- `animation-loader.ts` — PersonaAnimationData interface updated with angry/relaxed/surprised fields. States array expanded.
+- `witch.json` + `idol.json` — 9 new animation variants (3 states × 3 variants each) with varied durations, loop_sin continuity, and natural bone rotation limits.
+- `character-animator.ts` — STATE_EXPRESSIONS for new emotions (angry: 0.7 angry expression, relaxed: 0.6 relaxed + 0.15 happy, surprised: 0.8 surprised). Placeholder animations for all new states.
+- `conversation.ts` — Persona fallback detects angry (angry/furious/frustrated), relaxed (relax/calm/peaceful), and surprised (surprise/wow/amazing) keywords.
+- `ChatView.vue` — sentimentToState expanded to route all 6 emotions to character states.
+- `CharacterViewport.vue` — State badge CSS for angry (red), relaxed (teal), surprised (amber).
+- `ModelPanel.vue` — Thumbnail cropping fixed: `object-fit: cover` → `object-fit: contain`, size 40→56px, subtle background.
+- `ChatMessageList.vue` — Welcome state shown when messages are empty: icon, title, hint text.
+
+### Files Modified
+- `src/types/index.ts` — CharacterState + Message sentiment expansion
+- `src/renderer/animation-loader.ts` — PersonaAnimationData + states array
+- `src/renderer/animations/witch.json` — 9 new animation variants
+- `src/renderer/animations/idol.json` — 9 new animation variants
+- `src/renderer/character-animator.ts` — STATE_EXPRESSIONS + placeholder animations
+- `src/stores/conversation.ts` — Persona fallback emotion detection
+- `src/views/ChatView.vue` — sentimentToState expansion
+- `src/components/CharacterViewport.vue` — State badge CSS
+- `src/components/ModelPanel.vue` — Thumbnail cropping fix
+- `src/components/ChatMessageList.vue` — Welcome state
+
+### Test Counts (Chunk 058)
+- **Vitest:** 3 new tests (angry/relaxed/surprised placeholder) — 272 total across 23 files
+- **E2E:** 4 new tests (angry/relaxed/surprised emotions + 8-emotion cycle) — 28 total
+- **E2E fix:** Model selector option count 4→2

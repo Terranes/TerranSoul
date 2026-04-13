@@ -8,7 +8,7 @@ import idolData from './animations/idol.json';
 const DATA_MAP: Record<string, any> = { witch: witchData, idol: idolData };
 
 const PERSONAS: AnimationPersona[] = ['witch', 'idol'];
-const STATES: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad'];
+const STATES: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'];
 
 describe('animation-loader JSON data', () => {
   // ── Anti-sinking regression test ─────────────────────────────────

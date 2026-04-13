@@ -2,6 +2,7 @@ use tauri::State;
 
 use crate::brain::{
     self, ModelRecommendation, OllamaStatus, SystemInfo,
+    BrainMode, FreeProvider,
 };
 use crate::AppState;
 
@@ -74,6 +75,50 @@ pub async fn clear_active_brain(state: State<'_, AppState>) -> Result<(), String
     Ok(())
 }
 
+// ── Three-Tier Brain Commands ────────────────────────────────────────────────
+
+/// Return the curated list of free LLM API providers.
+#[tauri::command]
+pub async fn list_free_providers() -> Vec<FreeProvider> {
+    brain::free_provider_catalogue()
+}
+
+/// Return the current brain mode configuration.
+#[tauri::command]
+pub async fn get_brain_mode(state: State<'_, AppState>) -> Result<Option<BrainMode>, String> {
+    let mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+    Ok(mode.clone())
+}
+
+/// Set the brain mode (free API, paid API, or local Ollama).
+/// Persists to disk and updates in-memory state.
+#[tauri::command]
+pub async fn set_brain_mode(
+    mode: BrainMode,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    brain::brain_config::save(&state.data_dir, &mode)?;
+
+    // Also update the legacy active_brain field for backwards compatibility
+    // with existing streaming/chat code
+    match &mode {
+        BrainMode::LocalOllama { model } => {
+            let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
+            *brain = Some(model.clone());
+        }
+        _ => {
+            // For free/paid API modes, clear the Ollama active brain
+            // since streaming will route through the OpenAI client
+            let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
+            *brain = None;
+        }
+    }
+
+    let mut brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+    *brain_mode = Some(mode);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +141,24 @@ mod tests {
         let recs = recommend_brain_models().await;
         let top = recs.iter().filter(|m| m.is_top_pick).count();
         assert_eq!(top, 1);
+    }
+
+    #[tokio::test]
+    async fn list_free_providers_not_empty() {
+        let providers = list_free_providers().await;
+        assert!(!providers.is_empty());
+        assert!(providers.iter().any(|p| p.id == "groq"));
+    }
+
+    #[tokio::test]
+    async fn list_free_providers_all_have_https() {
+        let providers = list_free_providers().await;
+        for p in &providers {
+            assert!(
+                p.base_url.starts_with("https://"),
+                "{} base_url should be HTTPS",
+                p.id
+            );
+        }
     }
 }

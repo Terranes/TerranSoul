@@ -7,12 +7,21 @@ import type { Message } from '../types';
 function createPersonaResponse(content: string): Message {
   const lower = content.toLowerCase();
   let response: string;
-  let sentiment: 'happy' | 'sad' | 'neutral';
+  let sentiment: 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral';
 
   if (lower.includes('hello') || /\bhi\b/.test(lower) || lower.startsWith('hey')) {
     response = "Hello! I'm TerranSoul, your AI companion. How can I help you today? 😊";
     sentiment = 'happy';
-  } else if (lower.includes('sad') || lower.includes('bad') || lower.includes('hate') || lower.includes('sorry')) {
+  } else if (lower.includes('angry') || lower.includes('furious') || lower.includes('annoyed') || lower.includes('frustrated')) {
+    response = "I can sense your frustration. Take a deep breath — I'm here to help. 🔥";
+    sentiment = 'angry';
+  } else if (lower.includes('surprise') || lower.includes('wow') || lower.includes('unexpected') || lower.includes('amazing') || lower.includes('whoa') || lower.includes('omg')) {
+    response = "Wow, that's surprising! Tell me more! 😮";
+    sentiment = 'surprised';
+  } else if (lower.includes('relax') || lower.includes('calm') || lower.includes('peaceful') || lower.includes('chill') || lower.includes('meditat')) {
+    response = "That sounds so peaceful. Let's take a moment to enjoy the calm. 🧘";
+    sentiment = 'relaxed';
+  } else if (lower.includes('sad') || lower.includes('bad') || lower.includes('hate') || lower.includes('sorry') || lower.includes('cry')) {
     response = "I understand you're going through something difficult. I'm here for you. 💙";
     sentiment = 'sad';
   } else if (lower.includes('happy') || lower.includes('great') || lower.includes('awesome') || lower.includes('love')) {
