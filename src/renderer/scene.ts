@@ -24,7 +24,15 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   // cannot handle MToonMaterial (it requires MToonNodeMaterial for WebGPU,
   // which is experimental and produces different visual results).
   // VRoid Hub also uses WebGL, so this ensures visual parity.
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+    // preserveDrawingBuffer is required so that canvas.toDataURL(),
+    // Playwright screenshots, and video recording capture the actual
+    // rendered frame instead of reading a cleared/stale back-buffer.
+    preserveDrawingBuffer: true,
+  });
 
   // sRGB color space for correct output; NoToneMapping preserves MToon material
   // colors exactly as authored — ACES/other tone mappers desaturate & shift hues

@@ -146,6 +146,25 @@ export async function loadVRM(
   // Apply a natural relaxed pose so the character doesn't stand in T-pose
   applyNaturalPose(vrm);
 
+  // ── Spring bone warmup ────────────────────────────────────────────
+  // VRM spring bones (hair, clothing, accessories) start in their rest
+  // position, which may be far from where gravity would settle them.
+  // Without warmup the hair visibly "flies" or "drops" over the first
+  // second.  VRoid Hub solves this by running physics ticks off-screen.
+  //
+  // We reset the spring bone state to match the current pose, then
+  // simulate ~1 second of physics (60 ticks at 1/60s) so the hair and
+  // cloth settle into their gravity-affected rest position before the
+  // first visible frame.
+  const sbm = vrm.springBoneManager;
+  if (sbm) {
+    sbm.reset();
+    const warmupDt = 1 / 60;
+    for (let i = 0; i < 60; i++) {
+      sbm.update(warmupDt);
+    }
+  }
+
   return { vrm, metadata: extractVrmMetadata(vrm), isVrm0 };
 }
 

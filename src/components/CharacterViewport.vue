@@ -130,17 +130,31 @@ watch(
     const result = await loadVRMSafe(sceneCtx.scene, newPath);
     if (result) {
       currentVrmScene = result.vrm.scene;
-      // Look up per-model rotation, persona, and bone-pose config
+      // Hide the model initially — loadVRM already added it to the scene,
+      // but we keep it invisible until everything (textures, morphs, bones)
+      // is fully parsed so the user never sees hair dropping or half-loaded
+      // geometry.  We reveal it below after the animator is wired up.
+      result.vrm.scene.visible = false;
+
+      // Look up per-model persona and bone-pose config
       const model = DEFAULT_MODELS.find(m => m.path === newPath);
-      // VRM 0.x models are auto-rotated by VRMUtils.rotateVRM0(), so skip
-      // any manual rotationY for them.
-      const rotY = result.isVrm0 ? 0 : (model?.rotationY ?? 0);
+      // rotateVRM0() sets vrm.scene.rotation.y = Math.PI for VRM 0.x.
+      // Capture whatever rotation the loader left on the scene root so the
+      // animator preserves it every frame instead of overwriting it to 0.
+      const rotY = result.vrm.scene.rotation.y + (model?.rotationY ?? 0);
       const persona = model?.persona ?? 'cool';
       const skipBones = model?.skipBonePose ?? false;
       animator.setVRM(result.vrm, rotY, persona, skipBones);
       // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
       animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);
+
+      // Run one animation tick so bones settle into the natural pose before
+      // the first visible frame — this prevents the T-pose flash.
+      animator.update(0);
+
+      // Now reveal the fully-posed model and dismiss the loading overlay
+      result.vrm.scene.visible = true;
       characterStore.setLoaded();
     } else {
       characterStore.setLoadError('Failed to load VRM model');

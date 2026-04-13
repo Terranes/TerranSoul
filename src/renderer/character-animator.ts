@@ -177,17 +177,42 @@ export class CharacterAnimator {
   private applyCoolAnimation(t: number, _delta: number) {
     if (!this.vrmScene) return;
 
-    // Subtle idle breathing on spine/chest bones (always active)
-    const breathAmt = Math.sin(t * 1.2) * 0.008;
+    // ── Breathing — chest rises/falls continuously ──
+    const breathAmt = Math.sin(t * 1.2) * 0.012;
     this.addBoneRotation('spine', breathAmt, 0, 0);
-    this.addBoneRotation('chest', breathAmt * 0.5, 0, 0);
+    this.addBoneRotation('chest', breathAmt * 0.7, 0, 0);
 
     switch (this.state) {
       case 'idle': {
-        // Minimal weight shift — gentle spine sway
-        this.addBoneRotation('spine', 0, Math.sin(t * 0.3) * 0.01, 0);
-        // Slight head movement — looking around subtly
-        this.addBoneRotation('head', Math.sin(t * 0.5) * 0.01, Math.sin(t * 0.35) * 0.02, 0);
+        // ── Weight shift — slow hip sway ──
+        const shiftPhase = t * 0.25;
+        const shiftAmt = Math.sin(shiftPhase) * 0.018;
+        this.addBoneRotation('hips', 0, 0, shiftAmt);
+        // Spine counter-rotates slightly for natural S-curve
+        this.addBoneRotation('spine', 0, Math.sin(shiftPhase) * 0.012, -shiftAmt * 0.5);
+        this.addBoneRotation('chest', 0, Math.sin(shiftPhase + 0.3) * 0.008, -shiftAmt * 0.3);
+
+        // ── Upper body sway — slow, confident ──
+        this.addBoneRotation('upperChest', Math.sin(t * 0.4) * 0.006, Math.sin(t * 0.3) * 0.008, 0);
+
+        // ── Head — slight look-around with gentle nod ──
+        this.addBoneRotation('head',
+          Math.sin(t * 0.5) * 0.015,
+          Math.sin(t * 0.35) * 0.025,
+          Math.sin(t * 0.45) * 0.008,
+        );
+        this.addBoneRotation('neck', Math.sin(t * 0.6) * 0.006, Math.sin(t * 0.4) * 0.01, 0);
+
+        // ── Arm sway — subtle pendulum matching body movement ──
+        this.addBoneRotation('leftUpperArm', Math.sin(t * 0.3) * 0.015, 0, Math.sin(t * 0.25) * 0.01);
+        this.addBoneRotation('rightUpperArm', Math.sin(t * 0.3 + 0.5) * 0.015, 0, -Math.sin(t * 0.25 + 0.5) * 0.01);
+        this.addBoneRotation('leftLowerArm', Math.sin(t * 0.35) * 0.01, 0, 0);
+        this.addBoneRotation('rightLowerArm', Math.sin(t * 0.35 + 0.5) * 0.01, 0, 0);
+
+        // ── Fingers — subtle curl (if bones exist) ──
+        this.addBoneRotation('leftHand', Math.sin(t * 0.4) * 0.008, 0, 0);
+        this.addBoneRotation('rightHand', Math.sin(t * 0.4 + 0.3) * 0.008, 0, 0);
+
         this.clearExpressionTargets();
         this.setExpressionTarget('relaxed', 0.4);
         break;
@@ -195,23 +220,37 @@ export class CharacterAnimator {
       case 'thinking': {
         // Deliberate head tilt, like considering
         this.addBoneRotation('head', Math.sin(t * 0.5) * 0.03, Math.sin(t * 0.4) * 0.08, Math.sin(t * 0.5) * 0.04);
+        this.addBoneRotation('neck', 0.02, Math.sin(t * 0.3) * 0.03, 0);
         this.addBoneRotation('spine', 0, Math.sin(t * 0.3) * 0.02, 0);
+        // One arm up near face
+        this.addBoneRotation('rightUpperArm', -0.15, 0.1, 0);
+        this.addBoneRotation('rightLowerArm', 0, 0, -0.3);
         this.clearExpressionTargets();
         break;
       }
       case 'talking': {
-        // Measured nods with controlled lip sync
-        this.addBoneRotation('head', Math.sin(t * 1.5) * 0.02, Math.sin(t * 0.7) * 0.04, 0);
+        // Measured nods with controlled lip sync + body engagement
+        this.addBoneRotation('head', Math.sin(t * 1.5) * 0.025, Math.sin(t * 0.7) * 0.04, 0);
+        this.addBoneRotation('neck', Math.sin(t * 1.8) * 0.01, 0, 0);
         this.addBoneRotation('spine', 0, Math.sin(t * 0.5) * 0.015, 0);
+        this.addBoneRotation('chest', Math.sin(t * 1.2) * 0.008, 0, 0);
+        // Arm gestures while talking
+        this.addBoneRotation('leftUpperArm', Math.sin(t * 1.0) * 0.02, 0, 0);
+        this.addBoneRotation('rightUpperArm', Math.sin(t * 0.9 + 0.5) * 0.025, 0, 0);
         this.clearExpressionTargets();
         this.setExpressionTarget('aa', ((Math.sin(t * 6.0) + 1.0) * 0.5) * 0.5);
         this.setExpressionTarget('oh', ((Math.cos(t * 4.5) + 1.0) * 0.5) * 0.2);
         break;
       }
       case 'happy': {
-        // Confident lean back, head lifts
-        this.addBoneRotation('spine', -0.03 + Math.sin(t * 1.2) * 0.01, Math.sin(t * 0.8) * 0.03, 0);
+        // Confident lean back, head lifts, slight bounce
+        this.addBoneRotation('spine', -0.03 + Math.sin(t * 1.2) * 0.015, Math.sin(t * 0.8) * 0.03, 0);
+        this.addBoneRotation('chest', -0.02, 0, 0);
         this.addBoneRotation('head', -0.02, Math.sin(t * 0.6) * 0.03, 0);
+        this.addBoneRotation('hips', 0, 0, Math.sin(t * 1.5) * 0.01);
+        // Arms open slightly
+        this.addBoneRotation('leftUpperArm', -0.05, 0, 0.08);
+        this.addBoneRotation('rightUpperArm', -0.05, 0, -0.08);
         this.clearExpressionTargets();
         this.setExpressionTarget('happy', 0.6);
         this.setExpressionTarget('relaxed', 0.3);
@@ -220,7 +259,12 @@ export class CharacterAnimator {
       case 'sad': {
         // Stoic disappointment — head droops, spine curves
         this.addBoneRotation('spine', 0.04, 0, Math.sin(t * 0.25) * 0.005);
+        this.addBoneRotation('chest', 0.025, 0, 0);
         this.addBoneRotation('head', 0.06, 0, Math.sin(t * 0.3) * 0.01);
+        this.addBoneRotation('neck', 0.02, 0, 0);
+        // Shoulders drop
+        this.addBoneRotation('leftShoulder', 0.03, 0, 0);
+        this.addBoneRotation('rightShoulder', 0.03, 0, 0);
         this.clearExpressionTargets();
         this.setExpressionTarget('sad', 0.5);
         break;
@@ -233,16 +277,41 @@ export class CharacterAnimator {
   private applyCuteAnimation(t: number, _delta: number) {
     if (!this.vrmScene) return;
 
-    // Breathing — slightly more visible for cute persona
-    const breathAmt = Math.sin(t * 1.5) * 0.012;
+    // ── Breathing — slightly more visible for cute persona ──
+    const breathAmt = Math.sin(t * 1.5) * 0.015;
     this.addBoneRotation('spine', breathAmt, 0, 0);
-    this.addBoneRotation('chest', breathAmt * 0.6, 0, 0);
+    this.addBoneRotation('chest', breathAmt * 0.7, 0, 0);
 
     switch (this.state) {
       case 'idle': {
-        // Gentle swaying side-to-side
-        this.addBoneRotation('spine', 0, Math.sin(t * 0.7) * 0.03, Math.sin(t * 0.9) * 0.02);
-        this.addBoneRotation('head', 0, Math.sin(t * 0.6) * 0.03, Math.sin(t * 0.8) * 0.02);
+        // ── Weight shift — livelier side-to-side sway ──
+        const shiftPhase = t * 0.45;
+        const shiftAmt = Math.sin(shiftPhase) * 0.025;
+        this.addBoneRotation('hips', 0, Math.sin(shiftPhase * 0.8) * 0.01, shiftAmt);
+        this.addBoneRotation('spine', 0, Math.sin(shiftPhase) * 0.02, -shiftAmt * 0.4);
+        this.addBoneRotation('chest', 0, Math.sin(shiftPhase + 0.4) * 0.012, -shiftAmt * 0.2);
+
+        // ── Upper body — gentle rocking ──
+        this.addBoneRotation('upperChest', Math.sin(t * 0.6) * 0.008, Math.sin(t * 0.5) * 0.012, Math.sin(t * 0.7) * 0.006);
+
+        // ── Head — curious look-around ──
+        this.addBoneRotation('head',
+          Math.sin(t * 0.6) * 0.02,
+          Math.sin(t * 0.45) * 0.04,
+          Math.sin(t * 0.55) * 0.015,
+        );
+        this.addBoneRotation('neck', Math.sin(t * 0.7) * 0.01, Math.sin(t * 0.5) * 0.015, 0);
+
+        // ── Arm sway — slightly wider and more playful ──
+        this.addBoneRotation('leftUpperArm', Math.sin(t * 0.5) * 0.02, 0, Math.sin(t * 0.4) * 0.015);
+        this.addBoneRotation('rightUpperArm', Math.sin(t * 0.5 + 0.6) * 0.02, 0, -Math.sin(t * 0.4 + 0.6) * 0.015);
+        this.addBoneRotation('leftLowerArm', Math.sin(t * 0.6) * 0.012, 0, 0);
+        this.addBoneRotation('rightLowerArm', Math.sin(t * 0.6 + 0.6) * 0.012, 0, 0);
+
+        // ── Gentle hand motion ──
+        this.addBoneRotation('leftHand', Math.sin(t * 0.55) * 0.012, 0, Math.sin(t * 0.7) * 0.008);
+        this.addBoneRotation('rightHand', Math.sin(t * 0.55 + 0.4) * 0.012, 0, -Math.sin(t * 0.7 + 0.4) * 0.008);
+
         this.clearExpressionTargets();
         this.setExpressionTarget('relaxed', 0.5);
         this.setExpressionTarget('happy', 0.2);
@@ -251,15 +320,24 @@ export class CharacterAnimator {
       case 'thinking': {
         // Cute confused head tilts
         this.addBoneRotation('head', Math.sin(t * 1.0) * 0.04, Math.sin(t * 0.8) * 0.1, Math.sin(t * 1.2) * 0.06);
+        this.addBoneRotation('neck', 0.015, Math.sin(t * 0.6) * 0.03, 0);
         this.addBoneRotation('spine', 0, Math.sin(t * 0.6) * 0.025, 0);
+        // Hand near chin
+        this.addBoneRotation('rightUpperArm', -0.2, 0.1, 0);
+        this.addBoneRotation('rightLowerArm', 0, 0, -0.4);
         this.clearExpressionTargets();
         this.setExpressionTarget('oh', 0.4);
         break;
       }
       case 'talking': {
-        // Energetic bobbing with exaggerated mouth
+        // Energetic bobbing with exaggerated mouth + body movement
         this.addBoneRotation('head', Math.sin(t * 2.5) * 0.03, Math.sin(t * 1.8) * 0.06, Math.sin(t * 2.0) * 0.02);
-        this.addBoneRotation('spine', Math.sin(t * 3.5) * 0.015, Math.sin(t * 1.5) * 0.02, 0);
+        this.addBoneRotation('neck', Math.sin(t * 2.0) * 0.015, 0, 0);
+        this.addBoneRotation('spine', Math.sin(t * 3.5) * 0.015, Math.sin(t * 1.5) * 0.025, 0);
+        this.addBoneRotation('chest', Math.sin(t * 2.8) * 0.01, 0, 0);
+        // Animated gestures
+        this.addBoneRotation('leftUpperArm', Math.sin(t * 1.5) * 0.03, 0, Math.sin(t * 2.0) * 0.015);
+        this.addBoneRotation('rightUpperArm', Math.sin(t * 1.5 + 0.8) * 0.035, 0, -Math.sin(t * 2.0 + 0.8) * 0.015);
         this.clearExpressionTargets();
         this.setExpressionTarget('aa', ((Math.sin(t * 9.0) + 1.0) * 0.5) * 0.8);
         this.setExpressionTarget('oh', ((Math.cos(t * 7.0) + 1.0) * 0.5) * 0.4);
@@ -267,9 +345,15 @@ export class CharacterAnimator {
         break;
       }
       case 'happy': {
-        // Super bouncy! Big smile, celebratory head bobbing
-        this.addBoneRotation('spine', Math.abs(Math.sin(t * 5.0)) * 0.04, Math.sin(t * 3.0) * 0.06, Math.sin(t * 4.0) * 0.04);
+        // Super bouncy! Big smile, celebratory body bobbing
+        const bounce = Math.abs(Math.sin(t * 5.0)) * 0.04;
+        this.addBoneRotation('spine', bounce, Math.sin(t * 3.0) * 0.06, Math.sin(t * 4.0) * 0.04);
+        this.addBoneRotation('chest', bounce * 0.5, 0, 0);
         this.addBoneRotation('head', -0.03, Math.sin(t * 2.5) * 0.05, Math.sin(t * 3.0) * 0.03);
+        this.addBoneRotation('hips', 0, 0, Math.sin(t * 4.0) * 0.02);
+        // Arms swing happily
+        this.addBoneRotation('leftUpperArm', -0.08, 0, 0.12 + Math.sin(t * 3.5) * 0.05);
+        this.addBoneRotation('rightUpperArm', -0.08, 0, -0.12 - Math.sin(t * 3.5 + 0.5) * 0.05);
         this.clearExpressionTargets();
         this.setExpressionTarget('happy', 1.0);
         this.setExpressionTarget('aa', 0.4 + Math.sin(t * 4.0) * 0.2);
@@ -278,7 +362,15 @@ export class CharacterAnimator {
       case 'sad': {
         // Droopy, pouty — clearly upset
         this.addBoneRotation('spine', 0.06, 0, Math.sin(t * 0.4) * 0.01);
+        this.addBoneRotation('chest', 0.035, 0, 0);
         this.addBoneRotation('head', 0.08, 0, Math.sin(t * 0.5) * 0.015);
+        this.addBoneRotation('neck', 0.025, 0, 0);
+        // Shoulders droop
+        this.addBoneRotation('leftShoulder', 0.04, 0, 0);
+        this.addBoneRotation('rightShoulder', 0.04, 0, 0);
+        // Arms hang limply
+        this.addBoneRotation('leftUpperArm', 0.02, 0, 0);
+        this.addBoneRotation('rightUpperArm', 0.02, 0, 0);
         this.clearExpressionTargets();
         this.setExpressionTarget('sad', 1.0);
         break;
