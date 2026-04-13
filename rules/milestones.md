@@ -120,7 +120,22 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 034** — Agent Marketplace UI (Phase 3)
+**Chunk 055** — Free LLM API Provider Registry (Phase 5.5)
+
+---
+
+## Phase 5.5 — Three-Tier Brain (Free API / Paid API / Local LLM)
+
+> **Goal:** Make TerranSoul work out of the box with zero setup by defaulting
+> to free cloud LLM APIs. Users can optionally upgrade to paid APIs or local
+> Ollama. Free providers are sourced from awesome-free-llm-apis and auto-rotated
+> when rate-limited. See `rules/research-reverse-engineering.md` §8.
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 055 | **Free LLM API Provider Registry & OpenAI-Compatible Client** — Curate a provider list from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis): Groq, Cerebras, Google Gemini, Mistral, SiliconFlow, GitHub Models, OpenRouter, NVIDIA NIM, Cloudflare Workers AI. Store as `FreeProvider` structs with `id`, `display_name`, `base_url`, `model`, `rpm_limit`, `rpd_limit`. New `brain/openai_client.rs` — generic OpenAI-compatible chat client that works for ALL providers (POST `/v1/chat/completions` with SSE streaming). New `brain/free_api.rs` with the provider catalogue. New `BrainMode` enum: `FreeApi { provider_id }` / `PaidApi { provider, api_key, model }` / `LocalOllama { model }`. Persist to `brain_config.json`. Tauri commands: `list_free_providers`, `get_brain_mode`, `set_brain_mode`. Rust tests for client, provider list, config persistence. | `not-started` |
+| 056 | **Provider Auto-Selection & Token Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Auto-detect logic: if `get_system_info()` fails (UAT/web) → default to `FreeApi`. If low RAM (<8GB) → recommend `FreeApi`. If high RAM → show all tiers. Extend `send_message_stream` to route through `BrainMode` (free API SSE / paid API SSE / Ollama NDJSON). Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
+| 057 | **Brain Setup Wizard Redesign** — Redesign `BrainSetupView.vue` as three-tier wizard. Step 0: "Choose how to power your brain" with three cards (Free API / Paid API / Local LLM). Free API card is the default, highlighted, marked "Instant — no setup". Step 1 (Free): auto-select best provider, show status, done. Step 1 (Paid): pick provider (OpenAI, Anthropic, etc.), enter API key, test connection. Step 1 (Local): existing Ollama wizard flow. Update `App.vue` to skip onboarding entirely if free API is auto-configured. Vitest tests for new brain store methods. | `not-started` |
 
 ---
 
@@ -179,10 +194,7 @@ axum 0.8 in-process registry server, HttpRegistry, 3 official agents (stub-agent
 wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostContext + capability-gated host API, WasmRunner.
 5 Tauri commands, 12 Rust tests, 12 Vitest tests.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 034 | **Agent Marketplace UI** — Marketplace view listing registry agents with install/update/remove actions, capability consent dialog before install, sandboxed agent status badges. | `not-started` |
-| 035 | **Agent-to-Agent Messaging** — Allow installed agents to pass messages to each other via the command router. Agents can subscribe to message topics and the orchestrator fans out. | `not-started` |
+✅ Phase 3 complete — see completion-log.md
 
 ---
 
@@ -193,13 +205,7 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 > streaming LLM responses, emotion-driven character reactions.
 > Patterns learned from Open-LLM-VTuber and aituber-kit — see `rules/research-reverse-engineering.md`.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 050 | **Window Mode System** — Dual-mode window: normal window mode (decorations, resizable, taskbar) + pet mode overlay (transparent, always-on-top, skip-taskbar). Pinia `WindowMode` store (`'window' \| 'pet'`). Tauri commands `set_window_mode` / `get_window_mode` that call `set_decorations`, `set_always_on_top`, `set_skip_taskbar`. System tray toggle between modes. Opacity-fade transition. Default to window mode on first launch. | `not-started` |
-| 051 | **Selective Click-Through** — In pet mode, clicks pass through empty areas but interact with character and chatbox. Frontend tracks mouse over interactive elements. On hover enter → `invoke('set_cursor_passthrough', false)`. On hover leave → `invoke('set_cursor_passthrough', true)`. Tauri command calls `window.set_ignore_cursor_events()`. Test on Windows + macOS (different behaviors per Open-LLM-VTuber). | `not-started` |
-| 052 | **Multi-Monitor Pet Mode** — Pet mode window spans all connected displays. Tauri command queries `available_monitors()`, calculates bounding rect, sets window bounds to combined rect. Character position stored relative to combined screen space. Allow dragging character between monitors. | `not-started` |
-| 053 | **Streaming LLM Responses** — Modify OllamaAgent to use streaming API (`/api/chat` with `stream: true`). Emit Tauri events for each text chunk. Frontend subscribes and appends text progressively. Character starts "talking" animation on first chunk (not after full response). Prepare for future TTS streaming. | `not-started` |
-| 054 | **Emotion Tags in LLM Responses** — System prompt instructs brain to tag emotions: `[happy] text`. Parse and strip tags before display. Map to VRM expressions (happy/sad/angry/relaxed/surprised/neutral). Optional motion tags `[motion:wave]`. Integrate with character-animator state machine. | `not-started` |
+✅ Phase 5 complete — see completion-log.md
 
 ---
 
@@ -426,3 +432,21 @@ pipeline only applies to bundled default models that we ship with TerranSoul.
 | 073 | **Frontend Secure Loading Path** — Update `CharacterViewport.vue` and `vrm-loader.ts` to call `invoke('load_vrm_secure', { modelId })` for default models. Receive `ArrayBuffer`, create `Blob` URL, pass to `GLTFLoader`. User-imported models continue using direct file path. Update `default-models.ts` to flag built-in vs user models. Vitest tests for both paths. | `not-started` |
 | 074 | **CSP, DevTools & Scope Lockdown** — Set strict CSP in `tauri.conf.json`. Disable devtools in production. Configure Tauri resource/asset scope to deny raw `.vrm` access. Add integrity hashes for `.vrm.enc` files verified at startup. | `not-started` |
 | 075 | **Obfuscation & Anti-Tamper** — Add `vite-plugin-obfuscator` to production build. Rust SHA-256 integrity check of `.vrm.enc` files at load time. `zeroize` sensitive buffers after use. Optional: platform-specific anti-debug checks behind feature flag. | `not-started` |
+
+---
+
+## Phase 8 — Brain-Driven Animation (AI4Animation for VRM)
+
+> **Goal:** Use the LLM brain as an animation controller. Instead of pre-baked
+> keyframe clips, the brain generates pose parameters (blend weights, bone
+> offsets, gesture tags) that drive VRM character animation in realtime.
+> Inspired by AI4Animation-js (SIGGRAPH 2018 MANN), adapted for stationary
+> VRM desktop companion use. See `rules/research-reverse-engineering.md` §7.
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 080 | **Pose Preset Library** — Define 8–12 VRM humanoid pose presets as JSON bone rotation sets (confident, shy, excited, thoughtful, relaxed, defensive, attentive, playful, bored, empathetic). Each preset stores rotation offsets for ~20 key VRM bones (hips, spine, chest, neck, head, shoulders, upper/lower arms, hands). A `PosePreset` type with `id`, `label`, `boneRotations: Record<VRMHumanBoneName, {x,y,z}>`. Load from `src/renderer/poses/` JSON files. Unit tests verifying all presets have valid bone names and angle ranges. | `not-started` |
+| 081 | **Pose Blending Engine** — `PoseBlender` class in `src/renderer/pose-blender.ts`. Takes an array of `{ presetId, weight }` blend instructions and produces a final set of bone rotations by weighted-average (same principle as MANN's expert blending). Smooth interpolation over time (lerp/slerp between current and target blend). Integrates with `CharacterAnimator` — replaces or layers on top of procedural sin-wave animations. Breathing and blink remain procedural; body pose comes from blender. Vitest tests for blend math, edge cases (weights sum to 0, single preset at 1.0, etc.). | `not-started` |
+| 082 | **LLM Pose Prompt Engineering** — Extend the streaming system prompt to instruct the brain to output structured pose data alongside emotion tags. Format: `[pose:confident=0.6,attentive=0.3]` — blend weights for named presets. The emotion parser (`utils/emotion-parser.ts` and `commands/emotion.rs`) is extended to also extract `pose` tags. When no pose tag is present, fall back to mapping emotion → default pose (happy→excited+playful, sad→shy+defensive, etc.). Frontend streaming store passes parsed pose weights to character store. Rust + TS parser tests. | `not-started` |
+| 083 | **Gesture Tag System** — Extend motion tags to support timed gesture sequences. Brain outputs `[gesture:nod]`, `[gesture:wave]`, `[gesture:shrug]`, `[gesture:lean-in]`, etc. Each gesture is a short animation sequence (0.5–2s) defined as keyframe arrays in `src/renderer/gestures/`. `GesturePlayer` class plays the gesture, then returns to the current blended pose. Gestures layer on top of pose blending (additive). The brain can trigger gestures mid-sentence for natural conversational body language. 10+ built-in gestures. Vitest tests. | `not-started` |
+| 084 | **Autoregressive Pose Feedback** — Feed the character's current pose state back into the LLM context window. When starting a new streaming response, include a compact pose descriptor in the system context: `Current character pose: confident=0.6, attentive=0.3. Last gesture: nod (2s ago).` This lets the brain make coherent animation decisions — e.g., not repeating the same gesture, gradually transitioning between poses across a conversation. Measure latency impact of extra context. Tests verifying pose context is correctly serialized and injected. | `not-started` |

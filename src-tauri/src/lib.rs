@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
+use tauri::Emitter;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tokio::sync::Mutex as TokioMutex;
@@ -11,12 +12,14 @@ pub mod commands;
 pub mod identity;
 pub mod link;
 pub mod memory;
+pub mod messaging;
 pub mod orchestrator;
 pub mod package_manager;
 pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
 pub mod sync;
+pub mod voice;
 
 use commands::{
     agent::list_agents,
@@ -36,6 +39,10 @@ use commands::{
         get_relevant_memories, get_short_term_memory, search_memories,
         semantic_search_memories, summarize_session, update_memory,
     },
+    messaging::{
+        get_agent_messages, list_agent_subscriptions, publish_agent_message,
+        subscribe_agent_topic, unsubscribe_agent_topic,
+    },
     package::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
         remove_agent, update_agent, validate_agent_manifest,
@@ -50,6 +57,15 @@ use commands::{
     sandbox::{
         clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
         revoke_agent_capability, run_agent_in_sandbox,
+    },
+    window::{
+        get_all_monitors, get_window_mode, set_cursor_passthrough, set_pet_mode_bounds,
+        set_window_mode, toggle_window_mode,
+    },
+    streaming::send_message_stream,
+    voice::{
+        clear_voice_config, get_voice_config, list_asr_providers, list_tts_providers,
+        set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -76,6 +92,12 @@ pub struct AppState {
     pub registry_server_handle: TokioMutex<Option<(u16, tokio::task::JoinHandle<()>)>>,
     /// Per-agent sandbox capability consents.
     pub capability_store: TokioMutex<sandbox::CapabilityStore>,
+    /// Agent-to-agent message bus for topic-based pub/sub.
+    pub message_bus: TokioMutex<messaging::MessageBus>,
+    /// Current window mode (window or pet).
+    pub window_mode: Mutex<commands::window::WindowMode>,
+    /// Voice provider configuration (ASR/TTS selections).
+    pub voice_config: Mutex<voice::VoiceConfig>,
 }
 
 impl AppState {
@@ -101,6 +123,9 @@ impl AppState {
             memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
             registry_server_handle: TokioMutex::new(None),
             capability_store: TokioMutex::new(sandbox::CapabilityStore::new(data_dir)),
+            message_bus: TokioMutex::new(messaging::MessageBus::new()),
+            window_mode: Mutex::new(commands::window::WindowMode::default()),
+            voice_config: Mutex::new(voice::config_store::load(data_dir)),
         }
     }
 
@@ -125,6 +150,9 @@ impl AppState {
             memory_store: Mutex::new(memory::MemoryStore::in_memory()),
             registry_server_handle: TokioMutex::new(None),
             capability_store: TokioMutex::new(sandbox::CapabilityStore::in_memory()),
+            message_bus: TokioMutex::new(messaging::MessageBus::new()),
+            window_mode: Mutex::new(commands::window::WindowMode::default()),
+            voice_config: Mutex::new(voice::VoiceConfig::default()),
         }
     }
 }
@@ -186,6 +214,26 @@ pub fn run() {
             list_agent_capabilities,
             run_agent_in_sandbox,
             clear_agent_capabilities,
+            publish_agent_message,
+            subscribe_agent_topic,
+            unsubscribe_agent_topic,
+            get_agent_messages,
+            list_agent_subscriptions,
+            set_window_mode,
+            get_window_mode,
+            toggle_window_mode,
+            set_cursor_passthrough,
+            get_all_monitors,
+            set_pet_mode_bounds,
+            send_message_stream,
+            list_asr_providers,
+            list_tts_providers,
+            get_voice_config,
+            set_asr_provider,
+            set_tts_provider,
+            set_voice_api_key,
+            set_voice_endpoint,
+            clear_voice_config,
         ])
         .setup(|app| {
             let data_dir = app
@@ -207,10 +255,11 @@ pub fn run() {
             *state.command_router.blocking_lock() =
                 routing::CommandRouter::new(&device_id);
 
-            // System tray with Show/Hide + Quit
+            // System tray with Show/Hide + Window/Pet toggle + Quit
             let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
+            let mode_toggle = MenuItem::with_id(app, "mode_toggle", "Switch to Pet Mode", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_hide, &quit])?;
+            let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
 
             TrayIconBuilder::new()
                 .menu(&menu)
@@ -224,6 +273,22 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
+                        }
+                    }
+                    "mode_toggle" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let state = app.state::<AppState>();
+                            let new_mode = {
+                                let current = state.window_mode.lock().unwrap();
+                                match *current {
+                                    commands::window::WindowMode::Window => commands::window::WindowMode::Pet,
+                                    commands::window::WindowMode::Pet => commands::window::WindowMode::Window,
+                                }
+                            };
+                            let _ = commands::window::apply_window_mode(&window, new_mode);
+                            *state.window_mode.lock().unwrap() = new_mode;
+                            // Emit event so frontend can react
+                            let _ = window.emit("window-mode-changed", new_mode);
                         }
                     }
                     "quit" => {

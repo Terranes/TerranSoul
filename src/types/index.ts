@@ -178,3 +178,47 @@ export interface ConsentInfo {
   granted: boolean;
 }
 
+// ── Messaging ─────────────────────────────────────────────────────────────────
+
+export interface AgentMessageInfo {
+  id: string;
+  sender: string;
+  topic: string;
+  payload: unknown;
+  timestamp: number;
+}
+
+// ── Window Mode ───────────────────────────────────────────────────────────────
+
+export type WindowMode = 'window' | 'pet';
+
+export interface MonitorInfo {
+  name: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale_factor: number;
+}
+
+// ── Streaming / Emotion ───────────────────────────────────────────────────────
+
+export type EmotionTag =
+  | 'happy'
+  | 'sad'
+  | 'angry'
+  | 'relaxed'
+  | 'surprised'
+  | 'neutral';
+
+export type MotionTag = string; // e.g. 'wave', 'nod', 'bow'
+
+export interface ParsedLlmChunk {
+  /** Display text with tags stripped. */
+  text: string;
+  /** Emotion tag found in this chunk, if any. */
+  emotion: EmotionTag | null;
+  /** Motion tag found in this chunk, if any. */
+  motion: MotionTag | null;
+}
+

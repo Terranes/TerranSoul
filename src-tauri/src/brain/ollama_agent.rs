@@ -94,6 +94,11 @@ impl OllamaAgent {
 
     /// Infer a simple sentiment label from the response text.
     fn infer_sentiment(text: &str) -> Sentiment {
+        Self::infer_sentiment_static(text)
+    }
+
+    /// Static version of sentiment inference, usable without an OllamaAgent instance.
+    pub fn infer_sentiment_static(text: &str) -> Sentiment {
         let lower = text.to_lowercase();
         if lower.contains("sorry")
             || lower.contains("unfortunate")

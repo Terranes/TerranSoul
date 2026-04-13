@@ -1,8 +1,9 @@
 # Reverse Engineering Research — External Projects
 
 > **Purpose:** Accelerate TerranSoul development by learning proven patterns from
-> three reference projects. This document records architecture, overlay systems,
-> voice approaches, and actionable takeaways chunked for incremental implementation.
+> reference projects. This document records architecture, overlay systems,
+> voice approaches, free LLM API strategies, and actionable takeaways chunked
+> for incremental implementation.
 
 ---
 
@@ -14,6 +15,8 @@
 4. [Overlay Comparison — What We're Doing Wrong](#4-overlay-comparison)
 5. [Voice System Recommendation](#5-voice-system-recommendation)
 6. [Actionable Chunks for TerranSoul](#6-actionable-chunks)
+7. [AI4Animation-js — Brain-Driven Neural Animation](#7-ai4animation-js)
+8. [Free LLM APIs — Three-Tier Brain Provider Strategy](#8-free-llm-apis)
 
 ---
 
@@ -559,3 +562,314 @@ character and chatbox
 > **Next session:** Pick the highest-priority chunk not already being handled
 > by another agent. Chunks 050 and 051 should come first (they fix the overlay
 > problem). Skip animation-related chunks as another agent handles those.
+
+---
+
+## 7. AI4Animation-js — Brain-Driven Neural Animation {#7-ai4animation-js}
+
+> **Reverse-engineered from:** https://github.com/sneha-belkhale/AI4Animation-js
+> **Original research:** Sebastian Starke et al., "Mode-Adaptive Neural Networks
+> for Quadruped Motion Control", SIGGRAPH 2018.
+> **Python remake (2026):** https://github.com/facebookresearch/ai4animationpy
+
+### What It Is
+
+AI4Animation-js is a Three.js port of the SIGGRAPH 2018 MANN (Mode-Adaptive
+Neural Networks) paper. Instead of using pre-baked animation clips, a neural
+network generates bone positions and velocities **every frame** based on:
+
+1. **Trajectory input** — Where the character should go (position, direction,
+   velocity, speed, style weights for 6 locomotion styles).
+2. **Previous pose** — Current bone positions, forward vectors, up vectors,
+   and velocities for all 27 bones.
+3. **Neural network prediction** — Outputs next bone positions/velocities plus
+   root motion (translation + rotation).
+
+The result: **unlimited smooth transitions** between motion states with no
+blend trees or crossfades. The character simply moves however the neural
+network decides is natural.
+
+### Architecture (from code analysis)
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ User Input   │───▶│ Trajectory   │───▶│ MANN Neural  │
+│ (WASD keys)  │    │ Prediction   │    │ Network      │
+│              │    │ (12 points)  │    │              │
+└──────────────┘    └──────────────┘    │ Input: 480   │
+                                        │ Hidden: 512  │
+┌──────────────┐                        │ Output: 363  │
+│ Previous     │───────────────────────▶│              │
+│ Bone State   │                        │ Gating Net:  │
+│ (27 bones ×  │                        │ 19→32→8 blend│
+│ 12 dims)     │                        │ weights      │
+└──────────────┘                        └──────┬───────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │ Output Parse │
+                                        │ • Trajectory │
+                                        │ • Bone pos   │
+                                        │ • Bone vel   │
+                                        │ • Root motion│
+                                        └──────┬───────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │ Skeleton     │
+                                        │ Retarget     │
+                                        │ (Wolf.js)    │
+                                        └──────────────┘
+```
+
+#### Key Files
+
+| File | Role | Size |
+|------|------|------|
+| `MANNNeuralNet.js` | MANN: gating network + expert blending + prediction | 4.4 KB |
+| `MainScene.js` | Main loop: packs NN inputs, calls predict, reads outputs, updates character | 15 KB |
+| `Wolf.js` | Skeleton retargeting: NN bone positions → FBX bone quaternions via `updatePose()` | 9.6 KB |
+| `Trajectory.js` | 12-point trajectory (position, direction, velocity, styles per point) | 1.6 KB |
+| `Parameters.js` | Loads `.bin` weight files into numjs matrices | 611 B |
+| `Eigen.js` | Linear algebra: Layer, ELU, SoftMax, Normalise, Blend | 1.2 KB |
+| `AxisUtils.js` | `setZForward()`: recursively aligns bone +Z to face children | 2.7 KB |
+| `Utils.js` | Coordinate transforms: relative position/direction to/from a root matrix | 1.7 KB |
+
+#### MANN Neural Network Details
+
+The MANN is a **mixture-of-experts** architecture:
+
+1. **Gating Network** (small): 19 control neurons → 32 hidden (ELU) → 32 hidden
+   (ELU) → 8 expert weights (softmax). Selects blend weights for 8 expert
+   sub-networks based on the character's current motion style.
+
+2. **Expert Networks** (8 sets of weights): Each expert has 3 layers
+   (480→512→512→363). Weights are **blended** by gating output before forward
+   pass, producing a single effective network per frame.
+
+3. **Forward Pass**:
+   ```
+   X_normalized = (X - Xmean) / Xstd
+   control_neurons = X_normalized[ControlNeurons]  // 19 specific indices
+   blend_weights = softmax(gating_network(control_neurons))  // 8 weights
+   W0, b0, W1, b1, W2, b2 = Σ(weight_i × expert_i_params)
+   Y_normalized = ELU(ELU(X_normalized · W0 + b0) · W1 + b1) · W2 + b2
+   Y = Y_normalized × Ystd + Ymean
+   ```
+
+4. **Input (480 dims)**: 12 trajectory points × 13 dims (pos.xz, dir.xz,
+   vel.xz, speed, 6 styles) + 27 bones × 12 dims (pos.xyz, forward.xyz,
+   up.xyz, velocity.xyz).
+
+5. **Output (363 dims)**: 6 future trajectory updates × 6 dims + 27 bones ×
+   12 dims (new pos/forward/up/vel) + 3 root motion (translation.xz, rotation).
+
+#### Skeleton Retargeting (Wolf.js → VRM adaptation needed)
+
+The key insight from Wolf.js is how NN bone positions are converted to skeleton
+quaternions:
+
+```javascript
+// For each bone, compute direction to average child position
+averagedDir = average(children.map(c => BONES[c.posRef].position))
+averagedDir.sub(parentBonePos)
+localDir = averagedDir.normalize().transformDirection(inverse(parent.matrixWorld))
+setQuaternionFromDirection(localDir, bone.originalUp, bone.quaternion)
+```
+
+This is a **direction-based IK** approach: each bone rotates to point toward
+where its children should be (as predicted by the NN). Combined with rest-pose
+length preservation, this produces smooth, natural skeletal animation.
+
+For VRM humanoid characters, this would need:
+- Map NN bone indices → VRM humanoid bone names (hips, spine, chest, head,
+  upperArm, lowerArm, hand, upperLeg, lowerLeg, foot, etc.)
+- Replace Wolf's 27-bone topology with VRM's ~55 humanoid bones
+- Maintain same direction-based quaternion computation
+
+### How This Applies to TerranSoul
+
+**The critical insight:** Instead of the original MANN approach (which requires
+massive mocap datasets and offline TensorFlow training), we can use TerranSoul's
+**existing LLM brain** to generate animation parameters.
+
+#### Approach: LLM → Animation Parameter Generation
+
+The brain already understands emotion tags (`[happy]`, `[sad]`) and motion tags
+(`[motion:wave]`). We can extend this to generate **continuous animation
+parameters** per response:
+
+1. **Emotion → Pose Blend Weights**: The LLM output emotion tag maps to a set
+   of blend weights for predefined pose clusters (like MANN's 8 experts but
+   for VRM humanoid poses: confident stance, shy stance, excited bounce, etc.)
+
+2. **Motion Tag → Procedural Trajectory**: `[motion:nod]` generates a
+   trajectory for the head bone, `[motion:wave]` for the arm chain. The brain
+   can describe custom motions: `[motion:lean-forward]`, `[motion:look-away]`.
+
+3. **Conversational Context → Dynamic Pose**: Beyond single-word tags, the brain
+   generates structured pose data:
+   ```
+   [pose: { head_tilt: 0.15, body_lean: -0.05, gesture: "open_palms" }]
+   ```
+   This creates **context-appropriate animation** — leaning in during questions,
+   crossing arms during disagreement, etc.
+
+#### Implementation Strategy (What's Feasible for TerranSoul)
+
+Rather than training a full MANN network (which requires massive mocap data and
+GPU training), TerranSoul adapts the **core concepts**:
+
+**What we take from AI4Animation:**
+- Expert blending architecture (multiple pose presets blended by weights)
+- Per-frame bone position → quaternion retargeting via direction-based IK
+- Autoregressive feedback (previous pose feeds into next prediction)
+
+**What we replace:**
+- MANN neural network → LLM-driven emotion/motion parameter generation
+- Mocap training data → Hand-authored VRM pose presets + procedural generation
+- Trajectory planning → Stationary VRM (no locomotion needed — it's a desktop
+  companion, not a game character)
+
+**The result:** AI-driven character animation that reacts naturally to
+conversation context, without needing mocap data or neural network training.
+The brain IS the animation controller.
+
+### TerranSoul Adaptation: Phase 8 Chunks
+
+See `rules/milestones.md` Phase 8 for implementation chunks 080–084.
+
+---
+
+## 8. Free LLM APIs — Three-Tier Brain Provider Strategy {#8-free-llm-apis}
+
+> **Source:** https://github.com/mnfst/awesome-free-llm-apis
+> **Design principle:** TerranSoul should work out of the box with zero setup.
+> Free cloud LLM APIs make this possible — no Ollama install, no GPU required.
+
+### Problem
+
+The current brain system requires users to:
+1. Install Ollama
+2. Download a multi-GB model
+3. Have enough RAM/VRAM to run it
+
+This creates a huge barrier to first-use. Many users (especially on low-end
+machines, Chromebooks, or during UAT) cannot or don't want to set up local
+inference.
+
+### Solution: Three-Tier Brain Provider System
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Tier 1: FREE Cloud APIs (default, zero setup)       │
+│ ─────────────────────────────────────────────        │
+│ • No API key needed (or free key from provider)     │
+│ • Auto-rotate between providers when rate-limited   │
+│ • Curated from awesome-free-llm-apis               │
+│ • Works immediately on any hardware                 │
+├─────────────────────────────────────────────────────┤
+│ Tier 2: PAID Cloud APIs (user provides API key)     │
+│ ─────────────────────────────────────────────        │
+│ • OpenAI, Anthropic, Google, Mistral, etc.          │
+│ • Higher rate limits, better models                 │
+│ • User enters their own API key                     │
+├─────────────────────────────────────────────────────┤
+│ Tier 3: LOCAL LLM (Ollama, existing system)         │
+│ ─────────────────────────────────────────────        │
+│ • Full privacy, no internet needed                  │
+│ • Requires Ollama + model download                  │
+│ • Best for power users with good hardware           │
+└─────────────────────────────────────────────────────┘
+```
+
+### Auto-Detection Logic
+
+```
+App starts → try get_system_info()
+  ├─ FAILS (no Tauri backend, UAT, web preview)
+  │   → Default to Tier 1 (Free API)
+  │
+  └─ SUCCEEDS
+      ├─ Low-end (< 8GB RAM, no GPU)
+      │   → Recommend Tier 1 (Free API)
+      │   → Show Tier 2 as upgrade option
+      │
+      ├─ Mid-range (8–16GB RAM)
+      │   → Show all three tiers
+      │   → Default to Tier 1 for instant start
+      │
+      └─ High-end (16GB+ RAM, GPU)
+          → Show all three tiers
+          → Highlight Tier 3 (Local) as recommended
+```
+
+### Free Provider Catalogue (from awesome-free-llm-apis)
+
+All endpoints are **OpenAI SDK-compatible** unless noted. This means we need
+ONE generic client that works for all of them.
+
+#### Provider APIs (trained by the company itself)
+
+| Provider | Models | Rate Limits | Notes |
+|----------|--------|-------------|-------|
+| Google Gemini | Gemini 2.5 Pro/Flash | 5-15 RPM, 100-1K RPD | Not available in EU/UK/CH |
+| Mistral AI | Large 3, Small 3.1 | 1 req/s, 1B tok/mo | EU-based, generous limits |
+| Cohere | Command A, Command R+ | 20 RPM, 1K/mo | Good for conversation |
+
+#### Inference Providers (host open-weight models)
+
+| Provider | Models | Rate Limits | Priority |
+|----------|--------|-------------|----------|
+| Groq | Llama 3.3 70B, Kimi K2 | 30 RPM, 1K RPD | **High** — fast, reliable |
+| Cerebras | Llama 3.3 70B, Qwen3 235B | 30 RPM, 14.4K RPD | **High** — generous limits |
+| GitHub Models | GPT-4o, Llama 3.3 70B | 10-15 RPM, 50-150 RPD | Medium |
+| OpenRouter | DeepSeek R1, Llama 3.3 70B | 20 RPM, 50 RPD | Medium (1K RPD w/ $10) |
+| Cloudflare Workers AI | Llama 3.3 70B, Qwen QwQ 32B | 10K neurons/day | Medium |
+| NVIDIA NIM | Llama 3.3 70B, Mistral Large | 40 RPM | Medium |
+| SiliconFlow | Qwen3-8B, DeepSeek-R1 | 1K RPM, 50K TPM | High — very generous |
+| Ollama Cloud | DeepSeek-V3.2, Qwen3.5 | Light usage | Uses Ollama API, not OpenAI |
+
+### Token Rotation Strategy
+
+```
+1. On app start, load provider list (curated, not fetched live)
+2. For each request:
+   a. Pick the first healthy provider with quota remaining
+   b. Send request
+   c. Parse rate-limit headers from response:
+      - x-ratelimit-remaining-requests
+      - x-ratelimit-remaining-tokens
+      - x-ratelimit-reset
+   d. If 429 (rate limited) → mark provider exhausted, try next
+   e. If success → record usage, return response
+3. If ALL free providers exhausted:
+   → Show user notification: "Free quota used up"
+   → Suggest upgrading to Paid API or Local LLM
+```
+
+### OpenAI-Compatible Chat API (Unified Client)
+
+Since nearly all providers use the OpenAI chat completions format, we need
+ONE client that handles:
+
+```
+POST {base_url}/v1/chat/completions  (or /chat/completions)
+{
+  "model": "llama-3.3-70b",
+  "messages": [{ "role": "system", "content": "..." }, ...],
+  "stream": true
+}
+
+Response (streaming SSE):
+data: {"choices":[{"delta":{"content":"Hello"}}]}
+data: {"choices":[{"delta":{"content":" world"}}]}
+data: [DONE]
+```
+
+This replaces the Ollama-specific NDJSON streaming with standard SSE streaming.
+The Ollama path remains as a separate code path for Tier 3 (local).
+
+### Implementation Chunks
+
+See `rules/milestones.md` Phase 5.5 for chunks 055–057.
