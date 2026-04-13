@@ -199,19 +199,18 @@ export class OllvClient {
   /** Health check: attempt WebSocket connection and verify open within timeout. */
   static async healthCheck(url: string = DEFAULT_OLLV_WS_URL, timeoutMs: number = 3000): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      const timer = setTimeout(() => {
-        ws.close();
-        resolve(false);
-      }, timeoutMs);
-
       let ws: WebSocket;
       try {
         ws = new WebSocket(url);
       } catch {
-        clearTimeout(timer);
         resolve(false);
         return;
       }
+
+      const timer = setTimeout(() => {
+        ws.close();
+        resolve(false);
+      }, timeoutMs);
 
       ws.onopen = () => {
         clearTimeout(timer);

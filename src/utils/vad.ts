@@ -49,7 +49,8 @@ export function useVad(callbacks: VadCallbacks = {}) {
   const error = ref<string | null>(null);
 
   // Internal VAD instance (loaded dynamically)
-  let vadInstance: { destroy: () => Promise<void>; pause: () => Promise<void>; start: () => Promise<void> } | null = null;
+  type VadInstance = { destroy: () => Promise<void>; pause: () => Promise<void>; start: () => Promise<void> };
+  let vadInstance: VadInstance | null = null;
 
   const canStart = computed(() => !micOn.value);
 
