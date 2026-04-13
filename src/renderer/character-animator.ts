@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
+import type { VRM } from '@pixiv/three-vrm';
 import type { AnimationPersona, CharacterState } from '../types';
+import { buildPersonaClips, type PersonaClips } from './animation-loader';
 
 /**
  * Smooth interpolation helper — lerps a value toward a target each frame.
@@ -10,26 +11,25 @@ function smoothStep(current: number, target: number, speed: number, delta: numbe
   return current + (target - current) * Math.min(1, speed * delta);
 }
 
+// ── Expression targets per state (persona-agnostic — expressions don't
+//    change much between personas). ──────────────────────────────────
+const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
+  idle:     { relaxed: 0.25 },
+  thinking: { neutral: 0.3 },
+  talking:  { relaxed: 0.15 },
+  happy:    { happy: 0.7, relaxed: 0.2 },
+  sad:      { sad: 0.6 },
+};
+
 /**
- * VRoid Hub–inspired VRM animator with persona-specific animations.
+ * VRM animator driven by predefined keyframe animations.
  *
- * Each character persona has unique idle behaviour and state reactions
- * that match their personality:
+ * Bone animation is handled by `THREE.AnimationMixer` which plays
+ * keyframe clips loaded from JSON files in `src/renderer/animations/`.
+ * Expressions (morph targets) and blinking remain procedural.
  *
- * - **witch** (Annabelle): slow, deliberate, mystical gestures.
- *   Head tilts curiously, gentle sway, one hand occasionally rises as if
- *   channelling energy. Composed and studious.
- *
- * - **idol** (M58): bouncy, friendly, energetic. Slight rhythmic sway,
- *   head bobs side to side, cheerful micro-bounces. Very expressive.
- *
- * - **fashionista** (Miyoura): confident posture, hip-shift weight sway,
- *   occasional head toss. Cool and stylish.
- *
- * - **gentleman** (Nogami): minimal, composed, stoic. Very slight breathing,
- *   rare slow head turns. Almost statue-like calm.
- *
- * All bones use direct `.rotation.set()` each frame — never `+=`.
+ * When the character state changes the mixer cross-fades from the
+ * current clip to the new one over 0.35 s.
  */
 export class CharacterAnimator {
   private vrm: VRM | null = null;
@@ -39,6 +39,12 @@ export class CharacterAnimator {
   private elapsed = 0;
   private baseRotationY = 0;
   private persona: AnimationPersona = 'gentleman';
+
+  // ── AnimationMixer state ────────────────────────────────────────
+  private mixer: THREE.AnimationMixer | null = null;
+  private clips: PersonaClips | null = null;
+  private currentAction: THREE.AnimationAction | null = null;
+  private static readonly CROSS_FADE_DURATION = 0.35;
 
   // Blink timing constants
   private static readonly BLINK_DURATION = 0.15;
@@ -54,6 +60,9 @@ export class CharacterAnimator {
   // Smooth expression targets (interpolated each frame)
   private expressionTargets: Map<string, number> = new Map();
   private expressionCurrent: Map<string, number> = new Map();
+
+  // Mouth animation elapsed for talking state
+  private mouthElapsed = 0;
 
   private static randomBlinkInterval(): number {
     return CharacterAnimator.MIN_BLINK_INTERVAL +
@@ -71,6 +80,13 @@ export class CharacterAnimator {
     this.blinkValue = 0;
     this.isBlinking = false;
     this.blinkTimer = 0;
+
+    // ── Build AnimationMixer + clips ──────────────────────────────
+    this.mixer = new THREE.AnimationMixer(vrm.scene);
+    this.clips = buildPersonaClips(vrm, persona);
+    this.currentAction = null;
+    // Start with idle
+    this.playClip(this.state);
   }
 
   /** Configure the VRM lookAt target so the model's eyes track the camera. */
@@ -84,11 +100,17 @@ export class CharacterAnimator {
     this.placeholder = group;
     this.vrm = null;
     this.vrmScene = null;
+    this.mixer = null;
+    this.clips = null;
+    this.currentAction = null;
   }
 
   setState(state: CharacterState) {
+    if (this.state === state) return;
     this.state = state;
     this.elapsed = 0;
+    this.mouthElapsed = 0;
+    this.playClip(state);
   }
 
   getState(): CharacterState {
@@ -110,12 +132,28 @@ export class CharacterAnimator {
     }
   }
 
-  /**
-   * VRoid Hub–style VRM animation with persona-specific behaviour.
-   *
-   * Every bone is set via direct assignment (.rotation.set) each frame so
-   * no rotation accumulates.
-   */
+  // ── AnimationMixer clip management ─────────────────────────────────
+
+  private playClip(state: CharacterState) {
+    if (!this.mixer || !this.clips) return;
+
+    const clip = this.clips[state];
+    const newAction = this.mixer.clipAction(clip);
+    newAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    if (this.currentAction && this.currentAction !== newAction) {
+      // Cross-fade from old → new
+      this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
+      newAction.reset().fadeIn(CharacterAnimator.CROSS_FADE_DURATION).play();
+    } else {
+      newAction.reset().play();
+    }
+
+    this.currentAction = newAction;
+  }
+
+  // ── VRM animation (mixer + expressions + blink) ────────────────────
+
   private applyVRMAnimation(t: number, delta: number) {
     if (!this.vrm || !this.vrmScene) return;
 
@@ -123,11 +161,14 @@ export class CharacterAnimator {
     this.vrmScene.position.set(0, 0, 0);
     this.vrmScene.rotation.set(0, this.baseRotationY, 0);
 
+    // Advance the animation mixer (drives bone keyframes)
+    this.mixer?.update(delta);
+
     // Natural blinking with random intervals
     this.updateBlink(delta);
 
-    // Apply persona-specific idle & state animation
-    this.applyPersonaAnimation(t);
+    // Set expression targets for the current state
+    this.applyStateExpressions(t, delta);
 
     // Smoothly interpolate all expressions toward their targets
     this.flushExpressions(delta);
@@ -135,6 +176,26 @@ export class CharacterAnimator {
     // vrm.update() transfers normalized bones → raw skeleton,
     // then updates lookAt, expressions, and spring bones.
     this.vrm.update(delta);
+  }
+
+  // ── State-based expression targets ─────────────────────────────────
+
+  private applyStateExpressions(_t: number, delta: number) {
+    // Clear all expression targets first
+    this.clearExpressionTargets();
+
+    // Apply per-state base expressions
+    const targets = STATE_EXPRESSIONS[this.state];
+    for (const [name, value] of Object.entries(targets)) {
+      this.setExpressionTarget(name, value);
+    }
+
+    // Mouth flap for talking state (procedural sine wave on top)
+    if (this.state === 'talking') {
+      this.mouthElapsed += delta;
+      const mouth = ((Math.sin(this.mouthElapsed * 5.5) + 1) * 0.5) * 0.5;
+      this.setExpressionTarget('aa', mouth);
+    }
   }
 
   // ── Natural blink system with random timing ────────────────────────
@@ -163,409 +224,6 @@ export class CharacterAnimator {
     }
 
     this.setExpressionTarget('blink', this.blinkValue);
-  }
-
-  // ── Bone helper — direct assignment, never additive ────────────────
-
-  private setBone(name: VRMHumanBoneName, x: number, y: number, z: number) {
-    const bone = this.vrm?.humanoid?.getNormalizedBoneNode(name);
-    if (bone) {
-      bone.rotation.set(x, y, z);
-    }
-  }
-
-  // ── Persona-specific animation dispatcher ──────────────────────────
-
-  private applyPersonaAnimation(t: number) {
-    // Clear expressions each frame — state methods set new targets
-    this.clearExpressionTargets();
-
-    switch (this.persona) {
-      case 'witch':
-        this.animateWitch(t);
-        break;
-      case 'idol':
-        this.animateIdol(t);
-        break;
-      case 'fashionista':
-        this.animateFashionista(t);
-        break;
-      case 'gentleman':
-        this.animateGentleman(t);
-        break;
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  //  WITCH — Annabelle: studious, mystical, composed with slow gestures
-  // ══════════════════════════════════════════════════════════════════════
-
-  private animateWitch(t: number) {
-    // ── Breathing — deep, slow, mystical ──
-    const breath = Math.sin(t * 0.9) * 0.06;
-    this.setBone('spine', breath, 0, 0);
-    this.setBone('chest', breath * 0.7, 0, 0);
-
-    // ── Base arm pose — relaxed ──
-    this.setBone('leftUpperArm', 0, 0, 1.2);
-    this.setBone('rightUpperArm', 0, 0, -1.2);
-    this.setBone('leftLowerArm', 0, 0, 0.15);
-    this.setBone('rightLowerArm', 0, 0, -0.15);
-    this.setBone('leftShoulder', 0, 0, 0.05);
-    this.setBone('rightShoulder', 0, 0, -0.05);
-
-    // Defaults for bones that states override
-    this.setBone('hips', 0, 0, 0);
-    this.setBone('neck', 0, 0, 0);
-    this.setBone('head', 0, 0, 0);
-    this.setBone('upperChest', 0, 0, 0);
-
-    switch (this.state) {
-      case 'idle': {
-        // Slow, curious head tilts — like reading an ancient tome
-        const headX = Math.sin(t * 0.35) * 0.08;
-        const headY = Math.sin(t * 0.2) * 0.12;
-        const headZ = Math.sin(t * 0.28) * 0.05;
-        this.setBone('head', headX, headY, headZ);
-        this.setBone('neck', Math.sin(t * 0.25) * 0.04, Math.sin(t * 0.15) * 0.03, 0);
-        // Body sway — mystical energy flowing through
-        const sway = Math.sin(t * 0.3) * 0.04;
-        this.setBone('spine', breath + sway * 0.5, Math.sin(t * 0.18) * 0.03, sway);
-        this.setBone('hips', 0, Math.sin(t * 0.15) * 0.02, sway * 0.6);
-        this.setBone('upperChest', Math.sin(t * 0.4) * 0.02, 0, -sway * 0.3);
-        // Right arm lifts periodically as if channelling energy
-        const armCycle = (Math.sin(t * 0.22) * 0.5 + 0.5);
-        const armLift = armCycle * 0.35;
-        this.setBone('rightUpperArm', -armLift * 0.4, 0, -1.2 + armLift);
-        this.setBone('rightLowerArm', -armCycle * 0.15, 0, -0.15 - armLift * 0.6);
-        // Left arm subtle pendulum
-        this.setBone('leftUpperArm', Math.sin(t * 0.3) * 0.04, 0, 1.2 + Math.sin(t * 0.25) * 0.03);
-        this.setExpressionTarget('relaxed', 0.3);
-        break;
-      }
-      case 'thinking': {
-        // Scholarly contemplation — head tilts deeply, hand near chin
-        this.setBone('head', 0.1, 0.15, Math.sin(t * 0.5) * 0.08);
-        this.setBone('neck', 0.06, Math.sin(t * 0.3) * 0.05, 0);
-        this.setBone('spine', breath, Math.sin(t * 0.2) * 0.04, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.3) * 0.02);
-        // Right arm up near face — thinking pose
-        this.setBone('rightUpperArm', -0.5, 0.15, -0.6);
-        this.setBone('rightLowerArm', -0.4, 0, -0.8);
-        this.setExpressionTarget('neutral', 0.3);
-        break;
-      }
-      case 'talking': {
-        // Explaining magic — animated head, gesturing hand
-        this.setBone('head', Math.sin(t * 1.5) * 0.08, Math.sin(t * 0.8) * 0.1, 0);
-        this.setBone('neck', Math.sin(t * 1.8) * 0.04, Math.sin(t * 0.6) * 0.03, 0);
-        this.setBone('spine', breath, Math.sin(t * 0.5) * 0.04, Math.sin(t * 0.7) * 0.02);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.6) * 0.02);
-        // Right arm gestures while explaining
-        const gesture = Math.sin(t * 1.2) * 0.25;
-        this.setBone('rightUpperArm', -0.35 + gesture, 0, -0.8);
-        this.setBone('rightLowerArm', gesture * 0.4, 0, -0.3 + Math.sin(t * 1.5) * 0.1);
-        this.setExpressionTarget('aa', ((Math.sin(t * 5.5) + 1) * 0.5) * 0.5);
-        this.setExpressionTarget('relaxed', 0.15);
-        break;
-      }
-      case 'happy': {
-        // Pleased discovery — lean back, warm smile, arms lift
-        this.setBone('head', -0.1, Math.sin(t * 0.6) * 0.06, 0);
-        this.setBone('neck', -0.05, 0, 0);
-        this.setBone('spine', breath - 0.06, 0, Math.sin(t * 0.8) * 0.03);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.5) * 0.02);
-        // Arms spread slightly in delight
-        this.setBone('leftUpperArm', -0.08, 0, 1.1 + Math.sin(t * 0.7) * 0.05);
-        this.setBone('rightUpperArm', -0.08, 0, -1.1 - Math.sin(t * 0.7) * 0.05);
-        this.setExpressionTarget('happy', 0.65);
-        this.setExpressionTarget('relaxed', 0.25);
-        break;
-      }
-      case 'sad': {
-        // Worried about a failed spell — droops forward
-        this.setBone('head', 0.15, 0, Math.sin(t * 0.25) * 0.04);
-        this.setBone('neck', 0.08, 0, 0);
-        this.setBone('spine', breath + 0.1, 0, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.2) * 0.015);
-        this.setBone('leftShoulder', 0.06, 0, 0.08);
-        this.setBone('rightShoulder', 0.06, 0, -0.08);
-        this.setExpressionTarget('sad', 0.6);
-        break;
-      }
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  //  IDOL — M58: cute, bouncy, friendly, BTS-vibes
-  // ══════════════════════════════════════════════════════════════════════
-
-  private animateIdol(t: number) {
-    // ── Breathing — quicker, energetic ──
-    const breath = Math.sin(t * 1.5) * 0.05;
-    this.setBone('spine', breath, 0, 0);
-    this.setBone('chest', breath * 0.8, 0, 0);
-
-    // ── Arms — relaxed but ready ──
-    this.setBone('leftUpperArm', 0, 0, 1.2);
-    this.setBone('rightUpperArm', 0, 0, -1.2);
-    this.setBone('leftLowerArm', 0, 0, 0.15);
-    this.setBone('rightLowerArm', 0, 0, -0.15);
-    this.setBone('leftShoulder', 0, 0, 0.05);
-    this.setBone('rightShoulder', 0, 0, -0.05);
-    this.setBone('hips', 0, 0, 0);
-    this.setBone('neck', 0, 0, 0);
-    this.setBone('head', 0, 0, 0);
-    this.setBone('upperChest', 0, 0, 0);
-
-    switch (this.state) {
-      case 'idle': {
-        // Rhythmic sway — side to side like grooving to music
-        const sway = Math.sin(t * 0.8) * 0.07;
-        const bounce = Math.abs(Math.sin(t * 1.6)) * 0.03;
-        this.setBone('hips', 0, Math.sin(t * 0.6) * 0.04, sway);
-        this.setBone('spine', breath + bounce, 0, -sway * 0.4);
-        this.setBone('chest', breath * 0.8, 0, -sway * 0.2);
-        this.setBone('upperChest', 0, 0, -sway * 0.15);
-        // Head bobs — friendly curiosity
-        this.setBone('head',
-          Math.sin(t * 0.7) * 0.07 + bounce,
-          Math.sin(t * 0.5) * 0.12,
-          Math.sin(t * 0.9) * 0.07,
-        );
-        this.setBone('neck', Math.sin(t * 0.55) * 0.04, Math.sin(t * 0.45) * 0.05, 0);
-        // Arms swing with body sway — cute arm pendulums
-        this.setBone('leftUpperArm', Math.sin(t * 0.8) * 0.08, 0, 1.2 + sway * 0.4);
-        this.setBone('rightUpperArm', Math.sin(t * 0.8 + 0.5) * 0.08, 0, -1.2 + sway * 0.4);
-        this.setBone('leftLowerArm', 0, 0, 0.15 + Math.sin(t * 0.6) * 0.05);
-        this.setBone('rightLowerArm', 0, 0, -0.15 - Math.sin(t * 0.6 + 0.3) * 0.05);
-        this.setExpressionTarget('happy', 0.25);
-        this.setExpressionTarget('relaxed', 0.2);
-        break;
-      }
-      case 'thinking': {
-        // Cute confusion — head tilts far, pout
-        this.setBone('head', Math.sin(t * 0.6) * 0.08, 0.2, Math.sin(t * 0.8) * 0.12);
-        this.setBone('neck', 0.05, Math.sin(t * 0.4) * 0.08, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.5) * 0.03);
-        this.setBone('spine', breath, 0, Math.sin(t * 0.4) * 0.02);
-        this.setExpressionTarget('oh', 0.4);
-        break;
-      }
-      case 'talking': {
-        // Animated chatting — bobbing, very expressive
-        const bob = Math.sin(t * 2.0) * 0.06;
-        this.setBone('head', bob, Math.sin(t * 1.0) * 0.12, Math.sin(t * 1.5) * 0.06);
-        this.setBone('neck', Math.sin(t * 2.2) * 0.03, Math.sin(t * 0.8) * 0.04, 0);
-        this.setBone('spine', breath + bob * 0.5, 0, Math.sin(t * 0.8) * 0.03);
-        this.setBone('hips', 0, 0, Math.sin(t * 1.0) * 0.04);
-        // Hand gestures while talking — active gesturing
-        this.setBone('rightUpperArm', Math.sin(t * 1.5) * 0.2 - 0.2, 0, -1.0);
-        this.setBone('rightLowerArm', Math.sin(t * 1.8) * 0.15, 0, -0.2 + Math.sin(t * 2.0) * 0.08);
-        this.setBone('leftUpperArm', Math.sin(t * 1.3) * 0.1, 0, 1.1);
-        this.setExpressionTarget('aa', ((Math.sin(t * 7.0) + 1) * 0.5) * 0.6);
-        this.setExpressionTarget('happy', 0.2);
-        break;
-      }
-      case 'happy': {
-        // Excited bounce — big smile, energetic jumping vibes
-        const bounce = Math.abs(Math.sin(t * 3.0)) * 0.05;
-        this.setBone('spine', breath + bounce, 0, Math.sin(t * 2.0) * 0.07);
-        this.setBone('chest', breath * 0.8 + bounce * 0.5, 0, 0);
-        this.setBone('head', -0.1 + bounce, Math.sin(t * 1.5) * 0.1, Math.sin(t * 2.0) * 0.08);
-        this.setBone('hips', 0, 0, Math.sin(t * 2.5) * 0.06);
-        // Arms swing wider — celebratory wave
-        this.setBone('leftUpperArm', -0.3, 0, 0.9 + Math.sin(t * 2.0) * 0.15);
-        this.setBone('rightUpperArm', -0.3, 0, -0.9 - Math.sin(t * 2.0 + 0.5) * 0.15);
-        this.setBone('leftLowerArm', 0, 0, 0.2 + Math.sin(t * 2.5) * 0.1);
-        this.setBone('rightLowerArm', 0, 0, -0.2 - Math.sin(t * 2.5 + 0.3) * 0.1);
-        this.setExpressionTarget('happy', 0.9);
-        break;
-      }
-      case 'sad': {
-        // Puppy-eyes sad — shoulders droop, head hangs
-        this.setBone('head', 0.15, 0, Math.sin(t * 0.3) * 0.05);
-        this.setBone('neck', 0.08, 0, 0);
-        this.setBone('spine', breath + 0.08, 0, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.25) * 0.015);
-        this.setBone('leftShoulder', 0.08, 0, 0.1);
-        this.setBone('rightShoulder', 0.08, 0, -0.1);
-        this.setExpressionTarget('sad', 0.8);
-        break;
-      }
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  //  FASHIONISTA — Miyoura: cool, confident, gen Z attitude
-  // ══════════════════════════════════════════════════════════════════════
-
-  private animateFashionista(t: number) {
-    // ── Breathing — relaxed, confident ──
-    const breath = Math.sin(t * 1.1) * 0.05;
-    this.setBone('spine', breath, 0, 0);
-    this.setBone('chest', breath * 0.6, 0, 0);
-
-    // ── Arms — slightly away from body, attitude ──
-    this.setBone('leftUpperArm', 0, 0, 1.15);
-    this.setBone('rightUpperArm', 0, 0, -1.15);
-    this.setBone('leftLowerArm', 0, 0, 0.18);
-    this.setBone('rightLowerArm', 0, 0, -0.18);
-    this.setBone('leftShoulder', 0, 0, 0.05);
-    this.setBone('rightShoulder', 0, 0, -0.05);
-    this.setBone('hips', 0, 0, 0);
-    this.setBone('neck', 0, 0, 0);
-    this.setBone('head', 0, 0, 0);
-    this.setBone('upperChest', 0, 0, 0);
-
-    switch (this.state) {
-      case 'idle': {
-        // Hip-shift weight sway — model-like contrapposto stance
-        const hipSway = Math.sin(t * 0.5) * 0.08;
-        this.setBone('hips', 0, Math.sin(t * 0.35) * 0.04, hipSway);
-        this.setBone('spine', breath, 0, -hipSway * 0.35);
-        this.setBone('chest', breath * 0.6, 0, -hipSway * 0.2);
-        this.setBone('upperChest', 0, 0, -hipSway * 0.15);
-        // Confident head — slow turns, chin slightly up
-        this.setBone('head',
-          -0.04 + Math.sin(t * 0.3) * 0.04,
-          Math.sin(t * 0.22) * 0.15,
-          Math.sin(t * 0.4) * 0.06,
-        );
-        this.setBone('neck', -0.03, Math.sin(t * 0.18) * 0.06, 0);
-        // Weight on one leg — hip sway affects arms
-        this.setBone('leftUpperArm', Math.sin(t * 0.4) * 0.04, 0, 1.15 + hipSway * 0.08);
-        this.setBone('rightUpperArm', Math.sin(t * 0.4) * 0.04, 0, -1.15 - hipSway * 0.08);
-        this.setBone('leftLowerArm', 0, 0, 0.18 + Math.sin(t * 0.35) * 0.04);
-        this.setBone('rightLowerArm', 0, 0, -0.18 - Math.sin(t * 0.35 + 0.2) * 0.04);
-        this.setExpressionTarget('relaxed', 0.35);
-        break;
-      }
-      case 'thinking': {
-        // Cool ponder — one hip out, hand on hip attitude
-        this.setBone('hips', 0, 0, 0.08);
-        this.setBone('head', Math.sin(t * 0.5) * 0.06, 0.12, 0.08);
-        this.setBone('neck', 0, 0.06, 0);
-        this.setBone('spine', breath, 0, -0.04);
-        // Left hand on hip — attitude pose
-        this.setBone('leftUpperArm', -0.15, 0.3, 0.7);
-        this.setBone('leftLowerArm', 0, 0, 0.7);
-        break;
-      }
-      case 'talking': {
-        // Expressive but controlled — confident gestures
-        this.setBone('head', Math.sin(t * 1.2) * 0.07, Math.sin(t * 0.7) * 0.12, Math.sin(t * 1.0) * 0.04);
-        this.setBone('neck', Math.sin(t * 1.5) * 0.03, Math.sin(t * 0.5) * 0.04, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.6) * 0.04);
-        this.setBone('spine', breath, Math.sin(t * 0.4) * 0.04, Math.sin(t * 0.5) * 0.02);
-        // Casual hand gesture — stylish
-        this.setBone('rightUpperArm', Math.sin(t * 1.0) * 0.15 - 0.15, 0, -1.0);
-        this.setBone('rightLowerArm', Math.sin(t * 1.3) * 0.1, 0, -0.2);
-        this.setExpressionTarget('aa', ((Math.sin(t * 6.0) + 1) * 0.5) * 0.45);
-        this.setExpressionTarget('relaxed', 0.1);
-        break;
-      }
-      case 'happy': {
-        // Pleased but cool about it — subtle smile, hair toss motion
-        this.setBone('head', -0.08, Math.sin(t * 0.8) * 0.1, Math.sin(t * 1.2) * 0.07);
-        this.setBone('neck', -0.04, Math.sin(t * 0.6) * 0.04, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 1.0) * 0.06);
-        this.setBone('spine', breath - 0.04, 0, Math.sin(t * 0.7) * 0.03);
-        this.setExpressionTarget('happy', 0.6);
-        this.setExpressionTarget('relaxed', 0.3);
-        break;
-      }
-      case 'sad': {
-        // Annoyed-sad — looks away with attitude
-        this.setBone('head', 0.1, -0.15, 0.04);
-        this.setBone('neck', 0.05, -0.08, 0);
-        this.setBone('spine', breath + 0.06, 0, Math.sin(t * 0.3) * 0.02);
-        this.setBone('hips', 0, 0, 0.04);
-        this.setExpressionTarget('sad', 0.4);
-        this.setExpressionTarget('angry', 0.2);
-        break;
-      }
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  //  GENTLEMAN — Nogami: stoic, minimal, composed, strong silent type
-  // ══════════════════════════════════════════════════════════════════════
-
-  private animateGentleman(t: number) {
-    // ── Breathing — slow, measured, controlled ──
-    const breath = Math.sin(t * 0.8) * 0.04;
-    this.setBone('spine', breath, 0, 0);
-    this.setBone('chest', breath * 0.5, 0, 0);
-
-    // ── Arms — proper, close to body, firmly at sides ──
-    // Increased Z rotation (1.35 ≈ 77°) to push arms fully down for VRM 1.0
-    this.setBone('leftUpperArm', 0.05, 0, 1.35);
-    this.setBone('rightUpperArm', 0.05, 0, -1.35);
-    this.setBone('leftLowerArm', 0, 0, 0.1);
-    this.setBone('rightLowerArm', 0, 0, -0.1);
-    this.setBone('leftShoulder', 0, 0, 0.04);
-    this.setBone('rightShoulder', 0, 0, -0.04);
-    this.setBone('hips', 0, 0, 0);
-    this.setBone('neck', 0, 0, 0);
-    this.setBone('head', 0, 0, 0);
-    this.setBone('upperChest', 0, 0, 0);
-
-    switch (this.state) {
-      case 'idle': {
-        // Deliberate, slow micro-movements — conveys quiet confidence
-        // Still restrained compared to other personas but VISIBLE
-        const headY = Math.sin(t * 0.15) * 0.08;
-        const headX = Math.sin(t * 0.12) * 0.03;
-        this.setBone('head', headX, headY, Math.sin(t * 0.1) * 0.015);
-        this.setBone('neck', Math.sin(t * 0.1) * 0.02, Math.sin(t * 0.08) * 0.02, 0);
-        // Slow weight shift — barely visible but present
-        const shift = Math.sin(t * 0.2) * 0.03;
-        this.setBone('hips', 0, Math.sin(t * 0.12) * 0.015, shift);
-        this.setBone('spine', breath, 0, -shift * 0.3);
-        this.setBone('upperChest', Math.sin(t * 0.15) * 0.01, 0, 0);
-        // Very subtle arm pendulum with weight shift
-        this.setBone('leftUpperArm', Math.sin(t * 0.2) * 0.02 + 0.05, 0, 1.35 + shift * 0.04);
-        this.setBone('rightUpperArm', Math.sin(t * 0.2 + 0.3) * 0.02 + 0.05, 0, -1.35 + shift * 0.04);
-        break;
-      }
-      case 'thinking': {
-        // Slight brow furrow, chin down — deep pensive
-        this.setBone('head', 0.08, Math.sin(t * 0.3) * 0.04, 0);
-        this.setBone('neck', 0.04, 0, 0);
-        this.setBone('spine', breath, Math.sin(t * 0.2) * 0.02, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.2) * 0.015);
-        this.setExpressionTarget('angry', 0.15);
-        break;
-      }
-      case 'talking': {
-        // Minimal nods — speaks with gravity, measured
-        this.setBone('head', Math.sin(t * 1.2) * 0.05, Math.sin(t * 0.5) * 0.04, 0);
-        this.setBone('neck', Math.sin(t * 1.5) * 0.02, 0, 0);
-        this.setBone('spine', breath, 0, Math.sin(t * 0.4) * 0.015);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.5) * 0.012);
-        this.setExpressionTarget('aa', ((Math.sin(t * 5.0) + 1) * 0.5) * 0.35);
-        break;
-      }
-      case 'happy': {
-        // Restrained satisfaction — subtle nod, slight lean back
-        this.setBone('head', -0.06, Math.sin(t * 0.4) * 0.03, 0);
-        this.setBone('neck', -0.03, 0, 0);
-        this.setBone('spine', breath - 0.03, 0, 0);
-        this.setExpressionTarget('happy', 0.35);
-        this.setExpressionTarget('relaxed', 0.3);
-        break;
-      }
-      case 'sad': {
-        // Stoic sadness — head drops slightly, shoulders tense
-        this.setBone('head', 0.1, 0, Math.sin(t * 0.2) * 0.02);
-        this.setBone('neck', 0.05, 0, 0);
-        this.setBone('spine', breath + 0.04, 0, 0);
-        this.setBone('hips', 0, 0, Math.sin(t * 0.15) * 0.01);
-        this.setExpressionTarget('sad', 0.35);
-        break;
-      }
-    }
   }
 
   // ── Smooth expression system ───────────────────────────────────────
@@ -635,3 +293,4 @@ export class CharacterAnimator {
     }
   }
 }
+
