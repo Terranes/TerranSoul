@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 056** — Provider Auto-Selection & Token Rotation (Phase 5.5)
+**Chunk 058** — Provider Health Check & Rate-Limit Rotation (Phase 5.5)
 
 ---
 
@@ -137,10 +137,14 @@ FreeProvider struct + curated catalogue (8 providers). Generic OpenAI-compatible
 with SSE streaming. BrainMode enum (FreeApi/PaidApi/LocalOllama) + JSON persistence + legacy
 migration. 3 Tauri commands, 33 Rust tests, 9 Vitest tests.
 
+✅ Chunk 056+057 — Streaming BrainMode Routing, Auto-Selection & Wizard Redesign — see `rules/completion-log.md`
+
+Streaming routes through BrainMode (free API SSE / paid API SSE / Ollama NDJSON).
+Auto-configure free API when Tauri unavailable. Three-tier setup wizard. 1 E2E test.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 056 | **Provider Auto-Selection & Token Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Auto-detect logic: if `get_system_info()` fails (UAT/web) → default to `FreeApi`. If low RAM (<8GB) → recommend `FreeApi`. If high RAM → show all tiers. Extend `send_message_stream` to route through `BrainMode` (free API SSE / paid API SSE / Ollama NDJSON). Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
-| 057 | **Brain Setup Wizard Redesign** — Redesign `BrainSetupView.vue` as three-tier wizard. Step 0: "Choose how to power your brain" with three cards (Free API / Paid API / Local LLM). Free API card is the default, highlighted, marked "Instant — no setup". Step 1 (Free): auto-select best provider, show status, done. Step 1 (Paid): pick provider (OpenAI, Anthropic, etc.), enter API key, test connection. Step 1 (Local): existing Ollama wizard flow. Update `App.vue` to skip onboarding entirely if free API is auto-configured. Vitest tests for new brain store methods. | `not-started` |
+| 058 | **Provider Health Check & Rate-Limit Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
 
 ---
 

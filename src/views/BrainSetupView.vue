@@ -96,18 +96,18 @@
         Enter your API credentials. We support any OpenAI-compatible endpoint.
       </p>
       <div class="bs-form">
-        <label>Provider:</label>
-        <select v-model="paidProvider" class="bs-select">
+        <label for="paid-provider-select">Provider:</label>
+        <select id="paid-provider-select" v-model="paidProvider" class="bs-select">
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
           <option value="custom">Custom endpoint</option>
         </select>
-        <label>API Key:</label>
-        <input v-model="paidApiKey" type="password" placeholder="sk-…" class="bs-input" />
-        <label>Model:</label>
-        <input v-model="paidModel" type="text" placeholder="gpt-4o" class="bs-input" />
-        <label v-if="paidProvider === 'custom'">Base URL:</label>
-        <input v-if="paidProvider === 'custom'" v-model="paidBaseUrl" type="url" placeholder="https://api.example.com" class="bs-input" />
+        <label for="paid-api-key-input">API Key:</label>
+        <input id="paid-api-key-input" v-model="paidApiKey" type="password" placeholder="sk-…" class="bs-input" />
+        <label for="paid-model-input">Model:</label>
+        <input id="paid-model-input" v-model="paidModel" type="text" placeholder="gpt-4o" class="bs-input" />
+        <label v-if="paidProvider === 'custom'" for="paid-base-url-input">Base URL:</label>
+        <input v-if="paidProvider === 'custom'" id="paid-base-url-input" v-model="paidBaseUrl" type="url" placeholder="https://api.example.com" class="bs-input" />
       </div>
       <div class="bs-nav">
         <button class="btn-secondary" @click="step = 0">← Back</button>

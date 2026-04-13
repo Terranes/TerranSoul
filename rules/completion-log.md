@@ -1212,3 +1212,45 @@ with JSON persistence and legacy migration from `active_brain.txt`.
 ### Test Counts (Phase 5.5 — Chunk 055)
 - **Rust:** 33 new tests (free_api 8 + openai_client 11 + brain_config 12 + commands 2) — 361 total
 - **Vitest:** 9 new tests — 264 total across 23 files
+
+---
+
+## Chunk 056+057 — Streaming BrainMode Routing, Auto-Selection & Wizard Redesign
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Route `send_message_stream` through BrainMode (free API SSE / paid API SSE / Ollama NDJSON).
+Auto-configure free API when Tauri backend is unavailable (zero-setup). Redesign the brain
+setup wizard as a three-tier selector (Free Cloud API / Paid Cloud API / Local Ollama).
+Write a single consolidated E2E test for free LLM brain (to avoid spamming free providers in CI/CD).
+
+### Architecture
+- `streaming.rs` — Refactored into helper functions: `stream_openai_api()` (SSE for free/paid),
+  `stream_ollama()` (NDJSON for local), `emit_stub_response()` (no brain fallback),
+  `store_assistant_message()` (shared). Routes via `brain_mode` → `active_brain` → stub.
+- `brain.ts` — `autoConfigureFreeApi()` sets `brainMode` to free_api/groq with fallback provider
+  list. `isFreeApiMode` computed. `initialise()` catches Tauri errors and auto-defaults.
+  `FALLBACK_FREE_PROVIDERS` constant for offline use.
+- `App.vue` — `onMounted` catches `loadActiveBrain()` failure and calls `autoConfigureFreeApi()`,
+  then also tries `loadBrainMode()`. Skips setup when any brain mode is configured.
+- `BrainSetupView.vue` — Three-tier wizard: Step 0 (choose tier), Step 1A (free provider list),
+  Step 1B (paid API credentials), Step 1C (local hardware analysis), Steps 2-5 (local flow).
+  Free API tier is pre-selected and highlighted with "Instant — no setup" badge.
+- `ChatView.vue` — Inline brain card now shows "☁️ Use Free Cloud API (no setup)" button above
+  the local Ollama section. Ollama warning only shown when local models are available.
+
+### Files Modified
+- `src-tauri/src/commands/streaming.rs` — Three-tier routing + 3 new Rust tests
+- `src/stores/brain.ts` — autoConfigureFreeApi(), isFreeApiMode, FALLBACK_FREE_PROVIDERS
+- `src/stores/brain.test.ts` — 5 new Vitest tests for auto-configure behavior
+- `src/App.vue` — Auto-configure free API on Tauri failure
+- `src/views/BrainSetupView.vue` — Three-tier wizard redesign
+- `src/views/ChatView.vue` — Free API quick-start in inline brain card
+- `e2e/app.spec.ts` — 1 consolidated E2E test (intentionally 1 test to avoid spamming free LLM providers in CI/CD)
+
+### Test Counts (Phase 5.5 — Chunks 056+057)
+- **Rust:** 3 new tests (streaming routing) — 364 total
+- **Vitest:** 5 new tests (auto-configure) — 269 total across 23 files
+- **E2E:** 1 new test (free LLM brain) — 28 total (27 existing + 1 new)
