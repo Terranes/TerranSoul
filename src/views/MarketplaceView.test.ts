@@ -81,11 +81,11 @@ describe('MarketplaceView', () => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
     // Simulate Tauri desktop environment for marketplace tests
-    (window as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: mockInvoke };
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: mockInvoke };
   });
 
   afterEach(() => {
-    delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
   it('renders header and tabs', async () => {
@@ -198,13 +198,13 @@ describe('MarketplaceView', () => {
     expect(wrapper.text()).toContain('terranes.dev');
   });
 
-  it('shows browser mode notice when Tauri is unavailable', async () => {
-    // Remove Tauri to simulate browser/UAT environment
-    delete (window as Record<string, unknown>).__TAURI_INTERNALS__;
+  it('shows Tauri unavailable banner when Tauri is not present', async () => {
+    // Remove Tauri to simulate browser/UAT/Vercel environment
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     const wrapper = mount(MarketplaceView);
     await flushPromises();
-    expect(wrapper.text()).toContain('Browser Mode');
-    expect(wrapper.text()).toContain('TerranSoul desktop app');
+    expect(wrapper.text()).toContain('Tauri Desktop Backend Unavailable');
+    expect(wrapper.text()).toContain('desktop app');
     expect(wrapper.text()).not.toContain('stub-agent');
   });
 });
