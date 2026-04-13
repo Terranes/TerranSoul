@@ -1,10 +1,18 @@
 /**
  * Integration tests for the conversation store.
- * Mocks @tauri-apps/api/core invoke() to simulate Tauri IPC without the Rust backend.
+ *
+ * The conversation store now has three paths:
+ *  1. Tauri backend available (window.__TAURI_INTERNALS__) → streaming IPC
+ *  2. No Tauri but brain configured → browser-side free API
+ *  3. No brain → persona fallback
+ *
+ * In jsdom tests, __TAURI_INTERNALS__ is absent unless explicitly set,
+ * so tests exercise paths 2 and 3 by default.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { useConversationStore } from './conversation';
+import { useBrainStore } from './brain';
 import type { Message } from '../types';
 
 // Mock the Tauri invoke API
@@ -13,17 +21,204 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
-describe('conversation store — IPC integration', () => {
+// Mock the free-api-client to avoid real HTTP calls
+const mockStreamChat = vi.fn();
+vi.mock('../utils/free-api-client', () => ({
+  streamChatCompletion: (...args: unknown[]) => mockStreamChat(...args),
+  buildHistory: (msgs: Array<{ role: string; content: string }>, limit = 20) =>
+    msgs.slice(-limit).map((m: { role: string; content: string }) => ({
+      role: m.role,
+      content: m.content,
+    })),
+}));
+
+describe('conversation store — no brain (persona fallback)', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockStreamChat.mockReset();
   });
 
-  it('sendMessage round-trip: user message added locally, invoke called, response pushed', async () => {
+  it('sendMessage uses persona fallback when no brain is configured', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+
+    expect(store.isThinking).toBe(false);
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0].role).toBe('user');
+    expect(store.messages[0].content).toBe('hello');
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.messages[1].sentiment).toBe('happy'); // "hello" triggers happy
+  });
+
+  it('persona fallback detects sadness', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('I am sad today');
+
+    expect(store.messages[1].sentiment).toBe('sad');
+  });
+
+  it('persona fallback default message no longer echoes input', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('How are you?');
+
+    expect(store.messages[1].content).not.toContain('You said:');
+    expect(store.messages[1].content).toContain('set up a brain');
+  });
+
+  it('multiple messages accumulate in correct order', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+    await store.sendMessage('I feel sad');
+
+    expect(store.messages).toHaveLength(4);
+    expect(store.messages[0].content).toBe('hello');
+    expect(store.messages[0].role).toBe('user');
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].sentiment).toBe('happy');
+    expect(store.messages[2].content).toBe('I feel sad');
+    expect(store.messages[2].role).toBe('user');
+    expect(store.messages[3].role).toBe('assistant');
+    expect(store.messages[3].sentiment).toBe('sad');
+  });
+
+  it('isThinking is set and cleared during persona fallback', async () => {
+    const store = useConversationStore();
+    const promise = store.sendMessage('hello');
+    expect(store.isThinking).toBe(true);
+    await promise;
+    expect(store.isThinking).toBe(false);
+  });
+});
+
+describe('conversation store — brain configured (browser-side free API)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('calls free API when brain is configured', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    // Mock streamChatCompletion to call onDone immediately
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
+        callbacks.onDone('[happy] Hello! Great to see you!');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].content).toBe('Hello! Great to see you!'); // tags stripped
+    expect(store.messages[1].sentiment).toBe('happy');
+  });
+
+  it('streams chunks to streamingText during generation', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    let capturedCallbacks: { onChunk: (t: string) => void; onDone: (t: string) => void } | null = null;
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onChunk: (t: string) => void; onDone: (t: string) => void }) => {
+        capturedCallbacks = callbacks;
+        // Simulate delayed chunks
+        setTimeout(() => {
+          callbacks.onChunk('Hello ');
+          callbacks.onChunk('world!');
+          callbacks.onDone('Hello world!');
+        }, 10);
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('hi');
+
+    expect(capturedCallbacks).not.toBeNull();
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].content).toBe('Hello world!');
+  });
+
+  it('falls back to persona on free API error', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onError: (err: string) => void }) => {
+        callbacks.onError('HTTP 429: Rate limited');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+
+    // Should fall back to persona
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.isThinking).toBe(false);
+  });
+});
+
+describe('conversation store — Tauri backend available', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+    // Simulate Tauri environment
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+  });
+
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  });
+
+  it('uses streaming IPC when Tauri is available', async () => {
+    // send_message_stream resolves immediately, then streaming store gets handleChunk
+    mockInvoke.mockResolvedValue(undefined);
+
+    const store = useConversationStore();
+    // sendMessage will try streaming → send_message_stream
+    // Since streaming store won't receive done chunk in test, it will time out.
+    // But the invoke should be called.
+    const promise = store.sendMessage('hello');
+
+    // Give the async poll loop a tick
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'hello' });
+
+    // Simulate the streaming store being done
+    const { useStreamingStore } = await import('./streaming');
+    const streaming = useStreamingStore();
+    streaming.handleChunk({ text: 'Hi there!', done: false });
+    streaming.handleChunk({ text: '', done: true });
+
+    await promise;
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].content).toBe('Hi there!');
+    expect(store.isThinking).toBe(false);
+  });
+
+  it('falls back to send_message on streaming failure', async () => {
+    // First call (send_message_stream) rejects
+    mockInvoke.mockRejectedValueOnce(new Error('stream not supported'));
+    // Second call (send_message) succeeds
     const serverResponse: Message = {
-      id: 'resp-1',
+      id: 'resp-fb',
       role: 'assistant',
-      content: 'Hello! I am TerranSoul.',
+      content: 'Hello via fallback!',
       agentName: 'TerranSoul',
       sentiment: 'happy',
       timestamp: Date.now(),
@@ -33,85 +228,30 @@ describe('conversation store — IPC integration', () => {
     const store = useConversationStore();
     await store.sendMessage('hello');
 
-    // invoke was called with the correct command and arguments
-    expect(mockInvoke).toHaveBeenCalledWith('send_message', {
-      message: 'hello',
-      agentId: null,
-    });
-
-    // Both user and assistant messages are in the store
     expect(store.messages).toHaveLength(2);
-    expect(store.messages[0].role).toBe('user');
-    expect(store.messages[0].content).toBe('hello');
     expect(store.messages[1]).toEqual(serverResponse);
   });
 
-  it('sendMessage with custom agent routes agentId in invoke', async () => {
-    const serverResponse: Message = {
-      id: 'resp-2',
-      role: 'assistant',
-      content: 'Response from custom agent',
-      agentName: 'custom',
-      timestamp: Date.now(),
-    };
-    mockInvoke.mockResolvedValueOnce(serverResponse);
-
-    const store = useConversationStore();
-    store.currentAgent = 'my-agent';
-    await store.sendMessage('test');
-
-    expect(mockInvoke).toHaveBeenCalledWith('send_message', {
-      message: 'test',
-      agentId: 'my-agent',
-    });
-    expect(store.messages[1].agentName).toBe('custom');
-  });
-
-  it('sendMessage error: uses persona fallback and clears isThinking', async () => {
-    mockInvoke.mockRejectedValueOnce(new Error('Backend unavailable'));
+  it('falls back to persona when both streaming and invoke fail', async () => {
+    mockInvoke.mockRejectedValue(new Error('all failed'));
 
     const store = useConversationStore();
     await store.sendMessage('hello');
 
-    // isThinking should be cleared
-    expect(store.isThinking).toBe(false);
-
-    // Two messages: user + persona fallback
     expect(store.messages).toHaveLength(2);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
-    expect(store.messages[1].sentiment).toBe('happy'); // "hello" triggers happy
-    expect(store.messages[1].content).not.toContain('Error:');
-  });
-
-  it('isThinking toggles during sendMessage lifecycle', async () => {
-    let resolveInvoke: (value: Message) => void;
-    const pendingInvoke = new Promise<Message>((resolve) => {
-      resolveInvoke = resolve;
-    });
-    mockInvoke.mockReturnValueOnce(pendingInvoke);
-
-    const store = useConversationStore();
-    const sendPromise = store.sendMessage('hi');
-
-    // After calling sendMessage but before invoke resolves, isThinking should be true
-    expect(store.isThinking).toBe(true);
-
-    // Resolve the invoke
-    resolveInvoke!({
-      id: 'resp-3',
-      role: 'assistant',
-      content: 'Hi there!',
-      agentName: 'TerranSoul',
-      timestamp: Date.now(),
-    });
-    await sendPromise;
-
-    // After resolving, isThinking should be false
     expect(store.isThinking).toBe(false);
   });
+});
 
-  it('getConversation populates store from backend history', async () => {
+describe('conversation store — getConversation', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('populates store from backend history', async () => {
     const history: Message[] = [
       { id: 'h1', role: 'user', content: 'first', timestamp: 1000 },
       { id: 'h2', role: 'assistant', content: 'response 1', agentName: 'TerranSoul', timestamp: 1001 },
@@ -128,64 +268,12 @@ describe('conversation store — IPC integration', () => {
     expect(store.messages).toHaveLength(4);
   });
 
-  it('getConversation silently ignores errors', async () => {
+  it('silently ignores errors', async () => {
     mockInvoke.mockRejectedValueOnce(new Error('connection lost'));
 
     const store = useConversationStore();
-    // Should not throw
     await store.getConversation();
 
     expect(store.messages).toHaveLength(0);
-  });
-
-  it('sendMessage sentiment is preserved from backend response', async () => {
-    const serverResponse: Message = {
-      id: 'resp-s',
-      role: 'assistant',
-      content: 'That makes me sad to hear.',
-      agentName: 'TerranSoul',
-      sentiment: 'sad',
-      timestamp: Date.now(),
-    };
-    mockInvoke.mockResolvedValueOnce(serverResponse);
-
-    const store = useConversationStore();
-    await store.sendMessage('I am sad');
-
-    expect(store.messages[1].sentiment).toBe('sad');
-  });
-
-  it('multiple messages accumulate in correct order', async () => {
-    const resp1: Message = {
-      id: 'r1',
-      role: 'assistant',
-      content: 'Hello!',
-      agentName: 'TerranSoul',
-      sentiment: 'happy',
-      timestamp: 1000,
-    };
-    const resp2: Message = {
-      id: 'r2',
-      role: 'assistant',
-      content: 'I can help with that.',
-      agentName: 'TerranSoul',
-      sentiment: 'neutral',
-      timestamp: 2000,
-    };
-    mockInvoke.mockResolvedValueOnce(resp1).mockResolvedValueOnce(resp2);
-
-    const store = useConversationStore();
-    await store.sendMessage('hello');
-    await store.sendMessage('help me');
-
-    expect(store.messages).toHaveLength(4);
-    expect(store.messages[0].content).toBe('hello');
-    expect(store.messages[0].role).toBe('user');
-    expect(store.messages[1].content).toBe('Hello!');
-    expect(store.messages[1].role).toBe('assistant');
-    expect(store.messages[2].content).toBe('help me');
-    expect(store.messages[2].role).toBe('user');
-    expect(store.messages[3].content).toBe('I can help with that.');
-    expect(store.messages[3].role).toBe('assistant');
   });
 });

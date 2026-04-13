@@ -2,8 +2,12 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Message } from '../types';
+import { useBrainStore } from './brain';
+import { useStreamingStore } from './streaming';
+import { streamChatCompletion, buildHistory } from '../utils/free-api-client';
+import { parseTags } from '../utils/emotion-parser';
 
-/** Browser-side persona fallback when Tauri backend is unavailable. */
+/** Browser-side persona fallback when no brain is configured at all. */
 function createPersonaResponse(content: string): Message {
   const lower = content.toLowerCase();
   let response: string;
@@ -28,7 +32,7 @@ function createPersonaResponse(content: string): Message {
     response = "That's wonderful to hear! Your positive energy is contagious! ✨";
     sentiment = 'happy';
   } else {
-    response = `I hear you! You said: "${content}". I'm still learning, but I'm always here to listen and help!`;
+    response = `Hello! I'm TerranSoul. Please set up a brain (free cloud API or local Ollama) so I can have a real conversation with you!`;
     sentiment = 'neutral';
   }
 
@@ -42,10 +46,42 @@ function createPersonaResponse(content: string): Message {
   };
 }
 
+/** Detect if the Tauri IPC bridge is available (synchronous check). */
+function isTauriAvailable(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/**
+ * Resolve the free provider details (base_url, model, api_key) from the brain store
+ * for browser-side streaming.
+ */
+function resolveFreeProvider(brain: ReturnType<typeof useBrainStore>): {
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+} | null {
+  if (!brain.brainMode || brain.brainMode.mode !== 'free_api') return null;
+
+  const providerId = brain.brainMode.provider_id;
+  const apiKey = brain.brainMode.api_key ?? null;
+  const provider = brain.freeProviders.find((p) => p.id === providerId);
+  if (!provider) return null;
+
+  return {
+    baseUrl: provider.base_url,
+    model: provider.model,
+    apiKey,
+  };
+}
+
 export const useConversationStore = defineStore('conversation', () => {
   const messages = ref<Message[]>([]);
   const currentAgent = ref<string>('auto');
   const isThinking = ref(false);
+  /** Live streaming text shown in the UI while the LLM is generating. */
+  const streamingText = ref('');
+  /** Whether a streaming response is in progress. */
+  const isStreaming = ref(false);
 
   async function sendMessage(content: string) {
     const userMsg: Message = {
@@ -56,20 +92,120 @@ export const useConversationStore = defineStore('conversation', () => {
     };
     messages.value.push(userMsg);
     isThinking.value = true;
+    streamingText.value = '';
+    isStreaming.value = false;
 
-    try {
-      const response = await invoke<Message>('send_message', {
-        message: content,
-        agentId: currentAgent.value === 'auto' ? null : currentAgent.value,
-      });
-      messages.value.push(response);
-    } catch {
-      // No Tauri backend — use browser-side persona with emotion
-      await new Promise(r => setTimeout(r, 500));
-      messages.value.push(createPersonaResponse(content));
-    } finally {
-      isThinking.value = false;
+    const brain = useBrainStore();
+
+    // Path 1: Tauri backend available → use streaming IPC command
+    if (isTauriAvailable()) {
+      try {
+        const streaming = useStreamingStore();
+        const ok = await streaming.sendStreaming(content);
+        if (!ok) throw new Error(streaming.error ?? 'Streaming failed');
+
+        // The actual chunk events come via Tauri events (llm-chunk).
+        // ChatView wires up the event listener and calls streaming.handleChunk().
+        // We wait for the stream to finish by polling streaming.isStreaming.
+        // To avoid blocking forever, use a timeout.
+        const maxWait = 120_000; // 2 minutes
+        const start = Date.now();
+        while (streaming.isStreaming && Date.now() - start < maxWait) {
+          streamingText.value = streaming.streamText;
+          isStreaming.value = true;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+
+        isStreaming.value = false;
+        streamingText.value = '';
+
+        // Create the final assistant message from accumulated text
+        const finalText = streaming.streamText;
+        if (finalText) {
+          const parsed = parseTags(finalText);
+          const assistantMsg: Message = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: finalText,
+            agentName: 'TerranSoul',
+            sentiment: (parsed.emotion as Message['sentiment']) ?? 'neutral',
+            timestamp: Date.now(),
+          };
+          messages.value.push(assistantMsg);
+        }
+        streaming.reset();
+      } catch {
+        // Tauri streaming failed — fall back to non-streaming invoke
+        try {
+          const response = await invoke<Message>('send_message', {
+            message: content,
+            agentId: currentAgent.value === 'auto' ? null : currentAgent.value,
+          });
+          messages.value.push(response);
+        } catch {
+          messages.value.push(createPersonaResponse(content));
+        }
+      } finally {
+        isThinking.value = false;
+      }
+      return;
     }
+
+    // Path 2: No Tauri, but brain is configured with free API → browser-side streaming
+    if (brain.hasBrain) {
+      const provider = resolveFreeProvider(brain);
+      if (provider) {
+        try {
+          const history = buildHistory(
+            messages.value.map((m) => ({ role: m.role, content: m.content })),
+          );
+          isStreaming.value = true;
+
+          const fullText = await new Promise<string>((resolve, reject) => {
+            streamChatCompletion(
+              provider.baseUrl,
+              provider.model,
+              provider.apiKey,
+              history,
+              {
+                onChunk: (text) => {
+                  streamingText.value += text;
+                },
+                onDone: (full) => resolve(full),
+                onError: (err) => reject(new Error(err)),
+              },
+            );
+          });
+
+          isStreaming.value = false;
+          streamingText.value = '';
+
+          const parsed = parseTags(fullText);
+          const assistantMsg: Message = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: parsed.text,
+            agentName: 'TerranSoul',
+            sentiment: (parsed.emotion as Message['sentiment']) ?? 'neutral',
+            timestamp: Date.now(),
+          };
+          messages.value.push(assistantMsg);
+        } catch {
+          isStreaming.value = false;
+          streamingText.value = '';
+          // Free API call failed — fall back to persona
+          messages.value.push(createPersonaResponse(content));
+        } finally {
+          isThinking.value = false;
+        }
+        return;
+      }
+    }
+
+    // Path 3: No brain configured — persona fallback
+    await new Promise((r) => setTimeout(r, 500));
+    messages.value.push(createPersonaResponse(content));
+    isThinking.value = false;
   }
 
   async function getConversation() {
@@ -81,5 +217,13 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
-  return { messages, currentAgent, isThinking, sendMessage, getConversation };
+  return {
+    messages,
+    currentAgent,
+    isThinking,
+    streamingText,
+    isStreaming,
+    sendMessage,
+    getConversation,
+  };
 });

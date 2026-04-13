@@ -74,7 +74,12 @@
           </div>
         </div>
 
-        <ChatMessageList :messages="conversationStore.messages" :is-thinking="conversationStore.isThinking" />
+        <ChatMessageList
+          :messages="conversationStore.messages"
+          :is-thinking="conversationStore.isThinking"
+          :streaming-text="conversationStore.streamingText"
+          :is-streaming="conversationStore.isStreaming"
+        />
         <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
       </div>
     </Transition>
@@ -82,10 +87,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
+import { useStreamingStore } from '../stores/streaming';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
@@ -95,9 +101,11 @@ import ModelPanel from '../components/ModelPanel.vue';
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
+const streaming = useStreamingStore();
 const showModelPanel = ref(false);
 const showDialog = ref(true);
 const selectedBrain = ref('');
+let unlistenLlmChunk: (() => void) | null = null;
 
 function toggleDialog() {
   showDialog.value = !showDialog.value;
@@ -158,6 +166,19 @@ async function handleSend(message: string) {
   setTimeout(() => characterStore.setState('idle'), 3000);
 }
 
+/** Set up Tauri event listener for llm-chunk events (streaming LLM). */
+async function setupTauriEventListener() {
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
+      streaming.handleChunk(event.payload);
+    });
+    unlistenLlmChunk = unlisten;
+  } catch {
+    // Tauri event API not available (browser mode) — streaming handled via fetch
+  }
+}
+
 watch(
   () => conversationStore.isThinking,
   (thinking) => {
@@ -165,7 +186,17 @@ watch(
   },
 );
 
+// Show talking animation during streaming
+watch(
+  () => conversationStore.isStreaming,
+  (active) => {
+    if (active) characterStore.setState('talking');
+  },
+);
+
 onMounted(async () => {
+  await setupTauriEventListener();
+
   try {
     await brain.initialise();
     if (brain.topRecommendation) {
@@ -173,6 +204,13 @@ onMounted(async () => {
     }
   } catch {
     // No Tauri backend
+  }
+});
+
+onUnmounted(() => {
+  if (unlistenLlmChunk) {
+    unlistenLlmChunk();
+    unlistenLlmChunk = null;
   }
 });
 </script>
