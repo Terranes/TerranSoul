@@ -7,13 +7,14 @@ on:
         description: 'TestFlight build note (shown to testers)'
         required: false
         default: 'New TerranSoul build from CI'
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'package.json'
-      - 'package-lock.json'
+  # Temporarily disabled — re-enable when iOS signing secrets are configured
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'src/**'
+  #     - 'src-tauri/**'
+  #     - 'package.json'
+  #     - 'package-lock.json'
 
 concurrency:
   group: ios-deploy-${{ github.ref }}

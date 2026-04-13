@@ -8,14 +8,12 @@ This folder contains guides for working with 3D models in TerranSoul.
 |-------|-------------|
 | [Importing Models](./IMPORTING-MODELS.md) | How to import VRM models into TerranSoul and use them as your AI character |
 | [Extending](./EXTENDING.md) | How developers can add custom models, create new character behaviors, and build extensions |
-| [iOS Testing](./IOS-TESTING.md) | How to test TerranSoul on an iPhone via TestFlight with automated CI builds |
-| [Self-Validation](./SELF-VALIDATION.md) | Automated video recording that proves TerranSoul is working as expected |
 
 ## Quick Start
 
-1. Launch TerranSoul — **Model 1** loads automatically as the default character
+1. Launch TerranSoul — **Annabelle the Sorcerer** loads automatically as the default character
 2. Click the **ℹ** button in the top-right of the 3D viewport to open the Model Panel
-3. Use the **Default Model** dropdown to switch between bundled models (Model 1, Model 2)
+3. Use the **Default Model** dropdown to switch between bundled models (Annabelle, M58, Miyoura Toshie, Nogami Juto)
 4. Or click **Import VRM Model** to load a custom `.vrm` file from your computer
 5. Your character appears in the viewport and reacts to chat messages
 
@@ -29,12 +27,14 @@ TerranSoul supports:
 
 ## Default Character
 
-TerranSoul ships with two bundled VRM models in `public/models/default/`:
+TerranSoul ships with four bundled VRM models in `public/models/default/`:
 
 | Model | File | Description |
 |-------|------|-------------|
-| Model 1 | `Model1.vrm` | Default character (loaded on startup) |
-| Model 2 | `Model2.vrm` | Additional bundled character |
+| Annabelle the Sorcerer | `Annabelle the Sorcerer.vrm` | Default character (loaded on startup) |
+| M58 | `M58.vrm` | Additional bundled character |
+| Miyoura Toshie | `Miyoura Toshie.vrm` | Additional bundled character |
+| Nogami Juto | `Nogami Juto.vrm` | Additional bundled character |
 
 You can switch between them using the dropdown in the Model Panel. The default model registry is defined in `src/config/default-models.ts`.
 

@@ -13,7 +13,7 @@ body,
   width: 100%;
   overflow: hidden;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: #1a1a2e;
+  background: transparent;
   color: #e8e8f0;
 }
 

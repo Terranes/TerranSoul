@@ -29,14 +29,16 @@ describe('character store — IPC integration', () => {
     expect(store.loadError).toBeUndefined();
   });
 
-  it('loadVrm error: sets loadError and does not change vrmPath', async () => {
+  it('loadVrm error: sets vrmPath even if backend invoke fails', async () => {
     mockInvoke.mockRejectedValueOnce(new Error('File not found'));
 
     const store = useCharacterStore();
     await store.loadVrm('/bad/path.vrm');
 
-    expect(store.loadError).toContain('File not found');
-    expect(store.vrmPath).toBeUndefined();
+    // vrmPath is set immediately so the frontend can attempt Three.js loading
+    expect(store.vrmPath).toBe('/bad/path.vrm');
+    // Backend error is swallowed (frontend loading is independent)
+    expect(store.loadError).toBeUndefined();
   });
 
   it('loadVrm clears previous error and metadata before loading', async () => {
@@ -64,18 +66,35 @@ describe('character store — IPC integration', () => {
     expect(store.vrmPath).toBeUndefined();
     expect(store.vrmMetadata).toBeUndefined();
     expect(store.loadError).toBeUndefined();
-    expect(store.selectedModelId).toBe('model1');
+    expect(store.isLoading).toBe(false);
+    expect(store.selectedModelId).toBe('annabelle');
+  });
+
+  it('loadVrm sets isLoading and setLoaded clears it', async () => {
+    mockInvoke.mockResolvedValueOnce(undefined);
+
+    const store = useCharacterStore();
+    // isLoading starts true (loading screen shown until first model loads)
+    expect(store.isLoading).toBe(true);
+
+    await store.loadVrm('/models/avatar.vrm');
+
+    // Still loading (setLoaded must be called by the viewport after Three.js finishes)
+    expect(store.isLoading).toBe(true);
+
+    store.setLoaded();
+    expect(store.isLoading).toBe(false);
   });
 
   it('selectModel loads the correct default model path', async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
 
     const store = useCharacterStore();
-    await store.selectModel('model2');
+    await store.selectModel('annabelle');
 
-    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Model2.vrm' });
-    expect(store.vrmPath).toBe('/models/default/Model2.vrm');
-    expect(store.selectedModelId).toBe('model2');
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Annabelle the Sorcerer.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Annabelle the Sorcerer.vrm');
+    expect(store.selectedModelId).toBe('annabelle');
   });
 
   it('selectModel ignores unknown model ids', async () => {
@@ -86,21 +105,23 @@ describe('character store — IPC integration', () => {
     expect(store.vrmPath).toBeUndefined();
   });
 
-  it('loadDefaultModel loads model1 by default', async () => {
+  it('loadDefaultModel loads annabelle by default', async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
 
     const store = useCharacterStore();
     await store.loadDefaultModel();
 
-    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Model1.vrm' });
-    expect(store.vrmPath).toBe('/models/default/Model1.vrm');
-    expect(store.selectedModelId).toBe('model1');
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Annabelle the Sorcerer.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Annabelle the Sorcerer.vrm');
+    expect(store.selectedModelId).toBe('annabelle');
   });
 
   it('defaultModels contains the bundled model list', () => {
     const store = useCharacterStore();
-    expect(store.defaultModels.length).toBeGreaterThanOrEqual(2);
-    expect(store.defaultModels[0].id).toBe('model1');
-    expect(store.defaultModels[1].id).toBe('model2');
+    expect(store.defaultModels.length).toBeGreaterThanOrEqual(4);
+    expect(store.defaultModels[0].id).toBe('annabelle');
+    expect(store.defaultModels[1].id).toBe('m58');
+    expect(store.defaultModels[2].id).toBe('miyoura-toshie');
+    expect(store.defaultModels[3].id).toBe('nogami-juto');
   });
 });

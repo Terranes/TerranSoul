@@ -12,7 +12,6 @@ describe('CharacterAnimator', () => {
     const group = makePlaceholder();
     animator.setPlaceholder(group);
     animator.update(0.016);
-    // Idle should produce minimal movement — position.y should be near 0
     expect(Math.abs(group.position.y)).toBeLessThan(0.1);
   });
 
@@ -25,6 +24,11 @@ describe('CharacterAnimator', () => {
     expect(animator.getState()).toBe('happy');
   });
 
+  it('getPersona returns current persona', () => {
+    const animator = new CharacterAnimator();
+    expect(animator.getPersona()).toBe('cool');
+  });
+
   it('setState changes state and resets elapsed time', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();
@@ -33,9 +37,7 @@ describe('CharacterAnimator', () => {
 
     animator.setState('thinking');
     animator.update(0.016);
-    // After state change the elapsed resets, so animation starts from t≈0
     const posAfterThinking = group.position.y;
-    // Just verify it ran without error and produced a number
     expect(typeof posAfterThinking).toBe('number');
     expect(posAfterThinking).not.toBeNaN();
   });
@@ -45,11 +47,9 @@ describe('CharacterAnimator', () => {
     const group = makePlaceholder();
     animator.setPlaceholder(group);
 
-    // Run idle for some time
     animator.setState('idle');
     animator.update(0.5);
 
-    // Reset and run thinking
     const group2 = makePlaceholder();
     const animator2 = new CharacterAnimator();
     animator2.setPlaceholder(group2);
@@ -57,9 +57,6 @@ describe('CharacterAnimator', () => {
     animator2.update(0.5);
     const thinkingY = group2.position.y;
 
-    // At the same elapsed time, thinking uses faster oscillation
-    // so the positions will generally differ
-    // (both are sine-based but different frequencies)
     expect(typeof thinkingY).toBe('number');
   });
 
@@ -69,7 +66,6 @@ describe('CharacterAnimator', () => {
     animator.setPlaceholder(group);
     animator.setState('talking');
     animator.update(0.3);
-    // Talking should affect both y and z rotation
     expect(typeof group.position.y).toBe('number');
     expect(typeof group.rotation.z).toBe('number');
   });
@@ -80,7 +76,6 @@ describe('CharacterAnimator', () => {
     animator.setPlaceholder(group);
     animator.setState('talking');
     animator.update(0.2);
-    // Scale pulse: 1.0 + sin(t*8) * 0.04, so scale should be near 1.0
     expect(group.scale.x).toBeGreaterThan(0.9);
     expect(group.scale.x).toBeLessThan(1.1);
   });
@@ -91,7 +86,6 @@ describe('CharacterAnimator', () => {
     animator.setPlaceholder(group);
     animator.setState('happy');
     animator.update(0.1);
-    // Happy uses abs(sin) so position.y should be >= 0
     expect(group.position.y).toBeGreaterThanOrEqual(0);
   });
 
@@ -101,7 +95,6 @@ describe('CharacterAnimator', () => {
     animator.setPlaceholder(group);
     animator.setState('happy');
     animator.update(0.1);
-    // Happy: 1.0 + abs(sin(t*5)) * 0.05
     expect(group.scale.x).toBeGreaterThanOrEqual(1.0);
   });
 
@@ -111,7 +104,6 @@ describe('CharacterAnimator', () => {
     animator.setPlaceholder(group);
     animator.setState('sad');
     animator.update(0.5);
-    // Sad uses -abs(sin) so position.y should be <= 0
     expect(group.position.y).toBeLessThanOrEqual(0);
   });
 
@@ -172,7 +164,6 @@ describe('CharacterAnimator', () => {
   it('setPlaceholder clears VRM reference', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();
-    // After setting placeholder, update should work on the group
     animator.setPlaceholder(group);
     animator.update(0.1);
     expect(typeof group.position.y).toBe('number');

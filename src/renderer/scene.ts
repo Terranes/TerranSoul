@@ -47,35 +47,57 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     rendererType = 'webgl';
   }
 
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a1a2e);
+  // No solid background — transparent for overlay window
+  scene.background = null;
 
   const camera = new THREE.PerspectiveCamera(
-    45,
+    30,
     canvas.clientWidth / canvas.clientHeight,
     0.1,
     100,
   );
-  camera.position.set(0, 1.4, 3);
-  camera.lookAt(0, 1.0, 0);
+  // Frame the upper body: camera slightly above eye level, pulled back enough
+  // to see head-to-waist. VRM origin is at feet (Y=0), typical height ~1.5m.
+  camera.position.set(0, 1.25, 2.5);
+  camera.lookAt(0, 1.15, 0);
 
   // Ambient light
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
   scene.add(ambient);
 
-  // Directional light
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  dirLight.position.set(1, 2, 2);
+  // Key light — warm, from upper right
+  const dirLight = new THREE.DirectionalLight(0xfff5ee, 1.2);
+  dirLight.position.set(2, 3, 2);
   dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(512, 512);
   scene.add(dirLight);
 
-  // Rim light
-  const rimLight = new THREE.DirectionalLight(0x8888ff, 0.4);
-  rimLight.position.set(-2, 1, -1);
+  // Fill light — cool, from left
+  const fillLight = new THREE.DirectionalLight(0xc4d4ff, 0.4);
+  fillLight.position.set(-2, 1, 1);
+  scene.add(fillLight);
+
+  // Rim light — helps separate character from background
+  const rimLight = new THREE.DirectionalLight(0x8888ff, 0.5);
+  rimLight.position.set(-1, 2, -2);
   scene.add(rimLight);
+
+  // Subtle ground circle for visual grounding
+  const groundGeo = new THREE.CircleGeometry(1.2, 48);
+  const groundMat = new THREE.MeshBasicMaterial({
+    color: 0x4444aa,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2; // lay flat
+  ground.position.y = 0.001; // just above origin to avoid z-fighting
+  ground.receiveShadow = true;
+  scene.add(ground);
 
   const clock = new THREE.Clock();
 
@@ -84,7 +106,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     if (w === 0 || h === 0) return;
-    renderer.setSize(w, h);
+    renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   });

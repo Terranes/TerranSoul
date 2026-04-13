@@ -1,10 +1,29 @@
 <template>
   <div class="viewport-wrapper">
     <canvas ref="canvasRef" class="viewport-canvas" />
+    <!-- Loading overlay -->
+    <Transition name="fade">
+      <div v-if="characterStore.isLoading" class="loading-overlay">
+        <div class="loading-spinner" />
+        <span class="loading-text">Loading model…</span>
+      </div>
+    </Transition>
     <div class="character-name-overlay">{{ characterName }}</div>
     <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
       <span>by {{ characterStore.vrmMetadata.author }}</span>
     </div>
+    <!-- Model selector dropdown -->
+    <select
+      class="model-selector"
+      :value="characterStore.selectedModelId"
+      @change="handleModelChange"
+    >
+      <option
+        v-for="model in characterStore.defaultModels"
+        :key="model.id"
+        :value="model.id"
+      >{{ model.name }}</option>
+    </select>
     <div class="state-badge" :class="characterStore.state">
       {{ characterStore.state }}
     </div>
@@ -18,10 +37,12 @@
 </template>
 
 <script setup lang="ts">
+import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
+import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type RendererType, type SceneContext } from '../renderer/scene';
-import { createPlaceholderCharacter, loadVRMSafe } from '../renderer/vrm-loader';
+import { loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -38,7 +59,13 @@ let animFrameId = 0;
 let disposeScene: (() => void) | null = null;
 let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
+let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
+
+function handleModelChange(e: Event) {
+  const select = e.target as HTMLSelectElement;
+  characterStore.selectModel(select.value);
+}
 
 function handleKeyDown(e: KeyboardEvent) {
   if (e.ctrlKey && e.key === 'd') {
@@ -57,10 +84,7 @@ onMounted(async () => {
   getRendererInfo = ctx.getRendererInfo;
   rendererType.value = ctx.rendererType;
 
-  const placeholder = createPlaceholderCharacter(ctx.scene);
-  animator.setPlaceholder(placeholder);
-
-  // Auto-load the default VRM model
+  // Auto-load the default VRM model (loading overlay shows until ready)
   characterStore.loadDefaultModel();
 
   function loop() {
@@ -94,12 +118,27 @@ watch(
   () => characterStore.vrmPath,
   async (newPath) => {
     if (!newPath || !sceneCtx) return;
+
+    // Remove the previous VRM model from the scene before loading a new one
+    if (currentVrmScene) {
+      sceneCtx.scene.remove(currentVrmScene);
+      currentVrmScene = null;
+    }
+
     const result = await loadVRMSafe(sceneCtx.scene, newPath);
     if (result) {
-      animator.setVRM(result.vrm);
+      currentVrmScene = result.vrm.scene;
+      // Look up per-model rotation, persona, and bone-pose config
+      const model = DEFAULT_MODELS.find(m => m.path === newPath);
+      const rotY = model?.rotationY ?? 0;
+      const persona = model?.persona ?? 'cool';
+      const skipBones = model?.skipBonePose ?? false;
+      animator.setVRM(result.vrm, rotY, persona, skipBones);
       characterStore.setMetadata(result.metadata);
+      characterStore.setLoaded();
     } else {
       characterStore.setLoadError('Failed to load VRM model');
+      characterStore.setLoaded();
     }
   },
 );
@@ -139,6 +178,35 @@ watch(
   color: rgba(255, 255, 255, 0.45);
   pointer-events: none;
   letter-spacing: 0.02em;
+}
+
+.model-selector {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 24px 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  z-index: 5;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.6)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.model-selector:hover {
+  background-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.model-selector option {
+  background: #1e293b;
+  color: #f1f5f9;
 }
 
 .state-badge {
@@ -192,5 +260,49 @@ watch(
   color: #7ef5a0;
   pointer-events: none;
   letter-spacing: 0.02em;
+}
+
+/* Loading overlay */
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: rgba(100, 180, 255, 0.9);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  letter-spacing: 0.05em;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.4s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

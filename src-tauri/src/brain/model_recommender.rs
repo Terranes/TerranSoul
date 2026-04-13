@@ -26,9 +26,30 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
 
     let all: Vec<ModelRecommendation> = vec![
         ModelRecommendation {
+            model_tag: "gemma4:27b".to_string(),
+            display_name: "Gemma 4 27B".to_string(),
+            description: "Google's latest flagship open model. State-of-the-art reasoning, coding, and conversation. Requires 32 GB+ RAM.".to_string(),
+            required_ram_mb: 32_768,
+            is_top_pick: false,
+        },
+        ModelRecommendation {
+            model_tag: "gemma4:12b".to_string(),
+            display_name: "Gemma 4 12B".to_string(),
+            description: "Excellent quality-to-speed ratio. Strong instruction-following and multilingual support. Requires 16 GB+ RAM.".to_string(),
+            required_ram_mb: 16_384,
+            is_top_pick: false,
+        },
+        ModelRecommendation {
+            model_tag: "gemma4:4b".to_string(),
+            display_name: "Gemma 4 4B".to_string(),
+            description: "Fast and capable. Great for everyday chat and recommendations. Requires 8 GB+ RAM.".to_string(),
+            required_ram_mb: 8_192,
+            is_top_pick: false,
+        },
+        ModelRecommendation {
             model_tag: "gemma3:27b".to_string(),
             display_name: "Gemma 3 27B".to_string(),
-            description: "Google's flagship open model. Best reasoning, coding, and conversation quality. Requires 32 GB+ RAM.".to_string(),
+            description: "Previous-gen flagship. Still excellent reasoning and coding. Requires 32 GB+ RAM.".to_string(),
             required_ram_mb: 32_768,
             is_top_pick: false,
         },
@@ -97,9 +118,9 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
 
     // Mark the top pick for this tier.
     let top_tag = match tier {
-        RamTier::VeryHigh => "gemma3:27b",
-        RamTier::High => "gemma3:12b",
-        RamTier::Medium => "gemma3:4b",
+        RamTier::VeryHigh => "gemma4:27b",
+        RamTier::High => "gemma4:12b",
+        RamTier::Medium => "gemma4:4b",
         RamTier::Low => "gemma3:1b",
         RamTier::VeryLow => "tinyllama",
     };
@@ -125,25 +146,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recommend_very_high_ram_top_pick_is_gemma3_27b() {
+    fn recommend_very_high_ram_top_pick_is_gemma4_27b() {
         let recs = recommend(65_536);
         assert!(!recs.is_empty());
-        assert_eq!(recs[0].model_tag, "gemma3:27b");
+        assert_eq!(recs[0].model_tag, "gemma4:27b");
         assert!(recs[0].is_top_pick);
     }
 
     #[test]
-    fn recommend_high_ram_top_pick_is_gemma3_12b() {
+    fn recommend_high_ram_top_pick_is_gemma4_12b() {
         let recs = recommend(24_000);
         let top = recs.iter().find(|m| m.is_top_pick).unwrap();
-        assert_eq!(top.model_tag, "gemma3:12b");
+        assert_eq!(top.model_tag, "gemma4:12b");
     }
 
     #[test]
-    fn recommend_medium_ram_top_pick_is_gemma3_4b() {
+    fn recommend_medium_ram_top_pick_is_gemma4_4b() {
         let recs = recommend(12_000);
         let top = recs.iter().find(|m| m.is_top_pick).unwrap();
-        assert_eq!(top.model_tag, "gemma3:4b");
+        assert_eq!(top.model_tag, "gemma4:4b");
     }
 
     #[test]
