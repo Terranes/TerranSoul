@@ -28,6 +28,7 @@
           v-model="searchQuery"
           placeholder="Search agents…"
           class="mp-search"
+          aria-label="Search agents"
           @keyup.enter="doSearch"
         />
         <button class="btn-secondary" @click="doSearch">🔍 Search</button>
@@ -243,8 +244,8 @@ async function confirmInstall() {
 
   // Grant sensitive capabilities the user consented to
   for (const cap of sensitiveCaps) {
-    const capName = capabilityToSandboxName(cap);
-    if (capName) {
+    const capNames = capabilityToSandboxNames(cap);
+    for (const capName of capNames) {
       await sandboxStore.grantCapability(name, capName);
     }
   }
@@ -253,16 +254,16 @@ async function confirmInstall() {
   await refreshSandboxStatus();
 }
 
-function capabilityToSandboxName(
+function capabilityToSandboxNames(
   cap: string,
-): 'file_read' | 'file_write' | 'clipboard' | 'network' | 'process_spawn' | null {
-  const map: Record<string, 'file_read' | 'file_write' | 'clipboard' | 'network' | 'process_spawn'> = {
-    filesystem: 'file_read',
-    network: 'network',
-    clipboard: 'clipboard',
-    process_spawn: 'process_spawn',
+): ('file_read' | 'file_write' | 'clipboard' | 'network' | 'process_spawn')[] {
+  const map: Record<string, ('file_read' | 'file_write' | 'clipboard' | 'network' | 'process_spawn')[]> = {
+    filesystem: ['file_read', 'file_write'],
+    network: ['network'],
+    clipboard: ['clipboard'],
+    process_spawn: ['process_spawn'],
   };
-  return map[cap] ?? null;
+  return map[cap] ?? [];
 }
 
 async function handleUpdate(agent: AgentSearchResult) {
