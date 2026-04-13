@@ -120,7 +120,22 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 060** — Voice Abstraction Layer (Phase 6)
+**Chunk 055** — Free LLM API Provider Registry (Phase 5.5)
+
+---
+
+## Phase 5.5 — Three-Tier Brain (Free API / Paid API / Local LLM)
+
+> **Goal:** Make TerranSoul work out of the box with zero setup by defaulting
+> to free cloud LLM APIs. Users can optionally upgrade to paid APIs or local
+> Ollama. Free providers are sourced from awesome-free-llm-apis and auto-rotated
+> when rate-limited. See `rules/research-reverse-engineering.md` §8.
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 055 | **Free LLM API Provider Registry & OpenAI-Compatible Client** — Curate a provider list from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis): Groq, Cerebras, Google Gemini, Mistral, SiliconFlow, GitHub Models, OpenRouter, NVIDIA NIM, Cloudflare Workers AI. Store as `FreeProvider` structs with `id`, `display_name`, `base_url`, `model`, `rpm_limit`, `rpd_limit`. New `brain/openai_client.rs` — generic OpenAI-compatible chat client that works for ALL providers (POST `/v1/chat/completions` with SSE streaming). New `brain/free_api.rs` with the provider catalogue. New `BrainMode` enum: `FreeApi { provider_id }` / `PaidApi { provider, api_key, model }` / `LocalOllama { model }`. Persist to `brain_config.json`. Tauri commands: `list_free_providers`, `get_brain_mode`, `set_brain_mode`. Rust tests for client, provider list, config persistence. | `not-started` |
+| 056 | **Provider Auto-Selection & Token Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Auto-detect logic: if `get_system_info()` fails (UAT/web) → default to `FreeApi`. If low RAM (<8GB) → recommend `FreeApi`. If high RAM → show all tiers. Extend `send_message_stream` to route through `BrainMode` (free API SSE / paid API SSE / Ollama NDJSON). Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
+| 057 | **Brain Setup Wizard Redesign** — Redesign `BrainSetupView.vue` as three-tier wizard. Step 0: "Choose how to power your brain" with three cards (Free API / Paid API / Local LLM). Free API card is the default, highlighted, marked "Instant — no setup". Step 1 (Free): auto-select best provider, show status, done. Step 1 (Paid): pick provider (OpenAI, Anthropic, etc.), enter API key, test connection. Step 1 (Local): existing Ollama wizard flow. Update `App.vue` to skip onboarding entirely if free API is auto-configured. Vitest tests for new brain store methods. | `not-started` |
 
 ---
 

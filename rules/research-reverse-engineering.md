@@ -1,8 +1,9 @@
 # Reverse Engineering Research — External Projects
 
 > **Purpose:** Accelerate TerranSoul development by learning proven patterns from
-> three reference projects. This document records architecture, overlay systems,
-> voice approaches, and actionable takeaways chunked for incremental implementation.
+> reference projects. This document records architecture, overlay systems,
+> voice approaches, free LLM API strategies, and actionable takeaways chunked
+> for incremental implementation.
 
 ---
 
@@ -14,6 +15,8 @@
 4. [Overlay Comparison — What We're Doing Wrong](#4-overlay-comparison)
 5. [Voice System Recommendation](#5-voice-system-recommendation)
 6. [Actionable Chunks for TerranSoul](#6-actionable-chunks)
+7. [AI4Animation-js — Brain-Driven Neural Animation](#7-ai4animation-js)
+8. [Free LLM APIs — Three-Tier Brain Provider Strategy](#8-free-llm-apis)
 
 ---
 
@@ -735,3 +738,138 @@ The brain IS the animation controller.
 ### TerranSoul Adaptation: Phase 8 Chunks
 
 See `rules/milestones.md` Phase 8 for implementation chunks 080–084.
+
+---
+
+## 8. Free LLM APIs — Three-Tier Brain Provider Strategy {#8-free-llm-apis}
+
+> **Source:** https://github.com/mnfst/awesome-free-llm-apis
+> **Design principle:** TerranSoul should work out of the box with zero setup.
+> Free cloud LLM APIs make this possible — no Ollama install, no GPU required.
+
+### Problem
+
+The current brain system requires users to:
+1. Install Ollama
+2. Download a multi-GB model
+3. Have enough RAM/VRAM to run it
+
+This creates a huge barrier to first-use. Many users (especially on low-end
+machines, Chromebooks, or during UAT) cannot or don't want to set up local
+inference.
+
+### Solution: Three-Tier Brain Provider System
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Tier 1: FREE Cloud APIs (default, zero setup)       │
+│ ─────────────────────────────────────────────        │
+│ • No API key needed (or free key from provider)     │
+│ • Auto-rotate between providers when rate-limited   │
+│ • Curated from awesome-free-llm-apis               │
+│ • Works immediately on any hardware                 │
+├─────────────────────────────────────────────────────┤
+│ Tier 2: PAID Cloud APIs (user provides API key)     │
+│ ─────────────────────────────────────────────        │
+│ • OpenAI, Anthropic, Google, Mistral, etc.          │
+│ • Higher rate limits, better models                 │
+│ • User enters their own API key                     │
+├─────────────────────────────────────────────────────┤
+│ Tier 3: LOCAL LLM (Ollama, existing system)         │
+│ ─────────────────────────────────────────────        │
+│ • Full privacy, no internet needed                  │
+│ • Requires Ollama + model download                  │
+│ • Best for power users with good hardware           │
+└─────────────────────────────────────────────────────┘
+```
+
+### Auto-Detection Logic
+
+```
+App starts → try get_system_info()
+  ├─ FAILS (no Tauri backend, UAT, web preview)
+  │   → Default to Tier 1 (Free API)
+  │
+  └─ SUCCEEDS
+      ├─ Low-end (< 8GB RAM, no GPU)
+      │   → Recommend Tier 1 (Free API)
+      │   → Show Tier 2 as upgrade option
+      │
+      ├─ Mid-range (8–16GB RAM)
+      │   → Show all three tiers
+      │   → Default to Tier 1 for instant start
+      │
+      └─ High-end (16GB+ RAM, GPU)
+          → Show all three tiers
+          → Highlight Tier 3 (Local) as recommended
+```
+
+### Free Provider Catalogue (from awesome-free-llm-apis)
+
+All endpoints are **OpenAI SDK-compatible** unless noted. This means we need
+ONE generic client that works for all of them.
+
+#### Provider APIs (trained by the company itself)
+
+| Provider | Models | Rate Limits | Notes |
+|----------|--------|-------------|-------|
+| Google Gemini | Gemini 2.5 Pro/Flash | 5-15 RPM, 100-1K RPD | Not available in EU/UK/CH |
+| Mistral AI | Large 3, Small 3.1 | 1 req/s, 1B tok/mo | EU-based, generous limits |
+| Cohere | Command A, Command R+ | 20 RPM, 1K/mo | Good for conversation |
+
+#### Inference Providers (host open-weight models)
+
+| Provider | Models | Rate Limits | Priority |
+|----------|--------|-------------|----------|
+| Groq | Llama 3.3 70B, Kimi K2 | 30 RPM, 1K RPD | **High** — fast, reliable |
+| Cerebras | Llama 3.3 70B, Qwen3 235B | 30 RPM, 14.4K RPD | **High** — generous limits |
+| GitHub Models | GPT-4o, Llama 3.3 70B | 10-15 RPM, 50-150 RPD | Medium |
+| OpenRouter | DeepSeek R1, Llama 3.3 70B | 20 RPM, 50 RPD | Medium (1K RPD w/ $10) |
+| Cloudflare Workers AI | Llama 3.3 70B, Qwen QwQ 32B | 10K neurons/day | Medium |
+| NVIDIA NIM | Llama 3.3 70B, Mistral Large | 40 RPM | Medium |
+| SiliconFlow | Qwen3-8B, DeepSeek-R1 | 1K RPM, 50K TPM | High — very generous |
+| Ollama Cloud | DeepSeek-V3.2, Qwen3.5 | Light usage | Uses Ollama API, not OpenAI |
+
+### Token Rotation Strategy
+
+```
+1. On app start, load provider list (curated, not fetched live)
+2. For each request:
+   a. Pick the first healthy provider with quota remaining
+   b. Send request
+   c. Parse rate-limit headers from response:
+      - x-ratelimit-remaining-requests
+      - x-ratelimit-remaining-tokens
+      - x-ratelimit-reset
+   d. If 429 (rate limited) → mark provider exhausted, try next
+   e. If success → record usage, return response
+3. If ALL free providers exhausted:
+   → Show user notification: "Free quota used up"
+   → Suggest upgrading to Paid API or Local LLM
+```
+
+### OpenAI-Compatible Chat API (Unified Client)
+
+Since nearly all providers use the OpenAI chat completions format, we need
+ONE client that handles:
+
+```
+POST {base_url}/v1/chat/completions  (or /chat/completions)
+{
+  "model": "llama-3.3-70b",
+  "messages": [{ "role": "system", "content": "..." }, ...],
+  "stream": true
+}
+
+Response (streaming SSE):
+data: {"choices":[{"delta":{"content":"Hello"}}]}
+data: {"choices":[{"delta":{"content":" world"}}]}
+data: [DONE]
+```
+
+This replaces the Ollama-specific NDJSON streaming with standard SSE streaming.
+The Ollama path remains as a separate code path for Tier 3 (local).
+
+### Implementation Chunks
+
+See `rules/milestones.md` Phase 5.5 for chunks 055–057.
