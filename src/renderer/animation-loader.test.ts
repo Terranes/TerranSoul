@@ -92,4 +92,54 @@ describe('animation-loader JSON data', () => {
       }
     }
   });
+
+  // ── Loop continuity: first and last keyframes must be close ──────
+  // Without this, clips snap visibly when wrapping from end→start.
+  it('all rotation tracks loop cleanly (first ≈ last keyframe within 0.01 rad)', () => {
+    const MAX_LOOP_DIFF = 0.01;
+    for (const persona of PERSONAS) {
+      const data = DATA_MAP[persona];
+      for (const state of STATES) {
+        const variants = Array.isArray(data[state]) ? data[state] : [data[state]];
+        for (let vi = 0; vi < variants.length; vi++) {
+          const clip = variants[vi];
+          for (const track of clip.tracks) {
+            if (!track.rotations || track.rotations.length < 2) continue;
+            const first = track.rotations[0];
+            const last = track.rotations[track.rotations.length - 1];
+            for (let axis = 0; axis < 3; axis++) {
+              const diff = Math.abs(first[axis] - last[axis]);
+              const label = `${persona}/${state}/v${vi}/${track.bone} axis ${axis}`;
+              expect(diff, `${label} loop_diff=${diff}`).toBeLessThanOrEqual(MAX_LOOP_DIFF);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // ── Amplitude bounds: head/hips rotations stay subtle ────────────
+  // Head ≤ 12° (0.21 rad) and hips ≤ 8° (0.14 rad) prevents "jumping" look.
+  it('head and hips rotation amplitudes stay within natural limits', () => {
+    const LIMITS: Record<string, number> = { head: 0.21, hips: 0.14 };
+    for (const persona of PERSONAS) {
+      const data = DATA_MAP[persona];
+      for (const state of STATES) {
+        const variants = Array.isArray(data[state]) ? data[state] : [data[state]];
+        for (let vi = 0; vi < variants.length; vi++) {
+          const clip = variants[vi];
+          for (const track of clip.tracks) {
+            const limit = LIMITS[track.bone];
+            if (!limit || !track.rotations) continue;
+            for (let i = 0; i < track.rotations.length; i++) {
+              const [x, y, z] = track.rotations[i];
+              const maxAbs = Math.max(Math.abs(x), Math.abs(y), Math.abs(z));
+              const label = `${persona}/${state}/v${vi}/${track.bone}[${i}]`;
+              expect(maxAbs, `${label} amp=${maxAbs}`).toBeLessThanOrEqual(limit);
+            }
+          }
+        }
+      }
+    }
+  });
 });

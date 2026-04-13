@@ -49,7 +49,7 @@ export class CharacterAnimator {
   private clips: PersonaClips | null = null;
   private currentAction: THREE.AnimationAction | null = null;
   private currentClipIndex = 0;
-  private static readonly CROSS_FADE_DURATION = 0.35;
+  private static readonly CROSS_FADE_DURATION = 0.6;
 
   // ── Clip cycling — switch variant each time the current clip loops ──
   private loopListener: ((e: { action: THREE.AnimationAction }) => void) | null = null;
