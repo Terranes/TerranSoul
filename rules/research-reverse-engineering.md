@@ -559,3 +559,179 @@ character and chatbox
 > **Next session:** Pick the highest-priority chunk not already being handled
 > by another agent. Chunks 050 and 051 should come first (they fix the overlay
 > problem). Skip animation-related chunks as another agent handles those.
+
+---
+
+## 7. AI4Animation-js — Brain-Driven Neural Animation {#7-ai4animation-js}
+
+> **Reverse-engineered from:** https://github.com/sneha-belkhale/AI4Animation-js
+> **Original research:** Sebastian Starke et al., "Mode-Adaptive Neural Networks
+> for Quadruped Motion Control", SIGGRAPH 2018.
+> **Python remake (2026):** https://github.com/facebookresearch/ai4animationpy
+
+### What It Is
+
+AI4Animation-js is a Three.js port of the SIGGRAPH 2018 MANN (Mode-Adaptive
+Neural Networks) paper. Instead of using pre-baked animation clips, a neural
+network generates bone positions and velocities **every frame** based on:
+
+1. **Trajectory input** — Where the character should go (position, direction,
+   velocity, speed, style weights for 6 locomotion styles).
+2. **Previous pose** — Current bone positions, forward vectors, up vectors,
+   and velocities for all 27 bones.
+3. **Neural network prediction** — Outputs next bone positions/velocities plus
+   root motion (translation + rotation).
+
+The result: **unlimited smooth transitions** between motion states with no
+blend trees or crossfades. The character simply moves however the neural
+network decides is natural.
+
+### Architecture (from code analysis)
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ User Input   │───▶│ Trajectory   │───▶│ MANN Neural  │
+│ (WASD keys)  │    │ Prediction   │    │ Network      │
+│              │    │ (12 points)  │    │              │
+└──────────────┘    └──────────────┘    │ Input: 480   │
+                                        │ Hidden: 512  │
+┌──────────────┐                        │ Output: 363  │
+│ Previous     │───────────────────────▶│              │
+│ Bone State   │                        │ Gating Net:  │
+│ (27 bones ×  │                        │ 19→32→8 blend│
+│ 12 dims)     │                        │ weights      │
+└──────────────┘                        └──────┬───────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │ Output Parse │
+                                        │ • Trajectory │
+                                        │ • Bone pos   │
+                                        │ • Bone vel   │
+                                        │ • Root motion│
+                                        └──────┬───────┘
+                                               │
+                                               ▼
+                                        ┌──────────────┐
+                                        │ Skeleton     │
+                                        │ Retarget     │
+                                        │ (Wolf.js)    │
+                                        └──────────────┘
+```
+
+#### Key Files
+
+| File | Role | Size |
+|------|------|------|
+| `MANNNeuralNet.js` | MANN: gating network + expert blending + prediction | 4.4 KB |
+| `MainScene.js` | Main loop: packs NN inputs, calls predict, reads outputs, updates character | 15 KB |
+| `Wolf.js` | Skeleton retargeting: NN bone positions → FBX bone quaternions via `updatePose()` | 9.6 KB |
+| `Trajectory.js` | 12-point trajectory (position, direction, velocity, styles per point) | 1.6 KB |
+| `Parameters.js` | Loads `.bin` weight files into numjs matrices | 611 B |
+| `Eigen.js` | Linear algebra: Layer, ELU, SoftMax, Normalise, Blend | 1.2 KB |
+| `AxisUtils.js` | `setZForward()`: recursively aligns bone +Z to face children | 2.7 KB |
+| `Utils.js` | Coordinate transforms: relative position/direction to/from a root matrix | 1.7 KB |
+
+#### MANN Neural Network Details
+
+The MANN is a **mixture-of-experts** architecture:
+
+1. **Gating Network** (small): 19 control neurons → 32 hidden (ELU) → 32 hidden
+   (ELU) → 8 expert weights (softmax). Selects blend weights for 8 expert
+   sub-networks based on the character's current motion style.
+
+2. **Expert Networks** (8 sets of weights): Each expert has 3 layers
+   (480→512→512→363). Weights are **blended** by gating output before forward
+   pass, producing a single effective network per frame.
+
+3. **Forward Pass**:
+   ```
+   X_normalized = (X - Xmean) / Xstd
+   control_neurons = X_normalized[ControlNeurons]  // 19 specific indices
+   blend_weights = softmax(gating_network(control_neurons))  // 8 weights
+   W0, b0, W1, b1, W2, b2 = Σ(weight_i × expert_i_params)
+   Y_normalized = ELU(ELU(X_normalized · W0 + b0) · W1 + b1) · W2 + b2
+   Y = Y_normalized × Ystd + Ymean
+   ```
+
+4. **Input (480 dims)**: 12 trajectory points × 13 dims (pos.xz, dir.xz,
+   vel.xz, speed, 6 styles) + 27 bones × 12 dims (pos.xyz, forward.xyz,
+   up.xyz, velocity.xyz).
+
+5. **Output (363 dims)**: 6 future trajectory updates × 6 dims + 27 bones ×
+   12 dims (new pos/forward/up/vel) + 3 root motion (translation.xz, rotation).
+
+#### Skeleton Retargeting (Wolf.js → VRM adaptation needed)
+
+The key insight from Wolf.js is how NN bone positions are converted to skeleton
+quaternions:
+
+```javascript
+// For each bone, compute direction to average child position
+averagedDir = average(children.map(c => BONES[c.posRef].position))
+averagedDir.sub(parentBonePos)
+localDir = averagedDir.normalize().transformDirection(inverse(parent.matrixWorld))
+setQuaternionFromDirection(localDir, bone.originalUp, bone.quaternion)
+```
+
+This is a **direction-based IK** approach: each bone rotates to point toward
+where its children should be (as predicted by the NN). Combined with rest-pose
+length preservation, this produces smooth, natural skeletal animation.
+
+For VRM humanoid characters, this would need:
+- Map NN bone indices → VRM humanoid bone names (hips, spine, chest, head,
+  upperArm, lowerArm, hand, upperLeg, lowerLeg, foot, etc.)
+- Replace Wolf's 27-bone topology with VRM's ~55 humanoid bones
+- Maintain same direction-based quaternion computation
+
+### How This Applies to TerranSoul
+
+**The critical insight:** Instead of the original MANN approach (which requires
+massive mocap datasets and offline TensorFlow training), we can use TerranSoul's
+**existing LLM brain** to generate animation parameters.
+
+#### Approach: LLM → Animation Parameter Generation
+
+The brain already understands emotion tags (`[happy]`, `[sad]`) and motion tags
+(`[motion:wave]`). We can extend this to generate **continuous animation
+parameters** per response:
+
+1. **Emotion → Pose Blend Weights**: The LLM output emotion tag maps to a set
+   of blend weights for predefined pose clusters (like MANN's 8 experts but
+   for VRM humanoid poses: confident stance, shy stance, excited bounce, etc.)
+
+2. **Motion Tag → Procedural Trajectory**: `[motion:nod]` generates a
+   trajectory for the head bone, `[motion:wave]` for the arm chain. The brain
+   can describe custom motions: `[motion:lean-forward]`, `[motion:look-away]`.
+
+3. **Conversational Context → Dynamic Pose**: Beyond single-word tags, the brain
+   generates structured pose data:
+   ```
+   [pose: { head_tilt: 0.15, body_lean: -0.05, gesture: "open_palms" }]
+   ```
+   This creates **context-appropriate animation** — leaning in during questions,
+   crossing arms during disagreement, etc.
+
+#### Implementation Strategy (What's Feasible for TerranSoul)
+
+Rather than training a full MANN network (which requires massive mocap data and
+GPU training), TerranSoul adapts the **core concepts**:
+
+**What we take from AI4Animation:**
+- Expert blending architecture (multiple pose presets blended by weights)
+- Per-frame bone position → quaternion retargeting via direction-based IK
+- Autoregressive feedback (previous pose feeds into next prediction)
+
+**What we replace:**
+- MANN neural network → LLM-driven emotion/motion parameter generation
+- Mocap training data → Hand-authored VRM pose presets + procedural generation
+- Trajectory planning → Stationary VRM (no locomotion needed — it's a desktop
+  companion, not a game character)
+
+**The result:** AI-driven character animation that reacts naturally to
+conversation context, without needing mocap data or neural network training.
+The brain IS the animation controller.
+
+### TerranSoul Adaptation: Phase 8 Chunks
+
+See `rules/milestones.md` Phase 8 for implementation chunks 080–084.

@@ -12,4 +12,5 @@ pub mod registry;
 pub mod routing;
 pub mod sandbox;
 pub mod streaming;
+pub mod voice;
 pub mod window;

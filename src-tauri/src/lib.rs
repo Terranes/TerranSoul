@@ -19,6 +19,7 @@ pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
 pub mod sync;
+pub mod voice;
 
 use commands::{
     agent::list_agents,
@@ -62,6 +63,10 @@ use commands::{
         set_window_mode, toggle_window_mode,
     },
     streaming::send_message_stream,
+    voice::{
+        clear_voice_config, get_voice_config, list_asr_providers, list_tts_providers,
+        set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
+    },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
 
@@ -91,6 +96,8 @@ pub struct AppState {
     pub message_bus: TokioMutex<messaging::MessageBus>,
     /// Current window mode (window or pet).
     pub window_mode: Mutex<commands::window::WindowMode>,
+    /// Voice provider configuration (ASR/TTS selections).
+    pub voice_config: Mutex<voice::VoiceConfig>,
 }
 
 impl AppState {
@@ -118,6 +125,7 @@ impl AppState {
             capability_store: TokioMutex::new(sandbox::CapabilityStore::new(data_dir)),
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
+            voice_config: Mutex::new(voice::config_store::load(data_dir)),
         }
     }
 
@@ -144,6 +152,7 @@ impl AppState {
             capability_store: TokioMutex::new(sandbox::CapabilityStore::in_memory()),
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
+            voice_config: Mutex::new(voice::VoiceConfig::default()),
         }
     }
 }
@@ -217,6 +226,14 @@ pub fn run() {
             get_all_monitors,
             set_pet_mode_bounds,
             send_message_stream,
+            list_asr_providers,
+            list_tts_providers,
+            get_voice_config,
+            set_asr_provider,
+            set_tts_provider,
+            set_voice_api_key,
+            set_voice_endpoint,
+            clear_voice_config,
         ])
         .setup(|app| {
             let data_dir = app
