@@ -67,7 +67,7 @@ describe('character store — IPC integration', () => {
     expect(store.vrmMetadata).toBeUndefined();
     expect(store.loadError).toBeUndefined();
     expect(store.isLoading).toBe(false);
-    expect(store.selectedModelId).toBe('model2');
+    expect(store.selectedModelId).toBe('annabelle');
   });
 
   it('loadVrm sets isLoading and setLoaded clears it', async () => {
@@ -90,11 +90,11 @@ describe('character store — IPC integration', () => {
     mockInvoke.mockResolvedValueOnce(undefined);
 
     const store = useCharacterStore();
-    await store.selectModel('model2');
+    await store.selectModel('annabelle');
 
-    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Model2.vrm' });
-    expect(store.vrmPath).toBe('/models/default/Model2.vrm');
-    expect(store.selectedModelId).toBe('model2');
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Annabelle the Sorcerer.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Annabelle the Sorcerer.vrm');
+    expect(store.selectedModelId).toBe('annabelle');
   });
 
   it('selectModel ignores unknown model ids', async () => {
@@ -105,21 +105,23 @@ describe('character store — IPC integration', () => {
     expect(store.vrmPath).toBeUndefined();
   });
 
-  it('loadDefaultModel loads model2 by default', async () => {
+  it('loadDefaultModel loads annabelle by default', async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
 
     const store = useCharacterStore();
     await store.loadDefaultModel();
 
-    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Model2.vrm' });
-    expect(store.vrmPath).toBe('/models/default/Model2.vrm');
-    expect(store.selectedModelId).toBe('model2');
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Annabelle the Sorcerer.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Annabelle the Sorcerer.vrm');
+    expect(store.selectedModelId).toBe('annabelle');
   });
 
   it('defaultModels contains the bundled model list', () => {
     const store = useCharacterStore();
-    expect(store.defaultModels.length).toBeGreaterThanOrEqual(2);
-    expect(store.defaultModels[0].id).toBe('model1');
-    expect(store.defaultModels[1].id).toBe('model2');
+    expect(store.defaultModels.length).toBeGreaterThanOrEqual(4);
+    expect(store.defaultModels[0].id).toBe('annabelle');
+    expect(store.defaultModels[1].id).toBe('m58');
+    expect(store.defaultModels[2].id).toBe('miyoura-toshie');
+    expect(store.defaultModels[3].id).toBe('nogami-juto');
   });
 });

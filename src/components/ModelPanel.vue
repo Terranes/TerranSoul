@@ -48,7 +48,8 @@
             :class="{ active: characterStore.selectedModelId === model.id && !customVrmActive }"
             @click="handleSelectModel(model.id)"
           >
-            <div class="model-icon">👤</div>
+            <img v-if="model.thumbnail" :src="model.thumbnail" :alt="model.name" class="model-thumb" />
+            <div v-else class="model-icon">👤</div>
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
               <span class="model-author">{{ model.path }}</span>
@@ -317,6 +318,14 @@ async function handleImport() {
 
 .model-icon {
   font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.model-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
   flex-shrink: 0;
 }
 

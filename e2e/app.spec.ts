@@ -121,11 +121,12 @@ test.describe('3D Character Loading & Animation', () => {
 
   /** Helper: enable debug overlay and wait for triangle count > 0 */
   async function waitForModelLoaded(page: import('@playwright/test').Page) {
-    // Wait for CharacterViewport to be mounted: App.vue has an async init phase
-    // (brain.loadActiveBrain invoke) that must complete before ChatView renders.
-    await expect(page.locator('.viewport-canvas')).toBeVisible({ timeout: 10_000 });
+    // Give the app a moment to register the keydown handler
+    await page.waitForTimeout(500);
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
+      // Focus the page body (not the viewport — that toggles dialog)
+      await page.locator('body').click({ position: { x: 1, y: 1 } });
       await page.keyboard.press('Control+d');
       await page.waitForTimeout(300);
     }
@@ -186,13 +187,13 @@ test.describe('3D Character Loading & Animation', () => {
     await expect(selector).toBeVisible();
 
     const options = selector.locator('option');
-    await expect(options).toHaveCount(2);
+    await expect(options).toHaveCount(4);
 
-    // Default selection should be Model 2
-    await expect(selector).toHaveValue('model2');
+    // Default selection should be Annabelle
+    await expect(selector).toHaveValue('annabelle');
   });
 
-  test('Model 2 (default, cute persona) loads correctly', async ({ page }) => {
+  test('Annabelle (default, cool persona) loads correctly', async ({ page }) => {
     await page.goto('/');
 
     const debugOverlay = await waitForModelLoaded(page);
@@ -206,11 +207,11 @@ test.describe('3D Character Loading & Animation', () => {
     // Loading overlay should be gone
     await waitForLoadingDone(page);
 
-    // Model selector should show model2
-    await expect(page.locator('.model-selector')).toHaveValue('model2');
+    // Model selector should show annabelle
+    await expect(page.locator('.model-selector')).toHaveValue('annabelle');
   });
 
-  test('Model 1 (cool persona) loads correctly when selected', async ({ page }) => {
+  test('Miyoura Toshie (cute persona) loads correctly when selected', async ({ page }) => {
     await page.goto('/');
 
     // Wait for default model to load first
@@ -221,11 +222,11 @@ test.describe('3D Character Loading & Animation', () => {
     const defaultText = await triangleSpan.textContent();
     const defaultTriCount = parseInt(defaultText?.replace(/[^\d]/g, '') ?? '0', 10);
 
-    // Switch to Model 1
+    // Switch to Miyoura Toshie
     const selector = page.locator('.model-selector');
-    await selector.selectOption('model1');
+    await selector.selectOption('miyoura-toshie');
 
-    // Wait for Model 1 to load — triangle count should change
+    // Wait for Miyoura Toshie to load — triangle count should change
     await expect(async () => {
       const text = await triangleSpan.textContent();
       const count = parseInt(text?.replace(/[^\d]/g, '') ?? '0', 10);
@@ -233,7 +234,7 @@ test.describe('3D Character Loading & Animation', () => {
       expect(count).not.toBe(defaultTriCount);
     }).toPass({ timeout: VRM_LOAD_TIMEOUT });
 
-    // Loading overlay should disappear after Model 1 loads
+    // Loading overlay should disappear after Miyoura Toshie loads
     await waitForLoadingDone(page);
   });
 
@@ -245,11 +246,11 @@ test.describe('3D Character Loading & Animation', () => {
     await waitForModelLoaded(page);
     await waitForLoadingDone(page);
 
-    // Switch to Model 1 — loading overlay should appear
+    // Switch to M58 — loading overlay should appear
     const selector = page.locator('.model-selector');
-    await selector.selectOption('model1');
+    await selector.selectOption('m58');
 
-    // Loading overlay should eventually disappear when Model 1 is ready
+    // Loading overlay should eventually disappear when M58 is ready
     await waitForLoadingDone(page);
   });
 
@@ -289,42 +290,34 @@ test.describe('3D Character Loading & Animation', () => {
     expect(draws1).toBeGreaterThan(0);
   });
 
-  test('Model 1 animates visibly with cool persona', async ({ page }) => {
-    test.setTimeout(90_000);
+  test('Annabelle animates visibly with cool persona', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto('/');
 
-    // Switch to Model 1
-    const selector = page.locator('.model-selector');
-    await selector.selectOption('model1');
-
-    // Wait for Model 1 to load
+    // Annabelle is the default (cool persona)
     const debugOverlay = await waitForModelLoaded(page);
     await expect(async () => {
       const text = await debugOverlay.locator('span').nth(1).textContent();
       expect(parseInt(text?.replace(/[^\d]/g, '') ?? '0', 10)).toBeGreaterThan(0);
     }).toPass({ timeout: VRM_LOAD_TIMEOUT });
 
-    // Wait for loading overlay (and its backdrop-filter animation) to fully disappear
-    // before taking screenshots — the animation causes locator stability issues.
-    await waitForLoadingDone(page);
-
-    // Use page.screenshot with a clip rect instead of canvas.screenshot().
-    // canvas.screenshot() waits for element stability which can hang while the
-    // loading overlay's CSS backdrop-filter transition is fading out.
+    // Take two screenshots — cool persona has subtle but visible animation
     const canvas = page.locator('.viewport-canvas');
-    const bbox = await canvas.boundingBox();
-    expect(bbox).not.toBeNull();
-    const shot1 = await page.screenshot({ clip: bbox! });
+    const shot1 = await canvas.screenshot();
     await page.waitForTimeout(800);
-    const shot2 = await page.screenshot({ clip: bbox! });
+    const shot2 = await canvas.screenshot();
 
     expect(Buffer.compare(shot1, shot2)).not.toBe(0);
   });
 
-  test('Model 2 animates visibly with cute persona', async ({ page }) => {
+  test('Miyoura Toshie animates visibly with cute persona', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto('/');
 
-    // Model 2 is the default
+    // Switch to Miyoura Toshie (cute persona)
+    const selector = page.locator('.model-selector');
+    await selector.selectOption('miyoura-toshie');
+
     await waitForModelLoaded(page);
 
     const canvas = page.locator('.viewport-canvas');
@@ -340,10 +333,10 @@ test.describe('Animation & AI Emotion', () => {
   const VRM_LOAD_TIMEOUT = 30_000;
 
   async function waitForModelLoaded(page: import('@playwright/test').Page) {
-    // Wait for CharacterViewport to be mounted (App.vue has an async init phase)
-    await expect(page.locator('.viewport-canvas')).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(500);
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
+      await page.locator('body').click({ position: { x: 1, y: 1 } });
       await page.keyboard.press('Control+d');
       await page.waitForTimeout(300);
     }
@@ -446,7 +439,7 @@ test.describe('Animation & AI Emotion', () => {
 
     await expect(badge).toContainText('idle');
 
-    await input.fill('What time is it?');
+    await input.fill('Tell me something interesting');
     await sendBtn.click();
 
     await expect(badge).toContainText('thinking', { timeout: 2_000 });
@@ -477,14 +470,11 @@ test.describe('Animation & AI Emotion', () => {
     await expect(badge).toContainText('happy', { timeout: 5_000 });
   });
 
-  test('Model 1 (cool) emotion animation with happy message', async ({ page }) => {
-    test.setTimeout(90_000);
+  test('Annabelle (cool) emotion animation with happy message', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto('/');
 
-    // Switch to Model 1 (cool persona)
-    const selector = page.locator('.model-selector');
-    await selector.selectOption('model1');
-
+    // Annabelle is the default (cool persona)
     await waitForModelLoaded(page);
 
     const badge = page.locator('.state-badge');
@@ -500,11 +490,14 @@ test.describe('Animation & AI Emotion', () => {
     await expect(badge).toContainText('idle', { timeout: 10_000 });
   });
 
-  test('Model 2 (cute) emotion animation with sad message', async ({ page }) => {
+  test('Miyoura Toshie (cute) emotion animation with sad message', async ({ page }) => {
     test.setTimeout(60_000);
     await page.goto('/');
 
-    // Model 2 is the default (cute persona)
+    // Switch to Miyoura Toshie (cute persona)
+    const selector = page.locator('.model-selector');
+    await selector.selectOption('miyoura-toshie');
+
     await waitForModelLoaded(page);
 
     const badge = page.locator('.state-badge');
