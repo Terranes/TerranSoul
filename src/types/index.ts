@@ -222,3 +222,23 @@ export interface ParsedLlmChunk {
   motion: MotionTag | null;
 }
 
+// ── Three-Tier Brain ──────────────────────────────────────────────────────────
+
+/** Describes a free LLM API provider from the curated catalogue. */
+export interface FreeProvider {
+  id: string;
+  display_name: string;
+  base_url: string;
+  model: string;
+  rpm_limit: number;
+  rpd_limit: number;
+  requires_api_key: boolean;
+  notes: string;
+}
+
+/** The three-tier brain mode configuration. */
+export type BrainMode =
+  | { mode: 'free_api'; provider_id: string; api_key: string | null }
+  | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string }
+  | { mode: 'local_ollama'; model: string };
+

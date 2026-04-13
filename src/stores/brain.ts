@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  BrainMode,
+  FreeProvider,
   ModelRecommendation,
   OllamaModelEntry,
   OllamaStatus,
@@ -18,7 +20,11 @@ export const useBrainStore = defineStore('brain', () => {
   const pullError = ref<string | null>(null);
   const isLoading = ref(false);
 
-  const hasBrain = computed(() => activeBrain.value !== null);
+  // Three-tier brain state
+  const brainMode = ref<BrainMode | null>(null);
+  const freeProviders = ref<FreeProvider[]>([]);
+
+  const hasBrain = computed(() => activeBrain.value !== null || brainMode.value !== null);
   const topRecommendation = computed(() =>
     recommendations.value.find((m) => m.is_top_pick) ?? recommendations.value[0] ?? null,
   );
@@ -68,12 +74,35 @@ export const useBrainStore = defineStore('brain', () => {
     activeBrain.value = null;
   }
 
+  // ── Three-Tier Brain Methods ─────────────────────────────────────────────
+
+  async function fetchFreeProviders(): Promise<void> {
+    freeProviders.value = await invoke<FreeProvider[]>('list_free_providers');
+  }
+
+  async function loadBrainMode(): Promise<void> {
+    brainMode.value = await invoke<BrainMode | null>('get_brain_mode');
+  }
+
+  async function setBrainMode(mode: BrainMode): Promise<void> {
+    await invoke('set_brain_mode', { mode });
+    brainMode.value = mode;
+    // Update legacy activeBrain for backwards compatibility
+    if (mode.mode === 'local_ollama') {
+      activeBrain.value = mode.model;
+    } else {
+      activeBrain.value = null;
+    }
+  }
+
   /** Full initialisation for the brain setup wizard. */
   async function initialise(): Promise<void> {
     isLoading.value = true;
     try {
       await Promise.all([
         loadActiveBrain(),
+        loadBrainMode(),
+        fetchFreeProviders(),
         fetchSystemInfo(),
         fetchRecommendations(),
         checkOllamaStatus(),
@@ -93,6 +122,8 @@ export const useBrainStore = defineStore('brain', () => {
     isPulling,
     pullError,
     isLoading,
+    brainMode,
+    freeProviders,
     hasBrain,
     topRecommendation,
     loadActiveBrain,
@@ -103,6 +134,9 @@ export const useBrainStore = defineStore('brain', () => {
     pullModel,
     setActiveBrain,
     clearActiveBrain,
+    fetchFreeProviders,
+    loadBrainMode,
+    setBrainMode,
     initialise,
   };
 });

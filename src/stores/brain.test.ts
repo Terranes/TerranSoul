@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { useBrainStore } from './brain';
-import type { ModelRecommendation, OllamaStatus, SystemInfo } from '../types';
+import type { BrainMode, FreeProvider, ModelRecommendation, OllamaStatus, SystemInfo } from '../types';
 
 const mockInvoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
@@ -27,13 +27,24 @@ const sampleRec: ModelRecommendation = {
 
 const offlineStatus: OllamaStatus = { running: false, model_count: 0 };
 
+const sampleFreeProvider: FreeProvider = {
+  id: 'groq',
+  display_name: 'Groq',
+  base_url: 'https://api.groq.com/openai',
+  model: 'llama-3.3-70b-versatile',
+  rpm_limit: 30,
+  rpd_limit: 1000,
+  requires_api_key: true,
+  notes: 'Fast inference',
+};
+
 describe('brain store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
   });
 
-  it('hasBrain is false when activeBrain is null', () => {
+  it('hasBrain is false when activeBrain is null and brainMode is null', () => {
     const store = useBrainStore();
     expect(store.hasBrain).toBe(false);
   });
@@ -103,5 +114,83 @@ describe('brain store', () => {
     const ok = await store.pullModel('gemma3:4b');
     expect(ok).toBe(false);
     expect(store.pullError).toContain('Ollama not found');
+  });
+
+  // ── Three-Tier Brain Tests ───────────────────────────────────────────────
+
+  it('fetchFreeProviders stores provider list', async () => {
+    mockInvoke.mockResolvedValue([sampleFreeProvider]);
+    const store = useBrainStore();
+    await store.fetchFreeProviders();
+    expect(store.freeProviders).toHaveLength(1);
+    expect(store.freeProviders[0].id).toBe('groq');
+  });
+
+  it('loadBrainMode stores brain mode', async () => {
+    const mode: BrainMode = { mode: 'free_api', provider_id: 'groq', api_key: null };
+    mockInvoke.mockResolvedValue(mode);
+    const store = useBrainStore();
+    await store.loadBrainMode();
+    expect(store.brainMode).toEqual(mode);
+  });
+
+  it('loadBrainMode stores null when no mode configured', async () => {
+    mockInvoke.mockResolvedValue(null);
+    const store = useBrainStore();
+    await store.loadBrainMode();
+    expect(store.brainMode).toBeNull();
+  });
+
+  it('setBrainMode calls invoke and updates state for free_api', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    const mode: BrainMode = { mode: 'free_api', provider_id: 'cerebras', api_key: null };
+    await store.setBrainMode(mode);
+    expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', { mode });
+    expect(store.brainMode).toEqual(mode);
+    expect(store.activeBrain).toBeNull();
+  });
+
+  it('setBrainMode updates activeBrain for local_ollama', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    const mode: BrainMode = { mode: 'local_ollama', model: 'phi-4:latest' };
+    await store.setBrainMode(mode);
+    expect(store.brainMode).toEqual(mode);
+    expect(store.activeBrain).toBe('phi-4:latest');
+  });
+
+  it('setBrainMode supports paid_api mode', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    const mode: BrainMode = {
+      mode: 'paid_api',
+      provider: 'openai',
+      api_key: 'sk-test',
+      model: 'gpt-4o',
+      base_url: 'https://api.openai.com',
+    };
+    await store.setBrainMode(mode);
+    expect(store.brainMode).toEqual(mode);
+    expect(store.activeBrain).toBeNull();
+  });
+
+  it('hasBrain is true when brainMode is set even if activeBrain is null', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    const mode: BrainMode = { mode: 'free_api', provider_id: 'groq', api_key: null };
+    await store.setBrainMode(mode);
+    expect(store.activeBrain).toBeNull();
+    expect(store.hasBrain).toBe(true);
+  });
+
+  it('freeProviders starts as empty array', () => {
+    const store = useBrainStore();
+    expect(store.freeProviders).toEqual([]);
+  });
+
+  it('brainMode starts as null', () => {
+    const store = useBrainStore();
+    expect(store.brainMode).toBeNull();
   });
 });
