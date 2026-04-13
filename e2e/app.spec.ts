@@ -121,12 +121,11 @@ test.describe('3D Character Loading & Animation', () => {
 
   /** Helper: enable debug overlay and wait for triangle count > 0 */
   async function waitForModelLoaded(page: import('@playwright/test').Page) {
-    // Give the app a moment to register the keydown handler
-    await page.waitForTimeout(500);
+    // Wait for CharacterViewport to be mounted: App.vue has an async init phase
+    // (brain.loadActiveBrain invoke) that must complete before ChatView renders.
+    await expect(page.locator('.viewport-canvas')).toBeVisible({ timeout: 10_000 });
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
-      // Press Ctrl+D directly — Playwright sends keyboard events to the page
-      // without needing to click (avoids accidentally toggling the chat dialog).
       await page.keyboard.press('Control+d');
       await page.waitForTimeout(300);
     }
@@ -305,11 +304,19 @@ test.describe('3D Character Loading & Animation', () => {
       expect(parseInt(text?.replace(/[^\d]/g, '') ?? '0', 10)).toBeGreaterThan(0);
     }).toPass({ timeout: VRM_LOAD_TIMEOUT });
 
-    // Take two screenshots — cool persona has subtle but visible animation
+    // Wait for loading overlay (and its backdrop-filter animation) to fully disappear
+    // before taking screenshots — the animation causes locator stability issues.
+    await waitForLoadingDone(page);
+
+    // Use page.screenshot with a clip rect instead of canvas.screenshot().
+    // canvas.screenshot() waits for element stability which can hang while the
+    // loading overlay's CSS backdrop-filter transition is fading out.
     const canvas = page.locator('.viewport-canvas');
-    const shot1 = await canvas.screenshot();
+    const bbox = await canvas.boundingBox();
+    expect(bbox).not.toBeNull();
+    const shot1 = await page.screenshot({ clip: bbox! });
     await page.waitForTimeout(800);
-    const shot2 = await canvas.screenshot();
+    const shot2 = await page.screenshot({ clip: bbox! });
 
     expect(Buffer.compare(shot1, shot2)).not.toBe(0);
   });
@@ -333,7 +340,8 @@ test.describe('Animation & AI Emotion', () => {
   const VRM_LOAD_TIMEOUT = 30_000;
 
   async function waitForModelLoaded(page: import('@playwright/test').Page) {
-    await page.waitForTimeout(500);
+    // Wait for CharacterViewport to be mounted (App.vue has an async init phase)
+    await expect(page.locator('.viewport-canvas')).toBeVisible({ timeout: 10_000 });
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
       await page.keyboard.press('Control+d');
@@ -438,7 +446,7 @@ test.describe('Animation & AI Emotion', () => {
 
     await expect(badge).toContainText('idle');
 
-    await input.fill('Tell me something interesting');
+    await input.fill('What time is it?');
     await sendBtn.click();
 
     await expect(badge).toContainText('thinking', { timeout: 2_000 });

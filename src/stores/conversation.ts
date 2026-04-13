@@ -9,7 +9,7 @@ function createPersonaResponse(content: string): Message {
   let response: string;
   let sentiment: 'happy' | 'sad' | 'neutral';
 
-  if (lower.includes('hello') || lower.includes('hi') || lower.startsWith('hey')) {
+  if (lower.includes('hello') || /\bhi\b/.test(lower) || lower.startsWith('hey')) {
     response = "Hello! I'm TerranSoul, your AI companion. How can I help you today? 😊";
     sentiment = 'happy';
   } else if (lower.includes('sad') || lower.includes('bad') || lower.includes('hate') || lower.includes('sorry')) {
