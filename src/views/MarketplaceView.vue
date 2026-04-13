@@ -21,72 +21,109 @@
       >{{ tab.icon }} {{ tab.label }}</button>
     </nav>
 
+    <!-- ── Browser-only: brain status card ── -->
+    <div v-if="!tauriAvailable && brainStore.isFreeApiMode" class="mp-brain-card">
+      <div class="mp-brain-header">
+        <span class="mp-brain-icon">☁️</span>
+        <div>
+          <strong>Free Cloud LLM — Active</strong>
+          <p class="mp-brain-detail">
+            {{ activeProviderName }} · Ready to chat
+          </p>
+        </div>
+        <span class="mp-brain-badge">✅ Connected</span>
+      </div>
+    </div>
+
     <!-- ── Browse tab ── -->
     <div v-if="activeTab === 'browse'" class="mp-panel">
-      <div class="mp-search-row">
-        <input
-          v-model="searchQuery"
-          placeholder="Search agents…"
-          class="mp-search"
-          aria-label="Search agents"
-          @keyup.enter="doSearch"
-        />
-        <button class="btn-secondary" @click="doSearch">🔍 Search</button>
-      </div>
-
-      <p v-if="isLoading" class="mp-status">Loading agents…</p>
-      <p v-else-if="displayedAgents.length === 0" class="mp-status">No agents found.</p>
-
-      <div v-else class="mp-grid">
-        <div
-          v-for="agent in displayedAgents"
-          :key="agent.name"
-          class="mp-card"
-        >
-          <div class="mp-card-header">
-            <h3 class="mp-agent-name">{{ agent.name }}</h3>
-            <span class="mp-version">v{{ agent.version }}</span>
-          </div>
-          <p class="mp-description">{{ agent.description }}</p>
-          <div class="mp-caps">
-            <span
-              v-for="cap in agent.capabilities"
-              :key="cap"
-              class="mp-cap-badge"
-            >{{ cap }}</span>
-          </div>
-          <div v-if="agent.homepage" class="mp-homepage">
-            <span class="mp-link-label">🔗 {{ agent.homepage }}</span>
-          </div>
-          <div class="mp-card-actions">
-            <template v-if="isInstalled(agent.name)">
-              <span class="mp-installed-badge">✅ Installed</span>
-              <button
-                class="btn-secondary btn-sm"
-                @click="handleUpdate(agent)"
-                :disabled="isLoading"
-              >⬆ Update</button>
-              <button
-                class="btn-danger btn-sm"
-                @click="handleRemove(agent.name)"
-                :disabled="isLoading"
-              >🗑 Remove</button>
-            </template>
-            <template v-else>
-              <button
-                class="btn-primary btn-sm"
-                @click="promptInstall(agent)"
-                :disabled="isLoading"
-              >⬇ Install</button>
-            </template>
+      <!-- Browser mode: no Tauri registry available -->
+      <template v-if="!tauriAvailable">
+        <div class="mp-browser-notice">
+          <div class="mp-notice-icon">🌐</div>
+          <div>
+            <strong>Browser Mode</strong>
+            <p>The agent marketplace requires the TerranSoul desktop app. Your free cloud LLM brain is already active — head to <strong>💬 Chat</strong> to start talking!</p>
           </div>
         </div>
-      </div>
+      </template>
+
+      <!-- Desktop mode: full marketplace -->
+      <template v-else>
+        <div class="mp-search-row">
+          <input
+            v-model="searchQuery"
+            placeholder="Search agents…"
+            class="mp-search"
+            aria-label="Search agents"
+            @keyup.enter="doSearch"
+          />
+          <button class="btn-secondary" @click="doSearch">🔍 Search</button>
+        </div>
+
+        <p v-if="isLoading" class="mp-status">Loading agents…</p>
+        <p v-else-if="displayedAgents.length === 0" class="mp-status">No agents found.</p>
+
+        <div v-else class="mp-grid">
+          <div
+            v-for="agent in displayedAgents"
+            :key="agent.name"
+            class="mp-card"
+          >
+            <div class="mp-card-header">
+              <h3 class="mp-agent-name">{{ agent.name }}</h3>
+              <span class="mp-version">v{{ agent.version }}</span>
+            </div>
+            <p class="mp-description">{{ agent.description }}</p>
+            <div class="mp-caps">
+              <span
+                v-for="cap in agent.capabilities"
+                :key="cap"
+                class="mp-cap-badge"
+              >{{ cap }}</span>
+            </div>
+            <div v-if="agent.homepage" class="mp-homepage">
+              <span class="mp-link-label">🔗 {{ agent.homepage }}</span>
+            </div>
+            <div class="mp-card-actions">
+              <template v-if="isInstalled(agent.name)">
+                <span class="mp-installed-badge">✅ Installed</span>
+                <button
+                  class="btn-secondary btn-sm"
+                  @click="handleUpdate(agent)"
+                  :disabled="isLoading"
+                >⬆ Update</button>
+                <button
+                  class="btn-danger btn-sm"
+                  @click="handleRemove(agent.name)"
+                  :disabled="isLoading"
+                >🗑 Remove</button>
+              </template>
+              <template v-else>
+                <button
+                  class="btn-primary btn-sm"
+                  @click="promptInstall(agent)"
+                  :disabled="isLoading"
+                >⬇ Install</button>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- ── Installed tab ── -->
     <div v-if="activeTab === 'installed'" class="mp-panel">
-      <p v-if="packageStore.installedAgents.length === 0" class="mp-status">No agents installed yet.</p>
+      <template v-if="!tauriAvailable">
+        <div class="mp-browser-notice">
+          <div class="mp-notice-icon">📦</div>
+          <div>
+            <strong>No Desktop Agents</strong>
+            <p>Agent installation requires the TerranSoul desktop app. In browser mode, the free cloud LLM brain handles all conversations.</p>
+          </div>
+        </div>
+      </template>
+      <p v-else-if="packageStore.installedAgents.length === 0" class="mp-status">No agents installed yet.</p>
 
       <div v-else class="mp-grid">
         <div
@@ -159,11 +196,23 @@
 import { ref, computed, onMounted } from 'vue';
 import { usePackageStore } from '../stores/package';
 import { useSandboxStore } from '../stores/sandbox';
+import { useBrainStore } from '../stores/brain';
 import CapabilityConsentDialog from '../components/CapabilityConsentDialog.vue';
 import type { AgentSearchResult } from '../types';
 
 const packageStore = usePackageStore();
 const sandboxStore = useSandboxStore();
+const brainStore = useBrainStore();
+
+/** Whether the Tauri IPC bridge is available. */
+const tauriAvailable = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const activeProviderName = computed(() => {
+  const mode = brainStore.brainMode;
+  if (!mode || mode.mode !== 'free_api') return '';
+  const p = brainStore.freeProviders.find((fp) => fp.id === mode.provider_id);
+  return p?.display_name ?? mode.provider_id ?? '';
+});
 
 const activeTab = ref<'browse' | 'installed'>('browse');
 const tabs = [
@@ -208,6 +257,7 @@ function sandboxLabel(name: string): string {
 }
 
 async function refreshAll() {
+  if (!tauriAvailable) return;
   await packageStore.searchAgents('');
   await packageStore.fetchInstalledAgents();
   await refreshSandboxStatus();
@@ -329,4 +379,18 @@ onMounted(async () => {
 .mp-grant-badge.granted { color: #22c55e; }
 .mp-grant-badge.denied { color: #ef4444; }
 .mp-modal-btns { display: flex; gap: 0.5rem; justify-content: flex-end; }
+
+/* ── Brain status card ── */
+.mp-brain-card { background: rgba(22, 163, 74, 0.12); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 10px; padding: 0.75rem 1rem; }
+.mp-brain-header { display: flex; align-items: center; gap: 0.75rem; }
+.mp-brain-icon { font-size: 1.4rem; }
+.mp-brain-header strong { font-size: 0.9rem; margin: 0; }
+.mp-brain-detail { margin: 0; font-size: 0.78rem; color: #94a3b8; }
+.mp-brain-badge { margin-left: auto; font-size: 0.75rem; padding: 0.2rem 0.7rem; background: rgba(34, 197, 94, 0.2); color: #4ade80; border-radius: 999px; white-space: nowrap; }
+
+/* ── Browser mode notice ── */
+.mp-browser-notice { display: flex; gap: 0.75rem; padding: 1.25rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 10px; }
+.mp-notice-icon { font-size: 1.5rem; flex-shrink: 0; }
+.mp-browser-notice strong { font-size: 0.9rem; }
+.mp-browser-notice p { margin: 0.25rem 0 0; font-size: 0.82rem; color: #94a3b8; line-height: 1.5; }
 </style>

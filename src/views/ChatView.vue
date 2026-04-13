@@ -68,6 +68,12 @@
           </div>
         </div>
 
+        <!-- Brain status indicator when free API is active -->
+        <div v-if="brain.hasBrain && brain.isFreeApiMode" class="brain-status-bar">
+          <span class="brain-status-dot" />
+          <span class="brain-status-text">☁️ {{ activeProviderName }}</span>
+        </div>
+
         <ChatMessageList
           :messages="conversationStore.messages"
           :is-thinking="conversationStore.isThinking"
@@ -81,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
@@ -98,6 +104,13 @@ const streaming = useStreamingStore();
 const showDialog = ref(true);
 const selectedBrain = ref('');
 let unlistenLlmChunk: (() => void) | null = null;
+
+const activeProviderName = computed(() => {
+  const mode = brain.brainMode;
+  if (!mode || mode.mode !== 'free_api') return '';
+  const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
+  return p?.display_name ?? mode.provider_id ?? '';
+});
 
 function toggleDialog() {
   showDialog.value = !showDialog.value;
@@ -264,6 +277,12 @@ onUnmounted(() => {
 
 /* ── Inline brain setup ── */
 .brain-inline { padding: 10px 12px 4px; flex-shrink: 0; }
+
+/* ── Brain status bar ── */
+.brain-status-bar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(22, 163, 74, 0.1); border-bottom: 1px solid rgba(34, 197, 94, 0.15); flex-shrink: 0; }
+.brain-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse-dot 2s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.brain-status-text { font-size: 0.72rem; color: #86efac; letter-spacing: 0.02em; }
 .brain-card { background: rgba(30, 41, 59, 0.9); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; border: 1px solid rgba(59, 130, 246, 0.3); }
 .brain-card-header { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; }
 .brain-hw { font-size: 0.78rem; color: #94a3b8; margin: 0; }
