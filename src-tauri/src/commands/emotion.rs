@@ -18,7 +18,7 @@ pub enum EmotionTag {
 
 impl EmotionTag {
     /// Try to parse an emotion from a tag string (case-insensitive).
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_tag(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "happy" => Some(EmotionTag::Happy),
             "sad" => Some(EmotionTag::Sad),
@@ -58,8 +58,7 @@ pub fn parse_tags(input: &str) -> ParsedChunk {
     // Simple regex-free bracket parser — scan from the beginning each iteration
     // because recognized tags are removed (shifting indices).
     let mut search_from = 0;
-    loop {
-        let Some(rel_start) = text[search_from..].find('[') else { break };
+    while let Some(rel_start) = text[search_from..].find('[') {
         let start = search_from + rel_start;
         let Some(rel_end) = text[start..].find(']') else { break };
         let end = start + rel_end;
@@ -72,7 +71,7 @@ pub fn parse_tags(input: &str) -> ParsedChunk {
             }
             text = format!("{}{}", &text[..start], text[end + 1..].trim_start());
             // Don't advance search_from — text was shortened, new content at `start`
-        } else if let Some(em) = EmotionTag::from_str(tag_content) {
+        } else if let Some(em) = EmotionTag::parse_tag(tag_content) {
             if emotion.is_none() {
                 emotion = Some(em);
             }

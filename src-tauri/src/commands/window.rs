@@ -4,19 +4,14 @@ use tauri::{Manager, State, WebviewWindow};
 use crate::AppState;
 
 /// Window mode: either a normal decorated window or a pet-mode overlay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowMode {
     /// Normal desktop window with decorations, taskbar entry, resizable.
+    #[default]
     Window,
     /// Pet-mode overlay: transparent, always-on-top, skip-taskbar, no decorations.
     Pet,
-}
-
-impl Default for WindowMode {
-    fn default() -> Self {
-        WindowMode::Window
-    }
 }
 
 /// Apply window mode properties to the given Tauri window.
