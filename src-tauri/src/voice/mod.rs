@@ -1,6 +1,8 @@
 pub mod config_store;
+pub mod edge_tts;
 pub mod stub_asr;
 pub mod stub_tts;
+pub mod whisper_api;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
