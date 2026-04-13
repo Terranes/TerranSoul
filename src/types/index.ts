@@ -249,9 +249,8 @@ export interface VoiceProviderInfo {
   id: string;
   display_name: string;
   description: string;
-  kind: 'local' | 'cloud' | 'sidecar';
+  kind: 'local' | 'cloud' | 'external';
   requires_api_key: boolean;
-  requires_sidecar: boolean;
 }
 
 /** Persisted voice configuration. */

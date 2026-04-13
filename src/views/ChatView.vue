@@ -168,7 +168,7 @@ async function handleSend(message: string) {
   // Trigger a random animation variant so the character doesn't repeat
   // the same clip every time the brain responds.
   characterStore.triggerRandomAnimation();
-  setTimeout(() => characterStore.setState('idle'), 3000);
+  setTimeout(() => characterStore.setState('idle'), 6000);
 }
 
 /** Set up Tauri event listener for llm-chunk events (streaming LLM). */

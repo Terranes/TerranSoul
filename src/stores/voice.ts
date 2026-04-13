@@ -12,15 +12,13 @@ const FALLBACK_ASR_PROVIDERS: VoiceProviderInfo[] = [
     description: 'Browser-native speech recognition. Zero setup.',
     kind: 'local',
     requires_api_key: false,
-    requires_sidecar: false,
   },
   {
     id: 'open-llm-vtuber',
     display_name: 'Open-LLM-VTuber',
     description: 'Connect to a running Open-LLM-VTuber server. Supports 7+ ASR engines via WebSocket.',
-    kind: 'sidecar',
+    kind: 'external',
     requires_api_key: false,
-    requires_sidecar: true,
   },
 ];
 
@@ -29,9 +27,8 @@ const FALLBACK_TTS_PROVIDERS: VoiceProviderInfo[] = [
     id: 'open-llm-vtuber',
     display_name: 'Open-LLM-VTuber',
     description: 'Connect to a running Open-LLM-VTuber server. Supports 18+ TTS engines via WebSocket.',
-    kind: 'sidecar',
+    kind: 'external',
     requires_api_key: false,
-    requires_sidecar: true,
   },
 ];
 

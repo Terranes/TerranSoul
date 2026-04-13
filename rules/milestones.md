@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 063** — Voice Sidecar Support (Phase 6)
+**Chunk 064** — Next phase TBD
 
 ---
 
@@ -214,7 +214,7 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 063 | **Voice Sidecar Support** — For Python-based voice engines (VibeVoice, sherpa-onnx, etc.), Tauri spawns a FastAPI sidecar process. Health-check on `/health`. STT via `POST /api/asr`. TTS via `POST /api/tts` or WebSocket `/ws/tts`. Graceful fallback to text-only if sidecar unavailable. Users configure which sidecar to run. | `not-started` |
+| (Phase 6 complete — chunks 060–062 done. Voice sidecar removed in favour of pure Tauri + Open-LLM-VTuber WebSocket.) | | |
 
 ---
 

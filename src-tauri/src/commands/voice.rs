@@ -74,7 +74,7 @@ pub async fn set_voice_api_key(
     Ok(())
 }
 
-/// Set the endpoint URL for sidecar or self-hosted voice providers.
+/// Set the endpoint URL for external voice providers (e.g. Open-LLM-VTuber WebSocket).
 #[tauri::command]
 pub async fn set_voice_endpoint(
     endpoint_url: Option<String>,
@@ -119,7 +119,7 @@ mod tests {
         let providers = voice::asr_providers();
         for p in &providers {
             assert!(
-                ["local", "cloud", "sidecar"].contains(&p.kind.as_str()),
+                ["local", "cloud", "external"].contains(&p.kind.as_str()),
                 "Invalid kind for {}: {}",
                 p.id,
                 p.kind
@@ -132,7 +132,7 @@ mod tests {
         let providers = voice::tts_providers();
         for p in &providers {
             assert!(
-                ["local", "cloud", "sidecar"].contains(&p.kind.as_str()),
+                ["local", "cloud", "external"].contains(&p.kind.as_str()),
                 "Invalid kind for {}: {}",
                 p.id,
                 p.kind

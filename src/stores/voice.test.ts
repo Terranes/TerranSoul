@@ -14,7 +14,6 @@ const sampleAsrProvider: VoiceProviderInfo = {
   description: 'Browser-native speech recognition.',
   kind: 'local',
   requires_api_key: false,
-  requires_sidecar: false,
 };
 
 const sampleTtsProvider: VoiceProviderInfo = {
@@ -23,16 +22,14 @@ const sampleTtsProvider: VoiceProviderInfo = {
   description: 'Microsoft Edge neural voices.',
   kind: 'cloud',
   requires_api_key: false,
-  requires_sidecar: false,
 };
 
 const ollvProvider: VoiceProviderInfo = {
   id: 'open-llm-vtuber',
   display_name: 'Open-LLM-VTuber',
   description: 'Connect to Open-LLM-VTuber server.',
-  kind: 'sidecar',
+  kind: 'external',
   requires_api_key: false,
-  requires_sidecar: true,
 };
 
 describe('voice store', () => {
