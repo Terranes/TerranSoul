@@ -111,3 +111,55 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # ── Vercel Deploy (approval-gated) ─────────────────────────────────────────
+  # Runs only after all CI jobs pass.  Uses a GitHub Environment with required
+  # reviewers so a "Review pending deployments" button appears in the PR.
+  #
+  # Required repo secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+  # Required repo environments (Settings → Environments):
+  #   • "Preview"    – add required reviewers for the approval gate
+  #   • "Production" – (optional) add reviewers or allow auto-deploy on main
+  deploy-vercel:
+    needs: [build-and-test, playwright-e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Preview' }}
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=${{ env.VERCEL_ENV }}
+
+      - name: Build Project Artifacts
+        run: vercel build ${{ env.VERCEL_ENV == 'production' && '--prod' || '' }}
+
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          if [ "${{ env.VERCEL_ENV }}" = "production" ]; then
+            url=$(vercel deploy --prebuilt --prod)
+          else
+            url=$(vercel deploy --prebuilt)
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: $url"
