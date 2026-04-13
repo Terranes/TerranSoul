@@ -1547,3 +1547,90 @@ available for ASR. Echo cancellation support via mic management.
 ### Test Counts (Chunk 062)
 - **Vitest:** 14 new tests (VAD) — 357 total across 29 files
 - **Build:** `npm run build` ✓
+
+---
+
+## Chunk 063 — Remove Open-LLM-VTuber + Rewrite Voice in Rust (done)
+
+**Date:** 2026-04-13
+**Goal:** Remove all Open-LLM-VTuber WebSocket integration and replace with
+pure Rust implementations for TTS (Edge TTS) and ASR (OpenAI Whisper API).
+
+### Architecture
+
+- **OLLV Removal:** Deleted `ollv-client.ts` (WebSocket client to Open-LLM-VTuber).
+  Removed 'external' provider kind. Voice system now has only 'local' and 'cloud' kinds.
+- **Edge TTS (Rust):** `src-tauri/src/voice/edge_tts.rs` — uses `msedge-tts` crate
+  (sync WebSocket to Microsoft Edge Read Aloud API, wrapped in `spawn_blocking` for
+  Tokio compatibility). Outputs PCM→WAV 24kHz 16-bit mono. Free, no API key.
+- **Whisper API (Rust):** `src-tauri/src/voice/whisper_api.rs` — uses `reqwest`
+  multipart form POST to OpenAI `/v1/audio/transcriptions`. Requires API key.
+- **VoiceSetupView:** Simplified from 4-tier (OLLV/Browser/Cloud/Text) to 3-tier
+  (Browser/Cloud/Text). Browser mode now uses Edge TTS for output (was text-only).
+
+### Files Created
+- `src-tauri/src/voice/edge_tts.rs` — Edge TTS engine (TtsEngine trait impl)
+- `src-tauri/src/voice/whisper_api.rs` — Whisper API engine (AsrEngine trait impl)
+
+### Files Modified
+- `src/utils/ollv-client.ts` — **DELETED**
+- `src/utils/ollv-client.test.ts` — **DELETED**
+- `src/stores/voice.ts` — Removed OLLV from fallback providers, added Edge TTS
+- `src/stores/voice.test.ts` — Rewritten without OLLV, new cloud API tests
+- `src/types/index.ts` — Removed 'external' kind from VoiceProviderInfo
+- `src/views/VoiceSetupView.vue` — Removed OLLV wizard step
+- `src/renderer/lip-sync.ts` — Removed OLLV references in comments
+- `src/utils/vad.ts` — Removed OLLV pattern reference
+- `src-tauri/src/voice/mod.rs` — Removed OLLV from catalogues, added new modules
+- `src-tauri/src/commands/voice.rs` — Updated kind validation ('local'/'cloud' only)
+- `src-tauri/src/voice/config_store.rs` — Updated test fixture
+- `src-tauri/Cargo.toml` — Added msedge-tts, reqwest multipart+rustls-tls features
+
+### Dependencies Added
+- `msedge-tts@0.3.0` (Rust) — Microsoft Edge TTS WebSocket client (no advisories)
+- `reqwest` features: `multipart`, `rustls-tls` (already a dependency, added features)
+
+### Test Counts (Chunk 063)
+- **Vitest:** 338 total across 28 files (was 357; OLLV test file deleted, voice tests rewritten)
+- **Rust:** 395 total (was 387; +4 edge_tts tests, +4 whisper_api tests)
+- **Build:** `npm run build` ✓ · `cargo clippy` clean
+
+---
+
+## Chunk 064 — Desktop Pet Overlay with Floating Chat (done)
+
+**Date:** 2026-04-13
+**Goal:** Implement desktop pet mode — the main feature of Open-LLM-VTuber —
+natively in Tauri/Vue without any external dependency. Character floats on
+the desktop as a transparent overlay with a floating chat box.
+
+### Architecture
+
+- **PetOverlayView.vue:** Full-screen transparent overlay containing:
+  - VRM character in bottom-right corner (CharacterViewport)
+  - Floating speech bubble showing latest assistant message
+  - Expandable chat panel (left side) with recent messages + input
+  - Hover-reveal controls: 💬 toggle chat, ✕ exit pet mode
+  - Emotion badge showing character state
+  - Cursor passthrough when chat is collapsed (clicks go to desktop)
+- **App.vue integration:** New `isPetMode` computed from `windowStore.mode`.
+  When `pet`, renders PetOverlayView instead of normal tabbed UI.
+  🐾 button in nav bar (Tauri-only) toggles pet mode.
+  Body background switches to transparent in pet mode.
+- **Existing Rust backend:** Already has `set_window_mode`, `toggle_window_mode`,
+  `set_cursor_passthrough`, `set_pet_mode_bounds` commands (from earlier chunks).
+  tauri.conf.json already has `transparent: true`.
+
+### Files Created
+- `src/views/PetOverlayView.vue` — Desktop pet overlay component
+- `src/views/PetOverlayView.test.ts` — 9 tests
+
+### Files Modified
+- `src/App.vue` — Added PetOverlayView, 🐾 toggle, pet mode routing
+- `rules/milestones.md` — Updated Next Chunk, Phase 6 note
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 064)
+- **Vitest:** 347 total across 29 files (+9 PetOverlayView tests)
+- **Rust:** 395 total (unchanged)
+- **Build:** `npm run build` ✓

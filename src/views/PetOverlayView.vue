@@ -178,7 +178,7 @@ watch(
       showBubble.value = true;
       // Auto-hide bubble after 8 seconds
       setTimeout(() => {
-        if (!chatExpanded.value) showBubble.value = true;
+        if (!chatExpanded.value) showBubble.value = false;
       }, 8000);
     }
   },

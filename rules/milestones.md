@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 064** — Next phase TBD
+**Chunk 065** — Next phase TBD
 
 ---
 
@@ -214,7 +214,7 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| (Phase 6 complete — chunks 060–062 done. Voice sidecar removed in favour of pure Tauri + Open-LLM-VTuber WebSocket.) | | |
+| (Phase 6 complete — chunks 060–064 done. Open-LLM-VTuber removed; Edge TTS + Whisper API in pure Rust; desktop pet overlay.) | | |
 
 ---
 
