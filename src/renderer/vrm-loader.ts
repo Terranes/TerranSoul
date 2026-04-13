@@ -19,14 +19,14 @@ export interface VrmLoadResult {
 export function setNaturalBonePose(vrm: VRM): void {
   const bone = (name: VRMHumanBoneName) => vrm.humanoid?.getNormalizedBoneNode(name);
 
-  // Arms down — rotate upper arms ~70° toward body
+  // Arms down — rotate upper arms ~77° toward body
   const leftUpperArm = bone('leftUpperArm');
   if (leftUpperArm) {
-    leftUpperArm.rotation.set(0, 0, 1.1); // Z+ = toward body for left
+    leftUpperArm.rotation.set(0, 0, 1.35); // Z+ = toward body for left
   }
   const rightUpperArm = bone('rightUpperArm');
   if (rightUpperArm) {
-    rightUpperArm.rotation.set(0, 0, -1.1); // Z- = toward body for right
+    rightUpperArm.rotation.set(0, 0, -1.35); // Z- = toward body for right
   }
 
   // Slight bend in elbows so arms don't look stiff
