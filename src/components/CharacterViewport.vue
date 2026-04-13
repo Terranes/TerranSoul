@@ -143,8 +143,7 @@ watch(
       // animator preserves it every frame instead of overwriting it to 0.
       const rotY = result.vrm.scene.rotation.y + (model?.rotationY ?? 0);
       const persona = model?.persona ?? 'cool';
-      const skipBones = model?.skipBonePose ?? false;
-      animator.setVRM(result.vrm, rotY, persona, skipBones);
+      animator.setVRM(result.vrm, rotY, persona);
       // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
       animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);

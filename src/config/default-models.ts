@@ -11,8 +11,6 @@ export interface DefaultModel {
   rotationY?: number;
   /** Animation personality — affects movement style and expressions. */
   persona?: AnimationPersona;
-  /** Skip normalized bone pose manipulation (for models with non-standard skeletons). */
-  skipBonePose?: boolean;
 }
 
 export const DEFAULT_MODELS: DefaultModel[] = [
