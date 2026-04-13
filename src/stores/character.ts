@@ -12,9 +12,16 @@ export const useCharacterStore = defineStore('character', () => {
   const isLoading = ref(true);
   const selectedModelId = ref<string>(DEFAULT_MODEL_ID);
   const defaultModels = ref<DefaultModel[]>(DEFAULT_MODELS);
+  /** Incremented to signal the viewport to play a random animation variant. */
+  const randomAnimTrigger = ref(0);
 
   function setState(newState: CharacterState) {
     state.value = newState;
+  }
+
+  /** Signal the animator to cross-fade to a different animation variant. */
+  function triggerRandomAnimation() {
+    randomAnimTrigger.value++;
   }
 
   function setMetadata(metadata: VrmMetadata) {
@@ -62,5 +69,5 @@ export const useCharacterStore = defineStore('character', () => {
     selectedModelId.value = DEFAULT_MODEL_ID;
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, setState, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter };
+  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, randomAnimTrigger, setState, triggerRandomAnimation, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter };
 });

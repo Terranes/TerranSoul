@@ -207,4 +207,12 @@ describe('CharacterAnimator', () => {
       }
     }
   });
+
+  it('triggerRandomAnimation does not throw on placeholder', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    // No VRM set → should be a no-op, not an error
+    expect(() => animator.triggerRandomAnimation()).not.toThrow();
+  });
 });

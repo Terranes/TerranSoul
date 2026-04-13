@@ -126,6 +126,9 @@ async function handleSend(message: string) {
     : 'talking';
 
   characterStore.setState(reactionState);
+  // Trigger a random animation variant so the character doesn't repeat
+  // the same clip every time the brain responds.
+  characterStore.triggerRandomAnimation();
   setTimeout(() => characterStore.setState('idle'), 3000);
 }
 

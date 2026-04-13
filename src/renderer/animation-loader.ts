@@ -19,13 +19,17 @@ interface ClipData {
   tracks: BoneTrack[];
 }
 
-/** Per-persona JSON: one clip per CharacterState. */
+/**
+ * Per-persona JSON: each CharacterState maps to **one or more** clip variants.
+ * A single ClipData is accepted for backwards-compat; an array enables the
+ * multi-clip system that randomly cycles through animation variants.
+ */
 interface PersonaAnimationData {
-  idle: ClipData;
-  thinking: ClipData;
-  talking: ClipData;
-  happy: ClipData;
-  sad: ClipData;
+  idle: ClipData | ClipData[];
+  thinking: ClipData | ClipData[];
+  talking: ClipData | ClipData[];
+  happy: ClipData | ClipData[];
+  sad: ClipData | ClipData[];
 }
 
 // ── Static imports (bundled by Vite — no runtime fetch) ──────────────
@@ -55,11 +59,13 @@ function eulerToQuatArray(rotations: [number, number, number][]): number[] {
 
 // ── Public API ───────────────────────────────────────────────────────
 
-export type PersonaClips = Record<CharacterState, THREE.AnimationClip>;
+/** Maps each CharacterState to one or more AnimationClips (variants). */
+export type PersonaClips = Record<CharacterState, THREE.AnimationClip[]>;
 
 /**
  * Build a set of AnimationClips for every CharacterState of a given persona.
  *
+ * Each state can have multiple clip variants (loaded from the JSON array).
  * The clips target VRM *normalized* bone nodes so the mixer drives the
  * same skeleton layer that `vrm.humanoid.update()` copies to raw bones.
  *
@@ -72,7 +78,11 @@ export function buildPersonaClips(vrm: VRM, persona: AnimationPersona): PersonaC
   const clips: Partial<PersonaClips> = {};
 
   for (const state of states) {
-    clips[state] = buildClip(vrm, `${persona}-${state}`, data[state]);
+    const raw = data[state];
+    const arr = Array.isArray(raw) ? raw : [raw];
+    clips[state] = arr.map((d, i) =>
+      buildClip(vrm, `${persona}-${state}-${i}`, d),
+    );
   }
 
   return clips as PersonaClips;
@@ -99,10 +109,15 @@ function buildClip(vrm: VRM, name: string, clipData: ClipData): THREE.AnimationC
     }
 
     // Position track (for hips vertical bob, etc.)
+    // JSON values are *offsets* from the bone's rest position.  The THREE
+    // AnimationMixer sets position absolutely, so we must add the bone's
+    // rest position to each keyframe to prevent the model sinking into
+    // the ground (the hips rest position is typically Y ≈ 0.85).
     if (t.positions?.length) {
+      const rest = node.position;
       const posValues: number[] = [];
       for (const [x, y, z] of t.positions) {
-        posValues.push(x, y, z);
+        posValues.push(rest.x + x, rest.y + y, rest.z + z);
       }
       tracks.push(
         new THREE.VectorKeyframeTrack(

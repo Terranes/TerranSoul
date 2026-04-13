@@ -117,6 +117,12 @@ watch(
   (newState) => animator.setState(newState),
 );
 
+// Watch for brain-triggered random animation requests
+watch(
+  () => characterStore.randomAnimTrigger,
+  () => animator.triggerRandomAnimation(),
+);
+
 // Watch for VRM path changes and load the model
 watch(
   () => characterStore.vrmPath,
