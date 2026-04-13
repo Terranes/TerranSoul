@@ -136,8 +136,9 @@ export class CharacterAnimator {
     this.setBone('chest', breathAmt * 0.6, 0, 0);
 
     // ── Natural arm-down pose ──
-    // VRM T-pose has arms horizontal; rotate upper arms ~70° down toward body.
-    // These are direct-set each frame so they never accumulate.
+    // VRM T-pose has arms horizontal (0 rad).  1.1 rad ≈ 63° rotates
+    // upper arms downward toward the body for a relaxed standing look.
+    // Z+ = toward body for left arm, Z- = toward body for right arm.
     this.setBone('leftUpperArm', 0, 0, 1.1);
     this.setBone('rightUpperArm', 0, 0, -1.1);
     this.setBone('leftLowerArm', 0, 0, 0.15);
