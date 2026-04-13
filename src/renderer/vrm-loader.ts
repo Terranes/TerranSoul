@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { VrmMetadata } from '../types';
 
 export type ProgressCallback = (loaded: number, total: number) => void;
@@ -8,6 +8,7 @@ export type ProgressCallback = (loaded: number, total: number) => void;
 export interface VrmLoadResult {
   vrm: VRM;
   metadata: VrmMetadata;
+  isVrm0: boolean;
 }
 
 /**
@@ -18,14 +19,14 @@ export interface VrmLoadResult {
 export function setNaturalBonePose(vrm: VRM): void {
   const bone = (name: VRMHumanBoneName) => vrm.humanoid?.getNormalizedBoneNode(name);
 
-  // Arms down — rotate upper arms ~70° toward body
+  // Arms down — rotate upper arms ~77° toward body
   const leftUpperArm = bone('leftUpperArm');
   if (leftUpperArm) {
-    leftUpperArm.rotation.set(0, 0, 1.1); // Z+ = toward body for left
+    leftUpperArm.rotation.set(0, 0, 1.35); // Z+ = toward body for left
   }
   const rightUpperArm = bone('rightUpperArm');
   if (rightUpperArm) {
-    rightUpperArm.rotation.set(0, 0, -1.1); // Z- = toward body for right
+    rightUpperArm.rotation.set(0, 0, -1.35); // Z- = toward body for right
   }
 
   // Slight bend in elbows so arms don't look stiff
@@ -67,6 +68,8 @@ export function setNaturalBonePose(vrm: VRM): void {
  */
 export function applyNaturalPose(vrm: VRM): void {
   setNaturalBonePose(vrm);
+  // vrm.update() calls humanoid.update() internally, which transfers
+  // normalized bone rotations to the raw skeleton (autoUpdateHumanBones=true).
   vrm.update(0);
 }
 
@@ -105,6 +108,9 @@ export async function loadVRM(
   }
 
   const loader = new GLTFLoader();
+  // autoUpdateHumanBones must be true (default) so that humanoid.update()
+  // transfers normalized bone rotations to the raw skeleton each frame.
+  // When false, humanoid.update() is a no-op and the model stays in T-pose.
   loader.register((parser) => new VRMLoaderPlugin(parser));
 
   const gltf = await loader.loadAsync(path, (event) => {
@@ -118,12 +124,53 @@ export async function loadVRM(
     throw new Error('File loaded but does not contain valid VRM data');
   }
 
+  // Rotate VRM 0.x models so they face the camera (VRM 0 faces -Z, VRM 1 faces +Z)
+  const isVrm0 = String(vrm.meta?.metaVersion ?? '').startsWith('0');
+  if (isVrm0) {
+    VRMUtils.rotateVRM0(vrm);
+  }
+
+  // Performance optimizations (from official three-vrm examples)
+  VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  VRMUtils.combineSkeletons(gltf.scene);
+  VRMUtils.combineMorphs(vrm);
+
+  // Disable frustum culling to prevent clipping when parts are near screen edge;
+  // also recompute bounding geometry for correct depth sorting.
+  vrm.scene.traverse((obj) => {
+    obj.frustumCulled = false;
+    if ((obj as THREE.Mesh).isMesh) {
+      const mesh = obj as THREE.Mesh;
+      mesh.geometry?.computeBoundingBox?.();
+      mesh.geometry?.computeBoundingSphere?.();
+    }
+  });
+
   scene.add(vrm.scene);
 
   // Apply a natural relaxed pose so the character doesn't stand in T-pose
   applyNaturalPose(vrm);
 
-  return { vrm, metadata: extractVrmMetadata(vrm) };
+  // ── Spring bone warmup ────────────────────────────────────────────
+  // VRM spring bones (hair, clothing, accessories) start in their rest
+  // position, which may be far from where gravity would settle them.
+  // Without warmup the hair visibly "flies" or "drops" over the first
+  // second.  VRoid Hub solves this by running physics ticks off-screen.
+  //
+  // We reset the spring bone state to match the current pose, then
+  // simulate ~1 second of physics (60 ticks at 1/60s) so the hair and
+  // cloth settle into their gravity-affected rest position before the
+  // first visible frame.
+  const sbm = vrm.springBoneManager;
+  if (sbm) {
+    sbm.reset();
+    const warmupDt = 1 / 60;
+    for (let i = 0; i < 60; i++) {
+      sbm.update(warmupDt);
+    }
+  }
+
+  return { vrm, metadata: extractVrmMetadata(vrm), isVrm0 };
 }
 
 export async function loadVRMSafe(

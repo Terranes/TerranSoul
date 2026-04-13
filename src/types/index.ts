@@ -9,7 +9,7 @@ export interface Message {
 
 export type CharacterState = 'idle' | 'thinking' | 'talking' | 'happy' | 'sad';
 
-export type AnimationPersona = 'cool' | 'cute';
+export type AnimationPersona = 'witch' | 'idol' | 'fashionista' | 'gentleman';
 
 export interface Agent {
   id: string;

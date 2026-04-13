@@ -11,8 +11,6 @@ export interface DefaultModel {
   rotationY?: number;
   /** Animation personality — affects movement style and expressions. */
   persona?: AnimationPersona;
-  /** Skip normalized bone pose manipulation (for models with non-standard skeletons). */
-  skipBonePose?: boolean;
 }
 
 export const DEFAULT_MODELS: DefaultModel[] = [
@@ -21,32 +19,28 @@ export const DEFAULT_MODELS: DefaultModel[] = [
     name: 'Annabelle the Sorcerer',
     path: '/models/default/Annabelle the Sorcerer.vrm',
     thumbnail: '/models/default/Annabelle the Sorcerer.png',
-    rotationY: Math.PI,
-    persona: 'cool',
+    persona: 'witch',
   },
   {
     id: 'm58',
     name: 'M58',
     path: '/models/default/M58.vrm',
     thumbnail: '/models/default/M58.png',
-    rotationY: Math.PI,
-    persona: 'cool',
+    persona: 'idol',
   },
   {
     id: 'miyoura-toshie',
     name: 'Miyoura Toshie',
     path: '/models/default/Miyoura Toshie.vrm',
     thumbnail: '/models/default/Miyoura Toshie.png',
-    rotationY: Math.PI,
-    persona: 'cute',
+    persona: 'fashionista',
   },
   {
     id: 'nogami-juto',
     name: 'Nogami Juto',
     path: '/models/default/Nogami Juto.vrm',
     thumbnail: '/models/default/Nogami Juto.png',
-    rotationY: 0,
-    persona: 'cool',
+    persona: 'gentleman',
   },
 ];
 

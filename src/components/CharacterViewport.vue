@@ -28,7 +28,7 @@
       {{ characterStore.state }}
     </div>
     <div v-if="showDebug" class="debug-overlay">
-      <span>{{ rendererType.toUpperCase() }}</span>
+      <span>WebGL</span>
       <span>▲ {{ debugInfo.triangles }}</span>
       <span>⬡ {{ debugInfo.calls }} draws</span>
       <span>⚙ {{ debugInfo.programs }} progs</span>
@@ -41,14 +41,13 @@ import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
 import { DEFAULT_MODELS } from '../config/default-models';
-import { initScene, type RendererInfo, type RendererType, type SceneContext } from '../renderer/scene';
+import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const showDebug = ref(false);
-const rendererType = ref<RendererType>('webgl');
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 
 const characterName = computed(() => {
@@ -82,7 +81,6 @@ onMounted(async () => {
   sceneCtx = ctx;
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
-  rendererType.value = ctx.rendererType;
 
   // Auto-load the default VRM model (loading overlay shows until ready)
   characterStore.loadDefaultModel();
@@ -90,6 +88,12 @@ onMounted(async () => {
   function loop() {
     animFrameId = requestAnimationFrame(loop);
     const delta = ctx.clock.getDelta();
+    // Adjust orbit target height based on zoom (face ↔ full body)
+    ctx.updateZoomTarget();
+    // Update OrbitControls (damping requires per-frame update)
+    ctx.controls.update();
+    // Keep lookAt target at camera position so VRM eyes track the viewer
+    ctx.lookAtTarget.position.copy(ctx.camera.position);
     animator.update(delta);
     ctx.renderer.render(ctx.scene, ctx.camera);
 
@@ -128,13 +132,33 @@ watch(
     const result = await loadVRMSafe(sceneCtx.scene, newPath);
     if (result) {
       currentVrmScene = result.vrm.scene;
-      // Look up per-model rotation, persona, and bone-pose config
+      // Hide the model initially — loadVRM already added it to the scene,
+      // but we keep it invisible until everything (textures, morphs, bones)
+      // is fully parsed so the user never sees hair dropping or half-loaded
+      // geometry.  We reveal it below after the animator is wired up.
+      result.vrm.scene.visible = false;
+
+      // Look up per-model persona and bone-pose config
       const model = DEFAULT_MODELS.find(m => m.path === newPath);
-      const rotY = model?.rotationY ?? 0;
-      const persona = model?.persona ?? 'cool';
-      const skipBones = model?.skipBonePose ?? false;
-      animator.setVRM(result.vrm, rotY, persona, skipBones);
+      // rotateVRM0() sets vrm.scene.rotation.y = Math.PI for VRM 0.x.
+      // Capture whatever rotation the loader left on the scene root so the
+      // animator preserves it every frame instead of overwriting it to 0.
+      const rotY = result.vrm.scene.rotation.y + (model?.rotationY ?? 0);
+      const persona = model?.persona ?? 'gentleman';
+      animator.setVRM(result.vrm, rotY, persona);
+      // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
+      animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);
+
+      // Expose VRM for E2E testing — allows Playwright to verify bone positions
+      (window as any).__terransoul_vrm__ = result.vrm;
+
+      // Run one animation tick so bones settle into the natural pose before
+      // the first visible frame — this prevents the T-pose flash.
+      animator.update(0);
+
+      // Now reveal the fully-posed model and dismiss the loading overlay
+      result.vrm.scene.visible = true;
       characterStore.setLoaded();
     } else {
       characterStore.setLoadError('Failed to load VRM model');
