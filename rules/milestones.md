@@ -183,3 +183,36 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 |-------|-------------|--------|
 | 034 | **Agent Marketplace UI** — Marketplace view listing registry agents with install/update/remove actions, capability consent dialog before install, sandboxed agent status badges. | `not-started` |
 | 035 | **Agent-to-Agent Messaging** — Allow installed agents to pass messages to each other via the command router. Agents can subscribe to message topics and the orchestrator fans out. | `not-started` |
+
+---
+
+## Phase 5 — Desktop Experience (Overlay & Streaming)
+
+> **Goal:** Transform the desktop window into a proper overlay companion.
+> Dual-mode window (normal + pet mode), selective click-through, multi-monitor,
+> streaming LLM responses, emotion-driven character reactions.
+> Patterns learned from Open-LLM-VTuber and aituber-kit — see `rules/research-reverse-engineering.md`.
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 050 | **Window Mode System** — Dual-mode window: normal window mode (decorations, resizable, taskbar) + pet mode overlay (transparent, always-on-top, skip-taskbar). Pinia `WindowMode` store (`'window' \| 'pet'`). Tauri commands `set_window_mode` / `get_window_mode` that call `set_decorations`, `set_always_on_top`, `set_skip_taskbar`. System tray toggle between modes. Opacity-fade transition. Default to window mode on first launch. | `not-started` |
+| 051 | **Selective Click-Through** — In pet mode, clicks pass through empty areas but interact with character and chatbox. Frontend tracks mouse over interactive elements. On hover enter → `invoke('set_cursor_passthrough', false)`. On hover leave → `invoke('set_cursor_passthrough', true)`. Tauri command calls `window.set_ignore_cursor_events()`. Test on Windows + macOS (different behaviors per Open-LLM-VTuber). | `not-started` |
+| 052 | **Multi-Monitor Pet Mode** — Pet mode window spans all connected displays. Tauri command queries `available_monitors()`, calculates bounding rect, sets window bounds to combined rect. Character position stored relative to combined screen space. Allow dragging character between monitors. | `not-started` |
+| 053 | **Streaming LLM Responses** — Modify OllamaAgent to use streaming API (`/api/chat` with `stream: true`). Emit Tauri events for each text chunk. Frontend subscribes and appends text progressively. Character starts "talking" animation on first chunk (not after full response). Prepare for future TTS streaming. | `not-started` |
+| 054 | **Emotion Tags in LLM Responses** — System prompt instructs brain to tag emotions: `[happy] text`. Parse and strip tags before display. Map to VRM expressions (happy/sad/angry/relaxed/surprised/neutral). Optional motion tags `[motion:wave]`. Integrate with character-animator state machine. | `not-started` |
+
+---
+
+## Phase 6 — Voice (User-Defined ASR/TTS)
+
+> **Goal:** Add voice input/output. Users choose their own voice provider — same
+> philosophy as the brain system where users pick their own LLM model.
+> TerranSoul provides the abstraction layer; users bring their preferred engine.
+> Reference implementations studied: VibeVoice, sherpa-onnx, Edge TTS, OpenAI Whisper — see `rules/research-reverse-engineering.md`.
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 060 | **Voice Abstraction Layer** — Rust traits `AsrEngine` (async `transcribe(audio) → text`) and `TtsEngine` (async `synthesize(text) → audio`). Config-driven provider selection (same pattern as `AgentProvider` trait). Stub implementations for testing. Tauri commands: `list_voice_providers`, `set_asr_provider`, `set_tts_provider`. VoiceSetupView.vue for users to pick their ASR/TTS provider and configure endpoints/API keys. | `not-started` |
+| 061 | **Web Audio Lip Sync** — `LipSync` class using Web Audio API `AnalyserNode`. Connect TTS audio output to analyser. Extract volume from `getFloatTimeDomainData()`. Map volume → VRM mouth morph targets (`aa`, `oh`). Run in requestAnimationFrame loop alongside character animator. Provider-agnostic — works with any TTS audio output. | `not-started` |
+| 062 | **Voice Activity Detection** — Use `@ricky0123/vad-web` (ONNX) for browser-side speech detection. Detect speech start → pause AI audio and capture mic. Detect speech end → send audio to user's configured ASR engine. Handle echo cancellation (mute TTS during mic capture). | `not-started` |
+| 063 | **Voice Sidecar Support** — For Python-based voice engines (VibeVoice, sherpa-onnx, etc.), Tauri spawns a FastAPI sidecar process. Health-check on `/health`. STT via `POST /api/asr`. TTS via `POST /api/tts` or WebSocket `/ws/tts`. Graceful fallback to text-only if sidecar unavailable. Users configure which sidecar to run. | `not-started` |

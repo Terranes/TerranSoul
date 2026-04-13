@@ -94,10 +94,12 @@ BrowserWindow({
 ### Key Lessons for TerranSoul
 
 1. **Streaming is critical** — Text chunks arrive via SSE, TTS starts on first chunks
-   (character speaks while still receiving text). We need this.
+   (character speaks while still receiving text). Apply to our existing Ollama brain.
 2. **Web Audio API is sufficient for lip sync** — No external lib needed.
 3. **Emotion tags in LLM responses** — Parse `[happy]`, `[motion:wave]` from text.
-4. **TTS abstraction layer** — Easy provider switching via factory pattern.
+   Works with any brain model the user has configured.
+4. **Voice abstraction layer** — aituber-kit supports 11 TTS providers via factory pattern.
+   We should build a similar abstraction so users can pick their preferred provider.
 5. **Zustand persistence** — Same pattern as our Pinia + localStorage.
 
 ---
@@ -256,8 +258,9 @@ Frontend connects to `/client-ws`. Server handles:
    Tauri can replicate this with `set_ignore_cursor_events()`.
 3. **Multi-monitor support** — Window spans all displays in pet mode.
 4. **Opacity-based mode transitions** — Smooth switching between modes.
-5. **Python server for AI** — They run LLM/TTS/ASR in Python, frontend just renders.
-   We use Rust backend which is better for performance but needs Python bridge for models.
+5. **Separation of concerns** — They run LLM/TTS/ASR as backend services,
+   frontend just renders. We already do this with Rust backend + Ollama.
+   Users configure which services to use — not hardcoded.
 6. **WebSocket for streaming** — Real-time audio/text streaming between processes.
 
 ---
@@ -304,25 +307,32 @@ with continuous speech tokenizers. Uses next-token diffusion for synthesis.
 3. **FastAPI Service** — REST + WebSocket endpoints
 4. **HuggingFace Transformers** — Native support (v5.3.0+)
 
-### Why VibeVoice > aituber-kit's Approach
+### VibeVoice vs Cloud Providers (Comparison for Users)
 
-| Feature | aituber-kit | VibeVoice |
-|---------|------------|-----------|
-| ASR | Web Speech API / Whisper API (cloud) | Local 7B model, 60min, diarization |
-| TTS | 11 cloud providers (vendor lock-in) | Local 0.5B model, ~300ms, MIT license |
+| Feature | Cloud providers (aituber-kit style) | VibeVoice (local) |
+|---------|-------------------------------------|-------------------|
+| ASR | Web Speech API / Whisper API | Local 7B model, 60min, diarization |
+| TTS | 11 cloud providers | Local 0.5B model, ~300ms, MIT license |
 | Offline | Mostly cloud-dependent | Fully offline capable |
 | Languages | Per-provider, complex config | 50+ languages, auto-detect |
 | Cost | API fees add up | Free, runs on consumer GPU |
 | Customization | Limited to provider options | LoRA fine-tuning, hotwords |
 | Privacy | Audio sent to cloud | Everything local |
 
+> **Note:** TerranSoul does not prescribe a voice provider. Users choose
+> based on their hardware, privacy needs, and preferences — same as the
+> brain system where users pick their own LLM model.
+
 ### Key Lesson
 
-VibeVoice's **0.5B Realtime model** is the sweet spot for TerranSoul:
-- Small enough to run alongside Ollama on 8GB+ VRAM
-- Fast enough for real-time conversation (~300ms latency)
+VibeVoice demonstrates that **high-quality local voice AI is now feasible**:
+- 0.5B model runs alongside Ollama on 8GB+ VRAM
+- ~300ms latency is fast enough for real-time conversation
 - MIT licensed, no vendor lock-in
 - Streaming text input pairs perfectly with LLM streaming output
+
+TerranSoul should offer VibeVoice as **one option** in the voice provider
+selection UI — alongside sherpa-onnx, Edge TTS, OpenAI, etc. Users choose.
 
 ---
 
@@ -389,42 +399,62 @@ The frontend would:
 
 ---
 
-## 5. Voice System Recommendation {#5-voice-system-recommendation}
+## 5. Voice System — Abstraction Layer (User Chooses Provider) {#5-voice-system-recommendation}
 
-### Recommended: VibeVoice
+> **Design principle:** TerranSoul already lets users choose their own brain
+> (LLM model via the Ollama brain setup wizard). The same philosophy applies
+> to voice — we build the **abstraction layer**, users pick their preferred
+> ASR/TTS engine. We do NOT hardcode a single provider.
 
-**For ASR (Speech-to-Text):**
-- VibeVoice-ASR-7B for production
-- Requires ~14GB VRAM (too heavy for low-end)
-- Fallback: sherpa-onnx (lightweight, used by Open-LLM-VTuber) for low-end
+### Voice Provider Options (for users to choose from)
 
-**For TTS (Text-to-Speech):**
-- VibeVoice-Realtime-0.5B for production
-- Requires ~2GB VRAM
-- Fallback: sherpa-onnx or Edge TTS for low-end
+**ASR (Speech-to-Text) options:**
 
-### Integration Plan
+| Provider | Type | VRAM | Strengths |
+|----------|------|------|-----------|
+| VibeVoice-ASR-7B | Local (Python sidecar) | ~14GB | 60min, diarization, 50+ langs |
+| sherpa-onnx | Local (ONNX) | CPU-only | Lightweight, works on low-end |
+| OpenAI Whisper API | Cloud | None | High accuracy, simple API |
+| Web Speech API | Browser-native | None | Zero setup, limited accuracy |
 
-Since VibeVoice is Python-based, integration options:
+**TTS (Text-to-Speech) options:**
 
-1. **Sidecar process** — Run VibeVoice as a FastAPI server alongside Tauri.
-   Tauri spawns it on startup, communicates via localhost WebSocket/HTTP.
-   This is how Open-LLM-VTuber does it (Python server + Electron frontend).
+| Provider | Type | VRAM | Strengths |
+|----------|------|------|-----------|
+| VibeVoice-Realtime-0.5B | Local (Python sidecar) | ~2GB | ~300ms, MIT, streaming |
+| sherpa-onnx | Local (ONNX) | CPU-only | Lightweight, many voices |
+| Edge TTS | Cloud (free) | None | High quality, many languages |
+| OpenAI TTS | Cloud (paid) | None | Best quality, simple API |
+| ElevenLabs | Cloud (paid) | None | Voice cloning, expressive |
 
-2. **ONNX export** — Export VibeVoice-Realtime-0.5B to ONNX, run in Rust
-   via `ort` crate. Removes Python dependency but may lose features.
+### Integration Architecture
 
-3. **Tauri sidecar plugin** — Tauri 2.0's `tauri-plugin-shell` can manage
-   child processes. Bundle VibeVoice with PyInstaller as a sidecar.
+TerranSoul provides:
+1. **Rust traits** — `AsrEngine` and `TtsEngine` with async methods
+2. **Config-driven selection** — Users pick provider in VoiceSetupView.vue
+   (same UX pattern as BrainSetupView.vue)
+3. **Sidecar support** — For Python-based engines, Tauri spawns a FastAPI
+   sidecar. Users configure which sidecar to run.
+4. **Direct HTTP/WebSocket** — For cloud APIs, frontend calls directly.
+5. **Graceful fallback** — Text-only mode if no voice provider configured.
 
-**Recommended: Option 1 (FastAPI sidecar)** — Simplest, most maintainable,
-matches Open-LLM-VTuber's proven pattern.
+This matches TerranSoul's philosophy: **we provide the platform, users
+bring their preferred AI services.**
 
 ---
 
 ## 6. Actionable Chunks for TerranSoul {#6-actionable-chunks}
 
-### Chunk A — Window Mode System (High Priority)
+> **These chunks are registered in `rules/milestones.md` (Phase 5 & 6).**
+> Agents will implement them via the standard `Continue` workflow.
+>
+> **Design principle:** TerranSoul already has a brain system where users
+> choose their own LLM model. All new features follow the same philosophy —
+> we build abstraction layers, users bring their preferred services.
+
+### Phase 5 — Desktop Experience (Chunks 050–054)
+
+#### Chunk 050 — Window Mode System (High Priority)
 
 **Goal:** Implement dual-mode window (normal + pet mode overlay)
 
@@ -437,7 +467,7 @@ matches Open-LLM-VTuber's proven pattern.
 - Opacity-fade transition (match Open-LLM-VTuber pattern)
 - Default to window mode on first launch, pet mode after setup
 
-### Chunk B — Selective Click-Through (High Priority)
+#### Chunk 051 — Selective Click-Through (High Priority)
 
 **Goal:** In pet mode, clicks pass through empty areas but interact with
 character and chatbox
@@ -449,7 +479,7 @@ character and chatbox
 - Tauri command calls `window.set_ignore_cursor_events()`
 - Test on Windows + macOS (different behaviors, match Open-LLM-VTuber)
 
-### Chunk C — Multi-Monitor Pet Mode (Medium Priority)
+#### Chunk 052 — Multi-Monitor Pet Mode (Medium Priority)
 
 **Goal:** Pet mode window spans all connected displays
 
@@ -459,30 +489,19 @@ character and chatbox
 - Character position stored relative to combined screen space
 - Allow dragging character between monitors
 
-### Chunk D — Streaming LLM Responses (High Priority)
+#### Chunk 053 — Streaming LLM Responses (High Priority)
 
-**Goal:** Stream text from Ollama instead of waiting for full response
+**Goal:** Stream text from the user's active brain instead of waiting for full response
 
 - Modify OllamaAgent to use streaming API (`/api/chat` with `stream: true`)
 - Emit Tauri events for each text chunk
 - Frontend subscribes and appends text progressively
 - Character starts "talking" animation on first chunk (not after full response)
-- Prepare for future TTS streaming (pipe text chunks → TTS → audio)
+- Works with whatever brain model the user has configured
 
-### Chunk E — Web Audio Lip Sync (Medium Priority)
+#### Chunk 054 — Emotion Tags in LLM Responses (Medium Priority)
 
-**Goal:** Animate VRM mouth based on audio output
-
-- Create `LipSync` class using Web Audio API `AnalyserNode`
-- Connect TTS audio output to analyser
-- Extract volume from `getFloatTimeDomainData()`
-- Map volume → VRM mouth morph target (`aa`, `oh`)
-- Run in requestAnimationFrame loop alongside character animator
-- (Match aituber-kit's proven approach)
-
-### Chunk F — Emotion Tags in LLM Responses (Medium Priority)
-
-**Goal:** LLM responses contain emotion/motion directives
+**Goal:** User's brain model tags emotions in responses
 
 - Add system prompt instructions for emotion tagging: `[happy] text here`
 - Parse emotion tags before displaying text (strip from visible message)
@@ -490,30 +509,53 @@ character and chatbox
 - Optional motion tags: `[motion:wave]`, `[motion:nod]`
 - Integrate with character-animator state machine
 
-### Chunk G — Voice Sidecar (VibeVoice) (Lower Priority)
+### Phase 6 — Voice (Chunks 060–063)
 
-**Goal:** Add voice input/output via VibeVoice sidecar
+#### Chunk 060 — Voice Abstraction Layer (High Priority)
 
-- Bundle VibeVoice-Realtime-0.5B FastAPI server as sidecar
-- Tauri spawns on startup, health-checks on `/health`
-- STT: Browser MediaRecorder → POST audio to `/api/asr`
-- TTS: POST text to `/api/tts` or stream via `/ws/tts`
-- Audio playback in browser + lip sync integration
-- Graceful fallback if sidecar unavailable (text-only mode)
+**Goal:** Let users choose their own voice providers (same philosophy as brain)
 
-### Chunk H — Voice Activity Detection (Lower Priority)
+- Rust traits `AsrEngine` (async `transcribe(audio) → text`) and
+  `TtsEngine` (async `synthesize(text) → audio`)
+- Config-driven provider selection (same pattern as `AgentProvider` trait)
+- Stub implementations for testing
+- Tauri commands: `list_voice_providers`, `set_asr_provider`, `set_tts_provider`
+- VoiceSetupView.vue for users to pick ASR/TTS provider and configure
+  endpoints/API keys (mirrors BrainSetupView.vue UX)
+
+#### Chunk 061 — Web Audio Lip Sync (Medium Priority)
+
+**Goal:** Animate VRM mouth based on audio output (provider-agnostic)
+
+- Create `LipSync` class using Web Audio API `AnalyserNode`
+- Connect TTS audio output to analyser
+- Extract volume from `getFloatTimeDomainData()`
+- Map volume → VRM mouth morph target (`aa`, `oh`)
+- Run in requestAnimationFrame loop alongside character animator
+- Works with ANY TTS audio output regardless of provider
+
+#### Chunk 062 — Voice Activity Detection (Medium Priority)
 
 **Goal:** Detect when user is speaking, interrupt AI response
 
 - Use `@ricky0123/vad-web` (ONNX, same as Open-LLM-VTuber-Web)
-- Detect speech start → pause AI audio, send to ASR
-- Detect speech end → submit transcription to LLM
-- Handle "AI won't hear itself" — subtract TTS audio from mic input
-  or mute TTS during mic capture
+- Detect speech start → pause AI audio, send to user's configured ASR
+- Detect speech end → submit transcription to brain
+- Handle "AI won't hear itself" — mute TTS during mic capture
+
+#### Chunk 063 — Voice Sidecar Support (Lower Priority)
+
+**Goal:** Support Python-based voice engines as sidecars
+
+- For engines like VibeVoice, sherpa-onnx, etc. that need Python runtime
+- Tauri spawns a FastAPI sidecar on startup, health-checks on `/health`
+- STT: Browser MediaRecorder → POST audio to `/api/asr`
+- TTS: POST text to `/api/tts` or stream via `/ws/tts`
+- Users configure which sidecar to run (not hardcoded)
+- Graceful fallback to text-only if sidecar unavailable
 
 ---
 
 > **Next session:** Pick the highest-priority chunk not already being handled
-> by another agent. Chunks A and B should come first (they fix the overlay
-> problem identified in the task). Skip animation-related chunks as another
-> agent handles those.
+> by another agent. Chunks 050 and 051 should come first (they fix the overlay
+> problem). Skip animation-related chunks as another agent handles those.
