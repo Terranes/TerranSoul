@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, type VRM } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { VrmMetadata } from '../types';
 
 export type ProgressCallback = (loaded: number, total: number) => void;
@@ -16,7 +16,7 @@ export interface VrmLoadResult {
  * Does NOT call vrm.update() — the caller is responsible for that.
  */
 export function setNaturalBonePose(vrm: VRM): void {
-  const bone = (name: string) => vrm.humanoid?.getNormalizedBoneNode(name);
+  const bone = (name: VRMHumanBoneName) => vrm.humanoid?.getNormalizedBoneNode(name);
 
   // Arms down — rotate upper arms ~70° toward body
   const leftUpperArm = bone('leftUpperArm');

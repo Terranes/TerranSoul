@@ -3,8 +3,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 use uuid::Uuid;
 
-use crate::agent::stub_agent::StubAgent;
+use crate::agent::stub_agent::{Sentiment, StubAgent};
 use crate::agent::AgentProvider;
+use crate::brain::OllamaAgent;
 use crate::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -22,6 +23,14 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+fn sentiment_str(s: &Sentiment) -> &'static str {
+    match s {
+        Sentiment::Happy => "happy",
+        Sentiment::Sad => "sad",
+        Sentiment::Neutral => "neutral",
+    }
 }
 
 pub async fn process_message(
@@ -47,21 +56,53 @@ pub async fn process_message(
         conv.push(user_msg);
     }
 
-    let agent = StubAgent::new(agent_id.unwrap_or("stub"));
-    let (content, sentiment) = agent.respond(message).await;
+    // Clone model name before any await so the MutexGuard is not held across .await.
+    let model_opt: Option<String> = {
+        app_state.active_brain.lock().map_err(|e| e.to_string())?.clone()
+    };
 
-    let sentiment_str = match sentiment {
-        crate::agent::stub_agent::Sentiment::Happy => "happy",
-        crate::agent::stub_agent::Sentiment::Sad => "sad",
-        crate::agent::stub_agent::Sentiment::Neutral => "neutral",
+    // Route through the active brain (Ollama) if one is configured; otherwise use StubAgent.
+    let (agent_name, content, sentiment) = if let Some(ref model) = model_opt {
+        // Build short-term memory: last 20 conversation messages as history pairs.
+        let history: Vec<(String, String)> = {
+            let conv = app_state.conversation.lock().map_err(|e| e.to_string())?;
+            conv.iter()
+                .rev()
+                .take(20)
+                .rev()
+                .map(|m| (m.role.clone(), m.content.clone()))
+                .collect()
+        }; // lock released before await
+
+        // Pre-load memory entries so no MutexGuard is held across the async LLM call.
+        let memory_entries: Vec<crate::memory::MemoryEntry> = {
+            let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+            mem_store.get_all().unwrap_or_default()
+        }; // lock released before await
+
+        let memories: Vec<String> =
+            crate::memory::brain_memory::semantic_search_entries(model, message, &memory_entries, 5)
+                .await
+                .into_iter()
+                .map(|e| e.content)
+                .collect();
+
+        let agent = OllamaAgent::new(model);
+        let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
+        (agent.name().to_string(), text, sent)
+    } else {
+        let agent = StubAgent::new(agent_id.unwrap_or("stub"));
+        let name = agent.name().to_string();
+        let (text, sent) = agent.respond(message).await;
+        (name, text, sent)
     };
 
     let response = Message {
         id: Uuid::new_v4().to_string(),
         role: "assistant".to_string(),
         content,
-        agent_name: Some(agent.name().to_string()),
-        sentiment: Some(sentiment_str.to_string()),
+        agent_name: Some(agent_name),
+        sentiment: Some(sentiment_str(&sentiment).to_string()),
         timestamp: now_ms(),
     };
 
