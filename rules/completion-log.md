@@ -1500,3 +1500,50 @@ sine-wave mouth animation.
 ### Test Counts (Chunk 061)
 - **Vitest:** 14 new tests (lip-sync) — 343 total across 28 files
 - **Build:** `npm run build` ✓
+
+---
+
+## Chunk 062 — Voice Activity Detection
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Browser-side voice activity detection using @ricky0123/vad-web (ONNX WebAssembly).
+Detect speech start → pause AI audio and capture mic. Detect speech end → audio data
+available for ASR. Echo cancellation support via mic management.
+
+### Architecture
+
+**VAD Composable** (`src/utils/vad.ts`):
+- `useVad()` Vue composable using @ricky0123/vad-web MicVAD.
+- Dynamic import of @ricky0123/vad-web — ONNX model only loaded when voice is used.
+- Reactive state: `micOn`, `isSpeaking`, `lastProbability`, `error`.
+- Callbacks: `onSpeechStart`, `onSpeechEnd(audio)`, `onMisfire`, `onFrameProcessed(prob)`.
+- Configurable: `positiveSpeechThreshold` (0.5), `negativeSpeechThreshold` (0.35),
+  `redemptionMs` (300ms).
+- `startMic()` — creates MicVAD instance, starts microphone capture.
+- `stopMic()` — pauses + destroys VAD, releases mic.
+- Auto-cleanup on component unmount via `onUnmounted`.
+
+**Open-LLM-VTuber Integration**:
+- Speech audio (Float32Array 16kHz) from `onSpeechEnd` can be sent directly to
+  Open-LLM-VTuber via `OllvClient.sendAudioChunk()` + `sendAudioEnd()`.
+- The `onSpeechStart` callback can pause TTS playback (echo cancellation).
+- Matches Open-LLM-VTuber-Web's VAD context pattern.
+
+### Files Created
+- `src/utils/vad.ts` — useVad composable with @ricky0123/vad-web
+- `src/utils/vad.test.ts` — 14 tests for VAD composable
+
+### Dependencies Added
+- `@ricky0123/vad-web@0.0.30` — ONNX-based voice activity detection (no advisories)
+
+### Files Modified
+- `package.json` — Added @ricky0123/vad-web dependency
+- `rules/milestones.md` — Marked chunk 062 done, updated Next Chunk to 063
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 062)
+- **Vitest:** 14 new tests (VAD) — 357 total across 29 files
+- **Build:** `npm run build` ✓
