@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 034** — Agent Marketplace UI (Phase 3)
+**Chunk 050** — Window Mode System (Phase 5)
 
 ---
 
@@ -179,10 +179,7 @@ axum 0.8 in-process registry server, HttpRegistry, 3 official agents (stub-agent
 wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostContext + capability-gated host API, WasmRunner.
 5 Tauri commands, 12 Rust tests, 12 Vitest tests.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 034 | **Agent Marketplace UI** — Marketplace view listing registry agents with install/update/remove actions, capability consent dialog before install, sandboxed agent status badges. | `not-started` |
-| 035 | **Agent-to-Agent Messaging** — Allow installed agents to pass messages to each other via the command router. Agents can subscribe to message topics and the orchestrator fans out. | `not-started` |
+✅ Phase 3 complete — see completion-log.md
 
 ---
 

@@ -5,6 +5,7 @@ pub mod chat;
 pub mod identity;
 pub mod link;
 pub mod memory;
+pub mod messaging;
 pub mod package;
 pub mod registry;
 pub mod routing;

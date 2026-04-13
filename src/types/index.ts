@@ -178,3 +178,13 @@ export interface ConsentInfo {
   granted: boolean;
 }
 
+// ── Messaging ─────────────────────────────────────────────────────────────────
+
+export interface AgentMessageInfo {
+  id: string;
+  sender: string;
+  topic: string;
+  payload: unknown;
+  timestamp: number;
+}
+

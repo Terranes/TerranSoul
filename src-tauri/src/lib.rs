@@ -11,6 +11,7 @@ pub mod commands;
 pub mod identity;
 pub mod link;
 pub mod memory;
+pub mod messaging;
 pub mod orchestrator;
 pub mod package_manager;
 pub mod registry_server;
@@ -35,6 +36,10 @@ use commands::{
         add_memory, delete_memory, extract_memories_from_session, get_memories,
         get_relevant_memories, get_short_term_memory, search_memories,
         semantic_search_memories, summarize_session, update_memory,
+    },
+    messaging::{
+        get_agent_messages, list_agent_subscriptions, publish_agent_message,
+        subscribe_agent_topic, unsubscribe_agent_topic,
     },
     package::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
@@ -76,6 +81,8 @@ pub struct AppState {
     pub registry_server_handle: TokioMutex<Option<(u16, tokio::task::JoinHandle<()>)>>,
     /// Per-agent sandbox capability consents.
     pub capability_store: TokioMutex<sandbox::CapabilityStore>,
+    /// Agent-to-agent message bus for topic-based pub/sub.
+    pub message_bus: TokioMutex<messaging::MessageBus>,
 }
 
 impl AppState {
@@ -101,6 +108,7 @@ impl AppState {
             memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
             registry_server_handle: TokioMutex::new(None),
             capability_store: TokioMutex::new(sandbox::CapabilityStore::new(data_dir)),
+            message_bus: TokioMutex::new(messaging::MessageBus::new()),
         }
     }
 
@@ -125,6 +133,7 @@ impl AppState {
             memory_store: Mutex::new(memory::MemoryStore::in_memory()),
             registry_server_handle: TokioMutex::new(None),
             capability_store: TokioMutex::new(sandbox::CapabilityStore::in_memory()),
+            message_bus: TokioMutex::new(messaging::MessageBus::new()),
         }
     }
 }
@@ -186,6 +195,11 @@ pub fn run() {
             list_agent_capabilities,
             run_agent_in_sandbox,
             clear_agent_capabilities,
+            publish_agent_message,
+            subscribe_agent_topic,
+            unsubscribe_agent_topic,
+            get_agent_messages,
+            list_agent_subscriptions,
         ])
         .setup(|app| {
             let data_dir = app

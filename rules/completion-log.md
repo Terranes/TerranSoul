@@ -946,3 +946,75 @@ will execute.
 - **Rust:** 12 new tests (capability grant/revoke/enforce + wasm runner) — 265 total
 - **Vitest:** 12 new tests in sandbox.test.ts — 174 total
 - **Clippy:** 0 warnings
+
+---
+
+## Chunk 034 — Agent Marketplace UI
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Create a marketplace UI for browsing, searching, installing, updating, and removing agents
+from the registry. Includes capability consent dialog before install and sandbox status
+badges on installed agents.
+
+### Architecture
+- `MarketplaceView.vue` — Full marketplace tab with Browse and Installed sub-tabs
+- `CapabilityConsentDialog.vue` — Modal dialog showing required capabilities before install
+- Integrates with existing `usePackageStore` (install/update/remove/search) and
+  `useSandboxStore` (capability grant/list/clear)
+- Sandbox status badges on installed agents (Sandboxed/Unrestricted/Unknown)
+- New "🏪 Marketplace" tab in `App.vue` navigation
+
+### Files Created
+- `src/views/MarketplaceView.vue` — Marketplace view (browse + installed tabs)
+- `src/components/CapabilityConsentDialog.vue` — Pre-install consent dialog
+- `src/views/MarketplaceView.test.ts` — 12 Vitest component tests
+
+### Files Modified
+- `src/App.vue` — Added marketplace tab and MarketplaceView import
+
+### Test Counts
+- **Vitest:** 12 new tests in MarketplaceView.test.ts — 200 total across 19 files
+
+---
+
+## Chunk 035 — Agent-to-Agent Messaging
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Allow installed agents to pass messages to each other via a topic-based pub/sub message bus.
+Agents subscribe to topics and the message bus fans out published messages to all subscribers.
+
+### Architecture
+- `MessageBus` — In-memory topic-based pub/sub with per-agent inboxes (max 100 msgs)
+- `AgentMessage` — Message envelope with id, sender, topic, payload, timestamp
+- Sender exclusion — publishers don't receive their own messages
+- Inbox size limits — oldest messages trimmed when capacity exceeded
+- 5 Tauri commands for frontend integration
+
+### Files Created
+**Rust (src-tauri/src/)**
+- `messaging/mod.rs` — Module declarations
+- `messaging/message_bus.rs` — `MessageBus`, `AgentMessage`, `Subscription` + 15 tests
+- `commands/messaging.rs` — 5 Tauri commands
+
+**Frontend (src/)**
+- `src/stores/messaging.ts` — Pinia store with publish/subscribe/unsubscribe/getMessages/listSubscriptions
+- `src/stores/messaging.test.ts` — 11 Vitest tests
+
+### Files Modified
+- `src-tauri/src/lib.rs` — Added messaging module, MessageBus to AppState, registered 5 commands
+- `src-tauri/src/commands/mod.rs` — Added messaging module
+- `src/types/index.ts` — Added AgentMessageInfo type
+
+### New Tauri Commands
+`publish_agent_message` · `subscribe_agent_topic` · `unsubscribe_agent_topic`
+`get_agent_messages` · `list_agent_subscriptions`
+
+### Test Counts
+- **Rust:** 15 new tests (message bus pub/sub/drain/peek/limits) — 280 total
+- **Vitest:** 11 new tests in messaging.test.ts — 200 total across 19 files
