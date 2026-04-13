@@ -47,7 +47,7 @@
 
           <!-- Collapsible details -->
           <button class="tauri-details-toggle" @click="showDetails = !showDetails">
-            {{ showDetails ? '▾ Hide details' : '▸ Show details — why &amp; how to fix' }}
+            {{ showDetails ? '▾ Hide details' : '▸ Show details — why & how to fix' }}
           </button>
 
           <div v-if="showDetails" class="tauri-details">
