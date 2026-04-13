@@ -68,9 +68,8 @@ export function setNaturalBonePose(vrm: VRM): void {
  */
 export function applyNaturalPose(vrm: VRM): void {
   setNaturalBonePose(vrm);
-  // With autoUpdateHumanBones: false, we must explicitly push normalized
-  // bone transforms to the raw skeleton before calling vrm.update().
-  vrm.humanoid?.update();
+  // vrm.update() calls humanoid.update() internally, which transfers
+  // normalized bone rotations to the raw skeleton (autoUpdateHumanBones=true).
   vrm.update(0);
 }
 
@@ -109,7 +108,10 @@ export async function loadVRM(
   }
 
   const loader = new GLTFLoader();
-  loader.register((parser) => new VRMLoaderPlugin(parser, { autoUpdateHumanBones: false }));
+  // autoUpdateHumanBones must be true (default) so that humanoid.update()
+  // transfers normalized bone rotations to the raw skeleton each frame.
+  // When false, humanoid.update() is a no-op and the model stays in T-pose.
+  loader.register((parser) => new VRMLoaderPlugin(parser));
 
   const gltf = await loader.loadAsync(path, (event) => {
     if (onProgress && event.lengthComputable) {

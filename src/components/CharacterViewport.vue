@@ -149,6 +149,9 @@ watch(
       animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);
 
+      // Expose VRM for E2E testing — allows Playwright to verify bone positions
+      (window as any).__terransoul_vrm__ = result.vrm;
+
       // Run one animation tick so bones settle into the natural pose before
       // the first visible frame — this prevents the T-pose flash.
       animator.update(0);

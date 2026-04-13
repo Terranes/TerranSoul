@@ -116,11 +116,9 @@ export class CharacterAnimator {
     // Smoothly interpolate all expressions toward their targets
     this.flushExpressions(delta);
 
-    // With autoUpdateHumanBones: false, we MUST explicitly push
-    // normalized bone transforms to the raw skeleton each frame.
-    // Without this call, all setNaturalBonePose() and addBoneRotation()
-    // writes are invisible — the model stays in T-pose.
-    this.vrm.humanoid?.update();
+    // vrm.update() calls humanoid.update() internally, which transfers
+    // normalized bone rotations → raw skeleton (autoUpdateHumanBones=true),
+    // then updates lookAt, expressions, and spring bones.
     this.vrm.update(delta);
   }
 
