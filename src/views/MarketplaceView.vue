@@ -39,10 +39,105 @@
           </div>
 
           <!-- Brain status -->
-          <div v-if="brainStore.isFreeApiMode" class="tauri-brain-row">
+          <div v-if="brainStore.hasBrain" class="tauri-brain-row">
             <span class="tauri-brain-dot" />
-            <span>☁️ Free Cloud LLM active — <strong>{{ activeProviderName }}</strong></span>
+            <span v-if="brainStore.isFreeApiMode">☁️ Free Cloud LLM active — <strong>{{ activeProviderName }}</strong></span>
+            <span v-else-if="brainStore.brainMode?.mode === 'paid_api'">💳 Paid API active — <strong>{{ brainStore.brainMode.model }}</strong></span>
             <span class="tauri-brain-badge">✅ Ready to chat</span>
+          </div>
+
+          <!-- LLM configuration section -->
+          <div class="llm-config">
+            <div class="llm-config-header" @click="showLlmConfig = !showLlmConfig">
+              <span>🔧</span>
+              <strong>Configure LLM</strong>
+              <span class="llm-config-hint">Change your AI model {{ showLlmConfig ? '▾' : '▸' }}</span>
+            </div>
+
+            <div v-if="showLlmConfig" class="llm-config-body">
+              <!-- Tab bar: Free / Paid -->
+              <div class="llm-tier-tabs">
+                <button :class="['llm-tier-tab', { active: llmTier === 'free' }]" @click="llmTier = 'free'">☁️ Free Cloud</button>
+                <button :class="['llm-tier-tab', { active: llmTier === 'paid' }]" @click="llmTier = 'paid'">💳 Paid API</button>
+              </div>
+
+              <!-- Free provider selection -->
+              <div v-if="llmTier === 'free'" class="llm-providers">
+                <div
+                  v-for="p in brainStore.freeProviders"
+                  :key="p.id"
+                  :class="['llm-provider-card', { active: llmSelectedProvider === p.id }]"
+                  @click="llmSelectedProvider = p.id"
+                >
+                  <div class="llm-provider-row">
+                    <strong>{{ p.display_name }}</strong>
+                    <span v-if="p.id === currentFreeProviderId" class="llm-current-badge">current</span>
+                    <span v-if="p.id === 'pollinations'" class="llm-rec-badge">⭐ no key needed</span>
+                  </div>
+                  <small>{{ p.notes }}</small>
+                  <small class="llm-provider-model">Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM{{ p.requires_api_key ? ' · API key required' : '' }}</small>
+                </div>
+                <div v-if="selectedFreeProviderNeedsKey" class="llm-field">
+                  <label>API Key:</label>
+                  <input v-model="llmFreeApiKey" type="password" placeholder="Enter API key…" class="llm-input" />
+                </div>
+                <button
+                  class="btn-primary btn-sm llm-apply-btn"
+                  :disabled="!llmSelectedProvider || (selectedFreeProviderNeedsKey && !llmFreeApiKey)"
+                  @click="applyFreeProvider"
+                >
+                  Apply {{ llmSelectedProviderName }}
+                </button>
+              </div>
+
+              <!-- Paid API configuration -->
+              <div v-if="llmTier === 'paid'" class="llm-paid-form">
+                <div class="llm-field">
+                  <label>Provider:</label>
+                  <select v-model="llmPaidProvider" class="llm-select">
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="custom">Custom endpoint</option>
+                  </select>
+                </div>
+                <div class="llm-field">
+                  <label>API Key:</label>
+                  <input v-model="llmPaidApiKey" type="password" placeholder="sk-…" class="llm-input" />
+                </div>
+                <div class="llm-field">
+                  <label>Model:</label>
+                  <input v-model="llmPaidModel" type="text" placeholder="gpt-4o" class="llm-input" />
+                </div>
+                <div v-if="llmPaidProvider === 'custom'" class="llm-field">
+                  <label>Base URL:</label>
+                  <input v-model="llmPaidBaseUrl" type="url" placeholder="https://api.example.com" class="llm-input" />
+                </div>
+                <button
+                  class="btn-primary btn-sm llm-apply-btn"
+                  :disabled="!llmPaidApiKey || !llmPaidModel"
+                  @click="applyPaidProvider"
+                >
+                  Apply {{ llmPaidProvider === 'custom' ? 'Custom' : llmPaidProvider }} API
+                </button>
+              </div>
+
+              <!-- Confirmation after switching -->
+              <div v-if="llmConfirmation" class="llm-confirmation">
+                <span class="llm-confirm-icon">✅</span>
+                <div>
+                  <strong>{{ llmConfirmation.name }}</strong> is now active.
+                  <span v-if="llmConfirmation.url" class="llm-confirm-url">
+                    Verify at: <a :href="llmConfirmation.url" target="_blank" rel="noopener">{{ llmConfirmation.url }}</a>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Chat hint -->
+              <p class="llm-chat-hint">
+                💬 <strong>Tip:</strong> You can also ask TerranSoul in chat to change the model —
+                e.g. <em>"Switch to Groq"</em> or <em>"Use OpenAI with my API key"</em>.
+              </p>
+            </div>
           </div>
 
           <!-- Collapsible details -->
@@ -299,6 +394,78 @@ const activeProviderName = computed(() => {
 
 const showDetails = ref(false);
 
+// ── LLM configuration state ──────────────────────────────────────────────────
+const showLlmConfig = ref(false);
+const llmTier = ref<'free' | 'paid'>('free');
+const llmSelectedProvider = ref(
+  brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
+);
+const llmFreeApiKey = ref('');
+const llmConfirmation = ref<{ name: string; url: string } | null>(null);
+
+// Paid API fields
+const llmPaidProvider = ref('openai');
+const llmPaidApiKey = ref('');
+const llmPaidModel = ref('gpt-4o');
+const llmPaidBaseUrl = ref('https://api.example.com');
+
+const currentFreeProviderId = computed(() =>
+  brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : null,
+);
+
+const selectedFreeProviderNeedsKey = computed(() => {
+  const p = brainStore.freeProviders.find((fp) => fp.id === llmSelectedProvider.value);
+  return p?.requires_api_key ?? false;
+});
+
+const llmSelectedProviderName = computed(() => {
+  const p = brainStore.freeProviders.find((fp) => fp.id === llmSelectedProvider.value);
+  return p?.display_name ?? llmSelectedProvider.value;
+});
+
+function resolvedPaidBaseUrl(): string {
+  switch (llmPaidProvider.value) {
+    case 'openai': return 'https://api.openai.com';
+    case 'anthropic': return 'https://api.anthropic.com';
+    default: return llmPaidBaseUrl.value;
+  }
+}
+
+function applyFreeProvider() {
+  const providerId = llmSelectedProvider.value;
+  const apiKey = llmFreeApiKey.value || null;
+  brainStore.brainMode = {
+    mode: 'free_api',
+    provider_id: providerId,
+    api_key: apiKey,
+  };
+  // Try to persist via Tauri (will fail in browser mode — that's fine)
+  brainStore.setBrainMode(brainStore.brainMode).catch(() => { /* expected in browser */ });
+
+  const provider = brainStore.freeProviders.find((fp) => fp.id === providerId);
+  llmConfirmation.value = {
+    name: provider?.display_name ?? providerId,
+    url: provider?.base_url ?? '',
+  };
+}
+
+function applyPaidProvider() {
+  const baseUrl = resolvedPaidBaseUrl();
+  brainStore.brainMode = {
+    mode: 'paid_api',
+    provider: llmPaidProvider.value,
+    api_key: llmPaidApiKey.value,
+    model: llmPaidModel.value,
+    base_url: baseUrl,
+  };
+  brainStore.setBrainMode(brainStore.brainMode).catch(() => { /* expected in browser */ });
+
+  llmConfirmation.value = {
+    name: `${llmPaidProvider.value} / ${llmPaidModel.value}`,
+    url: baseUrl,
+  };
+}
+
 const activeTab = ref<'browse' | 'installed'>('browse');
 const tabs = [
   { id: 'browse' as const, icon: '🔍', label: 'Browse' },
@@ -417,6 +584,10 @@ async function viewCapabilities(name: string) {
 }
 
 onMounted(async () => {
+  // In browser mode, ensure fallback providers are available for the LLM config UI
+  if (!tauriAvailable && brainStore.freeProviders.length === 0) {
+    brainStore.autoConfigureFreeApi();
+  }
   await refreshAll();
 });
 </script>
@@ -546,4 +717,117 @@ onMounted(async () => {
 }
 .tauri-steps code { background: rgba(30, 41, 59, 0.8); padding: 1px 5px; border-radius: 3px; font-size: 0.74rem; color: #e2e8f0; }
 .tauri-steps strong { color: #cbd5e1; }
+
+/* ── LLM configuration section ── */
+.llm-config {
+  border-top: 1px solid rgba(59, 130, 246, 0.15);
+}
+.llm-config-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 8px 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+.llm-config-header strong { color: #e2e8f0; font-size: 0.84rem; }
+.llm-config-hint { margin-left: auto; font-size: 0.72rem; color: #64748b; }
+
+.llm-config-body {
+  padding: 0.5rem 1rem 1rem;
+  border-top: 1px solid rgba(59, 130, 246, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Tier tabs */
+.llm-tier-tabs { display: flex; gap: 0.25rem; }
+.llm-tier-tab {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  cursor: pointer;
+  text-align: center;
+}
+.llm-tier-tab.active { background: #1e293b; color: #f1f5f9; border-color: #3b82f6; }
+
+/* Provider cards */
+.llm-providers { display: flex; flex-direction: column; gap: 0.4rem; }
+.llm-provider-card {
+  padding: 0.5rem 0.75rem;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.llm-provider-card.active { border-color: #3b82f6; background: rgba(59, 130, 246, 0.06); }
+.llm-provider-row { display: flex; align-items: center; gap: 0.4rem; }
+.llm-provider-row strong { font-size: 0.82rem; color: #e2e8f0; }
+.llm-current-badge { font-size: 0.65rem; background: #22c55e; color: #fff; padding: 1px 6px; border-radius: 999px; }
+.llm-rec-badge { font-size: 0.65rem; color: #fbbf24; }
+.llm-provider-card small { color: #64748b; font-size: 0.72rem; }
+.llm-provider-model code { background: #1e293b; padding: 0 3px; border-radius: 2px; font-size: 0.70rem; }
+
+/* Paid form */
+.llm-paid-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.llm-field { display: flex; flex-direction: column; gap: 2px; }
+.llm-field label { font-size: 0.76rem; color: #94a3b8; }
+.llm-input {
+  padding: 0.35rem 0.6rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  color: #f1f5f9;
+  font-size: 0.8rem;
+}
+.llm-input:focus { outline: none; border-color: #3b82f6; }
+.llm-select {
+  padding: 0.35rem 0.6rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  color: #f1f5f9;
+  font-size: 0.8rem;
+}
+
+.llm-apply-btn { align-self: flex-end; margin-top: 0.25rem; }
+
+/* Confirmation */
+.llm-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #86efac;
+}
+.llm-confirm-icon { flex-shrink: 0; }
+.llm-confirmation strong { color: #4ade80; }
+.llm-confirm-url { display: block; margin-top: 2px; font-size: 0.72rem; color: #94a3b8; }
+.llm-confirm-url a { color: #60a5fa; text-decoration: none; }
+.llm-confirm-url a:hover { text-decoration: underline; }
+
+/* Chat hint */
+.llm-chat-hint {
+  margin: 0;
+  font-size: 0.74rem;
+  color: #64748b;
+  line-height: 1.4;
+  padding-top: 0.25rem;
+  border-top: 1px solid rgba(100, 116, 139, 0.12);
+}
+.llm-chat-hint strong { color: #94a3b8; }
+.llm-chat-hint em { color: #60a5fa; font-style: normal; }
 </style>

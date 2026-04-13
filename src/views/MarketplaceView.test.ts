@@ -205,6 +205,25 @@ describe('MarketplaceView', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('Tauri Desktop Backend Unavailable');
     expect(wrapper.text()).toContain('desktop app');
+    expect(wrapper.text()).toContain('Configure LLM');
     expect(wrapper.text()).not.toContain('stub-agent');
+  });
+
+  it('shows LLM config UI with free providers and chat hint', async () => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    const wrapper = mount(MarketplaceView);
+    await flushPromises();
+
+    // Click "Configure LLM" to expand
+    const configHeader = wrapper.find('.llm-config-header');
+    expect(configHeader.exists()).toBe(true);
+    await configHeader.trigger('click');
+    await flushPromises();
+
+    // Should show provider options and chat hint
+    expect(wrapper.text()).toContain('Free Cloud');
+    expect(wrapper.text()).toContain('Paid API');
+    expect(wrapper.text()).toContain('Pollinations AI');
+    expect(wrapper.text()).toContain('ask TerranSoul in chat');
   });
 });
