@@ -28,7 +28,7 @@
       {{ characterStore.state }}
     </div>
     <div v-if="showDebug" class="debug-overlay">
-      <span>{{ rendererType.toUpperCase() }}</span>
+      <span>WebGL</span>
       <span>▲ {{ debugInfo.triangles }}</span>
       <span>⬡ {{ debugInfo.calls }} draws</span>
       <span>⚙ {{ debugInfo.programs }} progs</span>
@@ -41,14 +41,13 @@ import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
 import { DEFAULT_MODELS } from '../config/default-models';
-import { initScene, type RendererInfo, type RendererType, type SceneContext } from '../renderer/scene';
+import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const showDebug = ref(false);
-const rendererType = ref<RendererType>('webgl');
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 
 const characterName = computed(() => {
@@ -82,7 +81,6 @@ onMounted(async () => {
   sceneCtx = ctx;
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
-  rendererType.value = ctx.rendererType;
 
   // Auto-load the default VRM model (loading overlay shows until ready)
   characterStore.loadDefaultModel();

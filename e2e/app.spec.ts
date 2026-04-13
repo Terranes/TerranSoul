@@ -320,9 +320,12 @@ test.describe('3D Character Loading & Animation', () => {
 
     await waitForModelLoaded(page);
 
+    // Allow the animation loop to settle after model swap
+    await page.waitForTimeout(1000);
+
     const canvas = page.locator('.viewport-canvas');
     const shot1 = await canvas.screenshot();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(1000);
     const shot2 = await canvas.screenshot();
 
     expect(Buffer.compare(shot1, shot2)).not.toBe(0);

@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-export type RendererType = 'webgpu' | 'webgl';
-
 export interface RendererInfo {
   triangles: number;
   calls: number;
@@ -16,37 +14,17 @@ export interface SceneContext {
   clock: THREE.Clock;
   controls: OrbitControls;
   lookAtTarget: THREE.Object3D;
-  rendererType: RendererType;
   getRendererInfo: () => RendererInfo;
   dispose: () => void;
 }
 
-async function tryCreateWebGPURenderer(
-  canvas: HTMLCanvasElement,
-): Promise<THREE.WebGLRenderer | null> {
-  if (typeof navigator === 'undefined' || !('gpu' in navigator)) return null;
-  try {
-    const { WebGPURenderer } = await import('three/webgpu');
-    const renderer = new WebGPURenderer({ canvas, antialias: true });
-    await renderer.init();
-    return renderer as unknown as THREE.WebGLRenderer;
-  } catch {
-    return null;
-  }
-}
-
 export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext> {
-  let renderer: THREE.WebGLRenderer;
-  let rendererType: RendererType;
-
-  const webgpuRenderer = await tryCreateWebGPURenderer(canvas);
-  if (webgpuRenderer) {
-    renderer = webgpuRenderer;
-    rendererType = 'webgpu';
-  } else {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    rendererType = 'webgl';
-  }
+  // Force WebGL2 — VRM MToon materials use custom GLSL shaders (ShaderMaterial)
+  // that only render correctly under WebGL2.  The Three.js WebGPU renderer
+  // cannot handle MToonMaterial (it requires MToonNodeMaterial for WebGPU,
+  // which is experimental and produces different visual results).
+  // VRoid Hub also uses WebGL, so this ensures visual parity.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 
   // sRGB color space for correct output; NoToneMapping preserves MToon material
   // colors exactly as authored — ACES/other tone mappers desaturate & shift hues
@@ -140,5 +118,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, rendererType, getRendererInfo, dispose };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, dispose };
 }
