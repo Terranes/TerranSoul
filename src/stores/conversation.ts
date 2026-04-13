@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Message } from '../types';
 import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
+import { useProviderHealthStore } from './provider-health';
 import { streamChatCompletion, buildHistory } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -155,49 +156,80 @@ export const useConversationStore = defineStore('conversation', () => {
     if (brain.hasBrain) {
       const provider = resolveFreeProvider(brain);
       if (provider) {
-        try {
-          const history = buildHistory(
-            messages.value.map((m) => ({ role: m.role, content: m.content })),
-          );
-          isStreaming.value = true;
+        const healthStore = useProviderHealthStore();
+        const history = buildHistory(
+          messages.value.map((m) => ({ role: m.role, content: m.content })),
+        );
 
-          const fullText = await new Promise<string>((resolve, reject) => {
-            streamChatCompletion(
-              provider.baseUrl,
-              provider.model,
-              provider.apiKey,
-              history,
-              {
-                onChunk: (text) => {
-                  streamingText.value += text;
-                },
-                onDone: (full) => resolve(full),
-                onError: (err) => reject(new Error(err)),
-              },
-            );
-          });
-
-          isStreaming.value = false;
-          streamingText.value = '';
-
-          const parsed = parseTags(fullText);
-          const assistantMsg: Message = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: parsed.text,
-            agentName: 'TerranSoul',
-            sentiment: (parsed.emotion as Message['sentiment']) ?? 'neutral',
-            timestamp: Date.now(),
-          };
-          messages.value.push(assistantMsg);
-        } catch {
-          isStreaming.value = false;
-          streamingText.value = '';
-          // Free API call failed — fall back to persona
-          messages.value.push(createPersonaResponse(content));
-        } finally {
-          isThinking.value = false;
+        // Try the primary provider, then rotate to next healthy on rate-limit
+        const providersToTry = [provider];
+        // Add fallback providers from the brain store
+        for (const fp of brain.freeProviders) {
+          if (fp.id !== provider.baseUrl && !providersToTry.some((p) => p.baseUrl === fp.base_url)) {
+            providersToTry.push({ baseUrl: fp.base_url, model: fp.model, apiKey: provider.apiKey });
+          }
         }
+
+        let succeeded = false;
+        for (const prov of providersToTry) {
+          const provId = brain.freeProviders.find((f) => f.base_url === prov.baseUrl)?.id ?? 'unknown';
+          // Skip if already known to be rate-limited
+          const healthInfo = healthStore.providers.find((p) => p.id === provId);
+          if (healthInfo?.is_rate_limited) continue;
+
+          try {
+            isStreaming.value = true;
+            streamingText.value = '';
+
+            const fullText = await new Promise<string>((resolve, reject) => {
+              streamChatCompletion(
+                prov.baseUrl,
+                prov.model,
+                prov.apiKey,
+                history,
+                {
+                  onChunk: (text) => {
+                    streamingText.value += text;
+                  },
+                  onDone: (full) => resolve(full),
+                  onError: (err) => reject(new Error(err)),
+                },
+              );
+            });
+
+            isStreaming.value = false;
+            streamingText.value = '';
+
+            const parsed = parseTags(fullText);
+            const assistantMsg: Message = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: parsed.text,
+              agentName: 'TerranSoul',
+              sentiment: (parsed.emotion as Message['sentiment']) ?? 'neutral',
+              timestamp: Date.now(),
+            };
+            messages.value.push(assistantMsg);
+            succeeded = true;
+            break;
+          } catch (err) {
+            isStreaming.value = false;
+            streamingText.value = '';
+            // Check if it's a rate-limit error — mark and try next provider
+            const errMsg = String(err);
+            if (errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit')) {
+              healthStore.markRateLimited(provId);
+              continue; // Try next provider
+            }
+            // Other error — don't retry
+            break;
+          }
+        }
+
+        if (!succeeded) {
+          messages.value.push(createPersonaResponse(content));
+        }
+        isThinking.value = false;
         return;
       }
     }

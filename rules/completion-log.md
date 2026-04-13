@@ -1294,3 +1294,79 @@ different emotions and animations when the brain is installed.
 - **Vitest:** 3 new tests (angry/relaxed/surprised placeholder) — 272 total across 23 files
 - **E2E:** 4 new tests (angry/relaxed/surprised emotions + 8-emotion cycle) — 28 total
 - **E2E fix:** Model selector option count 4→2
+
+---
+
+## Chunk 059 — Provider Health Check & Rate-Limit Rotation
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Implement automatic provider rotation when free LLM API providers are rate-limited.
+Track per-provider usage, parse rate-limit headers, health-check all providers on startup,
+and automatically fall back to the next healthy provider on HTTP 429 or quota exhaustion.
+
+### Architecture
+
+**Rust — `ProviderRotator`** (`src-tauri/src/brain/provider_rotator.rs`):
+- `ProviderStatus` struct: tracks requests_sent, remaining_requests, remaining_tokens,
+  rate_limit_reset, is_rate_limited, is_healthy, latency, last_health_check per provider.
+- `ProviderRotator::new()` — pre-loads all providers from `free_provider_catalogue()`.
+- `health_check_all()` — async parallel HEAD requests to all providers, records latency,
+  sorts by response time (fastest first).
+- `record_response_headers()` — parses `x-ratelimit-remaining-requests`,
+  `x-ratelimit-remaining-tokens`, `x-ratelimit-reset` from HTTP response headers.
+  Auto-marks as rate-limited when remaining reaches zero.
+- `record_rate_limit()` — marks a provider as rate-limited (e.g., on HTTP 429).
+- `next_healthy_provider()` — returns the fastest healthy, non-rate-limited provider.
+  Auto-clears expired rate limits before selecting.
+- `all_exhausted()` — returns true when all providers are unavailable.
+- `clear_expired_limits()` — resets stale rate-limit flags after reset time passes.
+
+**Rust Integration**:
+- `AppState` gains `provider_rotator: Mutex<ProviderRotator>`.
+- `streaming.rs` FreeApi path: uses rotator to select the best healthy provider.
+  On 429/rate-limit errors, records the limit and emits `providers-exhausted` event
+  if all providers are down. Successful requests increment the request count.
+- `commands/brain.rs`: Two new Tauri commands — `health_check_providers` (returns
+  `ProviderHealthInfo[]` with status of all providers) and `get_next_provider`
+  (returns the next healthy provider ID).
+
+**TypeScript**:
+- `ProviderHealthInfo` type in `types/index.ts`.
+- `useProviderHealthStore` Pinia store: wraps Tauri commands, provides browser-side
+  rate-limit tracking (`markRateLimited`), `nextHealthyBrowserProvider()` for rotation
+  in browser mode, `allExhausted` computed.
+- Conversation store Path 2 (browser mode): on 429 errors, marks provider as
+  rate-limited and retries with the next available provider from the catalogue.
+
+**Also fixed: Brain-to-Conversation wiring** (the "I hear you" bug):
+- Conversation store now has 3 paths: Tauri streaming IPC, browser-side free API
+  streaming via fetch, and persona fallback (only when no brain is configured).
+- `free-api-client.ts` — browser-side OpenAI-compatible SSE streaming client.
+- ChatView wires up Tauri `llm-chunk` event listener for live streaming display.
+- ChatMessageList shows live streaming bubble with cursor blink animation.
+
+### Files Created
+- `src-tauri/src/brain/provider_rotator.rs` — ProviderRotator with health check + rotation
+- `src/stores/provider-health.ts` — Pinia store for provider health tracking
+- `src/stores/provider-health.test.ts` — 12 tests for provider health store
+- `src/utils/free-api-client.ts` — browser-side OpenAI SSE streaming client
+- `src/utils/free-api-client.test.ts` — 7 tests for the free API client
+
+### Files Modified
+- `src-tauri/src/brain/mod.rs` — register provider_rotator module
+- `src-tauri/src/lib.rs` — add provider_rotator to AppState + register commands
+- `src-tauri/src/commands/brain.rs` — ProviderHealthInfo struct + 2 new commands
+- `src-tauri/src/commands/streaming.rs` — use rotator for provider selection + error handling
+- `src/types/index.ts` — ProviderHealthInfo interface
+- `src/stores/conversation.ts` — three-path brain routing with provider rotation
+- `src/stores/conversation.test.ts` — rewritten tests for brain-aware flow
+- `src/views/ChatView.vue` — Tauri event listener + streaming display
+- `src/components/ChatMessageList.vue` — streaming bubble + cursor blink
+
+### Test Counts (Chunk 059)
+- **Rust:** 23 new tests (provider_rotator) — 387 total
+- **Vitest:** 24 new tests (12 provider-health, 7 free-api-client, 5 conversation) — 296 total across 25 files
+- **Build:** `npm run build` ✓, `cargo test --lib` ✓, `cargo clippy` ✓
