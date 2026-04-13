@@ -8,6 +8,7 @@ export type ProgressCallback = (loaded: number, total: number) => void;
 export interface VrmLoadResult {
   vrm: VRM;
   metadata: VrmMetadata;
+  isVrm0: boolean;
 }
 
 /**
@@ -105,7 +106,7 @@ export async function loadVRM(
   }
 
   const loader = new GLTFLoader();
-  loader.register((parser) => new VRMLoaderPlugin(parser));
+  loader.register((parser) => new VRMLoaderPlugin(parser, { autoUpdateHumanBones: false }));
 
   const gltf = await loader.loadAsync(path, (event) => {
     if (onProgress && event.lengthComputable) {
@@ -118,14 +119,26 @@ export async function loadVRM(
     throw new Error('File loaded but does not contain valid VRM data');
   }
 
+  // Rotate VRM 0.x models so they face the camera (VRM 0 faces -Z, VRM 1 faces +Z)
+  const isVrm0 = String(vrm.meta?.metaVersion ?? '').startsWith('0');
+  if (isVrm0) {
+    VRMUtils.rotateVRM0(vrm);
+  }
+
   // Performance optimizations (from official three-vrm examples)
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   VRMUtils.combineSkeletons(gltf.scene);
   VRMUtils.combineMorphs(vrm);
 
-  // Disable frustum culling to prevent clipping when parts are near screen edge
+  // Disable frustum culling to prevent clipping when parts are near screen edge;
+  // also recompute bounding geometry for correct depth sorting.
   vrm.scene.traverse((obj) => {
     obj.frustumCulled = false;
+    if ((obj as THREE.Mesh).isMesh) {
+      const mesh = obj as THREE.Mesh;
+      mesh.geometry?.computeBoundingBox?.();
+      mesh.geometry?.computeBoundingSphere?.();
+    }
   });
 
   scene.add(vrm.scene);
@@ -133,7 +146,7 @@ export async function loadVRM(
   // Apply a natural relaxed pose so the character doesn't stand in T-pose
   applyNaturalPose(vrm);
 
-  return { vrm, metadata: extractVrmMetadata(vrm) };
+  return { vrm, metadata: extractVrmMetadata(vrm), isVrm0 };
 }
 
 export async function loadVRMSafe(

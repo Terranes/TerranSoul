@@ -92,6 +92,8 @@ onMounted(async () => {
     const delta = ctx.clock.getDelta();
     // Update OrbitControls (damping requires per-frame update)
     ctx.controls.update();
+    // Keep lookAt target at camera position so VRM eyes track the viewer
+    ctx.lookAtTarget.position.copy(ctx.camera.position);
     animator.update(delta);
     ctx.renderer.render(ctx.scene, ctx.camera);
 
@@ -132,11 +134,13 @@ watch(
       currentVrmScene = result.vrm.scene;
       // Look up per-model rotation, persona, and bone-pose config
       const model = DEFAULT_MODELS.find(m => m.path === newPath);
-      const rotY = model?.rotationY ?? 0;
+      // VRM 0.x models are auto-rotated by VRMUtils.rotateVRM0(), so skip
+      // any manual rotationY for them.
+      const rotY = result.isVrm0 ? 0 : (model?.rotationY ?? 0);
       const persona = model?.persona ?? 'cool';
       const skipBones = model?.skipBonePose ?? false;
       animator.setVRM(result.vrm, rotY, persona, skipBones);
-      // Wire up eye tracking — lookAtTarget is attached to the camera
+      // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
       animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);
       characterStore.setLoaded();

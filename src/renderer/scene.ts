@@ -45,74 +45,72 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     rendererType = 'webgpu';
   } else {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererType = 'webgl';
   }
 
-  // Correct color space and tone mapping (matches VRoid Hub rendering)
+  // sRGB color space for correct output; NoToneMapping preserves MToon material
+  // colors exactly as authored — ACES/other tone mappers desaturate & shift hues
+  // which breaks VRM toon-shaded looks.  This matches VRoid Hub's renderer config.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMapping = THREE.NoToneMapping;
 
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
-  // No solid background — transparent for overlay window
-  scene.background = null;
+  // Light-blue backdrop matching VRoid Hub's viewer
+  scene.background = new THREE.Color(0xe3f4ff);
 
   const camera = new THREE.PerspectiveCamera(
     30,
     canvas.clientWidth / canvas.clientHeight,
-    0.1,
-    20.0,
+    0.02,
+    1000,
   );
-  // Frame the upper body: camera slightly above eye level, pulled back enough
-  // to see head-to-waist. VRM origin is at feet (Y=0), typical height ~1.5m.
-  camera.position.set(0, 1.25, 2.5);
+  // Full-body framing matching VRoid Hub — camera at chest height, pulled back
+  camera.position.set(0.0, 1.35, 2.8);
 
   // OrbitControls for smooth interactive camera (like VRoid Hub)
   const controls = new OrbitControls(camera, canvas);
   controls.screenSpacePanning = true;
-  controls.target.set(0, 1.15, 0);
+  controls.target.set(0.0, 1.2, 0.0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.1;
-  controls.minDistance = 1.0;
+  controls.minDistance = 0.08;
   controls.maxDistance = 8.0;
-  controls.maxPolarAngle = Math.PI * 0.85;
   controls.update();
 
-  // LookAt target — attached to camera so VRM eyes follow the viewer
+  // LookAt target — placed in scene (not on camera) for VRM eye tracking
   const lookAtTarget = new THREE.Object3D();
-  camera.add(lookAtTarget);
+  scene.add(lookAtTarget);
 
-  // Key light — physically-correct intensity (like three-vrm examples)
-  const dirLight = new THREE.DirectionalLight(0xffffff, Math.PI);
-  dirLight.position.set(1.0, 1.0, 1.0).normalize();
-  scene.add(dirLight);
+  // ── Lighting: matches VRoid Hub's 5-light setup ───────────────────────────
+  // Ambient fill — ensures no part of the model is completely dark
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+  scene.add(ambientLight);
 
-  // Hemisphere light — natural sky/ground ambient fill
-  const hemiLight = new THREE.HemisphereLight(0xddeeff, 0x443322, 0.8);
-  scene.add(hemiLight);
+  // Hemisphere sky light — subtle blue-tinted ground bounce
+  const skyLight = new THREE.HemisphereLight(0xffffff, 0xdcecff, 0.95);
+  scene.add(skyLight);
 
-  // Rim light — helps separate character from background
-  const rimLight = new THREE.DirectionalLight(0x8888ff, 0.6);
-  rimLight.position.set(-1, 2, -2);
+  // Key light — slightly off-center and above, main illumination
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  keyLight.position.set(0.4, 1.8, 3.4);
+  scene.add(keyLight);
+
+  // Fill light — softer, from the opposite side to reduce harsh shadows
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+  fillLight.position.set(-1.6, 1.4, 2.2);
+  scene.add(fillLight);
+
+  // Rim/back light — subtle separation from background
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.18);
+  rimLight.position.set(0.3, 2.3, -2.2);
   scene.add(rimLight);
 
-  // Subtle ground circle for visual grounding
-  const groundGeo = new THREE.CircleGeometry(1.2, 48);
-  const groundMat = new THREE.MeshBasicMaterial({
-    color: 0x4444aa,
-    transparent: true,
-    opacity: 0.12,
-  });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2; // lay flat
-  ground.position.y = 0.001; // just above origin to avoid z-fighting
-  ground.receiveShadow = true;
-  scene.add(ground);
+  // Grid helper — visual grounding (like VRoid Hub)
+  const gridHelper = new THREE.GridHelper(10, 20, 0x8fb0d2, 0xc4d7eb);
+  scene.add(gridHelper);
 
   const clock = new THREE.Clock();
 
