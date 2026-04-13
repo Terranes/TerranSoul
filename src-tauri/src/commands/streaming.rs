@@ -80,7 +80,14 @@ pub async fn send_message_stream(
 
     match brain_mode {
         Some(BrainMode::FreeApi { provider_id, api_key }) => {
-            stream_openai_api(&app_handle, &state, &message, &history, &provider_id, api_key.as_deref(), None).await
+            // Check rotator for a healthy provider, falling back to configured one
+            let effective_provider_id = {
+                let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+                rotator.next_healthy_provider()
+                    .map(|p| p.id.clone())
+                    .unwrap_or(provider_id.clone())
+            };
+            stream_openai_api(&app_handle, &state, &message, &history, &effective_provider_id, api_key.as_deref(), None).await
         }
         Some(BrainMode::PaidApi { provider: _, api_key, model, base_url }) => {
             stream_openai_api(&app_handle, &state, &message, &history, "paid", Some(&api_key), Some((&base_url, &model))).await
@@ -151,11 +158,27 @@ async fn stream_openai_api(
     match result {
         Ok(full_response) => {
             let _ = app_handle.emit("llm-chunk", LlmChunk { text: String::new(), done: true });
+            // Record successful request in rotator
+            {
+                let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+                rotator.providers.entry(provider_id.to_string()).and_modify(|s| {
+                    s.requests_sent += 1;
+                });
+            }
             store_assistant_message(state, &full_response, &model)?;
             Ok(())
         }
         Err(e) => {
             let _ = app_handle.emit("llm-chunk", LlmChunk { text: String::new(), done: true });
+            // Record rate limit if applicable
+            let err_lower = e.to_string().to_lowercase();
+            if err_lower.contains("429") || err_lower.contains("rate limit") {
+                let mut rotator = state.provider_rotator.lock().map_err(|er| er.to_string())?;
+                rotator.record_rate_limit(provider_id);
+                if rotator.all_exhausted() {
+                    let _ = app_handle.emit("providers-exhausted", ());
+                }
+            }
             Err(format!("Free API error: {e}"))
         }
     }
