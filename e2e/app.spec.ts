@@ -477,3 +477,88 @@ test.describe('Animation & AI Emotion', () => {
     await expect(badge).toContainText('idle', { timeout: 10_000 });
   });
 });
+
+// ── Free LLM Brain Auto-Configuration ──────────────────────────────────
+
+test.describe('Free LLM Brain', () => {
+  test('app auto-configures free API when Tauri backend is unavailable', async ({ page }) => {
+    await page.goto('/');
+
+    // When Tauri is unavailable, the app should skip the brain setup wizard
+    // and go directly to the chat view (auto-configured with free API).
+    const chatView = page.locator('.chat-view');
+    await expect(chatView).toBeVisible({ timeout: 5_000 });
+
+    // The brain setup view should NOT be visible
+    await expect(page.locator('.brain-setup')).not.toBeVisible();
+  });
+
+  test('no Ollama error message is shown when free API is auto-configured', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for the chat view to be visible
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    // The "Ollama not running" error should NOT appear
+    await expect(page.locator('text=Ollama not running')).not.toBeVisible();
+
+    // The "Set up your Brain" card should NOT appear (brain is already configured)
+    await expect(page.locator('.brain-inline')).not.toBeVisible();
+  });
+
+  test('chat input is usable without Ollama when free API is auto-configured', async ({ page }) => {
+    await page.goto('/');
+
+    // Chat input should be visible and enabled
+    const input = page.locator('.chat-input');
+    await expect(input).toBeVisible({ timeout: 5_000 });
+    await expect(input).toBeEnabled();
+
+    // Type and send a message
+    await input.fill('hello');
+    const sendBtn = page.locator('.send-btn');
+    await expect(sendBtn).toBeEnabled();
+    await sendBtn.click();
+
+    // User message should appear
+    const userMsg = page.locator('.message-row.user').first();
+    await expect(userMsg).toBeVisible({ timeout: 5_000 });
+    await expect(userMsg).toContainText('hello');
+
+    // Assistant response should appear (persona fallback or stub)
+    const assistantMsg = page.locator('.message-row.assistant').first();
+    await expect(assistantMsg).toBeVisible({ timeout: 10_000 });
+    // Should get a real response, not an error about Ollama
+    await expect(assistantMsg).not.toContainText('Ollama');
+  });
+
+  test('brain store reports hasBrain true via auto-configured free API', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for app to fully load
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    // Check brain state via the page's JavaScript context
+    const hasBrain = await page.evaluate(() => {
+      // Access Pinia store state directly
+      const app = (document.querySelector('#app') as any)?.__vue_app__;
+      if (!app) return null;
+      const pinia = app.config.globalProperties.$pinia;
+      if (!pinia) return null;
+      const brainState = pinia.state.value.brain;
+      if (!brainState) return null;
+      return {
+        hasBrain: brainState.activeBrain !== null || brainState.brainMode !== null,
+        brainMode: brainState.brainMode,
+        freeProviders: brainState.freeProviders?.length ?? 0,
+      };
+    });
+
+    // Brain should be configured
+    expect(hasBrain).not.toBeNull();
+    expect(hasBrain!.hasBrain).toBe(true);
+    expect(hasBrain!.brainMode).not.toBeNull();
+    expect(hasBrain!.brainMode.mode).toBe('free_api');
+    expect(hasBrain!.freeProviders).toBeGreaterThan(0);
+  });
+});

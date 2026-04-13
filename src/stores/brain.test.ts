@@ -193,4 +193,50 @@ describe('brain store', () => {
     const store = useBrainStore();
     expect(store.brainMode).toBeNull();
   });
+
+  // ── Auto-Configure Free API Tests ──────────────────────────────────────
+
+  it('autoConfigureFreeApi sets brainMode to free_api with groq', () => {
+    const store = useBrainStore();
+    expect(store.hasBrain).toBe(false);
+    store.autoConfigureFreeApi();
+    expect(store.hasBrain).toBe(true);
+    expect(store.brainMode).toEqual({
+      mode: 'free_api',
+      provider_id: 'groq',
+      api_key: null,
+    });
+  });
+
+  it('autoConfigureFreeApi populates fallback free providers', () => {
+    const store = useBrainStore();
+    expect(store.freeProviders).toEqual([]);
+    store.autoConfigureFreeApi();
+    expect(store.freeProviders.length).toBeGreaterThanOrEqual(2);
+    expect(store.freeProviders[0].id).toBe('groq');
+  });
+
+  it('isFreeApiMode is true after autoConfigureFreeApi', () => {
+    const store = useBrainStore();
+    expect(store.isFreeApiMode).toBe(false);
+    store.autoConfigureFreeApi();
+    expect(store.isFreeApiMode).toBe(true);
+  });
+
+  it('isFreeApiMode is false for local_ollama', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    await store.setBrainMode({ mode: 'local_ollama', model: 'gemma3:4b' });
+    expect(store.isFreeApiMode).toBe(false);
+  });
+
+  it('initialise auto-defaults to free API when Tauri unavailable', async () => {
+    mockInvoke.mockRejectedValue(new Error('window.__TAURI_INTERNALS__ not found'));
+    const store = useBrainStore();
+    await store.initialise();
+    expect(store.hasBrain).toBe(true);
+    expect(store.brainMode?.mode).toBe('free_api');
+    expect(store.freeProviders.length).toBeGreaterThan(0);
+    expect(store.isLoading).toBe(false);
+  });
 });

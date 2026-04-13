@@ -28,39 +28,49 @@
               <span>🧠</span>
               <strong>Set up your Brain</strong>
             </div>
-            <p v-if="brain.systemInfo" class="brain-hw">
-              {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
-            </p>
-            <p v-if="brain.topRecommendation" class="brain-rec">
-              Recommended: <strong>{{ brain.topRecommendation.display_name }}</strong>
-              <br><small>{{ brain.topRecommendation.description }}</small>
-            </p>
-            <div v-if="brain.recommendations.length" class="brain-models">
-              <button
-                v-for="m in brain.recommendations"
-                :key="m.model_tag"
-                :class="['brain-model-btn', { selected: selectedBrain === m.model_tag, top: m.is_top_pick }]"
-                @click="selectedBrain = m.model_tag"
-              >
-                <span>{{ m.display_name }}</span>
-                <span v-if="m.is_top_pick" class="brain-star">⭐</span>
+            <!-- Free API quick-start (default) -->
+            <div class="brain-free-start">
+              <p>Start chatting instantly with a free cloud LLM:</p>
+              <button class="brain-activate-btn" @click="activateFreeApi">
+                ☁️ Use Free Cloud API (no setup)
               </button>
             </div>
-            <div v-if="!brain.ollamaStatus.running" class="brain-warn">
-              ❌ Ollama not running — start it first (<code>ollama serve</code>)
-              <button class="brain-retry-btn" @click="brain.checkOllamaStatus()">🔄 Retry</button>
+            <!-- Optional: local Ollama section -->
+            <div class="brain-local-section">
+              <p class="brain-hw" v-if="brain.systemInfo">
+                {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
+              </p>
+              <p v-if="brain.topRecommendation" class="brain-rec">
+                Or run locally: <strong>{{ brain.topRecommendation.display_name }}</strong>
+                <br><small>{{ brain.topRecommendation.description }}</small>
+              </p>
+              <div v-if="brain.recommendations.length" class="brain-models">
+                <button
+                  v-for="m in brain.recommendations"
+                  :key="m.model_tag"
+                  :class="['brain-model-btn', { selected: selectedBrain === m.model_tag, top: m.is_top_pick }]"
+                  @click="selectedBrain = m.model_tag"
+                >
+                  <span>{{ m.display_name }}</span>
+                  <span v-if="m.is_top_pick" class="brain-star">⭐</span>
+                </button>
+              </div>
+              <div v-if="!brain.ollamaStatus.running && brain.recommendations.length" class="brain-warn">
+                ❌ Ollama not running — start it first (<code>ollama serve</code>)
+                <button class="brain-retry-btn" @click="brain.checkOllamaStatus()">🔄 Retry</button>
+              </div>
+              <div v-else-if="brain.isPulling" class="brain-pulling">
+                <div class="brain-spinner" /> Downloading…
+              </div>
+              <div v-else-if="brain.pullError" class="brain-warn">❌ {{ brain.pullError }}</div>
+              <button
+                v-if="brain.ollamaStatus.running && !brain.isPulling && selectedBrain"
+                class="brain-local-btn"
+                @click="activateBrain"
+              >
+                ⬇ Install &amp; activate {{ selectedBrain }}
+              </button>
             </div>
-            <div v-else-if="brain.isPulling" class="brain-pulling">
-              <div class="brain-spinner" /> Downloading…
-            </div>
-            <div v-else-if="brain.pullError" class="brain-warn">❌ {{ brain.pullError }}</div>
-            <button
-              v-if="brain.ollamaStatus.running && !brain.isPulling && selectedBrain"
-              class="brain-activate-btn"
-              @click="activateBrain"
-            >
-              ⬇ Install &amp; activate {{ selectedBrain }}
-            </button>
           </div>
         </div>
 
@@ -106,6 +116,19 @@ async function activateBrain() {
     if (!ok) return;
   }
   await brain.setActiveBrain(model);
+}
+
+async function activateFreeApi() {
+  try {
+    await brain.setBrainMode({
+      mode: 'free_api',
+      provider_id: 'groq',
+      api_key: null,
+    });
+  } catch {
+    // Tauri unavailable — set locally
+    brain.autoConfigureFreeApi();
+  }
 }
 
 function sentimentToState(sentiment?: string): CharacterState {
@@ -245,6 +268,11 @@ onMounted(async () => {
 .brain-pulling { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: #94a3b8; }
 .brain-spinner { width: 14px; height: 14px; border: 2px solid #334155; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.brain-activate-btn { padding: 6px 14px; border: none; background: #3b82f6; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background 0.15s; }
-.brain-activate-btn:hover { background: #2563eb; }
+.brain-activate-btn { padding: 6px 14px; border: none; background: #16a34a; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background 0.15s; }
+.brain-activate-btn:hover { background: #15803d; }
+.brain-local-btn { padding: 6px 14px; border: none; background: #3b82f6; color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background 0.15s; }
+.brain-local-btn:hover { background: #2563eb; }
+.brain-free-start { display: flex; flex-direction: column; gap: 4px; }
+.brain-free-start p { margin: 0; font-size: 0.78rem; color: #94a3b8; }
+.brain-local-section { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px; margin-top: 2px; }
 </style>

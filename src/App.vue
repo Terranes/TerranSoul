@@ -61,11 +61,20 @@ onMounted(async () => {
   try {
     await brain.loadActiveBrain();
   } catch {
-    // No Tauri backend available (dev server / E2E tests) — skip the setup wizard.
+    // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
+    brain.autoConfigureFreeApi();
     skipSetup.value = true;
     return;
   }
-  // If brain is already set, skip the onboarding.
+
+  // Also try to load brain mode (three-tier config)
+  try {
+    await brain.loadBrainMode();
+  } catch {
+    // Ignore — will fall through to setup
+  }
+
+  // If brain is already set (either legacy or new mode), skip the onboarding.
   if (brain.hasBrain) {
     skipSetup.value = true;
   }
