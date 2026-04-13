@@ -96,22 +96,22 @@ test.describe('TerranSoul App', () => {
     await expect(badge).toContainText('idle');
   });
 
-  test('model panel toggle button works', async ({ page }) => {
+  test('settings dropdown toggle works', async ({ page }) => {
     await page.goto('/');
 
-    // Model panel toggle button should be visible
-    const toggleBtn = page.locator('.model-panel-toggle');
+    // Settings toggle button should be visible
+    const toggleBtn = page.locator('.settings-toggle');
     await expect(toggleBtn).toBeVisible();
 
-    // Model panel should be hidden initially
-    await expect(page.locator('.model-panel')).not.toBeVisible();
+    // Settings dropdown should be hidden initially
+    await expect(page.locator('.settings-dropdown')).not.toBeVisible();
 
-    // Click toggle — panel should appear
+    // Click toggle — dropdown should appear with model selector
     await toggleBtn.click();
-    await expect(page.locator('.model-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
+    await expect(page.locator('.settings-dropdown')).toBeVisible({ timeout: PANEL_TIMEOUT });
 
-    // Panel should have "3D Models" header
-    await expect(page.locator('.panel-header h3')).toContainText('3D Models');
+    // Dropdown should have character label and model selector
+    await expect(page.locator('.settings-dropdown .model-selector')).toBeVisible();
   });
 });
 
@@ -183,11 +183,13 @@ test.describe('3D Character Loading & Animation', () => {
   test('model selector dropdown is visible and has options', async ({ page }) => {
     await page.goto('/');
 
+    // Open the settings dropdown
+    await page.locator('.settings-toggle').click();
     const selector = page.locator('.model-selector');
     await expect(selector).toBeVisible();
 
     const options = selector.locator('option');
-    await expect(options).toHaveCount(2);
+    await expect(options).toHaveCount(3);
 
     // Default selection should be Annabelle
     await expect(selector).toHaveValue('annabelle');
@@ -207,7 +209,8 @@ test.describe('3D Character Loading & Animation', () => {
     // Loading overlay should be gone
     await waitForLoadingDone(page);
 
-    // Model selector should show annabelle
+    // Model selector should show annabelle (open settings first)
+    await page.locator('.settings-toggle').click();
     await expect(page.locator('.model-selector')).toHaveValue('annabelle');
   });
 
@@ -219,7 +222,8 @@ test.describe('3D Character Loading & Animation', () => {
     await waitForModelLoaded(page);
     await waitForLoadingDone(page);
 
-    // Switch to M58 — loading overlay should appear
+    // Switch to M58 — open settings first, then loading overlay should appear
+    await page.locator('.settings-toggle').click();
     const selector = page.locator('.model-selector');
     await selector.selectOption('m58');
 

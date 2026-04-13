@@ -25,8 +25,9 @@ use commands::{
     agent::list_agents,
     brain::{
         check_ollama_status, clear_active_brain, get_active_brain, get_brain_mode,
-        get_ollama_models, get_system_info, list_free_providers, pull_ollama_model,
-        recommend_brain_models, set_active_brain, set_brain_mode,
+        get_next_provider, get_ollama_models, get_system_info, health_check_providers,
+        list_free_providers, pull_ollama_model, recommend_brain_models, set_active_brain,
+        set_brain_mode,
     },
     character::load_vrm,
     chat::{get_conversation, send_message},
@@ -101,6 +102,8 @@ pub struct AppState {
     pub window_mode: Mutex<commands::window::WindowMode>,
     /// Voice provider configuration (ASR/TTS selections).
     pub voice_config: Mutex<voice::VoiceConfig>,
+    /// Provider rotation and rate-limit tracking for free API providers.
+    pub provider_rotator: Mutex<brain::ProviderRotator>,
 }
 
 impl AppState {
@@ -131,6 +134,7 @@ impl AppState {
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
             voice_config: Mutex::new(voice::config_store::load(data_dir)),
+            provider_rotator: Mutex::new(brain::ProviderRotator::new()),
         }
     }
 
@@ -159,6 +163,7 @@ impl AppState {
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
             voice_config: Mutex::new(voice::VoiceConfig::default()),
+            provider_rotator: Mutex::new(brain::ProviderRotator::new()),
         }
     }
 }
@@ -235,6 +240,8 @@ pub fn run() {
             list_free_providers,
             get_brain_mode,
             set_brain_mode,
+            health_check_providers,
+            get_next_provider,
             list_asr_providers,
             list_tts_providers,
             get_voice_config,

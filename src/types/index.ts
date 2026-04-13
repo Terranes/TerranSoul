@@ -242,3 +242,17 @@ export type BrainMode =
   | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string }
   | { mode: 'local_ollama'; model: string };
 
+// ── Provider Health / Rotation ────────────────────────────────────────────────
+
+/** Health and rate-limit status for a single free provider. */
+export interface ProviderHealthInfo {
+  id: string;
+  display_name: string;
+  is_healthy: boolean;
+  is_rate_limited: boolean;
+  requests_sent: number;
+  remaining_requests: number | null;
+  remaining_tokens: number | null;
+  latency_ms: number | null;
+}
+

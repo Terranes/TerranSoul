@@ -1,7 +1,7 @@
 <template>
   <div class="message-list" ref="listRef">
     <!-- Welcome state when no messages yet -->
-    <div v-if="messages.length === 0 && !isThinking" class="welcome-state">
+    <div v-if="messages.length === 0 && !isThinking && !isStreaming" class="welcome-state">
       <div class="welcome-icon">💬</div>
       <p class="welcome-title">Welcome to TerranSoul</p>
       <p class="welcome-hint">Type a message below to start chatting with your AI companion.</p>
@@ -20,7 +20,14 @@
         </div>
       </div>
     </TransitionGroup>
-    <TypingIndicator v-if="isThinking" />
+    <!-- Live streaming response bubble -->
+    <div v-if="isStreaming && streamingText" class="message-row assistant" key="streaming">
+      <div class="bubble-wrapper">
+        <AgentBadge name="TerranSoul" />
+        <div class="bubble streaming-bubble">{{ streamingText }}<span class="cursor-blink">▎</span></div>
+      </div>
+    </div>
+    <TypingIndicator v-if="isThinking && !isStreaming" />
   </div>
 </template>
 
@@ -33,6 +40,8 @@ import TypingIndicator from './TypingIndicator.vue';
 const props = defineProps<{
   messages: Message[];
   isThinking: boolean;
+  streamingText?: string;
+  isStreaming?: boolean;
 }>();
 
 const listRef = ref<HTMLElement | null>(null);
@@ -50,6 +59,7 @@ async function scrollToBottom() {
 
 watch(() => props.messages.length, scrollToBottom);
 watch(() => props.isThinking, scrollToBottom);
+watch(() => props.streamingText, scrollToBottom);
 </script>
 
 <style scoped>
@@ -160,5 +170,20 @@ watch(() => props.isThinking, scrollToBottom);
   color: rgba(255, 255, 255, 0.45);
   max-width: 260px;
   line-height: 1.4;
+}
+
+/* Streaming cursor blink */
+.streaming-bubble {
+  border: 1px solid rgba(108, 99, 255, 0.3);
+}
+
+.cursor-blink {
+  animation: blink 0.8s step-end infinite;
+  color: #6c63ff;
+  font-weight: 300;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
 }
 </style>

@@ -6,6 +6,18 @@ use crate::brain::{
 };
 use crate::AppState;
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProviderHealthInfo {
+    pub id: String,
+    pub display_name: String,
+    pub is_healthy: bool,
+    pub is_rate_limited: bool,
+    pub requests_sent: u64,
+    pub remaining_requests: Option<u64>,
+    pub remaining_tokens: Option<u64>,
+    pub latency_ms: Option<u64>,
+}
+
 /// Return hardware information about the host machine.
 #[tauri::command]
 pub async fn get_system_info() -> SystemInfo {
@@ -117,6 +129,35 @@ pub async fn set_brain_mode(
     let mut brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
     *brain_mode = Some(mode);
     Ok(())
+}
+
+// ── Provider Rotator Commands ────────────────────────────────────────────────
+
+/// Return health and rate-limit status for all free API providers.
+#[tauri::command]
+pub async fn health_check_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<ProviderHealthInfo>, String> {
+    let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+    Ok(rotator.providers.values().map(|s| ProviderHealthInfo {
+        id: s.provider.id.clone(),
+        display_name: s.provider.display_name.clone(),
+        is_healthy: s.is_healthy,
+        is_rate_limited: s.is_rate_limited,
+        requests_sent: s.requests_sent,
+        remaining_requests: s.remaining_requests,
+        remaining_tokens: s.remaining_tokens,
+        latency_ms: s.latency.map(|d| d.as_millis() as u64),
+    }).collect())
+}
+
+/// Return the next healthy, non-rate-limited provider id (fastest first).
+#[tauri::command]
+pub fn get_next_provider(
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+    Ok(rotator.next_healthy_provider().map(|p| p.id.clone()))
 }
 
 #[cfg(test)]

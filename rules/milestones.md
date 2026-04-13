@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 059** — Provider Health Check & Rate-Limit Rotation (Phase 5.5)
+**Chunk 060** — Voice Abstraction Layer (Phase 6)
 
 ---
 
@@ -131,25 +131,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 > Ollama. Free providers are sourced from awesome-free-llm-apis and auto-rotated
 > when rate-limited. See `rules/research-reverse-engineering.md` §8.
 
-✅ Chunk 055 — Free LLM API Provider Registry & OpenAI-Compatible Client — see `rules/completion-log.md`
-
-FreeProvider struct + curated catalogue (8 providers). Generic OpenAI-compatible chat client
-with SSE streaming. BrainMode enum (FreeApi/PaidApi/LocalOllama) + JSON persistence + legacy
-migration. 3 Tauri commands, 33 Rust tests, 9 Vitest tests.
-
-✅ Chunk 056+057 — Streaming BrainMode Routing, Auto-Selection & Wizard Redesign — see `rules/completion-log.md`
-
-Streaming routes through BrainMode (free API SSE / paid API SSE / Ollama NDJSON).
-Auto-configure free API when Tauri unavailable. Three-tier setup wizard. 1 E2E test.
-
-✅ Chunk 058 — Emotion Expansion & UI Fixes — see `rules/completion-log.md`
-
-CharacterState expanded (angry/relaxed/surprised). 9 new animation variants. Thumbnail cropping
-fixed. Welcome state for empty chat. 4 new E2E tests. 3 new Vitest tests. 272 Vitest + 28 E2E total.
-
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 059 | **Provider Health Check & Rate-Limit Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
+✅ Phase 5.5 complete — see completion-log.md
 
 ---
 

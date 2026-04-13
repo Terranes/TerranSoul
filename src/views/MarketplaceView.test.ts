@@ -2,7 +2,7 @@
  * Integration tests for MarketplaceView.vue.
  * Mocks @tauri-apps/api/core invoke() to simulate Tauri IPC.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { setActivePinia, createPinia } from 'pinia';
 import MarketplaceView from './MarketplaceView.vue';
@@ -80,6 +80,12 @@ describe('MarketplaceView', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    // Simulate Tauri desktop environment for marketplace tests
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: mockInvoke };
+  });
+
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
   });
 
   it('renders header and tabs', async () => {
@@ -190,5 +196,34 @@ describe('MarketplaceView', () => {
     const wrapper = mount(MarketplaceView);
     await flushPromises();
     expect(wrapper.text()).toContain('terranes.dev');
+  });
+
+  it('shows Tauri unavailable banner when Tauri is not present', async () => {
+    // Remove Tauri to simulate browser/UAT/Vercel environment
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    const wrapper = mount(MarketplaceView);
+    await flushPromises();
+    expect(wrapper.text()).toContain('Tauri Desktop Backend Unavailable');
+    expect(wrapper.text()).toContain('desktop app');
+    expect(wrapper.text()).toContain('Configure LLM');
+    expect(wrapper.text()).not.toContain('stub-agent');
+  });
+
+  it('shows LLM config UI with free providers and chat hint', async () => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    const wrapper = mount(MarketplaceView);
+    await flushPromises();
+
+    // Click "Configure LLM" to expand
+    const configHeader = wrapper.find('.llm-config-header');
+    expect(configHeader.exists()).toBe(true);
+    await configHeader.trigger('click');
+    await flushPromises();
+
+    // Should show provider options and chat hint
+    expect(wrapper.text()).toContain('Free Cloud');
+    expect(wrapper.text()).toContain('Paid API');
+    expect(wrapper.text()).toContain('Pollinations AI');
+    expect(wrapper.text()).toContain('ask TerranSoul in chat');
   });
 });

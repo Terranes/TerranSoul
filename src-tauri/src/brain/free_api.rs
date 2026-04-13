@@ -27,9 +27,21 @@ pub struct FreeProvider {
 /// Return the curated catalogue of free LLM API providers.
 ///
 /// Sorted roughly by reliability and speed (best first).
+/// Providers that do NOT require an API key are listed first so that
+/// auto-configuration can work out-of-the-box with zero setup.
 /// Source: <https://github.com/mnfst/awesome-free-llm-apis>
 pub fn free_provider_catalogue() -> Vec<FreeProvider> {
     vec![
+        FreeProvider {
+            id: "pollinations".into(),
+            display_name: "Pollinations AI".into(),
+            base_url: "https://text.pollinations.ai/openai".into(),
+            model: "openai".into(),
+            rpm_limit: 30,
+            rpd_limit: 0,
+            requires_api_key: false,
+            notes: "Free, no API key needed — works instantly".into(),
+        },
         FreeProvider {
             id: "groq".into(),
             display_name: "Groq".into(),

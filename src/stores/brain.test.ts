@@ -196,14 +196,14 @@ describe('brain store', () => {
 
   // ── Auto-Configure Free API Tests ──────────────────────────────────────
 
-  it('autoConfigureFreeApi sets brainMode to free_api with groq', () => {
+  it('autoConfigureFreeApi sets brainMode to free_api with pollinations', () => {
     const store = useBrainStore();
     expect(store.hasBrain).toBe(false);
     store.autoConfigureFreeApi();
     expect(store.hasBrain).toBe(true);
     expect(store.brainMode).toEqual({
       mode: 'free_api',
-      provider_id: 'groq',
+      provider_id: 'pollinations',
       api_key: null,
     });
   });
@@ -213,7 +213,7 @@ describe('brain store', () => {
     expect(store.freeProviders).toEqual([]);
     store.autoConfigureFreeApi();
     expect(store.freeProviders.length).toBeGreaterThanOrEqual(2);
-    expect(store.freeProviders[0].id).toBe('groq');
+    expect(store.freeProviders[0].id).toBe('pollinations');
   });
 
   it('isFreeApiMode is true after autoConfigureFreeApi', () => {

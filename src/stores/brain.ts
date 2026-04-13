@@ -13,6 +13,16 @@ import type {
 /** Built-in free provider catalogue for use when Tauri backend is unavailable. */
 const FALLBACK_FREE_PROVIDERS: FreeProvider[] = [
   {
+    id: 'pollinations',
+    display_name: 'Pollinations AI',
+    base_url: 'https://text.pollinations.ai/openai',
+    model: 'openai',
+    rpm_limit: 30,
+    rpd_limit: 0,
+    requires_api_key: false,
+    notes: 'Free, no API key needed — works instantly',
+  },
+  {
     id: 'groq',
     display_name: 'Groq',
     base_url: 'https://api.groq.com/openai',
@@ -133,7 +143,7 @@ export const useBrainStore = defineStore('brain', () => {
     freeProviders.value = FALLBACK_FREE_PROVIDERS;
     brainMode.value = {
       mode: 'free_api',
-      provider_id: 'groq',
+      provider_id: 'pollinations',
       api_key: null,
     };
   }

@@ -10,12 +10,6 @@
         @click.stop="toggleDialog"
         aria-label="Toggle dialog"
       >💬</button>
-      <ModelPanel v-if="showModelPanel" @close="showModelPanel = false" />
-      <button class="model-panel-toggle" @click.stop="showModelPanel = !showModelPanel" aria-label="Toggle model panel">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
-        </svg>
-      </button>
     </div>
 
     <!-- Toggleable chat dialog -->
@@ -74,7 +68,18 @@
           </div>
         </div>
 
-        <ChatMessageList :messages="conversationStore.messages" :is-thinking="conversationStore.isThinking" />
+        <!-- Brain status indicator when free API is active -->
+        <div v-if="brain.hasBrain && brain.isFreeApiMode" class="brain-status-bar">
+          <span class="brain-status-dot" />
+          <span class="brain-status-text">☁️ {{ activeProviderName }}</span>
+        </div>
+
+        <ChatMessageList
+          :messages="conversationStore.messages"
+          :is-thinking="conversationStore.isThinking"
+          :streaming-text="conversationStore.streamingText"
+          :is-streaming="conversationStore.isStreaming"
+        />
         <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
       </div>
     </Transition>
@@ -82,22 +87,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
+import { useStreamingStore } from '../stores/streaming';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
-import ModelPanel from '../components/ModelPanel.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
-const showModelPanel = ref(false);
+const streaming = useStreamingStore();
 const showDialog = ref(true);
 const selectedBrain = ref('');
+let unlistenLlmChunk: (() => void) | null = null;
+
+const activeProviderName = computed(() => {
+  const mode = brain.brainMode;
+  if (!mode || mode.mode !== 'free_api') return '';
+  const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
+  return p?.display_name ?? mode.provider_id ?? '';
+});
 
 function toggleDialog() {
   showDialog.value = !showDialog.value;
@@ -122,7 +135,7 @@ async function activateFreeApi() {
   try {
     await brain.setBrainMode({
       mode: 'free_api',
-      provider_id: 'groq',
+      provider_id: 'pollinations',
       api_key: null,
     });
   } catch {
@@ -158,6 +171,19 @@ async function handleSend(message: string) {
   setTimeout(() => characterStore.setState('idle'), 3000);
 }
 
+/** Set up Tauri event listener for llm-chunk events (streaming LLM). */
+async function setupTauriEventListener() {
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
+      streaming.handleChunk(event.payload);
+    });
+    unlistenLlmChunk = unlisten;
+  } catch {
+    // Tauri event API not available (browser mode) — streaming handled via fetch
+  }
+}
+
 watch(
   () => conversationStore.isThinking,
   (thinking) => {
@@ -165,7 +191,17 @@ watch(
   },
 );
 
+// Show talking animation during streaming
+watch(
+  () => conversationStore.isStreaming,
+  (active) => {
+    if (active) characterStore.setState('talking');
+  },
+);
+
 onMounted(async () => {
+  await setupTauriEventListener();
+
   try {
     await brain.initialise();
     if (brain.topRecommendation) {
@@ -173,6 +209,13 @@ onMounted(async () => {
     }
   } catch {
     // No Tauri backend
+  }
+});
+
+onUnmounted(() => {
+  if (unlistenLlmChunk) {
+    unlistenLlmChunk();
+    unlistenLlmChunk = null;
   }
 });
 </script>
@@ -232,28 +275,14 @@ onMounted(async () => {
 .slide-enter-active, .slide-leave-active { transition: transform 0.25s ease, opacity 0.25s ease; }
 .slide-enter-from, .slide-leave-to { transform: translateY(100%); opacity: 0; }
 
-.model-panel-toggle {
-  position: absolute;
-  top: 40px;
-  right: 16px;
-  z-index: 10;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(4px);
-  transition: background 0.2s, color 0.2s;
-}
-.model-panel-toggle:hover { background: rgba(108, 99, 255, 0.4); color: #fff; }
-
 /* ── Inline brain setup ── */
 .brain-inline { padding: 10px 12px 4px; flex-shrink: 0; }
+
+/* ── Brain status bar ── */
+.brain-status-bar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; background: rgba(22, 163, 74, 0.1); border-bottom: 1px solid rgba(34, 197, 94, 0.15); flex-shrink: 0; }
+.brain-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse-dot 2s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.brain-status-text { font-size: 0.72rem; color: #86efac; letter-spacing: 0.02em; }
 .brain-card { background: rgba(30, 41, 59, 0.9); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; border: 1px solid rgba(59, 130, 246, 0.3); }
 .brain-card-header { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; }
 .brain-hw { font-size: 0.78rem; color: #94a3b8; margin: 0; }
