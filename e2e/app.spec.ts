@@ -211,33 +211,6 @@ test.describe('3D Character Loading & Animation', () => {
     await expect(page.locator('.model-selector')).toHaveValue('annabelle');
   });
 
-  test('Miyoura Toshie (cute persona) loads correctly when selected', async ({ page }) => {
-    await page.goto('/');
-
-    // Wait for default model to load first
-    const debugOverlay = await waitForModelLoaded(page);
-
-    // Record default model triangle count
-    const triangleSpan = debugOverlay.locator('span').nth(1);
-    const defaultText = await triangleSpan.textContent();
-    const defaultTriCount = parseInt(defaultText?.replace(/[^\d]/g, '') ?? '0', 10);
-
-    // Switch to Miyoura Toshie
-    const selector = page.locator('.model-selector');
-    await selector.selectOption('miyoura-toshie');
-
-    // Wait for Miyoura Toshie to load — triangle count should change
-    await expect(async () => {
-      const text = await triangleSpan.textContent();
-      const count = parseInt(text?.replace(/[^\d]/g, '') ?? '0', 10);
-      expect(count).toBeGreaterThan(0);
-      expect(count).not.toBe(defaultTriCount);
-    }).toPass({ timeout: VRM_LOAD_TIMEOUT });
-
-    // Loading overlay should disappear after Miyoura Toshie loads
-    await waitForLoadingDone(page);
-  });
-
   test('switching models shows loading overlay', async ({ page }) => {
     test.setTimeout(90_000);
     await page.goto('/');
@@ -318,36 +291,6 @@ test.describe('3D Character Loading & Animation', () => {
     }).toPass({ timeout: 5_000 });
 
     // Confirm it returns to idle after response
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
-  });
-
-  test('Miyoura Toshie animates visibly with cute persona', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.goto('/');
-
-    // Switch to Miyoura Toshie (cute persona)
-    const selector = page.locator('.model-selector');
-    await selector.selectOption('miyoura-toshie');
-
-    const debugOverlay = await waitForModelLoaded(page);
-
-    // Verify geometry is rendered
-    const triSpan = debugOverlay.locator('span').nth(1);
-    const triCount = parseInt((await triSpan.textContent())?.replace(/[^\d]/g, '') ?? '0', 10);
-    expect(triCount).toBeGreaterThan(0);
-
-    // Verify animation state transitions work
-    const badge = page.locator('.state-badge');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-    await input.fill('Hello!');
-    await sendBtn.click();
-
-    await expect(async () => {
-      const text = (await badge.textContent())?.trim();
-      expect(['thinking', 'talking', 'happy', 'sad']).toContain(text);
-    }).toPass({ timeout: 5_000 });
-
     await expect(badge).toContainText('idle', { timeout: 10_000 });
   });
 });
@@ -531,29 +474,6 @@ test.describe('Animation & AI Emotion', () => {
 
     // Should transition to happy state (cool-happy: confident lean)
     await expect(badge).toContainText('happy', { timeout: 10_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
-  });
-
-  test('Miyoura Toshie (cute) emotion animation with sad message', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.goto('/');
-
-    // Switch to Miyoura Toshie (cute persona)
-    const selector = page.locator('.model-selector');
-    await selector.selectOption('miyoura-toshie');
-
-    await waitForModelLoaded(page);
-
-    const badge = page.locator('.state-badge');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    // Send a sad message
-    await input.fill('I feel so sad');
-    await sendBtn.click();
-
-    // Should transition to sad state (cute-sad: dramatic pout)
-    await expect(badge).toContainText('sad', { timeout: 10_000 });
     await expect(badge).toContainText('idle', { timeout: 10_000 });
   });
 });

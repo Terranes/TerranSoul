@@ -38,7 +38,7 @@ export class CharacterAnimator {
   private state: CharacterState = 'idle';
   private elapsed = 0;
   private baseRotationY = 0;
-  private persona: AnimationPersona = 'gentleman';
+  private persona: AnimationPersona = 'witch';
 
   // ── AnimationMixer state ────────────────────────────────────────
   private mixer: THREE.AnimationMixer | null = null;
@@ -69,7 +69,7 @@ export class CharacterAnimator {
       Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
   }
 
-  setVRM(vrm: VRM, rotationY = 0, persona: AnimationPersona = 'gentleman') {
+  setVRM(vrm: VRM, rotationY = 0, persona: AnimationPersona = 'witch') {
     this.vrm = vrm;
     this.vrmScene = vrm.scene;
     this.baseRotationY = rotationY;

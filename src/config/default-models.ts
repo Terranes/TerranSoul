@@ -28,20 +28,6 @@ export const DEFAULT_MODELS: DefaultModel[] = [
     thumbnail: '/models/default/M58.png',
     persona: 'idol',
   },
-  {
-    id: 'miyoura-toshie',
-    name: 'Miyoura Toshie',
-    path: '/models/default/Miyoura Toshie.vrm',
-    thumbnail: '/models/default/Miyoura Toshie.png',
-    persona: 'fashionista',
-  },
-  {
-    id: 'nogami-juto',
-    name: 'Nogami Juto',
-    path: '/models/default/Nogami Juto.vrm',
-    thumbnail: '/models/default/Nogami Juto.png',
-    persona: 'gentleman',
-  },
 ];
 
 export const DEFAULT_MODEL_ID = 'annabelle';

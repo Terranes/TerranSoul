@@ -30,14 +30,10 @@ interface PersonaAnimationData {
 
 import witchData from './animations/witch.json';
 import idolData from './animations/idol.json';
-import fashionistaData from './animations/fashionista.json';
-import gentlemanData from './animations/gentleman.json';
 
 const DATA_MAP: Record<AnimationPersona, PersonaAnimationData> = {
   witch: witchData as PersonaAnimationData,
   idol: idolData as PersonaAnimationData,
-  fashionista: fashionistaData as PersonaAnimationData,
-  gentleman: gentlemanData as PersonaAnimationData,
 };
 
 // ── Euler → Quaternion helper ────────────────────────────────────────

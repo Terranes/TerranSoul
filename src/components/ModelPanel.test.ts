@@ -35,21 +35,17 @@ describe('ModelPanel', () => {
     const select = wrapper.find('.model-select');
     expect(select.exists()).toBe(true);
     const options = select.findAll('option');
-    expect(options.length).toBeGreaterThanOrEqual(4);
+    expect(options.length).toBeGreaterThanOrEqual(2);
     expect(options[0].text()).toBe('Annabelle the Sorcerer');
     expect(options[1].text()).toBe('M58');
-    expect(options[2].text()).toBe('Miyoura Toshie');
-    expect(options[3].text()).toBe('Nogami Juto');
   });
 
   it('renders model cards for default models', () => {
     const wrapper = mount(ModelPanel);
     const cards = wrapper.findAll('.model-card');
-    expect(cards.length).toBeGreaterThanOrEqual(4);
+    expect(cards.length).toBeGreaterThanOrEqual(2);
     expect(cards[0].text()).toContain('Annabelle the Sorcerer');
     expect(cards[1].text()).toContain('M58');
-    expect(cards[2].text()).toContain('Miyoura Toshie');
-    expect(cards[3].text()).toContain('Nogami Juto');
   });
 
   it('emits close on overlay click', async () => {
@@ -83,6 +79,6 @@ describe('ModelPanel', () => {
   it('renders thumbnail images for models with thumbnails', () => {
     const wrapper = mount(ModelPanel);
     const thumbs = wrapper.findAll('.model-thumb');
-    expect(thumbs.length).toBeGreaterThanOrEqual(4);
+    expect(thumbs.length).toBeGreaterThanOrEqual(2);
   });
 });
