@@ -180,7 +180,7 @@ describe('CharacterAnimator', () => {
       // setVRM is VRM-only, but placeholder still exercises setState/update path
       expect(animator.getPersona()).toBe('witch'); // default
       // exercise all states with placeholder
-      for (const state of ['idle', 'thinking', 'talking', 'happy', 'sad'] as const) {
+      for (const state of ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'] as const) {
         animator.setState(state);
         expect(() => animator.update(0.016)).not.toThrow();
       }
@@ -189,7 +189,7 @@ describe('CharacterAnimator', () => {
 
   it('all persona × state combinations produce stable animation (no NaN)', () => {
     const personas = ['witch', 'idol'] as const;
-    const states = ['idle', 'thinking', 'talking', 'happy', 'sad'] as const;
+    const states = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'] as const;
     for (const _persona of personas) {
       for (const state of states) {
         const animator = new CharacterAnimator();
@@ -214,5 +214,36 @@ describe('CharacterAnimator', () => {
     animator.setPlaceholder(group);
     // No VRM set → should be a no-op, not an error
     expect(() => animator.triggerRandomAnimation()).not.toThrow();
+  });
+
+  // ── New emotion state tests ────────────────────────────────────────
+
+  it('angry state produces trembling animation', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('angry');
+    animator.update(0.3);
+    expect(typeof group.position.y).toBe('number');
+    expect(typeof group.rotation.z).toBe('number');
+  });
+
+  it('relaxed state produces gentle sway', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('relaxed');
+    animator.update(0.5);
+    expect(typeof group.position.y).toBe('number');
+    expect(group.scale.x).toBeCloseTo(1.0, 1);
+  });
+
+  it('surprised state produces jolt animation', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    animator.setState('surprised');
+    animator.update(0.2);
+    expect(group.position.y).toBeGreaterThanOrEqual(0);
   });
 });

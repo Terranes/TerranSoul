@@ -135,6 +135,9 @@ function sentimentToState(sentiment?: string): CharacterState {
   switch (sentiment) {
     case 'happy': return 'happy';
     case 'sad': return 'sad';
+    case 'angry': return 'angry';
+    case 'relaxed': return 'relaxed';
+    case 'surprised': return 'surprised';
     default: return 'talking';
   }
 }

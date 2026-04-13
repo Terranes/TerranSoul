@@ -30,6 +30,9 @@ interface PersonaAnimationData {
   talking: ClipData | ClipData[];
   happy: ClipData | ClipData[];
   sad: ClipData | ClipData[];
+  angry: ClipData | ClipData[];
+  relaxed: ClipData | ClipData[];
+  surprised: ClipData | ClipData[];
 }
 
 // ── Static imports (bundled by Vite — no runtime fetch) ──────────────
@@ -74,7 +77,7 @@ export type PersonaClips = Record<CharacterState, THREE.AnimationClip[]>;
  */
 export function buildPersonaClips(vrm: VRM, persona: AnimationPersona): PersonaClips {
   const data = DATA_MAP[persona];
-  const states: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad'];
+  const states: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'];
   const clips: Partial<PersonaClips> = {};
 
   for (const state of states) {

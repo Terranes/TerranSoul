@@ -3,11 +3,11 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   agentName?: string;
-  sentiment?: 'happy' | 'sad' | 'neutral';
+  sentiment?: 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral';
   timestamp: number;
 }
 
-export type CharacterState = 'idle' | 'thinking' | 'talking' | 'happy' | 'sad';
+export type CharacterState = 'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised';
 
 export type AnimationPersona = 'witch' | 'idol';
 

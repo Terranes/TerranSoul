@@ -322,11 +322,12 @@ async function handleImport() {
 }
 
 .model-thumb {
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   border-radius: 6px;
-  object-fit: cover;
+  object-fit: contain;
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .model-info {
