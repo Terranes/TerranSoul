@@ -180,7 +180,7 @@ function handleKeyDown(e: KeyboardEvent) {
 }
 
 function handleClickOutside(e: MouseEvent) {
-  if (settingsRef.value && !settingsRef.value.contains(e.target as Node)) {
+  if (settingsRef.value && e.target instanceof Node && !settingsRef.value.contains(e.target)) {
     settingsOpen.value = false;
   }
 }

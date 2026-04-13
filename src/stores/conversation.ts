@@ -164,8 +164,9 @@ export const useConversationStore = defineStore('conversation', () => {
         // Try the primary provider, then rotate to next healthy on rate-limit
         const providersToTry = [provider];
         // Add fallback providers from the brain store
+        const primaryProviderId = brain.brainMode?.mode === 'free_api' ? brain.brainMode.provider_id : '';
         for (const fp of brain.freeProviders) {
-          if (fp.id !== provider.baseUrl && !providersToTry.some((p) => p.baseUrl === fp.base_url)) {
+          if (fp.id !== primaryProviderId && !providersToTry.some((p) => p.baseUrl === fp.base_url)) {
             providersToTry.push({ baseUrl: fp.base_url, model: fp.model, apiKey: provider.apiKey });
           }
         }
