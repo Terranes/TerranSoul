@@ -87,7 +87,7 @@ function buildClip(vrm: VRM, name: string, clipData: ClipData): THREE.AnimationC
     if (!node) continue;
 
     // Rotation track (Euler → Quaternion)
-    if (t.rotations && t.rotations.length > 0) {
+    if (t.rotations?.length) {
       const quatValues = eulerToQuatArray(t.rotations);
       tracks.push(
         new THREE.QuaternionKeyframeTrack(
@@ -99,7 +99,7 @@ function buildClip(vrm: VRM, name: string, clipData: ClipData): THREE.AnimationC
     }
 
     // Position track (for hips vertical bob, etc.)
-    if (t.positions && t.positions.length > 0) {
+    if (t.positions?.length) {
       const posValues: number[] = [];
       for (const [x, y, z] of t.positions) {
         posValues.push(x, y, z);
