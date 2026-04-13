@@ -1452,3 +1452,51 @@ philosophy as the brain system where users pick their own LLM model.
 ### Test Counts (Chunk 060)
 - **Vitest:** 31 new tests (12 voice store, 19 OLLV client) — 329 total across 27 files
 - **Build:** `npm run build` ✓
+
+---
+
+## Chunk 061 — Web Audio Lip Sync
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Create a provider-agnostic LipSync class that maps audio volume to VRM mouth morph
+targets (aa, oh). Works with any TTS audio output via Web Audio API AnalyserNode.
+Integrate with CharacterAnimator so external lip-sync values override the procedural
+sine-wave mouth animation.
+
+### Architecture
+
+**LipSync Class** (`src/renderer/lip-sync.ts`):
+- `LipSync` class using Web Audio API `AnalyserNode`.
+- `connectAudioElement(audio)` — connects to an HTMLAudioElement via
+  `createMediaElementSource`, pipes through AnalyserNode to destination.
+- `connectAnalyser(analyser)` — connects to an external AnalyserNode.
+- `getMouthValues()` — reads `getFloatTimeDomainData()`, calculates RMS volume,
+  maps to `{ aa, oh }` morph targets with configurable sensitivity + threshold.
+- `mouthValuesFromVolume(volume)` — static method for Open-LLM-VTuber's pre-computed
+  volume arrays. Converts a single volume level to mouth values.
+- Options: `fftSize`, `smoothingTimeConstant`, `silenceThreshold`, `sensitivity`.
+- `disconnect()` — releases AudioContext and source resources.
+
+**CharacterAnimator Integration** (`src/renderer/character-animator.ts`):
+- Added `setMouthValues(aa, oh)` method — accepts external lip-sync values.
+- Added `clearMouthValues()` — reverts to procedural sine-wave animation.
+- When `useExternalLipSync` is true, talking state uses external aa/oh values
+  instead of procedural sine wave. Also applies `oh` morph for rounding.
+- Backward compatible — when no external lip-sync is provided, falls back to
+  the existing sine-wave mouth animation.
+
+### Files Created
+- `src/renderer/lip-sync.ts` — LipSync class with Web Audio API integration
+- `src/renderer/lip-sync.test.ts` — 14 tests for LipSync
+
+### Files Modified
+- `src/renderer/character-animator.ts` — setMouthValues/clearMouthValues, external lip-sync support
+- `rules/milestones.md` — Marked chunk 061 done, updated Next Chunk to 062
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 061)
+- **Vitest:** 14 new tests (lip-sync) — 343 total across 28 files
+- **Build:** `npm run build` ✓

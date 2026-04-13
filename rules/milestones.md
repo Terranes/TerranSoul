@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 061** — Web Audio Lip Sync (Phase 6)
+**Chunk 062** — Voice Activity Detection (Phase 6)
 
 ---
 
@@ -214,7 +214,6 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 061 | **Web Audio Lip Sync** — `LipSync` class using Web Audio API `AnalyserNode`. Connect TTS audio output to analyser. Extract volume from `getFloatTimeDomainData()`. Map volume → VRM mouth morph targets (`aa`, `oh`). Run in requestAnimationFrame loop alongside character animator. Provider-agnostic — works with any TTS audio output. | `not-started` |
 | 062 | **Voice Activity Detection** — Use `@ricky0123/vad-web` (ONNX) for browser-side speech detection. Detect speech start → pause AI audio and capture mic. Detect speech end → send audio to user's configured ASR engine. Handle echo cancellation (mute TTS during mic capture). | `not-started` |
 | 063 | **Voice Sidecar Support** — For Python-based voice engines (VibeVoice, sherpa-onnx, etc.), Tauri spawns a FastAPI sidecar process. Health-check on `/health`. STT via `POST /api/asr`. TTS via `POST /api/tts` or WebSocket `/ws/tts`. Graceful fallback to text-only if sidecar unavailable. Users configure which sidecar to run. | `not-started` |
 

@@ -75,6 +75,11 @@ export class CharacterAnimator {
   // Mouth animation elapsed for talking state
   private mouthElapsed = 0;
 
+  // External lip-sync values (from LipSync class or Open-LLM-VTuber volumes)
+  private externalMouthAa = 0;
+  private externalMouthOh = 0;
+  private useExternalLipSync = false;
+
   private static randomBlinkInterval(): number {
     return CharacterAnimator.MIN_BLINK_INTERVAL +
       Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
@@ -223,6 +228,27 @@ export class CharacterAnimator {
     this.cycleClipVariant();
   }
 
+  /**
+   * Set mouth morph values from an external lip-sync source.
+   * When called with non-zero values, overrides the procedural sine-wave
+   * mouth animation for the talking state.
+   *
+   * @param aa — mouth open "ah" (0–1)
+   * @param oh — mouth round "oh" (0–1)
+   */
+  setMouthValues(aa: number, oh: number) {
+    this.externalMouthAa = Math.max(0, Math.min(1, aa));
+    this.externalMouthOh = Math.max(0, Math.min(1, oh));
+    this.useExternalLipSync = aa > 0 || oh > 0;
+  }
+
+  /** Clear external lip-sync, reverting to procedural mouth animation. */
+  clearMouthValues() {
+    this.externalMouthAa = 0;
+    this.externalMouthOh = 0;
+    this.useExternalLipSync = false;
+  }
+
   // ── VRM animation (mixer + expressions + blink) ────────────────────
 
   private applyVRMAnimation(t: number, delta: number) {
@@ -261,11 +287,17 @@ export class CharacterAnimator {
       this.setExpressionTarget(name, value);
     }
 
-    // Mouth flap for talking state (procedural sine wave on top)
+    // Mouth flap for talking state — use external lip sync when available,
+    // otherwise fall back to procedural sine wave
     if (this.state === 'talking') {
-      this.mouthElapsed += delta;
-      const mouth = ((Math.sin(this.mouthElapsed * 5.5) + 1) * 0.5) * 0.5;
-      this.setExpressionTarget('aa', mouth);
+      if (this.useExternalLipSync) {
+        this.setExpressionTarget('aa', this.externalMouthAa);
+        this.setExpressionTarget('oh', this.externalMouthOh);
+      } else {
+        this.mouthElapsed += delta;
+        const mouth = ((Math.sin(this.mouthElapsed * 5.5) + 1) * 0.5) * 0.5;
+        this.setExpressionTarget('aa', mouth);
+      }
     }
   }
 

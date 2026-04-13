@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { useVoiceStore } from './voice';
-import type { VoiceProviderInfo, VoiceConfig } from '../types';
+import type { VoiceProviderInfo } from '../types';
 
 const mockInvoke = vi.fn();
 vi.mock('@tauri-apps/api/core', () => ({
