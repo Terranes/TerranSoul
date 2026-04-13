@@ -29,6 +29,37 @@ TerranSoul ships with four bundled VRM models that are available out of the box:
 
 You can switch between default models using the **dropdown** in the Model Panel, or by clicking the corresponding model card.
 
+### How Default Models Are Protected
+
+Default VRM models are encrypted at build time to protect the original creators' work.
+You don't need to do anything — encryption and decryption are handled automatically.
+
+```
+Build time (CI):
+  Raw .vrm files (stored in a private source, never in the Git repo)
+      ↓ AES-256-GCM encryption
+  .vrm.enc files bundled into the installer
+
+Runtime (your machine):
+  App requests a default model
+      ↓ Rust backend decrypts in memory
+  Decrypted bytes passed directly to the 3D renderer
+      ↓ Model appears in the viewport
+  Plaintext .vrm files are NEVER written to disk
+```
+
+- **Default models** are encrypted (`.vrm.enc`) and decrypted in memory by the
+  Rust backend. The decryption key is compiled into the app binary at build time —
+  you never need to configure or manage keys.
+- **Your imported models** (see below) are loaded directly from the path you choose.
+  They are your files, so they are **not** encrypted or modified by TerranSoul.
+
+### Managing Default Models
+
+Default models are managed by the TerranSoul team and updated automatically via
+app updates. You cannot add, remove, or replace them manually — they are part of
+the app bundle. To use your own models, see [Importing a Custom VRM Model](#importing-a-custom-vrm-model).
+
 ## Switching Between Default Models
 
 ### 1. Open the Model Panel
@@ -73,6 +104,36 @@ After loading:
 To switch back to a bundled default model, open the Model Panel and select a model from the **Default Model** dropdown or click the corresponding model card.
 
 ## How the Model is Used
+
+### Default models (encrypted)
+
+```
+App Startup / Model Switch
+        ↓
+invoke('load_vrm_secure', { modelId })
+        ↓
+Rust backend reads .vrm.enc from resource dir
+        ↓ AES-256-GCM decryption (in memory)
+Raw VRM bytes returned via Tauri IPC
+        ↓
+Frontend creates Blob URL → GLTFLoader → VRM scene
+        ↓
+CharacterAnimator → Three.js Render
+```
+
+### User-imported models (direct file load)
+
+```
+User selects .vrm file via "Import VRM Model"
+        ↓
+File path sent to Rust backend for persistence
+        ↓
+Frontend loads VRM directly via GLTFLoader
+        ↓
+CharacterAnimator → Three.js Render
+```
+
+### Chat interaction flow (both model types)
 
 ```
 Chat Message → Rust Backend → Stub Agent (with sentiment)

@@ -274,6 +274,60 @@ Build pipeline:
      the raw .vrm files.
 ```
 
+#### Key Distribution Architecture — How Clients Get the Decryption Key
+
+> **Q: "This app is released as an installer with auto-update. How do clients
+> know about the CI secret?"**
+>
+> **A: They don't.** The CI secret is compiled into the binary at build time.
+> End-users never see, handle, or configure the key.
+
+The encryption key flows through the build pipeline, not through user configuration:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  GitHub Actions (CI)                                            │
+│                                                                 │
+│  Secret: VRM_ENCRYPTION_KEY  (stored in Settings → Secrets)     │
+│          ↓                                                      │
+│  build.rs reads the env var at compile time:                    │
+│    let key = std::env::var("VRM_ENCRYPTION_KEY").unwrap();      │
+│    println!("cargo:rustc-env=VRM_KEY={}", key);                 │
+│          ↓                                                      │
+│  Rust compiler embeds it into the binary:                       │
+│    const KEY: &str = env!("VRM_KEY");                           │
+│          ↓                                                      │
+│  Tauri builds the installer (.msi / .dmg / .AppImage)           │
+│  with the compiled binary that has the key baked in.            │
+└─────────────────────────────────────────────────────────────────┘
+          ↓ installer download / auto-update
+┌─────────────────────────────────────────────────────────────────┐
+│  User's Machine                                                 │
+│                                                                 │
+│  1. User installs TerranSoul (or receives auto-update).         │
+│  2. The compiled Rust binary already contains the key.          │
+│  3. At runtime, load_vrm_secure() reads .vrm.enc from disk,    │
+│     decrypts in memory using the compiled-in key, and returns   │
+│     raw bytes to the frontend.                                  │
+│  4. User never sees, configures, or handles the key.            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key points:**
+
+- The CI secret `VRM_ENCRYPTION_KEY` lives **only** in GitHub Actions (Settings → Secrets).
+  It is never committed to source code, config files, or environment files.
+- `build.rs` reads it at compile time and injects it via `cargo:rustc-env`.
+  The `env!()` macro embeds the string into the compiled `.exe` / `.app` binary.
+- The installer ships this compiled binary. On auto-update, Tauri's updater
+  downloads a new binary that was also built by CI with the key embedded.
+- **Security trade-off:** A determined reverse engineer *can* extract the key
+  from the binary via disassembly or memory dump. This is an inherent limitation
+  of any client-side DRM. We mitigate with defense-in-depth layers (Step 7:
+  obfuscation, anti-tamper, zeroize). The goal is to make extraction **non-trivial**,
+  not mathematically impossible — matching the approach used by Steam, Unity,
+  and VRChat for their bundled assets.
+
 #### Step 3 — Runtime decryption in Rust backend
 
 The Tauri Rust backend decrypts models on demand, never writing plaintext to disk.
