@@ -10,7 +10,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:validate": "playwright test --config playwright-validate.config.ts && node scripts/copy-validation-video.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
