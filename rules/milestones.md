@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 050** — Window Mode System (Phase 5)
+**Chunk 060** — Voice Abstraction Layer (Phase 6)
 
 ---
 
@@ -190,13 +190,7 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 > streaming LLM responses, emotion-driven character reactions.
 > Patterns learned from Open-LLM-VTuber and aituber-kit — see `rules/research-reverse-engineering.md`.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 050 | **Window Mode System** — Dual-mode window: normal window mode (decorations, resizable, taskbar) + pet mode overlay (transparent, always-on-top, skip-taskbar). Pinia `WindowMode` store (`'window' \| 'pet'`). Tauri commands `set_window_mode` / `get_window_mode` that call `set_decorations`, `set_always_on_top`, `set_skip_taskbar`. System tray toggle between modes. Opacity-fade transition. Default to window mode on first launch. | `not-started` |
-| 051 | **Selective Click-Through** — In pet mode, clicks pass through empty areas but interact with character and chatbox. Frontend tracks mouse over interactive elements. On hover enter → `invoke('set_cursor_passthrough', false)`. On hover leave → `invoke('set_cursor_passthrough', true)`. Tauri command calls `window.set_ignore_cursor_events()`. Test on Windows + macOS (different behaviors per Open-LLM-VTuber). | `not-started` |
-| 052 | **Multi-Monitor Pet Mode** — Pet mode window spans all connected displays. Tauri command queries `available_monitors()`, calculates bounding rect, sets window bounds to combined rect. Character position stored relative to combined screen space. Allow dragging character between monitors. | `not-started` |
-| 053 | **Streaming LLM Responses** — Modify OllamaAgent to use streaming API (`/api/chat` with `stream: true`). Emit Tauri events for each text chunk. Frontend subscribes and appends text progressively. Character starts "talking" animation on first chunk (not after full response). Prepare for future TTS streaming. | `not-started` |
-| 054 | **Emotion Tags in LLM Responses** — System prompt instructs brain to tag emotions: `[happy] text`. Parse and strip tags before display. Map to VRM expressions (happy/sad/angry/relaxed/surprised/neutral). Optional motion tags `[motion:wave]`. Integrate with character-animator state machine. | `not-started` |
+✅ Phase 5 complete — see completion-log.md
 
 ---
 

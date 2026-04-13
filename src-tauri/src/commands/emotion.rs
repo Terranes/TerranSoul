@@ -55,11 +55,14 @@ pub fn parse_tags(input: &str) -> ParsedChunk {
     let mut emotion: Option<EmotionTag> = None;
     let mut motion: Option<String> = None;
 
-    // Simple regex-free bracket parser
+    // Simple regex-free bracket parser — scan from the beginning each iteration
+    // because recognized tags are removed (shifting indices).
+    let mut search_from = 0;
     loop {
-        let Some(start) = text.find('[') else { break };
-        let Some(end) = text[start..].find(']') else { break };
-        let end = start + end;
+        let Some(rel_start) = text[search_from..].find('[') else { break };
+        let start = search_from + rel_start;
+        let Some(rel_end) = text[start..].find(']') else { break };
+        let end = start + rel_end;
         let tag_content = &text[start + 1..end];
 
         if tag_content.starts_with("motion:") {
@@ -68,16 +71,15 @@ pub fn parse_tags(input: &str) -> ParsedChunk {
                 motion = Some(motion_name.to_string());
             }
             text = format!("{}{}", &text[..start], text[end + 1..].trim_start());
+            // Don't advance search_from — text was shortened, new content at `start`
         } else if let Some(em) = EmotionTag::from_str(tag_content) {
             if emotion.is_none() {
                 emotion = Some(em);
             }
             text = format!("{}{}", &text[..start], text[end + 1..].trim_start());
         } else {
-            // Not a recognized tag — skip past it to avoid infinite loop
-            // Move past this bracket pair by replacing just the opening bracket
-            // with a placeholder, process remaining, then restore
-            break;
+            // Not a recognized tag — skip past it and continue scanning
+            search_from = end + 1;
         }
     }
 
@@ -180,6 +182,13 @@ mod tests {
         // Unrecognized brackets stay in the text
         assert!(result.emotion.is_none());
         assert_eq!(result.text, "[unknown] Some text.");
+    }
+
+    #[test]
+    fn recognized_tag_after_unrecognized() {
+        let result = parse_tags("[unknown] [happy] Still works!");
+        assert_eq!(result.emotion, Some(EmotionTag::Happy));
+        assert_eq!(result.text, "[unknown] Still works!");
     }
 
     #[test]

@@ -1018,3 +1018,146 @@ Agents subscribe to topics and the message bus fans out published messages to al
 ### Test Counts
 - **Rust:** 15 new tests (message bus pub/sub/drain/peek/limits) — 280 total
 - **Vitest:** 11 new tests in messaging.test.ts — 200 total across 19 files
+
+---
+
+## Chunk 050 — Window Mode System
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Dual-mode window: normal window mode (decorations, resizable, taskbar) + pet mode overlay
+(transparent, always-on-top, skip-taskbar). Default to window mode on first launch.
+
+### Architecture
+- `commands/window.rs` — `WindowMode` enum (`Window` | `Pet`), `apply_window_mode()` helper,
+  3 Tauri commands: `set_window_mode`, `get_window_mode`, `toggle_window_mode`
+- `window_mode` field added to `AppState`
+- System tray "Switch to Pet Mode" menu item with event emission
+- `tauri.conf.json` updated: `decorations: true`, `alwaysOnTop: false`, `skipTaskbar: false`
+- `stores/window.ts` — Pinia store wrapping all window/monitor IPC
+
+### Files Created
+- `src-tauri/src/commands/window.rs` — Window mode commands + 4 Rust tests
+- `src/stores/window.ts` — Pinia window store
+- `src/stores/window.test.ts` — 15 Vitest tests
+
+### Files Modified
+- `src-tauri/src/lib.rs` — Added window_mode to AppState, registered 3 commands, tray toggle
+- `src-tauri/src/commands/mod.rs` — Added window module
+- `src-tauri/tauri.conf.json` — Switched defaults from pet to window mode
+- `src/types/index.ts` — Added WindowMode, MonitorInfo types
+
+### New Tauri Commands
+`set_window_mode` · `get_window_mode` · `toggle_window_mode`
+
+---
+
+## Chunk 051 — Selective Click-Through
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+In pet mode, clicks pass through empty areas but interact with character and chatbox.
+
+### Architecture
+- `set_cursor_passthrough` Tauri command in `commands/window.rs` — calls `window.set_ignore_cursor_events()`
+- Frontend `setCursorPassthrough(ignore: boolean)` in window store
+
+### Files Modified
+- `src-tauri/src/commands/window.rs` — Added `set_cursor_passthrough` command
+- `src/stores/window.ts` — Added `setCursorPassthrough` method
+- `src/stores/window.test.ts` — 3 click-through tests
+
+### New Tauri Commands
+`set_cursor_passthrough`
+
+---
+
+## Chunk 052 — Multi-Monitor Pet Mode
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Pet mode window spans all connected displays. Character can be dragged between monitors.
+
+### Architecture
+- `get_all_monitors` — queries `available_monitors()`, returns MonitorInfo vec
+- `set_pet_mode_bounds` — calculates bounding rect spanning all monitors, sets window position/size
+- Frontend `loadMonitors()` / `spanAllMonitors()` in window store
+
+### Files Modified
+- `src-tauri/src/commands/window.rs` — Added `get_all_monitors`, `set_pet_mode_bounds` commands
+- `src/stores/window.ts` — Added monitor methods
+- `src/stores/window.test.ts` — 3 monitor tests
+
+### New Tauri Commands
+`get_all_monitors` · `set_pet_mode_bounds`
+
+---
+
+## Chunk 053 — Streaming LLM Responses
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Modify OllamaAgent to use streaming API. Emit Tauri events for each text chunk. Character
+starts "talking" animation on first chunk (not after full response).
+
+### Architecture
+- `send_message_stream` command — streams from Ollama `/api/chat` with `stream: true`,
+  emits `llm-chunk` Tauri events with `{ text, done }` payload
+- Falls back to stub response (single chunk + done) when no brain is configured
+- Adds complete assistant message to conversation after stream finishes
+- `stores/streaming.ts` — Pinia store tracking `isStreaming`, `streamText`, `streamRawText`,
+  `currentEmotion`, `currentMotion`. `handleChunk()` parses emotion/motion tags from each chunk.
+- System prompt updated with emotion/motion tag instructions
+
+### Files Created
+- `src-tauri/src/commands/streaming.rs` — Streaming command + 4 Rust tests
+- `src/stores/streaming.ts` — Pinia streaming store
+- `src/stores/streaming.test.ts` — 11 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/mod.rs` — Added streaming module
+- `src-tauri/src/commands/chat.rs` — Added SYSTEM_PROMPT_FOR_STREAMING constant
+- `src-tauri/src/brain/ollama_agent.rs` — Added `infer_sentiment_static()` public method
+- `src-tauri/src/lib.rs` — Registered `send_message_stream` command
+
+### New Tauri Commands
+`send_message_stream` (emits `llm-chunk` events)
+
+---
+
+## Chunk 054 — Emotion Tags in LLM Responses
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+System prompt instructs brain to tag emotions: `[happy] text`. Parse and strip tags before
+display. Map to VRM expressions. Support optional motion tags `[motion:wave]`.
+
+### Architecture
+- Rust `commands/emotion.rs` — `EmotionTag` enum (happy/sad/angry/relaxed/surprised/neutral),
+  `ParsedChunk` struct, `parse_tags()` and `strip_tags()` functions
+- Frontend `utils/emotion-parser.ts` — Same parsing logic in TypeScript for streaming chunks
+- Streaming store integrates emotion parser: `currentEmotion` and `currentMotion` refs updated
+  on each chunk
+
+### Files Created
+- `src-tauri/src/commands/emotion.rs` — Emotion parser + 18 Rust tests
+- `src/utils/emotion-parser.ts` — TypeScript emotion parser
+- `src/utils/emotion-parser.test.ts` — 20 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/mod.rs` — Added emotion module
+- `src/types/index.ts` — Added EmotionTag, MotionTag, ParsedLlmChunk types
+
+### Test Counts (Phase 5 total)
+- **Rust:** 25 new tests (window 4 + streaming 4 + emotion 18) — 305 total
+- **Vitest:** 46 new tests (window 15 + streaming 11 + emotion 20) — 246 total across 22 files
