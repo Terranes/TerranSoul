@@ -71,7 +71,7 @@
         >
           <div class="bs-provider-header">
             <strong>{{ p.display_name }}</strong>
-            <span v-if="p.id === 'groq'" class="bs-badge">⭐ Recommended</span>
+            <span v-if="p.id === 'pollinations'" class="bs-badge">⭐ Recommended</span>
           </div>
           <p>{{ p.notes }}</p>
           <small>Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM</small>
@@ -267,7 +267,7 @@ const brain = useBrainStore();
 const step = ref(0);
 const selectedTier = ref<'free' | 'paid' | 'local'>('free');
 const selectedModel = ref('');
-const selectedProvider = ref('groq');
+const selectedProvider = ref('pollinations');
 const freeApiKey = ref<string | null>(null);
 const freeApiKeyInput = ref('');
 const pullDone = ref(false);

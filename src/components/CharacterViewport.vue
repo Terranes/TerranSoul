@@ -14,47 +14,66 @@
     <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
       <span>by {{ characterStore.vrmMetadata.author }}</span>
     </div>
-    <div class="top-controls">
-      <select
-        class="model-selector"
-        :value="characterStore.selectedModelId"
-        @change="handleModelChange"
-      >
-        <option
-          v-for="model in characterStore.defaultModels"
-          :key="model.id"
-          :value="model.id"
-        >{{ model.name }}</option>
-      </select>
-      <button class="import-vrm-btn" @click="openVrmPicker">Import VRM</button>
-      <input
-        ref="vrmInputRef"
-        class="hidden-file-input"
-        type="file"
-        accept=".vrm"
-        @change="handleVrmImport"
-      />
-    </div>
-    <div class="background-controls">
-      <span class="background-label">Background</span>
-      <button
-        v-for="background in backgroundStore.allBackgrounds"
-        :key="background.id"
-        class="background-chip"
-        :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
-        @click="backgroundStore.selectBackground(background.id)"
-      >
-        {{ background.name }}
+
+    <!-- ── Corner settings dropdown ── -->
+    <div class="settings-corner" ref="settingsRef">
+      <button class="settings-toggle" @click.stop="settingsOpen = !settingsOpen" aria-label="Settings">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+        </svg>
       </button>
-      <button class="import-bg-btn" @click="openBackgroundPicker">Import BG</button>
-      <input
-        ref="backgroundInputRef"
-        class="hidden-file-input"
-        type="file"
-        accept="image/*"
-        @change="handleBackgroundImport"
-      />
+      <Transition name="dropdown">
+        <div v-if="settingsOpen" class="settings-dropdown" @click.stop>
+          <!-- Model selector -->
+          <div class="dropdown-section">
+            <label class="dropdown-label">Character</label>
+            <select
+              class="model-selector"
+              :value="characterStore.selectedModelId"
+              @change="handleModelChange"
+            >
+              <option
+                v-for="model in characterStore.defaultModels"
+                :key="model.id"
+                :value="model.id"
+              >{{ model.name }}</option>
+            </select>
+            <button class="dropdown-btn" @click="openVrmPicker">📁 Import VRM</button>
+            <input
+              ref="vrmInputRef"
+              class="hidden-file-input"
+              type="file"
+              accept=".vrm"
+              @change="handleVrmImport"
+            />
+          </div>
+          <!-- Background selector -->
+          <div class="dropdown-section">
+            <label class="dropdown-label">Background</label>
+            <div class="bg-chips">
+              <button
+                v-for="background in backgroundStore.allBackgrounds"
+                :key="background.id"
+                class="background-chip"
+                :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
+                @click="backgroundStore.selectBackground(background.id)"
+              >
+                {{ background.name }}
+              </button>
+            </div>
+            <button class="dropdown-btn" @click="openBackgroundPicker">🖼 Import BG</button>
+            <input
+              ref="backgroundInputRef"
+              class="hidden-file-input"
+              type="file"
+              accept="image/*"
+              @change="handleBackgroundImport"
+            />
+          </div>
+        </div>
+      </Transition>
     </div>
+
     <div v-if="backgroundStore.importError" class="background-error-banner">
       {{ backgroundStore.importError }}
     </div>
@@ -88,6 +107,8 @@ const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 const backgroundInputRef = ref<HTMLInputElement | null>(null);
 const vrmInputRef = ref<HTMLInputElement | null>(null);
 const localVrmObjectUrl = ref<string | null>(null);
+const settingsOpen = ref(false);
+const settingsRef = ref<HTMLElement | null>(null);
 
 const characterName = computed(() => {
   return characterStore.vrmMetadata?.title ?? 'TerranSoul';
@@ -158,6 +179,12 @@ function handleKeyDown(e: KeyboardEvent) {
   }
 }
 
+function handleClickOutside(e: MouseEvent) {
+  if (settingsRef.value && !settingsRef.value.contains(e.target as Node)) {
+    settingsOpen.value = false;
+  }
+}
+
 onMounted(async () => {
   backgroundStore.ensureValidSelection();
 
@@ -191,12 +218,14 @@ onMounted(async () => {
   loop();
 
   window.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('click', handleClickOutside);
 });
 
 onUnmounted(() => {
   cancelAnimationFrame(animFrameId);
   disposeScene?.();
   window.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('click', handleClickOutside);
   if (localVrmObjectUrl.value) {
     URL.revokeObjectURL(localVrmObjectUrl.value);
   }
@@ -319,79 +348,142 @@ watch(
   letter-spacing: 0.02em;
 }
 
-.top-controls {
+/* ── Corner settings dropdown ── */
+.settings-corner {
   position: absolute;
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  z-index: 6;
+  right: 60px;
+  z-index: 20;
 }
 
-.background-controls {
-  position: absolute;
-  top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-  max-width: min(92vw, 920px);
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.46);
-  backdrop-filter: blur(10px);
-  z-index: 6;
-}
-
-.background-label {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.background-chip,
-.import-bg-btn {
-  padding: 7px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-size: 0.76rem;
-  font-weight: 600;
+.settings-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s, transform 0.15s;
+}
+.settings-toggle:hover {
+  background: rgba(59, 130, 246, 0.5);
+  transform: scale(1.08);
 }
 
-.background-chip:hover,
-.import-bg-btn:hover {
-  background: rgba(255, 255, 255, 0.22);
-  transform: translateY(-1px);
+.settings-dropdown {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  width: 280px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
-.background-chip.active {
-  background: rgba(59, 130, 246, 0.9);
-  border-color: rgba(191, 219, 254, 0.85);
+.dropdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.import-bg-btn {
-  background: rgba(168, 85, 247, 0.88);
-  border-color: rgba(233, 213, 255, 0.7);
+.dropdown-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dropdown-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+.dropdown-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.bg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Dropdown transition */
+.dropdown-enter-active, .dropdown-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.dropdown-enter-from, .dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.96);
+}
+
+.model-selector {
+  width: 100%;
+  padding: 7px 28px 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.7)'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.model-selector:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+.model-selector option {
+  background: #1e293b;
+  color: #f1f5f9;
 }
 
 .hidden-file-input {
   display: none;
 }
 
+.background-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.background-chip:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.background-chip.active {
+  background: rgba(59, 130, 246, 0.85);
+  border-color: rgba(191, 219, 254, 0.85);
+}
+
 .background-error-banner {
   position: absolute;
-  top: 108px;
+  top: 56px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;
@@ -402,51 +494,6 @@ watch(
   font-size: 0.76rem;
   font-weight: 600;
   backdrop-filter: blur(8px);
-}
-
-.model-selector {
-  min-width: 220px;
-  padding: 7px 28px 7px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 0.82rem;
-  backdrop-filter: blur(6px);
-  cursor: pointer;
-  outline: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.7)'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
-.model-selector:hover {
-  background-color: rgba(59, 130, 246, 0.3);
-  border-color: rgba(59, 130, 246, 0.5);
-}
-.model-selector option {
-  background: #1e293b;
-  color: #f1f5f9;
-}
-
-.import-vrm-btn {
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(99, 102, 241, 0.55);
-  background: rgba(79, 70, 229, 0.82);
-  color: #fff;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.28);
-  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
-}
-
-.import-vrm-btn:hover {
-  background: rgba(99, 102, 241, 0.96);
-  border-color: rgba(129, 140, 248, 0.9);
-  transform: translateY(-1px);
 }
 
 .state-badge {

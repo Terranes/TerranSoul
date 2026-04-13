@@ -10,12 +10,6 @@
         @click.stop="toggleDialog"
         aria-label="Toggle dialog"
       >💬</button>
-      <ModelPanel v-if="showModelPanel" @close="showModelPanel = false" />
-      <button class="model-panel-toggle" @click.stop="showModelPanel = !showModelPanel" aria-label="Toggle model panel">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
-        </svg>
-      </button>
     </div>
 
     <!-- Toggleable chat dialog -->
@@ -96,13 +90,11 @@ import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
-import ModelPanel from '../components/ModelPanel.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const streaming = useStreamingStore();
-const showModelPanel = ref(false);
 const showDialog = ref(true);
 const selectedBrain = ref('');
 let unlistenLlmChunk: (() => void) | null = null;
@@ -130,7 +122,7 @@ async function activateFreeApi() {
   try {
     await brain.setBrainMode({
       mode: 'free_api',
-      provider_id: 'groq',
+      provider_id: 'pollinations',
       api_key: null,
     });
   } catch {
@@ -269,26 +261,6 @@ onUnmounted(() => {
 /* Slide transition */
 .slide-enter-active, .slide-leave-active { transition: transform 0.25s ease, opacity 0.25s ease; }
 .slide-enter-from, .slide-leave-to { transform: translateY(100%); opacity: 0; }
-
-.model-panel-toggle {
-  position: absolute;
-  top: 40px;
-  right: 16px;
-  z-index: 10;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(4px);
-  transition: background 0.2s, color 0.2s;
-}
-.model-panel-toggle:hover { background: rgba(108, 99, 255, 0.4); color: #fff; }
 
 /* ── Inline brain setup ── */
 .brain-inline { padding: 10px 12px 4px; flex-shrink: 0; }
