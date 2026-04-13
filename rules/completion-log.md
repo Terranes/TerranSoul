@@ -1161,3 +1161,54 @@ display. Map to VRM expressions. Support optional motion tags `[motion:wave]`.
 ### Test Counts (Phase 5 total)
 - **Rust:** 25 new tests (window 4 + streaming 4 + emotion 18) — 305 total
 - **Vitest:** 46 new tests (window 15 + streaming 11 + emotion 20) — 246 total across 22 files
+
+---
+
+## Chunk 055 — Free LLM API Provider Registry & OpenAI-Compatible Client
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Curate a free LLM API provider catalogue from awesome-free-llm-apis. Build a generic
+OpenAI-compatible chat client that works for all providers (POST `/v1/chat/completions`
+with SSE streaming). Create a three-tier `BrainMode` enum (FreeApi / PaidApi / LocalOllama)
+with JSON persistence and legacy migration from `active_brain.txt`.
+
+### Architecture
+- `brain/free_api.rs` — `FreeProvider` struct with `id`, `display_name`, `base_url`, `model`,
+  `rpm_limit`, `rpd_limit`, `requires_api_key`, `notes`. Curated catalogue of 8 providers:
+  Groq, Cerebras, SiliconFlow, Mistral, GitHub Models, OpenRouter, NVIDIA NIM, Google Gemini.
+- `brain/openai_client.rs` — `OpenAiClient` with `chat()` (non-streaming) and `chat_stream()`
+  (SSE streaming with callback). Handles `data: {...}` SSE lines and `data: [DONE]` sentinel.
+  Bearer auth when API key provided. Works with any OpenAI-compatible endpoint.
+- `brain/brain_config.rs` — `BrainMode` enum with serde tagged JSON (`"mode":"free_api"` /
+  `"mode":"paid_api"` / `"mode":"local_ollama"`). `load()` checks new `brain_config.json`
+  first, falls back to legacy `active_brain.txt` for migration. `save()` writes JSON.
+  `clear()` removes both new and legacy config files.
+- `commands/brain.rs` — `list_free_providers`, `get_brain_mode`, `set_brain_mode` Tauri commands.
+  `set_brain_mode` also updates legacy `active_brain` field for backwards compatibility.
+- `AppState` gains `brain_mode: Mutex<Option<BrainMode>>` field, loaded on startup.
+- Frontend `types/index.ts` — `FreeProvider` and `BrainMode` TypeScript types.
+- Frontend `stores/brain.ts` — `fetchFreeProviders()`, `loadBrainMode()`, `setBrainMode()`.
+  `hasBrain` computed now considers `brainMode` in addition to `activeBrain`.
+
+### Files Created
+- `src-tauri/src/brain/free_api.rs` — Free provider catalogue + 8 Rust tests
+- `src-tauri/src/brain/openai_client.rs` — OpenAI-compatible client + 11 Rust tests
+- `src-tauri/src/brain/brain_config.rs` — BrainMode config + 12 Rust tests
+
+### Files Modified
+- `src-tauri/src/brain/mod.rs` — Added free_api, openai_client, brain_config modules
+- `src-tauri/src/commands/brain.rs` — Added 3 new Tauri commands + 2 Rust tests
+- `src-tauri/src/lib.rs` — Registered new commands, added brain_mode to AppState
+- `src/types/index.ts` — Added FreeProvider, BrainMode types
+- `src/stores/brain.ts` — Added three-tier brain methods
+- `src/stores/brain.test.ts` — Added 9 new Vitest tests
+
+### New Tauri Commands
+`list_free_providers` · `get_brain_mode` · `set_brain_mode`
+
+### Test Counts (Phase 5.5 — Chunk 055)
+- **Rust:** 33 new tests (free_api 8 + openai_client 11 + brain_config 12 + commands 2) — 361 total
+- **Vitest:** 9 new tests — 264 total across 23 files
