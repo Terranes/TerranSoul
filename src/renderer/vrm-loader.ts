@@ -68,6 +68,9 @@ export function setNaturalBonePose(vrm: VRM): void {
  */
 export function applyNaturalPose(vrm: VRM): void {
   setNaturalBonePose(vrm);
+  // With autoUpdateHumanBones: false, we must explicitly push normalized
+  // bone transforms to the raw skeleton before calling vrm.update().
+  vrm.humanoid?.update();
   vrm.update(0);
 }
 
