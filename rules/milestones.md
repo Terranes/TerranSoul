@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 058** — Provider Health Check & Rate-Limit Rotation (Phase 5.5)
+**Chunk 059** — Provider Health Check & Rate-Limit Rotation (Phase 5.5)
 
 ---
 
@@ -142,9 +142,14 @@ migration. 3 Tauri commands, 33 Rust tests, 9 Vitest tests.
 Streaming routes through BrainMode (free API SSE / paid API SSE / Ollama NDJSON).
 Auto-configure free API when Tauri unavailable. Three-tier setup wizard. 1 E2E test.
 
+✅ Chunk 058 — Emotion Expansion & UI Fixes — see `rules/completion-log.md`
+
+CharacterState expanded (angry/relaxed/surprised). 9 new animation variants. Thumbnail cropping
+fixed. Welcome state for empty chat. 4 new E2E tests. 3 new Vitest tests. 272 Vitest + 28 E2E total.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 058 | **Provider Health Check & Rate-Limit Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
+| 059 | **Provider Health Check & Rate-Limit Rotation** — `ProviderRotator` that tracks per-provider usage (requests sent, rate-limit headers parsed from responses: `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`). On 429 or exhausted quota → automatically try next healthy provider. On app start, health-check all free providers in parallel, sort by response time. Notification when all free providers exhausted. Rust tests for rotation logic, fallback behavior. | `not-started` |
 
 ---
 

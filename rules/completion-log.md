@@ -1254,3 +1254,43 @@ Write a single consolidated E2E test for free LLM brain (to avoid spamming free 
 - **Rust:** 3 new tests (streaming routing) — 364 total
 - **Vitest:** 5 new tests (auto-configure) — 269 total across 23 files
 - **E2E:** 1 new test (free LLM brain) — 28 total (27 existing + 1 new)
+
+---
+
+## Chunk 058 — Emotion Expansion & UI Fixes
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Extend the character emotion system from 5 states to 8 (adding angry, relaxed, surprised).
+Fix VRM thumbnail cropping in model panel. Add welcome/empty state to chat. Focus on
+different emotions and animations when the brain is installed.
+
+### Architecture
+- `types/index.ts` — CharacterState expanded: `'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised'`. Message sentiment expanded to include all 6 emotion tags.
+- `animation-loader.ts` — PersonaAnimationData interface updated with angry/relaxed/surprised fields. States array expanded.
+- `witch.json` + `idol.json` — 9 new animation variants (3 states × 3 variants each) with varied durations, loop_sin continuity, and natural bone rotation limits.
+- `character-animator.ts` — STATE_EXPRESSIONS for new emotions (angry: 0.7 angry expression, relaxed: 0.6 relaxed + 0.15 happy, surprised: 0.8 surprised). Placeholder animations for all new states.
+- `conversation.ts` — Persona fallback detects angry (angry/furious/frustrated), relaxed (relax/calm/peaceful), and surprised (surprise/wow/amazing) keywords.
+- `ChatView.vue` — sentimentToState expanded to route all 6 emotions to character states.
+- `CharacterViewport.vue` — State badge CSS for angry (red), relaxed (teal), surprised (amber).
+- `ModelPanel.vue` — Thumbnail cropping fixed: `object-fit: cover` → `object-fit: contain`, size 40→56px, subtle background.
+- `ChatMessageList.vue` — Welcome state shown when messages are empty: icon, title, hint text.
+
+### Files Modified
+- `src/types/index.ts` — CharacterState + Message sentiment expansion
+- `src/renderer/animation-loader.ts` — PersonaAnimationData + states array
+- `src/renderer/animations/witch.json` — 9 new animation variants
+- `src/renderer/animations/idol.json` — 9 new animation variants
+- `src/renderer/character-animator.ts` — STATE_EXPRESSIONS + placeholder animations
+- `src/stores/conversation.ts` — Persona fallback emotion detection
+- `src/views/ChatView.vue` — sentimentToState expansion
+- `src/components/CharacterViewport.vue` — State badge CSS
+- `src/components/ModelPanel.vue` — Thumbnail cropping fix
+- `src/components/ChatMessageList.vue` — Welcome state
+
+### Test Counts (Chunk 058)
+- **Vitest:** 3 new tests (angry/relaxed/surprised placeholder) — 272 total across 23 files
+- **E2E:** 4 new tests (angry/relaxed/surprised emotions + 8-emotion cycle) — 28 total
+- **E2E fix:** Model selector option count 4→2
