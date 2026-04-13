@@ -135,7 +135,7 @@
               <!-- Chat hint -->
               <p class="llm-chat-hint">
                 💬 <strong>Tip:</strong> You can also ask TerranSoul in chat to change the model —
-                e.g. <em>"Switch to Groq"</em> or <em>"Use OpenAI with my API key"</em>.
+                e.g. <em>"Switch to Groq"</em> or <em>"Use my OpenAI API key"</em>.
               </p>
             </div>
           </div>
@@ -407,7 +407,7 @@ const llmConfirmation = ref<{ name: string; url: string } | null>(null);
 const llmPaidProvider = ref('openai');
 const llmPaidApiKey = ref('');
 const llmPaidModel = ref('gpt-4o');
-const llmPaidBaseUrl = ref('https://api.example.com');
+const llmPaidBaseUrl = ref('');
 
 const currentFreeProviderId = computed(() =>
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : null,

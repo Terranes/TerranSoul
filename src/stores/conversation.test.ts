@@ -64,7 +64,7 @@ describe('conversation store — no brain (persona fallback)', () => {
     await store.sendMessage('How are you?');
 
     expect(store.messages[1].content).not.toContain('You said:');
-    expect(store.messages[1].content).toContain('set up a brain');
+    expect(store.messages[1].content).toContain('configure a brain');
   });
 
   it('multiple messages accumulate in correct order', async () => {

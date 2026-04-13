@@ -33,7 +33,7 @@ function createPersonaResponse(content: string): Message {
     response = "That's wonderful to hear! Your positive energy is contagious! ✨";
     sentiment = 'happy';
   } else {
-    response = `Hello! I'm TerranSoul. Please set up a brain (free cloud API or local Ollama) so I can have a real conversation with you!`;
+    response = `Hello! I'm TerranSoul. Please configure a brain (free cloud API or paid API) in the Marketplace so I can have a real conversation with you!`;
     sentiment = 'neutral';
   }
 
