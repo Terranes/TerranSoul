@@ -249,7 +249,7 @@ export interface VoiceProviderInfo {
   id: string;
   display_name: string;
   description: string;
-  kind: 'local' | 'cloud' | 'external';
+  kind: 'local' | 'cloud';
   requires_api_key: boolean;
 }
 

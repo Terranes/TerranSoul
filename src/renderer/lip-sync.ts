@@ -1,8 +1,8 @@
 /**
  * Web Audio API-based lip sync engine.
  *
- * Analyses audio output (from TTS or Open-LLM-VTuber) in real-time using an
- * `AnalyserNode` and maps volume levels to VRM mouth morph targets (`aa`, `oh`).
+ * Analyses audio output (from TTS) in real-time using an `AnalyserNode`
+ * and maps volume levels to VRM mouth morph targets (`aa`, `oh`).
  *
  * Provider-agnostic — works with any audio source that can be connected to
  * the Web Audio API (HTMLAudioElement, MediaStream, AudioBufferSource, etc.).
@@ -13,9 +13,6 @@
  *   // In your animation loop:
  *   const { aa, oh } = lipSync.getMouthValues();
  *   // Apply to VRM expression manager
- *
- * Reference: Open-LLM-VTuber uses a similar volume-to-mouth approach
- * with per-frame RMS volumes sent alongside audio data.
  */
 
 export interface MouthValues {
@@ -163,9 +160,9 @@ export class LipSync {
   }
 
   /**
-   * Get mouth values from pre-computed volume levels (e.g. from Open-LLM-VTuber).
-   * Open-LLM-VTuber sends `volumes: number[]` with each audio chunk.
-   * Call this with the current volume at the current playback position.
+   * Get mouth values from pre-computed volume levels.
+   * Useful when the audio source provides per-frame RMS volumes
+   * alongside the audio data. Call with the current volume at playback position.
    */
   static mouthValuesFromVolume(volume: number, sensitivity: number = 1.5): MouthValues {
     const scaledVolume = Math.min(1, Math.max(0, volume) * sensitivity);

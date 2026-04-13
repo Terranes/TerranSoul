@@ -20,25 +20,15 @@
       </p>
       <div class="vs-tiers">
         <div
-          :class="['vs-tier', { selected: selectedMode === 'open-llm-vtuber' }]"
-          @click="selectedMode = 'open-llm-vtuber'"
-        >
-          <div class="vs-tier-header">
-            <strong>🌐 Open-LLM-VTuber</strong>
-            <span class="vs-badge-rec">⭐ Recommended</span>
-          </div>
-          <p>Connect to a running Open-LLM-VTuber server. Supports 18+ TTS and 7+ ASR engines.</p>
-          <small>Requires Open-LLM-VTuber running locally · Free</small>
-        </div>
-        <div
           :class="['vs-tier', { selected: selectedMode === 'browser' }]"
           @click="selectedMode = 'browser'"
         >
           <div class="vs-tier-header">
             <strong>🖥 Browser Voice</strong>
+            <span class="vs-badge-rec">⭐ Free</span>
           </div>
-          <p>Use the browser's built-in Web Speech API. Zero setup, limited accuracy.</p>
-          <small>No downloads needed · Works offline on supported browsers</small>
+          <p>Use the browser's built-in Web Speech API for input, and Edge TTS for high-quality output.</p>
+          <small>No downloads or API keys needed · Works out of the box</small>
         </div>
         <div
           :class="['vs-tier', { selected: selectedMode === 'cloud' }]"
@@ -65,69 +55,24 @@
       </button>
     </div>
 
-    <!-- ── Step 1A: Open-LLM-VTuber config ── -->
-    <div v-else-if="step === 1 && selectedMode === 'open-llm-vtuber'" class="vs-card">
-      <h2>🌐 Open-LLM-VTuber Connection</h2>
-      <p class="vs-desc">
-        Enter the WebSocket URL of your running Open-LLM-VTuber server.
-        The default URL is <code>ws://localhost:12393/client-ws</code>.
-      </p>
-      <div class="vs-form">
-        <label for="ollv-url-input">WebSocket URL:</label>
-        <input
-          id="ollv-url-input"
-          v-model="ollvUrl"
-          type="url"
-          placeholder="ws://localhost:12393/client-ws"
-          class="vs-input"
-        />
-      </div>
-      <div :class="['vs-status', ollvHealthy === true ? 'ok' : ollvHealthy === false ? 'error' : '']">
-        <template v-if="ollvChecking">
-          <span class="vs-spinner" /> Checking connection…
-        </template>
-        <template v-else-if="ollvHealthy === true">
-          ✅ Connected to Open-LLM-VTuber server
-        </template>
-        <template v-else-if="ollvHealthy === false">
-          ❌ Cannot connect. Make sure Open-LLM-VTuber is running.
-        </template>
-      </div>
-      <div class="vs-install-hint">
-        <p><strong>Don't have Open-LLM-VTuber?</strong></p>
-        <ol>
-          <li>Clone: <code>git clone https://github.com/Open-LLM-VTuber/Open-LLM-VTuber</code></li>
-          <li>Install dependencies and configure your preferred TTS/ASR engines</li>
-          <li>Run the server: <code>python run_server.py</code></li>
-          <li>Click "Check Connection" below</li>
-        </ol>
-      </div>
-      <div class="vs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
-        <button class="btn-secondary" @click="checkOllvHealth">🔄 Check Connection</button>
-        <button class="btn-primary" :disabled="ollvHealthy !== true" @click="activateOllv">
-          Activate →
-        </button>
-      </div>
-    </div>
-
-    <!-- ── Step 1B: Browser voice ── -->
+    <!-- ── Step 1A: Browser voice ── -->
     <div v-else-if="step === 1 && selectedMode === 'browser'" class="vs-card">
       <h2>🖥 Browser Voice</h2>
       <p class="vs-desc">
-        Uses the Web Speech API built into your browser. No downloads or API keys needed.
+        Uses the Web Speech API for speech input and Edge TTS for high-quality voice output.
+        No downloads or API keys needed.
       </p>
       <div class="vs-provider-list">
         <div class="vs-provider-item">
           <strong>ASR:</strong> Web Speech API (browser-native)
         </div>
         <div class="vs-provider-item">
-          <strong>TTS:</strong> Not available (text-only output)
+          <strong>TTS:</strong> Edge TTS (free, Microsoft neural voices)
         </div>
       </div>
       <p class="vs-note">
-        💡 The Web Speech API works best in Chrome. For higher-quality voice, consider
-        connecting to Open-LLM-VTuber.
+        💡 The Web Speech API works best in Chrome. Edge TTS provides high-quality
+        neural voices in many languages — all running through Tauri's Rust backend.
       </p>
       <div class="vs-nav">
         <button class="btn-secondary" @click="step = 0">← Back</button>
@@ -135,7 +80,7 @@
       </div>
     </div>
 
-    <!-- ── Step 1C: Cloud API ── -->
+    <!-- ── Step 1B: Cloud API ── -->
     <div v-else-if="step === 1 && selectedMode === 'cloud'" class="vs-card">
       <h2>☁️ Cloud Voice API</h2>
       <p class="vs-desc">
@@ -177,12 +122,9 @@
     <div v-else-if="step === 99" class="vs-card vs-done">
       <div class="vs-done-icon">🎉</div>
       <h2>Voice configured!</h2>
-      <p v-if="selectedMode === 'open-llm-vtuber'">
-        Connected to <strong>Open-LLM-VTuber</strong> at <code>{{ ollvUrl }}</code>.
-        TTS and ASR are handled by the server.
-      </p>
-      <p v-else-if="selectedMode === 'browser'">
-        Using <strong>Web Speech API</strong> for speech input.
+      <p v-if="selectedMode === 'browser'">
+        Using <strong>Web Speech API</strong> for speech input and
+        <strong>Edge TTS</strong> for voice output.
       </p>
       <p v-else-if="selectedMode === 'cloud'">
         Using <strong>OpenAI</strong> cloud APIs for
@@ -199,20 +141,14 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useVoiceStore } from '../stores/voice';
-import { OllvClient, DEFAULT_OLLV_WS_URL } from '../utils/ollv-client';
 
 const emit = defineEmits<{ (e: 'done'): void }>();
 
 const voice = useVoiceStore();
 const step = ref(0);
-const selectedMode = ref<'open-llm-vtuber' | 'browser' | 'cloud' | 'text-only' | null>(null);
+const selectedMode = ref<'browser' | 'cloud' | 'text-only' | null>(null);
 
 const stepLabels = ['Choose', 'Configure', 'Done'];
-
-// Open-LLM-VTuber config
-const ollvUrl = ref(DEFAULT_OLLV_WS_URL);
-const ollvHealthy = ref<boolean | null>(null);
-const ollvChecking = ref(false);
 
 // Cloud config
 const cloudApiKey = ref('');
@@ -227,28 +163,9 @@ function goToConfig() {
   }
 }
 
-async function checkOllvHealth() {
-  ollvChecking.value = true;
-  ollvHealthy.value = null;
-  try {
-    ollvHealthy.value = await OllvClient.healthCheck(ollvUrl.value, 3000);
-  } catch {
-    ollvHealthy.value = false;
-  } finally {
-    ollvChecking.value = false;
-  }
-}
-
-async function activateOllv() {
-  await voice.setAsrProvider('open-llm-vtuber');
-  await voice.setTtsProvider('open-llm-vtuber');
-  await voice.setEndpointUrl(ollvUrl.value);
-  step.value = 99;
-}
-
 async function activateBrowser() {
   await voice.setAsrProvider('web-speech');
-  await voice.setTtsProvider(null);
+  await voice.setTtsProvider('edge-tts');
   step.value = 99;
 }
 
@@ -309,17 +226,11 @@ onMounted(async () => {
 .vs-status { padding: 0.75rem 1rem; border-radius: 8px; font-weight: 500; display: flex; align-items: center; gap: 0.5rem; min-height: 3rem; }
 .vs-status.ok { background: #1a2e1a; color: #86efac; }
 .vs-status.error { background: #2d1c1c; color: #fca5a5; }
-.vs-spinner { width: 16px; height: 16px; border: 2px solid #334155; border-top-color: #8b5cf6; border-radius: 50%; animation: vs-spin 0.8s linear infinite; display: inline-block; }
-@keyframes vs-spin { to { transform: rotate(360deg); } }
 
 /* Provider list */
 .vs-provider-list { display: flex; flex-direction: column; gap: 0.4rem; background: #0f172a; border-radius: 8px; padding: 0.75rem 1rem; }
 .vs-provider-item { font-size: 0.85rem; color: #94a3b8; }
 .vs-note { font-size: 0.8rem; color: #64748b; background: #0f172a; border-radius: 8px; padding: 0.75rem 1rem; margin: 0; }
-
-/* Install hint */
-.vs-install-hint { background: #0f172a; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; color: #94a3b8; }
-.vs-install-hint ol { margin: 0.5rem 0 0 1.25rem; line-height: 1.8; }
 
 /* Navigation */
 .vs-nav { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem; }

@@ -21,7 +21,7 @@ pub struct TranscriptionResult {
 /// Automatic Speech Recognition engine trait.
 ///
 /// Implementors convert audio input into text. Each provider (Whisper API,
-/// Web Speech API, Open-LLM-VTuber, etc.) implements this trait.
+/// Web Speech API, etc.) implements this trait.
 #[async_trait]
 pub trait AsrEngine: Send + Sync {
     /// Unique provider identifier (e.g. "whisper-api", "sherpa-onnx").
@@ -53,7 +53,7 @@ pub struct SynthesisResult {
 /// Text-to-Speech engine trait.
 ///
 /// Implementors convert text into audio. Each provider (Edge TTS, OpenAI TTS,
-/// Open-LLM-VTuber, etc.) implements this trait.
+/// etc.) implements this trait.
 #[async_trait]
 pub trait TtsEngine: Send + Sync {
     /// Unique provider identifier (e.g. "edge-tts", "openai-tts").
@@ -80,7 +80,7 @@ pub struct VoiceProviderInfo {
     pub display_name: String,
     /// Short description of the provider.
     pub description: String,
-    /// Provider kind: "local", "cloud", or "external".
+    /// Provider kind: "local" or "cloud".
     pub kind: String,
     /// Whether the provider requires an API key.
     pub requires_api_key: bool,
@@ -95,7 +95,7 @@ pub struct VoiceConfig {
     pub tts_provider: Option<String>,
     /// Optional API key for cloud providers (stored in app-data, not source).
     pub api_key: Option<String>,
-    /// Optional endpoint URL for external providers (e.g. Open-LLM-VTuber WebSocket).
+    /// Optional endpoint URL for custom cloud providers.
     pub endpoint_url: Option<String>,
 }
 
@@ -125,13 +125,6 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             kind: "cloud".into(),
             requires_api_key: true,
         },
-        VoiceProviderInfo {
-            id: "open-llm-vtuber".into(),
-            display_name: "Open-LLM-VTuber".into(),
-            description: "Connect to a running Open-LLM-VTuber server. Supports 7+ ASR engines via WebSocket.".into(),
-            kind: "external".into(),
-            requires_api_key: false,
-        },
     ]
 }
 
@@ -158,13 +151,6 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Cloud-based synthesis via OpenAI. Best quality, requires API key.".into(),
             kind: "cloud".into(),
             requires_api_key: true,
-        },
-        VoiceProviderInfo {
-            id: "open-llm-vtuber".into(),
-            display_name: "Open-LLM-VTuber".into(),
-            description: "Connect to a running Open-LLM-VTuber server. Supports 18+ TTS engines via WebSocket.".into(),
-            kind: "external".into(),
-            requires_api_key: false,
         },
     ]
 }

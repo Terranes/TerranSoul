@@ -6,8 +6,6 @@
  *   - onSpeechStart — speech detected, pause AI audio, capture mic
  *   - onSpeechEnd   — speech ended, audio data ready for ASR
  *   - Echo cancellation: mute TTS during mic capture
- *
- * Pattern reference: Open-LLM-VTuber-Web/src/renderer/src/context/vad-context.tsx
  */
 import { ref, computed, onUnmounted } from 'vue';
 

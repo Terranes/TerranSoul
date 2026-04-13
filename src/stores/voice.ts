@@ -13,21 +13,14 @@ const FALLBACK_ASR_PROVIDERS: VoiceProviderInfo[] = [
     kind: 'local',
     requires_api_key: false,
   },
-  {
-    id: 'open-llm-vtuber',
-    display_name: 'Open-LLM-VTuber',
-    description: 'Connect to a running Open-LLM-VTuber server. Supports 7+ ASR engines via WebSocket.',
-    kind: 'external',
-    requires_api_key: false,
-  },
 ];
 
 const FALLBACK_TTS_PROVIDERS: VoiceProviderInfo[] = [
   {
-    id: 'open-llm-vtuber',
-    display_name: 'Open-LLM-VTuber',
-    description: 'Connect to a running Open-LLM-VTuber server. Supports 18+ TTS engines via WebSocket.',
-    kind: 'external',
+    id: 'edge-tts',
+    display_name: 'Edge TTS (free)',
+    description: 'Microsoft Edge neural voices. Free, high quality, many languages.',
+    kind: 'cloud',
     requires_api_key: false,
   },
 ];
