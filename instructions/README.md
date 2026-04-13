@@ -13,7 +13,7 @@ This folder contains guides for working with 3D models in TerranSoul.
 
 1. Launch TerranSoul — **Annabelle the Sorcerer** loads automatically as the default character
 2. Click the **ℹ** button in the top-right of the 3D viewport to open the Model Panel
-3. Use the **Default Model** dropdown to switch between bundled models (Annabelle, M58, Miyoura Toshie, Nogami Juto)
+3. Use the **Default Model** dropdown to switch between bundled models (Annabelle, M58)
 4. Or click **Import VRM Model** to load a custom `.vrm` file from your computer
 5. Your character appears in the viewport and reacts to chat messages
 
@@ -27,14 +27,12 @@ TerranSoul supports:
 
 ## Default Character
 
-TerranSoul ships with four bundled VRM models in `public/models/default/`:
+TerranSoul ships with two bundled VRM models in `public/models/default/`:
 
 | Model | File | Description |
 |-------|------|-------------|
 | Annabelle the Sorcerer | `Annabelle the Sorcerer.vrm` | Default character (loaded on startup) |
 | M58 | `M58.vrm` | Additional bundled character |
-| Miyoura Toshie | `Miyoura Toshie.vrm` | Additional bundled character |
-| Nogami Juto | `Nogami Juto.vrm` | Additional bundled character |
 
 You can switch between them using the dropdown in the Model Panel. The default model registry is defined in `src/config/default-models.ts`.
 

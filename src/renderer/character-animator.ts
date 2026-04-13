@@ -26,6 +26,10 @@ const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
  *
  * Bone animation is handled by `THREE.AnimationMixer` which plays
  * keyframe clips loaded from JSON files in `src/renderer/animations/`.
+ * Each CharacterState can have **multiple clip variants** — the animator
+ * randomly picks one when entering a state, and cycles to a different
+ * variant each time the current clip loops.
+ *
  * Expressions (morph targets) and blinking remain procedural.
  *
  * When the character state changes the mixer cross-fades from the
@@ -38,13 +42,17 @@ export class CharacterAnimator {
   private state: CharacterState = 'idle';
   private elapsed = 0;
   private baseRotationY = 0;
-  private persona: AnimationPersona = 'gentleman';
+  private persona: AnimationPersona = 'witch';
 
   // ── AnimationMixer state ────────────────────────────────────────
   private mixer: THREE.AnimationMixer | null = null;
   private clips: PersonaClips | null = null;
   private currentAction: THREE.AnimationAction | null = null;
-  private static readonly CROSS_FADE_DURATION = 0.35;
+  private currentClipIndex = 0;
+  private static readonly CROSS_FADE_DURATION = 0.6;
+
+  // ── Clip cycling — switch variant each time the current clip loops ──
+  private loopListener: ((e: { action: THREE.AnimationAction }) => void) | null = null;
 
   // Blink timing constants
   private static readonly BLINK_DURATION = 0.15;
@@ -69,7 +77,7 @@ export class CharacterAnimator {
       Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
   }
 
-  setVRM(vrm: VRM, rotationY = 0, persona: AnimationPersona = 'gentleman') {
+  setVRM(vrm: VRM, rotationY = 0, persona: AnimationPersona = 'witch') {
     this.vrm = vrm;
     this.vrmScene = vrm.scene;
     this.baseRotationY = rotationY;
@@ -82,9 +90,23 @@ export class CharacterAnimator {
     this.blinkTimer = 0;
 
     // ── Build AnimationMixer + clips ──────────────────────────────
+    // Remove previous loop listener before replacing the mixer
+    if (this.mixer && this.loopListener) {
+      this.mixer.removeEventListener('loop', this.loopListener as any);
+    }
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.clips = buildPersonaClips(vrm, persona);
     this.currentAction = null;
+    this.currentClipIndex = 0;
+
+    // Register loop listener — cycles to next variant when clip loops
+    this.loopListener = (e: { action: THREE.AnimationAction }) => {
+      if (e.action === this.currentAction) {
+        this.cycleClipVariant();
+      }
+    };
+    this.mixer.addEventListener('loop', this.loopListener as any);
+
     // Start with idle
     this.playClip(this.state);
   }
@@ -137,7 +159,11 @@ export class CharacterAnimator {
   private playClip(state: CharacterState) {
     if (!this.mixer || !this.clips) return;
 
-    const clip = this.clips[state];
+    const variants = this.clips[state];
+    // Pick a random variant (different from current if possible)
+    const idx = this.pickRandomIndex(variants.length, this.currentClipIndex);
+    this.currentClipIndex = idx;
+    const clip = variants[idx];
     const newAction = this.mixer.clipAction(clip);
     newAction.setLoop(THREE.LoopRepeat, Infinity);
 
@@ -150,6 +176,48 @@ export class CharacterAnimator {
     }
 
     this.currentAction = newAction;
+  }
+
+  /** Called when the mixer fires a 'loop' event — cross-fade to a different variant. */
+  private cycleClipVariant() {
+    if (!this.mixer || !this.clips) return;
+    const variants = this.clips[this.state];
+    if (variants.length <= 1) return;  // only one clip, nothing to cycle
+
+    const idx = this.pickRandomIndex(variants.length, this.currentClipIndex);
+    this.currentClipIndex = idx;
+    const clip = variants[idx];
+    const newAction = this.mixer.clipAction(clip);
+    newAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    if (this.currentAction && this.currentAction !== newAction) {
+      this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
+      newAction.reset().fadeIn(CharacterAnimator.CROSS_FADE_DURATION).play();
+    } else {
+      newAction.reset().play();
+    }
+
+    this.currentAction = newAction;
+  }
+
+  /** Pick a random index different from `exclude` (when possible). */
+  private pickRandomIndex(length: number, exclude: number): number {
+    if (length <= 1) return 0;
+    let idx: number;
+    do {
+      idx = Math.floor(Math.random() * length);
+    } while (idx === exclude && length > 1);
+    return idx;
+  }
+
+  /**
+   * Trigger a random animation variant for the current state.
+   * Useful for brain-triggered liveliness — call this after receiving
+   * responses from the AI to make the character feel more alive.
+   */
+  triggerRandomAnimation() {
+    if (!this.mixer || !this.clips) return;
+    this.cycleClipVariant();
   }
 
   // ── VRM animation (mixer + expressions + blink) ────────────────────

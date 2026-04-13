@@ -26,7 +26,7 @@ describe('CharacterAnimator', () => {
 
   it('getPersona returns current persona', () => {
     const animator = new CharacterAnimator();
-    expect(animator.getPersona()).toBe('gentleman');
+    expect(animator.getPersona()).toBe('witch');
   });
 
   it('setState changes state and resets elapsed time', () => {
@@ -171,14 +171,14 @@ describe('CharacterAnimator', () => {
 
   // ── Persona-specific tests ─────────────────────────────────────────
 
-  it('all four persona types are accepted without error', () => {
-    const personas = ['witch', 'idol', 'fashionista', 'gentleman'] as const;
+  it('all persona types are accepted without error', () => {
+    const personas = ['witch', 'idol'] as const;
     for (const _persona of personas) {
       const animator = new CharacterAnimator();
       const group = makePlaceholder();
       animator.setPlaceholder(group);
       // setVRM is VRM-only, but placeholder still exercises setState/update path
-      expect(animator.getPersona()).toBe('gentleman'); // default
+      expect(animator.getPersona()).toBe('witch'); // default
       // exercise all states with placeholder
       for (const state of ['idle', 'thinking', 'talking', 'happy', 'sad'] as const) {
         animator.setState(state);
@@ -188,7 +188,7 @@ describe('CharacterAnimator', () => {
   });
 
   it('all persona × state combinations produce stable animation (no NaN)', () => {
-    const personas = ['witch', 'idol', 'fashionista', 'gentleman'] as const;
+    const personas = ['witch', 'idol'] as const;
     const states = ['idle', 'thinking', 'talking', 'happy', 'sad'] as const;
     for (const _persona of personas) {
       for (const state of states) {
@@ -206,5 +206,13 @@ describe('CharacterAnimator', () => {
         expect(Math.abs(group.position.y)).toBeLessThan(1.0);
       }
     }
+  });
+
+  it('triggerRandomAnimation does not throw on placeholder', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+    // No VRM set → should be a no-op, not an error
+    expect(() => animator.triggerRandomAnimation()).not.toThrow();
   });
 });

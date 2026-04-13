@@ -18,14 +18,12 @@ This guide explains how to import VRM models into TerranSoul for use as your AI 
 
 ## Built-in Default Models
 
-TerranSoul ships with four bundled VRM models that are available out of the box:
+TerranSoul ships with two bundled VRM models that are available out of the box:
 
 | Model | File | Description |
 |-------|------|-------------|
 | Annabelle the Sorcerer | `public/models/default/Annabelle the Sorcerer.vrm` | Default character (loaded on startup) |
 | M58 | `public/models/default/M58.vrm` | Additional bundled character |
-| Miyoura Toshie | `public/models/default/Miyoura Toshie.vrm` | Additional bundled character |
-| Nogami Juto | `public/models/default/Nogami Juto.vrm` | Additional bundled character |
 
 You can switch between default models using the **dropdown** in the Model Panel, or by clicking the corresponding model card.
 

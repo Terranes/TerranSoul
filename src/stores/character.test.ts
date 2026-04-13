@@ -118,10 +118,8 @@ describe('character store — IPC integration', () => {
 
   it('defaultModels contains the bundled model list', () => {
     const store = useCharacterStore();
-    expect(store.defaultModels.length).toBeGreaterThanOrEqual(4);
+    expect(store.defaultModels.length).toBeGreaterThanOrEqual(2);
     expect(store.defaultModels[0].id).toBe('annabelle');
     expect(store.defaultModels[1].id).toBe('m58');
-    expect(store.defaultModels[2].id).toBe('miyoura-toshie');
-    expect(store.defaultModels[3].id).toBe('nogami-juto');
   });
 });

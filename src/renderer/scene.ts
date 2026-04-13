@@ -78,14 +78,14 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
 
   // Zoom limits: close = face, far = full body
   const MIN_DIST = 0.5;
-  const MAX_DIST = 3.5;
+  const MAX_DIST = 5.0;
   controls.minDistance = MIN_DIST;
   controls.maxDistance = MAX_DIST;
   controls.update();
 
   // Heights for zoom-dependent orbit target
   const FACE_Y = 1.45;    // orbit target Y when zoomed in (face)
-  const BODY_Y = 0.85;    // orbit target Y when zoomed out (full body)
+  const BODY_Y = 0.65;    // orbit target Y when zoomed out (full body, head to toes)
 
   /**
    * Smoothly adjusts the orbit target height based on zoom distance so

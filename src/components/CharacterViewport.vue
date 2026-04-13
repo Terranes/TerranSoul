@@ -117,6 +117,12 @@ watch(
   (newState) => animator.setState(newState),
 );
 
+// Watch for brain-triggered random animation requests
+watch(
+  () => characterStore.randomAnimTrigger,
+  () => animator.triggerRandomAnimation(),
+);
+
 // Watch for VRM path changes and load the model
 watch(
   () => characterStore.vrmPath,
@@ -144,7 +150,7 @@ watch(
       // Capture whatever rotation the loader left on the scene root so the
       // animator preserves it every frame instead of overwriting it to 0.
       const rotY = result.vrm.scene.rotation.y + (model?.rotationY ?? 0);
-      const persona = model?.persona ?? 'gentleman';
+      const persona = model?.persona ?? 'witch';
       animator.setVRM(result.vrm, rotY, persona);
       // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
       animator.setLookAtTarget(sceneCtx.lookAtTarget);
