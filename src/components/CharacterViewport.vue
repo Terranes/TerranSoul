@@ -142,7 +142,7 @@ watch(
       // Capture whatever rotation the loader left on the scene root so the
       // animator preserves it every frame instead of overwriting it to 0.
       const rotY = result.vrm.scene.rotation.y + (model?.rotationY ?? 0);
-      const persona = model?.persona ?? 'cool';
+      const persona = model?.persona ?? 'gentleman';
       animator.setVRM(result.vrm, rotY, persona);
       // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
       animator.setLookAtTarget(sceneCtx.lookAtTarget);

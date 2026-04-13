@@ -19,28 +19,28 @@ export const DEFAULT_MODELS: DefaultModel[] = [
     name: 'Annabelle the Sorcerer',
     path: '/models/default/Annabelle the Sorcerer.vrm',
     thumbnail: '/models/default/Annabelle the Sorcerer.png',
-    persona: 'cool',
+    persona: 'witch',
   },
   {
     id: 'm58',
     name: 'M58',
     path: '/models/default/M58.vrm',
     thumbnail: '/models/default/M58.png',
-    persona: 'cool',
+    persona: 'idol',
   },
   {
     id: 'miyoura-toshie',
     name: 'Miyoura Toshie',
     path: '/models/default/Miyoura Toshie.vrm',
     thumbnail: '/models/default/Miyoura Toshie.png',
-    persona: 'cute',
+    persona: 'fashionista',
   },
   {
     id: 'nogami-juto',
     name: 'Nogami Juto',
     path: '/models/default/Nogami Juto.vrm',
     thumbnail: '/models/default/Nogami Juto.png',
-    persona: 'cool',
+    persona: 'gentleman',
   },
 ];
 
