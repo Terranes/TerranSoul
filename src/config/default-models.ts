@@ -28,6 +28,13 @@ export const DEFAULT_MODELS: DefaultModel[] = [
     thumbnail: '/models/default/M58.png',
     persona: 'idol',
   },
+  {
+    id: 'genshin',
+    name: 'GENSHIN',
+    path: '/models/default/2250278607152806301.vrm',
+    thumbnail: '/models/default/GENSHIN.png',
+    persona: 'idol',
+  },
 ];
 
 export const DEFAULT_MODEL_ID = 'annabelle';

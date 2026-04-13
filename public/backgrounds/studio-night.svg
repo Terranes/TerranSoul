@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="nightGlow" cx="50%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#253b69"/>
+      <stop offset="55%" stop-color="#18253f"/>
+      <stop offset="100%" stop-color="#0d1424"/>
+    </radialGradient>
+    <linearGradient id="nightFloor" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#152036"/>
+      <stop offset="100%" stop-color="#0c1322"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#nightGlow)"/>
+  <circle cx="1220" cy="165" r="68" fill="#dbeafe" fill-opacity="0.16"/>
+  <rect x="0" y="650" width="1600" height="250" fill="url(#nightFloor)"/>
+  <ellipse cx="800" cy="660" rx="420" ry="44" fill="#7dd3fc" fill-opacity="0.08"/>
+  <ellipse cx="800" cy="735" rx="320" ry="68" fill="#ffffff" fill-opacity="0.04"/>
+</svg>

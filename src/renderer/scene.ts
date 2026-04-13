@@ -43,13 +43,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   // which breaks VRM toon-shaded looks.  This matches VRoid Hub's renderer config.
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
+  renderer.setClearColor(0x000000, 0);
 
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
-  // Light-blue backdrop matching VRoid Hub's viewer
-  scene.background = new THREE.Color(0xe3f4ff);
 
   const camera = new THREE.PerspectiveCamera(
     30,
@@ -126,9 +125,31 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   rimLight.position.set(0.3, 2.3, -2.2);
   scene.add(rimLight);
 
-  // Grid helper — visual grounding (like VRoid Hub)
-  const gridHelper = new THREE.GridHelper(10, 20, 0x8fb0d2, 0xc4d7eb);
-  scene.add(gridHelper);
+  // Soft pedestal instead of grid floor
+  const pedestalGeometry = new THREE.CircleGeometry(1.15, 64);
+  const pedestalMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe6ecf5,
+    transparent: true,
+    opacity: 0.95,
+    roughness: 0.92,
+    metalness: 0.02,
+  });
+  const pedestal = new THREE.Mesh(pedestalGeometry, pedestalMaterial);
+  pedestal.rotation.x = -Math.PI / 2;
+  pedestal.position.y = 0.01;
+  scene.add(pedestal);
+
+  const pedestalRingGeometry = new THREE.RingGeometry(1.18, 1.28, 64);
+  const pedestalRingMaterial = new THREE.MeshBasicMaterial({
+    color: 0xc7d7eb,
+    transparent: true,
+    opacity: 0.5,
+    side: THREE.DoubleSide,
+  });
+  const pedestalRing = new THREE.Mesh(pedestalRingGeometry, pedestalRingMaterial);
+  pedestalRing.rotation.x = -Math.PI / 2;
+  pedestalRing.position.y = 0.012;
+  scene.add(pedestalRing);
 
   const clock = new THREE.Clock();
 
