@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { VrmMetadata } from '../types';
 
 export type ProgressCallback = (loaded: number, total: number) => void;
@@ -117,6 +117,16 @@ export async function loadVRM(
   if (!vrm) {
     throw new Error('File loaded but does not contain valid VRM data');
   }
+
+  // Performance optimizations (from official three-vrm examples)
+  VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  VRMUtils.combineSkeletons(gltf.scene);
+  VRMUtils.combineMorphs(vrm);
+
+  // Disable frustum culling to prevent clipping when parts are near screen edge
+  vrm.scene.traverse((obj) => {
+    obj.frustumCulled = false;
+  });
 
   scene.add(vrm.scene);
 

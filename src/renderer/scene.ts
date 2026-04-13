@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export type RendererType = 'webgpu' | 'webgl';
 
@@ -13,6 +14,8 @@ export interface SceneContext {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   clock: THREE.Clock;
+  controls: OrbitControls;
+  lookAtTarget: THREE.Object3D;
   rendererType: RendererType;
   getRendererInfo: () => RendererInfo;
   dispose: () => void;
@@ -47,6 +50,11 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     rendererType = 'webgl';
   }
 
+  // Correct color space and tone mapping (matches VRoid Hub rendering)
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -58,31 +66,38 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     30,
     canvas.clientWidth / canvas.clientHeight,
     0.1,
-    100,
+    20.0,
   );
   // Frame the upper body: camera slightly above eye level, pulled back enough
   // to see head-to-waist. VRM origin is at feet (Y=0), typical height ~1.5m.
   camera.position.set(0, 1.25, 2.5);
-  camera.lookAt(0, 1.15, 0);
 
-  // Ambient light
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-  scene.add(ambient);
+  // OrbitControls for smooth interactive camera (like VRoid Hub)
+  const controls = new OrbitControls(camera, canvas);
+  controls.screenSpacePanning = true;
+  controls.target.set(0, 1.15, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.minDistance = 1.0;
+  controls.maxDistance = 8.0;
+  controls.maxPolarAngle = Math.PI * 0.85;
+  controls.update();
 
-  // Key light — warm, from upper right
-  const dirLight = new THREE.DirectionalLight(0xfff5ee, 1.2);
-  dirLight.position.set(2, 3, 2);
-  dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(512, 512);
+  // LookAt target — attached to camera so VRM eyes follow the viewer
+  const lookAtTarget = new THREE.Object3D();
+  camera.add(lookAtTarget);
+
+  // Key light — physically-correct intensity (like three-vrm examples)
+  const dirLight = new THREE.DirectionalLight(0xffffff, Math.PI);
+  dirLight.position.set(1.0, 1.0, 1.0).normalize();
   scene.add(dirLight);
 
-  // Fill light — cool, from left
-  const fillLight = new THREE.DirectionalLight(0xc4d4ff, 0.4);
-  fillLight.position.set(-2, 1, 1);
-  scene.add(fillLight);
+  // Hemisphere light — natural sky/ground ambient fill
+  const hemiLight = new THREE.HemisphereLight(0xddeeff, 0x443322, 0.8);
+  scene.add(hemiLight);
 
   // Rim light — helps separate character from background
-  const rimLight = new THREE.DirectionalLight(0x8888ff, 0.5);
+  const rimLight = new THREE.DirectionalLight(0x8888ff, 0.6);
   rimLight.position.set(-1, 2, -2);
   scene.add(rimLight);
 
@@ -123,8 +138,9 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
 
   function dispose() {
     resizeObserver.disconnect();
+    controls.dispose();
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, rendererType, getRendererInfo, dispose };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, rendererType, getRendererInfo, dispose };
 }

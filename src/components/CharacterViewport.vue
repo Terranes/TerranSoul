@@ -90,6 +90,8 @@ onMounted(async () => {
   function loop() {
     animFrameId = requestAnimationFrame(loop);
     const delta = ctx.clock.getDelta();
+    // Update OrbitControls (damping requires per-frame update)
+    ctx.controls.update();
     animator.update(delta);
     ctx.renderer.render(ctx.scene, ctx.camera);
 
@@ -134,6 +136,8 @@ watch(
       const persona = model?.persona ?? 'cool';
       const skipBones = model?.skipBonePose ?? false;
       animator.setVRM(result.vrm, rotY, persona, skipBones);
+      // Wire up eye tracking — lookAtTarget is attached to the camera
+      animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);
       characterStore.setLoaded();
     } else {
