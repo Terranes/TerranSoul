@@ -21,8 +21,13 @@ export class CharacterAnimator {
   private persona: AnimationPersona = 'cool';
   private skipBonePose = false;
 
+  // Blink timing constants
+  private static readonly BLINK_DURATION = 0.15;
+  private static readonly MIN_BLINK_INTERVAL = 2.0;
+  private static readonly MAX_BLINK_INTERVAL = 6.0;
+
   // Smooth blink state
-  private nextBlinkTime = 2.0 + Math.random() * 3.0;
+  private nextBlinkTime = CharacterAnimator.MIN_BLINK_INTERVAL + Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
   private blinkValue = 0;
   private isBlinking = false;
   private blinkTimer = 0;
@@ -39,7 +44,7 @@ export class CharacterAnimator {
     this.skipBonePose = skipBonePose;
     this.placeholder = null;
     // Reset blink timing
-    this.nextBlinkTime = 1.0 + Math.random() * 3.0;
+    this.nextBlinkTime = CharacterAnimator.MIN_BLINK_INTERVAL + Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
     this.blinkValue = 0;
     this.isBlinking = false;
     this.blinkTimer = 0;
@@ -128,20 +133,19 @@ export class CharacterAnimator {
 
     if (this.isBlinking) {
       this.blinkTimer += delta;
-      const blinkDuration = 0.15; // total blink duration in seconds
-      const half = blinkDuration / 2;
+      const half = CharacterAnimator.BLINK_DURATION / 2;
       if (this.blinkTimer < half) {
         // Closing
         this.blinkValue = this.blinkTimer / half;
-      } else if (this.blinkTimer < blinkDuration) {
+      } else if (this.blinkTimer < CharacterAnimator.BLINK_DURATION) {
         // Opening
         this.blinkValue = 1.0 - (this.blinkTimer - half) / half;
       } else {
         // Done blinking
         this.blinkValue = 0;
         this.isBlinking = false;
-        // Random interval until next blink (2-6 seconds)
-        this.nextBlinkTime = 2.0 + Math.random() * 4.0;
+        // Random interval until next blink
+        this.nextBlinkTime = CharacterAnimator.MIN_BLINK_INTERVAL + Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
       }
     }
 
