@@ -1,4 +1,5 @@
 pub mod config_store;
+pub mod sidecar_client;
 pub mod stub_asr;
 pub mod stub_tts;
 
