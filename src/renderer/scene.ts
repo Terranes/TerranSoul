@@ -15,6 +15,10 @@ export interface SceneContext {
   controls: OrbitControls;
   lookAtTarget: THREE.Object3D;
   getRendererInfo: () => RendererInfo;
+  /** Call each frame before controls.update() — smoothly adjusts the orbit
+   *  target height so zooming in frames the face and zooming out shows the
+   *  full body. */
+  updateZoomTarget: () => void;
   dispose: () => void;
 }
 
@@ -53,18 +57,46 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     0.02,
     1000,
   );
-  // Full-body framing matching VRoid Hub — camera at chest height, pulled back
-  camera.position.set(0.0, 1.35, 2.8);
+  // Full-body framing — camera at body centre height, pulled back
+  camera.position.set(0.0, 1.0, 2.8);
 
-  // OrbitControls for smooth interactive camera (like VRoid Hub)
+  // ── OrbitControls — locked viewport ────────────────────────────────
+  // Horizontal-only rotation (360° azimuth, no vertical tilt).
+  // Zoom maps to face (close) ↔ full body (far).
   const controls = new OrbitControls(camera, canvas);
   controls.screenSpacePanning = true;
-  controls.target.set(0.0, 1.2, 0.0);
+  controls.target.set(0.0, 1.0, 0.0);
   controls.enableDamping = true;
   controls.dampingFactor = 0.1;
-  controls.minDistance = 0.08;
-  controls.maxDistance = 8.0;
+
+  // Lock vertical rotation — polar angle π/2 = camera stays level with target
+  controls.minPolarAngle = Math.PI / 2;
+  controls.maxPolarAngle = Math.PI / 2;
+
+  // Disable panning so the model stays centred
+  controls.enablePan = false;
+
+  // Zoom limits: close = face, far = full body
+  const MIN_DIST = 0.5;
+  const MAX_DIST = 3.5;
+  controls.minDistance = MIN_DIST;
+  controls.maxDistance = MAX_DIST;
   controls.update();
+
+  // Heights for zoom-dependent orbit target
+  const FACE_Y = 1.45;    // orbit target Y when zoomed in (face)
+  const BODY_Y = 0.85;    // orbit target Y when zoomed out (full body)
+
+  /**
+   * Smoothly adjusts the orbit target height based on zoom distance so
+   * zooming in frames the face and zooming out shows the entire body.
+   * Must be called each frame before controls.update().
+   */
+  function updateZoomTarget() {
+    const dist = controls.getDistance();
+    const t = Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
+    controls.target.y = FACE_Y + t * (BODY_Y - FACE_Y);
+  }
 
   // LookAt target — placed in scene (not on camera) for VRM eye tracking
   const lookAtTarget = new THREE.Object3D();
@@ -126,5 +158,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, dispose };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, dispose };
 }

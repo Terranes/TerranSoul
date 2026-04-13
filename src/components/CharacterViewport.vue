@@ -88,6 +88,8 @@ onMounted(async () => {
   function loop() {
     animFrameId = requestAnimationFrame(loop);
     const delta = ctx.clock.getDelta();
+    // Adjust orbit target height based on zoom (face ↔ full body)
+    ctx.updateZoomTarget();
     // Update OrbitControls (damping requires per-frame update)
     ctx.controls.update();
     // Keep lookAt target at camera position so VRM eyes track the viewer
