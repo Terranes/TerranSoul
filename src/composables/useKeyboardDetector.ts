@@ -16,13 +16,21 @@ export function useKeyboardDetector() {
   const keyboardHeight = ref(0);
   const keyboardOpen = ref(false);
 
-  /** Minimum shrink in px before we consider the keyboard open. */
+  /**
+   * Minimum shrink in px before we consider the keyboard open.
+   * 80px is chosen to comfortably exceed address-bar-hide animations
+   * (~20–40px on iOS/Android) without being so high that landscape
+   * keyboards (~200px) are missed.
+   */
   const KEYBOARD_THRESHOLD_PX = 80;
 
   function onVisualViewportResize() {
     const vv = window.visualViewport;
     if (!vv) return;
-    const shrink = window.innerHeight - (vv.height + vv.offsetTop);
+    // `vv.height` is the visible height of the visual viewport — it shrinks
+    // when the keyboard opens.  `window.innerHeight` stays fixed at the full
+    // layout viewport height, so their difference is the keyboard height.
+    const shrink = window.innerHeight - vv.height;
     if (shrink > KEYBOARD_THRESHOLD_PX) {
       keyboardHeight.value = shrink;
       keyboardOpen.value = true;

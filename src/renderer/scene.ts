@@ -113,9 +113,9 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
       // Lerp camera Z towards face distance
       const currentZ = camera.position.z;
       const targetZ = CAMERA_Z_KEYBOARD;
-      camera.position.z += (targetZ - currentZ) * 0.08;
+      camera.position.z += (targetZ - currentZ) * KEYBOARD_ZOOM_LERP_SPEED;
       // Lerp orbit target Y towards face height
-      controls.target.y += (CAMERA_TARGET_Y_KEYBOARD - controls.target.y) * 0.08;
+      controls.target.y += (CAMERA_TARGET_Y_KEYBOARD - controls.target.y) * KEYBOARD_ZOOM_LERP_SPEED;
     } else {
       // Normal zoom-target logic: portrait default or full-body
       const dist = controls.getDistance();
@@ -196,11 +196,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
 
     // Adjust camera distance for portrait vs landscape so the character
     // stays fully visible on narrow mobile screens.
-    const currentDist = camera.position.length();
+    const currentZ = camera.position.z;
     const targetZ = (w / h) < 1 ? CAMERA_Z_PORTRAIT : CAMERA_Z_LANDSCAPE;
     const ZOOM_TOLERANCE = 0.1;
-    // Only adjust if the user hasn't manually zoomed
-    if (Math.abs(currentDist - CAMERA_Z_LANDSCAPE) < ZOOM_TOLERANCE || Math.abs(currentDist - CAMERA_Z_PORTRAIT) < ZOOM_TOLERANCE) {
+    // Only adjust if the user hasn't manually zoomed (compare Z only since
+    // camera X=0, Y=1.0 are fixed and only Z varies with distance).
+    if (Math.abs(currentZ - CAMERA_Z_LANDSCAPE) < ZOOM_TOLERANCE || Math.abs(currentZ - CAMERA_Z_PORTRAIT) < ZOOM_TOLERANCE) {
       camera.position.setZ(targetZ);
     }
   });
@@ -211,6 +212,9 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   // We smoothly lerp the camera Z and orbit target Y towards face values
   // each animation frame via updateZoomTarget().
   let _keyboardOpen = false;
+
+  /** Lerp speed for keyboard zoom — controls how quickly camera animates to face. */
+  const KEYBOARD_ZOOM_LERP_SPEED = 0.08;
 
   function zoomToFace(enabled: boolean) {
     _keyboardOpen = enabled;

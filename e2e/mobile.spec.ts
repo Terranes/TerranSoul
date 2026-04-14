@@ -43,8 +43,9 @@ test.describe('Mobile Chat UX', () => {
 
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
-    // Canvas should fill the full width on mobile (375px viewport)
-    expect(box!.width).toBeCloseTo(375, -1);
+    // Canvas should fill the full width on mobile (375px viewport, ±5px tolerance)
+    expect(box!.width).toBeGreaterThanOrEqual(370);
+    expect(box!.width).toBeLessThanOrEqual(380);
   });
 
   test('chat history panel toggles open and closed on mobile', async ({ page }) => {
@@ -111,12 +112,10 @@ test.describe('Mobile Chat UX', () => {
     // We inject a fake resize event with a reduced height to simulate keyboard.
     await page.evaluate(() => {
       // Simulate the visualViewport resize event that useKeyboardDetector listens to.
-      // We dispatch on the visualViewport object if available, or window as fallback.
+      // window.innerHeight stays at 667, but vv.height shrinks by ~300px (keyboard).
       const vv = window.visualViewport;
       if (vv) {
-        // Override height to simulate keyboard open (300px keyboard on 667px screen)
         Object.defineProperty(vv, 'height', { value: 367, configurable: true, writable: true });
-        Object.defineProperty(vv, 'offsetTop', { value: 0, configurable: true, writable: true });
         vv.dispatchEvent(new Event('resize'));
       }
     });
@@ -147,7 +146,6 @@ test.describe('Mobile Chat UX', () => {
       const vv = window.visualViewport;
       if (vv) {
         Object.defineProperty(vv, 'height', { value: 367, configurable: true, writable: true });
-        Object.defineProperty(vv, 'offsetTop', { value: 0, configurable: true, writable: true });
         vv.dispatchEvent(new Event('resize'));
       }
     });
