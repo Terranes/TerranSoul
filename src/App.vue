@@ -45,6 +45,7 @@
         </main>
       </template>
     </template>
+
   </div>
 </template>
 
@@ -58,6 +59,7 @@ import MarketplaceView from './views/MarketplaceView.vue';
 import BrainSetupView from './views/BrainSetupView.vue';
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
+import speedInsights from '@vercel/speed-insights';
 
 const brain = useBrainStore();
 const windowStore = useWindowStore();
@@ -97,6 +99,9 @@ watch(
 );
 
 onMounted(async () => {
+  // Initialize Vercel Speed Insights
+  speedInsights.injectSpeedInsights();
+
   try {
     await brain.loadActiveBrain();
     tauriAvailable.value = true;
