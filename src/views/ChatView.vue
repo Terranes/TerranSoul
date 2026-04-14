@@ -300,8 +300,10 @@ onUnmounted(() => {
 .chat-view {
   position: relative;
   width: 100%;
-  height: 100vh;
-  height: 100dvh;
+  /* Use 100% to fill the parent .app-main flex container exactly.
+     100vh/100dvh would overflow on mobile where .app-main is shorter
+     than the viewport (viewport − bottom nav bar height). */
+  height: 100%;
   overflow: hidden;
 }
 
@@ -538,9 +540,15 @@ onUnmounted(() => {
 
 /* ── Mobile adjustments ── */
 @media (max-width: 640px) {
-  .bottom-panel { max-height: 55vh; }
-  .subtitle-overlay { width: 85%; bottom: 85px; }
-  .ai-state-pill { right: 16px; top: 10px; }
-  .brain-overlay { width: 90vw; }
+  .bottom-panel { max-height: 50vh; }
+  .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
+  .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
+  .ai-state-pill { right: 10px; top: 8px; padding: 3px 10px; font-size: 0.65rem; }
+  .brain-overlay { width: 92vw; }
+  /* Shift brain status pill left to avoid collision with AI state pill */
+  .brain-status-pill { left: 40%; font-size: 0.62rem; padding: 3px 10px; }
+  /* Compact the input footer */
+  .input-footer { padding: 4px 6px 6px; }
+  .chat-drawer-toggle { width: 36px; height: 36px; font-size: 1rem; }
 }
 </style>

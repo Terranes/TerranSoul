@@ -56,8 +56,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     0.02,
     1000,
   );
-  // Full-body framing — camera at body centre height, pulled back
-  camera.position.set(0.0, 1.0, 2.8);
+  // Full-body framing — camera at body centre height, pulled back.
+  // On portrait screens (aspect < 1), pull back further so
+  // the character's arms don't extend beyond the viewport edges.
+  const aspect = canvas.clientWidth / canvas.clientHeight;
+  const cameraZ = aspect < 1 ? 3.8 : 2.8;
+  camera.position.set(0.0, 1.0, cameraZ);
 
   // ── OrbitControls — locked viewport ────────────────────────────────
   // Horizontal-only rotation (360° azimuth, no vertical tilt).
@@ -166,6 +170,15 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+
+    // Adjust camera distance for portrait vs landscape so the character
+    // stays fully visible on narrow mobile screens.
+    const currentDist = camera.position.length();
+    const targetZ = (w / h) < 1 ? 3.8 : 2.8;
+    // Only adjust if the user hasn't manually zoomed
+    if (Math.abs(currentDist - 2.8) < 0.1 || Math.abs(currentDist - 3.8) < 0.1) {
+      camera.position.setZ(targetZ);
+    }
   });
   resizeObserver.observe(canvas.parentElement ?? canvas);
 

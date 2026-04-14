@@ -510,7 +510,14 @@ watch(
   letter-spacing: 0.02em;
 }
 
-/* Loading overlay */
+/* Mobile adjustments for viewport overlays */
+@media (max-width: 640px) {
+  .character-name-overlay { font-size: 0.85rem; left: 48px; top: 10px; }
+  .character-meta-overlay { font-size: 0.62rem; left: 48px; top: 28px; }
+  .settings-toggle { width: 32px; height: 32px; }
+  .settings-corner { top: 8px; left: 10px; }
+  .settings-dropdown { width: 260px; padding: 10px; gap: 10px; }
+}
 .loading-overlay {
   position: absolute;
   inset: 0;

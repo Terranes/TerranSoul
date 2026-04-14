@@ -197,10 +197,18 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 /* Mobile: collapse sidebar to horizontal bottom bar */
 @media (max-width: 640px) {
   .app-shell { flex-direction: column; }
-  .app-nav { flex-direction: row; width: 100%; order: 1; padding: 0.35rem 0.5rem; border-right: none; border-top: 1px solid var(--ts-bg-surface); justify-content: center; }
-  .app-main { order: 0; }
+  .app-nav {
+    flex-direction: row; width: 100%; order: 1;
+    padding: 0.25rem 0.5rem;
+    border-right: none; border-top: 1px solid var(--ts-bg-surface);
+    justify-content: center;
+    /* Prevent the nav from growing — fixed height on mobile */
+    flex-shrink: 0;
+  }
+  .app-main { order: 0; min-height: 0; }
+  .nav-btn { width: 34px; height: 34px; font-size: 1.1rem; }
   .nav-btn.active::after {
-    left: 50%; top: auto; bottom: -0.35rem;
+    left: 50%; top: auto; bottom: -0.25rem;
     transform: translateX(-50%);
     width: 20px; height: 3px;
     border-radius: var(--ts-radius-sm) var(--ts-radius-sm) 0 0;
