@@ -130,13 +130,20 @@ body { margin: 0; background: #0f172a; color: #f1f5f9; font-family: system-ui, s
 </style>
 
 <style scoped>
-.app-shell { display: flex; height: 100vh; overflow: hidden; }
+.app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 .app-shell.pet-mode { background: transparent; }
-.app-nav { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0.75rem 0.5rem; background: #0c1527; border-right: 1px solid #1e293b; width: 52px; }
+.app-nav { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0.75rem 0.5rem; background: #0c1527; border-right: 1px solid #1e293b; width: 52px; flex-shrink: 0; }
 .nav-btn { width: 38px; height: 38px; border: none; border-radius: 8px; background: transparent; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; }
 .nav-btn:hover, .nav-btn.active { background: #1e293b; }
 .nav-brain-warn { color: #fbbf24; margin-top: auto; }
 .nav-pet-toggle { color: #8b5cf6; margin-top: auto; }
 .nav-pet-toggle:hover { background: rgba(139, 92, 246, 0.2); }
 .app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+
+/* Mobile: collapse sidebar to horizontal bottom bar */
+@media (max-width: 640px) {
+  .app-shell { flex-direction: column; }
+  .app-nav { flex-direction: row; width: 100%; order: 1; padding: 0.35rem 0.5rem; border-right: none; border-top: 1px solid #1e293b; justify-content: center; }
+  .app-main { order: 0; }
+}
 </style>
