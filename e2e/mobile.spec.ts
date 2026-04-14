@@ -391,18 +391,13 @@ test.describe('Mobile Chat UX', () => {
     expect(scrollPos.y).toBe(0);
   });
 
-  test('html and body have touch-action: manipulation to prevent double-tap zoom', async ({ page }) => {
+  test('html has touch-action: manipulation to prevent double-tap zoom', async ({ page }) => {
     await page.goto('/');
 
     const htmlTouchAction = await page.evaluate(() => {
       return getComputedStyle(document.documentElement).touchAction;
     });
     expect(htmlTouchAction).toBe('manipulation');
-
-    const bodyTouchAction = await page.evaluate(() => {
-      return getComputedStyle(document.body).touchAction;
-    });
-    expect(bodyTouchAction).toBe('manipulation');
   });
 
   test('body is position:fixed to prevent iOS keyboard viewport shift', async ({ page }) => {

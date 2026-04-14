@@ -102,11 +102,6 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  font-family: var(--ts-font-family);
-  background: transparent;
-  color: var(--ts-text-primary);
-  touch-action: manipulation;
-  overscroll-behavior: none;
 }
 
 #app {

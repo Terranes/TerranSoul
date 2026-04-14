@@ -27,6 +27,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { burstResetScroll } from '../utils/scroll-reset';
 
 const props = defineProps<{ disabled: boolean }>();
 const emit = defineEmits<{ submit: [message: string] }>();
@@ -48,15 +49,7 @@ function handleSubmit() {
  * where iOS may apply its auto-scroll.
  */
 function handleFocus() {
-  const reset = () => {
-    window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  };
-  reset();
-  requestAnimationFrame(reset);
-  setTimeout(reset, 50);
-  setTimeout(reset, 150);
+  burstResetScroll();
 }
 </script>
 

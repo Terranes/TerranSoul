@@ -1,4 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue';
+import { resetAllScroll, burstResetScroll } from '../utils/scroll-reset';
 
 /**
  * Detects when the mobile virtual keyboard opens or closes using the
@@ -15,7 +16,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
  * iOS Safari aggressively scrolls the page when an input is focused to keep
  * it visible above the keyboard.  We prevent this with a multi-layer strategy:
  *  1. `body { position: fixed }` in CSS (primary prevention)
- *  2. `window.scrollTo(0, 0)` burst (covers race conditions)
+ *  2. `burstResetScroll()` (covers race conditions)
  *  3. Continuous scroll listener that resets scroll while keyboard is open
  *  4. Direct scrollTop resets on html/body elements
  */
@@ -30,25 +31,6 @@ export function useKeyboardDetector() {
    * keyboards (~200px) are missed.
    */
   const KEYBOARD_THRESHOLD_PX = 80;
-
-  /** Force all known scroll positions back to zero. */
-  function resetAllScroll() {
-    window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  }
-
-  /**
-   * Fire a burst of scroll resets across multiple frames / timers.
-   * iOS Safari can re-apply its scroll-to-input behavior *after* our
-   * first reset, so we need multiple attempts at different timings.
-   */
-  function burstResetScroll() {
-    resetAllScroll();
-    requestAnimationFrame(resetAllScroll);
-    setTimeout(resetAllScroll, 50);
-    setTimeout(resetAllScroll, 150);
-  }
 
   function onVisualViewportResize() {
     const vv = window.visualViewport;
