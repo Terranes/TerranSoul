@@ -1,10 +1,6 @@
 import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
-import type { AnimationPersona, CharacterState } from '../types';
-import { buildPersonaClips, type PersonaClips } from './animation-loader';
-import { PoseBlender, type BlendInstruction } from './pose-blender';
-import { EMOTION_TO_POSE } from './pose-presets';
-import { GesturePlayer } from './gesture-player';
+import type { CharacterState } from '../types';
 
 /**
  * Smooth interpolation helper — lerps a value toward a target each frame.
@@ -14,8 +10,7 @@ function smoothStep(current: number, target: number, speed: number, delta: numbe
   return current + (target - current) * Math.min(1, speed * delta);
 }
 
-// ── Expression targets per state (persona-agnostic — expressions don't
-//    change much between personas). ──────────────────────────────────
+// ── Expression targets per state ──────────────────────────────────────
 const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
   idle:      { relaxed: 0.25 },
   thinking:  { neutral: 0.3 },
@@ -28,18 +23,13 @@ const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
 };
 
 /**
- * VRM animator driven by predefined keyframe animations.
+ * VRM animator that drives facial expressions and blinking.
  *
- * Bone animation is handled by `THREE.AnimationMixer` which plays
- * keyframe clips loaded from JSON files in `src/renderer/animations/`.
- * Each CharacterState can have **multiple clip variants** — the animator
- * randomly picks one when entering a state, and cycles to a different
- * variant each time the current clip loops.
+ * Body/bone animation is expected to come from external VRMA or Mixamo
+ * animation clips loaded at runtime — this class does **not** generate
+ * procedural bone keyframes.
  *
- * Expressions (morph targets) and blinking remain procedural.
- *
- * When the character state changes the mixer cross-fades from the
- * current clip to the new one over 0.35 s.
+ * Expressions (morph targets) and blinking are procedural.
  */
 export class CharacterAnimator {
   private vrm: VRM | null = null;
@@ -48,23 +38,6 @@ export class CharacterAnimator {
   private state: CharacterState = 'idle';
   private elapsed = 0;
   private baseRotationY = 0;
-  private persona: AnimationPersona = 'witch';
-
-  // ── AnimationMixer state ────────────────────────────────────────
-  private mixer: THREE.AnimationMixer | null = null;
-  private clips: PersonaClips | null = null;
-  private currentAction: THREE.AnimationAction | null = null;
-  private currentClipIndex = 0;
-  private static readonly CROSS_FADE_DURATION = 0.35;
-
-  // ── Clip cycling — switch variant each time the current clip loops ──
-  private loopListener: ((e: { action: THREE.AnimationAction }) => void) | null = null;
-
-  // ── Pose blending ────────────────────────────────────────────────────
-  private poseBlender = new PoseBlender();
-
-  // ── Gesture playback ────────────────────────────────────────────────
-  private gesturePlayer = new GesturePlayer();
 
   // Blink timing constants
   private static readonly BLINK_DURATION = 0.15;
@@ -89,47 +62,21 @@ export class CharacterAnimator {
   private externalMouthOh = 0;
   private useExternalLipSync = false;
 
-  // ── Explicit pose blend from LLM tags ───────────────────────────────
-  /** True when the LLM has provided explicit [pose:...] instructions. */
-  private hasExplicitPose = false;
-
   private static randomBlinkInterval(): number {
     return CharacterAnimator.MIN_BLINK_INTERVAL +
       Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
   }
 
-  setVRM(vrm: VRM, rotationY = 0, persona: AnimationPersona = 'witch') {
+  setVRM(vrm: VRM, rotationY = 0) {
     this.vrm = vrm;
     this.vrmScene = vrm.scene;
     this.baseRotationY = rotationY;
-    this.persona = persona;
     this.placeholder = null;
     // Reset blink timing
     this.nextBlinkTime = CharacterAnimator.randomBlinkInterval();
     this.blinkValue = 0;
     this.isBlinking = false;
     this.blinkTimer = 0;
-
-    // ── Build AnimationMixer + clips ──────────────────────────────
-    // Remove previous loop listener before replacing the mixer
-    if (this.mixer && this.loopListener) {
-      this.mixer.removeEventListener('loop', this.loopListener as any);
-    }
-    this.mixer = new THREE.AnimationMixer(vrm.scene);
-    this.clips = buildPersonaClips(vrm, persona);
-    this.currentAction = null;
-    this.currentClipIndex = 0;
-
-    // Register loop listener — cycles to next variant when clip loops
-    this.loopListener = (e: { action: THREE.AnimationAction }) => {
-      if (e.action === this.currentAction) {
-        this.cycleClipVariant();
-      }
-    };
-    this.mixer.addEventListener('loop', this.loopListener as any);
-
-    // Start with idle
-    this.playClip(this.state);
   }
 
   /** Configure the VRM lookAt target so the model's eyes track the camera. */
@@ -143,9 +90,6 @@ export class CharacterAnimator {
     this.placeholder = group;
     this.vrm = null;
     this.vrmScene = null;
-    this.mixer = null;
-    this.clips = null;
-    this.currentAction = null;
   }
 
   setState(state: CharacterState) {
@@ -153,20 +97,10 @@ export class CharacterAnimator {
     this.state = state;
     this.elapsed = 0;
     this.mouthElapsed = 0;
-    this.playClip(state);
-    // Update default pose blend based on emotion→pose mapping
-    const defaultBlend = EMOTION_TO_POSE[state];
-    if (defaultBlend && !this.hasExplicitPose) {
-      this.poseBlender.setTarget(defaultBlend);
-    }
   }
 
   getState(): CharacterState {
     return this.state;
-  }
-
-  getPersona(): AnimationPersona {
-    return this.persona;
   }
 
   update(delta: number) {
@@ -178,96 +112,6 @@ export class CharacterAnimator {
     } else if (this.placeholder) {
       this.applyPlaceholderAnimation(t);
     }
-  }
-
-  // ── AnimationMixer clip management ─────────────────────────────────
-
-  /**
-   * Stop all mixer actions except the specified ones.
-   * Prevents accumulation of stale actions from previous state changes
-   * which causes unpredictable quaternion blending ("body flipping").
-   */
-  private stopAllExcept(...keep: (THREE.AnimationAction | null)[]) {
-    if (!this.mixer || !this.clips) return;
-    const keepSet = new Set(keep.filter((a): a is THREE.AnimationAction => a !== null));
-    for (const variants of Object.values(this.clips)) {
-      for (const clip of variants) {
-        const action = this.mixer.existingAction(clip);
-        if (action && !keepSet.has(action) && action.isRunning()) {
-          action.stop();
-        }
-      }
-    }
-  }
-
-  private playClip(state: CharacterState) {
-    if (!this.mixer || !this.clips) return;
-
-    const variants = this.clips[state];
-    // Pick a random variant (different from current if possible)
-    const idx = this.pickRandomIndex(variants.length, this.currentClipIndex);
-    this.currentClipIndex = idx;
-    const clip = variants[idx];
-    const newAction = this.mixer.clipAction(clip);
-    newAction.setLoop(THREE.LoopRepeat, Infinity);
-
-    if (this.currentAction && this.currentAction !== newAction) {
-      // Stop all stale actions from previous state changes to prevent
-      // accumulation of multiple blending actions (causes body flipping).
-      this.stopAllExcept(this.currentAction, newAction);
-      // Cross-fade from old → new
-      this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
-      newAction.reset().fadeIn(CharacterAnimator.CROSS_FADE_DURATION).play();
-    } else {
-      this.stopAllExcept(newAction);
-      newAction.reset().play();
-    }
-
-    this.currentAction = newAction;
-  }
-
-  /** Called when the mixer fires a 'loop' event — cross-fade to a different variant. */
-  private cycleClipVariant() {
-    if (!this.mixer || !this.clips) return;
-    const variants = this.clips[this.state];
-    if (variants.length <= 1) return;  // only one clip, nothing to cycle
-
-    const idx = this.pickRandomIndex(variants.length, this.currentClipIndex);
-    this.currentClipIndex = idx;
-    const clip = variants[idx];
-    const newAction = this.mixer.clipAction(clip);
-    newAction.setLoop(THREE.LoopRepeat, Infinity);
-
-    if (this.currentAction && this.currentAction !== newAction) {
-      this.stopAllExcept(this.currentAction, newAction);
-      this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
-      newAction.reset().fadeIn(CharacterAnimator.CROSS_FADE_DURATION).play();
-    } else {
-      this.stopAllExcept(newAction);
-      newAction.reset().play();
-    }
-
-    this.currentAction = newAction;
-  }
-
-  /** Pick a random index different from `exclude` (when possible). */
-  private pickRandomIndex(length: number, exclude: number): number {
-    if (length <= 1) return 0;
-    let idx: number;
-    do {
-      idx = Math.floor(Math.random() * length);
-    } while (idx === exclude && length > 1);
-    return idx;
-  }
-
-  /**
-   * Trigger a random animation variant for the current state.
-   * Useful for brain-triggered liveliness — call this after receiving
-   * responses from the AI to make the character feel more alive.
-   */
-  triggerRandomAnimation() {
-    if (!this.mixer || !this.clips) return;
-    this.cycleClipVariant();
   }
 
   /**
@@ -291,49 +135,7 @@ export class CharacterAnimator {
     this.useExternalLipSync = false;
   }
 
-  /**
-   * Apply an explicit pose blend from an LLM [pose:...] tag.
-   * Overrides the default emotion→pose fallback until clearPoseBlend() is called.
-   */
-  setPoseBlend(instructions: BlendInstruction[]) {
-    this.hasExplicitPose = instructions.length > 0;
-    this.poseBlender.setTarget(instructions);
-  }
-
-  /**
-   * Clear explicit pose blend, allowing the emotion→pose fallback to re-apply.
-   */
-  clearPoseBlend() {
-    this.hasExplicitPose = false;
-    const defaultBlend = EMOTION_TO_POSE[this.state];
-    if (defaultBlend) {
-      this.poseBlender.setTarget(defaultBlend);
-    } else {
-      this.poseBlender.reset();
-    }
-  }
-
-  /**
-   * Play a named gesture (e.g. 'nod', 'wave', 'shrug').
-   * Gestures layer on top of the current pose and are timed (1–2s).
-   *
-   * @returns true if the gesture exists and was started/queued.
-   */
-  playGesture(gestureId: string): boolean {
-    return this.gesturePlayer.play(gestureId);
-  }
-
-  /** Stop the current gesture and clear the gesture queue. */
-  stopGesture() {
-    this.gesturePlayer.stop();
-  }
-
-  /** Whether a gesture is currently active. */
-  get isGesturePlaying(): boolean {
-    return this.gesturePlayer.isPlaying;
-  }
-
-  // ── VRM animation (mixer + expressions + blink) ────────────────────
+  // ── VRM animation (expressions + blink) ────────────────────────────
 
   private applyVRMAnimation(t: number, delta: number) {
     if (!this.vrm || !this.vrmScene) return;
@@ -341,15 +143,6 @@ export class CharacterAnimator {
     // Pin scene root — only preserve the loader's base rotation
     this.vrmScene.position.set(0, 0, 0);
     this.vrmScene.rotation.set(0, this.baseRotationY, 0);
-
-    // Advance the animation mixer (drives bone keyframes)
-    this.mixer?.update(delta);
-
-    // Apply pose blending offsets on top of mixer output
-    this.poseBlender.apply(this.vrm!, delta);
-
-    // Apply gesture bone offsets on top of pose blend
-    this.gesturePlayer.apply(this.vrm!, delta);
 
     // Natural blinking with random intervals
     this.updateBlink(delta);
@@ -504,4 +297,3 @@ export class CharacterAnimator {
     }
   }
 }
-

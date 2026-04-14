@@ -34,9 +34,6 @@ vi.mock('../renderer/character-animator', () => ({
     setVRM: vi.fn(),
     setState: vi.fn(),
     update: vi.fn(),
-    persona: 'witch',
-    setPersona: vi.fn(),
-    triggerRandomVariant: vi.fn(),
   })),
 }));
 

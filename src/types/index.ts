@@ -9,7 +9,6 @@ export interface Message {
 
 export type CharacterState = 'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised';
 
-export type AnimationPersona = 'witch' | 'idol';
 
 export interface Agent {
   id: string;
@@ -211,23 +210,11 @@ export type EmotionTag =
   | 'surprised'
   | 'neutral';
 
-export type MotionTag = string; // e.g. 'wave', 'nod', 'bow'
-
-/** A single pose preset + blend weight from a [pose:...] tag. */
-export interface PoseBlendInstruction {
-  presetId: string;
-  weight: number;
-}
-
 export interface ParsedLlmChunk {
   /** Display text with tags stripped. */
   text: string;
   /** Emotion tag found in this chunk, if any. */
   emotion: EmotionTag | null;
-  /** Motion tag found in this chunk, if any. */
-  motion: MotionTag | null;
-  /** Pose blend instructions from [pose:...] tag, if any. */
-  poseBlend: PoseBlendInstruction[] | null;
 }
 
 // ── Three-Tier Brain ──────────────────────────────────────────────────────────
