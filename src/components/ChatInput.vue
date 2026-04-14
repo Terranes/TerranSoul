@@ -10,6 +10,7 @@
         :disabled="disabled"
         autocomplete="off"
         @focus="handleFocus"
+        @blur="handleBlur"
       />
       <button
         type="submit"
@@ -30,7 +31,7 @@ import { ref } from 'vue';
 import { burstResetScroll } from '../utils/scroll-reset';
 
 const props = defineProps<{ disabled: boolean }>();
-const emit = defineEmits<{ submit: [message: string] }>();
+const emit = defineEmits<{ submit: [message: string]; focus: []; blur: [] }>();
 
 const inputText = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -50,6 +51,11 @@ function handleSubmit() {
  */
 function handleFocus() {
   burstResetScroll();
+  emit('focus');
+}
+
+function handleBlur() {
+  emit('blur');
 }
 </script>
 

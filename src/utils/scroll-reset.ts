@@ -20,10 +20,12 @@ export function resetAllScroll(): void {
  * Fire a burst of scroll resets across multiple frames / timers.
  * iOS Safari can re-apply its scroll-to-input behavior *after* our
  * first reset, so we need multiple attempts at different timings.
+ * The 300ms final reset covers the widest observed iOS timing window.
  */
 export function burstResetScroll(): void {
   resetAllScroll();
   requestAnimationFrame(resetAllScroll);
   setTimeout(resetAllScroll, 50);
   setTimeout(resetAllScroll, 150);
+  setTimeout(resetAllScroll, 300);
 }

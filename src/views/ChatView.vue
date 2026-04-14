@@ -104,7 +104,7 @@
             @click="showDrawer = !showDrawer"
             aria-label="Toggle chat history"
           >💬</button>
-          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
+          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" @focus="onInputFocused" @blur="onInputBlurred" />
         </div>
       </div>
     </div>
@@ -136,7 +136,7 @@ let unlistenLlmChunk: (() => void) | null = null;
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
 // ── Keyboard detection ────────────────────────────────────────────
-const { keyboardHeight } = useKeyboardDetector();
+const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
 
 // ── Subtitle system ──────────────────────────────────────────────
 const MAX_SUBTITLE_LENGTH = 150;
