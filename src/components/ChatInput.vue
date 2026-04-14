@@ -43,8 +43,8 @@ function handleSubmit() {
   align-items: center;
   gap: 8px;
   padding: 12px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.20);
 }
 
 .chat-input {
@@ -74,8 +74,8 @@ function handleSubmit() {
 }
 
 .send-btn {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
   background: var(--ts-accent);
@@ -85,12 +85,14 @@ function handleSubmit() {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background var(--ts-transition-normal), opacity var(--ts-transition-normal), transform var(--ts-transition-fast);
+  transition: background var(--ts-transition-normal), opacity var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-fast);
+  box-shadow: 0 2px 8px rgba(124, 111, 255, 0.3);
 }
 
 .send-btn:hover:not(:disabled) {
   background: var(--ts-accent-hover);
-  transform: scale(1.05);
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(124, 111, 255, 0.4);
 }
 
 .send-btn:active:not(:disabled) {

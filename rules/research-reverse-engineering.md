@@ -873,3 +873,70 @@ The Ollama path remains as a separate code path for Tier 3 (local).
 ### Implementation Chunks
 
 See `rules/milestones.md` Phase 5.5 for chunks 055–057.
+
+---
+
+## 9. Integration Analysis — What We Can Learn & Implement {#9-integration-analysis}
+
+> **Date:** 2026-04-14
+> **Source repos:** All four above, re-analyzed for implementable patterns.
+> **Backlog chunks:** See `rules/backlog.md` Phase 9 (chunks 090–103).
+
+### Summary Matrix
+
+| Feature | Source Repo | Effort | Impact | Priority |
+|---------|-------------|--------|--------|----------|
+| Streaming TTS | VibeVoice | Medium | Very High | **High** |
+| Multi-ASR provider abstraction | Open-LLM-VTuber | Low | High | **High** |
+| Settings persistence + env overrides | aituber-kit | Low | High | **High** |
+| Idle action sequences | aituber-kit | Medium | High | **High** |
+| Model position saving | aituber-kit | Low | Medium | **Medium** |
+| Procedural gesture blending (MANN) | AI4Animation-js | High | Medium | **Medium** |
+| Speaker diarization | VibeVoice | Medium | Medium | **Medium** |
+| Hotword-boosted ASR | VibeVoice | Low | Low | **Medium** |
+| Presence / greeting system | aituber-kit | Medium | Medium | **Medium** |
+| Live2D support | aituber-kit | Medium | Medium | **Low** |
+| Screen recording / vision | Open-LLM-VTuber | High | Low | **Low** |
+| Docker containerization | Open-LLM-VTuber | High | Medium (CI) | **Low** |
+| Chat log export | Open-LLM-VTuber | Low | Low | **Low** |
+| Language translation layer | VibeVoice + LLM | Medium | Low | **Low** |
+
+### Key Patterns to Adopt
+
+**From aituber-kit:**
+- **Idle action queue** — Timer-based idle phrases, auto-greetings, face detection.
+  The character should feel alive when the user is away.
+- **Settings hydration** — Pre-validate schema before loading persisted state.
+  Prevents corruption on rapid restart or auto-update.
+- **Model position persistence** — Camera orbit + zoom saved per model.
+
+**From Open-LLM-VTuber:**
+- **Agent factory pattern** — Plugin-style provider registration for LLM/TTS/ASR.
+  We already have this for LLM brains; extend to voice providers.
+- **Docker for CI** — Containerized testing environment for cross-platform validation.
+
+**From VibeVoice:**
+- **Streaming TTS** — Voice starts 200ms after first LLM token. Currently our
+  Edge TTS waits for the full response. This is the single biggest UX improvement.
+- **Hotword injection** — Let users define custom vocabulary for better ASR accuracy.
+
+**From AI4Animation-js:**
+- **MANN mixture-of-experts** — 8 expert networks blended by a gating network.
+  Our pose blending system already does something similar (weighted presets).
+  The next step is to make blending weights learned/adaptive instead of static.
+- **Direction-based bone IK** — Each bone rotates to point toward its children's
+  predicted position. More natural than static Euler offsets.
+
+### What We Already Have (No Action Needed)
+
+These features from the reference repos are already implemented in TerranSoul:
+
+- ✅ Emotion tags from LLM (`[happy]`, `[sad]`, etc.) — aituber-kit pattern
+- ✅ Motion tags (`[motion:wave]`, `[motion:nod]`) — aituber-kit pattern
+- ✅ Desktop pet mode with click-through — Open-LLM-VTuber pattern
+- ✅ Dual-mode window (normal + pet) — Open-LLM-VTuber pattern
+- ✅ Free cloud LLM APIs with rotation — inspired by awesome-free-llm-apis
+- ✅ Voice abstraction (Edge TTS + Whisper API) — aituber-kit/VibeVoice inspired
+- ✅ VRM expression system (6 emotions) — aituber-kit pattern
+- ✅ Pose blending (additive Euler offsets) — AI4Animation-inspired
+- ✅ Gesture system (nod, wave, shrug, etc.) — original implementation

@@ -120,7 +120,17 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 069** — Phase 7 (VRM Security) starts with Chunk 070
+Chunk 085 (UI/UX Overhaul) ✅ Done — see `rules/completion-log.md`.
+Remaining not-started work is in `rules/backlog.md`.
+
+---
+
+## Phase 9.1 — UI/UX (Open-LLM-VTuber Patterns)
+
+✅ Chunk 085 — UI/UX Overhaul — see `rules/completion-log.md`
+
+Full-screen character layout, floating subtitle overlay, collapsible input footer,
+animated AI state pill, slide-over chat drawer. Learned from Open-LLM-VTuber-Web.
 
 ---
 
@@ -231,211 +241,7 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 
 ## Phase 7 — VRM Model Security (Anti-Exploit & Asset Protection)
 
-> **Goal:** Prevent VRM model files from being publicly exposed, downloaded, or
-> extracted — whether from the GitHub repository, the local filesystem after install,
-> or the app's runtime network traffic. VRM creators' work must be protected.
-
-### Problem Statement
-
-Currently, all default VRM models (~68 MB total) are committed to `public/models/default/`
-in plaintext `.vrm` files. This creates **three exploit vectors**:
-
-1. **GitHub repo exposure** — Anyone can clone/download the repo and get the raw `.vrm` files.
-2. **Local source code / installed app extraction** — After `npm run build`, VRM files are
-   copied as-is to `dist/models/default/` and then bundled into the Tauri app. Users or
-   attackers can browse the app resources folder and copy the files.
-3. **Network/DevTools interception** — In dev mode the `.vrm` files are served over HTTP.
-   Even in production, the WebView loads them from the local filesystem with predictable paths.
-
-### Step-by-Step Configuration Plan
-
-#### Step 1 — Remove VRM files from Git history
-
-VRM files should **never** live in the Git repository.
-
-```bash
-# 1a. Add VRM and large binary patterns to .gitignore
-echo "*.vrm" >> .gitignore
-echo "public/models/default/*.vrm" >> .gitignore
-
-# 1b. Remove tracked VRM files from the index (keeps local copies)
-git rm --cached "public/models/default/*.vrm"
-
-# 1c. (Optional) Purge from Git history entirely — use BFG Repo-Cleaner
-#     This is a one-time destructive operation; coordinate with team.
-bfg --delete-files '*.vrm' --no-blob-protection
-git reflog expire --expire=now --all && git gc --prune=now --aggressive
-```
-
-#### Step 2 — Encrypted asset bundle (build-time)
-
-Encrypt VRM files at build time so they are never stored in plaintext on disk.
-
-```
-Build pipeline:
-  1. Keep VRM source files in a private location outside the repo
-     (e.g., private GCS/S3 bucket, or a git-ignored local folder).
-  2. A build script (scripts/encrypt-models.ts) reads each .vrm file,
-     encrypts it with AES-256-GCM using a per-build key, and writes
-     the output to public/models/default/<name>.vrm.enc
-  3. The encryption key is embedded in the Rust binary (compiled in,
-     not in config files) via a build.rs env var or Tauri resource.
-  4. .vrm.enc files are committed or downloaded at CI time — never
-     the raw .vrm files.
-```
-
-#### Key Distribution Architecture — How Clients Get the Decryption Key
-
-> **Q: "This app is released as an installer with auto-update. How do clients
-> know about the CI secret?"**
->
-> **A: They don't.** The CI secret is compiled into the binary at build time.
-> End-users never see, handle, or configure the key.
-
-The encryption key flows through the build pipeline, not through user configuration:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  GitHub Actions (CI)                                            │
-│                                                                 │
-│  Secret: VRM_ENCRYPTION_KEY  (stored in Settings → Secrets)     │
-│          ↓                                                      │
-│  build.rs reads the env var at compile time:                    │
-│    let key = std::env::var("VRM_ENCRYPTION_KEY").unwrap();      │
-│    println!("cargo:rustc-env=VRM_KEY={}", key);                 │
-│          ↓                                                      │
-│  Rust compiler embeds it into the binary:                       │
-│    const KEY: &str = env!("VRM_KEY");                           │
-│          ↓                                                      │
-│  Tauri builds the installer (.msi / .dmg / .AppImage)           │
-│  with the compiled binary that has the key baked in.            │
-└─────────────────────────────────────────────────────────────────┘
-          ↓ installer download / auto-update
-┌─────────────────────────────────────────────────────────────────┐
-│  User's Machine                                                 │
-│                                                                 │
-│  1. User installs TerranSoul (or receives auto-update).         │
-│  2. The compiled Rust binary already contains the key.          │
-│  3. At runtime, load_vrm_secure() reads .vrm.enc from disk,    │
-│     decrypts in memory using the compiled-in key, and returns   │
-│     raw bytes to the frontend.                                  │
-│  4. User never sees, configures, or handles the key.            │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Key points:**
-
-- The CI secret `VRM_ENCRYPTION_KEY` lives **only** in GitHub Actions (Settings → Secrets).
-  It is never committed to source code, config files, or environment files.
-- `build.rs` reads it at compile time and injects it via `cargo:rustc-env`.
-  The `env!()` macro embeds the string into the compiled `.exe` / `.app` binary.
-- The installer ships this compiled binary. On auto-update, Tauri's updater
-  downloads a new binary that was also built by CI with the key embedded.
-- **Security trade-off:** A determined reverse engineer *can* extract the key
-  from the binary via disassembly or memory dump. This is an inherent limitation
-  of any client-side DRM. We mitigate with defense-in-depth layers (Step 7:
-  obfuscation, anti-tamper, zeroize). The goal is to make extraction **non-trivial**,
-  not mathematically impossible — matching the approach used by Steam, Unity,
-  and VRChat for their bundled assets.
-
-#### Step 3 — Runtime decryption in Rust backend
-
-The Tauri Rust backend decrypts models on demand, never writing plaintext to disk.
-
-```
-Runtime flow:
-  1. Frontend requests a model via Tauri command: invoke('load_vrm_secure', { modelId })
-  2. Rust handler reads the .vrm.enc file from the app's resource directory.
-  3. Decrypts in memory using the compiled-in AES-256-GCM key.
-  4. Returns the decrypted bytes to the frontend as a base64 data URI or
-     an ArrayBuffer via Tauri's binary response.
-  5. Frontend passes the ArrayBuffer directly to VRMLoaderPlugin.
-  6. Plaintext .vrm bytes NEVER touch the filesystem.
-```
-
-#### Step 4 — Tauri Content Security Policy (CSP)
-
-Lock down what the WebView can load and where data can be sent.
-
-```json
-// tauri.conf.json → app.security
-{
-  "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' http://localhost:* https://localhost:*; object-src 'none'"
-}
-```
-
-> **Note:** Avoid `'unsafe-inline'` for `style-src` — move all styles to external
-> stylesheets or use nonces/hashes. If inline styles are temporarily needed during
-> migration, scope the exception and track removal as a follow-up task.
-
-This blocks the WebView from fetching remote URLs (prevents exfiltration) and
-restricts resource loading to `'self'` and localhost (for Ollama/sidecar).
-
-#### Step 5 — Disable DevTools in production builds
-
-Prevent users from using browser DevTools to inspect network requests or memory.
-
-```json
-// tauri.conf.json → app.windows[0]
-{
-  "devtools": false
-}
-```
-
-In Rust, additionally strip the devtools feature from the production build by
-gating it behind `#[cfg(debug_assertions)]`.
-
-#### Step 6 — Tauri resource scope restrictions
-
-Use Tauri's file system scope to restrict which files the WebView can access.
-
-```json
-// tauri.conf.json → app.security — use default-deny approach
-{
-  "assetScope": {
-    "allow": ["$RESOURCE/models/**/*.vrm.enc", "$RESOURCE/icons/**"],
-    "deny": ["$RESOURCE/**"]
-  }
-}
-```
-
-> **Note:** Use a default-deny approach — deny everything, then explicitly allow
-> only the encrypted model files and other required resources. This is more secure
-> than relying on specific deny patterns for `.vrm` files which could be bypassed
-> if files are placed in unexpected directories.
-
-#### Step 7 — Obfuscation & anti-tamper (defense in depth)
-
-Additional hardening for production builds:
-
-- **Code obfuscation**: Use `vite-plugin-obfuscator` or `terser` mangling to
-  make it harder to find decryption routines in the JS bundle.
-- **Integrity checks**: At startup, Rust computes SHA-256 of each `.vrm.enc`
-  file and compares against compiled-in hashes. Reject tampered files.
-- **Memory protection**: After decryption, zero the key buffer. Use Rust's
-  `zeroize` crate for sensitive data.
-- **Anti-dump** (opt-in, behind feature flag): Detect common memory dump tools
-  and refuse to load models if debugging/injection is detected (e.g., check
-  `IsDebuggerPresent` on Windows). This is easily bypassed by determined
-  attackers and may interfere with legitimate development/troubleshooting —
-  only enable in release builds where model protection outweighs debuggability.
-
-#### Step 8 — User-imported models stay user-owned
-
-User-imported VRM files (via ModelPanel.vue) are the user's own files. These are
-**not** encrypted — they load directly from the user's chosen path. The encryption
-pipeline only applies to bundled default models that we ship with TerranSoul.
-
-### Milestone Chunks
-
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 070 | **Remove VRM from Git & .gitignore** — Add `*.vrm` to `.gitignore`. Remove tracked VRM files from index with `git rm --cached`. Update CI to download models from a private source (GitHub Release asset, private S3 bucket, or Git LFS with access control). Document the private model storage location. | `not-started` |
-| 071 | **Build-Time Encryption Pipeline** — Create `scripts/encrypt-models.ts`. AES-256-GCM encryption of each `.vrm` to `.vrm.enc`. Key generated per-release, stored as CI secret. Build script downloads raw VRM from private source → encrypts → outputs to `public/models/default/`. Update `npm run build` to call encryption step. Add `.vrm.enc` files to the repo (or download at CI). | `not-started` |
-| 072 | **Rust Decryption Command** — New Tauri command `load_vrm_secure(model_id: String) → Vec<u8>`. Reads `.vrm.enc` from Tauri resource dir, decrypts with compiled-in key (injected via `build.rs` env var). Returns raw bytes. Use `aes-gcm` crate. Add `zeroize` crate for key cleanup. Unit tests with a test-encrypted VRM. | `not-started` |
-| 073 | **Frontend Secure Loading Path** — Update `CharacterViewport.vue` and `vrm-loader.ts` to call `invoke('load_vrm_secure', { modelId })` for default models. Receive `ArrayBuffer`, create `Blob` URL, pass to `GLTFLoader`. User-imported models continue using direct file path. Update `default-models.ts` to flag built-in vs user models. Vitest tests for both paths. | `not-started` |
-| 074 | **CSP, DevTools & Scope Lockdown** — Set strict CSP in `tauri.conf.json`. Disable devtools in production. Configure Tauri resource/asset scope to deny raw `.vrm` access. Add integrity hashes for `.vrm.enc` files verified at startup. | `not-started` |
-| 075 | **Obfuscation & Anti-Tamper** — Add `vite-plugin-obfuscator` to production build. Rust SHA-256 integrity check of `.vrm.enc` files at load time. `zeroize` sensitive buffers after use. Optional: platform-specific anti-debug checks behind feature flag. | `not-started` |
+📦 Moved to `rules/backlog.md` — chunks 070–075 (all `not-started`).
 
 ---
 

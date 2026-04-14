@@ -162,14 +162,14 @@ watch(() => props.streamingText, scrollToBottom);
   background: linear-gradient(135deg, var(--ts-accent) 0%, #5a52e0 100%);
   color: #fff;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 1px 3px rgba(108, 99, 255, 0.25);
+  box-shadow: 0 2px 8px rgba(124, 111, 255, 0.28);
 }
 
 .message-row.assistant .bubble {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e8e8f0;
+  background: rgba(255, 255, 255, 0.10);
+  color: #eaecf4;
   border-bottom-left-radius: 4px;
-  border: 1px solid var(--ts-border-subtle);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
 .timestamp {
@@ -249,25 +249,27 @@ watch(() => props.streamingText, scrollToBottom);
 }
 
 .suggestion-chip {
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: var(--ts-radius-pill);
-  border: 1px solid rgba(108, 99, 255, 0.3);
-  background: rgba(108, 99, 255, 0.08);
-  color: rgba(108, 99, 255, 0.9);
-  font-size: 0.76rem;
+  border: 1px solid rgba(124, 111, 255, 0.35);
+  background: rgba(124, 111, 255, 0.10);
+  color: rgba(124, 111, 255, 0.95);
+  font-size: 0.78rem;
+  font-weight: 500;
   cursor: pointer;
   transition: all var(--ts-transition-fast);
 }
 
 .suggestion-chip:hover {
-  background: rgba(108, 99, 255, 0.18);
-  border-color: rgba(108, 99, 255, 0.5);
+  background: rgba(124, 111, 255, 0.22);
+  border-color: rgba(124, 111, 255, 0.55);
   transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(124, 111, 255, 0.15);
 }
 
 /* Streaming cursor blink */
 .streaming-bubble {
-  border: 1px solid rgba(108, 99, 255, 0.3);
+  border: 1px solid rgba(124, 111, 255, 0.3);
 }
 
 :deep(.cursor-blink) {

@@ -24,11 +24,6 @@ describe('CharacterAnimator', () => {
     expect(animator.getState()).toBe('happy');
   });
 
-  it('getPersona returns current persona', () => {
-    const animator = new CharacterAnimator();
-    expect(animator.getPersona()).toBe('witch');
-  });
-
   it('setState changes state and resets elapsed time', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();
@@ -215,51 +210,22 @@ describe('CharacterAnimator', () => {
     expect(typeof group.position.y).toBe('number');
   });
 
-  // ── Persona-specific tests ─────────────────────────────────────────
-
-  it('all persona types are accepted without error', () => {
-    const personas = ['witch', 'idol'] as const;
-    for (const _persona of personas) {
+  it('all states produce stable animation (no NaN)', () => {
+    const states = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'] as const;
+    for (const state of states) {
       const animator = new CharacterAnimator();
       const group = makePlaceholder();
       animator.setPlaceholder(group);
-      // setVRM is VRM-only, but placeholder still exercises setState/update path
-      expect(animator.getPersona()).toBe('witch'); // default
-      // exercise all states with placeholder
-      for (const state of ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'] as const) {
-        animator.setState(state);
-        expect(() => animator.update(0.016)).not.toThrow();
+      animator.setState(state);
+      // Simulate 5 seconds at 60fps
+      for (let i = 0; i < 300; i++) {
+        animator.update(1 / 60);
       }
+      expect(group.position.y).not.toBeNaN();
+      expect(group.rotation.x).not.toBeNaN();
+      expect(group.scale.x).not.toBeNaN();
+      expect(Math.abs(group.position.y)).toBeLessThan(1.0);
     }
-  });
-
-  it('all persona × state combinations produce stable animation (no NaN)', () => {
-    const personas = ['witch', 'idol'] as const;
-    const states = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'] as const;
-    for (const _persona of personas) {
-      for (const state of states) {
-        const animator = new CharacterAnimator();
-        const group = makePlaceholder();
-        animator.setPlaceholder(group);
-        animator.setState(state);
-        // Simulate 5 seconds at 60fps — long enough to catch accumulation bugs
-        for (let i = 0; i < 300; i++) {
-          animator.update(1 / 60);
-        }
-        expect(group.position.y).not.toBeNaN();
-        expect(group.rotation.x).not.toBeNaN();
-        expect(group.scale.x).not.toBeNaN();
-        expect(Math.abs(group.position.y)).toBeLessThan(1.0);
-      }
-    }
-  });
-
-  it('triggerRandomAnimation does not throw on placeholder', () => {
-    const animator = new CharacterAnimator();
-    const group = makePlaceholder();
-    animator.setPlaceholder(group);
-    // No VRM set → should be a no-op, not an error
-    expect(() => animator.triggerRandomAnimation()).not.toThrow();
   });
 
   // ── New emotion state tests ────────────────────────────────────────

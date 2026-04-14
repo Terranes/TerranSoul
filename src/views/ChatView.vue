@@ -1,89 +1,113 @@
 <template>
-  <div class="chat-view">
-    <!-- 3D viewport fills the whole area; click it to toggle dialog -->
-    <div class="viewport-section" @click="toggleDialog">
-      <CharacterViewport />
-      <!-- Toggle button overlay -->
-      <button
-        class="dialog-toggle-btn"
-        :class="{ active: showDialog }"
-        @click.stop="toggleDialog"
-        aria-label="Toggle dialog"
-      >💬</button>
+  <div class="chat-view" :style="{ '--keyboard-offset': keyboardHeight + 'px' }">
+    <!-- Full-screen character viewport — the star of the show -->
+    <div class="viewport-layer">
+      <CharacterViewport ref="viewportRef" />
     </div>
 
-    <!-- Toggleable chat dialog -->
-    <Transition name="slide">
-      <div v-if="showDialog" class="chat-section" @click.stop>
-        <!-- Inline brain setup card (shown when no brain is configured) -->
-        <div v-if="!brain.hasBrain" class="brain-inline">
-          <div class="brain-card">
-            <div class="brain-card-header">
-              <span>🧠</span>
-              <strong>Set up your Brain</strong>
-            </div>
-            <!-- Free API quick-start (default) -->
-            <div class="brain-free-start">
-              <p>Start chatting instantly with a free cloud LLM:</p>
-              <button class="brain-activate-btn" @click="activateFreeApi">
-                ☁️ Use Free Cloud API (no setup)
-              </button>
-            </div>
-            <!-- Optional: local Ollama section -->
-            <div class="brain-local-section">
-              <p class="brain-hw" v-if="brain.systemInfo">
-                {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
-              </p>
-              <p v-if="brain.topRecommendation" class="brain-rec">
-                Or run locally: <strong>{{ brain.topRecommendation.display_name }}</strong>
-                <br><small>{{ brain.topRecommendation.description }}</small>
-              </p>
-              <div v-if="brain.recommendations.length" class="brain-models">
-                <button
-                  v-for="m in brain.recommendations"
-                  :key="m.model_tag"
-                  :class="['brain-model-btn', { selected: selectedBrain === m.model_tag, top: m.is_top_pick }]"
-                  @click="selectedBrain = m.model_tag"
-                >
-                  <span>{{ m.display_name }}</span>
-                  <span v-if="m.is_top_pick" class="brain-star">⭐</span>
-                </button>
-              </div>
-              <div v-if="!brain.ollamaStatus.running && brain.recommendations.length" class="brain-warn">
-                ❌ Ollama not running — start it first (<code>ollama serve</code>)
-                <button class="brain-retry-btn" @click="brain.checkOllamaStatus()">🔄 Retry</button>
-              </div>
-              <div v-else-if="brain.isPulling" class="brain-pulling">
-                <div class="brain-spinner" /> Downloading…
-              </div>
-              <div v-else-if="brain.pullError" class="brain-warn">❌ {{ brain.pullError }}</div>
+    <!-- ── Floating overlays on top of the character ── -->
+
+    <!-- Brain setup card (shown when no brain is configured) -->
+    <Transition name="fade-up">
+      <div v-if="!brain.hasBrain" class="brain-overlay">
+        <div class="brain-card">
+          <div class="brain-card-header">
+            <span>🧠</span>
+            <strong>Set up your Brain</strong>
+          </div>
+          <div class="brain-free-start">
+            <p>Start chatting instantly with a free cloud LLM:</p>
+            <button class="brain-activate-btn" @click="activateFreeApi">
+              ☁️ Use Free Cloud API (no setup)
+            </button>
+          </div>
+          <div class="brain-local-section">
+            <p class="brain-hw" v-if="brain.systemInfo">
+              {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
+            </p>
+            <p v-if="brain.topRecommendation" class="brain-rec">
+              Or run locally: <strong>{{ brain.topRecommendation.display_name }}</strong>
+              <br><small>{{ brain.topRecommendation.description }}</small>
+            </p>
+            <div v-if="brain.recommendations.length" class="brain-models">
               <button
-                v-if="brain.ollamaStatus.running && !brain.isPulling && selectedBrain"
-                class="brain-local-btn"
-                @click="activateBrain"
+                v-for="m in brain.recommendations"
+                :key="m.model_tag"
+                :class="['brain-model-btn', { selected: selectedBrain === m.model_tag, top: m.is_top_pick }]"
+                @click="selectedBrain = m.model_tag"
               >
-                ⬇ Install &amp; activate {{ selectedBrain }}
+                <span>{{ m.display_name }}</span>
+                <span v-if="m.is_top_pick" class="brain-star">⭐</span>
               </button>
             </div>
+            <div v-if="!brain.ollamaStatus.running && brain.recommendations.length" class="brain-warn">
+              ❌ Ollama not running — start it first (<code>ollama serve</code>)
+              <button class="brain-retry-btn" @click="brain.checkOllamaStatus()">🔄 Retry</button>
+            </div>
+            <div v-else-if="brain.isPulling" class="brain-pulling">
+              <div class="brain-spinner" /> Downloading…
+            </div>
+            <div v-else-if="brain.pullError" class="brain-warn">❌ {{ brain.pullError }}</div>
+            <button
+              v-if="brain.ollamaStatus.running && !brain.isPulling && selectedBrain"
+              class="brain-local-btn"
+              @click="activateBrain"
+            >
+              ⬇ Install &amp; activate {{ selectedBrain }}
+            </button>
           </div>
         </div>
-
-        <!-- Brain status indicator when free API is active -->
-        <div v-if="brain.hasBrain && brain.isFreeApiMode" class="brain-status-bar">
-          <span class="brain-status-dot" />
-          <span class="brain-status-text">☁️ {{ activeProviderName }}</span>
-        </div>
-
-        <ChatMessageList
-          :messages="conversationStore.messages"
-          :is-thinking="conversationStore.isThinking"
-          :streaming-text="conversationStore.streamingText"
-          :is-streaming="conversationStore.isStreaming"
-          @suggest="handleSend"
-        />
-        <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
       </div>
     </Transition>
+
+    <!-- Floating subtitle — shows latest AI response on the canvas -->
+    <Transition name="subtitle">
+      <div v-if="subtitleText" class="subtitle-overlay" :key="subtitleKey">
+        <p class="subtitle-text">{{ subtitleText }}</p>
+      </div>
+    </Transition>
+
+    <!-- AI state indicator pill -->
+    <div class="ai-state-pill" :class="characterStore.state">
+      <span class="ai-state-dot" />
+      <span class="ai-state-label">{{ stateLabel }}</span>
+    </div>
+
+    <!-- Brain status (when free API active) -->
+    <Transition name="fade">
+      <div v-if="brain.hasBrain && brain.isFreeApiMode" class="brain-status-pill">
+        <span class="brain-pill-dot" />
+        <span>{{ activeProviderName }}</span>
+      </div>
+    </Transition>
+
+    <!-- Bottom chat panel — input always visible, history toggles via 💬 button -->
+    <div class="bottom-panel" :class="{ expanded: showDrawer }">
+      <!-- Chat history (shown when expanded) -->
+      <Transition name="chat-panel">
+        <div v-if="showDrawer" class="chat-history" @click.stop>
+          <ChatMessageList
+            :messages="conversationStore.messages"
+            :is-thinking="conversationStore.isThinking"
+            :streaming-text="conversationStore.streamingText"
+            :is-streaming="conversationStore.isStreaming"
+            @suggest="handleSend"
+          />
+        </div>
+      </Transition>
+      <!-- Input footer — always visible -->
+      <div class="input-footer">
+        <div class="input-row">
+          <button
+            class="chat-drawer-toggle"
+            :class="{ active: showDrawer }"
+            @click="showDrawer = !showDrawer"
+            aria-label="Toggle chat history"
+          >💬</button>
+          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -93,6 +117,7 @@ import { useConversationStore, detectSentiment } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
+import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
@@ -102,11 +127,49 @@ const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const streaming = useStreamingStore();
-const showDialog = ref(true);
+const showDrawer = ref(false);
 const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
+
+/** Ref to CharacterViewport — used to call zoomToFace() when keyboard opens. */
+const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
+
+// ── Keyboard detection ────────────────────────────────────────────
+const { keyboardHeight, keyboardOpen } = useKeyboardDetector();
+
+watch(keyboardOpen, (open) => {
+  // Tell the 3D scene to zoom to face (or revert) when keyboard state changes
+  viewportRef.value?.zoomToFace(open);
+});
+
+// ── Subtitle system ──────────────────────────────────────────────
+const MAX_SUBTITLE_LENGTH = 150;
+const SUBTITLE_DURATION_MS = 8000;
+const subtitleText = ref('');
+const subtitleKey = ref(0);
+let subtitleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showSubtitle(text: string) {
+  subtitleText.value = text.length > MAX_SUBTITLE_LENGTH ? text.slice(0, MAX_SUBTITLE_LENGTH) + '…' : text;
+  subtitleKey.value++;
+  if (subtitleTimer) clearTimeout(subtitleTimer);
+  subtitleTimer = setTimeout(() => { subtitleText.value = ''; }, SUBTITLE_DURATION_MS);
+}
+
+// ── State label ──────────────────────────────────────────────────
+const STATE_LABELS: Record<CharacterState, string> = {
+  idle: 'Idle',
+  thinking: 'Thinking…',
+  talking: 'Talking',
+  happy: 'Happy',
+  sad: 'Sad',
+  angry: 'Angry',
+  relaxed: 'Relaxed',
+  surprised: 'Surprised',
+};
+const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
 
 const activeProviderName = computed(() => {
   const mode = brain.brainMode;
@@ -114,10 +177,6 @@ const activeProviderName = computed(() => {
   const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
   return p?.display_name ?? mode.provider_id ?? '';
 });
-
-function toggleDialog() {
-  showDialog.value = !showDialog.value;
-}
 
 function formatRam(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`;
@@ -175,6 +234,12 @@ async function handleSend(message: string) {
 
   characterStore.setState(reactionState);
   pendingEmotion.value = 'idle';
+
+  // Show the AI's response as a floating subtitle
+  if (lastMsg?.role === 'assistant') {
+    showSubtitle(lastMsg.content);
+  }
+
   setTimeout(() => characterStore.setState('idle'), 6000);
 }
 
@@ -210,6 +275,16 @@ watch(
   },
 );
 
+// Update subtitle during streaming
+watch(
+  () => conversationStore.streamingText,
+  (text) => {
+    if (text) {
+      showSubtitle(text);
+    }
+  },
+);
+
 onMounted(async () => {
   await setupTauriEventListener();
 
@@ -228,82 +303,235 @@ onUnmounted(() => {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
   }
+  if (subtitleTimer) clearTimeout(subtitleTimer);
 });
 </script>
 
 <style scoped>
+/* ── Full-screen layout: character fills viewport, UI overlays on top ── */
 .chat-view {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
-  width: 100%;
-  overflow: hidden;
   position: relative;
+  width: 100%;
+  /* Use 100% to fill the parent .app-main flex container exactly.
+     100vh/100dvh would overflow on mobile where .app-main is shorter
+     than the viewport (viewport − bottom nav bar height). */
+  height: 100%;
+  overflow: hidden;
 }
 
-.viewport-section {
+/* The 3D viewport is always full-size and never shifts.
+   overflow:hidden on .chat-view clips any keyboard-driven translate. */
+.viewport-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* ── AI State Indicator — animated pill ── */
+.ai-state-pill {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: var(--ts-radius-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(11, 17, 32, 0.72);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.88);
+  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+.ai-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  transition: background 0.4s ease;
+}
+.ai-state-pill.idle { background: rgba(37, 99, 235, 0.25); color: #93c5fd; border-color: rgba(147, 197, 253, 0.3); }
+.ai-state-pill.idle .ai-state-dot { background: #3b82f6; }
+.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: #fcd34d; border-color: rgba(253, 230, 138, 0.35); }
+.ai-state-pill.thinking .ai-state-dot { background: #f59e0b; animation: pulse-dot 1.2s ease-in-out infinite; }
+.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: #86efac; border-color: rgba(134, 239, 172, 0.3); }
+.ai-state-pill.talking .ai-state-dot { background: #22c55e; }
+.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: #67e8f9; border-color: rgba(103, 232, 249, 0.3); }
+.ai-state-pill.happy .ai-state-dot { background: #06b6d4; }
+.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: #d8b4fe; border-color: rgba(216, 180, 254, 0.3); }
+.ai-state-pill.sad .ai-state-dot { background: #a855f7; }
+.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border-color: rgba(252, 165, 165, 0.3); }
+.ai-state-pill.angry .ai-state-dot { background: #ef4444; }
+.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: #5eead4; border-color: rgba(94, 234, 212, 0.25); }
+.ai-state-pill.relaxed .ai-state-dot { background: #14b8a6; }
+.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: #fde68a; border-color: rgba(253, 230, 138, 0.3); }
+.ai-state-pill.surprised .ai-state-dot { background: #f59e0b; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+/* ── Brain status pill ── */
+.brain-status-pill {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: var(--ts-radius-pill);
+  background: rgba(22, 163, 74, 0.15);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  font-size: 0.7rem;
+  color: #86efac;
+  pointer-events: none;
+}
+.brain-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* ── Floating subtitle overlay ── */
+.subtitle-overlay {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  width: 65%;
+  max-width: 560px;
+  pointer-events: none;
+}
+.subtitle-text {
+  margin: 0;
+  padding: 10px 20px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  border-radius: var(--ts-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* Subtitle transition */
+.subtitle-enter-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.subtitle-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.subtitle-enter-from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+.subtitle-leave-to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+
+/* ── Bottom panel — input + expandable chat history ── */
+.bottom-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  max-height: 65vh;
+  pointer-events: none;
+  /* Slide the panel up by the keyboard height when the virtual keyboard
+     is open — only the input floats up, the 3D viewport stays fixed. */
+  transform: translateY(calc(-1 * var(--keyboard-offset, 0px)));
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.bottom-panel > * { pointer-events: auto; }
+
+/* Chat history — slides up above the input */
+.chat-history {
   flex: 1;
   min-height: 0;
-  position: relative;
-  cursor: pointer;
+  overflow-y: auto;
+  background: rgba(11, 17, 32, 0.92);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-.chat-section {
-  flex: 0 0 45%;
-  max-height: 45%;
+/* Chat history slide transition */
+.chat-panel-enter-active { transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease; }
+.chat-panel-leave-active { transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease; }
+.chat-panel-enter-from, .chat-panel-leave-to { max-height: 0; opacity: 0; overflow: hidden; }
+.chat-panel-enter-to, .chat-panel-leave-from { max-height: 50vh; opacity: 1; }
+
+/* Input footer — always visible at the very bottom */
+.input-footer {
+  background: rgba(11, 17, 32, 0.88);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 6px 10px 8px;
+}
+.input-row {
   display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--ts-bg-overlay);
-  border-top: 1px solid var(--ts-border);
-  backdrop-filter: blur(8px);
+  align-items: center;
+  gap: 8px;
 }
 
-/* Mobile: expand chat section, hide viewport toggle for more space */
-@media (max-width: 640px) {
-  .chat-section {
-    flex: 0 0 55%;
-    max-height: 55%;
-  }
-}
-
-/* Toggle button */
-.dialog-toggle-btn {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  z-index: 10;
-  width: 44px;
-  height: 44px;
+/* ── Chat toggle button (💬) — inline in the input row ── */
+.chat-drawer-toggle {
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 32, 0.72);
+  backdrop-filter: blur(10px);
   color: #fff;
   font-size: 1.2rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
-  transition: background var(--ts-transition-normal), transform var(--ts-transition-normal), box-shadow var(--ts-transition-normal);
+  flex-shrink: 0;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
-.dialog-toggle-btn:hover { background: rgba(108, 99, 255, 0.5); transform: scale(1.1); box-shadow: 0 4px 20px rgba(108, 99, 255, 0.3); }
-.dialog-toggle-btn.active { background: rgba(108, 99, 255, 0.6); box-shadow: 0 2px 12px rgba(108, 99, 255, 0.2); }
+.chat-drawer-toggle:hover {
+  background: rgba(124, 111, 255, 0.55);
+  transform: scale(1.08);
+  box-shadow: 0 4px 24px rgba(124, 111, 255, 0.3);
+}
+.chat-drawer-toggle.active {
+  background: rgba(124, 111, 255, 0.70);
+  border-color: rgba(124, 111, 255, 0.5);
+}
 
-/* Slide transition */
-.slide-enter-active, .slide-leave-active { transition: transform 0.25s ease, opacity 0.25s ease; }
-.slide-enter-from, .slide-leave-to { transform: translateY(100%); opacity: 0; }
+/* ── Fade transitions ── */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+.fade-up-enter-active, .fade-up-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+.fade-up-leave-to { opacity: 0; transform: translateY(-8px); }
 
-/* ── Inline brain setup ── */
-.brain-inline { padding: 10px 12px 4px; flex-shrink: 0; }
-
-/* ── Brain status bar ── */
-.brain-status-bar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; background: var(--ts-success-bg); border-bottom: 1px solid rgba(34, 197, 94, 0.15); flex-shrink: 0; }
-.brain-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ts-success); animation: pulse-dot 2s ease-in-out infinite; }
-@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.brain-status-text { font-size: 0.72rem; color: #86efac; letter-spacing: 0.02em; }
-.brain-card { background: var(--ts-bg-card); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; border: 1px solid rgba(59, 130, 246, 0.3); }
+/* ── Brain setup overlay (centered on screen) ── */
+.brain-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: 340px;
+  max-width: 90vw;
+}
+.brain-card { background: rgba(11, 17, 32, 0.94); backdrop-filter: blur(20px); border-radius: var(--ts-radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(75, 142, 255, 0.3); box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6); }
 .brain-card-header { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-base); }
 .brain-hw { font-size: var(--ts-text-sm); color: var(--ts-text-secondary); margin: 0; }
 .brain-rec { font-size: 0.8rem; color: #cbd5e1; margin: 0; line-height: 1.4; }
@@ -327,4 +555,18 @@ onUnmounted(() => {
 .brain-free-start { display: flex; flex-direction: column; gap: 4px; }
 .brain-free-start p { margin: 0; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
 .brain-local-section { border-top: 1px solid var(--ts-border-subtle); padding-top: 6px; margin-top: 2px; }
+
+/* ── Mobile adjustments ── */
+@media (max-width: 640px) {
+  .bottom-panel { max-height: 50vh; }
+  .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
+  .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
+  .ai-state-pill { right: 10px; top: 8px; padding: 3px 10px; font-size: 0.65rem; }
+  .brain-overlay { width: 92vw; }
+  /* Shift brain status pill left to avoid collision with AI state pill */
+  .brain-status-pill { left: 40%; font-size: 0.62rem; padding: 3px 10px; }
+  /* Compact the input footer */
+  .input-footer { padding: 4px 6px 6px; }
+  .chat-drawer-toggle { width: 36px; height: 36px; font-size: 1rem; }
+}
 </style>

@@ -2001,3 +2001,45 @@ system prompt, enabling coherent animation decisions across conversation turns.
 - System prompt updated with full pose/gesture/motion documentation
 - **438 total Vitest tests across 34 files** (+67 new tests for Phase 8)
 - Build: `npm run build` ✓
+
+---
+
+## Chunk 085 — UI/UX Overhaul (Open-LLM-VTuber Layout Patterns)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+**Source:** Learned from Open-LLM-VTuber-Web (React/Electron) — adapted to Vue 3/Tauri.
+
+### Goal
+Transform the stacked viewport+chat layout into a modern full-screen character experience
+with floating glass overlays. Key patterns adopted from Open-LLM-VTuber:
+1. Character canvas fills the entire viewport (not squeezed to 55%).
+2. Chat panel is a slide-over drawer from the right (not a fixed bottom panel).
+3. Input bar is a collapsible floating footer.
+4. AI response text appears as a floating subtitle on the canvas.
+5. AI state shown as an animated glassmorphism pill (not a plain text badge).
+
+### Architecture Changes
+- **ChatView.vue** — Complete layout restructure:
+  - Viewport fills 100% of parent, positioned absolutely as z-index 0.
+  - All UI elements (brain setup, subtitle, state pill, input, chat drawer) float on top.
+  - New subtitle system: `showSubtitle()` displays truncated AI response text with 8s auto-dismiss.
+  - State labels: human-readable labels ("Thinking…", "Happy") instead of raw state strings.
+  - Streaming watcher updates subtitle in real-time.
+- **CharacterViewport.vue** — Removed `state-badge` element and all its CSS (67 lines removed).
+  State indicator now lives in ChatView as the new `ai-state-pill`.
+- **New UI components:**
+  - `.subtitle-overlay` — Centered floating text with glassmorphism, 65% width, animated entry/exit.
+  - `.ai-state-pill` — 8 color variants with animated dot, glassmorphism background.
+  - `.input-footer` — Collapsible bar with chevron toggle, slides down when collapsed.
+  - `.chat-drawer` — 380px slide-over from right with header, close button, shadow.
+  - `.brain-overlay` — Brain setup card now centered on screen instead of inline.
+  - `.brain-status-pill` — Compact pill centered at top instead of full-width bar.
+
+### Files Modified
+- `src/views/ChatView.vue` — Template, script, and styles completely overhauled.
+- `src/components/CharacterViewport.vue` — Removed state-badge element and CSS.
+
+### Test Counts (Chunk 085)
+- **Vitest:** 438 tests across 34 files — all pass (no test changes needed)
+- Build: `npm run build` ✓

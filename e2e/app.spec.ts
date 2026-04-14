@@ -23,8 +23,8 @@ test.describe('TerranSoul App', () => {
     await expect(chatView).toBeVisible();
 
     // Viewport section and chat section should both exist
-    await expect(page.locator('.viewport-section')).toBeVisible();
-    await expect(page.locator('.chat-section')).toBeVisible();
+    await expect(page.locator('.viewport-layer')).toBeVisible();
+    await expect(page.locator('.input-footer')).toBeVisible();
   });
 
   test('chat input is visible and interactive', async ({ page }) => {
@@ -60,6 +60,9 @@ test.describe('TerranSoul App', () => {
     await input.fill('hello world');
     await sendBtn.click();
 
+    // Open the chat drawer to see messages
+    await page.locator('.chat-drawer-toggle').click();
+
     // User message should appear in the message list
     const userMsg = page.locator('.message-row.user').first();
     await expect(userMsg).toBeVisible({ timeout: MESSAGE_TIMEOUT });
@@ -91,9 +94,9 @@ test.describe('TerranSoul App', () => {
     await page.goto('/');
 
     // The state badge should show "idle" initially
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     await expect(badge).toBeVisible();
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
   });
 
   test('settings dropdown toggle works', async ({ page }) => {
@@ -234,8 +237,8 @@ test.describe('3D Character Loading & Animation', () => {
   test('animation state changes when sending a message', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
-    await expect(badge).toContainText('idle');
+    const badge = page.locator('.ai-state-pill');
+    await expect(badge).toContainText('Idle');
 
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
@@ -244,10 +247,10 @@ test.describe('3D Character Loading & Animation', () => {
 
     await expect(async () => {
       const text = (await badge.textContent())?.trim();
-      expect(['thinking', 'talking', 'happy', 'sad']).toContain(text);
+      expect(['Thinking…', 'Talking', 'Happy', 'Sad']).toContain(text);
     }).toPass({ timeout: 3_000 });
 
-    await expect(badge).toContainText('idle', { timeout: RESPONSE_TIMEOUT });
+    await expect(badge).toContainText('Idle', { timeout: RESPONSE_TIMEOUT });
   });
 
   test('canvas continues to render frames over time', async ({ page }) => {
@@ -283,7 +286,7 @@ test.describe('3D Character Loading & Animation', () => {
     // system is responding to state changes even though headless Chrome's
     // software WebGL doesn't produce pixel-level differences for subtle
     // bone-level animation).
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
     await input.fill('Hello!');
@@ -291,11 +294,11 @@ test.describe('3D Character Loading & Animation', () => {
 
     await expect(async () => {
       const text = (await badge.textContent())?.trim();
-      expect(['thinking', 'talking', 'happy', 'sad']).toContain(text);
+      expect(['Thinking…', 'Talking', 'Happy', 'Sad']).toContain(text);
     }).toPass({ timeout: 5_000 });
 
     // Confirm it returns to idle after response
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 });
 
@@ -337,7 +340,7 @@ test.describe('Animation & AI Emotion', () => {
 
     // Verify animation state transitions work (proves the animation
     // system processes state changes and updates bones per frame).
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
     await input.fill('Hello there!');
@@ -345,10 +348,10 @@ test.describe('Animation & AI Emotion', () => {
 
     await expect(async () => {
       const text = (await badge.textContent())?.trim();
-      expect(['thinking', 'talking', 'happy', 'sad']).toContain(text);
+      expect(['Thinking…', 'Talking', 'Happy', 'Sad']).toContain(text);
     }).toPass({ timeout: 5_000 });
 
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('AI responds with persona (not an error) in browser mode', async ({ page }) => {
@@ -359,6 +362,9 @@ test.describe('Animation & AI Emotion', () => {
 
     await input.fill('Hello there!');
     await sendBtn.click();
+
+    // Open the chat drawer to see messages
+    await page.locator('.chat-drawer-toggle').click();
 
     const assistantMsg = page.locator('.message-row.assistant').first();
     await expect(assistantMsg).toBeVisible({ timeout: 5_000 });
@@ -371,59 +377,59 @@ test.describe('Animation & AI Emotion', () => {
   test('happy message triggers happy emotion on character', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('Hello!');
     await sendBtn.click();
 
-    await expect(badge).toContainText('happy', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Happy', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('sad message triggers sad emotion on character', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('I feel so sad today');
     await sendBtn.click();
 
-    await expect(badge).toContainText('sad', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Sad', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('neutral message triggers talking state on character', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('What is the weather like?');
     await sendBtn.click();
 
-    await expect(badge).toContainText('talking', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Talking', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('character shows thinking state while waiting for response', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('Tell me something interesting');
     await sendBtn.click();
@@ -432,33 +438,33 @@ test.describe('Animation & AI Emotion', () => {
     // Accept either state as proof the state machine responded to the message.
     await expect(async () => {
       const text = (await badge.textContent())?.trim();
-      expect(['thinking', 'talking']).toContain(text);
+      expect(['Thinking…', 'Talking']).toContain(text);
     }).toPass({ timeout: 5_000 });
   });
 
   test('multiple emotions cycle correctly across messages', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
     // Message 1: happy
     await input.fill('Hey there!');
     await sendBtn.click();
-    await expect(badge).toContainText('happy', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Happy', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // Message 2: sad
     await input.fill('That makes me sad');
     await sendBtn.click();
-    await expect(badge).toContainText('sad', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Sad', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // Message 3: happy again
     await input.fill('Actually, I feel awesome!');
     await sendBtn.click();
-    await expect(badge).toContainText('happy', { timeout: 5_000 });
+    await expect(badge).toContainText('Happy', { timeout: 5_000 });
   });
 
   test('Annabelle (cool) emotion animation with happy message', async ({ page }) => {
@@ -468,7 +474,7 @@ test.describe('Animation & AI Emotion', () => {
     // Annabelle is the default (cool persona)
     await waitForModelLoaded(page);
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
@@ -477,100 +483,100 @@ test.describe('Animation & AI Emotion', () => {
     await sendBtn.click();
 
     // Should transition to happy state (cool-happy: confident lean)
-    await expect(badge).toContainText('happy', { timeout: 10_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Happy', { timeout: 10_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('angry message triggers angry emotion on character', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('I am so angry and frustrated!');
     await sendBtn.click();
 
-    await expect(badge).toContainText('angry', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Angry', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('relaxed message triggers relaxed emotion on character', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('I want to relax and feel calm');
     await sendBtn.click();
 
-    await expect(badge).toContainText('relaxed', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Relaxed', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('surprised message triggers surprised emotion on character', async ({ page }) => {
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
-    await expect(badge).toContainText('idle');
+    await expect(badge).toContainText('Idle');
 
     await input.fill('Wow that is so surprising!');
     await sendBtn.click();
 
-    await expect(badge).toContainText('surprised', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Surprised', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('all 8 emotion states cycle correctly across messages', async ({ page }) => {
     test.setTimeout(90_000);
     await page.goto('/');
 
-    const badge = page.locator('.state-badge');
+    const badge = page.locator('.ai-state-pill');
     const input = page.locator('.chat-input');
     const sendBtn = page.locator('.send-btn');
 
     // happy → idle
     await input.fill('Hey there!');
     await sendBtn.click();
-    await expect(badge).toContainText('happy', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Happy', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // sad → idle
     await input.fill('That makes me sad');
     await sendBtn.click();
-    await expect(badge).toContainText('sad', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Sad', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // angry → idle
     await input.fill('I am so frustrated and angry');
     await sendBtn.click();
-    await expect(badge).toContainText('angry', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Angry', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // relaxed → idle
     await input.fill('Let me relax a bit');
     await sendBtn.click();
-    await expect(badge).toContainText('relaxed', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Relaxed', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // surprised → idle
     await input.fill('Wow that is amazing!');
     await sendBtn.click();
-    await expect(badge).toContainText('surprised', { timeout: 5_000 });
-    await expect(badge).toContainText('idle', { timeout: 10_000 });
+    await expect(badge).toContainText('Surprised', { timeout: 5_000 });
+    await expect(badge).toContainText('Idle', { timeout: 10_000 });
 
     // happy again
     await input.fill('Actually, I feel awesome!');
     await sendBtn.click();
-    await expect(badge).toContainText('happy', { timeout: 5_000 });
+    await expect(badge).toContainText('Happy', { timeout: 5_000 });
   });
 });
 
@@ -622,6 +628,9 @@ test.describe('Free LLM Brain', () => {
     const sendBtn = page.locator('.send-btn');
     await expect(sendBtn).toBeEnabled();
     await sendBtn.click();
+
+    // Open the chat drawer to see messages
+    await page.locator('.chat-drawer-toggle').click();
 
     const userMsg = page.locator('.message-row.user').first();
     await expect(userMsg).toBeVisible({ timeout: MESSAGE_TIMEOUT });

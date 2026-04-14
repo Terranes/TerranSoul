@@ -19,6 +19,12 @@ export interface SceneContext {
    *  target height so zooming in frames the face and zooming out shows the
    *  full body. */
   updateZoomTarget: () => void;
+  /**
+   * Smoothly zoom the camera to face-close (enabled=true) or back to the
+   * default full-body distance (enabled=false).  Used when the mobile keyboard
+   * opens so the character face stays visible while the input footer slides up.
+   */
+  zoomToFace: (enabled: boolean) => void;
   dispose: () => void;
 }
 
@@ -56,8 +62,18 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     0.02,
     1000,
   );
-  // Full-body framing — camera at body centre height, pulled back
-  camera.position.set(0.0, 1.0, 2.8);
+  // Full-body framing — camera at body centre height, pulled back.
+  // On portrait screens (aspect < 1), pull back further so
+  // the character's arms don't extend beyond the viewport edges.
+  const CAMERA_Z_LANDSCAPE = 2.8;
+  const CAMERA_Z_PORTRAIT = 3.8;
+  /** Camera distance when the mobile keyboard is open — zoomed to face. */
+  const CAMERA_Z_KEYBOARD = 1.2;
+  /** Orbit target Y when the mobile keyboard is open (face centre). */
+  const CAMERA_TARGET_Y_KEYBOARD = 1.55;
+  const aspect = canvas.clientWidth / canvas.clientHeight;
+  const cameraZ = aspect < 1 ? CAMERA_Z_PORTRAIT : CAMERA_Z_LANDSCAPE;
+  camera.position.set(0.0, 1.0, cameraZ);
 
   // ── OrbitControls — locked viewport ────────────────────────────────
   // Horizontal-only rotation (360° azimuth, no vertical tilt).
@@ -89,12 +105,23 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   /**
    * Smoothly adjusts the orbit target height based on zoom distance so
    * zooming in frames the face and zooming out shows the entire body.
+   * When the keyboard is open, lerps camera towards face-close distance.
    * Must be called each frame before controls.update().
    */
   function updateZoomTarget() {
-    const dist = controls.getDistance();
-    const t = Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
-    controls.target.y = FACE_Y + t * (BODY_Y - FACE_Y);
+    if (_keyboardOpen) {
+      // Lerp camera Z towards face distance
+      const currentZ = camera.position.z;
+      const targetZ = CAMERA_Z_KEYBOARD;
+      camera.position.z += (targetZ - currentZ) * KEYBOARD_ZOOM_LERP_SPEED;
+      // Lerp orbit target Y towards face height
+      controls.target.y += (CAMERA_TARGET_Y_KEYBOARD - controls.target.y) * KEYBOARD_ZOOM_LERP_SPEED;
+    } else {
+      // Normal zoom-target logic: portrait default or full-body
+      const dist = controls.getDistance();
+      const t = Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
+      controls.target.y = FACE_Y + t * (BODY_Y - FACE_Y);
+    }
   }
 
   // LookAt target — placed in scene (not on camera) for VRM eye tracking
@@ -120,10 +147,15 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   fillLight.position.set(-1.6, 1.4, 2.2);
   scene.add(fillLight);
 
-  // Rim/back light — subtle separation from background
-  const rimLight = new THREE.DirectionalLight(0xffffff, 0.18);
+  // Rim/back light — stronger separation from background
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.45);
   rimLight.position.set(0.3, 2.3, -2.2);
   scene.add(rimLight);
+
+  // Secondary rim from opposite side for fuller edge definition
+  const rimLight2 = new THREE.DirectionalLight(0xddeeff, 0.25);
+  rimLight2.position.set(-0.5, 1.5, -1.8);
+  scene.add(rimLight2);
 
   // Soft pedestal instead of grid floor
   const pedestalGeometry = new THREE.CircleGeometry(1.15, 64);
@@ -161,8 +193,32 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+
+    // Adjust camera distance for portrait vs landscape so the character
+    // stays fully visible on narrow mobile screens.
+    const currentZ = camera.position.z;
+    const targetZ = (w / h) < 1 ? CAMERA_Z_PORTRAIT : CAMERA_Z_LANDSCAPE;
+    const ZOOM_TOLERANCE = 0.1;
+    // Only adjust if the user hasn't manually zoomed (compare Z only since
+    // camera X=0, Y=1.0 are fixed and only Z varies with distance).
+    if (Math.abs(currentZ - CAMERA_Z_LANDSCAPE) < ZOOM_TOLERANCE || Math.abs(currentZ - CAMERA_Z_PORTRAIT) < ZOOM_TOLERANCE) {
+      camera.position.setZ(targetZ);
+    }
   });
   resizeObserver.observe(canvas.parentElement ?? canvas);
+
+  // ── Keyboard-open face-zoom ─────────────────────────────────────────
+  // When the mobile virtual keyboard opens, zoomToFace(true) is called.
+  // We smoothly lerp the camera Z and orbit target Y towards face values
+  // each animation frame via updateZoomTarget().
+  let _keyboardOpen = false;
+
+  /** Lerp speed for keyboard zoom — controls how quickly camera animates to face. */
+  const KEYBOARD_ZOOM_LERP_SPEED = 0.08;
+
+  function zoomToFace(enabled: boolean) {
+    _keyboardOpen = enabled;
+  }
 
   function getRendererInfo(): RendererInfo {
     const info = renderer.info;
@@ -179,5 +235,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, dispose };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, zoomToFace, dispose };
 }

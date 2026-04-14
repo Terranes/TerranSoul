@@ -67,22 +67,21 @@ describe('streaming store — IPC integration', () => {
     expect(store.streamText).toBe('Great to see you!');
   });
 
-  it('handleChunk extracts motion tags', () => {
+  it('handleChunk strips unknown tags but keeps text', () => {
     const store = useStreamingStore();
     store.isStreaming = true;
 
     store.handleChunk({ text: '[motion:wave] Hello!', done: false });
-    expect(store.currentMotion).toBe('wave');
-    expect(store.streamText).toBe('Hello!');
+    // motion tags are no longer recognized — they pass through as unrecognized bracket content
+    expect(store.streamText).toBe('[motion:wave] Hello!');
   });
 
-  it('handleChunk extracts both emotion and motion', () => {
+  it('handleChunk extracts emotion from mixed content', () => {
     const store = useStreamingStore();
     store.isStreaming = true;
 
-    store.handleChunk({ text: '[happy] [motion:nod] Absolutely!', done: false });
+    store.handleChunk({ text: '[happy] Absolutely!', done: false });
     expect(store.currentEmotion).toBe('happy');
-    expect(store.currentMotion).toBe('nod');
     expect(store.streamText).toBe('Absolutely!');
   });
 
@@ -103,7 +102,6 @@ describe('streaming store — IPC integration', () => {
     store.streamText = 'some text';
     store.streamRawText = '[happy] some text';
     store.currentEmotion = 'happy';
-    store.currentMotion = 'wave';
     store.error = 'some error';
 
     store.reset();
@@ -112,7 +110,6 @@ describe('streaming store — IPC integration', () => {
     expect(store.streamText).toBe('');
     expect(store.streamRawText).toBe('');
     expect(store.currentEmotion).toBeNull();
-    expect(store.currentMotion).toBeNull();
     expect(store.error).toBeNull();
   });
 

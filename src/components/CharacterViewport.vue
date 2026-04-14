@@ -77,9 +77,6 @@
     <div v-if="backgroundStore.importError" class="background-error-banner">
       {{ backgroundStore.importError }}
     </div>
-    <div class="state-badge" :class="characterStore.state">
-      {{ characterStore.state }}
-    </div>
     <div v-if="showDebug" class="debug-overlay">
       <span>WebGL</span>
       <span>▲ {{ debugInfo.triangles }}</span>
@@ -236,12 +233,6 @@ watch(
   (newState) => animator.setState(newState),
 );
 
-// Watch for brain-triggered random animation requests
-watch(
-  () => characterStore.randomAnimTrigger,
-  () => animator.triggerRandomAnimation(),
-);
-
 // Watch for VRM path changes and load the model
 watch(
   () => characterStore.vrmPath,
@@ -263,14 +254,12 @@ watch(
       // geometry.  We reveal it below after the animator is wired up.
       result.vrm.scene.visible = false;
 
-      // Look up per-model persona and bone-pose config
-      const model = DEFAULT_MODELS.find(m => m.path === newPath);
       // rotateVRM0() sets vrm.scene.rotation.y = Math.PI for VRM 0.x.
       // Capture whatever rotation the loader left on the scene root so the
       // animator preserves it every frame instead of overwriting it to 0.
+      const model = DEFAULT_MODELS.find(m => m.path === newPath);
       const rotY = result.vrm.scene.rotation.y + (model?.rotationY ?? 0);
-      const persona = model?.persona ?? 'witch';
-      animator.setVRM(result.vrm, rotY, persona);
+      animator.setVRM(result.vrm, rotY);
       // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
       animator.setLookAtTarget(sceneCtx.lookAtTarget);
       characterStore.setMetadata(result.metadata);
@@ -291,6 +280,16 @@ watch(
     }
   },
 );
+
+/**
+ * Exposed to parent (ChatView) so it can trigger face-zoom when the mobile
+ * virtual keyboard opens.  The call is forwarded to the scene's zoomToFace().
+ */
+function zoomToFace(enabled: boolean) {
+  sceneCtx?.zoomToFace(enabled);
+}
+
+defineExpose({ zoomToFace });
 </script>
 
 <style scoped>
@@ -313,7 +312,9 @@ watch(
 .background-tint {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.08) 0%, rgba(15, 23, 42, 0.16) 100%);
+  background:
+    radial-gradient(ellipse at center, transparent 40%, rgba(10, 15, 30, 0.35) 100%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.06) 0%, rgba(15, 23, 42, 0.20) 100%);
   z-index: 1;
   pointer-events: none;
 }
@@ -329,11 +330,11 @@ watch(
 .character-name-overlay {
   position: absolute;
   top: 12px;
-  left: 16px;
+  left: 56px;
   font-size: var(--ts-text-lg);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   letter-spacing: 0.05em;
 }
@@ -341,9 +342,10 @@ watch(
 .character-meta-overlay {
   position: absolute;
   top: 34px;
-  left: 16px;
+  left: 56px;
   font-size: 0.72rem;
-  color: var(--ts-text-dim);
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   letter-spacing: 0.02em;
 }
@@ -352,44 +354,45 @@ watch(
 .settings-corner {
   position: absolute;
   top: 12px;
-  right: 60px;
+  left: 16px;
   z-index: 20;
 }
 
 .settings-toggle {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 32, 0.72);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(10px);
   transition: background var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-normal);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .settings-toggle:hover {
-  background: rgba(108, 99, 255, 0.5);
+  background: rgba(124, 111, 255, 0.55);
   transform: scale(1.08);
-  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.25);
+  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
 }
 
 .settings-dropdown {
   position: absolute;
   top: 42px;
-  right: 0;
+  left: 0;
   width: 280px;
   max-width: min(280px, 90vw);
-  padding: 12px;
+  padding: 14px;
   border-radius: var(--ts-radius-lg);
-  border: 1px solid var(--ts-border);
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 17, 32, 0.94);
+  backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   box-shadow: var(--ts-shadow-lg);
 }
 
@@ -481,8 +484,8 @@ watch(
   transform: translateY(-1px);
 }
 .background-chip.active {
-  background: rgba(108, 99, 255, 0.85);
-  border-color: rgba(191, 219, 254, 0.85);
+  background: rgba(124, 111, 255, 0.85);
+  border-color: rgba(200, 210, 255, 0.85);
 }
 
 .background-error-banner {
@@ -498,76 +501,6 @@ watch(
   font-size: 0.76rem;
   font-weight: 600;
   backdrop-filter: blur(8px);
-}
-
-.state-badge {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  padding: 4px 12px;
-  border-radius: var(--ts-radius-pill);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  background: rgba(15, 23, 42, 0.72);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: var(--ts-shadow-md);
-  backdrop-filter: blur(6px);
-  transition: background var(--ts-transition-slow), color var(--ts-transition-slow), border-color var(--ts-transition-slow);
-}
-
-.state-badge.idle {
-  background: rgba(37, 99, 235, 0.9);
-  color: #eff6ff;
-  border-color: rgba(147, 197, 253, 0.7);
-}
-
-.state-badge.thinking {
-  background: rgba(245, 158, 11, 0.92);
-  color: #fff7ed;
-  border-color: rgba(253, 230, 138, 0.7);
-  animation: badge-pulse 1.5s ease-in-out infinite;
-}
-
-.state-badge.talking {
-  background: rgba(22, 163, 74, 0.9);
-  color: #f0fdf4;
-  border-color: rgba(134, 239, 172, 0.7);
-}
-
-.state-badge.happy {
-  background: rgba(8, 145, 178, 0.92);
-  color: #ecfeff;
-  border-color: rgba(103, 232, 249, 0.7);
-}
-
-.state-badge.sad {
-  background: rgba(126, 34, 206, 0.9);
-  color: #faf5ff;
-  border-color: rgba(216, 180, 254, 0.7);
-}
-
-.state-badge.angry {
-  background: rgba(255, 80, 60, 0.35);
-  color: #ff8a80;
-}
-
-.state-badge.relaxed {
-  background: rgba(80, 200, 180, 0.35);
-  color: #80e8d0;
-}
-
-.state-badge.surprised {
-  background: rgba(255, 180, 50, 0.35);
-  color: #ffc850;
-}
-
-@keyframes badge-pulse {
-  0%, 100% { box-shadow: var(--ts-shadow-md); }
-  50% { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35); }
 }
 
 .debug-overlay {
@@ -587,7 +520,14 @@ watch(
   letter-spacing: 0.02em;
 }
 
-/* Loading overlay */
+/* Mobile adjustments for viewport overlays */
+@media (max-width: 640px) {
+  .character-name-overlay { font-size: 0.85rem; left: 48px; top: 10px; }
+  .character-meta-overlay { font-size: 0.62rem; left: 48px; top: 28px; }
+  .settings-toggle { width: 32px; height: 32px; }
+  .settings-corner { top: 8px; left: 10px; }
+  .settings-dropdown { width: 260px; padding: 10px; gap: 10px; }
+}
 .loading-overlay {
   position: absolute;
   inset: 0;
