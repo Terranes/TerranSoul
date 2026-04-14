@@ -45,11 +45,13 @@
         </main>
       </template>
     </template>
+    <Analytics />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
+import { Analytics } from '@vercel/analytics/vue';
 import { useBrainStore } from './stores/brain';
 import { useWindowStore } from './stores/window';
 import ChatView from './views/ChatView.vue';
