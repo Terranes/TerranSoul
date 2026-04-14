@@ -1,8 +1,8 @@
 <template>
-  <div class="chat-view">
+  <div class="chat-view" :style="{ '--keyboard-offset': keyboardHeight + 'px' }">
     <!-- Full-screen character viewport — the star of the show -->
     <div class="viewport-layer">
-      <CharacterViewport />
+      <CharacterViewport ref="viewportRef" />
     </div>
 
     <!-- ── Floating overlays on top of the character ── -->
@@ -117,6 +117,7 @@ import { useConversationStore, detectSentiment } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
+import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
@@ -131,6 +132,17 @@ const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
+
+/** Ref to CharacterViewport — used to call zoomToFace() when keyboard opens. */
+const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
+
+// ── Keyboard detection ────────────────────────────────────────────
+const { keyboardHeight, keyboardOpen } = useKeyboardDetector();
+
+watch(keyboardOpen, (open) => {
+  // Tell the 3D scene to zoom to face (or revert) when keyboard state changes
+  viewportRef.value?.zoomToFace(open);
+});
 
 // ── Subtitle system ──────────────────────────────────────────────
 const MAX_SUBTITLE_LENGTH = 150;
@@ -307,6 +319,8 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* The 3D viewport is always full-size and never shifts.
+   overflow:hidden on .chat-view clips any keyboard-driven translate. */
 .viewport-layer {
   position: absolute;
   inset: 0;
@@ -434,6 +448,10 @@ onUnmounted(() => {
   flex-direction: column;
   max-height: 65vh;
   pointer-events: none;
+  /* Slide the panel up by the keyboard height when the virtual keyboard
+     is open — only the input floats up, the 3D viewport stays fixed. */
+  transform: translateY(calc(-1 * var(--keyboard-offset, 0px)));
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .bottom-panel > * { pointer-events: auto; }
 

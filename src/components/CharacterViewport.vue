@@ -280,6 +280,16 @@ watch(
     }
   },
 );
+
+/**
+ * Exposed to parent (ChatView) so it can trigger face-zoom when the mobile
+ * virtual keyboard opens.  The call is forwarded to the scene's zoomToFace().
+ */
+function zoomToFace(enabled: boolean) {
+  sceneCtx?.zoomToFace(enabled);
+}
+
+defineExpose({ zoomToFace });
 </script>
 
 <style scoped>
