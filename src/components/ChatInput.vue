@@ -43,14 +43,20 @@ function handleSubmit() {
 
 /**
  * When the input gains focus on mobile, iOS Safari tries to scroll the page
- * to keep the focused element visible.  We counteract this by resetting the
- * scroll position after a tick so the page doesn't shift.
+ * to keep the focused element visible.  We counteract this with a burst of
+ * scroll resets across multiple frames and timers to cover the various points
+ * where iOS may apply its auto-scroll.
  */
 function handleFocus() {
-  // Reset any scroll iOS may have applied when focusing the input.
-  requestAnimationFrame(() => {
+  const reset = () => {
     window.scrollTo(0, 0);
-  });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  };
+  reset();
+  requestAnimationFrame(reset);
+  setTimeout(reset, 50);
+  setTimeout(reset, 150);
 }
 </script>
 

@@ -80,9 +80,7 @@
   padding: 0;
 }
 
-html,
-body,
-#app {
+html {
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -92,6 +90,29 @@ body,
   /* Prevent double-tap zoom on mobile; pinch-zoom on the 3D canvas is
      handled by Three.js OrbitControls, not the browser. */
   touch-action: manipulation;
+  /* Prevent iOS rubber-band overscroll that can shift the viewport */
+  overscroll-behavior: none;
+}
+
+body {
+  /* position:fixed is the key iOS Safari fix — it prevents the browser from
+     scrolling the page when the virtual keyboard opens to reveal the focused
+     input.  Without this, iOS scrolls at the visual-viewport level which is
+     below CSS overflow:hidden and cannot be prevented by window.scrollTo(). */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  font-family: var(--ts-font-family);
+  background: transparent;
+  color: var(--ts-text-primary);
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
 }
 
 ::-webkit-scrollbar {

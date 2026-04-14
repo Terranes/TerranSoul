@@ -12,10 +12,12 @@ import { ref, onMounted, onUnmounted } from 'vue';
  * and iOS 13+ (the latter ships it since iOS 13.0).  On desktop browsers
  * where the keyboard never appears, the values stay at 0/false.
  *
- * iOS Safari may still scroll the page upward to reveal the focused input
- * even with `interactive-widget=overlays-content`.  We counteract this by
- * forcing `window.scrollTo(0, 0)` whenever the keyboard is detected and
- * accounting for `visualViewport.offsetTop` in the height calculation.
+ * iOS Safari aggressively scrolls the page when an input is focused to keep
+ * it visible above the keyboard.  We prevent this with a multi-layer strategy:
+ *  1. `body { position: fixed }` in CSS (primary prevention)
+ *  2. `window.scrollTo(0, 0)` burst (covers race conditions)
+ *  3. Continuous scroll listener that resets scroll while keyboard is open
+ *  4. Direct scrollTop resets on html/body elements
  */
 export function useKeyboardDetector() {
   const keyboardHeight = ref(0);
@@ -29,6 +31,25 @@ export function useKeyboardDetector() {
    */
   const KEYBOARD_THRESHOLD_PX = 80;
 
+  /** Force all known scroll positions back to zero. */
+  function resetAllScroll() {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
+  /**
+   * Fire a burst of scroll resets across multiple frames / timers.
+   * iOS Safari can re-apply its scroll-to-input behavior *after* our
+   * first reset, so we need multiple attempts at different timings.
+   */
+  function burstResetScroll() {
+    resetAllScroll();
+    requestAnimationFrame(resetAllScroll);
+    setTimeout(resetAllScroll, 50);
+    setTimeout(resetAllScroll, 150);
+  }
+
   function onVisualViewportResize() {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -39,17 +60,25 @@ export function useKeyboardDetector() {
     if (shrink > KEYBOARD_THRESHOLD_PX) {
       keyboardHeight.value = shrink;
       keyboardOpen.value = true;
-
-      // iOS Safari scrolls the page upward to keep the focused element
-      // visible when the keyboard opens.  This shifts the entire view
-      // (including the 3D model) which we don't want — only the bottom
-      // input panel should move.  Force scroll back to origin so the
-      // viewport stays pinned and our translateY-based offset handles
-      // the repositioning instead.
-      window.scrollTo(0, 0);
+      burstResetScroll();
     } else {
       keyboardHeight.value = 0;
       keyboardOpen.value = false;
+      // Also reset when keyboard closes in case iOS left residual scroll.
+      resetAllScroll();
+    }
+  }
+
+  /**
+   * Handle visualViewport scroll events.  Even with `position: fixed` on
+   * body, iOS Safari can still shift the visual viewport.  If the viewport
+   * has a non-zero offsetTop, immediately reset scroll to undo the shift.
+   */
+  function onVisualViewportScroll() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    if (vv.offsetTop !== 0) {
+      resetAllScroll();
     }
   }
 
@@ -60,14 +89,14 @@ export function useKeyboardDetector() {
    */
   function onWindowScroll() {
     if (keyboardOpen.value) {
-      window.scrollTo(0, 0);
+      resetAllScroll();
     }
   }
 
   onMounted(() => {
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', onVisualViewportResize);
-      window.visualViewport.addEventListener('scroll', onVisualViewportResize);
+      window.visualViewport.addEventListener('scroll', onVisualViewportScroll);
     }
     window.addEventListener('scroll', onWindowScroll);
   });
@@ -75,7 +104,7 @@ export function useKeyboardDetector() {
   onUnmounted(() => {
     if (window.visualViewport) {
       window.visualViewport.removeEventListener('resize', onVisualViewportResize);
-      window.visualViewport.removeEventListener('scroll', onVisualViewportResize);
+      window.visualViewport.removeEventListener('scroll', onVisualViewportScroll);
     }
     window.removeEventListener('scroll', onWindowScroll);
   });

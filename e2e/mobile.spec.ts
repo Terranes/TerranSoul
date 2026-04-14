@@ -404,4 +404,13 @@ test.describe('Mobile Chat UX', () => {
     });
     expect(bodyTouchAction).toBe('manipulation');
   });
+
+  test('body is position:fixed to prevent iOS keyboard viewport shift', async ({ page }) => {
+    await page.goto('/');
+
+    const bodyPosition = await page.evaluate(() => {
+      return getComputedStyle(document.body).position;
+    });
+    expect(bodyPosition).toBe('fixed');
+  });
 });
