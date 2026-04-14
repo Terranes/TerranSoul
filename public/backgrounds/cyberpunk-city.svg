@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="cyberSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a0015"/>
+      <stop offset="40%" stop-color="#12002a"/>
+      <stop offset="70%" stop-color="#1a0038"/>
+      <stop offset="100%" stop-color="#0d001a"/>
+    </linearGradient>
+    <linearGradient id="cyberGlow" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ff00ff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#00ffff" stop-opacity="0.05"/>
+    </linearGradient>
+    <radialGradient id="neonPulse" cx="50%" cy="60%" r="50%">
+      <stop offset="0%" stop-color="#6c63ff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#cyberSky)"/>
+  <rect width="1600" height="900" fill="url(#neonPulse)"/>
+  <!-- Distant buildings silhouette -->
+  <rect x="0" y="580" width="1600" height="320" fill="#080012" opacity="0.9"/>
+  <rect x="80" y="420" width="60" height="480" fill="#0d001f" rx="2"/>
+  <rect x="200" y="350" width="80" height="550" fill="#0f0024" rx="2"/>
+  <rect x="350" y="400" width="55" height="500" fill="#0b001c" rx="2"/>
+  <rect x="500" y="320" width="90" height="580" fill="#0e0020" rx="2"/>
+  <rect x="680" y="380" width="70" height="520" fill="#0c001e" rx="2"/>
+  <rect x="850" y="360" width="65" height="540" fill="#0d001f" rx="2"/>
+  <rect x="1000" y="300" width="100" height="600" fill="#100026" rx="2"/>
+  <rect x="1170" y="370" width="75" height="530" fill="#0e0022" rx="2"/>
+  <rect x="1330" y="340" width="85" height="560" fill="#0f0024" rx="2"/>
+  <rect x="1480" y="410" width="60" height="490" fill="#0b001c" rx="2"/>
+  <!-- Neon light strips on buildings -->
+  <rect x="80" y="440" width="60" height="2" fill="#ff00ff" opacity="0.6"/>
+  <rect x="200" y="370" width="80" height="2" fill="#00ffff" opacity="0.5"/>
+  <rect x="500" y="340" width="90" height="2" fill="#ff00ff" opacity="0.5"/>
+  <rect x="1000" y="320" width="100" height="2" fill="#00ffff" opacity="0.6"/>
+  <rect x="1330" y="360" width="85" height="2" fill="#ff00ff" opacity="0.4"/>
+  <!-- Small window lights -->
+  <rect x="215" y="390" width="4" height="4" fill="#00ffff" opacity="0.7" rx="1"/>
+  <rect x="235" y="420" width="4" height="4" fill="#ff88cc" opacity="0.6" rx="1"/>
+  <rect x="255" y="450" width="4" height="4" fill="#00ffff" opacity="0.5" rx="1"/>
+  <rect x="520" y="360" width="4" height="4" fill="#ff88cc" opacity="0.6" rx="1"/>
+  <rect x="540" y="400" width="4" height="4" fill="#00ffff" opacity="0.7" rx="1"/>
+  <rect x="1020" y="340" width="4" height="4" fill="#ff88cc" opacity="0.5" rx="1"/>
+  <rect x="1050" y="380" width="4" height="4" fill="#00ffff" opacity="0.6" rx="1"/>
+  <!-- Floor glow -->
+  <rect width="1600" height="900" fill="url(#cyberGlow)"/>
+  <ellipse cx="800" cy="750" rx="600" ry="60" fill="#6c63ff" fill-opacity="0.06"/>
+  <ellipse cx="800" cy="760" rx="300" ry="30" fill="#ff00ff" fill-opacity="0.04"/>
+</svg>

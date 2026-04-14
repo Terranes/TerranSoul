@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="oceanDepth" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a1929"/>
+      <stop offset="30%" stop-color="#062040"/>
+      <stop offset="60%" stop-color="#041830"/>
+      <stop offset="100%" stop-color="#020e1a"/>
+    </linearGradient>
+    <radialGradient id="oceanSun" cx="50%" cy="5%" r="45%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.12"/>
+      <stop offset="50%" stop-color="#0ea5e9" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <radialGradient id="abyssGlow" cx="50%" cy="90%" r="40%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#oceanDepth)"/>
+  <rect width="1600" height="900" fill="url(#oceanSun)"/>
+  <!-- Caustic light rays -->
+  <polygon points="600,0 750,500 550,500" fill="#38bdf8" fill-opacity="0.03"/>
+  <polygon points="900,0 1050,480 850,480" fill="#38bdf8" fill-opacity="0.025"/>
+  <polygon points="400,0 520,450 350,450" fill="#38bdf8" fill-opacity="0.02"/>
+  <polygon points="1200,0 1320,460 1140,460" fill="#38bdf8" fill-opacity="0.025"/>
+  <!-- Floating particles / plankton -->
+  <circle cx="200" cy="200" r="2" fill="#7dd3fc" fill-opacity="0.4"/>
+  <circle cx="450" cy="350" r="1.5" fill="#7dd3fc" fill-opacity="0.3"/>
+  <circle cx="700" cy="250" r="2" fill="#7dd3fc" fill-opacity="0.35"/>
+  <circle cx="950" cy="400" r="1.5" fill="#7dd3fc" fill-opacity="0.3"/>
+  <circle cx="1150" cy="300" r="2" fill="#7dd3fc" fill-opacity="0.4"/>
+  <circle cx="1380" cy="220" r="1.5" fill="#7dd3fc" fill-opacity="0.3"/>
+  <circle cx="300" cy="500" r="2" fill="#67e8f9" fill-opacity="0.25"/>
+  <circle cx="600" cy="600" r="1.5" fill="#67e8f9" fill-opacity="0.2"/>
+  <circle cx="1000" cy="550" r="2" fill="#67e8f9" fill-opacity="0.25"/>
+  <circle cx="1300" cy="480" r="1.5" fill="#67e8f9" fill-opacity="0.2"/>
+  <!-- Seafloor -->
+  <ellipse cx="800" cy="880" rx="900" ry="80" fill="#0c2d4a" fill-opacity="0.6"/>
+  <ellipse cx="400" cy="870" rx="200" ry="50" fill="#0a2540" fill-opacity="0.5"/>
+  <ellipse cx="1200" cy="875" rx="250" ry="55" fill="#0a2540" fill-opacity="0.5"/>
+  <!-- Bioluminescent glow -->
+  <circle cx="350" cy="700" r="40" fill="#06b6d4" fill-opacity="0.04"/>
+  <circle cx="1100" cy="650" r="50" fill="#0ea5e9" fill-opacity="0.03"/>
+  <circle cx="750" cy="750" r="35" fill="#22d3ee" fill-opacity="0.04"/>
+  <rect width="1600" height="900" fill="url(#abyssGlow)"/>
+</svg>

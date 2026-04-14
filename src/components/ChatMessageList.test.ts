@@ -117,4 +117,82 @@ describe('ChatMessageList', () => {
     expect(timestamp.exists()).toBe(true);
     expect(timestamp.text()).toBeTruthy();
   });
+
+  // ── Markdown rendering tests ──
+
+  it('renders bold text with <strong> tags', () => {
+    const messages = [makeMessage({ content: 'This is **bold** text' })];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    const bubble = wrapper.find('.bubble');
+    expect(bubble.html()).toContain('<strong>bold</strong>');
+  });
+
+  it('renders italic text with <em> tags', () => {
+    const messages = [makeMessage({ content: 'This is *italic* text' })];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    const bubble = wrapper.find('.bubble');
+    expect(bubble.html()).toContain('<em>italic</em>');
+  });
+
+  it('renders inline code with <code> tags', () => {
+    const messages = [makeMessage({ content: 'Run `npm test` here' })];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    const bubble = wrapper.find('.bubble');
+    expect(bubble.html()).toContain('<code class="md-inline-code">npm test</code>');
+  });
+
+  it('renders code blocks with <pre><code> tags', () => {
+    const messages = [makeMessage({ content: '```js\nconst x = 1;\n```' })];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    const bubble = wrapper.find('.bubble');
+    expect(bubble.html()).toContain('<pre class="md-code-block">');
+    expect(bubble.html()).toContain('const x = 1;');
+  });
+
+  it('escapes HTML in message content', () => {
+    const messages = [makeMessage({ content: '<script>alert("xss")</script>' })];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    const bubble = wrapper.find('.bubble');
+    expect(bubble.html()).not.toContain('<script>');
+    expect(bubble.html()).toContain('&lt;script&gt;');
+  });
+
+  // ── Welcome screen & suggestion tests ──
+
+  it('shows welcome state with suggestions when no messages', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: { messages: [], isThinking: false },
+    });
+    expect(wrapper.find('.welcome-state').exists()).toBe(true);
+    expect(wrapper.find('.welcome-title').text()).toBe('Welcome to TerranSoul');
+    expect(wrapper.findAll('.suggestion-chip').length).toBeGreaterThan(0);
+  });
+
+  it('emits suggest event when suggestion chip clicked', async () => {
+    const wrapper = mount(ChatMessageList, {
+      props: { messages: [], isThinking: false },
+    });
+    const chip = wrapper.find('.suggestion-chip');
+    await chip.trigger('click');
+    expect(wrapper.emitted('suggest')).toBeTruthy();
+    expect(wrapper.emitted('suggest')![0]).toBeTruthy();
+  });
+
+  it('hides welcome state when messages exist', () => {
+    const messages = [makeMessage()];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    expect(wrapper.find('.welcome-state').exists()).toBe(false);
+  });
 });
