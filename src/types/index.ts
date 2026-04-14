@@ -242,6 +242,25 @@ export type BrainMode =
   | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string }
   | { mode: 'local_ollama'; model: string };
 
+// ── Voice ──────────────────────────────────────────────────────────────────────
+
+/** Metadata describing an available voice provider. */
+export interface VoiceProviderInfo {
+  id: string;
+  display_name: string;
+  description: string;
+  kind: 'local' | 'cloud';
+  requires_api_key: boolean;
+}
+
+/** Persisted voice configuration. */
+export interface VoiceConfig {
+  asr_provider: string | null;
+  tts_provider: string | null;
+  api_key: string | null;
+  endpoint_url: string | null;
+}
+
 // ── Provider Health / Rotation ────────────────────────────────────────────────
 
 /** Health and rate-limit status for a single free provider. */

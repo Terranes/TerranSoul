@@ -1370,3 +1370,267 @@ and automatically fall back to the next healthy provider on HTTP 429 or quota ex
 - **Rust:** 23 new tests (provider_rotator) — 387 total
 - **Vitest:** 24 new tests (12 provider-health, 7 free-api-client, 5 conversation) — 296 total across 25 files
 - **Build:** `npm run build` ✓, `cargo test --lib` ✓, `cargo clippy` ✓
+
+---
+
+## Chunk 060 — Voice Abstraction Layer + Open-LLM-VTuber Integration
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Complete the Voice Abstraction Layer (Phase 6) with frontend voice setup wizard and
+Open-LLM-VTuber integration. Users can choose their preferred voice provider — same
+philosophy as the brain system where users pick their own LLM model.
+
+### Architecture
+
+**Rust — Voice Provider Catalogue** (`src-tauri/src/voice/mod.rs`):
+- Added Open-LLM-VTuber as both ASR and TTS provider in the catalogue.
+- ASR providers: stub, web-speech, whisper-api, sidecar-asr, open-llm-vtuber (5 total).
+- TTS providers: stub, edge-tts, openai-tts, sidecar-tts, open-llm-vtuber (5 total).
+- All existing Tauri commands (list_asr_providers, list_tts_providers, get_voice_config,
+  set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
+  clear_voice_config) already wired and registered.
+
+**TypeScript — Types** (`src/types/index.ts`):
+- `VoiceProviderInfo` interface matching Rust struct.
+- `VoiceConfig` interface matching Rust VoiceConfig.
+
+**TypeScript — Voice Store** (`src/stores/voice.ts`):
+- `useVoiceStore` Pinia store wrapping all voice Tauri commands.
+- Fallback provider catalogues for browser-side use when Tauri unavailable.
+- Computed: `hasVoice`, `isTextOnly`, `selectedAsrProvider`, `selectedTtsProvider`.
+- Actions: `initialise`, `setAsrProvider`, `setTtsProvider`, `setApiKey`,
+  `setEndpointUrl`, `clearConfig`.
+
+**TypeScript — Open-LLM-VTuber Client** (`src/utils/ollv-client.ts`):
+- `OllvClient` WebSocket client implementing Open-LLM-VTuber's protocol.
+- Outgoing messages: text-input, mic-audio-data, mic-audio-end, interrupt-signal.
+- Incoming messages: audio (with lip-sync volumes), user-input-transcription,
+  full-text, conversation-chain-start/end, interrupt-signal, control.
+- `OllvClient.healthCheck()` static method for connection verification.
+- Default URL: `ws://localhost:12393/client-ws`.
+- All message types fully typed with TypeScript interfaces.
+
+**Vue — VoiceSetupView** (`src/views/VoiceSetupView.vue`):
+- Step-by-step wizard mirroring BrainSetupView.vue UX pattern.
+- Step 0: Choose voice mode (Open-LLM-VTuber recommended, Browser, Cloud API, Text Only).
+- Step 1A: Open-LLM-VTuber config with WebSocket URL + health check.
+- Step 1B: Browser voice (Web Speech API).
+- Step 1C: Cloud API with API key and ASR/TTS checkboxes.
+- Done screen with confirmation.
+- Install instructions for Open-LLM-VTuber included.
+
+**App Integration** (`src/App.vue`):
+- Added 🎤 Voice tab to navigation.
+- VoiceSetupView mounted when voice tab is active.
+- Returns to chat tab on completion.
+
+### Open-LLM-VTuber Integration Details
+- Studied Open-LLM-VTuber's WebSocket protocol (websocket_handler.py).
+- Frontend sends text or audio via WS, server processes through its LLM/TTS/ASR pipeline.
+- Server returns audio with lip-sync volumes for mouth animation.
+- Supports 18+ TTS engines (Edge, OpenAI, ElevenLabs, CosyVoice, etc.).
+- Supports 7+ ASR engines (Faster Whisper, Groq, sherpa-onnx, etc.).
+- Each client gets unique context and can connect independently.
+
+### Files Created
+- `src/stores/voice.ts` — Pinia store for voice configuration
+- `src/stores/voice.test.ts` — 12 tests for voice store
+- `src/utils/ollv-client.ts` — Open-LLM-VTuber WebSocket client
+- `src/utils/ollv-client.test.ts` — 19 tests for OLLV client
+- `src/views/VoiceSetupView.vue` — Voice setup wizard
+
+### Files Modified
+- `src-tauri/src/voice/mod.rs` — Added open-llm-vtuber to ASR + TTS catalogues
+- `src/types/index.ts` — VoiceProviderInfo + VoiceConfig interfaces
+- `src/App.vue` — Added Voice tab + VoiceSetupView integration
+- `rules/milestones.md` — Marked chunk 060 done, updated Next Chunk to 061
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 060)
+- **Vitest:** 31 new tests (12 voice store, 19 OLLV client) — 329 total across 27 files
+- **Build:** `npm run build` ✓
+
+---
+
+## Chunk 061 — Web Audio Lip Sync
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Create a provider-agnostic LipSync class that maps audio volume to VRM mouth morph
+targets (aa, oh). Works with any TTS audio output via Web Audio API AnalyserNode.
+Integrate with CharacterAnimator so external lip-sync values override the procedural
+sine-wave mouth animation.
+
+### Architecture
+
+**LipSync Class** (`src/renderer/lip-sync.ts`):
+- `LipSync` class using Web Audio API `AnalyserNode`.
+- `connectAudioElement(audio)` — connects to an HTMLAudioElement via
+  `createMediaElementSource`, pipes through AnalyserNode to destination.
+- `connectAnalyser(analyser)` — connects to an external AnalyserNode.
+- `getMouthValues()` — reads `getFloatTimeDomainData()`, calculates RMS volume,
+  maps to `{ aa, oh }` morph targets with configurable sensitivity + threshold.
+- `mouthValuesFromVolume(volume)` — static method for Open-LLM-VTuber's pre-computed
+  volume arrays. Converts a single volume level to mouth values.
+- Options: `fftSize`, `smoothingTimeConstant`, `silenceThreshold`, `sensitivity`.
+- `disconnect()` — releases AudioContext and source resources.
+
+**CharacterAnimator Integration** (`src/renderer/character-animator.ts`):
+- Added `setMouthValues(aa, oh)` method — accepts external lip-sync values.
+- Added `clearMouthValues()` — reverts to procedural sine-wave animation.
+- When `useExternalLipSync` is true, talking state uses external aa/oh values
+  instead of procedural sine wave. Also applies `oh` morph for rounding.
+- Backward compatible — when no external lip-sync is provided, falls back to
+  the existing sine-wave mouth animation.
+
+### Files Created
+- `src/renderer/lip-sync.ts` — LipSync class with Web Audio API integration
+- `src/renderer/lip-sync.test.ts` — 14 tests for LipSync
+
+### Files Modified
+- `src/renderer/character-animator.ts` — setMouthValues/clearMouthValues, external lip-sync support
+- `rules/milestones.md` — Marked chunk 061 done, updated Next Chunk to 062
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 061)
+- **Vitest:** 14 new tests (lip-sync) — 343 total across 28 files
+- **Build:** `npm run build` ✓
+
+---
+
+## Chunk 062 — Voice Activity Detection
+
+**Date:** 2026-04-13
+**Status:** ✅ Done
+
+### Goal
+Browser-side voice activity detection using @ricky0123/vad-web (ONNX WebAssembly).
+Detect speech start → pause AI audio and capture mic. Detect speech end → audio data
+available for ASR. Echo cancellation support via mic management.
+
+### Architecture
+
+**VAD Composable** (`src/utils/vad.ts`):
+- `useVad()` Vue composable using @ricky0123/vad-web MicVAD.
+- Dynamic import of @ricky0123/vad-web — ONNX model only loaded when voice is used.
+- Reactive state: `micOn`, `isSpeaking`, `lastProbability`, `error`.
+- Callbacks: `onSpeechStart`, `onSpeechEnd(audio)`, `onMisfire`, `onFrameProcessed(prob)`.
+- Configurable: `positiveSpeechThreshold` (0.5), `negativeSpeechThreshold` (0.35),
+  `redemptionMs` (300ms).
+- `startMic()` — creates MicVAD instance, starts microphone capture.
+- `stopMic()` — pauses + destroys VAD, releases mic.
+- Auto-cleanup on component unmount via `onUnmounted`.
+
+**Open-LLM-VTuber Integration**:
+- Speech audio (Float32Array 16kHz) from `onSpeechEnd` can be sent directly to
+  Open-LLM-VTuber via `OllvClient.sendAudioChunk()` + `sendAudioEnd()`.
+- The `onSpeechStart` callback can pause TTS playback (echo cancellation).
+- Matches Open-LLM-VTuber-Web's VAD context pattern.
+
+### Files Created
+- `src/utils/vad.ts` — useVad composable with @ricky0123/vad-web
+- `src/utils/vad.test.ts` — 14 tests for VAD composable
+
+### Dependencies Added
+- `@ricky0123/vad-web@0.0.30` — ONNX-based voice activity detection (no advisories)
+
+### Files Modified
+- `package.json` — Added @ricky0123/vad-web dependency
+- `rules/milestones.md` — Marked chunk 062 done, updated Next Chunk to 063
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 062)
+- **Vitest:** 14 new tests (VAD) — 357 total across 29 files
+- **Build:** `npm run build` ✓
+
+---
+
+## Chunk 063 — Remove Open-LLM-VTuber + Rewrite Voice in Rust (done)
+
+**Date:** 2026-04-13
+**Goal:** Remove all Open-LLM-VTuber WebSocket integration and replace with
+pure Rust implementations for TTS (Edge TTS) and ASR (OpenAI Whisper API).
+
+### Architecture
+
+- **OLLV Removal:** Deleted `ollv-client.ts` (WebSocket client to Open-LLM-VTuber).
+  Removed 'external' provider kind. Voice system now has only 'local' and 'cloud' kinds.
+- **Edge TTS (Rust):** `src-tauri/src/voice/edge_tts.rs` — uses `msedge-tts` crate
+  (sync WebSocket to Microsoft Edge Read Aloud API, wrapped in `spawn_blocking` for
+  Tokio compatibility). Outputs PCM→WAV 24kHz 16-bit mono. Free, no API key.
+- **Whisper API (Rust):** `src-tauri/src/voice/whisper_api.rs` — uses `reqwest`
+  multipart form POST to OpenAI `/v1/audio/transcriptions`. Requires API key.
+- **VoiceSetupView:** Simplified from 4-tier (OLLV/Browser/Cloud/Text) to 3-tier
+  (Browser/Cloud/Text). Browser mode now uses Edge TTS for output (was text-only).
+
+### Files Created
+- `src-tauri/src/voice/edge_tts.rs` — Edge TTS engine (TtsEngine trait impl)
+- `src-tauri/src/voice/whisper_api.rs` — Whisper API engine (AsrEngine trait impl)
+
+### Files Modified
+- `src/utils/ollv-client.ts` — **DELETED**
+- `src/utils/ollv-client.test.ts` — **DELETED**
+- `src/stores/voice.ts` — Removed OLLV from fallback providers, added Edge TTS
+- `src/stores/voice.test.ts` — Rewritten without OLLV, new cloud API tests
+- `src/types/index.ts` — Removed 'external' kind from VoiceProviderInfo
+- `src/views/VoiceSetupView.vue` — Removed OLLV wizard step
+- `src/renderer/lip-sync.ts` — Removed OLLV references in comments
+- `src/utils/vad.ts` — Removed OLLV pattern reference
+- `src-tauri/src/voice/mod.rs` — Removed OLLV from catalogues, added new modules
+- `src-tauri/src/commands/voice.rs` — Updated kind validation ('local'/'cloud' only)
+- `src-tauri/src/voice/config_store.rs` — Updated test fixture
+- `src-tauri/Cargo.toml` — Added msedge-tts, reqwest multipart+rustls-tls features
+
+### Dependencies Added
+- `msedge-tts@0.3.0` (Rust) — Microsoft Edge TTS WebSocket client (no advisories)
+- `reqwest` features: `multipart`, `rustls-tls` (already a dependency, added features)
+
+### Test Counts (Chunk 063)
+- **Vitest:** 338 total across 28 files (was 357; OLLV test file deleted, voice tests rewritten)
+- **Rust:** 395 total (was 387; +4 edge_tts tests, +4 whisper_api tests)
+- **Build:** `npm run build` ✓ · `cargo clippy` clean
+
+---
+
+## Chunk 064 — Desktop Pet Overlay with Floating Chat (done)
+
+**Date:** 2026-04-13
+**Goal:** Implement desktop pet mode — the main feature of Open-LLM-VTuber —
+natively in Tauri/Vue without any external dependency. Character floats on
+the desktop as a transparent overlay with a floating chat box.
+
+### Architecture
+
+- **PetOverlayView.vue:** Full-screen transparent overlay containing:
+  - VRM character in bottom-right corner (CharacterViewport)
+  - Floating speech bubble showing latest assistant message
+  - Expandable chat panel (left side) with recent messages + input
+  - Hover-reveal controls: 💬 toggle chat, ✕ exit pet mode
+  - Emotion badge showing character state
+  - Cursor passthrough when chat is collapsed (clicks go to desktop)
+- **App.vue integration:** New `isPetMode` computed from `windowStore.mode`.
+  When `pet`, renders PetOverlayView instead of normal tabbed UI.
+  🐾 button in nav bar (Tauri-only) toggles pet mode.
+  Body background switches to transparent in pet mode.
+- **Existing Rust backend:** Already has `set_window_mode`, `toggle_window_mode`,
+  `set_cursor_passthrough`, `set_pet_mode_bounds` commands (from earlier chunks).
+  tauri.conf.json already has `transparent: true`.
+
+### Files Created
+- `src/views/PetOverlayView.vue` — Desktop pet overlay component
+- `src/views/PetOverlayView.test.ts` — 9 tests
+
+### Files Modified
+- `src/App.vue` — Added PetOverlayView, 🐾 toggle, pet mode routing
+- `rules/milestones.md` — Updated Next Chunk, Phase 6 note
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 064)
+- **Vitest:** 347 total across 29 files (+9 PetOverlayView tests)
+- **Rust:** 395 total (unchanged)
+- **Build:** `npm run build` ✓

@@ -63,10 +63,10 @@ mod tests {
     fn save_with_all_fields() {
         let dir = tempdir().unwrap();
         let cfg = VoiceConfig {
-            asr_provider: Some("sidecar-asr".into()),
-            tts_provider: Some("sidecar-tts".into()),
-            api_key: Some("my-key".into()),
-            endpoint_url: Some("http://localhost:9000".into()),
+            asr_provider: Some("whisper-api".into()),
+            tts_provider: Some("openai-tts".into()),
+            api_key: Some("sk-test-key".into()),
+            endpoint_url: Some("https://api.openai.com/v1".into()),
         };
         save(dir.path(), &cfg).unwrap();
         let loaded = load(dir.path());

@@ -1,6 +1,8 @@
 pub mod config_store;
+pub mod edge_tts;
 pub mod stub_asr;
 pub mod stub_tts;
+pub mod whisper_api;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,7 @@ pub struct TranscriptionResult {
 /// Automatic Speech Recognition engine trait.
 ///
 /// Implementors convert audio input into text. Each provider (Whisper API,
-/// sherpa-onnx, Web Speech API, sidecar, etc.) implements this trait.
+/// Web Speech API, etc.) implements this trait.
 #[async_trait]
 pub trait AsrEngine: Send + Sync {
     /// Unique provider identifier (e.g. "whisper-api", "sherpa-onnx").
@@ -53,7 +55,7 @@ pub struct SynthesisResult {
 /// Text-to-Speech engine trait.
 ///
 /// Implementors convert text into audio. Each provider (Edge TTS, OpenAI TTS,
-/// VibeVoice sidecar, etc.) implements this trait.
+/// etc.) implements this trait.
 #[async_trait]
 pub trait TtsEngine: Send + Sync {
     /// Unique provider identifier (e.g. "edge-tts", "openai-tts").
@@ -80,12 +82,10 @@ pub struct VoiceProviderInfo {
     pub display_name: String,
     /// Short description of the provider.
     pub description: String,
-    /// Provider kind: "local", "cloud", or "sidecar".
+    /// Provider kind: "local" or "cloud".
     pub kind: String,
     /// Whether the provider requires an API key.
     pub requires_api_key: bool,
-    /// Whether the provider requires a sidecar process.
-    pub requires_sidecar: bool,
 }
 
 /// Persisted voice configuration.
@@ -97,7 +97,7 @@ pub struct VoiceConfig {
     pub tts_provider: Option<String>,
     /// Optional API key for cloud providers (stored in app-data, not source).
     pub api_key: Option<String>,
-    /// Optional endpoint URL for sidecar or self-hosted providers.
+    /// Optional endpoint URL for custom cloud providers.
     pub endpoint_url: Option<String>,
 }
 
@@ -112,7 +112,6 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Returns fixed text. For development and testing only.".into(),
             kind: "local".into(),
             requires_api_key: false,
-            requires_sidecar: false,
         },
         VoiceProviderInfo {
             id: "web-speech".into(),
@@ -120,7 +119,6 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Browser-native speech recognition. Zero setup, works offline on supported browsers.".into(),
             kind: "local".into(),
             requires_api_key: false,
-            requires_sidecar: false,
         },
         VoiceProviderInfo {
             id: "whisper-api".into(),
@@ -128,15 +126,6 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Cloud-based transcription via OpenAI. High accuracy, requires API key.".into(),
             kind: "cloud".into(),
             requires_api_key: true,
-            requires_sidecar: false,
-        },
-        VoiceProviderInfo {
-            id: "sidecar-asr".into(),
-            display_name: "Sidecar ASR (Python)".into(),
-            description: "Local Python sidecar for engines like VibeVoice or sherpa-onnx.".into(),
-            kind: "sidecar".into(),
-            requires_api_key: false,
-            requires_sidecar: true,
         },
     ]
 }
@@ -150,7 +139,6 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Returns silence. For development and testing only.".into(),
             kind: "local".into(),
             requires_api_key: false,
-            requires_sidecar: false,
         },
         VoiceProviderInfo {
             id: "edge-tts".into(),
@@ -158,7 +146,6 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Microsoft Edge neural voices. Free, high quality, many languages.".into(),
             kind: "cloud".into(),
             requires_api_key: false,
-            requires_sidecar: false,
         },
         VoiceProviderInfo {
             id: "openai-tts".into(),
@@ -166,15 +153,6 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Cloud-based synthesis via OpenAI. Best quality, requires API key.".into(),
             kind: "cloud".into(),
             requires_api_key: true,
-            requires_sidecar: false,
-        },
-        VoiceProviderInfo {
-            id: "sidecar-tts".into(),
-            display_name: "Sidecar TTS (Python)".into(),
-            description: "Local Python sidecar for engines like VibeVoice or sherpa-onnx.".into(),
-            kind: "sidecar".into(),
-            requires_api_key: false,
-            requires_sidecar: true,
         },
     ]
 }

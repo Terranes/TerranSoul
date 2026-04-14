@@ -88,7 +88,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useConversationStore } from '../stores/conversation';
+import { useConversationStore, detectSentiment } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
@@ -103,6 +103,8 @@ const brain = useBrainStore();
 const streaming = useStreamingStore();
 const showDialog = ref(true);
 const selectedBrain = ref('');
+/** Pre-detected emotion from user input, used during streaming for immediate feedback. */
+const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 
 const activeProviderName = computed(() => {
@@ -156,19 +158,26 @@ function sentimentToState(sentiment?: string): CharacterState {
 }
 
 async function handleSend(message: string) {
+  // Detect emotion from user input immediately for responsive UI feedback.
+  // This is stored so the streaming watcher can show the correct emotion
+  // instead of generic 'talking' while the API call is in progress.
+  const userSentiment = detectSentiment(message);
+  pendingEmotion.value = sentimentToState(userSentiment);
+
   characterStore.setState('thinking');
   await conversationStore.sendMessage(message);
 
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
   const reactionState = lastMsg?.role === 'assistant'
     ? sentimentToState(lastMsg.sentiment)
-    : 'talking';
+    : pendingEmotion.value;
 
   characterStore.setState(reactionState);
   // Trigger a random animation variant so the character doesn't repeat
   // the same clip every time the brain responds.
   characterStore.triggerRandomAnimation();
-  setTimeout(() => characterStore.setState('idle'), 3000);
+  pendingEmotion.value = 'idle';
+  setTimeout(() => characterStore.setState('idle'), 6000);
 }
 
 /** Set up Tauri event listener for llm-chunk events (streaming LLM). */
@@ -191,11 +200,15 @@ watch(
   },
 );
 
-// Show talking animation during streaming
+// Show detected emotion (or talking) animation during streaming
 watch(
   () => conversationStore.isStreaming,
   (active) => {
-    if (active) characterStore.setState('talking');
+    if (active) {
+      // Use pre-detected emotion from user input if available,
+      // otherwise fall back to generic 'talking' animation.
+      characterStore.setState(pendingEmotion.value !== 'idle' ? pendingEmotion.value : 'talking');
+    }
   },
 );
 
@@ -225,6 +238,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
   position: relative;
@@ -246,6 +260,14 @@ onUnmounted(() => {
   background: rgba(10, 10, 20, 0.9);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px);
+}
+
+/* Mobile: expand chat section, hide viewport toggle for more space */
+@media (max-width: 640px) {
+  .chat-section {
+    flex: 0 0 55%;
+    max-height: 55%;
+  }
 }
 
 /* Toggle button */
