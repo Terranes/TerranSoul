@@ -81,40 +81,33 @@
       </div>
     </Transition>
 
-    <!-- Floating input footer -->
-    <div class="input-footer" :class="{ collapsed: !showInput }">
-      <button class="footer-toggle" @click="showInput = !showInput" aria-label="Toggle input">
-        <svg :class="{ flipped: !showInput }" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
-      </button>
-      <div v-if="showInput" class="footer-content">
-        <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
+    <!-- Bottom chat panel — input always visible, history toggles via 💬 button -->
+    <div class="bottom-panel" :class="{ expanded: showDrawer }">
+      <!-- Chat history (shown when expanded) -->
+      <Transition name="chat-panel">
+        <div v-if="showDrawer" class="chat-history" @click.stop>
+          <ChatMessageList
+            :messages="conversationStore.messages"
+            :is-thinking="conversationStore.isThinking"
+            :streaming-text="conversationStore.streamingText"
+            :is-streaming="conversationStore.isStreaming"
+            @suggest="handleSend"
+          />
+        </div>
+      </Transition>
+      <!-- Input footer — always visible -->
+      <div class="input-footer">
+        <div class="input-row">
+          <button
+            class="chat-drawer-toggle"
+            :class="{ active: showDrawer }"
+            @click="showDrawer = !showDrawer"
+            aria-label="Toggle chat history"
+          >💬</button>
+          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
+        </div>
       </div>
     </div>
-
-    <!-- Chat history drawer toggle -->
-    <button
-      class="chat-drawer-toggle"
-      :class="{ active: showDrawer }"
-      @click="showDrawer = !showDrawer"
-      aria-label="Toggle chat history"
-    >💬</button>
-
-    <!-- Chat history slide-over drawer -->
-    <Transition name="drawer">
-      <div v-if="showDrawer" class="chat-drawer" @click.stop>
-        <div class="drawer-header">
-          <span class="drawer-title">Chat</span>
-          <button class="drawer-close" @click="showDrawer = false" aria-label="Close chat">✕</button>
-        </div>
-        <ChatMessageList
-          :messages="conversationStore.messages"
-          :is-thinking="conversationStore.isThinking"
-          :streaming-text="conversationStore.streamingText"
-          :is-streaming="conversationStore.isStreaming"
-          @suggest="handleSend"
-        />
-      </div>
-    </Transition>
   </div>
 </template>
 
@@ -134,7 +127,6 @@ const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const streaming = useStreamingStore();
 const showDrawer = ref(false);
-const showInput = ref(true);
 const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
@@ -429,60 +421,68 @@ onUnmounted(() => {
 .subtitle-enter-from { opacity: 0; transform: translateX(-50%) translateY(8px); }
 .subtitle-leave-to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 
-/* ── Floating input footer ── */
-.input-footer {
+/* ── Bottom panel — input + expandable chat history ── */
+.bottom-panel {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 15;
-  background: rgba(11, 17, 32, 0.82);
-  backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.input-footer.collapsed {
-  transform: translateY(calc(100% - 28px));
-}
-.footer-toggle {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 28px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.5);
-  cursor: pointer;
-  transition: color var(--ts-transition-fast);
+  flex-direction: column;
+  max-height: 65vh;
+  pointer-events: none;
 }
-.footer-toggle:hover { color: rgba(255, 255, 255, 0.8); }
-.footer-toggle svg { transition: transform 0.3s ease; }
-.footer-toggle svg.flipped { transform: rotate(180deg); }
-.footer-content {
-  padding: 0 8px 8px;
+.bottom-panel > * { pointer-events: auto; }
+
+/* Chat history — slides up above the input */
+.chat-history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: rgba(11, 17, 32, 0.92);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-/* ── Chat drawer toggle button ── */
+/* Chat history slide transition */
+.chat-panel-enter-active { transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease; }
+.chat-panel-leave-active { transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease; }
+.chat-panel-enter-from, .chat-panel-leave-to { max-height: 0; opacity: 0; overflow: hidden; }
+.chat-panel-enter-to, .chat-panel-leave-from { max-height: 50vh; opacity: 1; }
+
+/* Input footer — always visible at the very bottom */
+.input-footer {
+  background: rgba(11, 17, 32, 0.88);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 6px 10px 8px;
+}
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Chat toggle button (💬) — inline in the input row ── */
 .chat-drawer-toggle {
-  position: absolute;
-  bottom: 90px;
-  right: 16px;
-  z-index: 20;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(11, 17, 32, 0.72);
   backdrop-filter: blur(10px);
   color: #fff;
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 .chat-drawer-toggle:hover {
   background: rgba(124, 111, 255, 0.55);
@@ -493,59 +493,6 @@ onUnmounted(() => {
   background: rgba(124, 111, 255, 0.70);
   border-color: rgba(124, 111, 255, 0.5);
 }
-
-/* ── Chat history slide-over drawer ── */
-.chat-drawer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 380px;
-  max-width: 85vw;
-  z-index: 25;
-  display: flex;
-  flex-direction: column;
-  background: rgba(11, 17, 32, 0.94);
-  backdrop-filter: blur(24px);
-  border-left: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow: -8px 0 48px rgba(0, 0, 0, 0.5);
-}
-.drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
-}
-.drawer-title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--ts-text-primary);
-}
-.drawer-close {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ts-text-secondary);
-  font-size: 0.75rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--ts-transition-fast), color var(--ts-transition-fast);
-}
-.drawer-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: var(--ts-text-primary);
-}
-
-/* Drawer transition */
-.drawer-enter-active, .drawer-leave-active { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease; }
-.drawer-enter-from, .drawer-leave-to { transform: translateX(100%); opacity: 0.5; }
 
 /* ── Fade transitions ── */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
@@ -591,7 +538,7 @@ onUnmounted(() => {
 
 /* ── Mobile adjustments ── */
 @media (max-width: 640px) {
-  .chat-drawer { width: 100%; max-width: 100%; }
+  .bottom-panel { max-height: 55vh; }
   .subtitle-overlay { width: 85%; bottom: 85px; }
   .ai-state-pill { right: 16px; top: 10px; }
   .brain-overlay { width: 90vw; }

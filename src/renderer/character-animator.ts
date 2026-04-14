@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { VRM } from '@pixiv/three-vrm';
+import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { CharacterState } from '../types';
 
 /**
@@ -22,14 +22,109 @@ const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
   surprised: { surprised: 0.8 },
 };
 
+// ── Bone pose targets per state (Euler angles in radians) ─────────────
+// Uses the standard VRM humanoid bone names from @pixiv/three-vrm.
+// Each state defines target rotations layered on top of a gentle
+// idle breathing cycle.  Bones not listed stay at their natural pose.
+interface BonePose {
+  head?: [number, number, number];
+  spine?: [number, number, number];
+  chest?: [number, number, number];
+  hips?: [number, number, number];
+  leftUpperArm?: [number, number, number];
+  rightUpperArm?: [number, number, number];
+  neck?: [number, number, number];
+}
+
+const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
+  idle: {
+    head:  [0, 0, 0],
+    spine: [0, 0, 0],
+    chest: [0, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [0, 0, 0],
+  },
+  thinking: {
+    head:  [0.08, 0.12, 0.04],     // tilted slightly, looking up-right
+    spine: [0.02, 0, 0],
+    chest: [0, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [0.04, 0.08, 0],
+    leftUpperArm:  [0, 0, 1.45],    // left arm crosses slightly more
+    rightUpperArm: [0.2, -0.1, -1.20], // right hand toward chin
+  },
+  talking: {
+    head:  [0, 0, 0],
+    spine: [0.02, 0, 0],           // slight lean forward
+    chest: [0.01, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [0, 0, 0],
+    leftUpperArm:  [0, 0, 1.25],   // arms slightly out for gesturing
+    rightUpperArm: [0, 0, -1.25],
+  },
+  happy: {
+    head:  [-0.06, 0, 0.04],       // head up, slight tilt
+    spine: [-0.04, 0, 0],          // chest out
+    chest: [-0.02, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [-0.04, 0, 0.02],
+    leftUpperArm:  [-0.1, 0, 1.15],  // arms wider (open body language)
+    rightUpperArm: [-0.1, 0, -1.15],
+  },
+  sad: {
+    head:  [0.15, 0, -0.02],       // head down
+    spine: [0.08, 0, 0],           // slouched
+    chest: [0.04, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [0.08, 0, 0],
+    leftUpperArm:  [0.05, 0, 1.45], // arms closer to body
+    rightUpperArm: [0.05, 0, -1.45],
+  },
+  angry: {
+    head:  [0.06, 0, 0],           // chin down, intense
+    spine: [-0.03, 0, 0],          // chest puffed
+    chest: [-0.02, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [0.04, 0, 0],
+    leftUpperArm:  [0, 0.1, 1.20],  // arms tense, slightly out
+    rightUpperArm: [0, -0.1, -1.20],
+  },
+  relaxed: {
+    head:  [-0.04, 0.03, 0.02],    // head slightly back, gentle tilt
+    spine: [-0.02, 0, 0],
+    chest: [0, 0, 0],
+    hips:  [0, 0.02, 0],           // slight sway
+    neck:  [-0.02, 0, 0.01],
+    leftUpperArm:  [0, 0, 1.30],
+    rightUpperArm: [0, 0, -1.30],
+  },
+  surprised: {
+    head:  [-0.10, 0, 0],          // head back (recoil)
+    spine: [-0.06, 0, 0],          // lean back
+    chest: [-0.03, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [-0.06, 0, 0],
+    leftUpperArm:  [-0.15, 0, 1.10], // arms up/out
+    rightUpperArm: [-0.15, 0, -1.10],
+  },
+};
+
+// All bone names we animate — typed as VRMHumanBoneName
+const ANIMATED_BONES: VRMHumanBoneName[] = [
+  'head', 'spine', 'chest', 'hips', 'neck',
+  'leftUpperArm', 'rightUpperArm',
+];
+
 /**
- * VRM animator that drives facial expressions and blinking.
+ * VRM animator that drives procedural bone animation, facial expressions,
+ * and blinking using only standard Three.js and @pixiv/three-vrm APIs.
  *
- * Body/bone animation is expected to come from external VRMA or Mixamo
- * animation clips loaded at runtime — this class does **not** generate
- * procedural bone keyframes.
- *
- * Expressions (morph targets) and blinking are procedural.
+ * - Body animation: per-frame procedural bone rotations via VRM humanoid
+ *   normalized bone nodes. Idle breathing is layered with state-specific
+ *   poses, smoothly interpolated for natural transitions.
+ * - Face animation: morph-target expressions driven by emotion state.
+ * - Blink: randomised natural blink cycle.
+ * - Lip-sync: external or procedural sine-wave mouth flap.
  */
 export class CharacterAnimator {
   private vrm: VRM | null = null;
@@ -54,6 +149,11 @@ export class CharacterAnimator {
   private expressionTargets: Map<string, number> = new Map();
   private expressionCurrent: Map<string, number> = new Map();
 
+  // Smooth bone rotation targets (interpolated each frame)
+  // Key = VRMHumanBoneName, Value = target Euler [x, y, z]
+  private boneTargets: Map<string, [number, number, number]> = new Map();
+  private boneCurrent: Map<string, [number, number, number]> = new Map();
+
   // Mouth animation elapsed for talking state
   private mouthElapsed = 0;
 
@@ -77,6 +177,9 @@ export class CharacterAnimator {
     this.blinkValue = 0;
     this.isBlinking = false;
     this.blinkTimer = 0;
+    // Reset bone interpolation state
+    this.boneCurrent.clear();
+    this.boneTargets.clear();
   }
 
   /** Configure the VRM lookAt target so the model's eyes track the camera. */
@@ -135,7 +238,7 @@ export class CharacterAnimator {
     this.useExternalLipSync = false;
   }
 
-  // ── VRM animation (expressions + blink) ────────────────────────────
+  // ── VRM animation (bones + expressions + blink) ────────────────────
 
   private applyVRMAnimation(t: number, delta: number) {
     if (!this.vrm || !this.vrmScene) return;
@@ -152,6 +255,12 @@ export class CharacterAnimator {
 
     // Smoothly interpolate all expressions toward their targets
     this.flushExpressions(delta);
+
+    // Set bone pose targets for the current state (with idle breathing overlay)
+    this.applyStateBonePose(t);
+
+    // Smoothly interpolate bones toward their targets
+    this.flushBones(delta);
 
     // vrm.update() transfers normalized bones → raw skeleton,
     // then updates lookAt, expressions, and spring bones.
@@ -180,6 +289,127 @@ export class CharacterAnimator {
         this.mouthElapsed += delta;
         const mouth = ((Math.sin(this.mouthElapsed * 5.5) + 1) * 0.5) * 0.5;
         this.setExpressionTarget('aa', mouth);
+      }
+    }
+  }
+
+  // ── State-based bone pose targets (with breathing overlay) ─────────
+
+  private applyStateBonePose(t: number) {
+    const pose = STATE_BONE_POSES[this.state];
+
+    // Idle breathing cycle — subtle sine wave layered on all states
+    // to keep the character feeling alive
+    const breathCycle = Math.sin(t * 1.2);     // ~0.6 Hz breathing rate
+    const breathAmt = 0.015;                   // subtle breath amplitude
+    const swayCycle = Math.sin(t * 0.4);       // slow idle sway
+
+    // Per-state additional movement overlays
+    let headOscX = 0;
+    let headOscY = 0;
+    let headOscZ = 0;
+    let spineOscX = 0;
+    let spineOscY = 0;
+    let hipsOscY = 0;
+
+    switch (this.state) {
+      case 'idle':
+        // Gentle head sway + breathing
+        headOscY = Math.sin(t * 0.5) * 0.03;
+        headOscZ = Math.sin(t * 0.35) * 0.015;
+        spineOscY = swayCycle * 0.01;
+        hipsOscY = swayCycle * 0.008;
+        break;
+      case 'thinking':
+        // Head tilting rhythmically as if pondering
+        headOscX = Math.sin(t * 0.8) * 0.04;
+        headOscY = Math.sin(t * 0.6) * 0.06;
+        break;
+      case 'talking':
+        // Subtle gesturing movement
+        headOscY = Math.sin(t * 2.5) * 0.04;
+        headOscX = Math.sin(t * 1.8) * 0.02;
+        spineOscY = Math.sin(t * 1.5) * 0.015;
+        break;
+      case 'happy':
+        // Bouncy, energetic
+        headOscZ = Math.sin(t * 3.0) * 0.04;
+        spineOscX = Math.sin(t * 2.5) * -0.02;
+        hipsOscY = Math.sin(t * 2.0) * 0.02;
+        break;
+      case 'sad':
+        // Slow, droopy
+        headOscX = Math.sin(t * 0.3) * 0.02;
+        spineOscX = Math.sin(t * 0.4) * 0.01;
+        break;
+      case 'angry':
+        // Tense, vibrating
+        headOscX = Math.sin(t * 6.0) * 0.01;
+        spineOscX = Math.sin(t * 5.0) * 0.008;
+        break;
+      case 'relaxed':
+        // Slow, peaceful sway
+        headOscY = Math.sin(t * 0.35) * 0.04;
+        headOscZ = Math.sin(t * 0.25) * 0.02;
+        spineOscY = Math.sin(t * 0.3) * 0.015;
+        hipsOscY = Math.sin(t * 0.25) * 0.01;
+        break;
+      case 'surprised':
+        // Quick recoil that settles
+        const recoilDecay = Math.exp(-t * 2.0);
+        headOscX = -0.08 * recoilDecay;
+        spineOscX = -0.04 * recoilDecay;
+        break;
+    }
+
+    // Compose final bone targets: base pose + breathing + per-state oscillation
+    for (const boneName of ANIMATED_BONES) {
+      const base = pose[boneName as keyof BonePose] ?? [0, 0, 0];
+      let x = base[0];
+      let y = base[1];
+      let z = base[2];
+
+      if (boneName === 'head') {
+        x += headOscX;
+        y += headOscY;
+        z += headOscZ;
+      } else if (boneName === 'spine') {
+        x += breathCycle * breathAmt + spineOscX; // breathing = spine tilt
+        y += spineOscY;
+      } else if (boneName === 'chest') {
+        x += breathCycle * breathAmt * 0.5;
+      } else if (boneName === 'hips') {
+        y += hipsOscY;
+        x += breathCycle * breathAmt * 0.3;
+      } else if (boneName === 'neck') {
+        x += headOscX * 0.4; // neck follows head partially
+        y += headOscY * 0.3;
+      }
+
+      this.boneTargets.set(boneName, [x, y, z]);
+    }
+  }
+
+  // ── Smooth bone interpolation ──────────────────────────────────────
+
+  private flushBones(delta: number) {
+    if (!this.vrm) return;
+
+    const boneSpeed = 4.0; // lerp speed for bone transitions
+
+    for (const [boneName, target] of this.boneTargets) {
+      const current = this.boneCurrent.get(boneName) ?? [0, 0, 0];
+      const next: [number, number, number] = [
+        smoothStep(current[0], target[0], boneSpeed, delta),
+        smoothStep(current[1], target[1], boneSpeed, delta),
+        smoothStep(current[2], target[2], boneSpeed, delta),
+      ];
+      this.boneCurrent.set(boneName, next);
+
+      // Apply to VRM humanoid normalized bone via the standard API
+      const node = this.vrm.humanoid?.getNormalizedBoneNode(boneName as VRMHumanBoneName);
+      if (node) {
+        node.rotation.set(next[0], next[1], next[2]);
       }
     }
   }
