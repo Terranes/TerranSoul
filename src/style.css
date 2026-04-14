@@ -89,6 +89,9 @@ body,
   font-family: var(--ts-font-family);
   background: transparent;
   color: var(--ts-text-primary);
+  /* Prevent double-tap zoom on mobile; pinch-zoom on the 3D canvas is
+     handled by Three.js OrbitControls, not the browser. */
+  touch-action: manipulation;
 }
 
 ::-webkit-scrollbar {

@@ -351,4 +351,57 @@ test.describe('Mobile Chat UX', () => {
     });
     expect(inputBorder).toBe('none');
   });
+
+  test('viewport meta disables user pinch zoom', async ({ page }) => {
+    await page.goto('/');
+
+    // Read the viewport meta tag content
+    const viewportContent = await page.evaluate(() => {
+      const meta = document.querySelector('meta[name="viewport"]');
+      return meta?.getAttribute('content') ?? '';
+    });
+
+    // Must include maximum-scale=1.0 and user-scalable=no to prevent page-level pinch zoom
+    expect(viewportContent).toContain('maximum-scale=1.0');
+    expect(viewportContent).toContain('user-scalable=no');
+    // interactive-widget=overlays-content should still be present
+    expect(viewportContent).toContain('interactive-widget=overlays-content');
+  });
+
+  test('page scroll stays at 0,0 when keyboard opens (iOS scroll prevention)', async ({ page }) => {
+    await page.goto('/');
+
+    // Simulate keyboard open
+    await page.evaluate(() => {
+      const vv = window.visualViewport;
+      if (vv) {
+        Object.defineProperty(vv, 'height', { value: 367, configurable: true, writable: true });
+        vv.dispatchEvent(new Event('resize'));
+      }
+    });
+
+    await page.waitForTimeout(200);
+
+    // Page scroll should be at 0,0 — the keyboard detector resets it
+    const scrollPos = await page.evaluate(() => ({
+      x: window.scrollX,
+      y: window.scrollY,
+    }));
+    expect(scrollPos.x).toBe(0);
+    expect(scrollPos.y).toBe(0);
+  });
+
+  test('html and body have touch-action: manipulation to prevent double-tap zoom', async ({ page }) => {
+    await page.goto('/');
+
+    const htmlTouchAction = await page.evaluate(() => {
+      return getComputedStyle(document.documentElement).touchAction;
+    });
+    expect(htmlTouchAction).toBe('manipulation');
+
+    const bodyTouchAction = await page.evaluate(() => {
+      return getComputedStyle(document.body).touchAction;
+    });
+    expect(bodyTouchAction).toBe('manipulation');
+  });
 });

@@ -11,6 +11,11 @@ import { ref, onMounted, onUnmounted } from 'vue';
  * The `visualViewport` approach is reliable across Chrome/Safari on Android
  * and iOS 13+ (the latter ships it since iOS 13.0).  On desktop browsers
  * where the keyboard never appears, the values stay at 0/false.
+ *
+ * iOS Safari may still scroll the page upward to reveal the focused input
+ * even with `interactive-widget=overlays-content`.  We counteract this by
+ * forcing `window.scrollTo(0, 0)` whenever the keyboard is detected and
+ * accounting for `visualViewport.offsetTop` in the height calculation.
  */
 export function useKeyboardDetector() {
   const keyboardHeight = ref(0);
@@ -34,9 +39,33 @@ export function useKeyboardDetector() {
     if (shrink > KEYBOARD_THRESHOLD_PX) {
       keyboardHeight.value = shrink;
       keyboardOpen.value = true;
+
+      // iOS Safari scrolls the page upward to keep the focused element
+      // visible when the keyboard opens.  This shifts the entire view
+      // (including the 3D model) which we don't want — only the bottom
+      // input panel should move.  Force scroll back to origin so the
+      // viewport stays pinned and our translateY-based offset handles
+      // the repositioning instead.
+      window.scrollTo(0, 0);
+      // Also reset any visual viewport offset that iOS may have applied.
+      // This compensates for iOS setting vv.offsetTop when it auto-scrolls.
+      if (vv.offsetTop > 0) {
+        window.scrollTo(0, 0);
+      }
     } else {
       keyboardHeight.value = 0;
       keyboardOpen.value = false;
+    }
+  }
+
+  /**
+   * Prevent iOS from auto-scrolling the page when the virtual keyboard
+   * opens by resetting scroll on any scroll event that occurs while the
+   * keyboard is active.
+   */
+  function onWindowScroll() {
+    if (keyboardOpen.value) {
+      window.scrollTo(0, 0);
     }
   }
 
@@ -45,6 +74,7 @@ export function useKeyboardDetector() {
       window.visualViewport.addEventListener('resize', onVisualViewportResize);
       window.visualViewport.addEventListener('scroll', onVisualViewportResize);
     }
+    window.addEventListener('scroll', onWindowScroll);
   });
 
   onUnmounted(() => {
@@ -52,6 +82,7 @@ export function useKeyboardDetector() {
       window.visualViewport.removeEventListener('resize', onVisualViewportResize);
       window.visualViewport.removeEventListener('scroll', onVisualViewportResize);
     }
+    window.removeEventListener('scroll', onWindowScroll);
   });
 
   return { keyboardHeight, keyboardOpen };

@@ -2,12 +2,14 @@
   <form class="chat-input-bar" @submit.prevent="handleSubmit">
     <div class="input-wrapper">
       <input
+        ref="inputRef"
         v-model="inputText"
         type="text"
         class="chat-input"
         placeholder="Type a message…"
         :disabled="disabled"
         autocomplete="off"
+        @focus="handleFocus"
       />
       <button
         type="submit"
@@ -30,12 +32,25 @@ const props = defineProps<{ disabled: boolean }>();
 const emit = defineEmits<{ submit: [message: string] }>();
 
 const inputText = ref('');
+const inputRef = ref<HTMLInputElement | null>(null);
 
 function handleSubmit() {
   const text = inputText.value.trim();
   if (!text || props.disabled) return;
   emit('submit', text);
   inputText.value = '';
+}
+
+/**
+ * When the input gains focus on mobile, iOS Safari tries to scroll the page
+ * to keep the focused element visible.  We counteract this by resetting the
+ * scroll position after a tick so the page doesn't shift.
+ */
+function handleFocus() {
+  // Reset any scroll iOS may have applied when focusing the input.
+  requestAnimationFrame(() => {
+    window.scrollTo(0, 0);
+  });
 }
 </script>
 
