@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import type { AnimationPersona, CharacterState } from '../types';
 import { buildPersonaClips, type PersonaClips } from './animation-loader';
+import { PoseBlender, type BlendInstruction } from './pose-blender';
+import { EMOTION_TO_POSE } from './pose-presets';
+import { GesturePlayer } from './gesture-player';
 
 /**
  * Smooth interpolation helper — lerps a value toward a target each frame.
@@ -57,6 +60,12 @@ export class CharacterAnimator {
   // ── Clip cycling — switch variant each time the current clip loops ──
   private loopListener: ((e: { action: THREE.AnimationAction }) => void) | null = null;
 
+  // ── Pose blending ────────────────────────────────────────────────────
+  private poseBlender = new PoseBlender();
+
+  // ── Gesture playback ────────────────────────────────────────────────
+  private gesturePlayer = new GesturePlayer();
+
   // Blink timing constants
   private static readonly BLINK_DURATION = 0.15;
   private static readonly MIN_BLINK_INTERVAL = 2.0;
@@ -79,6 +88,10 @@ export class CharacterAnimator {
   private externalMouthAa = 0;
   private externalMouthOh = 0;
   private useExternalLipSync = false;
+
+  // ── Explicit pose blend from LLM tags ───────────────────────────────
+  /** True when the LLM has provided explicit [pose:...] instructions. */
+  private hasExplicitPose = false;
 
   private static randomBlinkInterval(): number {
     return CharacterAnimator.MIN_BLINK_INTERVAL +
@@ -141,6 +154,11 @@ export class CharacterAnimator {
     this.elapsed = 0;
     this.mouthElapsed = 0;
     this.playClip(state);
+    // Update default pose blend based on emotion→pose mapping
+    const defaultBlend = EMOTION_TO_POSE[state];
+    if (defaultBlend && !this.hasExplicitPose) {
+      this.poseBlender.setTarget(defaultBlend);
+    }
   }
 
   getState(): CharacterState {
@@ -249,6 +267,48 @@ export class CharacterAnimator {
     this.useExternalLipSync = false;
   }
 
+  /**
+   * Apply an explicit pose blend from an LLM [pose:...] tag.
+   * Overrides the default emotion→pose fallback until clearPoseBlend() is called.
+   */
+  setPoseBlend(instructions: BlendInstruction[]) {
+    this.hasExplicitPose = instructions.length > 0;
+    this.poseBlender.setTarget(instructions);
+  }
+
+  /**
+   * Clear explicit pose blend, allowing the emotion→pose fallback to re-apply.
+   */
+  clearPoseBlend() {
+    this.hasExplicitPose = false;
+    const defaultBlend = EMOTION_TO_POSE[this.state];
+    if (defaultBlend) {
+      this.poseBlender.setTarget(defaultBlend);
+    } else {
+      this.poseBlender.reset();
+    }
+  }
+
+  /**
+   * Play a named gesture (e.g. 'nod', 'wave', 'shrug').
+   * Gestures layer on top of the current pose and are timed (1–2s).
+   *
+   * @returns true if the gesture exists and was started/queued.
+   */
+  playGesture(gestureId: string): boolean {
+    return this.gesturePlayer.play(gestureId);
+  }
+
+  /** Stop the current gesture and clear the gesture queue. */
+  stopGesture() {
+    this.gesturePlayer.stop();
+  }
+
+  /** Whether a gesture is currently active. */
+  get isGesturePlaying(): boolean {
+    return this.gesturePlayer.isPlaying;
+  }
+
   // ── VRM animation (mixer + expressions + blink) ────────────────────
 
   private applyVRMAnimation(t: number, delta: number) {
@@ -260,6 +320,12 @@ export class CharacterAnimator {
 
     // Advance the animation mixer (drives bone keyframes)
     this.mixer?.update(delta);
+
+    // Apply pose blending offsets on top of mixer output
+    this.poseBlender.apply(this.vrm!, delta);
+
+    // Apply gesture bone offsets on top of pose blend
+    this.gesturePlayer.apply(this.vrm!, delta);
 
     // Natural blinking with random intervals
     this.updateBlink(delta);

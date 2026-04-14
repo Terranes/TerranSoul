@@ -120,7 +120,7 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 069** — Next phase TBD
+**Chunk 069** — Phase 7 (VRM Security) starts with Chunk 070
 
 ---
 
@@ -447,10 +447,4 @@ pipeline only applies to bundled default models that we ship with TerranSoul.
 > Inspired by AI4Animation-js (SIGGRAPH 2018 MANN), adapted for stationary
 > VRM desktop companion use. See `rules/research-reverse-engineering.md` §7.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 080 | **Pose Preset Library** — Define 8–12 VRM humanoid pose presets as JSON bone rotation sets (confident, shy, excited, thoughtful, relaxed, defensive, attentive, playful, bored, empathetic). Each preset stores rotation offsets for ~20 key VRM bones (hips, spine, chest, neck, head, shoulders, upper/lower arms, hands). A `PosePreset` type with `id`, `label`, `boneRotations: Record<VRMHumanBoneName, {x,y,z}>`. Load from `src/renderer/poses/` JSON files. Unit tests verifying all presets have valid bone names and angle ranges. | `not-started` |
-| 081 | **Pose Blending Engine** — `PoseBlender` class in `src/renderer/pose-blender.ts`. Takes an array of `{ presetId, weight }` blend instructions and produces a final set of bone rotations by weighted-average (same principle as MANN's expert blending). Smooth interpolation over time (lerp/slerp between current and target blend). Integrates with `CharacterAnimator` — replaces or layers on top of procedural sin-wave animations. Breathing and blink remain procedural; body pose comes from blender. Vitest tests for blend math, edge cases (weights sum to 0, single preset at 1.0, etc.). | `not-started` |
-| 082 | **LLM Pose Prompt Engineering** — Extend the streaming system prompt to instruct the brain to output structured pose data alongside emotion tags. Format: `[pose:confident=0.6,attentive=0.3]` — blend weights for named presets. The emotion parser (`utils/emotion-parser.ts` and `commands/emotion.rs`) is extended to also extract `pose` tags. When no pose tag is present, fall back to mapping emotion → default pose (happy→excited+playful, sad→shy+defensive, etc.). Frontend streaming store passes parsed pose weights to character store. Rust + TS parser tests. | `not-started` |
-| 083 | **Gesture Tag System** — Extend motion tags to support timed gesture sequences. Brain outputs `[gesture:nod]`, `[gesture:wave]`, `[gesture:shrug]`, `[gesture:lean-in]`, etc. Each gesture is a short animation sequence (0.5–2s) defined as keyframe arrays in `src/renderer/gestures/`. `GesturePlayer` class plays the gesture, then returns to the current blended pose. Gestures layer on top of pose blending (additive). The brain can trigger gestures mid-sentence for natural conversational body language. 10+ built-in gestures. Vitest tests. | `not-started` |
-| 084 | **Autoregressive Pose Feedback** — Feed the character's current pose state back into the LLM context window. When starting a new streaming response, include a compact pose descriptor in the system context: `Current character pose: confident=0.6, attentive=0.3. Last gesture: nod (2s ago).` This lets the brain make coherent animation decisions — e.g., not repeating the same gesture, gradually transitioning between poses across a conversation. Measure latency impact of extra context. Tests verifying pose context is correctly serialized and injected. | `not-started` |
+✅ Phase 8 complete (chunks 080–084) — see completion-log.md

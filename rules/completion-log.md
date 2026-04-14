@@ -1792,3 +1792,212 @@ effects.
 ### Test Counts (Chunk 068)
 - **Vitest:** 371 total across 30 files (unchanged)
 - **Build:** `npm run build` ✓
+
+---
+
+## Chunk 080 — Pose Preset Library (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Define 10 VRM humanoid pose presets as TypeScript data, covering the full
+emotional range: confident, shy, excited, thoughtful, relaxed, defensive,
+attentive, playful, bored, empathetic.
+
+### Architecture
+
+**Pose Presets** (`src/renderer/pose-presets.ts`):
+- `PosePreset` interface: `{ id, label, boneRotations: Partial<Record<string, PoseBoneRotation>> }`
+- `PoseBoneRotation`: `{ x, y, z }` Euler angles in radians
+- Sparse representation — only bones that deviate from neutral are listed
+- 10 presets, each touching 3–8 upper-body bones
+- `getAllPosePresets()` and `getPosePreset(id)` accessors
+- `EMOTION_TO_POSE` mapping: each CharacterState maps to default pose blend weights
+- `VALID_POSE_BONES` set for validation
+
+**Types** (`src/types/index.ts`):
+- `PoseBoneRotation` — `{ x, y, z }` Euler rotation
+- `PoseBlendInstruction` — `{ presetId: string, weight: number }`
+
+### Files Created/Modified
+- `src/renderer/pose-presets.ts` — Pose preset library
+- `src/renderer/pose-presets.test.ts` — 15 tests
+- `src/types/index.ts` — `PoseBoneRotation`, `PoseBlendInstruction` types added
+
+### Test Counts (Chunk 080)
+- **Vitest:** 15 new tests in pose-presets.test.ts
+
+---
+
+## Chunk 081 — Pose Blending Engine (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+`PoseBlender` class applies weighted-average pose offsets to VRM normalized
+bone nodes, with smooth interpolation (exponential decay, BLEND_SPEED = 4).
+
+### Architecture
+
+**PoseBlender** (`src/renderer/pose-blender.ts`):
+- `currentWeights: Map<string, number>` — smoothed live weights
+- `targetWeights: Map<string, number>` — target weights set by `setTarget()`
+- `setTarget(instructions)` — set blend targets, fades others to 0
+- `reset()` — immediately clears all weights
+- `apply(vrm, delta)` — interpolates weights, computes weighted-average Euler
+  offsets per bone, multiplies onto `node.quaternion`
+- Integration point: called in `CharacterAnimator.applyVRMAnimation()` AFTER
+  `mixer.update(delta)` and BEFORE `vrm.update(delta)`
+
+**CharacterAnimator integration** (`src/renderer/character-animator.ts`):
+- `poseBlender` instance field
+- `setPoseBlend(instructions)` — explicit LLM-driven blend
+- `clearPoseBlend()` — revert to emotion→pose fallback
+- `setState()` now triggers default pose blend from `EMOTION_TO_POSE`
+- `hasExplicitPose` flag: LLM pose overrides emotion fallback
+
+### Files Created/Modified
+- `src/renderer/pose-blender.ts` — PoseBlender class
+- `src/renderer/pose-blender.test.ts` — 13 tests
+- `src/renderer/character-animator.ts` — PoseBlender integrated
+
+### Test Counts (Chunk 081)
+- **Vitest:** 13 new tests in pose-blender.test.ts
+
+---
+
+## Chunk 082 — LLM Pose Prompt Engineering (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Extend the emotion-tag parser to also handle `[pose:presetId=weight,...]` tags.
+Update system prompt to instruct LLM on all available pose presets and format.
+Propagate parsed pose blend instructions through the streaming store.
+
+### Architecture
+
+**Parser extension** (`src/utils/emotion-parser.ts`):
+- `parsePoseTag(body)` — parses `confident=0.6,attentive=0.3` into
+  `PoseBlendInstruction[]`; clamps weights to [0,1]
+- `parseTags()` now returns `poseBlend: PoseBlendInstruction[] | null`
+- Uses broader `[^\]]+` regex (vs previous `[\w:]+`) to match `=` and `,`
+- First `[pose:...]` tag wins; second is stripped
+
+**Streaming store** (`src/stores/streaming.ts`):
+- `currentPoseBlend` reactive ref added
+- Reset on `sendStreaming()` / `reset()`
+- Updated in `handleChunk()` when `parsed.poseBlend` is set
+
+**System prompt** (`src/utils/free-api-client.ts`):
+- Documents all 10 pose presets and the tag format
+- Lists all 8 motion/gesture ids in the motion tag description
+- `streamChatCompletion()` accepts optional `poseContextSuffix` parameter
+
+### Files Modified
+- `src/utils/emotion-parser.ts` — `[pose:...]` parsing
+- `src/utils/emotion-parser.test.ts` — +11 pose tag tests
+- `src/types/index.ts` — `poseBlend` field in `ParsedLlmChunk`
+- `src/stores/streaming.ts` — `currentPoseBlend` ref
+- `src/utils/free-api-client.ts` — extended system prompt, optional suffix
+
+### Test Counts (Chunk 082)
+- **Vitest:** 11 new tests in emotion-parser.test.ts (pose tag suite)
+
+---
+
+## Chunk 083 — Gesture Tag System (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+10 built-in gesture sequences (keyframe-based), `GesturePlayer` class with
+a queue, integrated into `CharacterAnimator` as an additive layer above pose blending.
+
+### Architecture
+
+**Gesture definitions** (`src/renderer/gestures.ts`):
+- `GestureDefinition`: `{ id, duration, keyframes: GestureKeyframe[] }`
+- `GestureKeyframe`: `{ time, bones: Partial<Record<string, {x,y,z}>> }`
+- 10 built-in gestures: `nod`, `wave`, `shrug`, `lean-in`, `head-tilt`,
+  `reach-out`, `bow`, `nod-slow`, `shake-head`, `idle-fidget`
+- `getAllGestures()` and `getGesture(id)` accessors
+
+**GesturePlayer** (`src/renderer/gesture-player.ts`):
+- `play(gestureId)` — start immediately or queue (max depth 4)
+- `stop()` — clear active + queue
+- `apply(vrm, delta)` — advance elapsed, interpolate keyframes, apply offsets
+- Linear interpolation between adjacent keyframes
+- `isPlaying`, `currentId`, `queueLength` getters
+- Integration: called in `CharacterAnimator.applyVRMAnimation()` after pose blending
+
+**CharacterAnimator integration** (`src/renderer/character-animator.ts`):
+- `gesturePlayer` instance field
+- `playGesture(gestureId)` → delegates to `gesturePlayer.play()`
+- `stopGesture()` → `gesturePlayer.stop()`
+- `isGesturePlaying` getter
+
+### Files Created/Modified
+- `src/renderer/gestures.ts` — Gesture library (10 gestures)
+- `src/renderer/gesture-player.ts` — GesturePlayer class
+- `src/renderer/gesture-player.test.ts` — 18 tests
+- `src/renderer/character-animator.ts` — GesturePlayer integrated
+
+### Test Counts (Chunk 083)
+- **Vitest:** 18 new tests in gesture-player.test.ts
+
+---
+
+## Chunk 084 — Autoregressive Pose Feedback (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Serialize current pose state to a compact descriptor injected into the LLM
+system prompt, enabling coherent animation decisions across conversation turns.
+
+### Architecture
+
+**Pose feedback serializer** (`src/utils/pose-feedback.ts`):
+- `PoseContextInput`: `{ weights: Map<string, number>, lastGestureId, secondsSinceLastGesture }`
+- `serializePoseContext(input)` → compact string e.g.
+  `"Current character pose: thoughtful=0.75. Last gesture: nod (3.2s ago)."`
+- Filters presets below 0.05 threshold, sorts by weight, limits to 3 presets
+- Rounds weights to 2 decimal places for readability
+- Output always < 200 chars
+- `buildPoseContextSuffix(input)` → wraps output with `\n\n[Character state] ...`
+  for system prompt injection
+
+**System prompt integration** (`src/utils/free-api-client.ts`):
+- `streamChatCompletion()` accepts `poseContextSuffix = ''` (optional 6th param)
+- Appends suffix to system prompt content when provided
+
+### Files Created/Modified
+- `src/utils/pose-feedback.ts` — Serializer
+- `src/utils/pose-feedback.test.ts` — 14 tests
+- `src/utils/free-api-client.ts` — `poseContextSuffix` parameter
+
+### Test Counts (Chunk 084)
+- **Vitest:** 14 new tests in pose-feedback.test.ts
+
+---
+
+## Phase 8 Summary
+
+**Date:** 2026-04-14
+**Chunks:** 080–084
+**Status:** ✅ Complete
+
+- 10 pose presets with emotion→pose fallback mapping
+- PoseBlender: smooth weighted-average blend with exponential interpolation
+- `[pose:...]` tag parsing in emotion-parser + streaming store propagation
+- 10 built-in gesture sequences with queuing in GesturePlayer
+- Autoregressive pose context serialization for LLM system prompt injection
+- System prompt updated with full pose/gesture/motion documentation
+- **438 total Vitest tests across 34 files** (+67 new tests for Phase 8)
+- Build: `npm run build` ✓

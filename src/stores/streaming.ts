@@ -8,7 +8,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { parseTags } from '../utils/emotion-parser';
-import type { EmotionTag, MotionTag } from '../types';
+import type { EmotionTag, MotionTag, PoseBlendInstruction } from '../types';
 
 export const useStreamingStore = defineStore('streaming', () => {
   /** Whether we are currently streaming a response. */
@@ -21,6 +21,8 @@ export const useStreamingStore = defineStore('streaming', () => {
   const currentEmotion = ref<EmotionTag | null>(null);
   /** Latest motion detected during streaming. */
   const currentMotion = ref<MotionTag | null>(null);
+  /** Latest pose blend instructions detected during streaming. */
+  const currentPoseBlend = ref<PoseBlendInstruction[] | null>(null);
   /** Error, if any. */
   const error = ref<string | null>(null);
 
@@ -35,6 +37,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamRawText.value = '';
     currentEmotion.value = null;
     currentMotion.value = null;
+    currentPoseBlend.value = null;
     error.value = null;
 
     try {
@@ -70,6 +73,9 @@ export const useStreamingStore = defineStore('streaming', () => {
     if (parsed.motion) {
       currentMotion.value = parsed.motion;
     }
+    if (parsed.poseBlend) {
+      currentPoseBlend.value = parsed.poseBlend;
+    }
 
     // Accumulate display text. parseTags trims, but for streaming we need
     // to preserve inter-token whitespace from the LLM. We use the raw text
@@ -84,6 +90,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamRawText.value = '';
     currentEmotion.value = null;
     currentMotion.value = null;
+    currentPoseBlend.value = null;
     error.value = null;
   }
 
@@ -93,6 +100,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamRawText,
     currentEmotion,
     currentMotion,
+    currentPoseBlend,
     error,
     sendStreaming,
     handleChunk,
