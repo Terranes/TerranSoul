@@ -77,9 +77,6 @@
     <div v-if="backgroundStore.importError" class="background-error-banner">
       {{ backgroundStore.importError }}
     </div>
-    <div class="state-badge" :class="characterStore.state">
-      {{ characterStore.state }}
-    </div>
     <div v-if="showDebug" class="debug-overlay">
       <span>WebGL</span>
       <span>▲ {{ debugInfo.triangles }}</span>
@@ -498,76 +495,6 @@ watch(
   font-size: 0.76rem;
   font-weight: 600;
   backdrop-filter: blur(8px);
-}
-
-.state-badge {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  padding: 4px 12px;
-  border-radius: var(--ts-radius-pill);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  pointer-events: none;
-  background: rgba(15, 23, 42, 0.72);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: var(--ts-shadow-md);
-  backdrop-filter: blur(6px);
-  transition: background var(--ts-transition-slow), color var(--ts-transition-slow), border-color var(--ts-transition-slow);
-}
-
-.state-badge.idle {
-  background: rgba(37, 99, 235, 0.9);
-  color: #eff6ff;
-  border-color: rgba(147, 197, 253, 0.7);
-}
-
-.state-badge.thinking {
-  background: rgba(245, 158, 11, 0.92);
-  color: #fff7ed;
-  border-color: rgba(253, 230, 138, 0.7);
-  animation: badge-pulse 1.5s ease-in-out infinite;
-}
-
-.state-badge.talking {
-  background: rgba(22, 163, 74, 0.9);
-  color: #f0fdf4;
-  border-color: rgba(134, 239, 172, 0.7);
-}
-
-.state-badge.happy {
-  background: rgba(8, 145, 178, 0.92);
-  color: #ecfeff;
-  border-color: rgba(103, 232, 249, 0.7);
-}
-
-.state-badge.sad {
-  background: rgba(126, 34, 206, 0.9);
-  color: #faf5ff;
-  border-color: rgba(216, 180, 254, 0.7);
-}
-
-.state-badge.angry {
-  background: rgba(255, 80, 60, 0.35);
-  color: #ff8a80;
-}
-
-.state-badge.relaxed {
-  background: rgba(80, 200, 180, 0.35);
-  color: #80e8d0;
-}
-
-.state-badge.surprised {
-  background: rgba(255, 180, 50, 0.35);
-  color: #ffc850;
-}
-
-@keyframes badge-pulse {
-  0%, 100% { box-shadow: var(--ts-shadow-md); }
-  50% { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35); }
 }
 
 .debug-overlay {
