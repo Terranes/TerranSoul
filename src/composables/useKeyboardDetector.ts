@@ -47,11 +47,6 @@ export function useKeyboardDetector() {
       // viewport stays pinned and our translateY-based offset handles
       // the repositioning instead.
       window.scrollTo(0, 0);
-      // Also reset any visual viewport offset that iOS may have applied.
-      // This compensates for iOS setting vv.offsetTop when it auto-scrolls.
-      if (vv.offsetTop > 0) {
-        window.scrollTo(0, 0);
-      }
     } else {
       keyboardHeight.value = 0;
       keyboardOpen.value = false;

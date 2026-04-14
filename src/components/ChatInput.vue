@@ -65,7 +65,6 @@ function handleFocus() {
   display: flex;
   align-items: center;
   flex: 1;
-  gap: 0;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--ts-radius-pill);
