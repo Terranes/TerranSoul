@@ -81,7 +81,7 @@ describe('emotion-parser — parseTags', () => {
   it('unrecognized tags like motion/pose are preserved in text', () => {
     const result = parseTags('[motion:wave] Hello!');
     expect(result.emotion).toBeNull();
-    expect(result.text).toContain('Hello!');
+    expect(result.text).toBe('[motion:wave] Hello!');
   });
 });
 
