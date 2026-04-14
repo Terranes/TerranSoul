@@ -73,6 +73,12 @@ function formatTime(ts: number) {
  * for the subset we support.
  */
 function renderMarkdown(text: string): string {
+  /**
+   * XSS Safety: Content is first escaped via escapeHtml() which replaces
+   * all &, <, >, " characters with HTML entities. Only then are markdown
+   * patterns converted to safe, known HTML tags (<strong>, <em>, <code>,
+   * <pre>). No raw user content is ever inserted as HTML.
+   */
   let html = escapeHtml(text);
   // Code blocks (```...```)
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="md-code-block"><code>$2</code></pre>');
@@ -81,9 +87,10 @@ function renderMarkdown(text: string): string {
   // Bold (**...** or __...__) — must come before italic
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  // Italic (*...* or _..._)
-  html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-  html = html.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '<em>$1</em>');
+  // Italic (*...* or _..._) — uses simple non-greedy match for broad
+  // browser compatibility (avoids lookbehind which Safari <16.4 lacks).
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
   // Line breaks
   html = html.replace(/\n/g, '<br/>');
   return html;
