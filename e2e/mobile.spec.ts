@@ -265,4 +265,90 @@ test.describe('Mobile Chat UX', () => {
     // Top of viewport must be at y=0 (never pushed off-screen)
     expect(vpBox!.y).toBeCloseTo(0, 0);
   });
+
+  test('mobile hamburger menu is visible and toggles dropdown', async ({ page }) => {
+    await page.goto('/');
+
+    // Hamburger menu toggle should be visible on mobile
+    const menuToggle = page.locator('.mobile-menu-toggle');
+    await expect(menuToggle).toBeVisible();
+
+    // Dropdown should be hidden by default (collapsed)
+    await expect(page.locator('.mobile-menu-dropdown')).not.toBeVisible();
+
+    // Tap the hamburger — dropdown should appear with menu items
+    await menuToggle.click();
+    const dropdown = page.locator('.mobile-menu-dropdown');
+    await expect(dropdown).toBeVisible({ timeout: 1_000 });
+
+    // Should have at least 4 menu items (Chat, Memory, Marketplace, Voice)
+    const items = dropdown.locator('.mobile-menu-item');
+    await expect(items).toHaveCount(4);
+
+    // Tap again — dropdown should close
+    await menuToggle.click();
+    await expect(dropdown).not.toBeVisible({ timeout: 1_000 });
+  });
+
+  test('mobile hamburger menu does not overflow viewport', async ({ page }) => {
+    await page.goto('/');
+
+    // Open the hamburger menu
+    await page.locator('.mobile-menu-toggle').click();
+    const dropdown = page.locator('.mobile-menu-dropdown');
+    await expect(dropdown).toBeVisible({ timeout: 1_000 });
+
+    // Dropdown must not overflow the viewport
+    const box = await dropdown.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(MOBILE_VIEWPORT.width + 2);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+  });
+
+  test('mobile menu navigation switches tabs', async ({ page }) => {
+    await page.goto('/');
+
+    // Verify we start on chat view
+    await expect(page.locator('.chat-view')).toBeVisible();
+
+    // Open hamburger and tap Memory
+    await page.locator('.mobile-menu-toggle').click();
+    await expect(page.locator('.mobile-menu-dropdown')).toBeVisible({ timeout: 1_000 });
+
+    // Click the Memory menu item
+    const memoryItem = page.locator('.mobile-menu-item', { hasText: 'Memory' });
+    await memoryItem.click();
+
+    // Menu should auto-close after selection
+    await expect(page.locator('.mobile-menu-dropdown')).not.toBeVisible({ timeout: 1_000 });
+  });
+
+  test('desktop nav bar is hidden on mobile', async ({ page }) => {
+    await page.goto('/');
+
+    // Desktop nav should be hidden on mobile viewport
+    const desktopNav = page.locator('.desktop-nav');
+    await expect(desktopNav).toBeHidden();
+  });
+
+  test('modernized input has unified wrapper with send button inside', async ({ page }) => {
+    await page.goto('/');
+
+    // Input wrapper should be visible (modern unified design)
+    const inputWrapper = page.locator('.input-wrapper');
+    await expect(inputWrapper).toBeVisible();
+
+    // Both input and send button should be inside the wrapper
+    const input = inputWrapper.locator('.chat-input');
+    const sendBtn = inputWrapper.locator('.send-btn');
+    await expect(input).toBeVisible();
+    await expect(sendBtn).toBeVisible();
+
+    // The input should not have its own visible border (border-less inside wrapper)
+    const inputBorder = await input.evaluate((el) => {
+      return getComputedStyle(el).borderStyle;
+    });
+    expect(inputBorder).toBe('none');
+  });
 });

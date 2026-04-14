@@ -522,10 +522,10 @@ defineExpose({ zoomToFace });
 
 /* Mobile adjustments for viewport overlays */
 @media (max-width: 640px) {
-  .character-name-overlay { font-size: 0.85rem; left: 48px; top: 10px; }
-  .character-meta-overlay { font-size: 0.62rem; left: 48px; top: 28px; }
+  .character-name-overlay { font-size: 0.85rem; left: 96px; top: 10px; }
+  .character-meta-overlay { font-size: 0.62rem; left: 96px; top: 28px; }
   .settings-toggle { width: 32px; height: 32px; }
-  .settings-corner { top: 8px; left: 10px; }
+  .settings-corner { top: 10px; left: 52px; }
   .settings-dropdown { width: 260px; padding: 10px; gap: 10px; }
 }
 .loading-overlay {
