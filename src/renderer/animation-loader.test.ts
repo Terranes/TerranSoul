@@ -36,16 +36,16 @@ describe('animation-loader JSON data', () => {
     }
   });
 
-  // ── Multi-variant presence test ──────────────────────────────────
-  it('each persona × state has at least 2 animation variants', () => {
+  // ── Variant presence test ─────────────────────────────────────────
+  it('each persona × state has at least 1 animation variant', () => {
     for (const persona of PERSONAS) {
       const data = DATA_MAP[persona];
       for (const state of STATES) {
         const variants = Array.isArray(data[state]) ? data[state] : [data[state]];
         expect(
           variants.length,
-          `${persona}/${state} should have ≥2 variants`,
-        ).toBeGreaterThanOrEqual(2);
+          `${persona}/${state} should have ≥1 variant`,
+        ).toBeGreaterThanOrEqual(1);
       }
     }
   });

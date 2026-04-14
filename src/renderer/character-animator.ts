@@ -183,21 +183,17 @@ export class CharacterAnimator {
   // ── AnimationMixer clip management ─────────────────────────────────
 
   /**
-   * Stop all mixer actions except the given one.
-   * Prevents stale actions from accumulating and causing visual glitches
-   * (spinning, body-flipping) when states change rapidly.
+   * Stop all mixer actions except the specified ones.
+   * Prevents accumulation of stale actions from previous state changes
+   * which causes unpredictable quaternion blending ("body flipping").
    */
-  private stopAllExcept(currentAction: THREE.AnimationAction | null) {
-    if (!this.mixer) return;
-    // The mixer's internal _actions array is not public API, but
-    // Three.js exposes existingAction via clipAction. Instead we
-    // iterate all clips we know about and stop their actions.
-    if (!this.clips) return;
-    const states: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'];
-    for (const s of states) {
-      for (const clip of this.clips[s]) {
+  private stopAllExcept(...keep: (THREE.AnimationAction | null)[]) {
+    if (!this.mixer || !this.clips) return;
+    const keepSet = new Set(keep.filter((a): a is THREE.AnimationAction => a !== null));
+    for (const variants of Object.values(this.clips)) {
+      for (const clip of variants) {
         const action = this.mixer.existingAction(clip);
-        if (action && action !== currentAction) {
+        if (action && !keepSet.has(action) && action.isRunning()) {
           action.stop();
         }
       }
@@ -214,9 +210,6 @@ export class CharacterAnimator {
     const clip = variants[idx];
     const newAction = this.mixer.clipAction(clip);
     newAction.setLoop(THREE.LoopRepeat, Infinity);
-
-    // Stop all stale actions before cross-fading to prevent accumulation
-    this.stopAllExcept(this.currentAction);
 
     if (this.currentAction && this.currentAction !== newAction) {
       // Stop all stale actions from previous state changes to prevent
@@ -245,9 +238,6 @@ export class CharacterAnimator {
     const newAction = this.mixer.clipAction(clip);
     newAction.setLoop(THREE.LoopRepeat, Infinity);
 
-    // Stop all stale actions before cross-fading
-    this.stopAllExcept(this.currentAction);
-
     if (this.currentAction && this.currentAction !== newAction) {
       this.stopAllExcept(this.currentAction, newAction);
       this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
@@ -268,24 +258,6 @@ export class CharacterAnimator {
       idx = Math.floor(Math.random() * length);
     } while (idx === exclude && length > 1);
     return idx;
-  }
-
-  /**
-   * Stop all mixer actions except the specified ones.
-   * Prevents accumulation of stale actions from previous state changes
-   * which causes unpredictable quaternion blending ("body flipping").
-   */
-  private stopAllExcept(...keep: THREE.AnimationAction[]) {
-    if (!this.mixer || !this.clips) return;
-    const keepSet = new Set(keep);
-    for (const variants of Object.values(this.clips)) {
-      for (const clip of variants) {
-        const action = this.mixer.clipAction(clip);
-        if (!keepSet.has(action) && action.isRunning()) {
-          action.stop();
-        }
-      }
-    }
   }
 
   /**
