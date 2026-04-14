@@ -141,15 +141,17 @@ const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 
 // ── Subtitle system ──────────────────────────────────────────────
+const MAX_SUBTITLE_LENGTH = 150;
+const SUBTITLE_DURATION_MS = 8000;
 const subtitleText = ref('');
 const subtitleKey = ref(0);
 let subtitleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function showSubtitle(text: string) {
-  subtitleText.value = text.length > 150 ? text.slice(0, 150) + '…' : text;
+  subtitleText.value = text.length > MAX_SUBTITLE_LENGTH ? text.slice(0, MAX_SUBTITLE_LENGTH) + '…' : text;
   subtitleKey.value++;
   if (subtitleTimer) clearTimeout(subtitleTimer);
-  subtitleTimer = setTimeout(() => { subtitleText.value = ''; }, 8000);
+  subtitleTimer = setTimeout(() => { subtitleText.value = ''; }, SUBTITLE_DURATION_MS);
 }
 
 // ── State label ──────────────────────────────────────────────────

@@ -120,8 +120,17 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-All not-started work has been moved to `rules/backlog.md`.
-Move chunks from backlog to here when ready to implement.
+Chunk 085 (UI/UX Overhaul) ✅ Done — see `rules/completion-log.md`.
+Remaining not-started work is in `rules/backlog.md`.
+
+---
+
+## Phase 9.1 — UI/UX (Open-LLM-VTuber Patterns)
+
+✅ Chunk 085 — UI/UX Overhaul — see `rules/completion-log.md`
+
+Full-screen character layout, floating subtitle overlay, collapsible input footer,
+animated AI state pill, slide-over chat drawer. Learned from Open-LLM-VTuber-Web.
 
 ---
 

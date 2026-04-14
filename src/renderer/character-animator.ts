@@ -187,17 +187,17 @@ export class CharacterAnimator {
    * Prevents stale actions from accumulating and causing visual glitches
    * (spinning, body-flipping) when states change rapidly.
    */
-  private stopAllExcept(keep: THREE.AnimationAction | null) {
+  private stopAllExcept(currentAction: THREE.AnimationAction | null) {
     if (!this.mixer) return;
     // The mixer's internal _actions array is not public API, but
-    // Three.js exposes existingAction via clipAction.  Instead we
+    // Three.js exposes existingAction via clipAction. Instead we
     // iterate all clips we know about and stop their actions.
     if (!this.clips) return;
     const states: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'];
     for (const s of states) {
       for (const clip of this.clips[s]) {
         const action = this.mixer.existingAction(clip);
-        if (action && action !== keep) {
+        if (action && action !== currentAction) {
           action.stop();
         }
       }
