@@ -95,7 +95,7 @@ watch(
       // Ensure transparent body background for pet mode
       document.body.style.background = 'transparent';
     } else {
-      document.body.style.background = '#0f172a';
+      document.body.style.background = '#0b1120';
     }
   },
 );
@@ -133,7 +133,7 @@ onMounted(async () => {
 
 <style>
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; background: var(--ts-bg-base, #0f172a); color: var(--ts-text-primary, #f1f5f9); font-family: var(--ts-font-family, system-ui, sans-serif); }
+body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-font-family, system-ui, sans-serif); }
 </style>
 
 <style scoped>

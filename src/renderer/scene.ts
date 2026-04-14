@@ -120,10 +120,15 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   fillLight.position.set(-1.6, 1.4, 2.2);
   scene.add(fillLight);
 
-  // Rim/back light — subtle separation from background
-  const rimLight = new THREE.DirectionalLight(0xffffff, 0.18);
+  // Rim/back light — stronger separation from background
+  const rimLight = new THREE.DirectionalLight(0xffffff, 0.45);
   rimLight.position.set(0.3, 2.3, -2.2);
   scene.add(rimLight);
+
+  // Secondary rim from opposite side for fuller edge definition
+  const rimLight2 = new THREE.DirectionalLight(0xddeeff, 0.25);
+  rimLight2.position.set(-0.5, 1.5, -1.8);
+  scene.add(rimLight2);
 
   // Soft pedestal instead of grid floor
   const pedestalGeometry = new THREE.CircleGeometry(1.15, 64);

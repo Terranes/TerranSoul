@@ -323,7 +323,7 @@ onUnmounted(() => {
 .ai-state-pill {
   position: absolute;
   top: 14px;
-  right: 60px;
+  right: 16px;
   z-index: 20;
   display: flex;
   align-items: center;
@@ -334,12 +334,13 @@ onUnmounted(() => {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.85);
+  background: rgba(11, 17, 32, 0.72);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.88);
   transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
   pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .ai-state-dot {
   width: 7px;
@@ -435,9 +436,9 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: 15;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(11, 17, 32, 0.82);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .input-footer.collapsed {
@@ -471,9 +472,9 @@ onUnmounted(() => {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 32, 0.72);
+  backdrop-filter: blur(10px);
   color: #fff;
   font-size: 1.3rem;
   cursor: pointer;
@@ -481,16 +482,16 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 .chat-drawer-toggle:hover {
-  background: rgba(108, 99, 255, 0.5);
+  background: rgba(124, 111, 255, 0.55);
   transform: scale(1.08);
-  box-shadow: 0 4px 24px rgba(108, 99, 255, 0.3);
+  box-shadow: 0 4px 24px rgba(124, 111, 255, 0.3);
 }
 .chat-drawer-toggle.active {
-  background: rgba(108, 99, 255, 0.65);
-  border-color: rgba(108, 99, 255, 0.5);
+  background: rgba(124, 111, 255, 0.70);
+  border-color: rgba(124, 111, 255, 0.5);
 }
 
 /* ── Chat history slide-over drawer ── */
@@ -504,10 +505,10 @@ onUnmounted(() => {
   z-index: 25;
   display: flex;
   flex-direction: column;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(20px);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.4);
+  background: rgba(11, 17, 32, 0.94);
+  backdrop-filter: blur(24px);
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: -8px 0 48px rgba(0, 0, 0, 0.5);
 }
 .drawer-header {
   display: flex;
@@ -563,7 +564,7 @@ onUnmounted(() => {
   width: 340px;
   max-width: 90vw;
 }
-.brain-card { background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(16px); border-radius: var(--ts-radius-lg); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; border: 1px solid rgba(59, 130, 246, 0.3); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+.brain-card { background: rgba(11, 17, 32, 0.94); backdrop-filter: blur(20px); border-radius: var(--ts-radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(75, 142, 255, 0.3); box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6); }
 .brain-card-header { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-base); }
 .brain-hw { font-size: var(--ts-text-sm); color: var(--ts-text-secondary); margin: 0; }
 .brain-rec { font-size: 0.8rem; color: #cbd5e1; margin: 0; line-height: 1.4; }

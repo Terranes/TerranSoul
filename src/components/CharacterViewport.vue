@@ -310,7 +310,9 @@ watch(
 .background-tint {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.08) 0%, rgba(15, 23, 42, 0.16) 100%);
+  background:
+    radial-gradient(ellipse at center, transparent 40%, rgba(10, 15, 30, 0.35) 100%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.06) 0%, rgba(15, 23, 42, 0.20) 100%);
   z-index: 1;
   pointer-events: none;
 }
@@ -326,11 +328,11 @@ watch(
 .character-name-overlay {
   position: absolute;
   top: 12px;
-  left: 16px;
+  left: 56px;
   font-size: var(--ts-text-lg);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   letter-spacing: 0.05em;
 }
@@ -338,9 +340,10 @@ watch(
 .character-meta-overlay {
   position: absolute;
   top: 34px;
-  left: 16px;
+  left: 56px;
   font-size: 0.72rem;
-  color: var(--ts-text-dim);
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   letter-spacing: 0.02em;
 }
@@ -349,44 +352,45 @@ watch(
 .settings-corner {
   position: absolute;
   top: 12px;
-  right: 60px;
+  left: 16px;
   z-index: 20;
 }
 
 .settings-toggle {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 32, 0.72);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(10px);
   transition: background var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-normal);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .settings-toggle:hover {
-  background: rgba(108, 99, 255, 0.5);
+  background: rgba(124, 111, 255, 0.55);
   transform: scale(1.08);
-  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.25);
+  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
 }
 
 .settings-dropdown {
   position: absolute;
   top: 42px;
-  right: 0;
+  left: 0;
   width: 280px;
   max-width: min(280px, 90vw);
-  padding: 12px;
+  padding: 14px;
   border-radius: var(--ts-radius-lg);
-  border: 1px solid var(--ts-border);
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 17, 32, 0.94);
+  backdrop-filter: blur(20px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   box-shadow: var(--ts-shadow-lg);
 }
 
@@ -478,8 +482,8 @@ watch(
   transform: translateY(-1px);
 }
 .background-chip.active {
-  background: rgba(108, 99, 255, 0.85);
-  border-color: rgba(191, 219, 254, 0.85);
+  background: rgba(124, 111, 255, 0.85);
+  border-color: rgba(200, 210, 255, 0.85);
 }
 
 .background-error-banner {
