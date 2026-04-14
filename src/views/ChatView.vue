@@ -174,9 +174,6 @@ async function handleSend(message: string) {
     : pendingEmotion.value;
 
   characterStore.setState(reactionState);
-  // Trigger a random animation variant so the character doesn't repeat
-  // the same clip every time the brain responds.
-  characterStore.triggerRandomAnimation();
   pendingEmotion.value = 'idle';
   setTimeout(() => characterStore.setState('idle'), 6000);
 }

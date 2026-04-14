@@ -55,7 +55,7 @@ export class CharacterAnimator {
   private clips: PersonaClips | null = null;
   private currentAction: THREE.AnimationAction | null = null;
   private currentClipIndex = 0;
-  private static readonly CROSS_FADE_DURATION = 0.6;
+  private static readonly CROSS_FADE_DURATION = 0.35;
 
   // ── Clip cycling — switch variant each time the current clip loops ──
   private loopListener: ((e: { action: THREE.AnimationAction }) => void) | null = null;
@@ -182,6 +182,28 @@ export class CharacterAnimator {
 
   // ── AnimationMixer clip management ─────────────────────────────────
 
+  /**
+   * Stop all mixer actions except the given one.
+   * Prevents stale actions from accumulating and causing visual glitches
+   * (spinning, body-flipping) when states change rapidly.
+   */
+  private stopAllExcept(keep: THREE.AnimationAction | null) {
+    if (!this.mixer) return;
+    // The mixer's internal _actions array is not public API, but
+    // Three.js exposes existingAction via clipAction.  Instead we
+    // iterate all clips we know about and stop their actions.
+    if (!this.clips) return;
+    const states: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'relaxed', 'surprised'];
+    for (const s of states) {
+      for (const clip of this.clips[s]) {
+        const action = this.mixer.existingAction(clip);
+        if (action && action !== keep) {
+          action.stop();
+        }
+      }
+    }
+  }
+
   private playClip(state: CharacterState) {
     if (!this.mixer || !this.clips) return;
 
@@ -192,6 +214,9 @@ export class CharacterAnimator {
     const clip = variants[idx];
     const newAction = this.mixer.clipAction(clip);
     newAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    // Stop all stale actions before cross-fading to prevent accumulation
+    this.stopAllExcept(this.currentAction);
 
     if (this.currentAction && this.currentAction !== newAction) {
       // Cross-fade from old → new
@@ -215,6 +240,9 @@ export class CharacterAnimator {
     const clip = variants[idx];
     const newAction = this.mixer.clipAction(clip);
     newAction.setLoop(THREE.LoopRepeat, Infinity);
+
+    // Stop all stale actions before cross-fading
+    this.stopAllExcept(this.currentAction);
 
     if (this.currentAction && this.currentAction !== newAction) {
       this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
