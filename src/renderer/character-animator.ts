@@ -296,7 +296,7 @@ export class CharacterAnimator {
   // ── State-based bone pose targets (with breathing overlay) ─────────
 
   private applyStateBonePose(t: number) {
-    const pose = STATE_BONE_POSES[this.state];
+    const pose = STATE_BONE_POSES[this.state] ?? STATE_BONE_POSES.idle;
 
     // Idle breathing cycle — subtle sine wave layered on all states
     // to keep the character feeling alive
