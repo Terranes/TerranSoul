@@ -48,6 +48,15 @@ export function useKeyboardDetector() {
    */
   let fullViewportHeight = 0;
 
+  /**
+   * Delay (ms) before re-checking visualViewport after input focus.
+   * iOS Safari can take up to ~300ms to fully expand the keyboard; the
+   * initial visualViewport resize event sometimes fires with a partial
+   * or zero height.  This is a best-effort timing that covers the widest
+   * observed delay across iOS 15–17 devices.
+   */
+  const KEYBOARD_EXPANSION_DELAY_MS = 300;
+
   /** Timer for focus-based fallback polling. */
   let focusPollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -107,11 +116,11 @@ export function useKeyboardDetector() {
    */
   function onInputFocused() {
     if (focusPollTimer) clearTimeout(focusPollTimer);
-    // Re-check after 300ms to catch the final keyboard height
+    // Re-check after delay to catch the final keyboard height
     focusPollTimer = setTimeout(() => {
       computeKeyboardState();
       focusPollTimer = null;
-    }, 300);
+    }, KEYBOARD_EXPANSION_DELAY_MS);
   }
 
   /**
