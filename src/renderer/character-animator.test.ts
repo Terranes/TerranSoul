@@ -156,6 +156,52 @@ describe('CharacterAnimator', () => {
     expect(typeof group.position.y).toBe('number');
   });
 
+  it('rapid state transitions (thinking→talking→emotion→idle) do not throw', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+
+    // Simulate the chat answer flow with rapid state changes
+    animator.setState('thinking');
+    animator.update(0.016);
+    animator.setState('happy');    // streaming starts with detected emotion
+    animator.update(0.016);
+    animator.setState('talking');  // override to talking mid-stream
+    animator.update(0.016);
+    animator.setState('happy');    // final emotion after response
+    animator.update(0.016);
+    animator.setState('idle');     // timeout revert
+    animator.update(0.016);
+
+    expect(group.position.y).not.toBeNaN();
+    expect(group.rotation.x).not.toBeNaN();
+    expect(group.scale.x).not.toBeNaN();
+  });
+
+  it('rapid state transitions produce stable animation (no NaN after settling)', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+
+    // Fire many rapid state changes within a single cross-fade window
+    const states: Array<'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised'> =
+      ['thinking', 'happy', 'talking', 'angry', 'surprised', 'idle'];
+    for (const state of states) {
+      animator.setState(state);
+      animator.update(0.05);  // 50ms between each — faster than cross-fade duration
+    }
+
+    // Let it settle for 2 seconds at 60fps
+    for (let i = 0; i < 120; i++) {
+      animator.update(1 / 60);
+    }
+
+    expect(group.position.y).not.toBeNaN();
+    expect(group.rotation.x).not.toBeNaN();
+    expect(group.scale.x).not.toBeNaN();
+    expect(Math.abs(group.position.y)).toBeLessThan(1.0);
+  });
+
   it('update with no placeholder or VRM does not throw', () => {
     const animator = new CharacterAnimator();
     expect(() => animator.update(0.016)).not.toThrow();

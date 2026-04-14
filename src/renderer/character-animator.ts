@@ -219,10 +219,14 @@ export class CharacterAnimator {
     this.stopAllExcept(this.currentAction);
 
     if (this.currentAction && this.currentAction !== newAction) {
+      // Stop all stale actions from previous state changes to prevent
+      // accumulation of multiple blending actions (causes body flipping).
+      this.stopAllExcept(this.currentAction, newAction);
       // Cross-fade from old → new
       this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
       newAction.reset().fadeIn(CharacterAnimator.CROSS_FADE_DURATION).play();
     } else {
+      this.stopAllExcept(newAction);
       newAction.reset().play();
     }
 
@@ -245,9 +249,11 @@ export class CharacterAnimator {
     this.stopAllExcept(this.currentAction);
 
     if (this.currentAction && this.currentAction !== newAction) {
+      this.stopAllExcept(this.currentAction, newAction);
       this.currentAction.fadeOut(CharacterAnimator.CROSS_FADE_DURATION);
       newAction.reset().fadeIn(CharacterAnimator.CROSS_FADE_DURATION).play();
     } else {
+      this.stopAllExcept(newAction);
       newAction.reset().play();
     }
 
@@ -262,6 +268,24 @@ export class CharacterAnimator {
       idx = Math.floor(Math.random() * length);
     } while (idx === exclude && length > 1);
     return idx;
+  }
+
+  /**
+   * Stop all mixer actions except the specified ones.
+   * Prevents accumulation of stale actions from previous state changes
+   * which causes unpredictable quaternion blending ("body flipping").
+   */
+  private stopAllExcept(...keep: THREE.AnimationAction[]) {
+    if (!this.mixer || !this.clips) return;
+    const keepSet = new Set(keep);
+    for (const variants of Object.values(this.clips)) {
+      for (const clip of variants) {
+        const action = this.mixer.clipAction(clip);
+        if (!keepSet.has(action) && action.isRunning()) {
+          action.stop();
+        }
+      }
+    }
   }
 
   /**

@@ -1,5 +1,6 @@
 <template>
   <Analytics />
+  <SpeedInsights />
   <div class="app-shell" :class="{ 'pet-mode': isPetMode }">
     <!-- Pet overlay mode: transparent character + floating chat -->
     <PetOverlayView v-if="isPetMode" />
@@ -61,7 +62,7 @@ import BrainSetupView from './views/BrainSetupView.vue';
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
 import { Analytics } from '@vercel/analytics/vue';
-import speedInsights from '@vercel/speed-insights';
+import { SpeedInsights } from '@vercel/speed-insights/vue';
 
 const brain = useBrainStore();
 const windowStore = useWindowStore();
@@ -101,9 +102,6 @@ watch(
 );
 
 onMounted(async () => {
-  // Initialize Vercel Speed Insights
-  speedInsights.injectSpeedInsights();
-
   try {
     await brain.loadActiveBrain();
     tauriAvailable.value = true;
