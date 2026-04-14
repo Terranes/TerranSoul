@@ -53,8 +53,8 @@
       </div>
     </Transition>
 
-    <!-- Pet mode controls (bottom-right) -->
-    <div class="pet-controls" :class="{ visible: hovered || chatExpanded }">
+    <!-- Pet mode controls (bottom-right) — always visible initially, then hover-only -->
+    <div class="pet-controls" :class="{ visible: hovered || chatExpanded || showInitialHint }">
       <button class="pet-ctrl-btn" title="Toggle chat" @click.stop="toggleChat">💬</button>
       <button class="pet-ctrl-btn" title="Exit pet mode" @click.stop="exitPetMode">✕</button>
     </div>
@@ -85,9 +85,10 @@ const windowStore = useWindowStore();
 const streaming = useStreamingStore();
 
 const inputText = ref('');
-const chatExpanded = ref(false);
+const chatExpanded = ref(true);
 const hovered = ref(false);
-const showBubble = ref(true);
+const showBubble = ref(false);
+const showInitialHint = ref(true);
 const messagesRef = ref<HTMLElement | null>(null);
 
 let unlistenLlmChunk: (() => void) | null = null;
@@ -212,8 +213,13 @@ onMounted(async () => {
     // No Tauri — browser-side streaming is handled by conversation store
   }
 
-  // Start in passthrough mode (clicks go through transparent areas)
-  windowStore.setCursorPassthrough(true);
+  // Start with click-through disabled since chat is expanded
+  windowStore.setCursorPassthrough(false);
+
+  // Auto-dismiss initial hint after 5 seconds
+  setTimeout(() => {
+    showInitialHint.value = false;
+  }, 5000);
 });
 
 onUnmounted(() => {

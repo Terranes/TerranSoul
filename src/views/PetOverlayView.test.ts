@@ -72,13 +72,18 @@ describe('PetOverlayView', () => {
     const wrapper = mount(PetOverlayView, {
       global: { stubs: { CharacterViewport: true } },
     });
-    expect(wrapper.find('.pet-chat').exists()).toBe(false);
+    // Chat auto-expands on mount
+    expect(wrapper.find('.pet-chat').exists()).toBe(true);
 
-    // Click the chat toggle button
+    // Click the chat toggle button to collapse
     const chatBtn = wrapper.findAll('.pet-ctrl-btn').find((b) => b.text() === '💬');
     expect(chatBtn).toBeDefined();
     await chatBtn!.trigger('click');
 
+    expect(wrapper.find('.pet-chat').exists()).toBe(false);
+
+    // Click again to expand
+    await chatBtn!.trigger('click');
     expect(wrapper.find('.pet-chat').exists()).toBe(true);
   });
 
@@ -86,9 +91,7 @@ describe('PetOverlayView', () => {
     const wrapper = mount(PetOverlayView, {
       global: { stubs: { CharacterViewport: true } },
     });
-    const chatBtn = wrapper.findAll('.pet-ctrl-btn').find((b) => b.text() === '💬');
-    await chatBtn!.trigger('click');
-
+    // Chat auto-expands on mount
     const input = wrapper.find('.pet-chat-input input');
     expect(input.exists()).toBe(true);
   });
@@ -112,15 +115,32 @@ describe('PetOverlayView', () => {
     expect(wrapper.find('.pet-controls.visible').exists()).toBe(true);
   });
 
-  it('hides controls on mouse leave', async () => {
+  it('hides controls on mouse leave when chat is collapsed and hint has dismissed', async () => {
+    vi.useFakeTimers();
     const wrapper = mount(PetOverlayView, {
       global: { stubs: { CharacterViewport: true } },
     });
+
+    // Flush the async onMounted (loadActiveBrain, listen, etc.)
+    await vi.runAllTimersAsync();
+    await wrapper.vm.$nextTick();
+
+    // Chat auto-expands; collapse it first
+    const chatBtn = wrapper.findAll('.pet-ctrl-btn').find((b) => b.text() === '💬');
+    await chatBtn!.trigger('click');
+
+    // Fast-forward past the initial hint timeout (5 seconds)
+    await vi.advanceTimersByTimeAsync(6000);
+    await wrapper.vm.$nextTick();
+
+    // Now hover and unhover
     await wrapper.find('.pet-overlay').trigger('mouseenter');
     expect(wrapper.find('.pet-controls.visible').exists()).toBe(true);
 
     await wrapper.find('.pet-overlay').trigger('mouseleave');
     expect(wrapper.find('.pet-controls.visible').exists()).toBe(false);
+
+    vi.useRealTimers();
   });
 
   it('does not show bubble when no messages', () => {

@@ -277,3 +277,48 @@ describe('conversation store — getConversation', () => {
     expect(store.messages).toHaveLength(0);
   });
 });
+
+describe('detectSentiment — keyword-based fallback', () => {
+  it('detects happy from greetings', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('Hello!')).toBe('happy');
+    expect(detectSentiment('Hey there')).toBe('happy');
+    expect(detectSentiment('hi')).toBe('happy');
+  });
+
+  it('detects happy from positive keywords', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('I feel happy today')).toBe('happy');
+    expect(detectSentiment('That was awesome')).toBe('happy');
+    expect(detectSentiment('I love this')).toBe('happy');
+  });
+
+  it('detects sad from negative keywords', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('I feel so sad today')).toBe('sad');
+    expect(detectSentiment('This is bad')).toBe('sad');
+  });
+
+  it('detects angry from frustration keywords', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('I am so angry!')).toBe('angry');
+    expect(detectSentiment('This is frustrating')).toBe('angry');
+  });
+
+  it('detects relaxed from calm keywords', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('I want to relax')).toBe('relaxed');
+    expect(detectSentiment('So calm and peaceful')).toBe('relaxed');
+  });
+
+  it('detects surprised from exclamation keywords', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('Wow that is so surprising!')).toBe('surprised');
+    expect(detectSentiment('That was amazing')).toBe('surprised');
+  });
+
+  it('returns neutral for unknown content', async () => {
+    const { detectSentiment } = await import('./conversation');
+    expect(detectSentiment('What is the weather like?')).toBe('neutral');
+  });
+});
