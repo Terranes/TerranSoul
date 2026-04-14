@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="forestSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a1628"/>
+      <stop offset="35%" stop-color="#0d1f2d"/>
+      <stop offset="70%" stop-color="#0f2818"/>
+      <stop offset="100%" stop-color="#0a1a0f"/>
+    </linearGradient>
+    <radialGradient id="moonlight" cx="75%" cy="20%" r="35%">
+      <stop offset="0%" stop-color="#c8e6ff" stop-opacity="0.12"/>
+      <stop offset="60%" stop-color="#6baed6" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <radialGradient id="forestGlow" cx="50%" cy="80%" r="50%">
+      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#forestSky)"/>
+  <rect width="1600" height="900" fill="url(#moonlight)"/>
+  <!-- Moon -->
+  <circle cx="1200" cy="140" r="50" fill="#e8f4fd" fill-opacity="0.15"/>
+  <circle cx="1200" cy="140" r="42" fill="#e8f4fd" fill-opacity="0.08"/>
+  <!-- Distant tree silhouettes -->
+  <polygon points="100,620 140,380 180,620" fill="#0a1a0d" opacity="0.8"/>
+  <polygon points="250,600 300,320 350,600" fill="#0b1c10" opacity="0.85"/>
+  <polygon points="420,610 470,350 520,610" fill="#0a1a0e" opacity="0.8"/>
+  <polygon points="620,590 680,300 740,590" fill="#0c1e12" opacity="0.85"/>
+  <polygon points="830,600 880,340 930,600" fill="#0b1c0f" opacity="0.82"/>
+  <polygon points="1020,610 1070,360 1120,610" fill="#0a1a0d" opacity="0.8"/>
+  <polygon points="1220,600 1280,310 1340,600" fill="#0c1e12" opacity="0.85"/>
+  <polygon points="1400,610 1450,370 1500,610" fill="#0b1c10" opacity="0.8"/>
+  <!-- Ground -->
+  <rect x="0" y="620" width="1600" height="280" fill="#081408"/>
+  <ellipse cx="800" cy="640" rx="500" ry="35" fill="#22c55e" fill-opacity="0.04"/>
+  <!-- Firefly particles -->
+  <circle cx="300" cy="500" r="3" fill="#86efac" fill-opacity="0.6"/>
+  <circle cx="700" cy="450" r="2" fill="#86efac" fill-opacity="0.5"/>
+  <circle cx="1100" cy="520" r="3" fill="#fde68a" fill-opacity="0.5"/>
+  <circle cx="500" cy="480" r="2" fill="#86efac" fill-opacity="0.4"/>
+  <circle cx="900" cy="540" r="2" fill="#fde68a" fill-opacity="0.6"/>
+  <circle cx="1300" cy="470" r="3" fill="#86efac" fill-opacity="0.5"/>
+  <circle cx="200" cy="560" r="2" fill="#fde68a" fill-opacity="0.4"/>
+  <circle cx="1400" cy="510" r="2" fill="#86efac" fill-opacity="0.5"/>
+  <rect width="1600" height="900" fill="url(#forestGlow)"/>
+</svg>

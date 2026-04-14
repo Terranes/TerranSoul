@@ -29,6 +29,30 @@ const PRESET_BACKGROUNDS: BackgroundOption[] = [
     url: '/backgrounds/sunset-glow.svg',
     kind: 'preset',
   },
+  {
+    id: 'cyberpunk-city',
+    name: 'Cyberpunk City',
+    url: '/backgrounds/cyberpunk-city.svg',
+    kind: 'preset',
+  },
+  {
+    id: 'enchanted-forest',
+    name: 'Enchanted Forest',
+    url: '/backgrounds/enchanted-forest.svg',
+    kind: 'preset',
+  },
+  {
+    id: 'deep-ocean',
+    name: 'Deep Ocean',
+    url: '/backgrounds/deep-ocean.svg',
+    kind: 'preset',
+  },
+  {
+    id: 'cosmic-nebula',
+    name: 'Cosmic Nebula',
+    url: '/backgrounds/cosmic-nebula.svg',
+    kind: 'preset',
+  },
 ];
 
 function loadStoredBackgroundId() {

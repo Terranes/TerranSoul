@@ -1,3 +1,77 @@
+/* ── TerranSoul Design System ── */
+:root {
+  /* ── Surface Palette ── */
+  --ts-bg-base: #0f172a;
+  --ts-bg-surface: #1e293b;
+  --ts-bg-nav: #0c1527;
+  --ts-bg-overlay: rgba(10, 10, 20, 0.9);
+  --ts-bg-input: rgba(255, 255, 255, 0.07);
+  --ts-bg-hover: rgba(255, 255, 255, 0.12);
+  --ts-bg-card: rgba(30, 41, 59, 0.9);
+
+  /* ── Brand Accent ── */
+  --ts-accent: #6c63ff;
+  --ts-accent-hover: #8078ff;
+  --ts-accent-glow: rgba(108, 99, 255, 0.2);
+  --ts-accent-blue: #3b82f6;
+  --ts-accent-blue-hover: #2563eb;
+  --ts-accent-violet: #8b5cf6;
+  --ts-accent-violet-hover: #7c3aed;
+
+  /* ── Semantic Colors ── */
+  --ts-success: #22c55e;
+  --ts-success-bg: rgba(22, 163, 74, 0.1);
+  --ts-warning: #fbbf24;
+  --ts-warning-text: #fca5a5;
+  --ts-error: #ef4444;
+  --ts-error-bg: rgba(45, 28, 28, 0.7);
+
+  /* ── Text Hierarchy ── */
+  --ts-text-primary: #f1f5f9;
+  --ts-text-secondary: #94a3b8;
+  --ts-text-muted: #64748b;
+  --ts-text-dim: rgba(255, 255, 255, 0.45);
+  --ts-text-on-accent: #ffffff;
+
+  /* ── Border ── */
+  --ts-border: rgba(255, 255, 255, 0.1);
+  --ts-border-subtle: rgba(255, 255, 255, 0.06);
+  --ts-border-focus: var(--ts-accent);
+
+  /* ── Radius ── */
+  --ts-radius-sm: 6px;
+  --ts-radius-md: 8px;
+  --ts-radius-lg: 12px;
+  --ts-radius-xl: 18px;
+  --ts-radius-pill: 999px;
+
+  /* ── Spacing ── */
+  --ts-space-xs: 4px;
+  --ts-space-sm: 8px;
+  --ts-space-md: 12px;
+  --ts-space-lg: 16px;
+  --ts-space-xl: 24px;
+
+  /* ── Shadows ── */
+  --ts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --ts-shadow-md: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --ts-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+  /* ── Transitions ── */
+  --ts-transition-fast: 0.15s ease;
+  --ts-transition-normal: 0.2s ease;
+  --ts-transition-slow: 0.3s ease;
+
+  /* ── Typography ── */
+  --ts-font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --ts-font-mono: 'Courier New', monospace;
+  --ts-text-xs: 0.68rem;
+  --ts-text-sm: 0.78rem;
+  --ts-text-base: 0.9rem;
+  --ts-text-lg: 1.1rem;
+  --ts-text-xl: 1.3rem;
+}
+
 *,
 *::before,
 *::after {
@@ -12,9 +86,9 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--ts-font-family);
   background: transparent;
-  color: #e8e8f0;
+  color: var(--ts-text-primary);
 }
 
 ::-webkit-scrollbar {
@@ -28,4 +102,128 @@ body,
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 2px;
+}
+
+/* ── Global Utility Classes ── */
+
+/* Primary action button */
+.ts-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ts-space-sm);
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--ts-radius-sm);
+  font-size: var(--ts-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--ts-transition-fast), opacity var(--ts-transition-fast), transform var(--ts-transition-fast);
+}
+
+.ts-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ts-btn-primary {
+  background: var(--ts-accent);
+  color: var(--ts-text-on-accent);
+}
+.ts-btn-primary:hover:not(:disabled) {
+  background: var(--ts-accent-hover);
+}
+
+.ts-btn-blue {
+  background: var(--ts-accent-blue);
+  color: var(--ts-text-on-accent);
+}
+.ts-btn-blue:hover:not(:disabled) {
+  background: var(--ts-accent-blue-hover);
+}
+
+.ts-btn-violet {
+  background: var(--ts-accent-violet);
+  color: var(--ts-text-on-accent);
+}
+.ts-btn-violet:hover:not(:disabled) {
+  background: var(--ts-accent-violet-hover);
+}
+
+.ts-btn-success {
+  background: var(--ts-success);
+  color: var(--ts-text-on-accent);
+}
+.ts-btn-success:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.ts-btn-ghost {
+  background: transparent;
+  color: var(--ts-text-secondary);
+  border: 1px solid var(--ts-border);
+}
+.ts-btn-ghost:hover:not(:disabled) {
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-primary);
+}
+
+.ts-btn-danger {
+  background: var(--ts-error);
+  color: var(--ts-text-on-accent);
+}
+.ts-btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+/* Input field */
+.ts-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
+  font-size: var(--ts-text-sm);
+  outline: none;
+  transition: border-color var(--ts-transition-normal), box-shadow var(--ts-transition-normal);
+}
+.ts-input:focus {
+  border-color: var(--ts-border-focus);
+  box-shadow: 0 0 0 2px var(--ts-accent-glow);
+}
+.ts-input::placeholder {
+  color: var(--ts-text-dim);
+}
+.ts-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Card container */
+.ts-card {
+  background: var(--ts-bg-card);
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-lg);
+  padding: var(--ts-space-lg);
+}
+
+/* Label */
+.ts-label {
+  font-size: var(--ts-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ts-text-dim);
+}
+
+/* Badge / chip */
+.ts-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--ts-radius-pill);
+  font-size: var(--ts-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }

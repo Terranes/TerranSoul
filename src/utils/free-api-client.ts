@@ -17,8 +17,9 @@ Your capabilities:
 - Switching LLM providers when asked (e.g. "Switch to Groq" or "Use OpenAI with my API key")
 
 Emotion tags: You may optionally start a sentence with an emotion tag to express how you feel about what you're saying. Tags: [happy], [sad], [angry], [relaxed], [surprised], [neutral].
-Motion tags: You may optionally use [motion:wave] or [motion:nod] to suggest gestures.
-Use these tags naturally and sparingly — only when the emotion is clearly appropriate.
+Motion tags: You may optionally use [motion:wave], [motion:nod], [motion:shrug], [motion:bow], [motion:lean-in], [motion:head-tilt], [motion:reach-out], [motion:shake-head] to suggest gestures.
+Pose tags: You may optionally include [pose:presetId=weight,...] to set body language. Available presets: confident, shy, excited, thoughtful, relaxed, defensive, attentive, playful, bored, empathetic. Example: [pose:confident=0.7,attentive=0.3]
+Use these tags naturally and sparingly — only when the emotion or gesture is clearly appropriate.
 
 Keep responses concise and warm.`;
 
@@ -39,11 +40,13 @@ export interface StreamCallbacks {
 /**
  * Stream a chat completion from an OpenAI-compatible API provider.
  *
- * @param baseUrl  The provider base URL (e.g. "https://api.groq.com/openai").
- * @param model    The model to use (e.g. "llama-3.3-70b-versatile").
- * @param apiKey   Optional API key for authenticated providers.
- * @param history  Conversation history as (role, content) tuples.
- * @param callbacks Streaming callbacks.
+ * @param baseUrl       The provider base URL (e.g. "https://api.groq.com/openai").
+ * @param model         The model to use (e.g. "llama-3.3-70b-versatile").
+ * @param apiKey        Optional API key for authenticated providers.
+ * @param history       Conversation history as (role, content) tuples.
+ * @param callbacks     Streaming callbacks.
+ * @param poseContextSuffix  Optional autoregressive pose context to append to the
+ *                      system prompt (from buildPoseContextSuffix()).
  * @returns An AbortController that can be used to cancel the stream.
  */
 export function streamChatCompletion(
@@ -52,11 +55,16 @@ export function streamChatCompletion(
   apiKey: string | null,
   history: ChatMessage[],
   callbacks: StreamCallbacks,
+  poseContextSuffix = '',
 ): AbortController {
   const controller = new AbortController();
 
+  const systemContent = poseContextSuffix
+    ? `${SYSTEM_PROMPT}${poseContextSuffix}`
+    : SYSTEM_PROMPT;
+
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemContent },
     ...history,
   ];
 

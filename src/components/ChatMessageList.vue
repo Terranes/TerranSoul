@@ -2,9 +2,18 @@
   <div class="message-list" ref="listRef">
     <!-- Welcome state when no messages yet -->
     <div v-if="messages.length === 0 && !isThinking && !isStreaming" class="welcome-state">
-      <div class="welcome-icon">💬</div>
+      <div class="welcome-glow" />
+      <div class="welcome-icon">✨</div>
       <p class="welcome-title">Welcome to TerranSoul</p>
-      <p class="welcome-hint">Type a message below to start chatting with your AI companion.</p>
+      <p class="welcome-hint">Your AI companion is ready. Type a message below to start a conversation.</p>
+      <div class="welcome-suggestions">
+        <button
+          v-for="suggestion in suggestions"
+          :key="suggestion"
+          class="suggestion-chip"
+          @click="$emit('suggest', suggestion)"
+        >{{ suggestion }}</button>
+      </div>
     </div>
     <TransitionGroup name="msg">
       <div
@@ -15,7 +24,7 @@
       >
         <div class="bubble-wrapper">
           <AgentBadge v-if="msg.role === 'assistant'" :name="msg.agentName ?? 'TerranSoul'" />
-          <div class="bubble">{{ msg.content }}</div>
+          <div class="bubble" v-html="renderMarkdown(msg.content)" />
           <span class="timestamp">{{ formatTime(msg.timestamp) }}</span>
         </div>
       </div>
@@ -24,7 +33,7 @@
     <div v-if="isStreaming && streamingText" class="message-row assistant" key="streaming">
       <div class="bubble-wrapper">
         <AgentBadge name="TerranSoul" />
-        <div class="bubble streaming-bubble">{{ streamingText }}<span class="cursor-blink">▎</span></div>
+        <div class="bubble streaming-bubble" v-html="renderMarkdown(streamingText) + '<span class=\'cursor-blink\'>▎</span>'" />
       </div>
     </div>
     <TypingIndicator v-if="isThinking && !isStreaming" />
@@ -44,10 +53,55 @@ const props = defineProps<{
   isStreaming?: boolean;
 }>();
 
+defineEmits<{ suggest: [message: string] }>();
+
+const suggestions = [
+  'Tell me about yourself',
+  'How are you feeling today?',
+  'What can you help me with?',
+];
+
 const listRef = ref<HTMLElement | null>(null);
 
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * Lightweight markdown renderer — handles **bold**, *italic*, `code`,
+ * ```code blocks```, and line breaks. No external dependency needed
+ * for the subset we support.
+ */
+function renderMarkdown(text: string): string {
+  /**
+   * XSS Safety: Content is first escaped via escapeHtml() which replaces
+   * all &, <, >, " characters with HTML entities. Only then are markdown
+   * patterns converted to safe, known HTML tags (<strong>, <em>, <code>,
+   * <pre>). No raw user content is ever inserted as HTML.
+   */
+  let html = escapeHtml(text);
+  // Code blocks (```...```)
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="md-code-block"><code>$2</code></pre>');
+  // Inline code (`...`)
+  html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+  // Bold (**...** or __...__) — must come before italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  // Italic (*...* or _..._) — uses simple non-greedy match for broad
+  // browser compatibility (avoids lookbehind which Safari <16.4 lacks).
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br/>');
+  return html;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 async function scrollToBottom() {
@@ -98,15 +152,14 @@ watch(() => props.streamingText, scrollToBottom);
 
 .bubble {
   padding: 10px 14px;
-  border-radius: 18px;
+  border-radius: var(--ts-radius-xl);
   line-height: 1.5;
-  font-size: 0.9rem;
+  font-size: var(--ts-text-base);
   word-break: break-word;
-  white-space: pre-wrap;
 }
 
 .message-row.user .bubble {
-  background: linear-gradient(135deg, #6c63ff 0%, #5a52e0 100%);
+  background: linear-gradient(135deg, var(--ts-accent) 0%, #5a52e0 100%);
   color: #fff;
   border-bottom-right-radius: 4px;
   box-shadow: 0 1px 3px rgba(108, 99, 255, 0.25);
@@ -116,12 +169,12 @@ watch(() => props.streamingText, scrollToBottom);
   background: rgba(255, 255, 255, 0.08);
   color: #e8e8f0;
   border-bottom-left-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ts-border-subtle);
 }
 
 .timestamp {
-  font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: var(--ts-text-xs);
+  color: var(--ts-text-dim);
   padding: 0 4px;
 }
 
@@ -146,30 +199,70 @@ watch(() => props.streamingText, scrollToBottom);
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   padding: 24px 16px;
-  opacity: 0.7;
   text-align: center;
+  position: relative;
+}
+
+.welcome-glow {
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--ts-accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -70%);
 }
 
 .welcome-icon {
-  font-size: 2.2rem;
+  font-size: 2.8rem;
   margin-bottom: 4px;
+  filter: drop-shadow(0 2px 8px rgba(108, 99, 255, 0.3));
 }
 
 .welcome-title {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #e8e8f0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ts-text-primary);
+  letter-spacing: 0.02em;
 }
 
 .welcome-hint {
   margin: 0;
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.45);
-  max-width: 260px;
-  line-height: 1.4;
+  color: var(--ts-text-dim);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.welcome-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 8px;
+  max-width: 340px;
+}
+
+.suggestion-chip {
+  padding: 6px 14px;
+  border-radius: var(--ts-radius-pill);
+  border: 1px solid rgba(108, 99, 255, 0.3);
+  background: rgba(108, 99, 255, 0.08);
+  color: rgba(108, 99, 255, 0.9);
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: all var(--ts-transition-fast);
+}
+
+.suggestion-chip:hover {
+  background: rgba(108, 99, 255, 0.18);
+  border-color: rgba(108, 99, 255, 0.5);
+  transform: translateY(-1px);
 }
 
 /* Streaming cursor blink */
@@ -177,13 +270,43 @@ watch(() => props.streamingText, scrollToBottom);
   border: 1px solid rgba(108, 99, 255, 0.3);
 }
 
-.cursor-blink {
+:deep(.cursor-blink) {
   animation: blink 0.8s step-end infinite;
-  color: #6c63ff;
+  color: var(--ts-accent);
   font-weight: 300;
 }
 
 @keyframes blink {
   50% { opacity: 0; }
+}
+
+/* Markdown styling inside bubbles */
+:deep(.md-code-block) {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: var(--ts-radius-sm);
+  padding: 8px 12px;
+  margin: 6px 0;
+  overflow-x: auto;
+  font-family: var(--ts-font-mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+:deep(.md-inline-code) {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: var(--ts-font-mono);
+  font-size: 0.85em;
+}
+
+:deep(strong) {
+  font-weight: 600;
+}
+
+:deep(em) {
+  font-style: italic;
+  opacity: 0.9;
 }
 </style>

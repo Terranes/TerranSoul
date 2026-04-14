@@ -213,6 +213,12 @@ export type EmotionTag =
 
 export type MotionTag = string; // e.g. 'wave', 'nod', 'bow'
 
+/** A single pose preset + blend weight from a [pose:...] tag. */
+export interface PoseBlendInstruction {
+  presetId: string;
+  weight: number;
+}
+
 export interface ParsedLlmChunk {
   /** Display text with tags stripped. */
   text: string;
@@ -220,6 +226,8 @@ export interface ParsedLlmChunk {
   emotion: EmotionTag | null;
   /** Motion tag found in this chunk, if any. */
   motion: MotionTag | null;
+  /** Pose blend instructions from [pose:...] tag, if any. */
+  poseBlend: PoseBlendInstruction[] | null;
 }
 
 // ── Three-Tier Brain ──────────────────────────────────────────────────────────

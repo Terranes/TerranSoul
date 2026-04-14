@@ -330,7 +330,7 @@ watch(
   position: absolute;
   top: 12px;
   left: 16px;
-  font-size: 1.1rem;
+  font-size: var(--ts-text-lg);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
@@ -343,7 +343,7 @@ watch(
   top: 34px;
   left: 16px;
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--ts-text-dim);
   pointer-events: none;
   letter-spacing: 0.02em;
 }
@@ -368,11 +368,12 @@ watch(
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(6px);
-  transition: background 0.2s, transform 0.15s;
+  transition: background var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-normal);
 }
 .settings-toggle:hover {
-  background: rgba(59, 130, 246, 0.5);
+  background: rgba(108, 99, 255, 0.5);
   transform: scale(1.08);
+  box-shadow: 0 2px 12px rgba(108, 99, 255, 0.25);
 }
 
 .settings-dropdown {
@@ -380,15 +381,16 @@ watch(
   top: 42px;
   right: 0;
   width: 280px;
+  max-width: min(280px, 90vw);
   padding: 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--ts-radius-lg);
+  border: 1px solid var(--ts-border);
   background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(16px);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--ts-shadow-lg);
 }
 
 .dropdown-section {
@@ -398,26 +400,26 @@ watch(
 }
 
 .dropdown-label {
-  font-size: 0.72rem;
+  font-size: var(--ts-text-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ts-text-dim);
 }
 
 .dropdown-btn {
   padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--ts-radius-sm);
+  border: 1px solid var(--ts-border);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.75);
-  font-size: 0.78rem;
+  font-size: var(--ts-text-sm);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--ts-transition-fast);
   text-align: left;
 }
 .dropdown-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ts-bg-hover);
 }
 
 .bg-chips {
@@ -438,7 +440,7 @@ watch(
 .model-selector {
   width: 100%;
   padding: 7px 28px 7px 10px;
-  border-radius: 8px;
+  border-radius: var(--ts-radius-md);
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.92);
@@ -449,13 +451,14 @@ watch(
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.7)'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
+  transition: border-color var(--ts-transition-fast);
 }
 .model-selector:hover {
-  border-color: rgba(59, 130, 246, 0.5);
+  border-color: rgba(108, 99, 255, 0.5);
 }
 .model-selector option {
-  background: #1e293b;
-  color: #f1f5f9;
+  background: var(--ts-bg-surface);
+  color: var(--ts-text-primary);
 }
 
 .hidden-file-input {
@@ -464,20 +467,21 @@ watch(
 
 .background-chip {
   padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--ts-radius-pill);
+  border: 1px solid var(--ts-border);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
 }
 .background-chip:hover {
   background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
 }
 .background-chip.active {
-  background: rgba(59, 130, 246, 0.85);
+  background: rgba(108, 99, 255, 0.85);
   border-color: rgba(191, 219, 254, 0.85);
 }
 
@@ -501,7 +505,7 @@ watch(
   top: 12px;
   right: 16px;
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: var(--ts-radius-pill);
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -510,8 +514,9 @@ watch(
   background: rgba(15, 23, 42, 0.72);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--ts-shadow-md);
   backdrop-filter: blur(6px);
+  transition: background var(--ts-transition-slow), color var(--ts-transition-slow), border-color var(--ts-transition-slow);
 }
 
 .state-badge.idle {
@@ -524,6 +529,7 @@ watch(
   background: rgba(245, 158, 11, 0.92);
   color: #fff7ed;
   border-color: rgba(253, 230, 138, 0.7);
+  animation: badge-pulse 1.5s ease-in-out infinite;
 }
 
 .state-badge.talking {
@@ -559,6 +565,11 @@ watch(
   color: #ffc850;
 }
 
+@keyframes badge-pulse {
+  0%, 100% { box-shadow: var(--ts-shadow-md); }
+  50% { box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35); }
+}
+
 .debug-overlay {
   position: absolute;
   bottom: 10px;
@@ -566,11 +577,11 @@ watch(
   display: flex;
   gap: 10px;
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: var(--ts-radius-sm);
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   font-size: 0.7rem;
-  font-family: 'Courier New', monospace;
+  font-family: var(--ts-font-mono);
   color: #7ef5a0;
   pointer-events: none;
   letter-spacing: 0.02em;
@@ -595,7 +606,7 @@ watch(
   width: 40px;
   height: 40px;
   border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: rgba(100, 180, 255, 0.9);
+  border-top-color: rgba(108, 99, 255, 0.9);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }

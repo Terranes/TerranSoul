@@ -51,21 +51,21 @@ function handleSubmit() {
   flex: 1;
   padding: 10px 16px;
   border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.07);
-  color: #e8e8f0;
-  font-size: 0.9rem;
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
+  font-size: var(--ts-text-base);
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--ts-transition-normal), box-shadow var(--ts-transition-normal);
 }
 
 .chat-input:focus {
-  border-color: #6c63ff;
-  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.2);
+  border-color: var(--ts-accent);
+  box-shadow: 0 0 0 2px var(--ts-accent-glow);
 }
 
 .chat-input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--ts-text-dim);
 }
 
 .chat-input:disabled {
@@ -78,18 +78,18 @@ function handleSubmit() {
   height: 38px;
   border-radius: 50%;
   border: none;
-  background: #6c63ff;
+  background: var(--ts-accent);
   color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.2s, opacity 0.2s, transform 0.15s;
+  transition: background var(--ts-transition-normal), opacity var(--ts-transition-normal), transform var(--ts-transition-fast);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #8078ff;
+  background: var(--ts-accent-hover);
   transform: scale(1.05);
 }
 
