@@ -1,4 +1,5 @@
 <template>
+  <Analytics />
   <div class="app-shell" :class="{ 'pet-mode': isPetMode }">
     <!-- Pet overlay mode: transparent character + floating chat -->
     <PetOverlayView v-if="isPetMode" />
@@ -59,6 +60,7 @@ import MarketplaceView from './views/MarketplaceView.vue';
 import BrainSetupView from './views/BrainSetupView.vue';
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
+import { Analytics } from '@vercel/analytics/vue';
 import speedInsights from '@vercel/speed-insights';
 
 const brain = useBrainStore();
