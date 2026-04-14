@@ -133,16 +133,10 @@ const selectedBrain = ref('');
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 
-/** Ref to CharacterViewport — used to call zoomToFace() when keyboard opens. */
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
 // ── Keyboard detection ────────────────────────────────────────────
-const { keyboardHeight, keyboardOpen } = useKeyboardDetector();
-
-watch(keyboardOpen, (open) => {
-  // Tell the 3D scene to zoom to face (or revert) when keyboard state changes
-  viewportRef.value?.zoomToFace(open);
-});
+const { keyboardHeight } = useKeyboardDetector();
 
 // ── Subtitle system ──────────────────────────────────────────────
 const MAX_SUBTITLE_LENGTH = 150;
