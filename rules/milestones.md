@@ -120,7 +120,18 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 ### Next Chunk
 
-**Chunk 065** — Next phase TBD
+**Chunk 069** — Next phase TBD
+
+---
+
+## Phase 6.5 — UI Polish, UX Refinement & Art
+
+> **Goal:** Elevate TerranSoul's visual identity and user experience with a unified design
+> system, richer background art, markdown-rendered chat, and polished navigation micro-interactions.
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| (Chunks 065–068 complete — Design system, backgrounds, chat UX, navigation polish.) | | |
 
 ---
 

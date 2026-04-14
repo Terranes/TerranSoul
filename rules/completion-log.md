@@ -1634,3 +1634,161 @@ the desktop as a transparent overlay with a floating chat box.
 - **Vitest:** 347 total across 29 files (+9 PetOverlayView tests)
 - **Rust:** 395 total (unchanged)
 - **Build:** `npm run build` ✓
+
+---
+
+## Chunk 065 — Design System & Global CSS Variables (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Create a unified design system with CSS custom properties to eliminate hardcoded
+colors, spacing, and typography values scattered across components. Establish
+reusable utility classes for buttons, inputs, cards, badges, and labels.
+
+### Architecture
+
+**Design System** (`src/style.css`):
+- `:root` CSS custom properties for: surface palette (7 vars), brand accent (6 vars),
+  semantic colors (5 vars), text hierarchy (5 vars), borders (3 vars), radius (5 vars),
+  spacing (5 vars), shadows (3 vars), transitions (3 vars), typography (7 vars).
+- Global utility classes: `.ts-btn` (with modifiers: `-primary`, `-blue`, `-violet`,
+  `-success`, `-ghost`, `-danger`), `.ts-input`, `.ts-card`, `.ts-label`, `.ts-badge`.
+
+**Components Updated**:
+- `App.vue` — Uses CSS vars for nav, surfaces, active indicators.
+- `ChatView.vue` — Brain card, status bar, buttons use design tokens.
+- `ChatInput.vue` — Input field and send button use design tokens.
+- `CharacterViewport.vue` — Settings dropdown, badges, debug overlay use tokens.
+
+### Files Modified
+- `src/style.css` — Complete design system with CSS custom properties
+- `src/App.vue` — Migrated to CSS vars, added active tab indicator + tooltip labels
+- `src/views/ChatView.vue` — Migrated to CSS vars
+- `src/components/ChatInput.vue` — Migrated to CSS vars
+- `src/components/CharacterViewport.vue` — Migrated to CSS vars, responsive dropdown
+- `rules/milestones.md` — Updated Next Chunk, added Phase 6.5
+- `rules/completion-log.md` — This entry
+
+### Test Counts (Chunk 065)
+- **Vitest:** 371 total across 30 files (was 354; +8 markdown tests, +9 background tests)
+- **Build:** `npm run build` ✓
+
+---
+
+## Chunk 066 — New Background Art (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Expand the background scene library from 3 to 7 with visually rich SVG
+backgrounds that add atmosphere and variety to the character viewport.
+
+### Architecture
+
+**New SVG Backgrounds** (`public/backgrounds/`):
+1. **Cyberpunk City** — Dark purple cityscape with neon building silhouettes,
+   magenta/cyan light strips, window lights, floor glow.
+2. **Enchanted Forest** — Night forest with moonlight, tree silhouettes,
+   firefly particles, green ground glow.
+3. **Deep Ocean** — Underwater scene with caustic light rays, bioluminescent
+   particles, seafloor, depth gradient.
+4. **Cosmic Nebula** — Space scene with purple/pink/cyan nebula clouds,
+   star field, bright star, dust band.
+
+**Background Store** (`src/stores/background.ts`):
+- `PRESET_BACKGROUNDS` expanded from 3 to 7 entries.
+- All backgrounds follow the same `BackgroundOption` interface with `preset` kind.
+
+### Files Created
+- `public/backgrounds/cyberpunk-city.svg`
+- `public/backgrounds/enchanted-forest.svg`
+- `public/backgrounds/deep-ocean.svg`
+- `public/backgrounds/cosmic-nebula.svg`
+- `src/stores/background.test.ts` — 9 tests for background store
+
+### Files Modified
+- `src/stores/background.ts` — Added 4 new preset backgrounds
+
+### Test Counts (Chunk 066)
+- **Vitest:** 371 total across 30 files (+9 background store tests)
+- **Build:** `npm run build` ✓
+
+---
+
+## Chunk 067 — Enhanced Chat UX (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Improve chat message rendering with lightweight markdown support, enhanced
+welcome screen with suggestion chips, and XSS-safe HTML escaping.
+
+### Architecture
+
+**Markdown Renderer** (`ChatMessageList.vue`):
+- Lightweight inline markdown: `**bold**`, `*italic*`, `` `code` ``,
+  ` ```code blocks``` `. No external dependency.
+- `escapeHtml()` sanitizes all content before markdown processing (XSS prevention).
+- Uses `v-html` with pre-escaped content for safe rendering.
+- `:deep()` scoped styles for markdown elements (`.md-code-block`, `.md-inline-code`).
+
+**Welcome Screen Enhancement**:
+- Sparkle icon (✨) with drop shadow glow.
+- Radial glow behind welcome text using accent color.
+- Suggestion chips: 3 starter prompts that emit `suggest` event.
+- ChatView listens to `@suggest` and sends as message.
+
+### Files Modified
+- `src/components/ChatMessageList.vue` — Markdown renderer, welcome screen, suggestions
+- `src/components/ChatMessageList.test.ts` — +8 tests (bold, italic, code, blocks, XSS, welcome, suggest)
+- `src/views/ChatView.vue` — Wired `@suggest` event
+
+### Test Counts (Chunk 067)
+- **Vitest:** 371 total across 30 files (+8 markdown/welcome tests)
+- **Build:** `npm run build` ✓
+
+---
+
+## Chunk 068 — Navigation Polish & Micro-interactions (done)
+
+**Date:** 2026-04-14
+**Status:** ✅ Done
+
+### Goal
+Add polish to navigation and UI interactions: active tab indicators, tooltip
+labels, thinking badge pulse, responsive dropdown, brand-consistent hover
+effects.
+
+### Architecture
+
+**Navigation Improvements** (`App.vue`):
+- Active tab indicator: 3px accent-colored bar on the left edge (desktop),
+  bottom edge (mobile).
+- Hover tooltip: CSS `::before` pseudo-element shows `title` text on hover.
+  Hidden on mobile to avoid overlap with bottom bar.
+- Hover scale animation on nav buttons (1.06x).
+
+**Viewport Improvements** (`CharacterViewport.vue`):
+- Thinking state badge has pulsing box-shadow animation (`badge-pulse`).
+- State badge transitions smoothly between states (0.3s color/bg transition).
+- Settings toggle hover shows accent glow shadow.
+- Background chips have `translateY(-1px)` hover lift effect.
+- Settings dropdown: `max-width: min(280px, 90vw)` prevents overflow on tablets.
+- Loading spinner uses accent color instead of generic blue.
+
+**Chat Toggle** (`ChatView.vue`):
+- Toggle button hover now shows accent glow shadow.
+- Active state uses accent color instead of generic blue.
+
+### Files Modified
+- `src/App.vue` — Active indicator, tooltip, hover animations
+- `src/components/CharacterViewport.vue` — Badge pulse, responsive dropdown, glow effects
+- `src/views/ChatView.vue` — Toggle button glow
+
+### Test Counts (Chunk 068)
+- **Vitest:** 371 total across 30 files (unchanged)
+- **Build:** `npm run build` ✓
