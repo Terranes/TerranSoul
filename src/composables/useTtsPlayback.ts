@@ -20,7 +20,7 @@ import { ref, readonly } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 /** Sentence-ending punctuation patterns that trigger TTS synthesis. */
-const SENTENCE_END_RE = /[.!?…]\s+|[\n]/;
+const SENTENCE_END_RE = /[.!?…]\s+|\n/;
 
 /** Minimum sentence length to bother synthesizing (filters out stray punctuation). */
 const MIN_SENTENCE_CHARS = 4;
@@ -41,8 +41,12 @@ export function useTtsPlayback(): TtsPlaybackHandle {
 
   /** Accumulated text not yet sent to TTS. */
   let buffer = '';
-  /** Whether we are currently stopped (user interrupted). */
-  let stopped = false;
+  /**
+   * Generation counter — incremented on every stop() call.
+   * Each async operation captures the generation at enqueue time and aborts
+   * if the current generation has changed when it executes.
+   */
+  let generation = 0;
   /** Queue of WAV data Promises — each item is one sentence being synthesized. */
   const synthQueue: Promise<Uint8Array | null>[] = [];
   /** Current HTMLAudioElement being played, if any. */
@@ -62,41 +66,44 @@ export function useTtsPlayback(): TtsPlaybackHandle {
   /** Enqueue a sentence for synthesis and sequential playback. */
   function enqueueSentence(sentence: string): void {
     const trimmed = sentence.trim();
-    if (trimmed.length < MIN_SENTENCE_CHARS || stopped) return;
+    if (trimmed.length < MIN_SENTENCE_CHARS) return;
+
+    // Capture generation at enqueue time so this sentence aborts if stop() is called.
+    const myGen = generation;
 
     const synthPromise = invoke<number[]>('synthesize_tts', { text: trimmed })
-      .then((bytes) => new Uint8Array(bytes))
+      .then((bytes) => (generation === myGen ? new Uint8Array(bytes) : null))
       .catch(() => null);
 
     synthQueue.push(synthPromise);
 
     // Drain queue if nothing is playing
     if (synthQueue.length === 1) {
-      drainQueue();
+      drainQueue(myGen);
     }
   }
 
   /** Play synthesized sentences from the queue one after another. */
-  async function drainQueue(): Promise<void> {
-    while (synthQueue.length > 0 && !stopped) {
+  async function drainQueue(myGen: number): Promise<void> {
+    while (synthQueue.length > 0 && generation === myGen) {
       const wavBytes = await synthQueue[0];
       synthQueue.shift();
 
-      if (!wavBytes || stopped) continue;
+      if (!wavBytes || generation !== myGen) continue;
 
       isSpeaking.value = true;
-      await playWavBytes(wavBytes);
+      await playWavBytes(wavBytes, myGen);
     }
 
-    if (!stopped) {
+    if (generation === myGen) {
       isSpeaking.value = false;
     }
   }
 
   /** Play WAV bytes via HTMLAudioElement. Returns a Promise that resolves when done. */
-  function playWavBytes(bytes: Uint8Array): Promise<void> {
+  function playWavBytes(bytes: Uint8Array, myGen: number): Promise<void> {
     return new Promise((resolve) => {
-      if (stopped) {
+      if (generation !== myGen) {
         resolve();
         return;
       }
@@ -144,7 +151,7 @@ export function useTtsPlayback(): TtsPlaybackHandle {
   // ── Public API ─────────────────────────────────────────────────────────────
 
   function feedChunk(text: string): void {
-    if (stopped || !text) return;
+    if (!text) return;
 
     buffer += text;
     const { sentences, remainder } = extractSentences(buffer);
@@ -156,8 +163,6 @@ export function useTtsPlayback(): TtsPlaybackHandle {
   }
 
   function flush(): void {
-    if (stopped) return;
-
     const leftover = buffer.trim();
     buffer = '';
     if (leftover.length >= MIN_SENTENCE_CHARS) {
@@ -166,7 +171,9 @@ export function useTtsPlayback(): TtsPlaybackHandle {
   }
 
   function stop(): void {
-    stopped = true;
+    // Increment generation — all in-flight async operations from previous generation
+    // will see the generation mismatch and abort before playing audio.
+    generation++;
     buffer = '';
     synthQueue.length = 0;
     isSpeaking.value = false;
@@ -178,9 +185,6 @@ export function useTtsPlayback(): TtsPlaybackHandle {
     }
 
     cleanupBlobUrls();
-
-    // Reset stopped flag so the composable can be reused for the next message
-    stopped = false;
   }
 
   return {
