@@ -6,9 +6,7 @@
  * user returns after being away the composable classifies the absence length
  * and picks a random greeting from a duration-appropriate pool.
  *
- * This is complementary to useIdleManager (which drives the *character's*
- * idle greetings after silence).  The presence detector reacts to the *user*
- * leaving and coming back.
+ * The presence detector reacts to the *user* leaving and coming back.
  *
  * Design notes:
  *  - Uses `setInterval` (1 s tick) to compare `lastActivityAt` against
