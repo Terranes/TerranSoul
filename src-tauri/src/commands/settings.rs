@@ -45,6 +45,9 @@ mod tests {
             selected_model_id: "m58".into(),
             camera_azimuth: 1.0,
             camera_distance: 3.0,
+            bgm_enabled: true,
+            bgm_volume: 0.25,
+            bgm_track_id: "ambient-space".into(),
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -54,6 +57,9 @@ mod tests {
         let loaded = state.app_settings.lock().unwrap();
         assert_eq!(loaded.selected_model_id, "m58");
         assert!((loaded.camera_azimuth - 1.0).abs() < 0.001);
+        assert!(loaded.bgm_enabled);
+        assert!((loaded.bgm_volume - 0.25).abs() < 0.001);
+        assert_eq!(loaded.bgm_track_id, "ambient-space");
     }
 
     #[test]
@@ -64,6 +70,9 @@ mod tests {
             selected_model_id: "genshin".into(),
             camera_azimuth: 0.5,
             camera_distance: 4.0,
+            bgm_enabled: false,
+            bgm_volume: 0.15,
+            bgm_track_id: "ambient-calm".into(),
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());
