@@ -75,6 +75,125 @@ function isTauriAvailable(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+// ── Chat-based LLM switching ─────────────────────────────────────────────────
+
+/** Known free-provider keywords mapped to provider IDs. */
+const PROVIDER_KEYWORDS: Record<string, string> = {
+  pollinations: 'pollinations',
+  groq: 'groq',
+  cerebras: 'cerebras',
+  siliconflow: 'siliconflow',
+  mistral: 'mistral',
+  'github models': 'github-models',
+  openrouter: 'openrouter',
+  nvidia: 'nvidia-nim',
+  gemini: 'gemini',
+};
+
+/**
+ * Detect if the user message is an LLM switching command.
+ * Recognises patterns like:
+ *   "switch to groq", "use pollinations", "change brain to cerebras",
+ *   "use my openai api key sk-..."
+ * Returns a result object if a command was detected, or null otherwise.
+ */
+function detectLlmCommand(text: string): {
+  type: 'switch_free';
+  providerId: string;
+  providerName: string;
+} | {
+  type: 'switch_paid';
+  provider: string;
+  apiKey: string;
+  model: string;
+} | null {
+  const lower = text.toLowerCase().trim();
+
+  // Free provider switching: "switch to groq", "use cerebras", "change to pollinations"
+  const switchPattern = /(?:switch|change|use|set)\s+(?:to\s+|brain\s+to\s+|model\s+to\s+|provider\s+to\s+)?(\w[\w\s]*?)(?:\s+(?:api|provider|model|brain))?$/i;
+  const match = lower.match(switchPattern);
+  if (match) {
+    const keyword = match[1].trim();
+    for (const [name, id] of Object.entries(PROVIDER_KEYWORDS)) {
+      if (keyword.includes(name)) {
+        return { type: 'switch_free', providerId: id, providerName: name };
+      }
+    }
+  }
+
+  // Paid API: "use my openai api key sk-..." or "set openai key sk-..."
+  const paidPattern = /(?:use|set)\s+(?:my\s+)?(\w+)\s+(?:api\s+)?key\s+(sk-\S+)/i;
+  const paidMatch = text.match(paidPattern);
+  if (paidMatch) {
+    const provider = paidMatch[1].toLowerCase();
+    const apiKey = paidMatch[2];
+    const model = provider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o';
+    const baseUrl = provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com';
+    return { type: 'switch_paid', provider: baseUrl, apiKey, model };
+  }
+
+  return null;
+}
+
+/**
+ * Execute an LLM switching command and return a confirmation message.
+ */
+async function executeLlmCommand(
+  cmd: NonNullable<ReturnType<typeof detectLlmCommand>>,
+  brain: ReturnType<typeof useBrainStore>,
+): Promise<Message> {
+  if (cmd.type === 'switch_free') {
+    const provider = brain.freeProviders.find((p) => p.id === cmd.providerId);
+    if (provider?.requires_api_key) {
+      return {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `I'd love to switch to ${provider.display_name}, but it requires an API key. You can configure it in the Marketplace (🏪) under "Configure LLM".`,
+        agentName: 'TerranSoul',
+        sentiment: 'neutral',
+        timestamp: Date.now(),
+      };
+    }
+    const mode = { mode: 'free_api' as const, provider_id: cmd.providerId, api_key: null };
+    try {
+      await brain.setBrainMode(mode);
+    } catch {
+      brain.brainMode = mode;
+    }
+    const displayName = provider?.display_name ?? cmd.providerName;
+    return {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `Done! I've switched to ${displayName}. Let's chat!`,
+      agentName: 'TerranSoul',
+      sentiment: 'happy',
+      timestamp: Date.now(),
+    };
+  }
+
+  // Paid API
+  const mode = {
+    mode: 'paid_api' as const,
+    provider: cmd.provider,
+    api_key: cmd.apiKey,
+    model: cmd.model,
+    base_url: cmd.provider,
+  };
+  try {
+    await brain.setBrainMode(mode);
+  } catch {
+    brain.brainMode = mode;
+  }
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: `Done! Paid API configured with model ${cmd.model}. Your API key is saved. Let's chat!`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+  };
+}
+
 /**
  * Resolve the free provider details (base_url, model, api_key) from the brain store
  * for browser-side streaming.
@@ -98,6 +217,9 @@ function resolveFreeProvider(brain: ReturnType<typeof useBrainStore>): {
   };
 }
 
+// Re-export detectLlmCommand for tests
+export { detectLlmCommand };
+
 export const useConversationStore = defineStore('conversation', () => {
   const messages = ref<Message[]>([]);
   const currentAgent = ref<string>('auto');
@@ -120,6 +242,16 @@ export const useConversationStore = defineStore('conversation', () => {
     isStreaming.value = false;
 
     const brain = useBrainStore();
+
+    // ── Chat-based LLM switching ──────────────────────────────────
+    // Detect if the user is asking to switch their LLM provider/model.
+    const llmCmd = detectLlmCommand(content);
+    if (llmCmd) {
+      const response = await executeLlmCommand(llmCmd, brain);
+      messages.value.push(response);
+      isThinking.value = false;
+      return;
+    }
 
     // Path 1: Tauri backend available → use streaming IPC command
     if (isTauriAvailable()) {

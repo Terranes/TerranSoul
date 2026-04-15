@@ -144,6 +144,16 @@ export const useVoiceStore = defineStore('voice', () => {
     };
   }
 
+  /**
+   * Auto-configure voice with free defaults (Web Speech API + Edge TTS).
+   * Called when the user hasn't explicitly configured voice yet so that
+   * voice is enabled out of the box.
+   */
+  async function autoConfigureVoice(): Promise<void> {
+    await setAsrProvider('web-speech');
+    await setTtsProvider('edge-tts');
+  }
+
   return {
     // state
     asrProviders,
@@ -166,5 +176,6 @@ export const useVoiceStore = defineStore('voice', () => {
     setApiKey,
     setEndpointUrl,
     clearConfig,
+    autoConfigureVoice,
   };
 });

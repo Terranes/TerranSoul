@@ -135,9 +135,9 @@ export const useBrainStore = defineStore('brain', () => {
   }
 
   /**
-   * Auto-configure free API as the default brain mode.
-   * Called when Tauri backend is unavailable or Ollama is not running.
-   * This enables zero-setup usage with cloud LLM providers.
+   * Auto-configure free API as the default brain mode (browser-side only).
+   * Sets state in the Pinia store but does NOT persist to the Tauri backend.
+   * Use {@link autoConfigureForDesktop} when Tauri is available.
    */
   function autoConfigureFreeApi(): void {
     freeProviders.value = FALLBACK_FREE_PROVIDERS;
@@ -148,14 +148,42 @@ export const useBrainStore = defineStore('brain', () => {
     };
   }
 
+  /**
+   * Auto-configure free API on desktop: persists to the Tauri backend
+   * so that the Rust `send_message_stream` command knows the brain mode.
+   * Without this, the backend's AppState keeps `brain_mode = None` and
+   * returns a stub response instead of calling the real LLM API.
+   */
+  async function autoConfigureForDesktop(): Promise<void> {
+    const mode: BrainMode = {
+      mode: 'free_api',
+      provider_id: 'pollinations',
+      api_key: null,
+    };
+    try {
+      await setBrainMode(mode);
+    } catch {
+      // setBrainMode invoke failed — set locally as fallback
+      brainMode.value = mode;
+    }
+    if (freeProviders.value.length === 0) {
+      freeProviders.value = FALLBACK_FREE_PROVIDERS;
+    }
+  }
+
   /** Full initialisation for the brain setup wizard. */
   async function initialise(): Promise<void> {
     isLoading.value = true;
     try {
+      // Load core brain state — these should always work when Tauri is available.
       await Promise.all([
         loadActiveBrain(),
         loadBrainMode(),
         fetchFreeProviders(),
+      ]);
+      // Non-critical: load hardware & Ollama info for the setup wizard.
+      // Don't let failures here break the entire initialisation.
+      await Promise.allSettled([
         fetchSystemInfo(),
         fetchRecommendations(),
         checkOllamaStatus(),
@@ -195,6 +223,7 @@ export const useBrainStore = defineStore('brain', () => {
     loadBrainMode,
     setBrainMode,
     autoConfigureFreeApi,
+    autoConfigureForDesktop,
     initialise,
   };
 });

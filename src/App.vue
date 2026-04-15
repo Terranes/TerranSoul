@@ -99,6 +99,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useBrainStore } from './stores/brain';
+import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
@@ -110,6 +111,7 @@ import { Analytics } from '@vercel/analytics/vue';
 import { SpeedInsights } from '@vercel/speed-insights/vue';
 
 const brain = useBrainStore();
+const voice = useVoiceStore();
 const windowStore = useWindowStore();
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice'>('chat');
 const skipSetup = ref(false);
@@ -167,6 +169,8 @@ onMounted(async () => {
     // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
     brain.autoConfigureFreeApi();
     skipSetup.value = true;
+    // Also auto-configure voice so it works out of the box
+    await voice.autoConfigureVoice();
     return;
   }
 
@@ -174,12 +178,29 @@ onMounted(async () => {
   try {
     await brain.loadBrainMode();
   } catch {
-    // Ignore — will fall through to setup
+    // Ignore — will fall through to auto-configure
+  }
+
+  // Load voice config from backend
+  try {
+    await voice.initialise();
+  } catch {
+    // Voice unavailable — will auto-configure below
   }
 
   // If brain is already set (either legacy or new mode), skip the onboarding.
   if (brain.hasBrain) {
     skipSetup.value = true;
+  } else {
+    // Desktop first launch: auto-configure free API (same as browser) and persist
+    // to the Tauri backend so `send_message_stream` knows the brain mode.
+    await brain.autoConfigureForDesktop();
+    skipSetup.value = true;
+  }
+
+  // If voice is not configured, auto-enable Web Speech API + Edge TTS
+  if (!voice.hasVoice) {
+    await voice.autoConfigureVoice();
   }
 });
 
