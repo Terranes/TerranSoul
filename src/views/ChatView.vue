@@ -81,6 +81,18 @@
       </div>
     </Transition>
 
+    <!-- Game-dialog upgrade prompt -->
+    <UpgradeDialog
+      :visible="showUpgradeDialog"
+      :current-model-name="currentUpgradeModel"
+      :current-model-desc="currentUpgradeDesc"
+      :recommended-name="recommendedUpgradeName"
+      :recommended-desc="recommendedUpgradeDesc"
+      :options="upgradeOptions"
+      @accept="handleUpgradeAccept"
+      @dismiss="showUpgradeDialog = false"
+    />
+
     <!-- Bottom chat panel — input always visible, history toggles via 💬 button -->
     <div class="bottom-panel" :class="{ expanded: showDrawer }">
       <!-- Chat history (shown when expanded) -->
@@ -137,9 +149,12 @@ import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
 import type { CharacterState } from '../types';
+import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
+import type { UpgradeOption } from '../components/UpgradeDialog.vue';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
+import UpgradeDialog from '../components/UpgradeDialog.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -158,6 +173,57 @@ const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
+
+// ── Upgrade dialog state ──────────────────────────────────────────
+const showUpgradeDialog = ref(false);
+/** Track the user message that triggered the upgrade suggestion. */
+let lastUserQuery = '';
+/** Only suggest once per session unless dismissed. */
+let upgradeAlreadySuggested = false;
+
+const currentUpgradeModel = computed(() => {
+  if (brain.brainMode?.mode === 'free_api') {
+    const providerId = brain.brainMode.provider_id;
+    const p = brain.freeProviders.find((fp) => fp.id === providerId);
+    return p?.display_name ?? 'Free Cloud API';
+  }
+  return 'Free Cloud API';
+});
+const currentUpgradeDesc = computed(() => 'Rate-limited · Basic model');
+const recommendedUpgradeName = computed(() => {
+  if (brain.topRecommendation) return brain.topRecommendation.display_name;
+  return 'Groq (Llama 3.3 70B)';
+});
+const recommendedUpgradeDesc = computed(() => {
+  if (brain.topRecommendation) return brain.topRecommendation.description;
+  return 'Faster · Smarter · Free with API key';
+});
+const upgradeOptions = computed<UpgradeOption[]>(() => {
+  const opts: UpgradeOption[] = [
+    {
+      id: 'free_upgrade',
+      icon: '☁️',
+      label: 'Switch to Groq (free)',
+      detail: 'Better model, free tier — requires API key from groq.com',
+      primary: true,
+    },
+  ];
+  if (brain.topRecommendation) {
+    opts.push({
+      id: 'local',
+      icon: '🖥',
+      label: `Install ${brain.topRecommendation.display_name} locally`,
+      detail: `Run on your machine with Ollama — ${formatRam(brain.topRecommendation.required_ram_mb)} RAM needed`,
+    });
+  }
+  opts.push({
+    id: 'paid',
+    icon: '💳',
+    label: 'Use paid API (OpenAI, Anthropic)',
+    detail: 'Best quality — bring your own API key',
+  });
+  return opts;
+});
 
 // ── Keyboard detection ────────────────────────────────────────────
 const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
@@ -248,6 +314,9 @@ async function handleSend(message: string) {
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
 
+  // Store user query for capacity detection.
+  lastUserQuery = message;
+
   // Detect emotion from user input immediately for responsive UI feedback.
   // This is stored so the streaming watcher can show the correct emotion
   // instead of generic 'talking' while the API call is in progress.
@@ -268,9 +337,94 @@ async function handleSend(message: string) {
   // Show the AI's response as a floating subtitle
   if (lastMsg?.role === 'assistant') {
     showSubtitle(lastMsg.content);
+
+    // Assess response quality — suggest upgrade if struggling
+    if (brain.isFreeApiMode && !upgradeAlreadySuggested) {
+      const signal = assessCapacity(lastMsg.content, lastUserQuery);
+      if (signal.shouldSuggestUpgrade) {
+        showUpgradeDialog.value = true;
+        upgradeAlreadySuggested = true;
+      }
+    }
   }
 
   setTimeout(() => characterStore.setState('idle'), 6000);
+}
+
+/** Handle user accepting an upgrade option from the game dialog. */
+async function handleUpgradeAccept(optionId: string) {
+  showUpgradeDialog.value = false;
+  resetCapacityTracking();
+
+  if (optionId === 'free_upgrade') {
+    // Switch to a better free provider (Groq)
+    const groq = brain.freeProviders.find((p) => p.id === 'groq');
+    if (groq) {
+      try {
+        await brain.setBrainMode({ mode: 'free_api', provider_id: 'groq', api_key: null });
+      } catch {
+        brain.autoConfigureFreeApi();
+      }
+      // Notify user in chat
+      conversationStore.messages.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '[happy] Brain upgraded! I switched to Groq for better responses. You can get a free API key at groq.com for even better performance!',
+        agentName: 'TerranSoul',
+        sentiment: 'happy',
+        timestamp: Date.now(),
+      });
+    }
+  } else if (optionId === 'local') {
+    // Install local model via Ollama
+    const model = brain.topRecommendation?.model_tag;
+    if (model) {
+      conversationStore.messages.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `[happy] Great choice! I'm downloading ${brain.topRecommendation!.display_name} now. This may take a few minutes...`,
+        agentName: 'TerranSoul',
+        sentiment: 'happy',
+        timestamp: Date.now(),
+      });
+      const ok = await brain.pullModel(model);
+      if (ok) {
+        await brain.setActiveBrain(model);
+        try {
+          await brain.setBrainMode({ mode: 'local_ollama', model });
+        } catch {
+          // Tauri unavailable
+        }
+        conversationStore.messages.push({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `[happy] ${brain.topRecommendation!.display_name} is installed and active! I'm much smarter now. Try asking me something complex!`,
+          agentName: 'TerranSoul',
+          sentiment: 'happy',
+          timestamp: Date.now(),
+        });
+      } else {
+        conversationStore.messages.push({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `[sad] Download failed: ${brain.pullError ?? 'unknown error'}. Make sure Ollama is running (ollama serve).`,
+          agentName: 'TerranSoul',
+          sentiment: 'sad',
+          timestamp: Date.now(),
+        });
+      }
+    }
+  } else if (optionId === 'paid') {
+    // Navigate to brain setup for paid API configuration
+    conversationStore.messages.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: '[happy] To set up a paid API, open the Marketplace (🏪) and configure your API key in the LLM settings section.',
+      agentName: 'TerranSoul',
+      sentiment: 'happy',
+      timestamp: Date.now(),
+    });
+  }
 }
 
 /** Set up Tauri event listener for llm-chunk events (streaming LLM). */

@@ -30,6 +30,7 @@ vi.mock('../utils/free-api-client', () => ({
       role: m.role,
       content: m.content,
     })),
+  getSystemPrompt: () => 'You are TerranSoul.',
 }));
 
 describe('conversation store — no brain (persona fallback)', () => {

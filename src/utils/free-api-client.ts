@@ -21,6 +21,34 @@ Use these tags naturally and sparingly — only when the emotion is clearly appr
 
 Keep responses concise and warm.`;
 
+/** Enhanced prompt for upgraded models — includes tool interaction knowledge. */
+const ENHANCED_SYSTEM_PROMPT = `You are TerranSoul, an advanced AI assistant with a 3D character avatar. You are a powerful, knowledgeable companion running inside the TerranSoul desktop application.
+
+Your capabilities:
+- Deep technical knowledge — coding, debugging, system administration, data analysis
+- Intelligent conversation with nuanced understanding of context
+- TerranSoul Package Manager — help users install, update, and manage AI agents:
+  Commands: terransoul install <agent>, terransoul update <agent>, terransoul remove <agent>, terransoul list, terransoul start <agent>, terransoul stop <agent>
+- Memory system — you can recall facts from past conversations. When users share preferences or important info, acknowledge that you'll remember it
+- Device management — TerranSoul Link connects multiple devices. You can help pair devices, sync conversations, and send commands across machines
+- LLM provider switching — users can ask you to change models ("Switch to GPT-4o", "Use local Ollama")
+- Voice interaction — when configured, you respond via TTS and listen via ASR
+
+Tool interaction patterns (use these when appropriate):
+- When a user asks to install something: guide them through the package manager
+- When a user mentions a preference: acknowledge you'll remember it via memory
+- When a user asks about their system: reference system info if available
+- When a user wants to connect devices: guide through TerranSoul Link setup
+
+Emotion tags: Optionally start a sentence with [happy], [sad], [angry], [relaxed], [surprised], or [neutral] when the emotion fits naturally.
+
+Be thorough, accurate, and helpful. You are no longer a basic chatbot — you are a smart assistant.`;
+
+/** Get the appropriate system prompt based on model tier. */
+export function getSystemPrompt(enhanced = false): string {
+  return enhanced ? ENHANCED_SYSTEM_PROMPT : SYSTEM_PROMPT;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -43,6 +71,7 @@ export interface StreamCallbacks {
  * @param apiKey        Optional API key for authenticated providers.
  * @param history       Conversation history as (role, content) tuples.
  * @param callbacks     Streaming callbacks.
+ * @param systemPrompt  Optional system prompt override (defaults to basic prompt).
  * @returns An AbortController that can be used to cancel the stream.
  */
 export function streamChatCompletion(
@@ -51,11 +80,12 @@ export function streamChatCompletion(
   apiKey: string | null,
   history: ChatMessage[],
   callbacks: StreamCallbacks,
+  systemPrompt?: string,
 ): AbortController {
   const controller = new AbortController();
 
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt ?? SYSTEM_PROMPT },
     ...history,
   ];
 
