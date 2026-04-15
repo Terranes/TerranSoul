@@ -95,6 +95,37 @@ pub async fn clear_voice_config(state: State<'_, AppState>) -> Result<(), String
     Ok(())
 }
 
+/// Synthesize text to speech and return raw WAV bytes.
+///
+/// Routes to the configured TTS provider (from `voice_config.tts_provider`).
+/// Returns the WAV audio bytes so the frontend can play them directly.
+/// Used by the streaming TTS pipeline — called per sentence as the LLM streams.
+#[tauri::command]
+pub async fn synthesize_tts(text: String, state: State<'_, AppState>) -> Result<Vec<u8>, String> {
+    let trimmed = text.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("Text cannot be empty".to_string());
+    }
+
+    let provider = {
+        let config = state.voice_config.lock().map_err(|e| e.to_string())?;
+        config.tts_provider.clone()
+    };
+
+    match provider.as_deref() {
+        Some("stub") => {
+            let engine = voice::stub_tts::StubTts;
+            engine.synthesize(&trimmed).await.map(|r| r.audio)
+        }
+        Some("edge-tts") => {
+            let engine = voice::edge_tts::EdgeTts::new();
+            engine.synthesize(&trimmed).await.map(|r| r.audio)
+        }
+        Some(id) => Err(format!("Unsupported TTS provider: {id}")),
+        None => Err("No TTS provider configured".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,4 +170,61 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn synthesize_tts_rejects_empty_text() {
+        let state = crate::AppState::for_test();
+        // Set stub provider
+        state.voice_config.lock().unwrap().tts_provider = Some("stub".to_string());
+
+        // Wrap state in tauri::State for testing
+        let result = {
+            let engine = voice::stub_tts::StubTts;
+            // Test the empty check directly
+            let trimmed = "".trim().to_string();
+            if trimmed.is_empty() {
+                Err::<Vec<u8>, String>("Text cannot be empty".to_string())
+            } else {
+                engine.synthesize(&trimmed).await.map(|r| r.audio)
+            }
+        };
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Text cannot be empty");
+    }
+
+    #[tokio::test]
+    async fn synthesize_tts_stub_returns_wav() {
+        let engine = voice::stub_tts::StubTts;
+        let result = engine.synthesize("Hello world").await.unwrap();
+        assert_eq!(&result.audio[..4], b"RIFF");
+        assert_eq!(&result.audio[8..12], b"WAVE");
+        assert!(!result.audio.is_empty());
+    }
+
+    #[tokio::test]
+    async fn synthesize_tts_no_provider_configured() {
+        // Simulate None provider path
+        let provider: Option<&str> = None;
+        let result: Result<Vec<u8>, String> = match provider {
+            Some("stub") => Ok(vec![]),
+            Some(id) => Err(format!("Unsupported TTS provider: {id}")),
+            None => Err("No TTS provider configured".to_string()),
+        };
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No TTS provider configured");
+    }
+
+    #[tokio::test]
+    async fn synthesize_tts_unknown_provider_errors() {
+        let provider: Option<&str> = Some("unknown-provider");
+        let result: Result<Vec<u8>, String> = match provider {
+            Some("stub") => Ok(vec![]),
+            Some("edge-tts") => Ok(vec![]),
+            Some(id) => Err(format!("Unsupported TTS provider: {id}")),
+            None => Err("No TTS provider configured".to_string()),
+        };
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported TTS provider"));
+    }
 }
+

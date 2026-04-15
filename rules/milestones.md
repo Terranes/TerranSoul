@@ -122,16 +122,20 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 
 > **Source repos:** Open-LLM-VTuber, AI4Animation-js, VibeVoice, aituber-kit
 
+✅ Chunk 106 — Streaming TTS — see `rules/completion-log.md`
+
+`synthesize_tts` Tauri command, `useTtsPlayback` composable (sentence queuing, sequential playback),
+wired into ChatView.vue. Voice starts ~200ms after first sentence. 13 Vitest tests + 4 Rust tests.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 106 | **Streaming TTS (VibeVoice Realtime or streaming Edge TTS)** — Replace batched TTS with streaming output. Voice starts ~200ms after LLM generates first token. Massive UX win for natural dialogue. Requires WebSocket or event stream plumbing between Rust TTS engine and frontend audio playback. | `not-started` |
 | 107 | **Multi-ASR Provider Abstraction** — Abstract ASR into a plugin-style factory (like Open-LLM-VTuber's agent pattern). Currently only Whisper API. Add runtime provider swap: Whisper → Groq → Azure → browser Web Speech API. Config-driven selection in VoiceSetupView. | `not-started` |
 | 108 | **Settings Persistence + Env Overrides** — Persist camera orbit position, zoom, model selection, TTS/ASR provider between sessions (aituber-kit pattern). Use Tauri `tauri-plugin-store`. Support `.env` override for dev/CI. Pre-validate schema before loading to prevent corruption. | `not-started` |
 | 109 | **Idle Action Sequences** — When character is idle too long: time-based greetings, auto-speak via LLM, face detection triggers (aituber-kit pattern). Scheduled action queue with interruption handling. Makes character feel alive when user is away. | `not-started` |
 
 ### Next Chunk
 
-→ **Chunk 106** — Streaming TTS (Phase 9 — Learned Features)
+→ **Chunk 107** — Multi-ASR Provider Abstraction (Phase 9 — Learned Features)
 
 ---
 

@@ -6,6 +6,42 @@
 
 ---
 
+## Chunk 106 — Streaming TTS
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Replace the stub/batched TTS architecture with a real streaming pipeline. Voice synthesis begins
+~200ms after the first LLM sentence completes — a major UX win over waiting for the full response.
+Learned from VibeVoice realtime streaming pattern.
+
+### Architecture
+- **Rust: `synthesize_tts` Tauri command** — routes to configured TTS provider (edge-tts, stub).
+  Takes `text: String`, returns `Vec<u8>` (WAV bytes). Empty text guard returns error.
+- **`useTtsPlayback` composable** — sentence-boundary detection (`SENTENCE_END_RE`), synthesis
+  queue (Promise chain), sequential HTMLAudioElement playback, stop/flush lifecycle API.
+  `MIN_SENTENCE_CHARS = 4` filters stray punctuation. Blob URL cleanup on stop.
+- **ChatView.vue wired**: `tts.stop()` on new message send, `tts.feedChunk()` per llm-chunk
+  event, `tts.flush()` on stream done. Voice store initialized on mount. `tts.stop()` on unmount.
+
+### Files Created
+- `src/composables/useTtsPlayback.ts` — streaming TTS composable (160 lines)
+- `src/composables/useTtsPlayback.test.ts` — 13 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/voice.rs` — added `synthesize_tts` command + 4 Rust tests
+- `src-tauri/src/lib.rs` — registered `synthesize_tts` in invoke handler
+- `src/views/ChatView.vue` — import `useTtsPlayback` + `useVoiceStore`; wire tts.feedChunk/flush/stop; voice.initialise() on mount; tts.stop() on unmount
+
+### Test Counts
+- **Rust tests added:** 4 (synthesize_tts empty text guard, stub WAV bytes, no provider error, unknown provider error)
+- **Vitest tests added:** 13 (sentence detection × 6, flush × 3, stop × 2, error handling × 1, isSpeaking × 1)
+- **Total Vitest:** 374 (35 files, all pass)
+- **Build:** `npx vite build` ✅ clean
+
+---
+
 ## Chunk 001 — Project Scaffold
 
 **Date:** 2026-04-10

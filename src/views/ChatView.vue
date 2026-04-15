@@ -117,7 +117,9 @@ import { useConversationStore, detectSentiment } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
+import { useVoiceStore } from '../stores/voice';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
+import { useTtsPlayback } from '../composables/useTtsPlayback';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
@@ -127,6 +129,8 @@ const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const streaming = useStreamingStore();
+const voice = useVoiceStore();
+const tts = useTtsPlayback();
 const showDrawer = ref(false);
 const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
@@ -212,6 +216,9 @@ function sentimentToState(sentiment?: string): CharacterState {
 }
 
 async function handleSend(message: string) {
+  // Stop any ongoing TTS playback before sending a new message.
+  tts.stop();
+
   // Detect emotion from user input immediately for responsive UI feedback.
   // This is stored so the streaming watcher can show the correct emotion
   // instead of generic 'talking' while the API call is in progress.
@@ -243,6 +250,15 @@ async function setupTauriEventListener() {
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
+
+      // Feed chunks into streaming TTS when a TTS provider is configured.
+      if (voice.config.tts_provider) {
+        if (event.payload.done) {
+          tts.flush();
+        } else if (event.payload.text) {
+          tts.feedChunk(event.payload.text);
+        }
+      }
     });
     unlistenLlmChunk = unlisten;
   } catch {
@@ -290,6 +306,12 @@ onMounted(async () => {
   } catch {
     // No Tauri backend
   }
+
+  try {
+    await voice.initialise();
+  } catch {
+    // No Tauri backend — voice stays in text-only mode
+  }
 });
 
 onUnmounted(() => {
@@ -298,6 +320,7 @@ onUnmounted(() => {
     unlistenLlmChunk = null;
   }
   if (subtitleTimer) clearTimeout(subtitleTimer);
+  tts.stop();
 });
 </script>
 
