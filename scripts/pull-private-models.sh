@@ -15,10 +15,11 @@ if [[ -z "${TERRANSOUL_PRIVATE_MODELS_URL:-}" ]]; then
   exit 1
 fi
 
-CURL_ARGS=(-fsSL "${TERRANSOUL_PRIVATE_MODELS_URL}" -o "${ARCHIVE_PATH}")
+CURL_ARGS=(-fsSL)
 if [[ -n "${TERRANSOUL_PRIVATE_MODELS_TOKEN:-}" ]]; then
-  CURL_ARGS=(-fsSL -H "Authorization: Bearer ${TERRANSOUL_PRIVATE_MODELS_TOKEN}" "${TERRANSOUL_PRIVATE_MODELS_URL}" -o "${ARCHIVE_PATH}")
+  CURL_ARGS+=(-H "Authorization: Bearer ${TERRANSOUL_PRIVATE_MODELS_TOKEN}")
 fi
+CURL_ARGS+=("${TERRANSOUL_PRIVATE_MODELS_URL}" -o "${ARCHIVE_PATH}")
 
 curl "${CURL_ARGS[@]}"
 
@@ -27,7 +28,7 @@ if [[ -n "${TERRANSOUL_PRIVATE_MODELS_SHA256:-}" ]]; then
 fi
 
 mkdir -p "${MODELS_DIR}"
-rm -f "${MODELS_DIR}"/*.vrm
+find "${MODELS_DIR}" -maxdepth 1 -type f -name '*.vrm' -delete
 tar -xzf "${ARCHIVE_PATH}" -C "${MODELS_DIR}" --no-same-owner
 
 required_models=(
