@@ -68,9 +68,9 @@ use commands::{
     streaming::send_message_stream,
     settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
     voice::{
-        clear_voice_config, get_voice_config, list_asr_providers, list_tts_providers,
-        set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
-        synthesize_tts, transcribe_audio,
+        clear_voice_config, diarize_audio, get_voice_config, list_asr_providers,
+        list_tts_providers, set_asr_provider, set_tts_provider, set_voice_api_key,
+        set_voice_endpoint, synthesize_tts, transcribe_audio,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -259,6 +259,7 @@ pub fn run() {
             clear_voice_config,
             synthesize_tts,
             transcribe_audio,
+            diarize_audio,
             get_app_settings,
             save_app_settings,
             get_model_camera_positions,

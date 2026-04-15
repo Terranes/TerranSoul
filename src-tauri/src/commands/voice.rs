@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::voice::{self, AsrEngine, TtsEngine, VoiceConfig, VoiceProviderInfo};
+use crate::voice::{self, AsrEngine, DiarizationEngine, TtsEngine, VoiceConfig, VoiceProviderInfo};
 use crate::AppState;
 
 /// List available ASR providers.
@@ -163,6 +163,26 @@ pub async fn transcribe_audio(
         Some(id) => Err(format!("Unknown ASR provider: {id}")),
         None => Err("No ASR provider configured".to_string()),
     }
+}
+
+
+/// Diarize speech audio into speaker-attributed segments.
+///
+/// Accepts 16kHz float32 PCM samples (as produced by the VAD composable) and
+/// routes to the stub diarization engine. Returns a list of segments, each
+/// tagged with a speaker label.
+#[tauri::command]
+pub async fn diarize_audio(
+    samples: Vec<f32>,
+    _state: State<'_, AppState>,
+) -> Result<Vec<voice::DiarizedSegment>, String> {
+    if samples.is_empty() {
+        return Err("No audio samples provided".to_string());
+    }
+
+    let pcm = float32_to_pcm16(&samples);
+    let engine = voice::stub_diarization::StubDiarization;
+    engine.diarize(&pcm).await
 }
 
 
@@ -411,6 +431,31 @@ mod tests {
         };
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown ASR provider"));
+    }
+
+    // ── diarize_audio tests ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn diarize_audio_rejects_empty_samples() {
+        let samples: Vec<f32> = vec![];
+        let result: Result<Vec<voice::DiarizedSegment>, String> = if samples.is_empty() {
+            Err("No audio samples provided".to_string())
+        } else {
+            Ok(vec![])
+        };
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No audio samples provided");
+    }
+
+    #[tokio::test]
+    async fn diarize_audio_stub_returns_segments() {
+        let samples = vec![0.0f32; 100];
+        let pcm = float32_to_pcm16(&samples);
+        let engine = voice::stub_diarization::StubDiarization;
+        let segments = engine.diarize(&pcm).await.unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].speaker, "Speaker 1");
+        assert_eq!(segments[1].speaker, "Speaker 2");
     }
 }
 
