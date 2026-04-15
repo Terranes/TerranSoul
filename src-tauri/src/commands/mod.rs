@@ -13,5 +13,7 @@ pub mod routing;
 pub mod sandbox;
 pub mod settings;
 pub mod streaming;
+pub mod translation;
+pub mod vision;
 pub mod voice;
 pub mod window;

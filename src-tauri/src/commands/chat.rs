@@ -151,6 +151,17 @@ pub fn get_conversation(state: State<'_, AppState>) -> Vec<Message> {
     fetch_conversation(&state)
 }
 
+/// Export the full conversation history as a pretty-printed JSON string.
+///
+/// Returns the serialised `Vec<Message>` for the frontend to save via a file
+/// dialog or download link.
+#[tauri::command]
+pub fn export_chat_log(state: State<'_, AppState>) -> Result<String, String> {
+    let conversation = state.conversation.lock().map_err(|e| e.to_string())?;
+    serde_json::to_string_pretty(&*conversation)
+        .map_err(|e| format!("Failed to serialize: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,5 +277,48 @@ mod tests {
         let _ = process_message("hello", None, &state).await;
         let conv = fetch_conversation(&state);
         assert!(conv[0].timestamp <= conv[1].timestamp);
+    }
+
+    // ── export_chat_log ─────────────────────────────────────────────────────
+
+    #[test]
+    fn export_chat_log_empty_returns_valid_json() {
+        let state = make_state();
+        let json = {
+            let conv = state.conversation.lock().unwrap();
+            serde_json::to_string_pretty(&*conv).unwrap()
+        };
+        let parsed: Vec<Message> = serde_json::from_str(&json).unwrap();
+        assert!(parsed.is_empty());
+    }
+
+    #[tokio::test]
+    async fn export_chat_log_returns_all_messages() {
+        let state = make_state();
+        let _ = process_message("first", None, &state).await;
+        let _ = process_message("second", None, &state).await;
+        let json = {
+            let conv = state.conversation.lock().unwrap();
+            serde_json::to_string_pretty(&*conv).unwrap()
+        };
+        let parsed: Vec<Message> = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.len(), 4); // 2 user + 2 assistant
+        assert_eq!(parsed[0].content, "first");
+        assert_eq!(parsed[0].role, "user");
+        assert_eq!(parsed[2].content, "second");
+    }
+
+    #[tokio::test]
+    async fn export_chat_log_preserves_sentiment() {
+        let state = make_state();
+        let _ = process_message("hello", None, &state).await;
+        let json = {
+            let conv = state.conversation.lock().unwrap();
+            serde_json::to_string_pretty(&*conv).unwrap()
+        };
+        let parsed: Vec<Message> = serde_json::from_str(&json).unwrap();
+        // User message has no sentiment, assistant does
+        assert!(parsed[0].sentiment.is_none());
+        assert!(parsed[1].sentiment.is_some());
     }
 }

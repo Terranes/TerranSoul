@@ -31,7 +31,7 @@ use commands::{
         set_brain_mode,
     },
     character::load_vrm,
-    chat::{get_conversation, send_message},
+    chat::{export_chat_log, get_conversation, send_message},
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
@@ -66,9 +66,12 @@ use commands::{
         set_window_mode, toggle_window_mode,
     },
     streaming::send_message_stream,
-    settings::{get_app_settings, save_app_settings},
+    translation::{list_languages, translate_text, detect_language},
+    settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
+    vision::{capture_screen, analyze_screen},
     voice::{
-        clear_voice_config, get_voice_config, list_asr_providers, list_tts_providers,
+        add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
+        get_voice_config, list_asr_providers, list_tts_providers, remove_hotword,
         set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
         synthesize_tts, transcribe_audio,
     },
@@ -182,6 +185,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             send_message,
             get_conversation,
+            export_chat_log,
             list_agents,
             load_vrm,
             get_device_identity,
@@ -259,8 +263,20 @@ pub fn run() {
             clear_voice_config,
             synthesize_tts,
             transcribe_audio,
+            diarize_audio,
+            get_hotwords,
+            add_hotword,
+            remove_hotword,
+            clear_hotwords,
             get_app_settings,
             save_app_settings,
+            get_model_camera_positions,
+            save_model_camera_position,
+            capture_screen,
+            analyze_screen,
+            list_languages,
+            translate_text,
+            detect_language,
         ])
         .setup(|app| {
             let data_dir = app

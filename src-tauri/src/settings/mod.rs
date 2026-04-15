@@ -18,9 +18,17 @@
 pub mod config_store;
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Current schema version. Bump when adding non-backward-compatible fields.
 pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+
+/// Per-model camera position.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelCameraPosition {
+    pub azimuth: f32,
+    pub distance: f32,
+}
 
 /// Default character model ID (must match `DEFAULT_MODEL_ID` in frontend).
 pub const DEFAULT_MODEL_ID: &str = "annabelle";
@@ -62,6 +70,10 @@ pub struct AppSettings {
     /// ID of the selected ambient track.
     #[serde(default = "default_bgm_track_id")]
     pub bgm_track_id: String,
+
+    /// Per-model camera positions (keyed by model ID).
+    #[serde(default)]
+    pub model_camera_positions: HashMap<String, ModelCameraPosition>,
 }
 
 fn default_version() -> u32 {
@@ -94,6 +106,7 @@ impl Default for AppSettings {
             bgm_enabled: false,
             bgm_volume: DEFAULT_BGM_VOLUME,
             bgm_track_id: DEFAULT_BGM_TRACK_ID.to_string(),
+            model_camera_positions: HashMap::new(),
         }
     }
 }
@@ -170,6 +183,8 @@ mod tests {
 
     #[test]
     fn roundtrip_serde() {
+        let mut positions = HashMap::new();
+        positions.insert("annabelle".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
             selected_model_id: "genshin".into(),
@@ -178,6 +193,7 @@ mod tests {
             bgm_enabled: true,
             bgm_volume: 0.3,
             bgm_track_id: "ambient-night".into(),
+            model_camera_positions: positions,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -200,5 +216,38 @@ mod tests {
         assert!(!parsed.bgm_enabled);
         assert!((parsed.bgm_volume - DEFAULT_BGM_VOLUME).abs() < 0.001);
         assert_eq!(parsed.bgm_track_id, DEFAULT_BGM_TRACK_ID);
+    }
+
+    #[test]
+    fn default_model_camera_positions_is_empty() {
+        let s = AppSettings::default();
+        assert!(s.model_camera_positions.is_empty());
+    }
+
+    #[test]
+    fn model_camera_position_serde_roundtrip() {
+        let pos = ModelCameraPosition { azimuth: 1.23, distance: 4.5 };
+        let json = serde_json::to_string(&pos).unwrap();
+        let parsed: ModelCameraPosition = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, pos);
+    }
+
+    #[test]
+    fn model_camera_positions_independent_per_model() {
+        let mut s = AppSettings::default();
+        s.model_camera_positions.insert("annabelle".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        s.model_camera_positions.insert("m58".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
+
+        assert_eq!(s.model_camera_positions.len(), 2);
+        assert!((s.model_camera_positions["annabelle"].azimuth - 0.5).abs() < 0.001);
+        assert!((s.model_camera_positions["m58"].distance - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn serde_fills_model_camera_positions_default_when_missing() {
+        // JSON without model_camera_positions field — should default to empty map
+        let json = r#"{"version":2,"selected_model_id":"annabelle","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"ambient-calm"}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(parsed.model_camera_positions.is_empty());
     }
 }
