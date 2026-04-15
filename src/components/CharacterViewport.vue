@@ -91,6 +91,7 @@ import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
 import { useBackgroundStore } from '../stores/background';
+import { useSettingsStore } from '../stores/settings';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe } from '../renderer/vrm-loader';
@@ -99,6 +100,7 @@ import { CharacterAnimator } from '../renderer/character-animator';
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
+const settingsStore = useSettingsStore();
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 const backgroundInputRef = ref<HTMLInputElement | null>(null);
@@ -192,6 +194,22 @@ onMounted(async () => {
   sceneCtx = ctx;
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
+
+  // Persist camera state after user finishes orbiting or zooming.
+  ctx.onCameraChange((azimuth, distance) => {
+    settingsStore.saveCameraState(azimuth, distance);
+  });
+
+  // Restore persisted camera state (azimuth + distance).
+  const savedAzimuth = settingsStore.settings.camera_azimuth;
+  const savedDistance = settingsStore.settings.camera_distance;
+  if (savedDistance > 0) {
+    // Set camera position from saved spherical coordinates (elevation = 0 = equatorial)
+    const x = savedDistance * Math.sin(savedAzimuth);
+    const z = savedDistance * Math.cos(savedAzimuth);
+    ctx.camera.position.set(x, ctx.camera.position.y, z);
+    ctx.controls.update();
+  }
 
   // Auto-load the default VRM model (loading overlay shows until ready)
   characterStore.loadDefaultModel();

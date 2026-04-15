@@ -6,7 +6,98 @@
 
 ---
 
-## Chunk 106 — Streaming TTS
+## Chunk 108 — Settings Persistence + Env Overrides
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Persist user preferences between sessions so TerranSoul "remembers" the character model and
+camera orientation. Support `.env` override for dev/CI without touching user config files.
+
+### Architecture
+- **Rust: `settings` module** — `AppSettings` struct (version, selected_model_id, camera_azimuth,
+  camera_distance). JSON persistence via `settings/config_store.rs` following voice/brain patterns.
+  Schema validation: stale/corrupt files silently replaced with defaults.
+- **Rust: `.env` override** — `TERRANSOUL_MODEL_ID` env var overrides `selected_model_id` at load time.
+  Non-secrets only; API keys remain user-configured.
+- **Rust: Tauri commands** — `get_app_settings`, `save_app_settings` in `commands/settings.rs`.
+- **AppState** — `app_settings: Mutex<settings::AppSettings>` field.
+- **`useSettingsStore`** — Pinia store with `loadSettings`, `saveSettings`, `saveModelId`,
+  `saveCameraState` convenience helpers. Falls back silently when Tauri unavailable.
+- **Model persistence** — `characterStore.selectModel()` calls `settingsStore.saveModelId()`.
+- **Camera persistence** — `scene.ts` exports `onCameraChange(cb)` callback (fired on OrbitControls
+  `end` event with spherical azimuth + radius). `CharacterViewport.vue` registers callback → saves.
+- **Camera restore** — `CharacterViewport.vue` restores camera position from settings on mount.
+- **App start** — `ChatView.vue` `onMounted` loads settings and selects persisted model if different
+  from default.
+
+### Files Created
+- `src-tauri/src/settings/mod.rs` — AppSettings struct + env override + schema validation (120 lines)
+- `src-tauri/src/settings/config_store.rs` — JSON load/save + 6 tests (115 lines)
+- `src-tauri/src/commands/settings.rs` — `get_app_settings` + `save_app_settings` + 3 tests
+- `src/stores/settings.ts` — `useSettingsStore` Pinia store
+- `src/stores/settings.test.ts` — 9 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/mod.rs` — added `settings` module
+- `src-tauri/src/lib.rs` — settings module, AppState field, commands registered
+- `src/stores/character.ts` — `selectModel` persists via `settingsStore.saveModelId`
+- `src/components/CharacterViewport.vue` — `onCameraChange` wired, camera restored from settings
+- `src/views/ChatView.vue` — load settings + restore persisted model on mount
+- `src/renderer/scene.ts` — `onCameraChange(cb)` API added to `SceneContext`
+
+### Test Counts
+- **Rust tests added:** 11 (schema validation × 6 in mod.rs, config_store × 5, command tests × 3)
+- **Vitest tests added:** 9 (useSettingsStore: defaults, load, save, patch, helpers, error resilience)
+- **Total Vitest:** 396 (32 files, all pass)
+- **Build:** `npm run build` ✅ clean
+
+---
+
+## Chunk 107 — Multi-ASR Provider Abstraction
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Abstract speech recognition into a provider-agnostic factory so users can choose between
+browser Web Speech API (zero setup), OpenAI Whisper (best quality), and Groq Whisper (fastest, free tier).
+
+### Architecture
+- **Rust: `groq-whisper`** added to `asr_providers()` catalogue in `voice/mod.rs`.
+- **Rust: `float32_to_pcm16`** helper in `commands/voice.rs` converts VAD float32 samples to int16 PCM.
+- **Rust: `transcribe_audio` command** — accepts `Vec<f32>` samples, converts to PCM-16, routes to
+  stub / whisper-api / groq-whisper (OpenAI-compatible endpoint). `web-speech` returns helpful error.
+- **`useAsrManager` composable** — provider factory: `web-speech` uses browser `SpeechRecognition`;
+  all Rust-backed providers go through VAD → `transcribe_audio` IPC. `isListening`, `error` reactive state.
+- **Mic button in ChatView.vue** — shown only when `voice.config.asr_provider` is set. Pulsing red
+  animation while listening. `toggleMic()` wired to `asr.startListening/stopListening`.
+- **Groq mode in VoiceSetupView.vue** — new tier card ("⚡ Groq (fast)"), dedicated config step
+  with Groq API key input, done screen updated.
+- **Bug fix:** `useTtsPlayback.ts` `Blob([bytes.buffer])` for correct BlobPart type.
+
+### Files Created
+- `src/composables/useAsrManager.ts` — provider factory composable (185 lines)
+- `src/composables/useAsrManager.test.ts` — 13 Vitest tests
+
+### Files Modified
+- `src-tauri/src/voice/mod.rs` — added `groq-whisper` provider
+- `src-tauri/src/commands/voice.rs` — `float32_to_pcm16`, `transcribe_audio` command, 8 Rust tests
+- `src-tauri/src/lib.rs` — registered `transcribe_audio`
+- `src/views/ChatView.vue` — `useAsrManager` import, `asr` instance, `toggleMic`, mic button CSS
+- `src/views/VoiceSetupView.vue` — Groq tier + config step + groq activate function
+- `src/composables/useTtsPlayback.ts` — `Blob([bytes.buffer])` fix
+- `src/composables/useTtsPlayback.test.ts` — removed unused `afterEach` import
+
+### Test Counts
+- **Rust tests added:** 8 (float32_to_pcm16 × 2, transcribe_audio routing × 6)
+- **Vitest tests added:** 13 (useAsrManager: routing × 3, transcript × 2, VAD+IPC × 5, stop/idle × 3)
+- **Total Vitest:** 387 → 396 after chunk 108
+
+---
+
+
 
 **Date:** 2026-04-15
 **Status:** ✅ Done

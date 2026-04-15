@@ -20,6 +20,9 @@ export interface SceneContext {
    *  full body. */
   updateZoomTarget: () => void;
   dispose: () => void;
+  /** Register a callback that fires after the user finishes orbiting or zooming.
+   *  Receives (azimuth, distance) so the caller can persist the camera state. */
+  onCameraChange: (cb: (azimuth: number, distance: number) => void) => void;
 }
 
 export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext> {
@@ -195,11 +198,27 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     };
   }
 
+  let cameraChangeCallback: ((azimuth: number, distance: number) => void) | null = null;
+
+  // Fire the camera change callback when the user finishes orbiting/zooming.
+  controls.addEventListener('end', () => {
+    if (cameraChangeCallback) {
+      const sph = new THREE.Spherical().setFromVector3(
+        camera.position.clone().sub(controls.target),
+      );
+      cameraChangeCallback(sph.theta, sph.radius);
+    }
+  });
+
+  function onCameraChange(cb: (azimuth: number, distance: number) => void) {
+    cameraChangeCallback = cb;
+  }
+
   function dispose() {
     resizeObserver.disconnect();
     controls.dispose();
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, dispose };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, dispose, onCameraChange };
 }

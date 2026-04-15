@@ -132,6 +132,7 @@ import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
 import { useVoiceStore } from '../stores/voice';
+import { useSettingsStore } from '../stores/settings';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
@@ -145,6 +146,7 @@ const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
+const settingsStore = useSettingsStore();
 const tts = useTtsPlayback();
 const asr = useAsrManager({
   onTranscript: (text: string) => handleSend(text),
@@ -338,6 +340,18 @@ onMounted(async () => {
     await voice.initialise();
   } catch {
     // No Tauri backend — voice stays in text-only mode
+  }
+
+  // Load persisted settings (model selection, camera state).
+  try {
+    await settingsStore.loadSettings();
+    const savedModelId = settingsStore.settings.selected_model_id;
+    const defaultId = characterStore.selectedModelId;
+    if (savedModelId && savedModelId !== defaultId) {
+      await characterStore.selectModel(savedModelId);
+    }
+  } catch {
+    // Settings unavailable — proceed with defaults
   }
 });
 

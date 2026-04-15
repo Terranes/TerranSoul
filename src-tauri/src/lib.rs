@@ -18,6 +18,7 @@ pub mod package_manager;
 pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
+pub mod settings;
 pub mod sync;
 pub mod voice;
 
@@ -65,6 +66,7 @@ use commands::{
         set_window_mode, toggle_window_mode,
     },
     streaming::send_message_stream,
+    settings::{get_app_settings, save_app_settings},
     voice::{
         clear_voice_config, get_voice_config, list_asr_providers, list_tts_providers,
         set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
@@ -105,6 +107,8 @@ pub struct AppState {
     pub voice_config: Mutex<voice::VoiceConfig>,
     /// Provider rotation and rate-limit tracking for free API providers.
     pub provider_rotator: Mutex<brain::ProviderRotator>,
+    /// Persistent application settings (model selection, camera state).
+    pub app_settings: Mutex<settings::AppSettings>,
 }
 
 impl AppState {
@@ -136,6 +140,7 @@ impl AppState {
             window_mode: Mutex::new(commands::window::WindowMode::default()),
             voice_config: Mutex::new(voice::config_store::load(data_dir)),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
+            app_settings: Mutex::new(settings::config_store::load(data_dir)),
         }
     }
 
@@ -165,6 +170,7 @@ impl AppState {
             window_mode: Mutex::new(commands::window::WindowMode::default()),
             voice_config: Mutex::new(voice::VoiceConfig::default()),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
+            app_settings: Mutex::new(settings::AppSettings::default()),
         }
     }
 }
@@ -253,6 +259,8 @@ pub fn run() {
             clear_voice_config,
             synthesize_tts,
             transcribe_audio,
+            get_app_settings,
+            save_app_settings,
         ])
         .setup(|app| {
             let data_dir = app

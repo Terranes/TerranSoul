@@ -127,15 +127,26 @@ Command envelope, permission management (Allow/Deny/Ask), router with pending ap
 `synthesize_tts` Tauri command, `useTtsPlayback` composable (sentence queuing, sequential playback),
 wired into ChatView.vue. Voice starts ~200ms after first sentence. 13 Vitest tests + 4 Rust tests.
 
+✅ Chunk 107 — Multi-ASR Provider Abstraction — see `rules/completion-log.md`
+
+`groq-whisper` provider added. `transcribe_audio` Tauri command (float32 PCM → Whisper/Groq/stub).
+`useAsrManager` composable (web-speech + Tauri IPC paths). Mic button in ChatView. Groq mode in VoiceSetupView.
+13 Vitest tests + 8 Rust tests.
+
+✅ Chunk 108 — Settings Persistence + Env Overrides — see `rules/completion-log.md`
+
+`AppSettings` struct (JSON + schema validation + `TERRANSOUL_MODEL_ID` env override). `get_app_settings` /
+`save_app_settings` Tauri commands. `useSettingsStore` Pinia store. Model selection + camera azimuth/distance
+persisted. CharacterViewport restores camera on mount. ChatView loads persisted model on mount.
+9 Vitest tests + 11 Rust unit tests.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 107 | **Multi-ASR Provider Abstraction** — Abstract ASR into a plugin-style factory (like Open-LLM-VTuber's agent pattern). Currently only Whisper API. Add runtime provider swap: Whisper → Groq → Azure → browser Web Speech API. Config-driven selection in VoiceSetupView. | `not-started` |
-| 108 | **Settings Persistence + Env Overrides** — Persist camera orbit position, zoom, model selection, TTS/ASR provider between sessions (aituber-kit pattern). Use Tauri `tauri-plugin-store`. Support `.env` override for dev/CI. Pre-validate schema before loading to prevent corruption. | `not-started` |
 | 109 | **Idle Action Sequences** — When character is idle too long: time-based greetings, auto-speak via LLM, face detection triggers (aituber-kit pattern). Scheduled action queue with interruption handling. Makes character feel alive when user is away. | `not-started` |
 
 ### Next Chunk
 
-→ **Chunk 107** — Multi-ASR Provider Abstraction (Phase 9 — Learned Features)
+→ **Chunk 109** — Idle Action Sequences (Phase 9 — Learned Features)
 
 ---
 
