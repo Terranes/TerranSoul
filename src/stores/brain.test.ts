@@ -239,4 +239,56 @@ describe('brain store', () => {
     expect(store.freeProviders.length).toBeGreaterThan(0);
     expect(store.isLoading).toBe(false);
   });
+
+  // ── autoConfigureForDesktop Tests ──────────────────────────────────────
+
+  it('autoConfigureForDesktop persists to Tauri backend via setBrainMode', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    await store.autoConfigureForDesktop();
+    expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', {
+      mode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+    });
+    expect(store.hasBrain).toBe(true);
+    expect(store.brainMode?.mode).toBe('free_api');
+  });
+
+  it('autoConfigureForDesktop falls back to local-only when invoke fails', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    const store = useBrainStore();
+    await store.autoConfigureForDesktop();
+    // Still sets brain locally even though Tauri persist failed
+    expect(store.hasBrain).toBe(true);
+    expect(store.brainMode?.mode).toBe('free_api');
+  });
+
+  it('autoConfigureForDesktop populates freeProviders if empty', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    expect(store.freeProviders).toEqual([]);
+    await store.autoConfigureForDesktop();
+    expect(store.freeProviders.length).toBeGreaterThan(0);
+  });
+
+  // ── initialise resilience ──────────────────────────────────────────────
+
+  it('initialise succeeds even when Ollama commands fail', async () => {
+    // Core commands succeed, Ollama commands fail
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_active_brain') return Promise.resolve(null);
+      if (cmd === 'get_brain_mode') return Promise.resolve({ mode: 'free_api', provider_id: 'pollinations', api_key: null });
+      if (cmd === 'list_free_providers') return Promise.resolve([sampleFreeProvider]);
+      if (cmd === 'get_system_info') return Promise.reject(new Error('timeout'));
+      if (cmd === 'recommend_brain_models') return Promise.reject(new Error('timeout'));
+      if (cmd === 'check_ollama_status') return Promise.reject(new Error('connection refused'));
+      if (cmd === 'get_ollama_models') return Promise.reject(new Error('connection refused'));
+      return Promise.resolve(null);
+    });
+    const store = useBrainStore();
+    await store.initialise();
+    // Core brain config was loaded despite Ollama failure
+    expect(store.brainMode?.mode).toBe('free_api');
+    expect(store.freeProviders).toHaveLength(1);
+    expect(store.isLoading).toBe(false);
+  });
 });

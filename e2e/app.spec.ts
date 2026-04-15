@@ -643,3 +643,132 @@ test.describe('Free LLM Brain', () => {
     await expect(assistantMsg).not.toContainText('Ollama');
   });
 });
+
+// ── Voice Auto-Configuration ──────────────────────────────────────────────
+test.describe('Voice Auto-Configuration', () => {
+  test('voice is auto-configured with Web Speech API and Edge TTS by default', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for app to finish initialising
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    // Voice store should have auto-configured providers
+    const voiceState = await page.evaluate(() => {
+      const app = (document.querySelector('#app') as any)?.__vue_app__;
+      if (!app) return null;
+      const pinia = app.config.globalProperties.$pinia;
+      if (!pinia) return null;
+      const s = pinia.state.value.voice;
+      if (!s) return null;
+      return {
+        asr_provider: s.config?.asr_provider,
+        tts_provider: s.config?.tts_provider,
+      };
+    });
+    expect(voiceState).not.toBeNull();
+    expect(voiceState!.asr_provider).toBe('web-speech');
+    expect(voiceState!.tts_provider).toBe('edge-tts');
+  });
+
+  test('microphone button is visible when voice is auto-configured', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for app to finish initialising
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    // The mic button should be visible because voice is auto-configured
+    const micBtn = page.locator('.mic-btn');
+    await expect(micBtn).toBeVisible({ timeout: 3_000 });
+  });
+});
+
+// ── Marketplace LLM Configuration ────────────────────────────────────────
+test.describe('Marketplace LLM Configuration', () => {
+  test('marketplace shows LLM configuration section', async ({ page }) => {
+    await page.goto('/');
+
+    // Navigate to marketplace
+    // In browser mode, click the marketplace tab
+    const mpTab = page.locator('button:has-text("🏪")').first();
+    await mpTab.click();
+
+    // Marketplace view should be visible
+    await expect(page.locator('.marketplace-view')).toBeVisible({ timeout: 3_000 });
+
+    // LLM configuration section should be visible (the collapsible header)
+    const llmConfigHeader = page.locator('.llm-config-header');
+    await expect(llmConfigHeader).toBeVisible({ timeout: 3_000 });
+    await expect(llmConfigHeader).toContainText('Configure LLM');
+  });
+
+  test('marketplace LLM config shows free and paid tiers', async ({ page }) => {
+    await page.goto('/');
+
+    // Navigate to marketplace
+    const mpTab = page.locator('button:has-text("🏪")').first();
+    await mpTab.click();
+
+    await expect(page.locator('.marketplace-view')).toBeVisible({ timeout: 3_000 });
+
+    // Open the LLM config section
+    await page.locator('.llm-config-header').click();
+
+    // Tier tabs should be visible
+    const freeTierTab = page.locator('.llm-tier-tab:has-text("Free Cloud")');
+    const paidTierTab = page.locator('.llm-tier-tab:has-text("Paid API")');
+    await expect(freeTierTab).toBeVisible({ timeout: 2_000 });
+    await expect(paidTierTab).toBeVisible({ timeout: 2_000 });
+
+    // Free provider cards should be visible
+    const providerCards = page.locator('.llm-provider-card');
+    await expect(providerCards.first()).toBeVisible({ timeout: 2_000 });
+  });
+
+  test('marketplace shows chat-based switching hint', async ({ page }) => {
+    await page.goto('/');
+
+    // Navigate to marketplace
+    const mpTab = page.locator('button:has-text("🏪")').first();
+    await mpTab.click();
+
+    await expect(page.locator('.marketplace-view')).toBeVisible({ timeout: 3_000 });
+
+    // Open LLM config
+    await page.locator('.llm-config-header').click();
+
+    // Chat hint should mention chat-based switching
+    const chatHint = page.locator('.llm-chat-hint');
+    await expect(chatHint).toBeVisible({ timeout: 2_000 });
+    await expect(chatHint).toContainText('Switch to Groq');
+  });
+});
+
+// ── Chat-based LLM Switching ─────────────────────────────────────────────
+test.describe('Chat-based LLM Switching', () => {
+  test('sending "switch to pollinations" triggers LLM switch response', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for chat to be ready
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    const input = page.locator('.chat-input');
+    const sendBtn = page.locator('.send-btn');
+
+    // Send LLM switch command
+    await input.fill('switch to pollinations');
+    await sendBtn.click();
+
+    // Open chat drawer
+    await page.locator('.chat-drawer-toggle').click();
+
+    // User message should appear
+    const userMsg = page.locator('.message-row.user').first();
+    await expect(userMsg).toBeVisible({ timeout: MESSAGE_TIMEOUT });
+    await expect(userMsg).toContainText('switch to pollinations');
+
+    // Assistant should confirm the switch
+    const assistantMsg = page.locator('.message-row.assistant').first();
+    await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
+    await expect(assistantMsg).toContainText('Pollinations');
+  });
+});

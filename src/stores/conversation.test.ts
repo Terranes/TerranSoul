@@ -323,3 +323,116 @@ describe('detectSentiment — keyword-based fallback', () => {
     expect(detectSentiment('What is the weather like?')).toBe('neutral');
   });
 });
+
+describe('detectLlmCommand — chat-based LLM switching', () => {
+  it('detects "switch to groq"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('switch to groq');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('groq');
+    }
+  });
+
+  it('detects "use pollinations"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('use pollinations');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('pollinations');
+    }
+  });
+
+  it('detects "change to cerebras"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('change to cerebras');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('cerebras');
+    }
+  });
+
+  it('detects "switch to mistral"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('switch to mistral');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('mistral');
+    }
+  });
+
+  it('detects paid API key command', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('use my openai api key sk-abc123def456');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_paid');
+    if (cmd!.type === 'switch_paid') {
+      expect(cmd!.apiKey).toBe('sk-abc123def456');
+    }
+  });
+
+  it('returns null for normal messages', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    expect(detectLlmCommand('What is the weather today?')).toBeNull();
+    expect(detectLlmCommand('Tell me a joke')).toBeNull();
+    expect(detectLlmCommand('How does machine learning work?')).toBeNull();
+  });
+});
+
+describe('conversation store — chat-based LLM switching integration', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('switches to pollinations via chat command', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockResolvedValue(undefined);
+
+    const store = useConversationStore();
+    await store.sendMessage('switch to pollinations');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0].content).toBe('switch to pollinations');
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].content).toContain('Pollinations');
+    expect(store.isThinking).toBe(false);
+  });
+
+  it('warns about API key requirement for groq', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    const store = useConversationStore();
+    await store.sendMessage('switch to groq');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].content).toContain('API key');
+    expect(store.messages[1].content).toContain('Marketplace');
+  });
+
+  it('normal messages are NOT treated as LLM commands', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
+        callbacks.onDone('42 is the answer');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('What is the meaning of life?');
+
+    // Should go through normal chat path, not command path
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(store.messages[1].content).toBe('42 is the answer');
+  });
+});
