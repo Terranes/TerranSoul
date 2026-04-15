@@ -53,6 +53,7 @@ mod tests {
             tts_provider: Some("edge-tts".into()),
             api_key: None,
             endpoint_url: None,
+            hotwords: vec![],
         };
         save(dir.path(), &cfg).unwrap();
         let loaded = load(dir.path());
@@ -67,6 +68,7 @@ mod tests {
             tts_provider: Some("openai-tts".into()),
             api_key: Some("sk-test-key".into()),
             endpoint_url: Some("https://api.openai.com/v1".into()),
+            hotwords: vec![],
         };
         save(dir.path(), &cfg).unwrap();
         let loaded = load(dir.path());
@@ -81,6 +83,7 @@ mod tests {
             tts_provider: None,
             api_key: None,
             endpoint_url: None,
+            hotwords: vec![],
         };
         save(dir.path(), &cfg).unwrap();
         clear(dir.path()).unwrap();

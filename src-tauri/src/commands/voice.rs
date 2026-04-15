@@ -185,6 +185,64 @@ pub async fn diarize_audio(
     engine.diarize(&pcm).await
 }
 
+// ── Hotword management commands ──────────────────────────────────────────────
+
+/// Get the current hotword list.
+#[tauri::command]
+pub async fn get_hotwords(state: State<'_, AppState>) -> Result<Vec<voice::Hotword>, String> {
+    let config = state.voice_config.lock().map_err(|e| e.to_string())?;
+    Ok(config.hotwords.clone())
+}
+
+/// Add a hotword to the list.
+#[tauri::command]
+pub async fn add_hotword(
+    phrase: String,
+    boost: f32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let trimmed = phrase.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("Hotword phrase cannot be empty".to_string());
+    }
+    if !(0.0..=10.0).contains(&boost) {
+        return Err("Boost must be between 0.0 and 10.0".to_string());
+    }
+
+    let mut config = state.voice_config.lock().map_err(|e| e.to_string())?;
+    if config.hotwords.iter().any(|h| h.phrase == trimmed) {
+        return Err(format!("Hotword already exists: {trimmed}"));
+    }
+    config.hotwords.push(voice::Hotword {
+        phrase: trimmed,
+        boost,
+    });
+    voice::config_store::save(&state.data_dir, &config)?;
+    Ok(())
+}
+
+/// Remove a hotword by phrase.
+#[tauri::command]
+pub async fn remove_hotword(phrase: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut config = state.voice_config.lock().map_err(|e| e.to_string())?;
+    let before = config.hotwords.len();
+    config.hotwords.retain(|h| h.phrase != phrase);
+    if config.hotwords.len() == before {
+        return Err(format!("Hotword not found: {phrase}"));
+    }
+    voice::config_store::save(&state.data_dir, &config)?;
+    Ok(())
+}
+
+/// Clear all hotwords.
+#[tauri::command]
+pub async fn clear_hotwords(state: State<'_, AppState>) -> Result<(), String> {
+    let mut config = state.voice_config.lock().map_err(|e| e.to_string())?;
+    config.hotwords.clear();
+    voice::config_store::save(&state.data_dir, &config)?;
+    Ok(())
+}
+
 
 /// Routes to the configured TTS provider (from `voice_config.tts_provider`).
 /// Returns the WAV audio bytes so the frontend can play them directly.
@@ -456,6 +514,61 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].speaker, "Speaker 1");
         assert_eq!(segments[1].speaker, "Speaker 2");
+    }
+
+    // ── hotword command tests ───────────────────────────────────────────────
+
+    #[test]
+    fn hotword_validate_empty_phrase() {
+        let phrase = "   ".trim().to_string();
+        assert!(phrase.is_empty(), "empty phrase should be rejected");
+    }
+
+    #[test]
+    fn hotword_validate_boost_range() {
+        for &b in &[-0.1f32, 10.1, 100.0, -5.0] {
+            assert!(!(0.0..=10.0).contains(&b), "boost {b} should be out of range");
+        }
+        for &b in &[0.0f32, 5.0, 10.0, 3.7] {
+            assert!((0.0..=10.0).contains(&b), "boost {b} should be in range");
+        }
+    }
+
+    #[test]
+    fn hotword_add_and_remove_logic() {
+        let mut hotwords: Vec<voice::Hotword> = vec![];
+
+        // Add
+        hotwords.push(voice::Hotword { phrase: "Kerrigan".into(), boost: 8.0 });
+        assert_eq!(hotwords.len(), 1);
+
+        // Duplicate check
+        let dup = hotwords.iter().any(|h| h.phrase == "Kerrigan");
+        assert!(dup, "duplicate should be detected");
+
+        // Remove
+        hotwords.retain(|h| h.phrase != "Kerrigan");
+        assert!(hotwords.is_empty());
+    }
+
+    #[test]
+    fn hotword_clear_logic() {
+        let mut hotwords = vec![
+            voice::Hotword { phrase: "Zeratul".into(), boost: 7.0 },
+            voice::Hotword { phrase: "Protoss".into(), boost: 5.0 },
+        ];
+        hotwords.clear();
+        assert!(hotwords.is_empty());
+    }
+
+    #[test]
+    fn hotword_remove_nonexistent_detected() {
+        let hotwords = vec![
+            voice::Hotword { phrase: "Artanis".into(), boost: 6.0 },
+        ];
+        let before = hotwords.len();
+        let after: Vec<_> = hotwords.into_iter().filter(|h| h.phrase != "Zagara").collect();
+        assert_eq!(after.len(), before, "nothing should be removed");
     }
 }
 

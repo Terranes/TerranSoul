@@ -125,6 +125,15 @@ pub struct VoiceProviderInfo {
     pub requires_api_key: bool,
 }
 
+/// A user-defined hotword for ASR boosting.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Hotword {
+    /// The word or phrase to boost recognition of.
+    pub phrase: String,
+    /// Boost weight (0.0–10.0). Higher = more likely to be recognized.
+    pub boost: f32,
+}
+
 /// Persisted voice configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct VoiceConfig {
@@ -136,6 +145,9 @@ pub struct VoiceConfig {
     pub api_key: Option<String>,
     /// Optional endpoint URL for custom cloud providers.
     pub endpoint_url: Option<String>,
+    /// User-defined hotwords for ASR boosting.
+    #[serde(default)]
+    pub hotwords: Vec<Hotword>,
 }
 
 // ── Built-in Provider Catalogue ───────────────────────────────────────────────
@@ -250,10 +262,52 @@ mod tests {
             tts_provider: Some("edge-tts".into()),
             api_key: Some("sk-test".into()),
             endpoint_url: Some("http://localhost:8000".into()),
+            hotwords: vec![],
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: VoiceConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, cfg);
+    }
+
+    #[test]
+    fn hotword_serde_roundtrip() {
+        let hw = Hotword {
+            phrase: "Kerrigan".into(),
+            boost: 7.5,
+        };
+        let json = serde_json::to_string(&hw).unwrap();
+        let parsed: Hotword = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, hw);
+    }
+
+    #[test]
+    fn voice_config_with_hotwords_serde_roundtrip() {
+        let cfg = VoiceConfig {
+            asr_provider: Some("stub".into()),
+            tts_provider: None,
+            api_key: None,
+            endpoint_url: None,
+            hotwords: vec![
+                Hotword { phrase: "Zeratul".into(), boost: 8.0 },
+                Hotword { phrase: "Protoss".into(), boost: 5.0 },
+            ],
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: VoiceConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, cfg);
+    }
+
+    #[test]
+    fn voice_config_deserializes_without_hotwords_field() {
+        let json = r#"{"asr_provider":"stub","tts_provider":null,"api_key":null,"endpoint_url":null}"#;
+        let cfg: VoiceConfig = serde_json::from_str(json).unwrap();
+        assert!(cfg.hotwords.is_empty());
+    }
+
+    #[test]
+    fn hotword_default_voice_config_has_empty_hotwords() {
+        let cfg = VoiceConfig::default();
+        assert!(cfg.hotwords.is_empty());
     }
 
     #[test]
