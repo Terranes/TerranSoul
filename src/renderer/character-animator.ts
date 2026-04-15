@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { CharacterState } from '../types';
+import { GestureBlender } from './gesture-blender';
 
 /**
  * Smooth interpolation helper — lerps a value toward a target each frame.
@@ -162,6 +163,8 @@ export class CharacterAnimator {
   private externalMouthOh = 0;
   private useExternalLipSync = false;
 
+  private blender = new GestureBlender();
+
   private static randomBlinkInterval(): number {
     return CharacterAnimator.MIN_BLINK_INTERVAL +
       Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
@@ -197,6 +200,7 @@ export class CharacterAnimator {
 
   setState(state: CharacterState) {
     if (this.state === state) return;
+    this.blender.transitionTo(state, this.elapsed);
     this.state = state;
     this.elapsed = 0;
     this.mouthElapsed = 0;
@@ -362,7 +366,10 @@ export class CharacterAnimator {
         break;
     }
 
-    // Compose final bone targets: base pose + breathing + per-state oscillation
+    // Compose final bone targets: base pose + breathing + per-state oscillation + gesture blending
+    const alpha = this.blender.getTransitionAlpha(t);
+    const prevState = this.blender.getPreviousState();
+
     for (const boneName of ANIMATED_BONES) {
       const base = pose[boneName as keyof BonePose] ?? [0, 0, 0];
       let x = base[0];
@@ -384,6 +391,18 @@ export class CharacterAnimator {
       } else if (boneName === 'neck') {
         x += headOscX * 0.4; // neck follows head partially
         y += headOscY * 0.3;
+      }
+
+      const curOffset = this.blender.computeOffset(boneName, this.state, t);
+      if (prevState !== null && alpha < 1) {
+        const prevOffset = this.blender.computeOffset(boneName, prevState, t);
+        x += prevOffset[0] * (1 - alpha) + curOffset[0] * alpha;
+        y += prevOffset[1] * (1 - alpha) + curOffset[1] * alpha;
+        z += prevOffset[2] * (1 - alpha) + curOffset[2] * alpha;
+      } else {
+        x += curOffset[0];
+        y += curOffset[1];
+        z += curOffset[2];
       }
 
       this.boneTargets.set(boneName, [x, y, z]);
