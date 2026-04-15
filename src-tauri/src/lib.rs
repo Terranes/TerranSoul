@@ -66,7 +66,7 @@ use commands::{
         set_window_mode, toggle_window_mode,
     },
     streaming::send_message_stream,
-    settings::{get_app_settings, save_app_settings},
+    settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
     voice::{
         clear_voice_config, get_voice_config, list_asr_providers, list_tts_providers,
         set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
@@ -261,6 +261,8 @@ pub fn run() {
             transcribe_audio,
             get_app_settings,
             save_app_settings,
+            get_model_camera_positions,
+            save_model_camera_position,
         ])
         .setup(|app| {
             let data_dir = app

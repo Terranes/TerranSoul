@@ -24,6 +24,32 @@ pub async fn save_app_settings(
     Ok(())
 }
 
+/// Return per-model camera positions from the current settings.
+#[tauri::command]
+pub async fn get_model_camera_positions(
+    state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, crate::settings::ModelCameraPosition>, String> {
+    let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    Ok(settings.model_camera_positions.clone())
+}
+
+/// Save a camera position for a specific model and persist to disk.
+#[tauri::command]
+pub async fn save_model_camera_position(
+    model_id: String,
+    azimuth: f32,
+    distance: f32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    settings.model_camera_positions.insert(
+        model_id,
+        crate::settings::ModelCameraPosition { azimuth, distance },
+    );
+    config_store::save(&state.data_dir, &settings)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,6 +74,7 @@ mod tests {
             bgm_enabled: true,
             bgm_volume: 0.25,
             bgm_track_id: "ambient-space".into(),
+            model_camera_positions: std::collections::HashMap::new(),
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -73,9 +100,46 @@ mod tests {
             bgm_enabled: false,
             bgm_volume: 0.15,
             bgm_track_id: "ambient-calm".into(),
+            model_camera_positions: std::collections::HashMap::new(),
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());
         assert_eq!(loaded.selected_model_id, "genshin");
+    }
+
+    #[test]
+    fn save_model_camera_position_updates_in_memory() {
+        let state = crate::AppState::for_test();
+        {
+            let mut settings = state.app_settings.lock().unwrap();
+            settings.model_camera_positions.insert(
+                "annabelle".into(),
+                crate::settings::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+            );
+        }
+        let settings = state.app_settings.lock().unwrap();
+        let pos = settings.model_camera_positions.get("annabelle").unwrap();
+        assert!((pos.azimuth - 0.5).abs() < 0.001);
+        assert!((pos.distance - 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn model_camera_positions_are_independent() {
+        let state = crate::AppState::for_test();
+        {
+            let mut settings = state.app_settings.lock().unwrap();
+            settings.model_camera_positions.insert(
+                "annabelle".into(),
+                crate::settings::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+            );
+            settings.model_camera_positions.insert(
+                "m58".into(),
+                crate::settings::ModelCameraPosition { azimuth: 1.2, distance: 2.0 },
+            );
+        }
+        let settings = state.app_settings.lock().unwrap();
+        assert_eq!(settings.model_camera_positions.len(), 2);
+        assert!((settings.model_camera_positions["annabelle"].azimuth - 0.5).abs() < 0.001);
+        assert!((settings.model_camera_positions["m58"].azimuth - 1.2).abs() < 0.001);
     }
 }

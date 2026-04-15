@@ -56,20 +56,8 @@ in plaintext `.vrm` files. This creates **three exploit vectors**:
 
 ### Medium Priority
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 094 | **Model Position Saving** — Persist camera orbit position, zoom, rotation per model. Resume user's preferred viewing angle on app restart. Store in Tauri settings alongside model selection. | `not-started` |
-| 095 | **Procedural Gesture Blending (MANN-inspired)** — Learn from AI4Animation MANN approach: instead of hardcoded JSON keyframes, use lightweight ML or procedural blending to generate smooth transitions between emotion states. Train on existing gesture data. Replace stiff cross-fades with natural motion. | `not-started` |
-| 096 | **Speaker Diarization** — Detect multiple speakers in room (VibeVoice-ASR-7B pattern). Tag "who said what" in conversation log. Useful for group scenarios or streaming. | `not-started` |
-| 097 | **Hotword-Boosted ASR** — Let users define domain-specific keywords (character names, game terms) that ASR should recognize better. VibeVoice supports hotword injection. | `not-started` |
-| 098 | **Presence / Greeting System** — Auto-greeting when user appears (timer-based or face detection), auto-goodbye when away. Track "away duration" for different responses (aituber-kit pattern). | `not-started` |
+📦 Promoted to `rules/milestones.md` — chunks 094–098.
 
 ### Lower Priority
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 110 | **Live2D Support** — Add Live2D rendering alongside VRM using `@cubism/cubism4-runtime-js` (aituber-kit pattern). Useful for users who prefer 2D or have only 2D models. Renderer abstraction layer. | `not-started` |
-| 111 | **Screen Recording / Vision** — Extend beyond static context: real-time screen activity analysis (Open-LLM-VTuber pattern). Use Tauri window capture API. Character can comment on what user is doing. | `not-started` |
-| 112 | **Docker Containerization** — Run TerranSoul in isolated containers for CI/testing and server deployment (Open-LLM-VTuber pattern). CPU/GPU variants. | `not-started` |
-| 113 | **Chat Log Export** — JSON export with timestamps, sentiment tags, emotion metadata. Build on existing conversation persistence. | `not-started` |
-| 114 | **Language Translation Layer** — Accept input in one language, TTS output in another. Use LLM for translation. Store original + translated text. | `not-started` |
+📦 Promoted to `rules/milestones.md` — chunks 115–119 (renumbered from 110–114 to avoid conflict with Chunk 110 BGM).

@@ -73,6 +73,7 @@ mod tests {
             bgm_enabled: true,
             bgm_volume: 0.3,
             bgm_track_id: "ambient-night".into(),
+            model_camera_positions: std::collections::HashMap::new(),
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -107,6 +108,7 @@ mod tests {
             bgm_enabled: false,
             bgm_volume: 0.15,
             bgm_track_id: "ambient-calm".into(),
+            model_camera_positions: std::collections::HashMap::new(),
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -127,6 +129,7 @@ mod tests {
             bgm_enabled: false,
             bgm_volume: 0.15,
             bgm_track_id: "ambient-calm".into(),
+            model_camera_positions: std::collections::HashMap::new(),
         };
         save(dir.path(), &s).unwrap();
 
@@ -144,5 +147,32 @@ mod tests {
         let s = AppSettings::default();
         save(&nested, &s).unwrap();
         assert!(nested.join("app_settings.json").exists());
+    }
+
+    #[test]
+    fn save_and_load_model_camera_positions() {
+        let dir = tempdir().unwrap();
+        let mut positions = std::collections::HashMap::new();
+        positions.insert(
+            "annabelle".to_string(),
+            super::super::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+        );
+        positions.insert(
+            "m58".to_string(),
+            super::super::ModelCameraPosition { azimuth: 1.2, distance: 2.5 },
+        );
+        let s = AppSettings {
+            model_camera_positions: positions,
+            ..AppSettings::default()
+        };
+        save(dir.path(), &s).unwrap();
+        let loaded = load(dir.path());
+        assert_eq!(loaded.model_camera_positions.len(), 2);
+        let anna = loaded.model_camera_positions.get("annabelle").unwrap();
+        assert!((anna.azimuth - 0.5).abs() < 0.001);
+        assert!((anna.distance - 3.0).abs() < 0.001);
+        let m58 = loaded.model_camera_positions.get("m58").unwrap();
+        assert!((m58.azimuth - 1.2).abs() < 0.001);
+        assert!((m58.distance - 2.5).abs() < 0.001);
     }
 }
