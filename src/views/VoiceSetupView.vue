@@ -41,6 +41,17 @@
           <small>Best quality · Requires API key</small>
         </div>
         <div
+          :class="['vs-tier', { selected: selectedMode === 'groq' }]"
+          @click="selectedMode = 'groq'"
+        >
+          <div class="vs-tier-header">
+            <strong>⚡ Groq (fast)</strong>
+            <span class="vs-badge-rec">⭐ Free tier</span>
+          </div>
+          <p>Groq Whisper for ultra-fast speech recognition. OpenAI-compatible, generous free tier.</p>
+          <small>Very fast ASR · Requires Groq API key</small>
+        </div>
+        <div
           :class="['vs-tier', { selected: selectedMode === 'text-only' }]"
           @click="selectedMode = 'text-only'"
         >
@@ -118,6 +129,41 @@
       </div>
     </div>
 
+    <!-- ── Step 1C: Groq ── -->
+    <div v-else-if="step === 1 && selectedMode === 'groq'" class="vs-card">
+      <h2>⚡ Groq Voice</h2>
+      <p class="vs-desc">
+        Groq provides ultra-fast Whisper transcription with a generous free tier.
+        Requires a Groq API key (free at console.groq.com).
+      </p>
+      <div class="vs-form">
+        <label for="groq-api-key-input">Groq API Key:</label>
+        <input
+          id="groq-api-key-input"
+          v-model="groqApiKey"
+          type="password"
+          placeholder="gsk_…"
+          class="vs-input"
+        />
+        <div class="vs-checkboxes">
+          <label class="vs-checkbox">
+            <input v-model="groqEnableTts" type="checkbox" />
+            Also enable TTS (OpenAI TTS) — voice output
+          </label>
+        </div>
+      </div>
+      <div class="vs-nav">
+        <button class="btn-secondary" @click="step = 0">← Back</button>
+        <button
+          class="btn-primary"
+          :disabled="!groqApiKey"
+          @click="activateGroq"
+        >
+          Activate →
+        </button>
+      </div>
+    </div>
+
     <!-- ── Done ── -->
     <div v-else-if="step === 99" class="vs-card vs-done">
       <div class="vs-done-icon">🎉</div>
@@ -129,6 +175,9 @@
       <p v-else-if="selectedMode === 'cloud'">
         Using <strong>OpenAI</strong> cloud APIs for
         {{ cloudEnableAsr && cloudEnableTts ? 'ASR + TTS' : cloudEnableAsr ? 'ASR' : 'TTS' }}.
+      </p>
+      <p v-else-if="selectedMode === 'groq'">
+        Using <strong>Groq Whisper</strong> for fast speech recognition{{ groqEnableTts ? ' + OpenAI TTS for voice output' : '' }}.
       </p>
       <p v-else>
         Voice is <strong>disabled</strong>. You can enable it anytime from settings.
@@ -146,7 +195,7 @@ const emit = defineEmits<{ (e: 'done'): void }>();
 
 const voice = useVoiceStore();
 const step = ref(0);
-const selectedMode = ref<'browser' | 'cloud' | 'text-only' | null>(null);
+const selectedMode = ref<'browser' | 'cloud' | 'groq' | 'text-only' | null>(null);
 
 const stepLabels = ['Choose', 'Configure', 'Done'];
 
@@ -154,6 +203,10 @@ const stepLabels = ['Choose', 'Configure', 'Done'];
 const cloudApiKey = ref('');
 const cloudEnableAsr = ref(true);
 const cloudEnableTts = ref(true);
+
+// Groq config
+const groqApiKey = ref('');
+const groqEnableTts = ref(false);
 
 function goToConfig() {
   if (selectedMode.value === 'text-only') {
@@ -173,6 +226,13 @@ async function activateCloud() {
   await voice.setAsrProvider(cloudEnableAsr.value ? 'whisper-api' : null);
   await voice.setTtsProvider(cloudEnableTts.value ? 'openai-tts' : null);
   await voice.setApiKey(cloudApiKey.value);
+  step.value = 99;
+}
+
+async function activateGroq() {
+  await voice.setAsrProvider('groq-whisper');
+  await voice.setTtsProvider(groqEnableTts.value ? 'openai-tts' : null);
+  await voice.setApiKey(groqApiKey.value);
   step.value = 99;
 }
 

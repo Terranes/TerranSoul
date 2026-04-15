@@ -6,6 +6,208 @@
 
 ---
 
+## Chunk 110 — Background Music
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Add ambient background music to the 3D character viewport. Procedurally generated audio tracks
+using the Web Audio API — no external audio files needed. Users can toggle BGM on/off, choose
+from 3 ambient presets, and adjust volume. Settings are persisted between sessions.
+
+### Architecture
+- **`useBgmPlayer` composable** — procedural ambient audio via `OscillatorNode`, `BiquadFilterNode`,
+  and noise buffers. Three preset tracks: Calm Ambience (C major pad), Night Breeze (A minor pad),
+  Cosmic Drift (deep F drone + high shimmer). Master gain with `linearRampToValueAtTime` for 1.5s
+  fade-in/fade-out transitions.
+- **`AppSettings` schema v2** — added `bgm_enabled` (bool), `bgm_volume` (f32, 0.0–1.0),
+  `bgm_track_id` (string). Rust `#[serde(default)]` ensures backward compatibility.
+- **Settings persistence** — `saveBgmState()` convenience method on `useSettingsStore`.
+  BGM state restored from settings on `CharacterViewport` mount.
+- **UI controls** — toggle switch, track selector dropdown, volume slider. All in the existing
+  settings dropdown in `CharacterViewport.vue`.
+
+### Files Created
+- `src/composables/useBgmPlayer.ts` — composable (225 lines)
+- `src/composables/useBgmPlayer.test.ts` — 10 Vitest tests (Web Audio mock)
+
+### Files Modified
+- `src-tauri/src/settings/mod.rs` — `AppSettings` v2 with BGM fields + 2 new Rust tests
+- `src-tauri/src/settings/config_store.rs` — no changes (serde defaults handle migration)
+- `src/stores/settings.ts` — `AppSettings` interface + `saveBgmState()` + default schema v2
+- `src/stores/settings.test.ts` — updated defaults test + new `saveBgmState` test
+- `src/components/CharacterViewport.vue` — BGM toggle/selector/slider UI + restore on mount + cleanup on unmount
+
+### Test Counts
+- **Vitest tests added:** 11 (10 BGM + 1 saveBgmState)
+- **Rust tests added:** 2 (default_bgm_settings, serde_fills_bgm_defaults_when_missing)
+- **Total Vitest:** 417 (34 files, all pass)
+- **Build:** `npm run build` ✅ clean
+
+---
+
+## Chunk 109 — Idle Action Sequences
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Make the character feel alive when the user is away. After a period of silence the character
+initiates conversation with a natural greeting, cycling through variants so it never feels robotic.
+
+### Architecture
+- **`useIdleManager` composable** — timeout-based idle detection. Uses `setTimeout` chain (not `setInterval`)
+  to avoid drift. Exposes `start`, `stop`, `resetIdle` lifecycle methods and reactive `isIdle`.
+- **`IDLE_TIMEOUT_MS = 45_000`** — first greeting fires 45 seconds after last user activity.
+- **`IDLE_REPEAT_MS = 90_000`** — repeat gap between subsequent greetings.
+- **5 greeting variants** in `IDLE_GREETINGS`, shuffled and cycled in round-robin before repeating.
+- **`isBlocked` guard** — callback checked before firing; blocked when `conversationStore.isThinking`
+  or `conversationStore.isStreaming` to avoid interrupting an active AI response.
+- **ChatView.vue wiring** — `idle.start()` on `onMounted`, `idle.stop()` on `onUnmounted`,
+  `idle.resetIdle()` at the top of `handleSend`.
+
+### Files Created
+- `src/composables/useIdleManager.ts` — composable (95 lines)
+- `src/composables/useIdleManager.test.ts` — 10 Vitest tests (fake timers)
+
+### Files Modified
+- `src/views/ChatView.vue` — import + instantiate `useIdleManager`; wire start/stop/reset
+
+### Test Counts
+- **Vitest tests added:** 10 (initial state, timeout, greeting content, repeat, reset, stop, block, round-robin)
+- **Total Vitest:** 406 (33 files, all pass)
+- **Build:** `npm run build` ✅ clean
+
+---
+
+
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Persist user preferences between sessions so TerranSoul "remembers" the character model and
+camera orientation. Support `.env` override for dev/CI without touching user config files.
+
+### Architecture
+- **Rust: `settings` module** — `AppSettings` struct (version, selected_model_id, camera_azimuth,
+  camera_distance). JSON persistence via `settings/config_store.rs` following voice/brain patterns.
+  Schema validation: stale/corrupt files silently replaced with defaults.
+- **Rust: `.env` override** — `TERRANSOUL_MODEL_ID` env var overrides `selected_model_id` at load time.
+  Non-secrets only; API keys remain user-configured.
+- **Rust: Tauri commands** — `get_app_settings`, `save_app_settings` in `commands/settings.rs`.
+- **AppState** — `app_settings: Mutex<settings::AppSettings>` field.
+- **`useSettingsStore`** — Pinia store with `loadSettings`, `saveSettings`, `saveModelId`,
+  `saveCameraState` convenience helpers. Falls back silently when Tauri unavailable.
+- **Model persistence** — `characterStore.selectModel()` calls `settingsStore.saveModelId()`.
+- **Camera persistence** — `scene.ts` exports `onCameraChange(cb)` callback (fired on OrbitControls
+  `end` event with spherical azimuth + radius). `CharacterViewport.vue` registers callback → saves.
+- **Camera restore** — `CharacterViewport.vue` restores camera position from settings on mount.
+- **App start** — `ChatView.vue` `onMounted` loads settings and selects persisted model if different
+  from default.
+
+### Files Created
+- `src-tauri/src/settings/mod.rs` — AppSettings struct + env override + schema validation (120 lines)
+- `src-tauri/src/settings/config_store.rs` — JSON load/save + 6 tests (115 lines)
+- `src-tauri/src/commands/settings.rs` — `get_app_settings` + `save_app_settings` + 3 tests
+- `src/stores/settings.ts` — `useSettingsStore` Pinia store
+- `src/stores/settings.test.ts` — 9 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/mod.rs` — added `settings` module
+- `src-tauri/src/lib.rs` — settings module, AppState field, commands registered
+- `src/stores/character.ts` — `selectModel` persists via `settingsStore.saveModelId`
+- `src/components/CharacterViewport.vue` — `onCameraChange` wired, camera restored from settings
+- `src/views/ChatView.vue` — load settings + restore persisted model on mount
+- `src/renderer/scene.ts` — `onCameraChange(cb)` API added to `SceneContext`
+
+### Test Counts
+- **Rust tests added:** 11 (schema validation × 6 in mod.rs, config_store × 5, command tests × 3)
+- **Vitest tests added:** 9 (useSettingsStore: defaults, load, save, patch, helpers, error resilience)
+- **Total Vitest:** 396 (32 files, all pass)
+- **Build:** `npm run build` ✅ clean
+
+---
+
+## Chunk 107 — Multi-ASR Provider Abstraction
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Abstract speech recognition into a provider-agnostic factory so users can choose between
+browser Web Speech API (zero setup), OpenAI Whisper (best quality), and Groq Whisper (fastest, free tier).
+
+### Architecture
+- **Rust: `groq-whisper`** added to `asr_providers()` catalogue in `voice/mod.rs`.
+- **Rust: `float32_to_pcm16`** helper in `commands/voice.rs` converts VAD float32 samples to int16 PCM.
+- **Rust: `transcribe_audio` command** — accepts `Vec<f32>` samples, converts to PCM-16, routes to
+  stub / whisper-api / groq-whisper (OpenAI-compatible endpoint). `web-speech` returns helpful error.
+- **`useAsrManager` composable** — provider factory: `web-speech` uses browser `SpeechRecognition`;
+  all Rust-backed providers go through VAD → `transcribe_audio` IPC. `isListening`, `error` reactive state.
+- **Mic button in ChatView.vue** — shown only when `voice.config.asr_provider` is set. Pulsing red
+  animation while listening. `toggleMic()` wired to `asr.startListening/stopListening`.
+- **Groq mode in VoiceSetupView.vue** — new tier card ("⚡ Groq (fast)"), dedicated config step
+  with Groq API key input, done screen updated.
+- **Bug fix:** `useTtsPlayback.ts` `Blob([bytes.buffer])` for correct BlobPart type.
+
+### Files Created
+- `src/composables/useAsrManager.ts` — provider factory composable (185 lines)
+- `src/composables/useAsrManager.test.ts` — 13 Vitest tests
+
+### Files Modified
+- `src-tauri/src/voice/mod.rs` — added `groq-whisper` provider
+- `src-tauri/src/commands/voice.rs` — `float32_to_pcm16`, `transcribe_audio` command, 8 Rust tests
+- `src-tauri/src/lib.rs` — registered `transcribe_audio`
+- `src/views/ChatView.vue` — `useAsrManager` import, `asr` instance, `toggleMic`, mic button CSS
+- `src/views/VoiceSetupView.vue` — Groq tier + config step + groq activate function
+- `src/composables/useTtsPlayback.ts` — `Blob([bytes.buffer])` fix
+- `src/composables/useTtsPlayback.test.ts` — removed unused `afterEach` import
+
+### Test Counts
+- **Rust tests added:** 8 (float32_to_pcm16 × 2, transcribe_audio routing × 6)
+- **Vitest tests added:** 13 (useAsrManager: routing × 3, transcript × 2, VAD+IPC × 5, stop/idle × 3)
+- **Total Vitest:** 387 → 396 after chunk 108
+
+---
+
+
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Replace the stub/batched TTS architecture with a real streaming pipeline. Voice synthesis begins
+~200ms after the first LLM sentence completes — a major UX win over waiting for the full response.
+Learned from VibeVoice realtime streaming pattern.
+
+### Architecture
+- **Rust: `synthesize_tts` Tauri command** — routes to configured TTS provider (edge-tts, stub).
+  Takes `text: String`, returns `Vec<u8>` (WAV bytes). Empty text guard returns error.
+- **`useTtsPlayback` composable** — sentence-boundary detection (`SENTENCE_END_RE`), synthesis
+  queue (Promise chain), sequential HTMLAudioElement playback, stop/flush lifecycle API.
+  `MIN_SENTENCE_CHARS = 4` filters stray punctuation. Blob URL cleanup on stop.
+- **ChatView.vue wired**: `tts.stop()` on new message send, `tts.feedChunk()` per llm-chunk
+  event, `tts.flush()` on stream done. Voice store initialized on mount. `tts.stop()` on unmount.
+
+### Files Created
+- `src/composables/useTtsPlayback.ts` — streaming TTS composable (160 lines)
+- `src/composables/useTtsPlayback.test.ts` — 13 Vitest tests
+
+### Files Modified
+- `src-tauri/src/commands/voice.rs` — added `synthesize_tts` command + 4 Rust tests
+- `src-tauri/src/lib.rs` — registered `synthesize_tts` in invoke handler
+- `src/views/ChatView.vue` — import `useTtsPlayback` + `useVoiceStore`; wire tts.feedChunk/flush/stop; voice.initialise() on mount; tts.stop() on unmount
+
+### Test Counts
+- **Rust tests added:** 4 (synthesize_tts empty text guard, stub WAV bytes, no provider error, unknown provider error)
+- **Vitest tests added:** 13 (sentence detection × 6, flush × 3, stop × 2, error handling × 1, isSpeaking × 1)
+- **Total Vitest:** 374 (35 files, all pass)
+- **Build:** `npx vite build` ✅ clean
+
+---
+
 ## Chunk 001 — Project Scaffold
 
 **Date:** 2026-04-10

@@ -104,6 +104,20 @@
             @click="showDrawer = !showDrawer"
             aria-label="Toggle chat history"
           >💬</button>
+          <button
+            v-if="voice.config.asr_provider"
+            class="mic-btn"
+            :class="{ listening: asr.isListening.value }"
+            :aria-label="asr.isListening.value ? 'Stop listening' : 'Start voice input'"
+            @click="toggleMic"
+          >
+            <svg v-if="!asr.isListening.value" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
+            </svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+          </button>
           <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" @focus="onInputFocused" @blur="onInputBlurred" />
         </div>
       </div>
@@ -117,7 +131,12 @@ import { useConversationStore, detectSentiment } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
+import { useVoiceStore } from '../stores/voice';
+import { useSettingsStore } from '../stores/settings';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
+import { useTtsPlayback } from '../composables/useTtsPlayback';
+import { useAsrManager } from '../composables/useAsrManager';
+import { useIdleManager } from '../composables/useIdleManager';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
@@ -127,6 +146,16 @@ const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const streaming = useStreamingStore();
+const voice = useVoiceStore();
+const settingsStore = useSettingsStore();
+const tts = useTtsPlayback();
+const asr = useAsrManager({
+  onTranscript: (text: string) => handleSend(text),
+});
+const idle = useIdleManager({
+  onSpeak: (text: string) => handleSend(text),
+  isBlocked: () => conversationStore.isThinking || conversationStore.isStreaming,
+});
 const showDrawer = ref(false);
 const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
@@ -211,7 +240,21 @@ function sentimentToState(sentiment?: string): CharacterState {
   }
 }
 
+/** Toggle the ASR microphone on/off. */
+async function toggleMic() {
+  if (asr.isListening.value) {
+    asr.stopListening();
+  } else {
+    await asr.startListening();
+  }
+}
+
 async function handleSend(message: string) {
+  // Stop any ongoing TTS playback before sending a new message.
+  tts.stop();
+  // User is active — reset the idle timer.
+  idle.resetIdle();
+
   // Detect emotion from user input immediately for responsive UI feedback.
   // This is stored so the streaming watcher can show the correct emotion
   // instead of generic 'talking' while the API call is in progress.
@@ -243,6 +286,15 @@ async function setupTauriEventListener() {
     const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
+
+      // Feed chunks into streaming TTS when a TTS provider is configured.
+      if (voice.config.tts_provider) {
+        if (event.payload.done) {
+          tts.flush();
+        } else if (event.payload.text) {
+          tts.feedChunk(event.payload.text);
+        }
+      }
     });
     unlistenLlmChunk = unlisten;
   } catch {
@@ -290,6 +342,27 @@ onMounted(async () => {
   } catch {
     // No Tauri backend
   }
+
+  try {
+    await voice.initialise();
+  } catch {
+    // No Tauri backend — voice stays in text-only mode
+  }
+
+  // Start idle detection — character greets user after prolonged silence.
+  idle.start();
+
+  // Load persisted settings (model selection, camera state).
+  try {
+    await settingsStore.loadSettings();
+    const savedModelId = settingsStore.settings.selected_model_id;
+    const defaultId = characterStore.selectedModelId;
+    if (savedModelId && savedModelId !== defaultId) {
+      await characterStore.selectModel(savedModelId);
+    }
+  } catch {
+    // Settings unavailable — proceed with defaults
+  }
 });
 
 onUnmounted(() => {
@@ -298,6 +371,8 @@ onUnmounted(() => {
     unlistenLlmChunk = null;
   }
   if (subtitleTimer) clearTimeout(subtitleTimer);
+  tts.stop();
+  idle.stop();
 });
 </script>
 
@@ -506,6 +581,36 @@ onUnmounted(() => {
 .chat-drawer-toggle.active {
   background: rgba(124, 111, 255, 0.70);
   border-color: rgba(124, 111, 255, 0.5);
+}
+
+/* ── Mic button — voice input toggle ── */
+.mic-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 32, 0.72);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--ts-transition-normal), border-color var(--ts-transition-normal), box-shadow var(--ts-transition-fast);
+}
+.mic-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.mic-btn.listening {
+  background: rgba(230, 60, 80, 0.75);
+  border-color: rgba(230, 60, 80, 0.5);
+  box-shadow: 0 0 10px rgba(230, 60, 80, 0.4);
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(230, 60, 80, 0.4); }
+  50% { box-shadow: 0 0 18px rgba(230, 60, 80, 0.7); }
 }
 
 /* ── Fade transitions ── */

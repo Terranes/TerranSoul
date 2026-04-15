@@ -118,10 +118,42 @@ HLC timestamps with site tiebreaker. 37 Rust tests, 8 Vitest tests.
 Command envelope, permission management (Allow/Deny/Ask), router with pending approval queue.
 5 Tauri commands, 31 Rust tests, 10 Vitest tests.
 
-### Next Chunk
+## Phase 9 — Learned Features (From Reference Projects) — High Priority
 
-Chunk 085 (UI/UX Overhaul) ✅ Done — see `rules/completion-log.md`.
-Remaining not-started work is in `rules/backlog.md`.
+> **Source repos:** Open-LLM-VTuber, AI4Animation-js, VibeVoice, aituber-kit
+
+✅ Chunk 106 — Streaming TTS — see `rules/completion-log.md`
+
+`synthesize_tts` Tauri command, `useTtsPlayback` composable (sentence queuing, sequential playback),
+wired into ChatView.vue. Voice starts ~200ms after first sentence. 13 Vitest tests + 4 Rust tests.
+
+✅ Chunk 107 — Multi-ASR Provider Abstraction — see `rules/completion-log.md`
+
+`groq-whisper` provider added. `transcribe_audio` Tauri command (float32 PCM → Whisper/Groq/stub).
+`useAsrManager` composable (web-speech + Tauri IPC paths). Mic button in ChatView. Groq mode in VoiceSetupView.
+13 Vitest tests + 8 Rust tests.
+
+✅ Chunk 108 — Settings Persistence + Env Overrides — see `rules/completion-log.md`
+
+`AppSettings` struct (JSON + schema validation + `TERRANSOUL_MODEL_ID` env override). `get_app_settings` /
+`save_app_settings` Tauri commands. `useSettingsStore` Pinia store. Model selection + camera azimuth/distance
+persisted. CharacterViewport restores camera on mount. ChatView loads persisted model on mount.
+9 Vitest tests + 11 Rust unit tests.
+
+✅ Chunk 109 — Idle Action Sequences — see `rules/completion-log.md`
+
+`useIdleManager` composable: 45s idle timeout, shuffled greeting pool (5 variants, round-robin),
+repeat every 90s. Blocked when character is thinking/streaming. Wired into ChatView.vue.
+10 Vitest tests.
+
+✅ Chunk 110 — Background Music — see `rules/completion-log.md`
+
+`useBgmPlayer` composable: Web Audio API procedural ambient tracks (3 presets: Calm Ambience,
+Night Breeze, Cosmic Drift). Fade-in/fade-out transitions. Toggle, volume slider, track selector
+in CharacterViewport settings dropdown. BGM state persisted via `AppSettings` (bgm_enabled,
+bgm_volume, bgm_track_id). Schema version bumped to 2. 10 Vitest tests.
+
+---
 
 ---
 
@@ -241,7 +273,7 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 
 ## Phase 7 — VRM Model Security (Anti-Exploit & Asset Protection)
 
-📦 Moved to `rules/backlog.md` — chunks 070–075 (all `not-started`).
+📦 Moved back to `rules/backlog.md` — chunks 100–105 (renumbered). Do not start until user says so.
 
 ---
 

@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { CharacterState, VrmMetadata } from '../types';
 import { DEFAULT_MODELS, DEFAULT_MODEL_ID, type DefaultModel } from '../config/default-models';
+import { useSettingsStore } from './settings';
 
 export const useCharacterStore = defineStore('character', () => {
   const state = ref<CharacterState>('idle');
@@ -44,6 +45,13 @@ export const useCharacterStore = defineStore('character', () => {
     if (!model) return;
     selectedModelId.value = modelId;
     await loadVrm(model.path);
+    // Persist the model selection across sessions
+    try {
+      const settingsStore = useSettingsStore();
+      await settingsStore.saveModelId(modelId);
+    } catch {
+      // Settings store unavailable — not critical
+    }
   }
 
   async function loadDefaultModel() {

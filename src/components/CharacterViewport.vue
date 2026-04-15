@@ -70,6 +70,43 @@
               @change="handleBackgroundImport"
             />
           </div>
+          <!-- Background music -->
+          <div class="dropdown-section">
+            <label class="dropdown-label">Music</label>
+            <div class="bgm-toggle-row">
+              <label class="bgm-switch">
+                <input
+                  type="checkbox"
+                  :checked="bgmEnabled"
+                  @change="handleBgmToggle"
+                />
+                <span class="bgm-slider" />
+              </label>
+              <span class="bgm-status">{{ bgmEnabled ? 'On' : 'Off' }}</span>
+            </div>
+            <select
+              v-if="bgmEnabled"
+              class="model-selector"
+              :value="bgmTrackId"
+              @change="handleBgmTrackChange"
+            >
+              <option v-for="track in bgmTracks" :key="track.id" :value="track.id">
+                {{ track.name }}
+              </option>
+            </select>
+            <div v-if="bgmEnabled" class="bgm-volume-row">
+              <span class="bgm-vol-icon">🔈</span>
+              <input
+                type="range"
+                class="bgm-volume-slider"
+                min="0"
+                max="100"
+                :value="Math.round(bgmVolume * 100)"
+                @input="handleBgmVolumeChange"
+              />
+              <span class="bgm-vol-icon">🔊</span>
+            </div>
+          </div>
         </div>
       </Transition>
     </div>
@@ -91,14 +128,17 @@ import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
 import { useBackgroundStore } from '../stores/background';
+import { useSettingsStore } from '../stores/settings';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
+import { useBgmPlayer, BGM_TRACKS } from '../composables/useBgmPlayer';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
+const settingsStore = useSettingsStore();
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 const backgroundInputRef = ref<HTMLInputElement | null>(null);
@@ -106,6 +146,53 @@ const vrmInputRef = ref<HTMLInputElement | null>(null);
 const localVrmObjectUrl = ref<string | null>(null);
 const settingsOpen = ref(false);
 const settingsRef = ref<HTMLElement | null>(null);
+
+// ── BGM player ────────────────────────────────────────────────────────────────
+const bgm = useBgmPlayer();
+const bgmTracks = BGM_TRACKS;
+const bgmEnabled = ref(false);
+const bgmVolume = ref(0.15);
+const bgmTrackId = ref('ambient-calm');
+
+function handleBgmToggle(e: Event) {
+  const checked = (e.target as HTMLInputElement).checked;
+  bgmEnabled.value = checked;
+  if (checked) {
+    bgm.setVolume(bgmVolume.value);
+    bgm.play(bgmTrackId.value);
+  } else {
+    bgm.stop();
+  }
+  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+}
+
+function handleBgmTrackChange(e: Event) {
+  const id = (e.target as HTMLSelectElement).value;
+  bgmTrackId.value = id;
+  if (bgmEnabled.value) {
+    bgm.play(id);
+  }
+  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+}
+
+function handleBgmVolumeChange(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10) / 100;
+  bgmVolume.value = v;
+  bgm.setVolume(v);
+  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+}
+
+/** Restore BGM state from persisted settings. */
+function restoreBgmFromSettings() {
+  const s = settingsStore.settings;
+  bgmEnabled.value = s.bgm_enabled;
+  bgmVolume.value = s.bgm_volume;
+  bgmTrackId.value = s.bgm_track_id;
+  if (bgmEnabled.value) {
+    bgm.setVolume(bgmVolume.value);
+    bgm.play(bgmTrackId.value);
+  }
+}
 
 const characterName = computed(() => {
   return characterStore.vrmMetadata?.title ?? 'TerranSoul';
@@ -193,8 +280,27 @@ onMounted(async () => {
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
 
+  // Persist camera state after user finishes orbiting or zooming.
+  ctx.onCameraChange((azimuth, distance) => {
+    settingsStore.saveCameraState(azimuth, distance);
+  });
+
+  // Restore persisted camera state (azimuth + distance).
+  const savedAzimuth = settingsStore.settings.camera_azimuth;
+  const savedDistance = settingsStore.settings.camera_distance;
+  if (savedDistance > 0) {
+    // Set camera position from saved spherical coordinates (elevation = 0 = equatorial)
+    const x = savedDistance * Math.sin(savedAzimuth);
+    const z = savedDistance * Math.cos(savedAzimuth);
+    ctx.camera.position.set(x, ctx.camera.position.y, z);
+    ctx.controls.update();
+  }
+
   // Auto-load the default VRM model (loading overlay shows until ready)
   characterStore.loadDefaultModel();
+
+  // Restore BGM state (track, volume, enabled) from persisted settings.
+  restoreBgmFromSettings();
 
   function loop() {
     animFrameId = requestAnimationFrame(loop);
@@ -221,6 +327,7 @@ onMounted(async () => {
 onUnmounted(() => {
   cancelAnimationFrame(animFrameId);
   disposeScene?.();
+  bgm.stop();
   window.removeEventListener('keydown', handleKeyDown);
   document.removeEventListener('click', handleClickOutside);
   if (localVrmObjectUrl.value) {
@@ -559,5 +666,99 @@ watch(
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* ── BGM Controls ── */
+.bgm-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bgm-status {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.bgm-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.bgm-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.bgm-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  transition: background 0.3s;
+}
+
+.bgm-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s;
+}
+
+.bgm-switch input:checked + .bgm-slider {
+  background: rgba(108, 99, 255, 0.8);
+}
+
+.bgm-switch input:checked + .bgm-slider::before {
+  transform: translateX(16px);
+}
+
+.bgm-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.bgm-vol-icon {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.bgm-volume-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.bgm-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: rgba(108, 99, 255, 0.9);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.bgm-volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: rgba(108, 99, 255, 0.9);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
 }
 </style>
