@@ -104,7 +104,7 @@
             @click="showDrawer = !showDrawer"
             aria-label="Toggle chat history"
           >💬</button>
-          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" />
+          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" @focus="onInputFocused" @blur="onInputBlurred" />
         </div>
       </div>
     </div>
@@ -133,16 +133,10 @@ const selectedBrain = ref('');
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 
-/** Ref to CharacterViewport — used to call zoomToFace() when keyboard opens. */
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
 // ── Keyboard detection ────────────────────────────────────────────
-const { keyboardHeight, keyboardOpen } = useKeyboardDetector();
-
-watch(keyboardOpen, (open) => {
-  // Tell the 3D scene to zoom to face (or revert) when keyboard state changes
-  viewportRef.value?.zoomToFace(open);
-});
+const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
 
 // ── Subtitle system ──────────────────────────────────────────────
 const MAX_SUBTITLE_LENGTH = 150;
@@ -475,10 +469,10 @@ onUnmounted(() => {
 
 /* Input footer — always visible at the very bottom */
 .input-footer {
-  background: rgba(11, 17, 32, 0.88);
-  backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
-  padding: 6px 10px 8px;
+  background: rgba(11, 17, 32, 0.75);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 12px 10px;
 }
 .input-row {
   display: flex;
@@ -566,7 +560,7 @@ onUnmounted(() => {
   /* Shift brain status pill left to avoid collision with AI state pill */
   .brain-status-pill { left: 40%; font-size: 0.62rem; padding: 3px 10px; }
   /* Compact the input footer */
-  .input-footer { padding: 4px 6px 6px; }
-  .chat-drawer-toggle { width: 36px; height: 36px; font-size: 1rem; }
+  .input-footer { padding: 6px 8px 8px; }
+  .chat-drawer-toggle { width: 34px; height: 34px; font-size: 1rem; }
 }
 </style>
