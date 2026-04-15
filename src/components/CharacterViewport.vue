@@ -378,6 +378,10 @@ watch(
       // the first visible frame — this prevents the T-pose flash.
       animator.update(0);
 
+      // Reframe the camera to fit this specific character's height so every
+      // model appears fully visible and centred regardless of their size.
+      sceneCtx.frameCameraToCharacter(result.vrm.scene);
+
       // Now reveal the fully-posed model and dismiss the loading overlay
       result.vrm.scene.visible = true;
       characterStore.setLoaded();
