@@ -2043,3 +2043,46 @@ with floating glass overlays. Key patterns adopted from Open-LLM-VTuber:
 ### Test Counts (Chunk 085)
 - **Vitest:** 438 tests across 34 files — all pass (no test changes needed)
 - Build: `npm run build` ✓
+
+---
+
+## Chunk 070 — Remove VRM from Git & .gitignore (done)
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Remove plaintext default VRM files from source control, pull them from a private
+source in CI, and document where default model assets are stored.
+
+### Architecture
+
+- Added `*.vrm` to repository ignore rules so raw VRM assets are not tracked.
+- Removed tracked default model `.vrm` files from git index.
+- Added `scripts/pull-private-models.sh` and npm script `models:pull` to fetch
+  a private model archive and extract expected default model files.
+- CI now runs `npm run models:pull` before frontend build/tests and before E2E.
+  Model bundle source is configured via repository secrets.
+- Documented private model storage strategy and required secrets in `README.md`.
+
+### Files Created
+- `scripts/pull-private-models.sh`
+
+### Files Modified
+- `.gitignore`
+- `.github/workflows/terransoul-ci.yml`
+- `package.json`
+- `README.md`
+- `rules/backlog.md`
+- `rules/completion-log.md`
+
+### Files Untracked from Git
+- `public/models/default/2250278607152806301.vrm`
+- `public/models/default/Annabelle the Sorcerer.vrm`
+- `public/models/default/M58.vrm`
+
+### Test Counts (Chunk 070)
+- **Build:** `npm run build` ✓
+- **Vitest:** 361 tests across 29 files (`npm run test`) ✓
+- **Script check:** `bash -n scripts/pull-private-models.sh` ✓
+- **Rust toolchain checks:** blocked in this environment (missing system `glib/gio/gobject` pkg-config libs)

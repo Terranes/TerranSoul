@@ -64,6 +64,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Pull private default models
+        env:
+          TERRANSOUL_PRIVATE_MODELS_URL: ${{ secrets.TERRANSOUL_PRIVATE_MODELS_URL }}
+          TERRANSOUL_PRIVATE_MODELS_SHA256: ${{ secrets.TERRANSOUL_PRIVATE_MODELS_SHA256 }}
+          TERRANSOUL_PRIVATE_MODELS_TOKEN: ${{ secrets.TERRANSOUL_PRIVATE_MODELS_TOKEN }}
+        run: npm run models:pull
+
       - name: Type-check and build frontend
         run: npm run build
 
@@ -97,6 +104,13 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Pull private default models
+        env:
+          TERRANSOUL_PRIVATE_MODELS_URL: ${{ secrets.TERRANSOUL_PRIVATE_MODELS_URL }}
+          TERRANSOUL_PRIVATE_MODELS_SHA256: ${{ secrets.TERRANSOUL_PRIVATE_MODELS_SHA256 }}
+          TERRANSOUL_PRIVATE_MODELS_TOKEN: ${{ secrets.TERRANSOUL_PRIVATE_MODELS_TOKEN }}
+        run: npm run models:pull
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps

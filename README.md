@@ -221,6 +221,9 @@ terransoul stop <agent-name>
 # Install frontend dependencies
 npm install
 
+# Pull private default VRM model bundle (required for built-in models)
+TERRANSOUL_PRIVATE_MODELS_URL=<private-bundle-url> npm run models:pull
+
 # Run in development mode (Tauri + Vite dev server)
 npm run tauri dev
 ```
@@ -228,12 +231,25 @@ npm run tauri dev
 ### Build
 
 ```bash
+# Pull private default VRM model bundle before build
+TERRANSOUL_PRIVATE_MODELS_URL=<private-bundle-url> npm run models:pull
+
 # Build the frontend
 npm run build
 
 # Build the Tauri app
 npm run tauri build
 ```
+
+### Private Default Model Storage
+
+Built-in VRM model files are no longer stored in this Git repository.
+
+- Storage location: **private model bundle archive** (recommended: private GitHub Release asset).
+- CI source URL secret: `TERRANSOUL_PRIVATE_MODELS_URL`
+- Optional CI integrity secret: `TERRANSOUL_PRIVATE_MODELS_SHA256`
+- Optional auth token secret for private assets: `TERRANSOUL_PRIVATE_MODELS_TOKEN`
+- Retrieval command: `npm run models:pull` (extracts `.vrm` files into `public/models/default/`)
 
 ---
 

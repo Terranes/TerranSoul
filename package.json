@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
+    "models:pull": "bash ./scripts/pull-private-models.sh",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
