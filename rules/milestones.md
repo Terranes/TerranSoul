@@ -118,11 +118,22 @@ HLC timestamps with site tiebreaker. 37 Rust tests, 8 Vitest tests.
 Command envelope, permission management (Allow/Deny/Ask), router with pending approval queue.
 5 Tauri commands, 31 Rust tests, 10 Vitest tests.
 
+## Phase 9 — Learned Features (From Reference Projects) — High Priority
+
+> **Source repos:** Open-LLM-VTuber, AI4Animation-js, VibeVoice, aituber-kit
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 106 | **Streaming TTS (VibeVoice Realtime or streaming Edge TTS)** — Replace batched TTS with streaming output. Voice starts ~200ms after LLM generates first token. Massive UX win for natural dialogue. Requires WebSocket or event stream plumbing between Rust TTS engine and frontend audio playback. | `not-started` |
+| 107 | **Multi-ASR Provider Abstraction** — Abstract ASR into a plugin-style factory (like Open-LLM-VTuber's agent pattern). Currently only Whisper API. Add runtime provider swap: Whisper → Groq → Azure → browser Web Speech API. Config-driven selection in VoiceSetupView. | `not-started` |
+| 108 | **Settings Persistence + Env Overrides** — Persist camera orbit position, zoom, model selection, TTS/ASR provider between sessions (aituber-kit pattern). Use Tauri `tauri-plugin-store`. Support `.env` override for dev/CI. Pre-validate schema before loading to prevent corruption. | `not-started` |
+| 109 | **Idle Action Sequences** — When character is idle too long: time-based greetings, auto-speak via LLM, face detection triggers (aituber-kit pattern). Scheduled action queue with interruption handling. Makes character feel alive when user is away. | `not-started` |
+
 ### Next Chunk
 
-⚠️ No `not-started` chunks remain in milestones.md. All scheduled work is complete.
-To continue, ask the user which backlog items to promote to milestones.md.
-See `rules/backlog.md` for planned work (chunks 094–114).
+→ **Chunk 106** — Streaming TTS (Phase 9 — Learned Features)
+
+---
 
 ---
 
