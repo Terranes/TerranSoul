@@ -215,7 +215,7 @@
             <span>🧠</span>
             <strong>Configure LLM</strong>
             <span v-if="brainStore.hasBrain" class="llm-active-badge">
-              {{ brainStore.isFreeApiMode ? '☁️ ' + activeProviderName : brainStore.brainMode?.mode === 'paid_api' ? '💳 ' + (brainStore.brainMode as any).model : '🖥 Local' }}
+              {{ activeBrainBadge }}
             </span>
             <span class="llm-config-hint">{{ showLlmConfig ? '▾' : '▸' }}</span>
           </div>
@@ -312,7 +312,7 @@
                 :disabled="!brainStore.ollamaStatus.running || !llmLocalModel"
                 @click="applyLocalModel"
               >
-                Install &amp; Activate {{ llmLocalModel || '…' }}
+                Install & Activate {{ llmLocalModel || '…' }}
               </button>
             </div>
 
@@ -517,6 +517,15 @@ const activeProviderName = computed(() => {
   if (!mode || mode.mode !== 'free_api') return '';
   const p = brainStore.freeProviders.find((fp) => fp.id === mode.provider_id);
   return p?.display_name ?? mode.provider_id ?? '';
+});
+
+/** Human-readable badge text for the currently active brain mode. */
+const activeBrainBadge = computed(() => {
+  const mode = brainStore.brainMode;
+  if (!mode) return '';
+  if (mode.mode === 'free_api') return '☁️ ' + activeProviderName.value;
+  if (mode.mode === 'paid_api') return '💳 ' + (mode as { model?: string }).model;
+  return '🖥 Local';
 });
 
 const showDetails = ref(false);

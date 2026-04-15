@@ -175,14 +175,17 @@ export const useBrainStore = defineStore('brain', () => {
   async function initialise(): Promise<void> {
     isLoading.value = true;
     try {
-      // Load core brain state — these should always work when Tauri is available.
+      // Core commands that must succeed for the brain to be usable:
+      //   - loadActiveBrain: legacy brain state
+      //   - loadBrainMode: three-tier brain config (free_api, paid_api, local_ollama)
+      //   - fetchFreeProviders: catalogue of free providers for the config UI
       await Promise.all([
         loadActiveBrain(),
         loadBrainMode(),
         fetchFreeProviders(),
       ]);
-      // Non-critical: load hardware & Ollama info for the setup wizard.
-      // Don't let failures here break the entire initialisation.
+      // Non-critical: load hardware info and Ollama status for the setup wizard.
+      // These may fail if Ollama isn't installed — that's fine, we still function.
       await Promise.allSettled([
         fetchSystemInfo(),
         fetchRecommendations(),

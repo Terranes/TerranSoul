@@ -110,6 +110,7 @@ function detectLlmCommand(text: string): {
   const lower = text.toLowerCase().trim();
 
   // Free provider switching: "switch to groq", "use cerebras", "change to pollinations"
+  // Pattern: (switch|change|use|set) [to|brain to|model to|provider to] <provider_name> [api|provider|model|brain]
   const switchPattern = /(?:switch|change|use|set)\s+(?:to\s+|brain\s+to\s+|model\s+to\s+|provider\s+to\s+)?(\w[\w\s]*?)(?:\s+(?:api|provider|model|brain))?$/i;
   const match = lower.match(switchPattern);
   if (match) {
