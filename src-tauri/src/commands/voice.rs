@@ -166,7 +166,6 @@ pub async fn transcribe_audio(
 }
 
 
-///
 /// Routes to the configured TTS provider (from `voice_config.tts_provider`).
 /// Returns the WAV audio bytes so the frontend can play them directly.
 /// Used by the streaming TTS pipeline — called per sentence as the LLM streams.

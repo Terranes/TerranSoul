@@ -6,7 +6,41 @@
 
 ---
 
-## Chunk 108 — Settings Persistence + Env Overrides
+## Chunk 109 — Idle Action Sequences
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Make the character feel alive when the user is away. After a period of silence the character
+initiates conversation with a natural greeting, cycling through variants so it never feels robotic.
+
+### Architecture
+- **`useIdleManager` composable** — timeout-based idle detection. Uses `setTimeout` chain (not `setInterval`)
+  to avoid drift. Exposes `start`, `stop`, `resetIdle` lifecycle methods and reactive `isIdle`.
+- **`IDLE_TIMEOUT_MS = 45_000`** — first greeting fires 45 seconds after last user activity.
+- **`IDLE_REPEAT_MS = 90_000`** — repeat gap between subsequent greetings.
+- **5 greeting variants** in `IDLE_GREETINGS`, shuffled and cycled in round-robin before repeating.
+- **`isBlocked` guard** — callback checked before firing; blocked when `conversationStore.isThinking`
+  or `conversationStore.isStreaming` to avoid interrupting an active AI response.
+- **ChatView.vue wiring** — `idle.start()` on `onMounted`, `idle.stop()` on `onUnmounted`,
+  `idle.resetIdle()` at the top of `handleSend`.
+
+### Files Created
+- `src/composables/useIdleManager.ts` — composable (95 lines)
+- `src/composables/useIdleManager.test.ts` — 10 Vitest tests (fake timers)
+
+### Files Modified
+- `src/views/ChatView.vue` — import + instantiate `useIdleManager`; wire start/stop/reset
+
+### Test Counts
+- **Vitest tests added:** 10 (initial state, timeout, greeting content, repeat, reset, stop, block, round-robin)
+- **Total Vitest:** 406 (33 files, all pass)
+- **Build:** `npm run build` ✅ clean
+
+---
+
+
 
 **Date:** 2026-04-15
 **Status:** ✅ Done

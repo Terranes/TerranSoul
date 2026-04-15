@@ -140,13 +140,19 @@ wired into ChatView.vue. Voice starts ~200ms after first sentence. 13 Vitest tes
 persisted. CharacterViewport restores camera on mount. ChatView loads persisted model on mount.
 9 Vitest tests + 11 Rust unit tests.
 
+✅ Chunk 109 — Idle Action Sequences — see `rules/completion-log.md`
+
+`useIdleManager` composable: 45s idle timeout, shuffled greeting pool (5 variants, round-robin),
+repeat every 90s. Blocked when character is thinking/streaming. Wired into ChatView.vue.
+10 Vitest tests.
+
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 109 | **Idle Action Sequences** — When character is idle too long: time-based greetings, auto-speak via LLM, face detection triggers (aituber-kit pattern). Scheduled action queue with interruption handling. Makes character feel alive when user is away. | `not-started` |
+| 110 | **Background Music** | `not-started` |
 
 ### Next Chunk
 
-→ **Chunk 109** — Idle Action Sequences (Phase 9 — Learned Features)
+→ **Chunk 110** — Background Music
 
 ---
 

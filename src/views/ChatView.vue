@@ -136,6 +136,7 @@ import { useSettingsStore } from '../stores/settings';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
+import { useIdleManager } from '../composables/useIdleManager';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
@@ -150,6 +151,10 @@ const settingsStore = useSettingsStore();
 const tts = useTtsPlayback();
 const asr = useAsrManager({
   onTranscript: (text: string) => handleSend(text),
+});
+const idle = useIdleManager({
+  onSpeak: (text: string) => handleSend(text),
+  isBlocked: () => conversationStore.isThinking || conversationStore.isStreaming,
 });
 const showDrawer = ref(false);
 const selectedBrain = ref('');
@@ -247,6 +252,8 @@ async function toggleMic() {
 async function handleSend(message: string) {
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
+  // User is active — reset the idle timer.
+  idle.resetIdle();
 
   // Detect emotion from user input immediately for responsive UI feedback.
   // This is stored so the streaming watcher can show the correct emotion
@@ -342,6 +349,9 @@ onMounted(async () => {
     // No Tauri backend — voice stays in text-only mode
   }
 
+  // Start idle detection — character greets user after prolonged silence.
+  idle.start();
+
   // Load persisted settings (model selection, camera state).
   try {
     await settingsStore.loadSettings();
@@ -362,6 +372,7 @@ onUnmounted(() => {
   }
   if (subtitleTimer) clearTimeout(subtitleTimer);
   tts.stop();
+  idle.stop();
 });
 </script>
 
