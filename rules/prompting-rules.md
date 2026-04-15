@@ -49,6 +49,24 @@ The AI agent must:
 
 ---
 
+## ENFORCEMENT RULE — Never Start Chunks from Backlog
+
+> **`rules/backlog.md` is a holding area only — never start work on chunks listed there.**
+>
+> All chunk implementation **must** begin from `rules/milestones.md`.
+>
+> If `milestones.md` has no `not-started` chunks remaining, the AI agent must:
+> 1. **Stop** and inform the user that all milestone chunks are complete.
+> 2. Ask the user which backlog chunk(s) to promote to `milestones.md`.
+> 3. **Only after the user confirms**, move the selected chunk(s) from `backlog.md` to `milestones.md`.
+> 4. Then proceed with the normal "Continue" workflow from `milestones.md`.
+>
+> **Rationale:** The backlog is unscheduled, unprioritized work. The user decides
+> what gets promoted to milestones. AI agents must not autonomously pick backlog
+> items to implement.
+
+---
+
 ## Code Generation Rules
 
 - Generate **working, compilable code** — no stubs, no skeletons
