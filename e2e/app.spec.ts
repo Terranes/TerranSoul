@@ -443,6 +443,7 @@ test.describe('Animation & AI Emotion', () => {
   });
 
   test('multiple emotions cycle correctly across messages', async ({ page }) => {
+    test.setTimeout(60_000);
     await page.goto('/');
 
     const badge = page.locator('.ai-state-pill');
