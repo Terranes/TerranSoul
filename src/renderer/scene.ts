@@ -19,6 +19,13 @@ export interface SceneContext {
    *  target height so zooming in frames the face and zooming out shows the
    *  full body. */
   updateZoomTarget: () => void;
+  /**
+   * Reframe the camera to fit a newly-loaded VRM scene.
+   * Computes the actual bounding box of the model, derives the correct
+   * face/body orbit-target heights, and resets the camera to a full-body
+   * view — so every character appears centred regardless of their height.
+   */
+  frameCameraToCharacter: (vrmScene: THREE.Object3D) => void;
   dispose: () => void;
   /** Register a callback that fires after the user finishes orbiting or zooming.
    *  Receives (azimuth, distance) so the caller can persist the camera state. */
@@ -91,9 +98,15 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   controls.maxDistance = MAX_DIST;
   controls.update();
 
-  // Heights for zoom-dependent orbit target
-  const FACE_Y = 1.45;    // orbit target Y when zoomed in (face)
-  const BODY_Y = 0.65;    // orbit target Y when zoomed out (full body, head to toes)
+  // Heights for zoom-dependent orbit target — updated by frameCameraToCharacter
+  // once the real model is loaded and its bounding box is known.
+  let faceY = 1.45;    // orbit target Y when zoomed in (face)
+  let bodyY = 0.65;    // orbit target Y when zoomed out (full body, head to toes)
+
+  // Default full-body camera distances used by the ResizeObserver — updated by
+  // frameCameraToCharacter so portrait/landscape switching still works after load.
+  let defaultCameraZLandscape = CAMERA_Z_LANDSCAPE;
+  let defaultCameraZPortrait  = CAMERA_Z_PORTRAIT;
 
   /**
    * Smoothly adjusts the orbit target height based on zoom distance so
@@ -103,7 +116,64 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   function updateZoomTarget() {
     const dist = controls.getDistance();
     const t = Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
-    controls.target.y = FACE_Y + t * (BODY_Y - FACE_Y);
+    controls.target.y = faceY + t * (bodyY - faceY);
+  }
+
+  /**
+   * Reframe the camera to fit the given VRM scene object.
+   * Computes the world-space bounding box to get the character's real height,
+   * then recalculates the face/body orbit-target heights and the full-body
+   * camera distance based on the camera's vertical FOV.
+   * Should be called each time a new model is loaded.
+   */
+  function frameCameraToCharacter(vrmScene: THREE.Object3D) {
+    const box = new THREE.Box3().setFromObject(vrmScene);
+    if (box.isEmpty()) return;
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const charHeight = size.y;
+    const charTop    = box.max.y;
+    const charBottom = box.min.y;
+
+    // Orbit target heights derived from the character's actual dimensions.
+    // Face target: 12% below the crown (roughly eye/chin level).
+    // Body target: vertical midpoint (keeps the full body centred when zoomed out).
+    faceY = charTop - charHeight * 0.12;
+    bodyY = charBottom + charHeight * 0.50;
+
+    // Minimum camera distance to fit the full character height inside the
+    // vertical FOV, with 10% padding above and below.
+    const vFovRad = THREE.MathUtils.degToRad(camera.fov);
+    const padding = 1.10;
+    const heightBasedDist = (charHeight * padding / 2) / Math.tan(vFovRad / 2);
+
+    // In portrait mode the character's arm span can clip the horizontal edges —
+    // also check the width-based minimum and take the larger of the two.
+    const clamp = (v: number) => Math.min(Math.max(v, MIN_DIST + 0.1), MAX_DIST);
+
+    const aspectNow = canvas.clientWidth / canvas.clientHeight;
+    const widthBasedLandscape = size.x > 0
+      ? (size.x * padding / 2) / (Math.tan(vFovRad / 2) * Math.max(aspectNow, 1))
+      : 0;
+    const widthBasedPortrait = size.x > 0
+      ? (size.x * padding / 2) / (Math.tan(vFovRad / 2) * Math.min(aspectNow, 1))
+      : 0;
+
+    defaultCameraZLandscape = clamp(Math.max(heightBasedDist, widthBasedLandscape));
+    defaultCameraZPortrait  = clamp(Math.max(heightBasedDist, widthBasedPortrait));
+
+    // Reset camera to the full-body view, preserving the current azimuth so
+    // the character's facing direction is unchanged.
+    const fullBodyDist = aspectNow < 1 ? defaultCameraZPortrait : defaultCameraZLandscape;
+    const azimuth = Math.atan2(camera.position.x, camera.position.z);
+    camera.position.set(
+      fullBodyDist * Math.sin(azimuth),
+      bodyY,
+      fullBodyDist * Math.cos(azimuth),
+    );
+    controls.target.set(0, bodyY, 0);
+    controls.update();
   }
 
   // LookAt target — placed in scene (not on camera) for VRM eye tracking
@@ -178,12 +248,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
 
     // Adjust camera distance for portrait vs landscape so the character
     // stays fully visible on narrow mobile screens.
-    const currentZ = camera.position.z;
-    const targetZ = (w / h) < 1 ? CAMERA_Z_PORTRAIT : CAMERA_Z_LANDSCAPE;
+    const currentDist = controls.getDistance();
+    const targetZ = (w / h) < 1 ? defaultCameraZPortrait : defaultCameraZLandscape;
     const ZOOM_TOLERANCE = 0.1;
-    // Only adjust if the user hasn't manually zoomed (compare Z only since
-    // camera X=0, Y=1.0 are fixed and only Z varies with distance).
-    if (Math.abs(currentZ - CAMERA_Z_LANDSCAPE) < ZOOM_TOLERANCE || Math.abs(currentZ - CAMERA_Z_PORTRAIT) < ZOOM_TOLERANCE) {
+    // Only adjust if the user hasn't manually zoomed away from the default.
+    if (Math.abs(currentDist - defaultCameraZLandscape) < ZOOM_TOLERANCE ||
+        Math.abs(currentDist - defaultCameraZPortrait)  < ZOOM_TOLERANCE) {
       camera.position.setZ(targetZ);
     }
   });
@@ -220,5 +290,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, dispose, onCameraChange };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, frameCameraToCharacter, dispose, onCameraChange };
 }
