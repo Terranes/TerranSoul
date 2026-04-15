@@ -270,3 +270,20 @@ export interface ProviderHealthInfo {
   latency_ms: number | null;
 }
 
+// ── Vision / Screen Capture ──────────────────────────────────────────────────
+
+export interface ScreenFrame {
+  image_b64: string;
+  width: number;
+  height: number;
+  captured_at: number;
+  active_window_title: string | null;
+}
+
+export interface VisionAnalysis {
+  description: string;
+  activity: string;
+  confidence: number;
+  analyzed_at: number;
+}
+

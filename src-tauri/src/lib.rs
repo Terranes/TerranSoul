@@ -67,6 +67,7 @@ use commands::{
     },
     streaming::send_message_stream,
     settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
+    vision::{capture_screen, analyze_screen},
     voice::{
         add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
         get_voice_config, list_asr_providers, list_tts_providers, remove_hotword,
@@ -269,6 +270,8 @@ pub fn run() {
             save_app_settings,
             get_model_camera_positions,
             save_model_camera_position,
+            capture_screen,
+            analyze_screen,
         ])
         .setup(|app| {
             let data_dir = app
