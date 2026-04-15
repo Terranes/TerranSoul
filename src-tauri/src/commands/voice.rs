@@ -95,7 +95,77 @@ pub async fn clear_voice_config(state: State<'_, AppState>) -> Result<(), String
     Ok(())
 }
 
-/// Synthesize text to speech and return raw WAV bytes.
+/// Groq Whisper API endpoint (OpenAI-compatible).
+const GROQ_WHISPER_ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
+
+/// Convert 16kHz float32 PCM samples (from VAD) to 16-bit signed PCM bytes.
+fn float32_to_pcm16(samples: &[f32]) -> Vec<u8> {
+    let mut pcm = Vec::with_capacity(samples.len() * 2);
+    for &s in samples {
+        let clamped = s.clamp(-1.0, 1.0);
+        let sample_i16 = (clamped * i16::MAX as f32) as i16;
+        pcm.extend_from_slice(&sample_i16.to_le_bytes());
+    }
+    pcm
+}
+
+/// Transcribe speech audio to text.
+///
+/// Accepts 16kHz float32 PCM samples (as produced by the VAD composable) and
+/// routes to the configured ASR provider. Returns the transcription result.
+///
+/// Provider routing:
+/// - `stub`         → StubAsr (returns fixed text, for testing)
+/// - `whisper-api`  → OpenAI Whisper (requires api_key in config)
+/// - `groq-whisper` → Groq Whisper endpoint (requires api_key, OpenAI-compatible)
+/// - `web-speech`   → error (browser-native, must be called client-side)
+/// - `None`         → error
+#[tauri::command]
+pub async fn transcribe_audio(
+    samples: Vec<f32>,
+    state: State<'_, AppState>,
+) -> Result<voice::TranscriptionResult, String> {
+    if samples.is_empty() {
+        return Err("No audio samples provided".to_string());
+    }
+
+    let (provider, api_key, endpoint_url) = {
+        let config = state.voice_config.lock().map_err(|e| e.to_string())?;
+        (
+            config.asr_provider.clone(),
+            config.api_key.clone(),
+            config.endpoint_url.clone(),
+        )
+    };
+
+    let pcm = float32_to_pcm16(&samples);
+
+    match provider.as_deref() {
+        Some("stub") => {
+            let engine = voice::stub_asr::StubAsr;
+            engine.transcribe(&pcm).await
+        }
+        Some("whisper-api") => {
+            let key = api_key.ok_or("Whisper API requires an API key")?;
+            let engine = voice::whisper_api::WhisperApi::new(key);
+            engine.transcribe(&pcm).await
+        }
+        Some("groq-whisper") => {
+            let key = api_key.ok_or("Groq Whisper requires an API key")?;
+            let endpoint = endpoint_url
+                .unwrap_or_else(|| GROQ_WHISPER_ENDPOINT.to_string());
+            let engine = voice::whisper_api::WhisperApi::with_endpoint(key, endpoint);
+            engine.transcribe(&pcm).await
+        }
+        Some("web-speech") => Err(
+            "web-speech uses the browser SpeechRecognition API directly; call useWebSpeech instead".to_string(),
+        ),
+        Some(id) => Err(format!("Unknown ASR provider: {id}")),
+        None => Err("No ASR provider configured".to_string()),
+    }
+}
+
+
 ///
 /// Routes to the configured TTS provider (from `voice_config.tts_provider`).
 /// Returns the WAV audio bytes so the frontend can play them directly.
@@ -225,6 +295,123 @@ mod tests {
         };
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unsupported TTS provider"));
+    }
+
+    // ── transcribe_audio tests ──────────────────────────────────────────────
+
+    #[test]
+    fn float32_to_pcm16_produces_correct_bytes() {
+        // 0.0 → i16 0x0000, 1.0 → i16::MAX (32767 = 0x7FFF), -1.0 → i16::MIN+1
+        let samples = vec![0.0f32, 1.0f32, -1.0f32];
+        let pcm = float32_to_pcm16(&samples);
+        assert_eq!(pcm.len(), 6); // 3 samples × 2 bytes
+
+        // 0.0 → 0
+        assert_eq!(i16::from_le_bytes([pcm[0], pcm[1]]), 0);
+        // 1.0 → i16::MAX
+        assert_eq!(i16::from_le_bytes([pcm[2], pcm[3]]), i16::MAX);
+        // -1.0 → -(i16::MAX)
+        assert_eq!(i16::from_le_bytes([pcm[4], pcm[5]]), -(i16::MAX));
+    }
+
+    #[test]
+    fn float32_to_pcm16_clamps_out_of_range() {
+        let samples = vec![2.0f32, -2.0f32];
+        let pcm = float32_to_pcm16(&samples);
+        // Clamped to [-1.0, 1.0] first, so both give max/min i16
+        assert_eq!(i16::from_le_bytes([pcm[0], pcm[1]]), i16::MAX);
+        assert_eq!(i16::from_le_bytes([pcm[2], pcm[3]]), -(i16::MAX));
+    }
+
+    #[tokio::test]
+    async fn transcribe_audio_rejects_empty_samples() {
+        let result: Result<voice::TranscriptionResult, String> = {
+            let samples: Vec<f32> = vec![];
+            if samples.is_empty() {
+                Err("No audio samples provided".to_string())
+            } else {
+                Ok(voice::TranscriptionResult {
+                    text: "".into(),
+                    language: None,
+                    confidence: None,
+                })
+            }
+        };
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No audio samples provided");
+    }
+
+    #[tokio::test]
+    async fn transcribe_audio_no_provider_configured() {
+        let provider: Option<&str> = None;
+        let result: Result<voice::TranscriptionResult, String> = match provider {
+            Some("stub") => Ok(voice::TranscriptionResult {
+                text: "stub".into(),
+                language: None,
+                confidence: None,
+            }),
+            Some(_) => Err("unknown".to_string()),
+            None => Err("No ASR provider configured".to_string()),
+        };
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "No ASR provider configured");
+    }
+
+    #[tokio::test]
+    async fn transcribe_audio_stub_returns_text() {
+        let samples = vec![0.0f32; 100];
+        let pcm = float32_to_pcm16(&samples);
+        let engine = voice::stub_asr::StubAsr;
+        let result = engine.transcribe(&pcm).await.unwrap();
+        assert!(!result.text.is_empty());
+    }
+
+    #[tokio::test]
+    async fn transcribe_audio_web_speech_returns_error() {
+        let provider: Option<&str> = Some("web-speech");
+        let result: Result<voice::TranscriptionResult, String> = match provider {
+            Some("web-speech") => Err(
+                "web-speech uses the browser SpeechRecognition API directly; call useWebSpeech instead"
+                    .to_string(),
+            ),
+            Some("stub") => Ok(voice::TranscriptionResult {
+                text: "stub".into(),
+                language: None,
+                confidence: None,
+            }),
+            Some(id) => Err(format!("Unknown ASR provider: {id}")),
+            None => Err("No ASR provider configured".to_string()),
+        };
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("web-speech"));
+    }
+
+    #[test]
+    fn asr_catalogue_contains_groq_whisper() {
+        let providers = voice::asr_providers();
+        assert!(providers.iter().any(|p| p.id == "groq-whisper"));
+        let groq = providers.iter().find(|p| p.id == "groq-whisper").unwrap();
+        assert!(groq.requires_api_key);
+        assert_eq!(groq.kind, "cloud");
+    }
+
+    #[tokio::test]
+    async fn transcribe_audio_unknown_provider_errors() {
+        let provider: Option<&str> = Some("azure-cognitive");
+        let result: Result<voice::TranscriptionResult, String> = match provider {
+            Some("stub") => Ok(voice::TranscriptionResult {
+                text: "".into(),
+                language: None,
+                confidence: None,
+            }),
+            Some("whisper-api") | Some("groq-whisper") | Some("web-speech") => {
+                Err("provider error".to_string())
+            }
+            Some(id) => Err(format!("Unknown ASR provider: {id}")),
+            None => Err("No ASR provider configured".to_string()),
+        };
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown ASR provider"));
     }
 }
 

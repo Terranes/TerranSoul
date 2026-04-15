@@ -127,6 +127,13 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             kind: "cloud".into(),
             requires_api_key: true,
         },
+        VoiceProviderInfo {
+            id: "groq-whisper".into(),
+            display_name: "Groq Whisper (fast)".into(),
+            description: "Whisper-compatible transcription via Groq. Very fast, generous free tier, requires API key.".into(),
+            kind: "cloud".into(),
+            requires_api_key: true,
+        },
     ]
 }
 
