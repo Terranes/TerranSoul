@@ -66,6 +66,7 @@ use commands::{
         set_window_mode, toggle_window_mode,
     },
     streaming::send_message_stream,
+    translation::{list_languages, translate_text, detect_language},
     settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
     vision::{capture_screen, analyze_screen},
     voice::{
@@ -273,6 +274,9 @@ pub fn run() {
             save_model_camera_position,
             capture_screen,
             analyze_screen,
+            list_languages,
+            translate_text,
+            detect_language,
         ])
         .setup(|app| {
             let data_dir = app

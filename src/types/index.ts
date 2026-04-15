@@ -287,3 +287,13 @@ export interface VisionAnalysis {
   analyzed_at: number;
 }
 
+// ── Translation ──────────────────────────────────────────────────────────────
+
+export interface TranslationResult {
+  original: string;
+  source_lang: string;
+  translated: string;
+  target_lang: string;
+  confidence: number | null;
+}
+
