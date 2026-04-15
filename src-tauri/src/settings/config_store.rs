@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::{AppSettings, CURRENT_SCHEMA_VERSION};
+use super::AppSettings;
 
 /// File name used to store application settings.
 const SETTINGS_FILE: &str = "app_settings.json";
@@ -51,6 +51,7 @@ pub fn save(data_dir: &Path, settings: &AppSettings) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::CURRENT_SCHEMA_VERSION;
     use tempfile::tempdir;
 
     #[test]
@@ -103,6 +104,9 @@ mod tests {
             selected_model_id: "old-model".into(),
             camera_azimuth: 0.0,
             camera_distance: 2.8,
+            bgm_enabled: false,
+            bgm_volume: 0.15,
+            bgm_track_id: "ambient-calm".into(),
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -120,6 +124,9 @@ mod tests {
             selected_model_id: "annabelle".into(),
             camera_azimuth: 0.0,
             camera_distance: 2.8,
+            bgm_enabled: false,
+            bgm_volume: 0.15,
+            bgm_track_id: "ambient-calm".into(),
         };
         save(dir.path(), &s).unwrap();
 

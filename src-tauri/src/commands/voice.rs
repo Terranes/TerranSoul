@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::voice::{self, VoiceConfig, VoiceProviderInfo};
+use crate::voice::{self, AsrEngine, TtsEngine, VoiceConfig, VoiceProviderInfo};
 use crate::AppState;
 
 /// List available ASR providers.
