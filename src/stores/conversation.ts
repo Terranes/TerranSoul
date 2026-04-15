@@ -5,7 +5,7 @@ import type { Message } from '../types';
 import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
-import { streamChatCompletion, buildHistory } from '../utils/free-api-client';
+import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
 /**
@@ -207,6 +207,9 @@ export const useConversationStore = defineStore('conversation', () => {
             isStreaming.value = true;
             streamingText.value = '';
 
+            // Use enhanced prompt for non-Pollinations providers (upgraded models)
+            const useEnhanced = provId !== 'pollinations';
+
             const fullText = await new Promise<string>((resolve, reject) => {
               streamChatCompletion(
                 prov.baseUrl,
@@ -220,6 +223,7 @@ export const useConversationStore = defineStore('conversation', () => {
                   onDone: (full) => resolve(full),
                   onError: (err) => reject(new Error(err)),
                 },
+                getSystemPrompt(useEnhanced),
               );
             });
 

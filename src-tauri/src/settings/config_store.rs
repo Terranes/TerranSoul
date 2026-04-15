@@ -56,6 +56,7 @@ mod tests {
 
     #[test]
     fn load_returns_default_when_no_file() {
+        let _lock = super::super::ENV_MUTEX.lock().unwrap();
         let dir = tempdir().unwrap();
         let s = load(dir.path());
         assert_eq!(s.selected_model_id, super::super::DEFAULT_MODEL_ID);
@@ -64,6 +65,7 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
+        let _lock = super::super::ENV_MUTEX.lock().unwrap();
         let dir = tempdir().unwrap();
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
@@ -87,6 +89,7 @@ mod tests {
 
     #[test]
     fn load_wipes_corrupt_json() {
+        let _lock = super::super::ENV_MUTEX.lock().unwrap();
         let dir = tempdir().unwrap();
         let path = dir.path().join("app_settings.json");
         fs::write(&path, "{not valid json").unwrap();
@@ -99,6 +102,7 @@ mod tests {
 
     #[test]
     fn load_wipes_stale_schema() {
+        let _lock = super::super::ENV_MUTEX.lock().unwrap();
         let dir = tempdir().unwrap();
         let stale = AppSettings {
             version: 0, // old schema version
@@ -120,6 +124,7 @@ mod tests {
 
     #[test]
     fn load_applies_env_override() {
+        let _lock = super::super::ENV_MUTEX.lock().unwrap();
         let dir = tempdir().unwrap();
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
@@ -151,6 +156,7 @@ mod tests {
 
     #[test]
     fn save_and_load_model_camera_positions() {
+        let _lock = super::super::ENV_MUTEX.lock().unwrap();
         let dir = tempdir().unwrap();
         let mut positions = std::collections::HashMap::new();
         positions.insert(

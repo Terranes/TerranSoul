@@ -132,6 +132,12 @@ impl AppSettings {
     }
 }
 
+/// Mutex shared across all test modules that mutate `TERRANSOUL_*` env vars.
+/// `std::env::set_var` is process-global, so tests that touch env vars must
+/// hold this lock to avoid data-races when Cargo runs tests in parallel.
+#[cfg(test)]
+pub(super) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,24 +163,27 @@ mod tests {
 
     #[test]
     fn apply_env_overrides_sets_model_id() {
+        let _lock = super::ENV_MUTEX.lock().unwrap();
         std::env::set_var("TERRANSOUL_MODEL_ID", "m58");
         let mut s = AppSettings::default();
         s.apply_env_overrides();
-        assert_eq!(s.selected_model_id, "m58");
         std::env::remove_var("TERRANSOUL_MODEL_ID");
+        assert_eq!(s.selected_model_id, "m58");
     }
 
     #[test]
     fn apply_env_overrides_ignores_empty_model_id() {
+        let _lock = super::ENV_MUTEX.lock().unwrap();
         std::env::set_var("TERRANSOUL_MODEL_ID", "  ");
         let mut s = AppSettings::default();
         s.apply_env_overrides();
-        assert_eq!(s.selected_model_id, DEFAULT_MODEL_ID);
         std::env::remove_var("TERRANSOUL_MODEL_ID");
+        assert_eq!(s.selected_model_id, DEFAULT_MODEL_ID);
     }
 
     #[test]
     fn apply_env_overrides_noop_when_unset() {
+        let _lock = super::ENV_MUTEX.lock().unwrap();
         std::env::remove_var("TERRANSOUL_MODEL_ID");
         let mut s = AppSettings::default();
         s.apply_env_overrides();
