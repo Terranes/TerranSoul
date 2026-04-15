@@ -146,13 +146,12 @@ persisted. CharacterViewport restores camera on mount. ChatView loads persisted 
 repeat every 90s. Blocked when character is thinking/streaming. Wired into ChatView.vue.
 10 Vitest tests.
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 110 | **Background Music** | `not-started` |
+✅ Chunk 110 — Background Music — see `rules/completion-log.md`
 
-### Next Chunk
-
-→ **Chunk 110** — Background Music
+`useBgmPlayer` composable: Web Audio API procedural ambient tracks (3 presets: Calm Ambience,
+Night Breeze, Cosmic Drift). Fade-in/fade-out transitions. Toggle, volume slider, track selector
+in CharacterViewport settings dropdown. BGM state persisted via `AppSettings` (bgm_enabled,
+bgm_volume, bgm_track_id). Schema version bumped to 2. 10 Vitest tests.
 
 ---
 

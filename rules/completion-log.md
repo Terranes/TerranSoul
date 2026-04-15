@@ -6,6 +6,47 @@
 
 ---
 
+## Chunk 110 — Background Music
+
+**Date:** 2026-04-15
+**Status:** ✅ Done
+
+### Goal
+Add ambient background music to the 3D character viewport. Procedurally generated audio tracks
+using the Web Audio API — no external audio files needed. Users can toggle BGM on/off, choose
+from 3 ambient presets, and adjust volume. Settings are persisted between sessions.
+
+### Architecture
+- **`useBgmPlayer` composable** — procedural ambient audio via `OscillatorNode`, `BiquadFilterNode`,
+  and noise buffers. Three preset tracks: Calm Ambience (C major pad), Night Breeze (A minor pad),
+  Cosmic Drift (deep F drone + high shimmer). Master gain with `linearRampToValueAtTime` for 1.5s
+  fade-in/fade-out transitions.
+- **`AppSettings` schema v2** — added `bgm_enabled` (bool), `bgm_volume` (f32, 0.0–1.0),
+  `bgm_track_id` (string). Rust `#[serde(default)]` ensures backward compatibility.
+- **Settings persistence** — `saveBgmState()` convenience method on `useSettingsStore`.
+  BGM state restored from settings on `CharacterViewport` mount.
+- **UI controls** — toggle switch, track selector dropdown, volume slider. All in the existing
+  settings dropdown in `CharacterViewport.vue`.
+
+### Files Created
+- `src/composables/useBgmPlayer.ts` — composable (225 lines)
+- `src/composables/useBgmPlayer.test.ts` — 10 Vitest tests (Web Audio mock)
+
+### Files Modified
+- `src-tauri/src/settings/mod.rs` — `AppSettings` v2 with BGM fields + 2 new Rust tests
+- `src-tauri/src/settings/config_store.rs` — no changes (serde defaults handle migration)
+- `src/stores/settings.ts` — `AppSettings` interface + `saveBgmState()` + default schema v2
+- `src/stores/settings.test.ts` — updated defaults test + new `saveBgmState` test
+- `src/components/CharacterViewport.vue` — BGM toggle/selector/slider UI + restore on mount + cleanup on unmount
+
+### Test Counts
+- **Vitest tests added:** 11 (10 BGM + 1 saveBgmState)
+- **Rust tests added:** 2 (default_bgm_settings, serde_fills_bgm_defaults_when_missing)
+- **Total Vitest:** 417 (34 files, all pass)
+- **Build:** `npm run build` ✅ clean
+
+---
+
 ## Chunk 109 — Idle Action Sequences
 
 **Date:** 2026-04-15

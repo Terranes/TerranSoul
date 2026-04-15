@@ -17,10 +17,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 const SCHEMA_V1_SETTINGS: AppSettings = {
-  version: 1,
+  version: 2,
   selected_model_id: 'm58',
   camera_azimuth: 0.5,
   camera_distance: 3.2,
+  bgm_enabled: false,
+  bgm_volume: 0.15,
+  bgm_track_id: 'ambient-calm',
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -36,7 +39,10 @@ describe('useSettingsStore', () => {
     expect(store.settings.selected_model_id).toBe('annabelle');
     expect(store.settings.camera_azimuth).toBe(0);
     expect(store.settings.camera_distance).toBeCloseTo(2.8);
-    expect(store.settings.version).toBe(1);
+    expect(store.settings.version).toBe(2);
+    expect(store.settings.bgm_enabled).toBe(false);
+    expect(store.settings.bgm_volume).toBeCloseTo(0.15);
+    expect(store.settings.bgm_track_id).toBe('ambient-calm');
   });
 
   it('loadSettings populates settings from Tauri IPC', async () => {
@@ -112,5 +118,21 @@ describe('useSettingsStore', () => {
     await store.saveSettings({ camera_azimuth: 2.0 });
     expect(store.settings.selected_model_id).toBe('m58'); // preserved
     expect(store.settings.camera_azimuth).toBeCloseTo(2.0); // patched
+  });
+
+  it('saveBgmState persists BGM settings', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveBgmState(true, 0.4, 'ambient-night');
+    expect(store.settings.bgm_enabled).toBe(true);
+    expect(store.settings.bgm_volume).toBeCloseTo(0.4);
+    expect(store.settings.bgm_track_id).toBe('ambient-night');
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({
+        bgm_enabled: true,
+        bgm_volume: 0.4,
+        bgm_track_id: 'ambient-night',
+      }),
+    });
   });
 });

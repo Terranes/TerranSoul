@@ -13,13 +13,22 @@ export interface AppSettings {
   camera_azimuth: number;
   /** Camera distance from the orbit target (zoom level). */
   camera_distance: number;
+  /** Whether background music is enabled. */
+  bgm_enabled: boolean;
+  /** Background music volume (0–1). */
+  bgm_volume: number;
+  /** ID of the selected ambient track. */
+  bgm_track_id: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  version: 1,
+  version: 2,
   selected_model_id: 'annabelle',
   camera_azimuth: 0,
   camera_distance: 2.8,
+  bgm_enabled: false,
+  bgm_volume: 0.15,
+  bgm_track_id: 'ambient-calm',
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -65,6 +74,11 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ camera_azimuth: azimuth, camera_distance: distance });
   }
 
+  /** Persist BGM state (enabled, volume, track). */
+  async function saveBgmState(enabled: boolean, bgmVolume: number, trackId: string): Promise<void> {
+    await saveSettings({ bgm_enabled: enabled, bgm_volume: bgmVolume, bgm_track_id: trackId });
+  }
+
   return {
     // state
     settings,
@@ -75,5 +89,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings,
     saveModelId,
     saveCameraState,
+    saveBgmState,
   };
 });
