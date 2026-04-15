@@ -31,7 +31,7 @@ use commands::{
         set_brain_mode,
     },
     character::load_vrm,
-    chat::{get_conversation, send_message},
+    chat::{export_chat_log, get_conversation, send_message},
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
@@ -184,6 +184,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             send_message,
             get_conversation,
+            export_chat_log,
             list_agents,
             load_vrm,
             get_device_identity,
