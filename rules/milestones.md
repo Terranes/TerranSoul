@@ -157,17 +157,17 @@ bgm_volume, bgm_track_id). Schema version bumped to 2. 10 Vitest tests.
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 094 | **Model Position Saving** — Persist camera orbit position, zoom, rotation per model. Resume user's preferred viewing angle on app restart. Store in Tauri settings alongside model selection. | `not-started` |
-| 095 | **Procedural Gesture Blending (MANN-inspired)** — Learn from AI4Animation MANN approach: instead of hardcoded JSON keyframes, use lightweight ML or procedural blending to generate smooth transitions between emotion states. Train on existing gesture data. Replace stiff cross-fades with natural motion. | `not-started` |
-| 096 | **Speaker Diarization** — Detect multiple speakers in room (VibeVoice-ASR-7B pattern). Tag "who said what" in conversation log. Useful for group scenarios or streaming. | `not-started` |
-| 097 | **Hotword-Boosted ASR** — Let users define domain-specific keywords (character names, game terms) that ASR should recognize better. VibeVoice supports hotword injection. | `not-started` |
-| 098 | **Presence / Greeting System** — Auto-greeting when user appears (timer-based or face detection), auto-goodbye when away. Track "away duration" for different responses (aituber-kit pattern). | `not-started` |
+| 094 | **Model Position Saving** — Persist camera orbit position, zoom, rotation per model. Resume user's preferred viewing angle on app restart. Store in Tauri settings alongside model selection. | `done` |
+| 095 | **Procedural Gesture Blending (MANN-inspired)** — Learn from AI4Animation MANN approach: instead of hardcoded JSON keyframes, use lightweight ML or procedural blending to generate smooth transitions between emotion states. Train on existing gesture data. Replace stiff cross-fades with natural motion. | `done` |
+| 096 | **Speaker Diarization** — Detect multiple speakers in room (VibeVoice-ASR-7B pattern). Tag "who said what" in conversation log. Useful for group scenarios or streaming. | `done` |
+| 097 | **Hotword-Boosted ASR** — Let users define domain-specific keywords (character names, game terms) that ASR should recognize better. VibeVoice supports hotword injection. | `done` |
+| 098 | **Presence / Greeting System** — Auto-greeting when user appears (timer-based or face detection), auto-goodbye when away. Track "away duration" for different responses (aituber-kit pattern). | `done` |
 
 ### Phase 9 — Lower Priority (Chunks 115–119)
 
 | Chunk | Description | Status |
 |-------|-------------|--------|
-| 115 | **Live2D Support** — Add Live2D rendering alongside VRM using renderer abstraction layer (aituber-kit pattern). Useful for users who prefer 2D or have only 2D models. | `not-started` |
+| 115 | **Live2D Support** — Add Live2D rendering alongside VRM using renderer abstraction layer (aituber-kit pattern). Useful for users who prefer 2D or have only 2D models. | `done` |
 | 116 | **Screen Recording / Vision** — Extend beyond static context: real-time screen activity analysis (Open-LLM-VTuber pattern). Use Tauri window capture API. Character can comment on what user is doing. | `not-started` |
 | 117 | **Docker Containerization** — Run TerranSoul in isolated containers for CI/testing and server deployment (Open-LLM-VTuber pattern). CPU/GPU variants. | `not-started` |
 | 118 | **Chat Log Export** — JSON export with timestamps, sentiment tags, emotion metadata. Build on existing conversation persistence. | `not-started` |
