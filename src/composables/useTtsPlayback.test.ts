@@ -6,7 +6,7 @@
  * HTMLAudioElement to test the logic without real audio hardware.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTtsPlayback } from './useTtsPlayback';
 
 // ── Mock Tauri IPC ────────────────────────────────────────────────────────────

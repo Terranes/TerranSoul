@@ -146,6 +146,9 @@ const brain = useBrainStore();
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const tts = useTtsPlayback();
+const asr = useAsrManager({
+  onTranscript: (text: string) => handleSend(text),
+});
 const showDrawer = ref(false);
 const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
@@ -227,6 +230,15 @@ function sentimentToState(sentiment?: string): CharacterState {
     case 'relaxed': return 'relaxed';
     case 'surprised': return 'surprised';
     default: return 'talking';
+  }
+}
+
+/** Toggle the ASR microphone on/off. */
+async function toggleMic() {
+  if (asr.isListening.value) {
+    asr.stopListening();
+  } else {
+    await asr.startListening();
   }
 }
 
@@ -544,6 +556,36 @@ onUnmounted(() => {
 .chat-drawer-toggle.active {
   background: rgba(124, 111, 255, 0.70);
   border-color: rgba(124, 111, 255, 0.5);
+}
+
+/* ── Mic button — voice input toggle ── */
+.mic-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 32, 0.72);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--ts-transition-normal), border-color var(--ts-transition-normal), box-shadow var(--ts-transition-fast);
+}
+.mic-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.mic-btn.listening {
+  background: rgba(230, 60, 80, 0.75);
+  border-color: rgba(230, 60, 80, 0.5);
+  box-shadow: 0 0 10px rgba(230, 60, 80, 0.4);
+  animation: mic-pulse 1.5s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(230, 60, 80, 0.4); }
+  50% { box-shadow: 0 0 18px rgba(230, 60, 80, 0.7); }
 }
 
 /* ── Fade transitions ── */

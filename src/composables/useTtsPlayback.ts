@@ -108,7 +108,7 @@ export function useTtsPlayback(): TtsPlaybackHandle {
         return;
       }
 
-      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
       blobUrls.push(url);
 
