@@ -155,23 +155,59 @@ bgm_volume, bgm_track_id). Schema version bumped to 2. 10 Vitest tests.
 
 ### Phase 9 — Medium Priority (Chunks 094–098)
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 094 | **Model Position Saving** — Persist camera orbit position, zoom, rotation per model. Resume user's preferred viewing angle on app restart. Store in Tauri settings alongside model selection. | `done` |
-| 095 | **Procedural Gesture Blending (MANN-inspired)** — Learn from AI4Animation MANN approach: instead of hardcoded JSON keyframes, use lightweight ML or procedural blending to generate smooth transitions between emotion states. Train on existing gesture data. Replace stiff cross-fades with natural motion. | `done` |
-| 096 | **Speaker Diarization** — Detect multiple speakers in room (VibeVoice-ASR-7B pattern). Tag "who said what" in conversation log. Useful for group scenarios or streaming. | `done` |
-| 097 | **Hotword-Boosted ASR** — Let users define domain-specific keywords (character names, game terms) that ASR should recognize better. VibeVoice supports hotword injection. | `done` |
-| 098 | **Presence / Greeting System** — Auto-greeting when user appears (timer-based or face detection), auto-goodbye when away. Track "away duration" for different responses (aituber-kit pattern). | `done` |
+✅ Chunk 094 — Model Position Saving — see `rules/completion-log.md`
+
+Per-model camera positions (`ModelCameraPosition` struct, `HashMap` in `AppSettings`).
+`get_model_camera_positions` + `save_model_camera_position` Tauri commands. `useModelCameraStore` composable.
+11 Vitest tests + 6 Rust tests.
+
+✅ Chunk 095 — Procedural Gesture Blending (MANN-inspired) — see `rules/completion-log.md`
+
+`GestureBlender` with layered sine-harmonic noise, per-state `BlendConfig`, cosine-interpolated cross-fades.
+Integrated into `CharacterAnimator.applyStateBonePose()`. 13 Vitest tests.
+
+✅ Chunk 096 — Speaker Diarization — see `rules/completion-log.md`
+
+`DiarizationEngine` trait, `StubDiarization`, `diarize_audio` Tauri command.
+`useDiarization` composable. 12 Vitest tests + 8 Rust tests.
+
+✅ Chunk 097 — Hotword-Boosted ASR — see `rules/completion-log.md`
+
+`Hotword` struct on `VoiceConfig`. CRUD commands (`get/add/remove/clear_hotwords`).
+`useHotwords` composable. 13 Vitest tests + 10 Rust tests.
+
+✅ Chunk 098 — Presence / Greeting System — see `rules/completion-log.md`
+
+`usePresenceDetector`: activity tracking via DOM events + `visibilitychange`, away duration
+classification (short/medium/long/extended), duration-specific greeting pools. 15 Vitest tests.
 
 ### Phase 9 — Lower Priority (Chunks 115–119)
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 115 | **Live2D Support** — Add Live2D rendering alongside VRM using renderer abstraction layer (aituber-kit pattern). Useful for users who prefer 2D or have only 2D models. | `done` |
-| 116 | **Screen Recording / Vision** — Extend beyond static context: real-time screen activity analysis (Open-LLM-VTuber pattern). Use Tauri window capture API. Character can comment on what user is doing. | `not-started` |
-| 117 | **Docker Containerization** — Run TerranSoul in isolated containers for CI/testing and server deployment (Open-LLM-VTuber pattern). CPU/GPU variants. | `not-started` |
-| 118 | **Chat Log Export** — JSON export with timestamps, sentiment tags, emotion metadata. Build on existing conversation persistence. | `not-started` |
-| 119 | **Language Translation Layer** — Accept input in one language, TTS output in another. Use LLM for translation. Store original + translated text. | `not-started` |
+✅ Chunk 115 — Live2D Support — see `rules/completion-log.md`
+
+Renderer abstraction layer (`CharacterRenderer` interface, `Live2DStubRenderer`, `createRenderer()` factory).
+Ready for Cubism SDK integration when needed. 14 Vitest tests.
+
+✅ Chunk 116 — Screen Recording / Vision — see `rules/completion-log.md`
+
+`ScreenFrame` + `VisionAnalysis` types. `capture_screen` + `analyze_screen` Tauri commands (stub).
+`useVisionCapture` composable (capture → analyze pipeline). 13 Vitest tests + 6 Rust tests.
+
+📦 Chunk 117 — Docker Containerization — demoted back to `rules/backlog.md`.
+
+Re-analysis: TerranSoul is a Tauri desktop app — Docker containers are not useful here. If container
+orchestration is ever needed (e.g. for running LLM inference servers), use .NET Aspire instead.
+
+✅ Chunk 118 — Chat Log Export — see `rules/completion-log.md`
+
+`useChatExport` composable (formatExport, toJson, downloadJson, filters by date/role/sentiment).
+`export_chat_log` Tauri command. JSON export includes metadata (sentiment summary, date range).
+14 Vitest tests + 3 Rust tests.
+
+✅ Chunk 119 — Language Translation Layer — see `rules/completion-log.md`
+
+`TranslationResult` type. `list_languages`, `translate_text`, `detect_language` Tauri commands (stub).
+10 supported languages. `useTranslation` composable. 11 Vitest tests + 9 Rust tests.
 
 ---
 

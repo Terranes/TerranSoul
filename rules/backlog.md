@@ -61,3 +61,9 @@ in plaintext `.vrm` files. This creates **three exploit vectors**:
 ### Lower Priority
 
 📦 Promoted to `rules/milestones.md` — chunks 115–119 (renumbered from 110–114 to avoid conflict with Chunk 110 BGM).
+
+### Demoted from Milestones
+
+| Chunk | Description | Status | Notes |
+|-------|-------------|--------|-------|
+| 117 | **Docker Containerization** — Run TerranSoul in isolated containers for CI/testing and server deployment (Open-LLM-VTuber pattern). CPU/GPU variants. | `not-needed` | Re-analysis: TerranSoul is a Tauri desktop app — Docker is not applicable. If container orchestration for LLM inference servers is ever needed, use .NET Aspire to manage Docker instead of raw Dockerfiles. |
