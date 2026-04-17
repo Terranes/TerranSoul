@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { ref } from 'vue';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { reactive } from 'vue';
 import { useChatExpansion } from './useChatExpansion';
 
-// Mock window store
-const mockWindowStore = {
-  mode: ref('window' as 'window' | 'pet')
-};
+// Mock window store — use reactive() so property access returns unwrapped values
+// (matching Pinia's composition-API store behaviour)
+const mockWindowStore = reactive({
+  mode: 'window' as 'window' | 'pet'
+});
 
 vi.mock('../stores/window', () => ({
   useWindowStore: () => mockWindowStore
@@ -17,7 +18,7 @@ describe('useChatExpansion', () => {
     const { setChatDrawerExpanded, setPetChatExpanded } = useChatExpansion();
     setChatDrawerExpanded(false);
     setPetChatExpanded(true);
-    mockWindowStore.mode.value = 'window';
+    mockWindowStore.mode = 'window';
   });
 
   it('should initialize with correct default states', () => {
@@ -29,7 +30,7 @@ describe('useChatExpansion', () => {
   });
 
   it('should reflect chat drawer expansion in window mode', () => {
-    mockWindowStore.mode.value = 'window';
+    mockWindowStore.mode = 'window';
     const { setChatDrawerExpanded, isChatExpanded } = useChatExpansion();
     
     setChatDrawerExpanded(true);
@@ -40,7 +41,7 @@ describe('useChatExpansion', () => {
   });
 
   it('should reflect pet chat expansion in pet mode', () => {
-    mockWindowStore.mode.value = 'pet';
+    mockWindowStore.mode = 'pet';
     const { setPetChatExpanded, isChatExpanded } = useChatExpansion();
     
     setPetChatExpanded(true);
@@ -86,14 +87,14 @@ describe('useChatExpansion', () => {
     setPetChatExpanded(true);
     
     // In window mode, should use drawer state
-    mockWindowStore.mode.value = 'window';
+    mockWindowStore.mode = 'window';
     expect(isChatExpanded.value).toBe(true);
     
     setChatDrawerExpanded(false);
     expect(isChatExpanded.value).toBe(false);
     
     // In pet mode, should use pet chat state
-    mockWindowStore.mode.value = 'pet';
+    mockWindowStore.mode = 'pet';
     expect(isChatExpanded.value).toBe(true); // petChatExpanded is still true
     
     setPetChatExpanded(false);

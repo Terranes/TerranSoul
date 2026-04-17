@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from './brain';
 import { useVoiceStore } from './voice';
@@ -1258,6 +1258,23 @@ Respond with ONLY valid JSON (no markdown):
     await loadTracker();
     recordActivations();
     installSaveGuard();
+
+    // Watch for feature state changes and record activations in real-time
+    // so quests are marked complete as soon as the user enables a feature.
+    const brain = useBrainStore();
+    const voice = useVoiceStore();
+    const settings = useSettingsStore();
+    watch(
+      () => [
+        brain.brainMode,
+        brain.hasBrain,
+        voice.config.tts_provider,
+        voice.config.asr_provider,
+        settings.settings.bgm_enabled,
+      ],
+      () => recordActivations(),
+    );
+
     if (needsRefresh.value) {
       await refreshDailySuggestions();
     }

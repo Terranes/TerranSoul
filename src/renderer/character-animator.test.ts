@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CharacterAnimator, damp } from './character-animator';
+import { CharacterAnimator, damp, softClampMin, softClampMax } from './character-animator';
 import * as THREE from 'three';
 
 function makePlaceholder(): THREE.Group {
@@ -522,5 +522,66 @@ describe('CharacterAnimator', () => {
     const longRange = Math.max(...longSamples) - Math.min(...longSamples);
     expect(shortRange).toBeGreaterThan(0);
     expect(longRange).toBeGreaterThan(0);
+  });
+});
+
+// ── softClampMin / softClampMax unit tests ────────────────────────────────────
+
+describe('softClampMin', () => {
+  it('passes through values well above min', () => {
+    expect(softClampMin(2.0, 1.0, 0.1)).toBe(2.0);
+  });
+
+  it('returns minVal when value is at or below minVal', () => {
+    expect(softClampMin(1.0, 1.0, 0.1)).toBe(1.0);
+    expect(softClampMin(0.5, 1.0, 0.1)).toBe(1.0);
+  });
+
+  it('smoothly transitions in the margin zone', () => {
+    const mid = softClampMin(1.05, 1.0, 0.1);
+    expect(mid).toBeGreaterThan(1.0);
+    expect(mid).toBeLessThan(1.1);
+  });
+
+  it('is continuous at margin boundary', () => {
+    // At value = minVal + margin, should return value (passthrough)
+    expect(softClampMin(1.1, 1.0, 0.1)).toBeCloseTo(1.1, 10);
+  });
+
+  it('is continuous at min boundary', () => {
+    // At value = minVal, should return minVal
+    expect(softClampMin(1.0, 1.0, 0.1)).toBeCloseTo(1.0, 10);
+  });
+});
+
+describe('softClampMax', () => {
+  it('passes through values well below max', () => {
+    expect(softClampMax(0.5, 1.38, 0.08)).toBe(0.5);
+  });
+
+  it('returns maxVal when value is at or above maxVal', () => {
+    expect(softClampMax(1.38, 1.38, 0.08)).toBe(1.38);
+    expect(softClampMax(2.0, 1.38, 0.08)).toBe(1.38);
+  });
+
+  it('smoothly transitions in the margin zone', () => {
+    const mid = softClampMax(1.34, 1.38, 0.08);
+    expect(mid).toBeGreaterThan(1.30);
+    expect(mid).toBeLessThan(1.38);
+  });
+
+  it('is continuous at margin boundary', () => {
+    // At value = maxVal - margin, should return value (passthrough)
+    expect(softClampMax(1.30, 1.38, 0.08)).toBeCloseTo(1.30, 10);
+  });
+
+  it('is continuous at max boundary', () => {
+    // At value = maxVal, should return maxVal
+    expect(softClampMax(1.38, 1.38, 0.08)).toBeCloseTo(1.38, 10);
+  });
+
+  it('clamps dress upper arm Z within limit', () => {
+    // Simulates the runtime clamping: value of 1.50 should be capped to 1.38
+    expect(softClampMax(1.50, 1.38, 0.08)).toBeCloseTo(1.38);
   });
 });

@@ -2,7 +2,7 @@
   <div class="chat-view" :style="{ '--keyboard-offset': keyboardHeight + 'px' }">
     <!-- Full-screen character viewport — the star of the show -->
     <div class="viewport-layer">
-      <CharacterViewport ref="viewportRef" />
+      <CharacterViewport ref="viewportRef" @request-add-music="handleRequestAddMusic" />
     </div>
 
     <!-- ── Floating overlays on top of the character ── -->
@@ -426,6 +426,14 @@ async function toggleMic() {
   } else {
     await asr.startListening();
   }
+}
+
+function handleRequestAddMusic() {
+  // Expand chat and send a request to the model for music suggestions
+  if (!chatDrawerExpanded.value) {
+    toggleChatDrawer();
+  }
+  handleSend('I want to add more background music. What songs or ambient tracks would you recommend? Can you suggest some music links or describe the kind of audio I should look for?');
 }
 
 async function handleSend(message: string) {

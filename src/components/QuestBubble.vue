@@ -228,8 +228,8 @@ const questHubPosition = computed(() => {
   return {
     bottom: isChatExpanded.value ? `${baseBottom + expandedOffset}px` : `${baseBottom}px`,
     right: `${baseRight}px`,
-    position: 'fixed',
-    'z-index': '150',
+    position: 'fixed' as const,
+    zIndex: '150',
     transition: 'bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1)'  // Smooth animation
   };
 });
@@ -460,7 +460,7 @@ async function startQuestExplanation(quest: SkillNode) {
     if (quest.description) questDetails.push(`Description: ${quest.description}`);
     if (quest.rewards?.length) questDetails.push(`Rewards: ${quest.rewards.join(', ')}`);
     if (quest.questSteps?.length) questDetails.push(`Key steps: ${quest.questSteps.slice(0, 3).map(s => s.label).join(', ')}`);
-    if (quest.difficulty) questDetails.push(`Difficulty: ${quest.difficulty}`);
+    if (quest.tier) questDetails.push(`Tier: ${quest.tier}`);
     
     const prompt = `A user clicked on the quest "${quest.name}" with tagline "${quest.tagline}". 
 

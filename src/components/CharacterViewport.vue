@@ -127,6 +127,33 @@
     <div v-if="backgroundStore.importError" class="background-error-banner">
       {{ backgroundStore.importError }}
     </div>
+    <!-- ── Floating Music Bar ── -->
+    <div class="music-bar" :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }">
+      <button class="music-bar-toggle" @click.stop="bgmBarExpanded = !bgmBarExpanded" :title="bgmEnabled ? 'Music playing' : 'Music off'">
+        <span class="music-bar-icon" :class="{ playing: bgmEnabled }">🎵</span>
+      </button>
+      <Transition name="music-expand">
+        <div v-if="bgmBarExpanded" class="music-bar-panel" @click.stop>
+          <button class="music-btn play-btn" @click="toggleBgmFromBar" :title="bgmEnabled ? 'Pause' : 'Play'">
+            {{ bgmEnabled ? '⏸' : '▶️' }}
+          </button>
+          <div class="music-track-info">
+            <span class="music-track-name">{{ currentTrackName }}</span>
+          </div>
+          <button class="music-btn" @click="nextTrack" title="Next track">⏭</button>
+          <input
+            type="range"
+            class="music-vol-slider"
+            min="0" max="100"
+            :value="Math.round(bgmVolume * 100)"
+            @input="handleBarVolumeChange"
+            title="Volume"
+          />
+          <button class="music-btn add-btn" @click="requestAddMusic" title="Add more music">➕</button>
+        </div>
+      </Transition>
+    </div>
+
     <div v-if="showDebug" class="debug-overlay">
       <span>WebGL</span>
       <span>▲ {{ debugInfo.triangles }}</span>
@@ -162,12 +189,17 @@ const localVrmObjectUrl = ref<string | null>(null);
 const settingsOpen = ref(false);
 const settingsRef = ref<HTMLElement | null>(null);
 
+const emit = defineEmits<{
+  'request-add-music': [];
+}>();
+
 // ── BGM player ────────────────────────────────────────────────────────────────
 const bgm = useBgmPlayer();
 const bgmTracks = BGM_TRACKS;
 const bgmEnabled = ref(false);
 const bgmVolume = ref(0.15);
 const bgmTrackId = ref('ambient-calm');
+const bgmBarExpanded = ref(false);
 
 function handleBgmToggle(e: Event) {
   const checked = (e.target as HTMLInputElement).checked;
@@ -216,6 +248,43 @@ function handleAudioBgmVolumeChange(volume: number) {
   if (bgmEnabled.value) {
     settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
   }
+}
+
+// ── Floating music bar helpers ────────────────────────────────────────────────
+const currentTrackName = computed(() => {
+  return bgmTracks.find(t => t.id === bgmTrackId.value)?.name ?? 'Music';
+});
+
+function toggleBgmFromBar() {
+  bgmEnabled.value = !bgmEnabled.value;
+  if (bgmEnabled.value) {
+    bgm.setVolume(bgmVolume.value);
+    bgm.play(bgmTrackId.value);
+  } else {
+    bgm.stop();
+  }
+  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+}
+
+function nextTrack() {
+  const currentIdx = bgmTracks.findIndex(t => t.id === bgmTrackId.value);
+  const nextIdx = (currentIdx + 1) % bgmTracks.length;
+  bgmTrackId.value = bgmTracks[nextIdx].id;
+  if (bgmEnabled.value) {
+    bgm.play(bgmTrackId.value);
+  }
+  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+}
+
+function handleBarVolumeChange(e: Event) {
+  const v = parseInt((e.target as HTMLInputElement).value, 10) / 100;
+  bgmVolume.value = v;
+  bgm.setVolume(v);
+  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+}
+
+function requestAddMusic() {
+  emit('request-add-music');
 }
 
 function handleAudioBgmTrackChange(trackId: string) {
@@ -733,7 +802,7 @@ watch(
   opacity: 0;
 }
 
-/* ── BGM Controls ── */
+/* ── BGM Controls (settings dropdown) ── */
 .bgm-toggle-row {
   display: flex;
   align-items: center;
@@ -742,7 +811,8 @@ watch(
 
 .bgm-status {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
 }
 
 .bgm-switch {
@@ -761,7 +831,7 @@ watch(
 .bgm-slider {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.22);
   border-radius: 10px;
   transition: background 0.3s;
 }
@@ -779,7 +849,7 @@ watch(
 }
 
 .bgm-switch input:checked + .bgm-slider {
-  background: rgba(108, 99, 255, 0.8);
+  background: rgba(56, 189, 248, 0.85);
 }
 
 .bgm-switch input:checked + .bgm-slider::before {
@@ -795,7 +865,7 @@ watch(
 
 .bgm-vol-icon {
   font-size: 0.7rem;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .bgm-volume-slider {
@@ -803,7 +873,7 @@ watch(
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -813,7 +883,7 @@ watch(
   -webkit-appearance: none;
   width: 14px;
   height: 14px;
-  background: rgba(108, 99, 255, 0.9);
+  background: rgba(56, 189, 248, 0.95);
   border-radius: 50%;
   cursor: pointer;
 }
@@ -821,9 +891,163 @@ watch(
 .bgm-volume-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: rgba(108, 99, 255, 0.9);
+  background: rgba(56, 189, 248, 0.95);
   border-radius: 50%;
   cursor: pointer;
   border: none;
+}
+
+/* ── Floating Music Bar ── */
+.music-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.music-bar-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(11, 17, 32, 0.78);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(10px);
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+.music-bar-toggle:hover {
+  background: rgba(56, 189, 248, 0.35);
+  transform: scale(1.08);
+  box-shadow: 0 4px 16px rgba(56, 189, 248, 0.25);
+}
+
+.music-bar-icon {
+  font-size: 1.1rem;
+  transition: transform 0.3s;
+}
+.music-bar-icon.playing {
+  animation: music-pulse 2s ease-in-out infinite;
+}
+@keyframes music-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+.music-bar.playing .music-bar-toggle {
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 2px 16px rgba(56, 189, 248, 0.2);
+}
+
+.music-bar-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  padding: 6px 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 17, 32, 0.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.music-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+.music-btn:hover {
+  background: rgba(56, 189, 248, 0.3);
+  transform: scale(1.1);
+}
+.music-btn.play-btn {
+  background: rgba(56, 189, 248, 0.25);
+  width: 34px;
+  height: 34px;
+}
+.music-btn.play-btn:hover {
+  background: rgba(56, 189, 248, 0.45);
+}
+.music-btn.add-btn {
+  font-size: 0.9rem;
+}
+
+.music-track-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 110px;
+}
+.music-track-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+
+.music-vol-slider {
+  width: 60px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.music-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: rgba(56, 189, 248, 0.95);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.music-vol-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: rgba(56, 189, 248, 0.95);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+/* Music bar expand transition */
+.music-expand-enter-active, .music-expand-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.music-expand-enter-from, .music-expand-leave-to {
+  opacity: 0;
+  transform: translateX(-12px) scale(0.9);
+}
+
+@media (max-width: 640px) {
+  .music-bar { bottom: 12px; left: 12px; }
+  .music-bar-toggle { width: 36px; height: 36px; }
+  .music-bar-panel { padding: 4px 8px; gap: 4px; }
+  .music-vol-slider { width: 44px; }
+  .music-track-info { max-width: 80px; }
 }
 </style>

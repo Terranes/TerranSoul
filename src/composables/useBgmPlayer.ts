@@ -38,7 +38,7 @@ export const BGM_TRACKS: BgmTrack[] = [
 export const DEFAULT_BGM_VOLUME = 0.15;
 
 /** Fade duration in seconds for play/stop transitions. */
-const FADE_DURATION_S = 1.5;
+const FADE_DURATION_S = 0.35;
 
 // ── Procedural audio generation ──────────────────────────────────────────────
 
@@ -178,6 +178,10 @@ export function useBgmPlayer(): BgmPlayerHandle {
   function ensureContext(): AudioContext {
     if (!audioCtx) {
       audioCtx = new AudioContext();
+    }
+    // Resume if suspended (browser autoplay policy)
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
     }
     return audioCtx;
   }

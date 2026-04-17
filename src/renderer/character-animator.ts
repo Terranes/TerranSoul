@@ -12,6 +12,25 @@ export function damp(current: number, target: number, lambda: number, delta: num
   return current + (target - current) * (1 - Math.exp(-lambda * delta));
 }
 
+/**
+ * Soft-clamp helpers — exported for testing.
+ */
+export function softClampMin(value: number, minVal: number, margin: number): number {
+  if (value >= minVal + margin) return value;
+  if (value <= minVal) return minVal;
+  const t = (value - minVal) / margin;
+  const smooth = t * t * (3 - 2 * t);
+  return minVal + smooth * margin;
+}
+
+export function softClampMax(value: number, maxVal: number, margin: number): number {
+  if (value <= maxVal - margin) return value;
+  if (value >= maxVal) return maxVal;
+  const t = (maxVal - value) / margin;
+  const smooth = t * t * (3 - 2 * t);
+  return maxVal - smooth * margin;
+}
+
 // ── Expression targets per state ──────────────────────────────────────
 const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
   idle:      { relaxed: 0.25 },
@@ -65,7 +84,7 @@ const IDLE_POSES: BonePose[] = [
     chest: [0, -0.015, 0],
     hips:  [0, -0.04, 0],           // shifted left
     neck:  [0, -0.01, 0],
-    leftUpperArm:  [0, 0, 1.40],    // left arm slightly more relaxed
+    leftUpperArm:  [0, 0, 1.36],    // left arm slightly more relaxed
     rightUpperArm: [0, 0, -1.30],   // right arm tighter to body
     leftLowerArm:  [0, 0, 0.20],
     rightLowerArm: [0, 0, -0.10],
@@ -80,7 +99,7 @@ const IDLE_POSES: BonePose[] = [
     hips:  [0, 0.04, 0],            // shifted right
     neck:  [0, 0.01, -0.01],
     leftUpperArm:  [0, 0, 1.30],    // left arm closer to body
-    rightUpperArm: [0, 0, -1.40],   // right arm more relaxed
+    rightUpperArm: [0, 0, -1.36],   // right arm more relaxed
     leftLowerArm:  [0, 0, 0.10],
     rightLowerArm: [0, 0, -0.20],
     leftShoulder:  [0, 0, 0.03],
@@ -101,6 +120,7 @@ const IDLE_POSES: BonePose[] = [
     rightShoulder: [0, 0, -0.06],
   },
   // Pose 5: One hand on hip (confident stance)
+  // Note: right arm akimbo — upper arm stays outside dress edge (≥1.10)
   {
     head:  [0, 0.01, 0.01],         // slight head tilt
     spine: [0, 0, 0],
@@ -108,25 +128,27 @@ const IDLE_POSES: BonePose[] = [
     hips:  [0, 0.01, 0],
     neck:  [0, 0.01, 0],
     leftUpperArm:  [0, 0, 1.35],    // left arm neutral
-    rightUpperArm: [0.15, -0.08, -1.0], // right arm akimbo
+    rightUpperArm: [0.15, -0.08, -1.12], // right arm akimbo — kept outside dress
     leftLowerArm:  [0, 0, 0.15],
-    rightLowerArm: [0, 0, -0.60],   // hand on hip
+    rightLowerArm: [0, 0, -0.50],   // hand on hip — limited to avoid clipping
     leftShoulder:  [0, 0, 0.05],
     rightShoulder: [0, 0, -0.10],
   },
-  // Pose 6: Arms behind back (at ease stance)
+  // Pose 6: Clasped hands in front (at ease stance)
+  // Note: arms kept forward/resting at sides instead of behind back
+  // to avoid clipping through the flared dress from behind.
   {
     head:  [0, 0, 0],
     spine: [-0.01, 0, 0],           // chest out slightly
     chest: [-0.01, 0, 0],
     hips:  [0, 0, 0],
     neck:  [0, 0, 0],
-    leftUpperArm:  [0.05, 0, 1.50], // arms further back
-    rightUpperArm: [0.05, 0, -1.50],
-    leftLowerArm:  [0, 0, 0.40],    // hands behind back
-    rightLowerArm: [0, 0, -0.40],
-    leftShoulder:  [-0.02, 0, 0.10],
-    rightShoulder: [-0.02, 0, -0.10],
+    leftUpperArm:  [-0.05, 0, 1.25],  // arms slightly forward
+    rightUpperArm: [-0.05, 0, -1.25],
+    leftLowerArm:  [0, 0, 0.30],    // hands clasped in front
+    rightLowerArm: [0, 0, -0.30],
+    leftShoulder:  [-0.02, 0, 0.08],
+    rightShoulder: [-0.02, 0, -0.08],
   },
 ];
 
@@ -139,7 +161,7 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     chest: [0, 0, 0],
     hips:  [0, 0, 0],
     neck:  [0.04, 0.08, 0],
-    leftUpperArm:  [0, 0, 1.45],    // left arm crosses slightly more
+    leftUpperArm:  [0, 0, 1.35],    // left arm at side
     rightUpperArm: [0.2, -0.1, -1.20], // right hand toward chin
     leftLowerArm:  [0, 0, 0.15],
     rightLowerArm: [0, 0, -0.45],   // forearm raised toward face
@@ -178,8 +200,8 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     chest: [0.04, 0, 0],
     hips:  [0, 0, 0],
     neck:  [0.08, 0, 0],
-    leftUpperArm:  [0.05, 0, 1.45], // arms closer to body
-    rightUpperArm: [0.05, 0, -1.45],
+    leftUpperArm:  [0.05, 0, 1.35], // arms at sides, slightly hunched
+    rightUpperArm: [0.05, 0, -1.35],
     leftLowerArm:  [0, 0, 0.1],
     rightLowerArm: [0, 0, -0.1],
     leftShoulder:  [0, 0.05, 0.08],
@@ -270,6 +292,29 @@ const EXPR_LAMBDAS = new Float64Array([
 /** Damping rate for bone rotations. */
 const BONE_LAMBDA = 6;
 const BONE_STRIDE = 3;
+
+// ── Dress-aware arm clamp boundaries ──────────────────────────────────
+// For characters wearing flared dresses (e.g. Annabelle), the arms must
+// not rotate too tightly against the body or the hands/forearms clip
+// through the dress volume.
+//
+// VRM convention:  left upper arm Z > 0 → arm toward body (higher = tighter);
+//                  right upper arm Z < 0 → arm toward body (lower = tighter).
+//
+// A flared skirt extends outward at the hip/wrist level.  When the
+// upper arm |Z| exceeds ~1.38 rad the hands enter the dress silhouette.
+// We enforce a soft max at 1.38 rad with a smooth transition zone.
+
+/** Maximum absolute Z-rotation for upper arms (rad).  Arms tighter to the
+ *  body than this angle will clip through a flared dress. */
+const DRESS_UPPER_ARM_Z_MAX = 1.38;
+
+/** Width of the soft transition zone (rad). */
+const DRESS_CLAMP_MARGIN = 0.08;
+
+/** Maximum inward bend for the lower arm Z-rotation (rad).
+ *  Prevents the forearm from folding into the dress volume. */
+const DRESS_LOWER_ARM_Z_MAX = 0.50;
 
 /**
  * VRM animator that drives procedural bone animation, facial expressions,
@@ -687,6 +732,26 @@ export class CharacterAnimator {
         x += curOffset[0];
         y += curOffset[1];
         z += curOffset[2];
+      }
+
+      // ── Dress-aware arm clamping ──────────────────────────────────
+      // Prevent hands / forearms from clipping through a flared dress.
+      // Higher |Z| on upper arms = tighter to body = more clipping risk.
+      // Applied after all composition so breathing, oscillations and
+      // gesture noise are already folded in.  The soft clamp keeps the
+      // motion looking natural rather than hitting a hard wall.
+      if (boneName === 'leftUpperArm') {
+        // Left upper arm: Z > 0 toward body; cap max to dress edge
+        z = softClampMax(z, DRESS_UPPER_ARM_Z_MAX, DRESS_CLAMP_MARGIN);
+      } else if (boneName === 'rightUpperArm') {
+        // Right upper arm: Z < 0 toward body; |Z| must stay ≤ threshold
+        z = -softClampMax(-z, DRESS_UPPER_ARM_Z_MAX, DRESS_CLAMP_MARGIN);
+      } else if (boneName === 'leftLowerArm') {
+        // Left lower arm: Z > 0 bends inward; limit max bend
+        z = softClampMax(z, DRESS_LOWER_ARM_Z_MAX, DRESS_CLAMP_MARGIN);
+      } else if (boneName === 'rightLowerArm') {
+        // Right lower arm: Z < 0 bends inward; |Z| limited
+        z = -softClampMax(-z, DRESS_LOWER_ARM_Z_MAX, DRESS_CLAMP_MARGIN);
       }
 
       this.boneTargetArr[i * BONE_STRIDE]     = x;

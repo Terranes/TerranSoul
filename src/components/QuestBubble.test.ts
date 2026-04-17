@@ -369,13 +369,8 @@ describe('QuestBubble', () => {
     // Wait for onMounted lifecycle
     await nextTick();
     
-    expect(mockBrainStore.generateResponse).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          role: 'user',
-          content: expect.stringContaining('Analyze these available quests'),
-        }),
-      ])
+    expect(mockBrainStore.processPromptSilently).toHaveBeenCalledWith(
+      expect.stringContaining('Analyze these available quests'),
     );
   });
 
@@ -435,17 +430,9 @@ describe('QuestBubble', () => {
   });
 
   describe('dynamic positioning', () => {
-    let mockChatExpansion: any;
-
     beforeEach(() => {
-      // Mock the chat expansion composable
-      mockChatExpansion = {
-        isChatExpanded: { value: false }
-      };
-      
-      vi.mock('../composables/useChatExpansion', () => ({
-        useChatExpansion: () => mockChatExpansion
-      }));
+      // Reset the top-level mock for chat expansion state
+      mockChatExpansion.isChatExpanded = { value: false };
 
       // Mock window dimensions for desktop
       Object.defineProperty(window, 'innerWidth', {
@@ -462,7 +449,7 @@ describe('QuestBubble', () => {
       expect(questHub.exists()).toBe(true);
       
       // Check that dynamic style binding includes correct positioning
-      const styleBinding = questHub.element.style;
+      const styleBinding = (questHub.element as HTMLElement).style;
       expect(styleBinding.bottom).toBe('90px');
       expect(styleBinding.right).toBe('24px');
       expect(styleBinding.position).toBe('fixed');
@@ -475,7 +462,7 @@ describe('QuestBubble', () => {
       await nextTick();
       
       const questHub = wrapper.find('.quest-hub');
-      const styleBinding = questHub.element.style;
+      const styleBinding = (questHub.element as HTMLElement).style;
       expect(styleBinding.bottom).toBe('340px'); // 90 + 250
       expect(styleBinding.right).toBe('24px');
     });
@@ -491,11 +478,11 @@ describe('QuestBubble', () => {
       const wrapper = mount(QuestBubble);
       
       // Simulate screen width update
-      wrapper.vm.screenWidth = 600;
+      (wrapper.vm as any).screenWidth = 600;
       await nextTick();
       
       const questHub = wrapper.find('.quest-hub');
-      const styleBinding = questHub.element.style;
+      const styleBinding = (questHub.element as HTMLElement).style;
       expect(styleBinding.bottom).toBe('85px'); // Mobile base
       expect(styleBinding.right).toBe('16px'); // Mobile right
     });
@@ -504,7 +491,7 @@ describe('QuestBubble', () => {
       const wrapper = mount(QuestBubble);
       
       const questHub = wrapper.find('.quest-hub');
-      const styleBinding = questHub.element.style;
+      const styleBinding = (questHub.element as HTMLElement).style;
       expect(styleBinding.transition).toContain('bottom');
       expect(styleBinding.transition).toContain('cubic-bezier');
     });

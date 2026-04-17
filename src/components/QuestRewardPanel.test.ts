@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
 import QuestRewardPanel from './QuestRewardPanel.vue';
 import type { SkillNode } from '../stores/skill-tree';
 import type { RewardChoice } from './QuestRewardPanel.vue';
@@ -11,16 +10,17 @@ const mockQuest: SkillNode = {
   tagline: 'A quest for testing',
   description: 'This is a test quest description',
   icon: '⚔️',
-  category: 'test',
-  difficulty: 'easy',
+  category: 'brain',
   questSteps: [
-    { label: 'Step 1: Learn basics', target: null },
-    { label: 'Step 2: Practice', target: null },
-    { label: 'Step 3: Master it', target: 'settings' },
+    { label: 'Step 1: Learn basics', action: 'info', target: undefined },
+    { label: 'Step 2: Practice', action: 'info', target: undefined },
+    { label: 'Step 3: Master it', action: 'navigate', target: 'settings' },
   ],
   rewards: ['XP', 'Knowledge', 'Skills'],
   rewardIcons: ['🎯', '📚', '⚡'],
   requires: [],
+  tier: 'foundation',
+  combos: [],
 };
 
 const mockChoices: RewardChoice[] = [
@@ -102,11 +102,11 @@ describe('QuestRewardPanel', () => {
     const questWithManySteps: SkillNode = {
       ...mockQuest,
       questSteps: [
-        { label: 'Step 1', target: null },
-        { label: 'Step 2', target: null },
-        { label: 'Step 3', target: null },
-        { label: 'Step 4', target: null },
-        { label: 'Step 5', target: null },
+        { label: 'Step 1', action: 'info' },
+        { label: 'Step 2', action: 'info' },
+        { label: 'Step 3', action: 'info' },
+        { label: 'Step 4', action: 'info' },
+        { label: 'Step 5', action: 'info' },
       ]
     };
 
