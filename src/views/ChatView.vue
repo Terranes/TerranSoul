@@ -1,7 +1,7 @@
 <template>
   <div class="chat-view">
-    <!-- 3D viewport fills the whole area; click it to toggle dialog -->
-    <div class="viewport-section" @click="toggleDialog">
+    <!-- 3D viewport — click handled by App.vue -->
+    <div class="viewport-section">
       <CharacterViewport />
       <!-- Toggle button overlay -->
       <button
@@ -76,7 +76,7 @@ import { ref, watch, onMounted } from 'vue';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
-import type { CharacterState } from '../types';
+import type { CharacterState, Message } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
@@ -93,6 +93,8 @@ function toggleDialog() {
   showDialog.value = !showDialog.value;
 }
 
+defineExpose({ toggleDialog });
+
 function formatRam(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`;
 }
@@ -108,10 +110,13 @@ async function activateBrain() {
   await brain.setActiveBrain(model);
 }
 
-function sentimentToState(sentiment?: string): CharacterState {
+function sentimentToState(sentiment?: Message['sentiment']): CharacterState {
   switch (sentiment) {
     case 'happy': return 'happy';
     case 'sad': return 'sad';
+    case 'angry': return 'angry';
+    case 'surprised': return 'surprised';
+    case 'shy': return 'shy';
     default: return 'talking';
   }
 }
@@ -169,14 +174,20 @@ onMounted(async () => {
 }
 
 .chat-section {
-  flex: 0 0 45%;
-  max-height: 45%;
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  max-height: 50%;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: rgba(10, 10, 20, 0.9);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(8px);
+  background: rgba(10, 10, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  overflow: hidden;
 }
 
 /* Toggle button */

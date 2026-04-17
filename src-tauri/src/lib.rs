@@ -20,6 +20,7 @@ pub mod sync;
 
 use commands::{
     agent::list_agents,
+    window::{close_window, start_drag, get_window_state, move_window},
     brain::{
         check_ollama_status, clear_active_brain, get_active_brain, get_ollama_models,
         get_system_info, pull_ollama_model, recommend_brain_models, set_active_brain,
@@ -186,6 +187,10 @@ pub fn run() {
             list_agent_capabilities,
             run_agent_in_sandbox,
             clear_agent_capabilities,
+            close_window,
+            start_drag,
+            get_window_state,
+            move_window,
         ])
         .setup(|app| {
             let data_dir = app
@@ -232,10 +237,12 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                    if let tauri::tray::TrayIconEvent::Click { button, .. } = event {
+                        if button == tauri::tray::MouseButton::Left {
+                            if let Some(window) = tray.app_handle().get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
                     }
                 })

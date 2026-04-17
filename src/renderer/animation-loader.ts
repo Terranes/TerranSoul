@@ -24,13 +24,7 @@ interface ClipData {
  * A single ClipData is accepted for backwards-compat; an array enables the
  * multi-clip system that randomly cycles through animation variants.
  */
-interface PersonaAnimationData {
-  idle: ClipData | ClipData[];
-  thinking: ClipData | ClipData[];
-  talking: ClipData | ClipData[];
-  happy: ClipData | ClipData[];
-  sad: ClipData | ClipData[];
-}
+type PersonaAnimationData = Record<'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'sitting', ClipData | ClipData[]>;
 
 // ── Static imports (bundled by Vite — no runtime fetch) ──────────────
 
@@ -74,18 +68,29 @@ export type PersonaClips = Record<CharacterState, THREE.AnimationClip[]>;
  */
 export function buildPersonaClips(vrm: VRM, persona: AnimationPersona): PersonaClips {
   const data = DATA_MAP[persona];
-  const states: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad'];
-  const clips: Partial<PersonaClips> = {};
+  const sourceStateMap: Record<CharacterState, keyof PersonaAnimationData> = {
+    idle: 'idle',
+    thinking: 'thinking',
+    talking: 'talking',
+    happy: 'happy',
+    sad: 'sad',
+    angry: 'talking',
+    surprised: 'happy',
+    shy: 'sad',
+    sitting: 'sitting',
+  };
+  const clips = {} as PersonaClips;
 
-  for (const state of states) {
-    const raw = data[state];
+  for (const state of Object.keys(sourceStateMap) as CharacterState[]) {
+    const sourceState = sourceStateMap[state];
+    const raw = data[sourceState];
     const arr = Array.isArray(raw) ? raw : [raw];
     clips[state] = arr.map((d, i) =>
       buildClip(vrm, `${persona}-${state}-${i}`, d),
     );
   }
 
-  return clips as PersonaClips;
+  return clips;
 }
 
 function buildClip(vrm: VRM, name: string, clipData: ClipData): THREE.AnimationClip {

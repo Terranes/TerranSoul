@@ -14,11 +14,15 @@ function smoothStep(current: number, target: number, speed: number, delta: numbe
 // ── Expression targets per state (persona-agnostic — expressions don't
 //    change much between personas). ──────────────────────────────────
 const STATE_EXPRESSIONS: Record<CharacterState, Record<string, number>> = {
-  idle:     { relaxed: 0.25 },
-  thinking: { neutral: 0.3 },
-  talking:  { relaxed: 0.15 },
-  happy:    { happy: 0.7, relaxed: 0.2 },
-  sad:      { sad: 0.6 },
+  idle:       { relaxed: 0.25 },
+  thinking:   { neutral: 0.38 },
+  talking:    { relaxed: 0.2 },
+  happy:      { happy: 0.88, relaxed: 0.18 },
+  sad:        { sad: 0.78 },
+  angry:      { angry: 0.9, neutral: 0.08 },
+  surprised:  { surprised: 0.95, oh: 0.55 },
+  shy:        { relaxed: 0.58, happy: 0.2, sad: 0.16 },
+  sitting:    { relaxed: 0.35 },
 };
 
 /**
@@ -225,9 +229,11 @@ export class CharacterAnimator {
   private applyVRMAnimation(t: number, delta: number) {
     if (!this.vrm || !this.vrmScene) return;
 
-    // Pin scene root — only preserve the loader's base rotation
+    // Pin scene root and add state-specific whole-body motion so the
+    // emotion reads even on models whose face blendshapes are subtle.
     this.vrmScene.position.set(0, 0, 0);
     this.vrmScene.rotation.set(0, this.baseRotationY, 0);
+    this.applyStateSceneMotion(t);
 
     // Advance the animation mixer (drives bone keyframes)
     this.mixer?.update(delta);
@@ -244,6 +250,71 @@ export class CharacterAnimator {
     // vrm.update() transfers normalized bones → raw skeleton,
     // then updates lookAt, expressions, and spring bones.
     this.vrm.update(delta);
+  }
+
+  // ── Whole-body scene-root motion to make emotions more readable ────
+
+  private applyStateSceneMotion(t: number) {
+    if (!this.vrmScene) return;
+
+    switch (this.state) {
+      case 'idle':
+        this.vrmScene.position.y += Math.sin(t * 0.9) * 0.01;
+        this.vrmScene.rotation.z += Math.sin(t * 0.45) * 0.015;
+        break;
+
+      case 'thinking':
+        this.vrmScene.position.y += Math.sin(t * 1.8) * 0.014;
+        this.vrmScene.rotation.x += -0.03;
+        this.vrmScene.rotation.y += Math.sin(t * 0.9) * 0.06;
+        this.vrmScene.rotation.z += Math.sin(t * 1.8) * 0.025;
+        break;
+
+      case 'talking':
+        this.vrmScene.position.y += Math.sin(t * 6.2) * 0.018;
+        this.vrmScene.rotation.x += Math.sin(t * 3.1) * 0.025;
+        this.vrmScene.rotation.z += Math.sin(t * 6.2) * 0.035;
+        break;
+
+      case 'happy':
+        this.vrmScene.position.y += 0.02 + Math.abs(Math.sin(t * 4.8)) * 0.038;
+        this.vrmScene.rotation.x += -0.035;
+        this.vrmScene.rotation.z += Math.sin(t * 4.8) * 0.055;
+        break;
+
+      case 'sad':
+        this.vrmScene.position.y -= 0.035 + Math.abs(Math.sin(t * 0.75)) * 0.018;
+        this.vrmScene.rotation.x += 0.09;
+        this.vrmScene.rotation.z += Math.sin(t * 0.75) * 0.022;
+        break;
+
+      case 'angry':
+        this.vrmScene.position.y += Math.sin(t * 8.8) * 0.012;
+        this.vrmScene.rotation.x += 0.08;
+        this.vrmScene.rotation.y += Math.sin(t * 4.4) * 0.08;
+        this.vrmScene.rotation.z += Math.sin(t * 8.8) * 0.04;
+        break;
+
+      case 'surprised':
+        this.vrmScene.position.y += 0.05 + Math.abs(Math.sin(t * 7.2)) * 0.03;
+        this.vrmScene.rotation.x += -0.08;
+        this.vrmScene.rotation.y += Math.sin(t * 2.5) * 0.045;
+        this.vrmScene.rotation.z += Math.sin(t * 5.4) * 0.02;
+        break;
+
+      case 'shy':
+        this.vrmScene.position.y -= 0.015;
+        this.vrmScene.rotation.x += 0.05;
+        this.vrmScene.rotation.y += -0.12 + Math.sin(t * 1.2) * 0.05;
+        this.vrmScene.rotation.z += -0.07 + Math.sin(t * 1.8) * 0.02;
+        break;
+
+      case 'sitting':
+        // Gentle idle breathing — the bone animation already handles leg pose
+        this.vrmScene.position.y += Math.sin(t * 0.8) * 0.006;
+        this.vrmScene.rotation.z += Math.sin(t * 0.4) * 0.008;
+        break;
+    }
   }
 
   // ── State-based expression targets ─────────────────────────────────
@@ -301,7 +372,7 @@ export class CharacterAnimator {
   }
 
   private clearExpressionTargets() {
-    for (const name of ['aa', 'oh', 'happy', 'sad', 'angry', 'relaxed', 'neutral']) {
+    for (const name of ['aa', 'oh', 'happy', 'sad', 'angry', 'surprised', 'relaxed', 'neutral']) {
       this.expressionTargets.set(name, 0);
     }
   }
@@ -330,33 +401,74 @@ export class CharacterAnimator {
     switch (this.state) {
       case 'idle':
         this.placeholder.position.y = Math.sin(t * 0.8) * 0.03;
+        this.placeholder.rotation.x = 0;
         this.placeholder.rotation.y = Math.sin(t * 0.4) * 0.1;
+        this.placeholder.rotation.z = 0;
         this.placeholder.scale.setScalar(1.0);
         break;
 
       case 'thinking':
-        this.placeholder.rotation.y += 0.02;
-        this.placeholder.position.y = Math.sin(t * 2.0) * 0.04;
-        this.placeholder.scale.setScalar(1.0);
+        this.placeholder.rotation.x = -0.05 + Math.sin(t * 1.6) * 0.02;
+        this.placeholder.rotation.y += 0.035;
+        this.placeholder.rotation.z = Math.sin(t * 1.6) * 0.03;
+        this.placeholder.position.y = Math.sin(t * 2.2) * 0.05;
+        this.placeholder.scale.setScalar(1.01 + Math.sin(t * 2.2) * 0.015);
         break;
 
       case 'talking':
-        this.placeholder.position.y = Math.sin(t * 6.0) * 0.025;
-        this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.04;
-        this.placeholder.scale.setScalar(1.0 + Math.sin(t * 8.0) * 0.04);
+        this.placeholder.position.y = Math.sin(t * 6.5) * 0.035;
+        this.placeholder.rotation.x = Math.sin(t * 3.25) * 0.03;
+        this.placeholder.rotation.y = 0;
+        this.placeholder.rotation.z = Math.sin(t * 6.5) * 0.06;
+        this.placeholder.scale.setScalar(1.0 + Math.sin(t * 8.5) * 0.055);
         break;
 
       case 'happy':
-        this.placeholder.position.y = Math.abs(Math.sin(t * 5.0)) * 0.08;
-        this.placeholder.rotation.z = Math.sin(t * 5.0) * 0.08;
-        this.placeholder.scale.setScalar(1.0 + Math.abs(Math.sin(t * 5.0)) * 0.05);
+        this.placeholder.position.y = Math.abs(Math.sin(t * 5.5)) * 0.13;
+        this.placeholder.rotation.x = -0.04;
+        this.placeholder.rotation.y = 0;
+        this.placeholder.rotation.z = Math.sin(t * 5.5) * 0.12;
+        this.placeholder.scale.setScalar(1.03 + Math.abs(Math.sin(t * 5.5)) * 0.09);
         break;
 
       case 'sad':
-        this.placeholder.position.y = -Math.abs(Math.sin(t * 0.5)) * 0.04;
-        this.placeholder.rotation.z = Math.sin(t * 0.5) * 0.02;
-        this.placeholder.rotation.x = 0.1;
-        this.placeholder.scale.setScalar(0.95 + Math.sin(t * 0.3) * 0.02);
+        this.placeholder.position.y = -0.05 - Math.abs(Math.sin(t * 0.7)) * 0.05;
+        this.placeholder.rotation.x = 0.18;
+        this.placeholder.rotation.y = 0;
+        this.placeholder.rotation.z = Math.sin(t * 0.7) * 0.035;
+        this.placeholder.scale.setScalar(0.9 + Math.sin(t * 0.35) * 0.025);
+        break;
+
+      case 'angry':
+        this.placeholder.position.y = Math.sin(t * 11.0) * 0.02;
+        this.placeholder.rotation.x = 0.14;
+        this.placeholder.rotation.y = Math.sin(t * 5.5) * 0.09;
+        this.placeholder.rotation.z = Math.sin(t * 11.0) * 0.055;
+        this.placeholder.scale.setScalar(1.06 + Math.abs(Math.sin(t * 11.0)) * 0.06);
+        break;
+
+      case 'surprised':
+        this.placeholder.position.y = 0.08 + Math.abs(Math.sin(t * 8.0)) * 0.08;
+        this.placeholder.rotation.x = -0.16;
+        this.placeholder.rotation.y = Math.sin(t * 3.0) * 0.05;
+        this.placeholder.rotation.z = Math.sin(t * 6.0) * 0.035;
+        this.placeholder.scale.setScalar(1.1 + Math.abs(Math.sin(t * 8.0)) * 0.08);
+        break;
+
+      case 'shy':
+        this.placeholder.position.y = Math.sin(t * 1.8) * 0.02 - 0.03;
+        this.placeholder.rotation.x = 0.09;
+        this.placeholder.rotation.y = Math.sin(t * 1.4) * 0.18 - 0.14;
+        this.placeholder.rotation.z = -0.12 + Math.sin(t * 1.8) * 0.025;
+        this.placeholder.scale.setScalar(0.93 + Math.sin(t * 1.8) * 0.02);
+        break;
+
+      case 'sitting':
+        this.placeholder.position.y = Math.sin(t * 0.8) * 0.01 - 0.08;
+        this.placeholder.rotation.x = 0.04;
+        this.placeholder.rotation.y = 0;
+        this.placeholder.rotation.z = Math.sin(t * 0.4) * 0.01;
+        this.placeholder.scale.setScalar(1.0);
         break;
     }
   }

@@ -125,31 +125,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   rimLight.position.set(0.3, 2.3, -2.2);
   scene.add(rimLight);
 
-  // Soft pedestal instead of grid floor
-  const pedestalGeometry = new THREE.CircleGeometry(1.15, 64);
-  const pedestalMaterial = new THREE.MeshStandardMaterial({
-    color: 0xe6ecf5,
-    transparent: true,
-    opacity: 0.95,
-    roughness: 0.92,
-    metalness: 0.02,
-  });
-  const pedestal = new THREE.Mesh(pedestalGeometry, pedestalMaterial);
-  pedestal.rotation.x = -Math.PI / 2;
-  pedestal.position.y = 0.01;
-  scene.add(pedestal);
-
-  const pedestalRingGeometry = new THREE.RingGeometry(1.18, 1.28, 64);
-  const pedestalRingMaterial = new THREE.MeshBasicMaterial({
-    color: 0xc7d7eb,
-    transparent: true,
-    opacity: 0.5,
-    side: THREE.DoubleSide,
-  });
-  const pedestalRing = new THREE.Mesh(pedestalRingGeometry, pedestalRingMaterial);
-  pedestalRing.rotation.x = -Math.PI / 2;
-  pedestalRing.position.y = 0.012;
-  scene.add(pedestalRing);
+  // Pedestal removed — transparent background mode
 
   const clock = new THREE.Clock();
 

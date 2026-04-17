@@ -1,7 +1,5 @@
 <template>
   <div class="viewport-wrapper">
-    <div class="background-layer" :style="backgroundStyle" />
-    <div class="background-tint" />
     <canvas ref="canvasRef" class="viewport-canvas" />
     <!-- Loading overlay -->
     <Transition name="fade">
@@ -14,7 +12,7 @@
     <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
       <span>by {{ characterStore.vrmMetadata.author }}</span>
     </div>
-    <div class="top-controls">
+    <div class="top-controls" @click.stop style="display:none">
       <select
         class="model-selector"
         :value="characterStore.selectedModelId"
@@ -35,31 +33,53 @@
         @change="handleVrmImport"
       />
     </div>
-    <div class="background-controls">
-      <span class="background-label">Background</span>
-      <button
-        v-for="background in backgroundStore.allBackgrounds"
-        :key="background.id"
-        class="background-chip"
-        :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
-        @click="backgroundStore.selectBackground(background.id)"
-      >
-        {{ background.name }}
-      </button>
-      <button class="import-bg-btn" @click="openBackgroundPicker">Import BG</button>
-      <input
-        ref="backgroundInputRef"
-        class="hidden-file-input"
-        type="file"
-        accept="image/*"
-        @change="handleBackgroundImport"
-      />
-    </div>
-    <div v-if="backgroundStore.importError" class="background-error-banner">
+    <div v-if="false && backgroundStore.importError" class="background-error-banner">
       {{ backgroundStore.importError }}
     </div>
-    <div class="state-badge" :class="characterStore.state">
-      {{ characterStore.state }}
+
+    <!-- Side panel tabs (hidden - moved to right-click menu) -->
+    <div class="side-tabs" @click.stop style="display:none">
+      <!-- Tab buttons -->
+      <div class="side-tab-buttons">
+        <button
+          class="side-tab-btn"
+          :class="{ active: activeTab === 'bg' }"
+          @click="activeTab = activeTab === 'bg' ? null : 'bg'"
+        >🖼</button>
+        <button
+          class="side-tab-btn"
+          :class="{ active: activeTab === 'mood' }"
+          @click="activeTab = activeTab === 'mood' ? null : 'mood'"
+        >😊</button>
+      </div>
+
+      <!-- Panel content -->
+      <div v-if="activeTab === 'bg'" class="side-panel">
+        <span class="panel-label">BACKGROUND</span>
+        <button
+          v-for="background in backgroundStore.allBackgrounds"
+          :key="background.id"
+          class="background-chip"
+          :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
+          @click="backgroundStore.selectBackground(background.id)"
+        >{{ background.name }}</button>
+        <button class="import-bg-btn" @click="openBackgroundPicker">Import BG</button>
+        <input ref="backgroundInputRef" class="hidden-file-input" type="file" accept="image/*" @change="handleBackgroundImport" />
+      </div>
+
+      <div v-if="activeTab === 'mood'" class="side-panel">
+        <span class="panel-label">MOOD</span>
+        <button
+          v-for="state in previewStates"
+          :key="state"
+          class="state-chip"
+          :class="[state, { active: characterStore.state === state }]"
+          @click="characterStore.setState(state)"
+        >{{ stateLabels[state] }}</button>
+      </div>
+    </div>
+    <div class="state-badge" :class="characterStore.state" style="display:none">
+      {{ stateLabels[characterStore.state] }}
     </div>
     <div v-if="showDebug" class="debug-overlay">
       <span>WebGL</span>
@@ -79,15 +99,37 @@ import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
+import type { CharacterState } from '../types';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
 const showDebug = ref(false);
+const activeTab = ref<'bg' | 'mood' | null>(null);
+
+// Mouse look target in NDC space (-1..1)
+const mouseLook = { x: 0, y: 0 };
+function onGlobalMouseMove(e: MouseEvent) {
+  // Use the full window as reference so even off-canvas movement works
+  mouseLook.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouseLook.y = -((e.clientY / window.innerHeight) * 2 - 1);
+}
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 const backgroundInputRef = ref<HTMLInputElement | null>(null);
 const vrmInputRef = ref<HTMLInputElement | null>(null);
 const localVrmObjectUrl = ref<string | null>(null);
+const previewStates: CharacterState[] = ['idle', 'thinking', 'talking', 'happy', 'sad', 'angry', 'surprised', 'shy', 'sitting'];
+const stateLabels: Record<CharacterState, string> = {
+  idle: '💤 Idle',
+  thinking: '🤔 Thinking',
+  talking: '🗣 Talking',
+  happy: '😊 Happy',
+  sad: '😢 Sad',
+  angry: '😠 Angry',
+  surprised: '😲 Surprised',
+  shy: '☺️ Shy',
+  sitting: '🪑 Sitting',
+};
 
 const characterName = computed(() => {
   return characterStore.vrmMetadata?.title ?? 'TerranSoul';
@@ -103,6 +145,12 @@ let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
+
+// Pre-allocated vectors for eye-tracking (avoids per-frame GC)
+const _eyeFwd   = new THREE.Vector3();
+const _eyeRight = new THREE.Vector3();
+const _eyeUp    = new THREE.Vector3();
+const _eyeTarget = new THREE.Vector3();
 
 function handleModelChange(e: Event) {
   const select = e.target as HTMLSelectElement;
@@ -179,8 +227,26 @@ onMounted(async () => {
     ctx.updateZoomTarget();
     // Update OrbitControls (damping requires per-frame update)
     ctx.controls.update();
-    // Keep lookAt target at camera position so VRM eyes track the viewer
-    ctx.lookAtTarget.position.copy(ctx.camera.position);
+    // Eyes follow mouse cursor — project NDC mouse onto a plane 1.5m in front of character
+    {
+      const dist = 1.5;
+      // getWorldDirection() forces a matrixWorld update and returns the
+      // camera's true forward direction (points INTO the scene).
+      ctx.camera.getWorldDirection(_eyeFwd);
+      // Right = forward × world-up (safe since polar angle is locked to π/2)
+      _eyeRight.crossVectors(_eyeFwd, new THREE.Vector3(0, 1, 0)).normalize();
+      // Camera-local up
+      _eyeUp.crossVectors(_eyeRight, _eyeFwd).normalize();
+      const fovY = (ctx.camera.fov * Math.PI) / 180;
+      const halfH = Math.tan(fovY / 2) * dist;
+      const halfW = halfH * ctx.camera.aspect;
+      _eyeTarget.copy(ctx.camera.position)
+        .addScaledVector(_eyeFwd, dist)
+        .addScaledVector(_eyeRight, mouseLook.x * halfW)
+        .addScaledVector(_eyeUp, mouseLook.y * halfH);
+      // Smooth interpolation so eyes glide rather than snap
+      ctx.lookAtTarget.position.lerp(_eyeTarget, 0.08);
+    }
     animator.update(delta);
     ctx.renderer.render(ctx.scene, ctx.camera);
 
@@ -191,12 +257,14 @@ onMounted(async () => {
   loop();
 
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('mousemove', onGlobalMouseMove);
 });
 
 onUnmounted(() => {
   cancelAnimationFrame(animFrameId);
   disposeScene?.();
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('mousemove', onGlobalMouseMove);
   if (localVrmObjectUrl.value) {
     URL.revokeObjectURL(localVrmObjectUrl.value);
   }
@@ -270,6 +338,7 @@ watch(
   width: 100%;
   height: 100%;
   overflow: hidden;
+  background: transparent;
 }
 
 .background-layer {
@@ -330,59 +399,99 @@ watch(
   z-index: 6;
 }
 
-.background-controls {
+.side-tabs {
   position: absolute;
-  top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-  max-width: min(92vw, 920px);
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: rgba(15, 23, 42, 0.46);
-  backdrop-filter: blur(10px);
+  flex-direction: row;
+  align-items: flex-start;
   z-index: 6;
 }
 
-.background-label {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 0.76rem;
+.side-tab-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 4px;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(10px);
+  border-radius: 10px 0 0 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-right: none;
+}
+
+.side-tab-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.side-tab-btn:hover,
+.side-tab-btn.active {
+  background: rgba(59, 130, 246, 0.7);
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px 0 0 10px;
+  min-width: 110px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.panel-label {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.65rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  margin-bottom: 2px;
 }
 
 .background-chip,
 .import-bg-btn {
-  padding: 7px 12px;
-  border-radius: 999px;
+  padding: 5px 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  text-align: left;
+  transition: background 0.15s ease;
 }
 
 .background-chip:hover,
 .import-bg-btn:hover {
-  background: rgba(255, 255, 255, 0.22);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .background-chip.active {
-  background: rgba(59, 130, 246, 0.9);
+  background: rgba(59, 130, 246, 0.8);
   border-color: rgba(191, 219, 254, 0.85);
 }
 
 .import-bg-btn {
-  background: rgba(168, 85, 247, 0.88);
-  border-color: rgba(233, 213, 255, 0.7);
+  background: rgba(168, 85, 247, 0.7);
+  border-color: rgba(233, 213, 255, 0.5);
 }
 
 .hidden-file-input {
@@ -449,22 +558,74 @@ watch(
   transform: translateY(-1px);
 }
 
+.state-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: min(94vw, 1040px);
+  padding: 7px 10px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.24);
+  backdrop-filter: blur(14px);
+  z-index: 6;
+}
+
+.state-controls-label {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+
+.state-chip {
+  min-width: 72px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.state-chip:hover {
+  transform: translateY(-2px) scale(1.02);
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.state-chip.active {
+  transform: translateY(-1px) scale(1.06);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.34);
+}
+
 .state-badge {
   position: absolute;
   top: 12px;
   right: 16px;
-  padding: 4px 12px;
+  padding: 8px 16px;
   border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.84rem;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   pointer-events: none;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(15, 23, 42, 0.82);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(8px);
 }
 
 .state-badge.idle {
@@ -495,6 +656,78 @@ watch(
   background: rgba(126, 34, 206, 0.9);
   color: #faf5ff;
   border-color: rgba(216, 180, 254, 0.7);
+}
+
+.state-badge.angry,
+.state-chip.angry.active {
+  background: rgba(220, 38, 38, 0.92);
+  color: #fef2f2;
+  border-color: rgba(252, 165, 165, 0.72);
+}
+
+.state-badge.surprised,
+.state-chip.surprised.active {
+  background: rgba(249, 115, 22, 0.92);
+  color: #fff7ed;
+  border-color: rgba(253, 186, 116, 0.72);
+}
+
+.state-badge.shy,
+.state-chip.shy.active {
+  background: rgba(236, 72, 153, 0.9);
+  color: #fdf2f8;
+  border-color: rgba(251, 207, 232, 0.72);
+}
+
+.state-chip.idle.active {
+  background: rgba(37, 99, 235, 0.9);
+  color: #eff6ff;
+  border-color: rgba(147, 197, 253, 0.7);
+}
+
+.state-chip.thinking.active {
+  background: rgba(245, 158, 11, 0.92);
+  color: #fff7ed;
+  border-color: rgba(253, 230, 138, 0.7);
+}
+
+.state-chip.talking.active {
+  background: rgba(22, 163, 74, 0.9);
+  color: #f0fdf4;
+  border-color: rgba(134, 239, 172, 0.7);
+}
+
+.state-chip.happy.active {
+  background: rgba(8, 145, 178, 0.92);
+  color: #ecfeff;
+  border-color: rgba(103, 232, 249, 0.7);
+}
+
+.state-chip.sad.active {
+  background: rgba(126, 34, 206, 0.9);
+  color: #faf5ff;
+  border-color: rgba(216, 180, 254, 0.7);
+}
+
+.state-badge.happy,
+.state-badge.angry,
+.state-badge.surprised {
+  animation: state-badge-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.state-badge.shy,
+.state-badge.sad {
+  animation: state-badge-float 1.8s ease-in-out infinite;
+}
+
+@keyframes state-badge-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+
+@keyframes state-badge-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
 }
 
 .debug-overlay {
