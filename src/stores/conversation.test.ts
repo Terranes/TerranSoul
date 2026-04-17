@@ -162,10 +162,12 @@ describe('conversation store — brain configured (browser-side free API)', () =
     const store = useConversationStore();
     await store.sendMessage('hello');
 
-    // Should fall back to persona
-    expect(store.messages).toHaveLength(2);
+    // Should fall back to persona + show provider warning
+    expect(store.messages).toHaveLength(3);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.messages[2].agentName).toBe('System');
+    expect(store.messages[2].content).toContain('rate-limited');
     expect(store.isThinking).toBe(false);
   });
 });
@@ -184,28 +186,22 @@ describe('conversation store — Tauri backend available', () => {
   });
 
   it('uses streaming IPC when Tauri is available', async () => {
-    // send_message_stream resolves immediately, then streaming store gets handleChunk
-    mockInvoke.mockResolvedValue(undefined);
-
-    const store = useConversationStore();
-    const promise = store.sendMessage('hello');
-
-    // Give the async poll loop a tick
-    await new Promise((r) => setTimeout(r, 150));
-
-    expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'hello' });
-
-    // isStreaming should be false until text chunks actually arrive
-    expect(store.isStreaming).toBe(false);
-
-    // Simulate the streaming store receiving chunks
+    // Simulate chunks arriving during the invoke call via the streaming store.
+    // In the real app, Tauri events fire during the invoke; here we inject
+    // chunks inside the mocked invoke so they arrive before it resolves.
     const { useStreamingStore } = await import('./streaming');
     const streaming = useStreamingStore();
-    streaming.handleChunk({ text: 'Hi there!', done: false });
-    streaming.handleChunk({ text: '', done: true });
 
-    await promise;
+    mockInvoke.mockImplementation(async () => {
+      // Simulate chunks arriving during the invoke
+      streaming.handleChunk({ text: 'Hi there!', done: false });
+      streaming.handleChunk({ text: '', done: true });
+    });
 
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+
+    expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'hello' });
     expect(store.messages).toHaveLength(2);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].content).toBe('Hi there!');

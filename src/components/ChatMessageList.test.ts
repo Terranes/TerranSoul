@@ -120,22 +120,24 @@ describe('ChatMessageList', () => {
 
   // ── Markdown rendering tests ──
 
-  it('renders bold text with <strong> tags', () => {
+  it('strips bold markers from text', () => {
     const messages = [makeMessage({ content: 'This is **bold** text' })];
     const wrapper = mount(ChatMessageList, {
       props: { messages, isThinking: false },
     });
     const bubble = wrapper.find('.bubble');
-    expect(bubble.html()).toContain('<strong>bold</strong>');
+    expect(bubble.text()).toContain('This is bold text');
+    expect(bubble.html()).not.toContain('**');
   });
 
-  it('renders italic text with <em> tags', () => {
+  it('strips italic markers from text', () => {
     const messages = [makeMessage({ content: 'This is *italic* text' })];
     const wrapper = mount(ChatMessageList, {
       props: { messages, isThinking: false },
     });
     const bubble = wrapper.find('.bubble');
-    expect(bubble.html()).toContain('<em>italic</em>');
+    expect(bubble.text()).toContain('This is italic text');
+    expect(bubble.html()).not.toContain('<em>');
   });
 
   it('renders inline code with <code> tags', () => {
@@ -169,23 +171,22 @@ describe('ChatMessageList', () => {
 
   // ── Welcome screen & suggestion tests ──
 
-  it('shows welcome state with suggestions when no messages', () => {
+  it('shows welcome state with quest buttons when no messages', () => {
     const wrapper = mount(ChatMessageList, {
       props: { messages: [], isThinking: false },
     });
     expect(wrapper.find('.welcome-state').exists()).toBe(true);
     expect(wrapper.find('.welcome-title').text()).toBe('Welcome to TerranSoul');
-    expect(wrapper.findAll('.suggestion-chip').length).toBeGreaterThan(0);
+    expect(wrapper.findAll('.welcome-quest-btn').length).toBe(3);
   });
 
-  it('emits suggest event when suggestion chip clicked', async () => {
+  it('emits startQuest when Start First Quest clicked', async () => {
     const wrapper = mount(ChatMessageList, {
       props: { messages: [], isThinking: false },
     });
-    const chip = wrapper.find('.suggestion-chip');
-    await chip.trigger('click');
-    expect(wrapper.emitted('suggest')).toBeTruthy();
-    expect(wrapper.emitted('suggest')![0]).toBeTruthy();
+    const btn = wrapper.find('.welcome-quest-btn.primary');
+    await btn.trigger('click');
+    expect(wrapper.emitted('startQuest')).toBeTruthy();
   });
 
   it('hides welcome state when messages exist', () => {

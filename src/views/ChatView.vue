@@ -67,6 +67,13 @@
       </div>
     </Transition>
 
+    <!-- Floating emoji popup above character head -->
+    <Transition name="emoji-pop">
+      <div v-if="emojiPopupVisible" class="emoji-popup" :key="emojiPopupKey">
+        {{ emojiPopupText }}
+      </div>
+    </Transition>
+
     <!-- AI state indicator pill -->
     <div class="ai-state-pill" :class="characterStore.state">
       <span class="ai-state-dot" />
@@ -105,6 +112,8 @@
             :is-streaming="conversationStore.isStreaming"
             @suggest="handleSend"
             @quest-choice="handleQuestChoice"
+            @start-quest="handleStartQuest"
+            @navigate="(target: string) => emit('navigate', target)"
           />
         </div>
       </Transition>
@@ -182,6 +191,7 @@ const selectedBrain = ref('');
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
+let unlistenProvidersExhausted: (() => void) | null = null;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
@@ -267,6 +277,24 @@ const upgradeOptions = computed<UpgradeOption[]>(() => {
 // ── Keyboard detection ────────────────────────────────────────────
 const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
 
+// ── Emoji popup — floating emoji above character head ─────────────
+const emojiPopupVisible = ref(false);
+const emojiPopupText = ref('');
+const emojiPopupKey = ref(0);
+let emojiPopupTimer: ReturnType<typeof setTimeout> | null = null;
+const EMOJI_POPUP_DURATION_MS = 3500;
+
+function showEmojiPopup(emoji: string) {
+  if (emojiPopupTimer) { clearTimeout(emojiPopupTimer); emojiPopupTimer = null; }
+  emojiPopupText.value = emoji;
+  emojiPopupVisible.value = true;
+  emojiPopupKey.value++;
+  emojiPopupTimer = setTimeout(() => {
+    emojiPopupVisible.value = false;
+    emojiPopupTimer = null;
+  }, EMOJI_POPUP_DURATION_MS);
+}
+
 // ── Subtitle system — karaoke-style word highlight synced with TTS ───
 const subtitleKey = ref(0);
 const subtitleRef = ref<HTMLElement | null>(null);
@@ -295,15 +323,18 @@ const subtitleHtml = computed(() => {
     return escapeHtml(full);
   }
 
-  // Find where the current sentence starts in the full text
-  const spokenLen = spoken.length;
-  // The spoken text may not align exactly character-by-character with fullText
-  // because fullText comes from streaming while spoken is from sentence splits.
-  // Use the current sentence to find a reliable anchor.
+  // When spoken has text but current is empty, TTS just finished the
+  // last sentence. Dim everything as "spoken" (done).
+  if (!current && spoken) {
+    return `<span class="subtitle-spoken">${escapeHtml(full)}</span>`;
+  }
+
+  // Find where the current sentence starts in the full text.
+  // Search backwards from the end in case the sentence appears multiple times.
   let currentStart = -1;
   if (current) {
-    // Search for the current sentence starting from after spoken portion
-    const searchFrom = Math.max(0, spokenLen - 20); // small overlap for safety
+    // Try searching near the spoken-length position first
+    const searchFrom = Math.max(0, spoken.length - current.length - 20);
     currentStart = full.indexOf(current, searchFrom);
     if (currentStart === -1) {
       // Fallback: search from beginning
@@ -319,9 +350,8 @@ const subtitleHtml = computed(() => {
   const parts: string[] = [];
 
   // Spoken portion (before current sentence)
-  const dimEnd = currentStart !== -1 ? currentStart : full.length;
-  if (dimEnd > 0) {
-    parts.push(`<span class="subtitle-spoken">${escapeHtml(full.slice(0, dimEnd))}</span>`);
+  if (currentStart > 0) {
+    parts.push(`<span class="subtitle-spoken">${escapeHtml(full.slice(0, currentStart))}</span>`);
   }
 
   // Current sentence (highlighted)
@@ -464,6 +494,11 @@ async function handleSend(message: string) {
   if (lastMsg?.role === 'assistant') {
     showSubtitle(lastMsg.content);
 
+    // Show emoji popup above character if the response included one
+    if (lastMsg.emoji) {
+      showEmojiPopup(lastMsg.emoji);
+    }
+
     // Assess response quality — suggest upgrade if struggling
     if (brain.isFreeApiMode && !upgradeAlreadySuggested) {
       const signal = assessCapacity(lastMsg.content, lastUserQuery);
@@ -560,6 +595,15 @@ async function handleUpgradeAccept(optionId: string) {
 }
 
 const emit = defineEmits<{ navigate: [target: string] }>();
+
+/** Trigger the first available quest from the welcome screen. */
+function handleStartQuest() {
+  setChatDrawerExpanded(true);
+  const availableQuests = skillTree.nodes.filter(n => skillTree.getSkillStatus(n.id) === 'available');
+  if (availableQuests.length > 0) {
+    skillTree.triggerQuestEvent(availableQuests[0].id);
+  }
+}
 
 /** Handle quest choice button clicks from ChatMessageList. */
 async function handleQuestChoice(questId: string, choiceValue: string) {
@@ -659,6 +703,12 @@ async function setupTauriEventListener() {
       }
     });
     unlistenLlmAnimation = unlistenAnim;
+
+    // Provider exhaustion — show upgrade quest
+    const unlistenExhausted = await listen('providers-exhausted', () => {
+      conversationStore.pushProviderWarning();
+    });
+    unlistenProvidersExhausted = unlistenExhausted;
   } catch {
     // Tauri event API not available (browser mode) — streaming handled via fetch
   }
@@ -671,14 +721,14 @@ watch(
   },
 );
 
-// Show detected emotion (or talking) animation during streaming
+// Show 'talking' animation during streaming; emotions applied from <anim> tags only
 watch(
   () => conversationStore.isStreaming,
   (active) => {
     if (active) {
-      // Use pre-detected emotion from user input if available,
-      // otherwise fall back to generic 'talking' animation.
-      setAvatarState(pendingEmotion.value !== 'idle' ? pendingEmotion.value : 'talking');
+      // Always show 'talking' while streaming — real emotions arrive via
+      // llm-animation events which call setAvatarState directly.
+      setAvatarState('talking');
     } else if (streaming.currentEmotion) {
       // Stream done — set final emotion from parsed tags (once, not per-chunk)
       setAvatarState(sentimentToState(streaming.currentEmotion));
@@ -720,7 +770,7 @@ watch(tts.isSpeaking, (speaking) => {
 
 // Auto-scroll subtitle to keep the highlighted sentence visible
 watch(
-  () => tts.currentSentence.value,
+  [() => tts.currentSentence.value, () => tts.spokenText.value],
   () => {
     nextTick(() => {
       const el = subtitleRef.value;
@@ -728,6 +778,9 @@ watch(
       const active = el.querySelector('.subtitle-active') as HTMLElement | null;
       if (active) {
         active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else {
+        // No active element — scroll to bottom (end of spoken text)
+        el.scrollTop = el.scrollHeight;
       }
     });
   },
@@ -775,6 +828,10 @@ onUnmounted(() => {
   if (unlistenLlmAnimation) {
     unlistenLlmAnimation();
     unlistenLlmAnimation = null;
+  }
+  if (unlistenProvidersExhausted) {
+    unlistenProvidersExhausted();
+    unlistenProvidersExhausted = null;
   }
   if (subtitleHideTimer) clearTimeout(subtitleHideTimer);
   tts.stop();
@@ -904,12 +961,16 @@ onUnmounted(() => {
   line-height: 1.6;
   text-align: center;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  max-height: 5.6em;
+  max-height: 8em;
   overflow-y: auto;
   scroll-behavior: smooth;
-  scrollbar-width: none;
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
 }
-.subtitle-text::-webkit-scrollbar { display: none; }
+.subtitle-text::-webkit-scrollbar { width: 4px; }
+.subtitle-text::-webkit-scrollbar-track { background: transparent; }
+.subtitle-text::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border-radius: 2px; }
 /* Spoken text — dimmed */
 :deep(.subtitle-spoken) {
   color: rgba(255, 255, 255, 0.4);
@@ -934,6 +995,36 @@ onUnmounted(() => {
 .subtitle-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
 .subtitle-enter-from { opacity: 0; transform: translateX(-50%) translateY(8px); }
 .subtitle-leave-to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+
+/* ── Floating emoji popup above character head ── */
+.emoji-popup {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  font-size: 2.4rem;
+  padding: 8px 14px;
+  border-radius: 20px;
+  background: rgba(11, 17, 32, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  line-height: 1;
+  animation: emoji-float 3.5s ease-in-out;
+}
+@keyframes emoji-float {
+  0% { transform: translateX(-50%) translateY(0) scale(0.5); opacity: 0; }
+  12% { transform: translateX(-50%) translateY(-8px) scale(1.15); opacity: 1; }
+  20% { transform: translateX(-50%) translateY(-4px) scale(1); opacity: 1; }
+  80% { transform: translateX(-50%) translateY(-4px) scale(1); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-20px) scale(0.8); opacity: 0; }
+}
+.emoji-pop-enter-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.emoji-pop-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.emoji-pop-enter-from { opacity: 0; transform: translateX(-50%) scale(0.5); }
+.emoji-pop-leave-to { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.8); }
 
 /* ── Bottom panel — input + expandable chat history ── */
 .bottom-panel {

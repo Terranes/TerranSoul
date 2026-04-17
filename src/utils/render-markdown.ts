@@ -21,13 +21,12 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="md-code-block"><code>$2</code></pre>');
   // Inline code (`...`)
   html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
-  // Bold (**...** or __...__) — must come before italic
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  // Italic (*...* or _..._) — uses simple non-greedy match for broad
-  // browser compatibility (avoids lookbehind which Safari <16.4 lacks).
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  html = html.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
+  // Strip bold markers (**...** or __...__) — show text without decoration
+  html = html.replace(/\*\*(.+?)\*\*/g, '$1');
+  html = html.replace(/__(.+?)__/g, '$1');
+  // Strip italic markers (*...* or _..._) — show text without decoration
+  html = html.replace(/\*([^*]+)\*/g, '$1');
+  html = html.replace(/\b_([^_]+)_\b/g, '$1');
   // Line breaks
   html = html.replace(/\n/g, '<br/>');
   return html;

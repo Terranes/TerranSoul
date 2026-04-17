@@ -188,7 +188,7 @@ interface QuestWithPriority {
 const skillTree = useSkillTreeStore();
 const brain = useBrainStore();
 const conversationStore = useConversationStore();
-const { isChatExpanded } = useChatExpansion();
+useChatExpansion();
 const panelOpen = ref(false);
 const screenWidth = ref(window.innerWidth);
 const selectedQuestId = ref<string | null>(null);
@@ -221,16 +221,14 @@ const availableQuests = computed(() => {
 // Dynamic positioning based on chat expansion state
 const questHubPosition = computed(() => {
   const isMobile = screenWidth.value <= 640;
-  const baseBottom = isMobile ? 85 : 90; // Different base positions for mobile vs desktop
-  const baseRight = isMobile ? 16 : 24; // Different right positions for mobile vs desktop
-  const expandedOffset = isMobile ? 200 : 250; // Less offset needed on mobile
+  const baseTop = isMobile ? 36 : 44; // Below the AI status pill
+  const baseRight = isMobile ? 10 : 16;
   
   return {
-    bottom: isChatExpanded.value ? `${baseBottom + expandedOffset}px` : `${baseBottom}px`,
+    top: `${baseTop}px`,
     right: `${baseRight}px`,
     position: 'fixed' as const,
-    zIndex: '150',
-    transition: 'bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1)'  // Smooth animation
+    zIndex: '19', // Below status pill (z-index 20) but above viewport
   };
 });
 
@@ -406,19 +404,38 @@ function selectQuest(id: string) {
   const quest = skillTree.nodes.find(n => n.id === id);
   if (!quest) return;
   
-  // Close quest panel
+  // Close quest panel — no extra dialogs
   panelOpen.value = false;
   selectedQuestId.value = null;
-  
-  // Show reward panel
-  rewardPanelQuest.value = quest;
-  showRewardPanel.value = true;
-  showRewardChoices.value = false;
-  
-  // Start AI explanation after a brief delay
-  setTimeout(() => {
-    startQuestExplanation(quest);
-  }, 300);
+
+  // Build quest description from existing data (no LLM call needed)
+  const parts: string[] = [];
+  parts.push(`**${quest.name}** — ${quest.tagline}`);
+  if (quest.description) parts.push(quest.description);
+  if (quest.rewards?.length) parts.push(`**Rewards:** ${quest.rewards.join(', ')}`);
+  if (quest.questSteps?.length) {
+    const steps = quest.questSteps.slice(0, 3).map((s, i) => `${i + 1}. ${s.label}`).join('\n');
+    parts.push(`**Steps:**\n${steps}`);
+  }
+  parts.push('Would you like to start this quest?');
+
+  // Push directly into chat as an assistant message with yes/no choices
+  conversationStore.addMessage({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: parts.join('\n\n'),
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+    questChoices: [
+      { label: 'Yes, let\'s do this!', value: `auto-config:${quest.id}`, icon: '✅' },
+      { label: 'Maybe later', value: 'dismiss', icon: '💭' },
+    ],
+    questId: quest.id,
+  });
+
+  // Open the chat drawer so the user sees the message
+  emit('trigger');
 }
 
 function startQuestChat(questId: string) {
@@ -445,59 +462,6 @@ function handleAcceptQuest() {
     // Re-sort quests after accepting one
     setTimeout(() => sortQuestsWithAI(), 1000);
   }
-}
-
-async function startQuestExplanation(quest: SkillNode) {
-  if (!brain.hasBrain) {
-    // Fallback for when no AI is available
-    setTimeout(() => showQuestChoices(quest), 500);
-    return;
-  }
-
-  try {
-    // Build a comprehensive quest description
-    const questDetails = [];
-    if (quest.description) questDetails.push(`Description: ${quest.description}`);
-    if (quest.rewards?.length) questDetails.push(`Rewards: ${quest.rewards.join(', ')}`);
-    if (quest.questSteps?.length) questDetails.push(`Key steps: ${quest.questSteps.slice(0, 3).map(s => s.label).join(', ')}`);
-    if (quest.tier) questDetails.push(`Tier: ${quest.tier}`);
-    
-    const prompt = `A user clicked on the quest "${quest.name}" with tagline "${quest.tagline}". 
-
-${questDetails.join('\n')}
-
-Please explain this quest in an engaging way (2-3 sentences max), focusing on:
-- What they'll learn or achieve
-- Why it's valuable for their journey
-- How it fits their current progress
-
-Keep it concise and motivating. Then naturally ask if they'd like to start this quest.`;
-
-    // Start the AI explanation in chat
-    emit('trigger'); // This will focus the chat
-    await conversationStore.sendMessage(prompt);
-    
-    // Show choices after a reasonable delay for reading
-    setTimeout(() => {
-      if (showRewardPanel.value && rewardPanelQuest.value?.id === quest.id) {
-        showQuestChoices(quest);
-      }
-    }, 2500);
-    
-  } catch (error) {
-    console.warn('Quest explanation failed:', error);
-    // Fallback to choices without explanation
-    setTimeout(() => showQuestChoices(quest), 500);
-  }
-}
-
-function showQuestChoices(quest: SkillNode) {
-  rewardChoiceQuestion.value = `Ready to start "${quest.name}"?`;
-  rewardChoices.value = [
-    { label: '✅ Yes, let\'s do this!', value: 'accept', primary: true },
-    { label: '💭 Maybe later', value: 'decline', primary: false }
-  ];
-  showRewardChoices.value = true;
 }
 
 function handleRewardChoice(choice: string) {
@@ -585,7 +549,7 @@ function closeRewardPanel() {
 /* ── Quest Panel ── */
 .quest-panel {
   position: absolute;
-  bottom: 64px;
+  top: 64px;
   right: 0;
   width: 320px;
   max-height: 480px;
@@ -801,7 +765,7 @@ function closeRewardPanel() {
 .quest-panel-enter-active { animation: panel-slide-up 0.25s ease-out; }
 .quest-panel-leave-active { animation: panel-slide-up 0.2s ease-in reverse; }
 @keyframes panel-slide-up {
-  0% { opacity: 0; transform: translateY(10px) scale(0.95); }
+  0% { opacity: 0; transform: translateY(-10px) scale(0.95); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -820,6 +784,7 @@ function closeRewardPanel() {
   .quest-panel {
     width: calc(100vw - 32px);
     right: 0;
+    top: 56px;
     max-height: 400px;
   }
 }

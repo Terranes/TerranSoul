@@ -8,6 +8,7 @@ import { useBrainStore } from '../stores/brain';
 // Create mock objects first
 const mockConversationStore = {
   sendMessage: vi.fn(),
+  addMessage: vi.fn(),
   messages: [],
   isThinking: false,
 };
@@ -450,8 +451,8 @@ describe('QuestBubble', () => {
       
       // Check that dynamic style binding includes correct positioning
       const styleBinding = (questHub.element as HTMLElement).style;
-      expect(styleBinding.bottom).toBe('90px');
-      expect(styleBinding.right).toBe('24px');
+      expect(styleBinding.top).toBe('44px');
+      expect(styleBinding.right).toBe('16px');
       expect(styleBinding.position).toBe('fixed');
     });
 
@@ -463,8 +464,9 @@ describe('QuestBubble', () => {
       
       const questHub = wrapper.find('.quest-hub');
       const styleBinding = (questHub.element as HTMLElement).style;
-      expect(styleBinding.bottom).toBe('340px'); // 90 + 250
-      expect(styleBinding.right).toBe('24px');
+      // Position stays top-right regardless of chat expansion
+      expect(styleBinding.top).toBe('44px');
+      expect(styleBinding.right).toBe('16px');
     });
 
     it('should use mobile positioning on small screens', async () => {
@@ -483,17 +485,17 @@ describe('QuestBubble', () => {
       
       const questHub = wrapper.find('.quest-hub');
       const styleBinding = (questHub.element as HTMLElement).style;
-      expect(styleBinding.bottom).toBe('85px'); // Mobile base
-      expect(styleBinding.right).toBe('16px'); // Mobile right
+      expect(styleBinding.top).toBe('36px'); // Mobile top
+      expect(styleBinding.right).toBe('10px'); // Mobile right
     });
 
-    it('should include transition animation', async () => {
+    it('should use fixed positioning with correct z-index', async () => {
       const wrapper = mount(QuestBubble);
       
       const questHub = wrapper.find('.quest-hub');
       const styleBinding = (questHub.element as HTMLElement).style;
-      expect(styleBinding.transition).toContain('bottom');
-      expect(styleBinding.transition).toContain('cubic-bezier');
+      expect(styleBinding.position).toBe('fixed');
+      expect(styleBinding.zIndex).toBe('19');
     });
   });
 });

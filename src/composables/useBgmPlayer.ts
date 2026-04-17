@@ -179,9 +179,11 @@ export function useBgmPlayer(): BgmPlayerHandle {
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
-    // Resume if suspended (browser autoplay policy)
+    // Resume if suspended (browser autoplay policy).
+    // resume() returns a Promise; we call it fire-and-forget here but
+    // the AudioContext will start processing as soon as it resolves.
     if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
+      audioCtx.resume().catch(() => { /* gesture not yet available */ });
     }
     return audioCtx;
   }
@@ -193,15 +195,30 @@ export function useBgmPlayer(): BgmPlayerHandle {
     }
 
     const ctx = ensureContext();
+
+    // If the context is still suspended after resume attempt, listen for
+    // state change and start playback when it becomes 'running'.
+    if (ctx.state === 'suspended') {
+      const onStateChange = () => {
+        if (ctx.state === 'running') {
+          ctx.removeEventListener('statechange', onStateChange);
+          play(trackId);
+        }
+      };
+      ctx.addEventListener('statechange', onStateChange);
+      return;
+    }
+
     masterGain = ctx.createGain();
-    masterGain.gain.value = 0;
     masterGain.connect(ctx.destination);
 
     const { cleanup } = buildTrackGraph(ctx, trackId, masterGain);
     trackCleanup = cleanup;
 
-    // Fade in
-    masterGain.gain.linearRampToValueAtTime(volume.value, ctx.currentTime + FADE_DURATION_S);
+    // Fade in — setValueAtTime anchors the ramp start (required by spec)
+    const now = ctx.currentTime;
+    masterGain.gain.setValueAtTime(0, now);
+    masterGain.gain.linearRampToValueAtTime(Math.max(volume.value, 0.01), now + FADE_DURATION_S);
 
     currentTrackId.value = trackId;
     isPlaying.value = true;

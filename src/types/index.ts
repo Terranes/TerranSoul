@@ -11,6 +11,8 @@ export interface Message {
   questId?: string;
   /** Mark as system message (hidden from main chat UI). */
   system?: boolean;
+  /** Emoji extracted from the model response, shown as a floating popup. */
+  emoji?: string;
 }
 
 export interface QuestChoice {
@@ -230,6 +232,8 @@ export interface ParsedLlmChunk {
   emotion: EmotionTag | null;
   /** Motion gesture tag found (e.g. 'wave', 'nod'), if any. */
   motion: string | null;
+  /** Emoji extracted from JSON-wrapped response, if any. */
+  emoji: string | null;
 }
 
 // ── Three-Tier Brain ──────────────────────────────────────────────────────────

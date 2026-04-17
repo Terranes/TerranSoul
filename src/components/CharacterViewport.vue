@@ -235,10 +235,35 @@ function restoreBgmFromSettings() {
   bgmEnabled.value = s.bgm_enabled;
   bgmVolume.value = s.bgm_volume;
   bgmTrackId.value = s.bgm_track_id;
+  // Don't auto-play here — browser autoplay policy blocks AudioContext.resume()
+  // without a user gesture. Instead, defer playback until the first interaction.
   if (bgmEnabled.value) {
     bgm.setVolume(bgmVolume.value);
-    bgm.play(bgmTrackId.value);
+    deferBgmPlayback();
   }
+}
+
+/** Wait for the first user interaction, then start BGM. */
+let bgmDeferredCleanup: (() => void) | null = null;
+function deferBgmPlayback() {
+  if (bgmDeferredCleanup) return; // already deferred
+  const startBgm = () => {
+    if (bgmEnabled.value) {
+      bgm.setVolume(bgmVolume.value);
+      bgm.play(bgmTrackId.value);
+    }
+    cleanup();
+  };
+  const cleanup = () => {
+    document.removeEventListener('click', startBgm, true);
+    document.removeEventListener('keydown', startBgm, true);
+    document.removeEventListener('touchstart', startBgm, true);
+    bgmDeferredCleanup = null;
+  };
+  bgmDeferredCleanup = cleanup;
+  document.addEventListener('click', startBgm, { capture: true, once: true });
+  document.addEventListener('keydown', startBgm, { capture: true, once: true });
+  document.addEventListener('touchstart', startBgm, { capture: true, once: true });
 }
 
 // Event handlers for audio controls panel
@@ -458,6 +483,7 @@ onUnmounted(() => {
   cancelAnimationFrame(animFrameId);
   disposeScene?.();
   bgm.stop();
+  bgmDeferredCleanup?.();
   window.removeEventListener('keydown', handleKeyDown);
   document.removeEventListener('click', handleClickOutside);
   if (localVrmObjectUrl.value) {

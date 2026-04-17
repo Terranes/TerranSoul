@@ -29,6 +29,7 @@ export function parseTags(input: string): ParsedLlmChunk {
   let text = input;
   let emotion: EmotionTag | null = null;
   let motion: string | null = null;
+  let emoji: string | null = null;
 
   // Primary: parse <anim>JSON</anim> blocks
   const animRegex = /<anim>([\s\S]*?)<\/anim>\s*/g;
@@ -70,10 +71,31 @@ export function parseTags(input: string): ParsedLlmChunk {
     return `[${tagContent}] `;
   });
 
+  // JSON-wrapped response fallback: LLM sometimes returns bare JSON like
+  // {"text":"Hello","emoji":"🎧"} — extract the text and emoji fields.
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (typeof obj.text === 'string') {
+        text = obj.text;
+        if (typeof obj.emoji === 'string') {
+          emoji = obj.emoji;
+        }
+        if (obj.emotion && EMOTION_TAGS.has(String(obj.emotion).toLowerCase()) && emotion === null) {
+          emotion = String(obj.emotion).toLowerCase() as EmotionTag;
+        }
+      }
+    } catch {
+      // Not valid JSON — keep text as-is
+    }
+  }
+
   return {
     text: text.trim(),
     emotion,
     motion,
+    emoji,
   };
 }
 

@@ -29,7 +29,9 @@ export const useStreamingStore = defineStore('streaming', () => {
    * This initiates the stream; call `handleChunk` to process each event.
    */
   async function sendStreaming(message: string): Promise<boolean> {
-    isStreaming.value = true;
+    // Don't set isStreaming here — handleChunk sets it on first actual text
+    // so the UI stays in "thinking" until text appears.
+    isStreaming.value = false;
     streamText.value = '';
     streamRawText.value = '';
     currentEmotion.value = null;

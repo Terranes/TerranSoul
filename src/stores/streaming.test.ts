@@ -23,7 +23,8 @@ describe('streaming store — IPC integration', () => {
     const result = await store.sendStreaming('Hello');
     expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'Hello' });
     expect(result).toBe(true);
-    expect(store.isStreaming).toBe(true); // Still streaming until done chunk
+    // isStreaming starts false — only handleChunk sets it true on first text
+    expect(store.isStreaming).toBe(false);
   });
 
   it('sendStreaming sets error on failure', async () => {

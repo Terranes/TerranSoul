@@ -136,6 +136,45 @@ describe('emotion-parser — parseTags', () => {
     expect(result.emotion).toBe('happy');
     expect(result.text).toBe('Hello!');
   });
+
+  // ── JSON-wrapped response extraction ────────────────────────────────────
+
+  it('extracts text from JSON-wrapped response', () => {
+    const result = parseTags('{"text":"Hello world!","emoji":"🎧"}');
+    expect(result.text).toBe('Hello world!');
+    expect(result.emoji).toBe('🎧');
+  });
+
+  it('extracts emotion from JSON-wrapped response', () => {
+    const result = parseTags('{"text":"Great choice!","emoji":"🎧","emotion":"happy"}');
+    expect(result.text).toBe('Great choice!');
+    expect(result.emotion).toBe('happy');
+    expect(result.emoji).toBe('🎧');
+  });
+
+  it('does not treat partial JSON as a JSON response', () => {
+    const result = parseTags('Hello {"key": "value"} world');
+    expect(result.text).toBe('Hello {"key": "value"} world');
+    expect(result.emoji).toBeNull();
+  });
+
+  it('does not extract if JSON has no text field', () => {
+    const result = parseTags('{"emoji":"🎧","mood":"happy"}');
+    // No text field, so JSON is kept as-is
+    expect(result.text).toBe('{"emoji":"🎧","mood":"happy"}');
+    expect(result.emoji).toBeNull();
+  });
+
+  it('returns null emoji when not present', () => {
+    const result = parseTags('Just plain text.');
+    expect(result.emoji).toBeNull();
+  });
+
+  it('handles <body> JSON wrapper from LLM', () => {
+    const result = parseTags('{"text":"✅ Great choice! Let\'s begin.","emoji":"🎧"}');
+    expect(result.text).toBe("✅ Great choice! Let's begin.");
+    expect(result.emoji).toBe('🎧');
+  });
 });
 
 describe('emotion-parser — stripTags', () => {

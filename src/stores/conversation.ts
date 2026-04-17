@@ -5,7 +5,6 @@ import type { Message } from '../types';
 import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
-import { useSkillTreeStore } from './skill-tree';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -245,37 +244,6 @@ export const useConversationStore = defineStore('conversation', () => {
 
     const brain = useBrainStore();
 
-    // ── Quest system integration ──────────────────────────────────
-    // Detect quest-related queries and trigger appropriate responses
-    if (content.toLowerCase().includes('suggest') && content.toLowerCase().includes('where to start')) {
-      const skillTree = useSkillTreeStore();
-      const availableQuests = skillTree.nodes.filter(n => skillTree.getSkillStatus(n.id) === 'available');
-      
-      if (availableQuests.length > 0) {
-        // Get the top recommended quest (you might want to implement AI-based recommendation here)
-        const recommendedQuest = availableQuests[0]; // Simplified - use first available quest
-        
-        const questResponse: Message = {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: `I'd recommend starting with **${recommendedQuest.name}**: ${recommendedQuest.description}\n\nThis would be a great foundation for your TerranSoul experience. Would you like me to help you set it up?`,
-          agentName: 'TerranSoul',
-          sentiment: 'happy',
-          timestamp: Date.now(),
-          questChoices: [
-            { label: 'Yes, set it up for me', value: `auto-config:${recommendedQuest.id}`, icon: '⚔️' },
-            { label: 'Not right now', value: 'dismiss', icon: '💤' },
-            { label: 'Show all quests', value: 'navigate:skills', icon: '🗺️' },
-          ],
-          questId: recommendedQuest.id,
-        };
-        
-        messages.value.push(questResponse);
-        isThinking.value = false;
-        return;
-      }
-    }
-
     // ── Quest analysis (silent background processing) ──────────────────
     // Check if the message might be quest-related and trigger background analysis
     const questKeywords = ['goal', 'quest', 'mission', 'task', 'adventure', 'journey', 'story', 'explore', 'build', 'create', 'learn'];
@@ -355,11 +323,13 @@ export const useConversationStore = defineStore('conversation', () => {
         streamingText.value = '';
 
         // Create the final assistant message from accumulated text.
-        // Text is already clean (anim blocks stripped by Rust parser).
-        const cleanText = streaming.streamText;
+        // Text is already clean (anim blocks stripped by Rust parser),
+        // but the LLM may still return JSON-wrapped text outside tags.
+        const parsed = parseTags(streaming.streamText);
+        const cleanText = parsed.text;
         if (cleanText) {
           // Emotion comes from the streaming store (set by llm-animation events).
-          const sentiment = streaming.currentEmotion ?? detectSentiment(content);
+          const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
             role: 'assistant',
@@ -367,6 +337,7 @@ export const useConversationStore = defineStore('conversation', () => {
             agentName: 'TerranSoul',
             sentiment: sentiment as Message['sentiment'],
             timestamp: Date.now(),
+            emoji: parsed.emoji ?? undefined,
           };
           messages.value.push(assistantMsg);
         } else {
@@ -460,6 +431,7 @@ export const useConversationStore = defineStore('conversation', () => {
               agentName: 'TerranSoul',
               sentiment: sentiment as Message['sentiment'],
               timestamp: Date.now(),
+              emoji: parsed.emoji ?? undefined,
             };
             messages.value.push(assistantMsg);
             succeeded = true;
@@ -480,6 +452,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
         if (!succeeded) {
           messages.value.push(createPersonaResponse(content));
+          pushProviderWarning();
         }
         isThinking.value = false;
         return;
@@ -490,6 +463,31 @@ export const useConversationStore = defineStore('conversation', () => {
     await new Promise((r) => setTimeout(r, 500));
     messages.value.push(createPersonaResponse(content));
     isThinking.value = false;
+  }
+
+  /** Push a warning message with upgrade quest when all providers are exhausted. */
+  function pushProviderWarning(): void {
+    // Avoid duplicate warnings within the last few messages
+    const recent = messages.value.slice(-5);
+    if (recent.some(m => m.agentName === 'System' && m.content.includes('rate limit'))) return;
+
+    messages.value.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content:
+        '⚠️ The free AI providers are currently rate-limited. ' +
+        'Responses may be slower or use a basic fallback until limits reset.\n\n' +
+        'You can upgrade to a paid API or run a local model for unlimited, faster responses!',
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+      questChoices: [
+        { label: 'Upgrade to Paid API', value: 'navigate:brain-setup', icon: '⚡' },
+        { label: 'Run AI Locally', value: 'navigate:brain-setup', icon: '🏰' },
+        { label: 'I\'ll wait', value: 'dismiss', icon: '⏳' },
+      ],
+      questId: 'paid-brain',
+    });
   }
 
   async function getConversation() {
@@ -515,5 +513,6 @@ export const useConversationStore = defineStore('conversation', () => {
     sendMessage,
     getConversation,
     addMessage,
+    pushProviderWarning,
   };
 });
