@@ -85,11 +85,15 @@
 
         <!-- Main area -->
         <main class="app-main">
-          <ChatView v-show="activeTab === 'chat'" />
+          <ChatView v-show="activeTab === 'chat'" @navigate="handleSkillNavigate" />
+          <SkillTreeView v-if="activeTab === 'skills'" @navigate="handleSkillNavigate" />
           <MemoryView v-if="activeTab === 'memory'" />
           <MarketplaceView v-if="activeTab === 'marketplace'" />
           <VoiceSetupView v-if="activeTab === 'voice'" @done="activeTab = 'chat'" />
         </main>
+
+        <!-- Floating quest progress bubble -->
+        <QuestBubble @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
       </template>
     </template>
 
@@ -101,19 +105,23 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useBrainStore } from './stores/brain';
 import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
+import { useSkillTreeStore } from './stores/skill-tree';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import BrainSetupView from './views/BrainSetupView.vue';
 import VoiceSetupView from './views/VoiceSetupView.vue';
+import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
+import QuestBubble from './components/QuestBubble.vue';
 import { Analytics } from '@vercel/analytics/vue';
 import { SpeedInsights } from '@vercel/speed-insights/vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();
 const windowStore = useWindowStore();
-const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice'>('chat');
+const skillTree = useSkillTreeStore();
+const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills'>('chat');
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
 const mobileMenuOpen = ref(false);
@@ -124,6 +132,7 @@ const isPetMode = computed(() => windowStore.mode === 'pet');
 
 const tabs = [
   { id: 'chat' as const, icon: '💬', label: 'Chat' },
+  { id: 'skills' as const, icon: '⚔️', label: 'Skill Tree' },
   { id: 'memory' as const, icon: '🧠', label: 'Memory' },
   { id: 'marketplace' as const, icon: '🏪', label: 'Marketplace' },
   { id: 'voice' as const, icon: '🎤', label: 'Voice' },
@@ -141,6 +150,28 @@ function handleClickOutsideMenu(e: MouseEvent) {
   if (mobileMenuRef.value && e.target instanceof Node && !mobileMenuRef.value.contains(e.target)) {
     mobileMenuOpen.value = false;
   }
+}
+
+function handleSkillNavigate(target: string) {
+  const tabMap: Record<string, typeof activeTab.value> = {
+    chat: 'chat',
+    memory: 'memory',
+    marketplace: 'marketplace',
+    voice: 'voice',
+    'brain-setup': 'chat', // brain setup opens from chat context
+  };
+  const tab = tabMap[target];
+  if (tab) {
+    activeTab.value = tab;
+  }
+  // 'brain-setup' target: re-open the brain wizard
+  if (target === 'brain-setup') {
+    skipSetup.value = false;
+  }
+}
+
+function handleQuestBubble() {
+  activeTab.value = 'chat';
 }
 
 // Watch for window mode changes (e.g. from tray icon toggle)
@@ -171,6 +202,7 @@ onMounted(async () => {
     skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
     await voice.autoConfigureVoice();
+    await skillTree.initialise();
     return;
   }
 
@@ -202,6 +234,9 @@ onMounted(async () => {
   if (!voice.hasVoice) {
     await voice.autoConfigureVoice();
   }
+
+  // Initialise skill tree (load quest tracker, refresh daily suggestions)
+  await skillTree.initialise();
 });
 
 onUnmounted(() => {

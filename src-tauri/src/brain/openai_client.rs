@@ -64,11 +64,16 @@ impl OpenAiClient {
     /// `base_url` should NOT include the `/v1/chat/completions` path — that is
     /// appended automatically.
     pub fn new(base_url: &str, model: &str, api_key: Option<&str>) -> Self {
+        let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
             api_key: api_key.map(|s| s.to_string()),
-            client: Client::new(),
+            client,
         }
     }
 

@@ -1,5 +1,6 @@
 pub mod brain_config;
 pub mod brain_store;
+pub mod docker_ollama;
 pub mod free_api;
 pub mod model_recommender;
 pub mod ollama_agent;

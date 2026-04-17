@@ -25,6 +25,18 @@
         <div class="bubble-wrapper">
           <AgentBadge v-if="msg.role === 'assistant'" :name="msg.agentName ?? 'TerranSoul'" />
           <div class="bubble" v-html="renderMarkdown(msg.content)" />
+          <!-- RPG quest choice buttons -->
+          <div v-if="msg.questChoices && msg.questChoices.length" class="quest-choices">
+            <button
+              v-for="choice in msg.questChoices"
+              :key="choice.value"
+              class="quest-choice-btn"
+              @click="$emit('questChoice', msg.questId ?? '', choice.value)"
+            >
+              <span v-if="choice.icon" class="quest-choice-icon">{{ choice.icon }}</span>
+              {{ choice.label }}
+            </button>
+          </div>
           <span class="timestamp">{{ formatTime(msg.timestamp) }}</span>
         </div>
       </div>
@@ -53,7 +65,7 @@ const props = defineProps<{
   isStreaming?: boolean;
 }>();
 
-defineEmits<{ suggest: [message: string] }>();
+defineEmits<{ suggest: [message: string]; questChoice: [questId: string, value: string] }>();
 
 const suggestions = [
   'Tell me about yourself',
@@ -310,5 +322,44 @@ watch(() => props.streamingText, scrollToBottom);
 :deep(em) {
   font-style: italic;
   opacity: 0.9;
+}
+
+/* RPG quest choice buttons */
+.quest-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.quest-choice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--ts-radius-pill);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.12) 0%, rgba(255, 165, 0, 0.08) 100%);
+  color: #ffd700;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--ts-transition-fast);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.quest-choice-btn:hover {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25) 0%, rgba(255, 165, 0, 0.18) 100%);
+  border-color: rgba(255, 215, 0, 0.7);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px rgba(255, 215, 0, 0.2);
+}
+
+.quest-choice-btn:active {
+  transform: translateY(0);
+}
+
+.quest-choice-icon {
+  font-size: 1rem;
 }
 </style>

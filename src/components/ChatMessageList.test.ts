@@ -195,4 +195,54 @@ describe('ChatMessageList', () => {
     });
     expect(wrapper.find('.welcome-state').exists()).toBe(false);
   });
+
+  // ── Quest choice button tests ──
+
+  it('renders quest choice buttons when message has questChoices', () => {
+    const messages = [
+      makeMessage({
+        role: 'assistant',
+        content: 'A quest!',
+        questId: 'tts',
+        questChoices: [
+          { label: 'Accept', value: 'accept', icon: '⚔️' },
+          { label: 'Dismiss', value: 'dismiss', icon: '💤' },
+        ],
+      }),
+    ];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    const buttons = wrapper.findAll('.quest-choice-btn');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0].text()).toContain('Accept');
+    expect(buttons[1].text()).toContain('Dismiss');
+  });
+
+  it('emits questChoice event with questId and value when choice clicked', async () => {
+    const messages = [
+      makeMessage({
+        role: 'assistant',
+        content: 'A quest!',
+        questId: 'tts',
+        questChoices: [
+          { label: 'Accept', value: 'accept', icon: '⚔️' },
+        ],
+      }),
+    ];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    await wrapper.find('.quest-choice-btn').trigger('click');
+    expect(wrapper.emitted('questChoice')).toBeTruthy();
+    expect(wrapper.emitted('questChoice')![0]).toEqual(['tts', 'accept']);
+  });
+
+  it('does not render quest choices when message has no questChoices', () => {
+    const messages = [makeMessage({ role: 'assistant', content: 'Hello' })];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    expect(wrapper.find('.quest-choices').exists()).toBe(false);
+  });
 });

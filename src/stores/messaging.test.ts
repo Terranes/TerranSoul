@@ -130,3 +130,40 @@ describe('messaging store — IPC integration', () => {
     expect(store.error).toBeNull();
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('messaging store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('subscribe sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useMessagingStore();
+    await store.subscribe('my-agent', 'events');
+    expect(mockInvoke).toHaveBeenCalledWith('subscribe_agent_topic', { agentName: 'my-agent', topic: 'events' });
+  });
+
+  it('unsubscribe sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useMessagingStore();
+    await store.unsubscribe('my-agent', 'events');
+    expect(mockInvoke).toHaveBeenCalledWith('unsubscribe_agent_topic', { agentName: 'my-agent', topic: 'events' });
+  });
+
+  it('getMessages sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue([]);
+    const store = useMessagingStore();
+    await store.getMessages('my-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('get_agent_messages', { agentName: 'my-agent' });
+  });
+
+  it('listSubscriptions sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue([]);
+    const store = useMessagingStore();
+    await store.listSubscriptions('my-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('list_agent_subscriptions', { agentName: 'my-agent' });
+  });
+});

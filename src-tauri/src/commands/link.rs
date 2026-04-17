@@ -40,7 +40,7 @@ pub async fn start_link_server(
 }
 
 /// Connect to a peer at the given host:port.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn connect_to_peer(
     host: String,
     port: u16,

@@ -107,6 +107,19 @@
               <span class="bgm-vol-icon">🔊</span>
             </div>
           </div>
+          
+          <!-- System Information Panel -->
+          <div class="dropdown-section">
+            <SystemInfoPanel />
+          </div>
+          
+          <!-- Audio Controls Panel -->
+          <div class="dropdown-section">
+            <AudioControlsPanel 
+              @update:bgmVolume="handleAudioBgmVolumeChange"
+              @update:bgmTrackId="handleAudioBgmTrackChange"
+            />
+          </div>
         </div>
       </Transition>
     </div>
@@ -134,6 +147,8 @@ import { initScene, type RendererInfo, type SceneContext } from '../renderer/sce
 import { loadVRMSafe } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 import { useBgmPlayer, BGM_TRACKS } from '../composables/useBgmPlayer';
+import SystemInfoPanel from './SystemInfoPanel.vue';
+import AudioControlsPanel from './AudioControlsPanel.vue';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
@@ -194,6 +209,23 @@ function restoreBgmFromSettings() {
   }
 }
 
+// Event handlers for audio controls panel
+function handleAudioBgmVolumeChange(volume: number) {
+  bgmVolume.value = volume / 100;
+  bgm.setVolume(bgmVolume.value);
+  if (bgmEnabled.value) {
+    settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+  }
+}
+
+function handleAudioBgmTrackChange(trackId: string) {
+  bgmTrackId.value = trackId;
+  if (bgmEnabled.value) {
+    bgm.play(trackId);
+    settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
+  }
+}
+
 const characterName = computed(() => {
   return characterStore.vrmMetadata?.title ?? 'TerranSoul';
 });
@@ -208,6 +240,14 @@ let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
+
+// Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
+defineExpose({
+  /** The layered AvatarStateMachine — ChatView mutates body/emotion here. */
+  get avatarStateMachine() {
+    return animator.avatarStateMachine;
+  },
+});
 
 function handleModelChange(e: Event) {
   const select = e.target as HTMLSelectElement;
@@ -302,6 +342,10 @@ onMounted(async () => {
   // Restore BGM state (track, volume, enabled) from persisted settings.
   restoreBgmFromSettings();
 
+  // On-demand rendering: throttle to ~15 FPS when idle & settled
+  const IDLE_INTERVAL = 1 / 15; // ~66ms
+  let idleAccum = 0;
+
   function loop() {
     animFrameId = requestAnimationFrame(loop);
     const delta = ctx.clock.getDelta();
@@ -311,6 +355,23 @@ onMounted(async () => {
     ctx.controls.update();
     // Keep lookAt target at camera position so VRM eyes track the viewer
     ctx.lookAtTarget.position.copy(ctx.camera.position);
+
+    const asm = animator.avatarStateMachine;
+    const settled = animator.isAnimationSettled();
+    const idle = asm.state.body === 'idle';
+
+    if (settled && idle && !asm.state.needsRender) {
+      // Throttle: accumulate time, only render at ~15 FPS
+      idleAccum += delta;
+      if (idleAccum < IDLE_INTERVAL) return;
+      idleAccum = 0;
+    } else {
+      idleAccum = 0;
+    }
+
+    // Clear the one-shot render flag
+    if (asm.state.needsRender) asm.state.needsRender = false;
+
     animator.update(delta);
     ctx.renderer.render(ctx.scene, ctx.camera);
 
@@ -372,7 +433,7 @@ watch(
       characterStore.setMetadata(result.metadata);
 
       // Expose VRM for E2E testing — allows Playwright to verify bone positions
-      (window as any).__terransoul_vrm__ = result.vrm;
+      (window as unknown as Record<string, unknown>).__terransoul_vrm__ = result.vrm;
 
       // Run one animation tick so bones settle into the natural pose before
       // the first visible frame — this prevents the T-pose flash.

@@ -151,3 +151,22 @@ describe('useModelCameraStore', () => {
     expect(store.getCameraForModel('annabelle')).not.toBeNull();
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('useModelCameraStore — IPC contract', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  it('save sends modelId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useModelCameraStore();
+    await store.saveCameraForModel('annabelle', 0.5, 3.0);
+    expect(mockInvoke).toHaveBeenCalledWith('save_model_camera_position', {
+      modelId: 'annabelle',
+      azimuth: 0.5,
+      distance: 3.0,
+    });
+  });
+});

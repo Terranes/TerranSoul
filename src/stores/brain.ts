@@ -200,6 +200,23 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  /** Process a prompt silently (for quest analysis) without adding to conversation history. */
+  async function processPromptSilently(prompt: string): Promise<string> {
+    try {
+      if (!hasBrain.value) return '';
+      
+      const response = await invoke<string>('process_prompt_silently', { 
+        prompt,
+        mode: brainMode.value 
+      });
+      
+      return response;
+    } catch (error) {
+      console.warn('Silent prompt processing failed:', error);
+      return '';
+    }
+  }
+
   return {
     activeBrain,
     systemInfo,
@@ -228,5 +245,6 @@ export const useBrainStore = defineStore('brain', () => {
     autoConfigureFreeApi,
     autoConfigureForDesktop,
     initialise,
+    processPromptSilently,
   };
 });

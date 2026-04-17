@@ -78,10 +78,63 @@ describe('emotion-parser — parseTags', () => {
     expect(result.text).toBe('Hello');
   });
 
-  it('unrecognized tags like motion/pose are preserved in text', () => {
+  it('unrecognized tags like pose are preserved in text', () => {
+    const result = parseTags('[pose:sit] Hello!');
+    expect(result.emotion).toBeNull();
+    expect(result.text).toBe('[pose:sit] Hello!');
+  });
+
+  it('strips motion tags from text', () => {
     const result = parseTags('[motion:wave] Hello!');
     expect(result.emotion).toBeNull();
-    expect(result.text).toBe('[motion:wave] Hello!');
+    expect(result.motion).toBe('wave');
+    expect(result.text).toBe('Hello!');
+  });
+
+  it('strips motion:nod tag', () => {
+    const result = parseTags('Sure! [motion:nod] I can help.');
+    expect(result.motion).toBe('nod');
+    expect(result.text).toBe('Sure! I can help.');
+  });
+
+  it('extracts both emotion and motion tags', () => {
+    const result = parseTags('[happy] Hi there! [motion:wave] How can I help?');
+    expect(result.emotion).toBe('happy');
+    expect(result.motion).toBe('wave');
+    expect(result.text).toBe('Hi there! How can I help?');
+  });
+
+  // ── <anim> block tests ──────────────────────────────────────────────────
+
+  it('parses <anim> block with emotion', () => {
+    const result = parseTags('<anim>{"emotion":"happy"}</anim>\nGreat to see you!');
+    expect(result.emotion).toBe('happy');
+    expect(result.text).toBe('Great to see you!');
+  });
+
+  it('parses <anim> block with motion', () => {
+    const result = parseTags('<anim>{"motion":"wave"}</anim>\nHello!');
+    expect(result.motion).toBe('wave');
+    expect(result.text).toBe('Hello!');
+  });
+
+  it('parses <anim> block with both emotion and motion', () => {
+    const result = parseTags('<anim>{"emotion":"surprised","motion":"nod"}</anim>\nWow!');
+    expect(result.emotion).toBe('surprised');
+    expect(result.motion).toBe('nod');
+    expect(result.text).toBe('Wow!');
+  });
+
+  it('strips <anim> block with invalid JSON', () => {
+    const result = parseTags('<anim>not json</anim>Hello!');
+    expect(result.emotion).toBeNull();
+    expect(result.text).toBe('Hello!');
+  });
+
+  it('prefers <anim> block emotion over legacy tag', () => {
+    const result = parseTags('<anim>{"emotion":"happy"}</anim>[sad] Hello!');
+    expect(result.emotion).toBe('happy');
+    expect(result.text).toBe('Hello!');
   });
 });
 

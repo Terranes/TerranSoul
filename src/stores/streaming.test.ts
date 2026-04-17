@@ -40,11 +40,10 @@ describe('streaming store — IPC integration', () => {
     store.isStreaming = true;
 
     store.handleChunk({ text: 'Hello ', done: false });
-    // parseTags trims each chunk, but the store concatenates
-    expect(store.streamText).toBe('Hello');
+    expect(store.streamText).toBe('Hello ');
 
     store.handleChunk({ text: 'World!', done: false });
-    expect(store.streamText).toBe('HelloWorld!');
+    expect(store.streamText).toBe('Hello World!');
   });
 
   it('handleChunk sets done flag', () => {
@@ -62,38 +61,43 @@ describe('streaming store — IPC integration', () => {
     const store = useStreamingStore();
     store.isStreaming = true;
 
-    store.handleChunk({ text: '[happy] Great to see you!', done: false });
-    expect(store.currentEmotion).toBe('happy');
+    // Text from Rust is already clean — emotion comes via handleAnimation
+    store.handleChunk({ text: 'Great to see you!', done: false });
     expect(store.streamText).toBe('Great to see you!');
+    expect(store.currentEmotion).toBeNull();
   });
 
-  it('handleChunk strips unknown tags but keeps text', () => {
+  it('handleAnimation sets emotion', () => {
     const store = useStreamingStore();
     store.isStreaming = true;
 
-    store.handleChunk({ text: '[motion:wave] Hello!', done: false });
-    // motion tags are no longer recognized — they pass through as unrecognized bracket content
-    expect(store.streamText).toBe('[motion:wave] Hello!');
-  });
-
-  it('handleChunk extracts emotion from mixed content', () => {
-    const store = useStreamingStore();
-    store.isStreaming = true;
-
-    store.handleChunk({ text: '[happy] Absolutely!', done: false });
+    store.handleAnimation({ emotion: 'happy' });
     expect(store.currentEmotion).toBe('happy');
-    expect(store.streamText).toBe('Absolutely!');
   });
 
-  it('latest emotion wins across chunks', () => {
+  it('handleAnimation sets motion', () => {
     const store = useStreamingStore();
     store.isStreaming = true;
 
-    store.handleChunk({ text: '[happy] Hi!', done: false });
-    expect(store.currentEmotion).toBe('happy');
+    store.handleAnimation({ motion: 'wave' });
+    expect(store.currentMotion).toBe('wave');
+  });
 
-    store.handleChunk({ text: ' [sad] Sorry.', done: false });
-    expect(store.currentEmotion).toBe('sad');
+  it('handleAnimation sets both emotion and motion', () => {
+    const store = useStreamingStore();
+    store.isStreaming = true;
+
+    store.handleAnimation({ emotion: 'surprised', motion: 'nod' });
+    expect(store.currentEmotion).toBe('surprised');
+    expect(store.currentMotion).toBe('nod');
+  });
+
+  it('handleAnimation ignores invalid emotions', () => {
+    const store = useStreamingStore();
+    store.isStreaming = true;
+
+    store.handleAnimation({ emotion: 'ecstatic' });
+    expect(store.currentEmotion).toBeNull();
   });
 
   it('reset clears all state', () => {
@@ -102,6 +106,7 @@ describe('streaming store — IPC integration', () => {
     store.streamText = 'some text';
     store.streamRawText = '[happy] some text';
     store.currentEmotion = 'happy';
+    store.currentMotion = 'wave';
     store.error = 'some error';
 
     store.reset();
@@ -110,6 +115,7 @@ describe('streaming store — IPC integration', () => {
     expect(store.streamText).toBe('');
     expect(store.streamRawText).toBe('');
     expect(store.currentEmotion).toBeNull();
+    expect(store.currentMotion).toBeNull();
     expect(store.error).toBeNull();
   });
 
@@ -118,12 +124,14 @@ describe('streaming store — IPC integration', () => {
     const store = useStreamingStore();
     store.streamText = 'old text';
     store.currentEmotion = 'sad';
+    store.currentMotion = 'wave';
     store.error = 'old error';
 
     await store.sendStreaming('New message');
 
     expect(store.streamText).toBe('');
     expect(store.currentEmotion).toBeNull();
+    expect(store.currentMotion).toBeNull();
     expect(store.error).toBeNull();
   });
 
@@ -131,8 +139,20 @@ describe('streaming store — IPC integration', () => {
     const store = useStreamingStore();
     store.isStreaming = true;
 
-    store.handleChunk({ text: '[happy] Hello', done: false });
-    expect(store.streamRawText).toBe('[happy] Hello');
+    // Text from Rust is already clean — streamRawText mirrors streamText
+    store.handleChunk({ text: 'Hello', done: false });
+    expect(store.streamRawText).toBe('Hello');
     expect(store.streamText).toBe('Hello');
+  });
+
+  it('handleAnimation updates emotion across multiple calls', () => {
+    const store = useStreamingStore();
+    store.isStreaming = true;
+
+    store.handleAnimation({ emotion: 'happy' });
+    expect(store.currentEmotion).toBe('happy');
+
+    store.handleAnimation({ emotion: 'sad' });
+    expect(store.currentEmotion).toBe('sad');
   });
 });

@@ -28,16 +28,40 @@ const MIN_SENTENCE_CHARS = 4;
 export interface TtsPlaybackHandle {
   /** Whether TTS audio is currently playing or pending. */
   isSpeaking: Readonly<ReturnType<typeof ref<boolean>>>;
+  /** The sentence currently being spoken (empty when not speaking). */
+  currentSentence: Readonly<ReturnType<typeof ref<string>>>;
+  /** All text that has been fully spoken so far in this generation. */
+  spokenText: Readonly<ReturnType<typeof ref<string>>>;
   /** Feed an LLM token chunk into the sentence buffer. */
   feedChunk(text: string): void;
   /** Flush the remaining buffer as the final TTS sentence (call on stream done). */
   flush(): void;
   /** Stop all pending synthesis and cancel audio playback. */
   stop(): void;
+  /**
+   * Register a callback fired when a sentence starts playing.
+   * Receives the HTMLAudioElement that is about to play.
+   */
+  onAudioStart(cb: (audio: HTMLAudioElement) => void): void;
+  /** Register a callback fired when a sentence finishes playing. */
+  onAudioEnd(cb: () => void): void;
+  /** Register a callback fired when stop() is called (all playback cancelled). */
+  onPlaybackStop(cb: () => void): void;
 }
 
-export function useTtsPlayback(): TtsPlaybackHandle {
+export interface TtsPlaybackOptions {
+  /** Returns the browser speech pitch to use (called per utterance). */
+  getBrowserPitch?: () => number;
+  /** Returns the browser speech rate to use (called per utterance). */
+  getBrowserRate?: () => number;
+}
+
+export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle {
   const isSpeaking = ref(false);
+  /** The sentence currently being spoken. */
+  const currentSentence = ref('');
+  /** All text fully spoken so far in this generation. */
+  const spokenText = ref('');
 
   /** Accumulated text not yet sent to TTS. */
   let buffer = '';
@@ -47,12 +71,17 @@ export function useTtsPlayback(): TtsPlaybackHandle {
    * if the current generation has changed when it executes.
    */
   let generation = 0;
-  /** Queue of WAV data Promises — each item is one sentence being synthesized. */
-  const synthQueue: Promise<Uint8Array | null>[] = [];
+  /** Queue of pending sentences — each carries text and a WAV synthesis promise. */
+  const synthQueue: { text: string; wav: Promise<Uint8Array | null> }[] = [];
   /** Current HTMLAudioElement being played, if any. */
   let currentAudio: HTMLAudioElement | null = null;
   /** Blob URLs created for audio elements, tracked for cleanup. */
   const blobUrls: string[] = [];
+
+  // Callback hooks for LipSync integration
+  let audioStartCb: ((audio: HTMLAudioElement) => void) | null = null;
+  let audioEndCb: (() => void) | null = null;
+  let playbackStopCb: (() => void) | null = null;
 
   // ── Internal helpers ───────────────────────────────────────────────────────
 
@@ -63,9 +92,23 @@ export function useTtsPlayback(): TtsPlaybackHandle {
     }
   }
 
+  /** Strip markdown formatting before TTS synthesis. */
+  function stripMarkdown(text: string): string {
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove **bold**
+      .replace(/\*([^*]+)\*/g, '$1')     // Remove *italic*
+      .replace(/`([^`]+)`/g, '$1')       // Remove `code`
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove [links](url)
+      .replace(/#+ /g, '')               // Remove markdown headers
+      .replace(/^[-*+] /gm, '')          // Remove list bullets
+      .replace(/\n{2,}/g, '. ')          // Replace multiple newlines with periods
+      .replace(/\n/g, ' ')               // Replace single newlines with spaces
+      .trim();
+  }
+
   /** Enqueue a sentence for synthesis and sequential playback. */
   function enqueueSentence(sentence: string): void {
-    const trimmed = sentence.trim();
+    const trimmed = stripMarkdown(sentence.trim());
     if (trimmed.length < MIN_SENTENCE_CHARS) return;
 
     // Capture generation at enqueue time so this sentence aborts if stop() is called.
@@ -73,9 +116,12 @@ export function useTtsPlayback(): TtsPlaybackHandle {
 
     const synthPromise = invoke<number[]>('synthesize_tts', { text: trimmed })
       .then((bytes) => (generation === myGen ? new Uint8Array(bytes) : null))
-      .catch(() => null);
+      .catch((err) => {
+        console.warn('synthesize_tts failed, will use browser fallback:', err);
+        return null;
+      });
 
-    synthQueue.push(synthPromise);
+    synthQueue.push({ text: trimmed, wav: synthPromise });
 
     // Drain queue if nothing is playing
     if (synthQueue.length === 1) {
@@ -86,17 +132,32 @@ export function useTtsPlayback(): TtsPlaybackHandle {
   /** Play synthesized sentences from the queue one after another. */
   async function drainQueue(myGen: number): Promise<void> {
     while (synthQueue.length > 0 && generation === myGen) {
-      const wavBytes = await synthQueue[0];
+      const item = synthQueue[0];
+      const wavBytes = await item.wav;
       synthQueue.shift();
 
-      if (!wavBytes || generation !== myGen) continue;
+      if (generation !== myGen) continue;
 
       isSpeaking.value = true;
-      await playWavBytes(wavBytes, myGen);
+      currentSentence.value = item.text;
+
+      if (wavBytes && wavBytes.length > 44) {
+        // WAV synthesis succeeded — play through HTMLAudioElement (enables lip sync).
+        await playWavBytes(wavBytes, myGen);
+      } else {
+        // Synthesis failed or returned empty audio — fall back to browser speech.
+        await speakWithBrowserTts(item.text, myGen);
+      }
+
+      // Mark sentence as fully spoken
+      if (generation === myGen) {
+        spokenText.value += (spokenText.value ? ' ' : '') + item.text;
+      }
     }
 
     if (generation === myGen) {
       isSpeaking.value = false;
+      currentSentence.value = '';
     }
   }
 
@@ -117,14 +178,17 @@ export function useTtsPlayback(): TtsPlaybackHandle {
 
       audio.onended = () => {
         currentAudio = null;
+        audioEndCb?.();
         resolve();
       };
 
       audio.onerror = () => {
         currentAudio = null;
+        audioEndCb?.();
         resolve();
       };
 
+      audioStartCb?.(audio);
       audio.play().catch(() => resolve());
     });
   }
@@ -146,6 +210,35 @@ export function useTtsPlayback(): TtsPlaybackHandle {
     }
 
     return { sentences, remainder };
+  }
+
+  /**
+   * Browser-native fallback when backend TTS synthesis fails.
+   * Uses the Web Speech API (SpeechSynthesis) which works on all platforms,
+   * offline, and without any backend dependency.
+   * Note: does not produce an HTMLAudioElement so lip sync is unavailable.
+   */
+  function speakWithBrowserTts(text: string, myGen: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (!('speechSynthesis' in window) || generation !== myGen) {
+        audioEndCb?.();
+        resolve();
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.pitch = options?.getBrowserPitch?.() ?? 1.0;
+      utterance.rate = options?.getBrowserRate?.() ?? 1.0;
+      utterance.onend = () => {
+        audioEndCb?.();
+        resolve();
+      };
+      utterance.onerror = () => {
+        audioEndCb?.();
+        resolve();
+      };
+      speechSynthesis.speak(utterance);
+    });
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -171,12 +264,12 @@ export function useTtsPlayback(): TtsPlaybackHandle {
   }
 
   function stop(): void {
-    // Increment generation — all in-flight async operations from previous generation
-    // will see the generation mismatch and abort before playing audio.
     generation++;
     buffer = '';
     synthQueue.length = 0;
     isSpeaking.value = false;
+    currentSentence.value = '';
+    spokenText.value = '';
 
     if (currentAudio) {
       currentAudio.pause();
@@ -184,13 +277,24 @@ export function useTtsPlayback(): TtsPlaybackHandle {
       currentAudio = null;
     }
 
+    // Cancel any browser-native speech synthesis in progress.
+    if (typeof speechSynthesis !== 'undefined') {
+      speechSynthesis.cancel();
+    }
+
     cleanupBlobUrls();
+    playbackStopCb?.();
   }
 
   return {
     isSpeaking: readonly(isSpeaking),
+    currentSentence: readonly(currentSentence),
+    spokenText: readonly(spokenText),
     feedChunk,
     flush,
     stop,
+    onAudioStart(cb: (audio: HTMLAudioElement) => void) { audioStartCb = cb; },
+    onAudioEnd(cb: () => void) { audioEndCb = cb; },
+    onPlaybackStop(cb: () => void) { playbackStopCb = cb; },
   };
 }

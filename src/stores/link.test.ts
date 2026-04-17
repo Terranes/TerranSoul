@@ -142,3 +142,24 @@ describe('link store — IPC integration', () => {
     expect(mockInvoke).toHaveBeenCalledWith('start_link_server', { port: null });
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('link store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('connectToPeer sends deviceId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useLinkStore();
+    await store.connectToPeer('192.168.1.1', 8080, 'dev-abc', 'MyPhone');
+    expect(mockInvoke).toHaveBeenCalledWith('connect_to_peer', {
+      host: '192.168.1.1',
+      port: 8080,
+      deviceId: 'dev-abc',
+      name: 'MyPhone',
+    });
+  });
+});

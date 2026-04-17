@@ -188,9 +188,6 @@ describe('conversation store — Tauri backend available', () => {
     mockInvoke.mockResolvedValue(undefined);
 
     const store = useConversationStore();
-    // sendMessage will try streaming → send_message_stream
-    // Since streaming store won't receive done chunk in test, it will time out.
-    // But the invoke should be called.
     const promise = store.sendMessage('hello');
 
     // Give the async poll loop a tick
@@ -198,7 +195,10 @@ describe('conversation store — Tauri backend available', () => {
 
     expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'hello' });
 
-    // Simulate the streaming store being done
+    // isStreaming should be false until text chunks actually arrive
+    expect(store.isStreaming).toBe(false);
+
+    // Simulate the streaming store receiving chunks
     const { useStreamingStore } = await import('./streaming');
     const streaming = useStreamingStore();
     streaming.handleChunk({ text: 'Hi there!', done: false });
@@ -210,6 +210,7 @@ describe('conversation store — Tauri backend available', () => {
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].content).toBe('Hi there!');
     expect(store.isThinking).toBe(false);
+    expect(store.isStreaming).toBe(false);
   });
 
   it('falls back to send_message on streaming failure', async () => {
@@ -242,6 +243,39 @@ describe('conversation store — Tauri backend available', () => {
     expect(store.messages).toHaveLength(2);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.isThinking).toBe(false);
+  });
+
+  it('falls back to non-streaming invoke when streaming produces no text', async () => {
+    // First invoke (send_message_stream) resolves OK but no chunks arrive
+    mockInvoke.mockResolvedValueOnce(undefined);
+    // Second invoke (send_message) returns a proper response
+    const fallbackResponse: Message = {
+      id: 'fb-1',
+      role: 'assistant',
+      content: 'Hello from non-streaming!',
+      agentName: 'TerranSoul',
+      sentiment: 'happy',
+      timestamp: Date.now(),
+    };
+    mockInvoke.mockResolvedValueOnce(fallbackResponse);
+
+    const store = useConversationStore();
+    const promise = store.sendMessage('Hi');
+
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Simulate the streaming ending with zero content (empty done chunk)
+    const { useStreamingStore } = await import('./streaming');
+    const streaming = useStreamingStore();
+    streaming.handleChunk({ text: '', done: true });
+
+    await promise;
+
+    // Should fall back to non-streaming invoke and use its response
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0].content).toBe('Hi');
+    expect(store.messages[1]).toEqual(fallbackResponse);
     expect(store.isThinking).toBe(false);
   });
 });

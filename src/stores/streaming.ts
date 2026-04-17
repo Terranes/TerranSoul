@@ -7,7 +7,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { parseTags } from '../utils/emotion-parser';
 import type { EmotionTag } from '../types';
 
 export const useStreamingStore = defineStore('streaming', () => {
@@ -19,6 +18,8 @@ export const useStreamingStore = defineStore('streaming', () => {
   const streamRawText = ref('');
   /** Latest emotion detected during streaming. */
   const currentEmotion = ref<EmotionTag | null>(null);
+  /** Latest motion/gesture detected during streaming. */
+  const currentMotion = ref<string | null>(null);
   /** Error, if any. */
   const error = ref<string | null>(null);
 
@@ -32,6 +33,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamText.value = '';
     streamRawText.value = '';
     currentEmotion.value = null;
+    currentMotion.value = null;
     error.value = null;
 
     try {
@@ -46,27 +48,41 @@ export const useStreamingStore = defineStore('streaming', () => {
 
   /**
    * Process a single LLM chunk from the Tauri event.
-   * Call this from the event listener.
+   * Text is already clean (anim blocks stripped by Rust StreamTagParser).
    */
   function handleChunk(chunk: { text: string; done: boolean }) {
     if (chunk.done) {
-      // Trim final accumulated text
-      streamText.value = streamText.value.trim();
       isStreaming.value = false;
       return;
     }
 
-    streamRawText.value += chunk.text;
-
-    // Parse tags from the incoming chunk
-    const parsed = parseTags(chunk.text);
-
-    if (parsed.emotion) {
-      currentEmotion.value = parsed.emotion;
+    // Set isStreaming to true on first chunk with actual text
+    if (!isStreaming.value && chunk.text) {
+      isStreaming.value = true;
     }
 
-    // Accumulate display text
-    streamText.value += parsed.text;
+    // Text from Rust is already clean — just accumulate.
+    streamRawText.value += chunk.text;
+    streamText.value += chunk.text;
+  }
+
+  /**
+   * Process a structured animation command from the `llm-animation` event.
+   * Called by the ChatView event listener.
+   */
+  function handleAnimation(cmd: { emotion?: string; motion?: string }) {
+    if (cmd.emotion) {
+      const lower = cmd.emotion.toLowerCase();
+      const valid: ReadonlySet<string> = new Set([
+        'happy', 'sad', 'angry', 'relaxed', 'surprised', 'neutral',
+      ]);
+      if (valid.has(lower)) {
+        currentEmotion.value = lower as EmotionTag;
+      }
+    }
+    if (cmd.motion) {
+      currentMotion.value = cmd.motion.toLowerCase();
+    }
   }
 
   /** Reset streaming state. */
@@ -75,6 +91,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamText.value = '';
     streamRawText.value = '';
     currentEmotion.value = null;
+    currentMotion.value = null;
     error.value = null;
   }
 
@@ -83,9 +100,11 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamText,
     streamRawText,
     currentEmotion,
+    currentMotion,
     error,
     sendStreaming,
     handleChunk,
+    handleAnimation,
     reset,
   };
 });

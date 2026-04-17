@@ -342,3 +342,10 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 > VRM desktop companion use. See `rules/research-reverse-engineering.md` §7.
 
 ✅ Phase 8 complete (chunks 080–084) — see completion-log.md
+
+---
+
+## Phase 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+✅ Phase 10 complete — see completion-log.md
+

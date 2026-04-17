@@ -135,3 +135,33 @@ describe('routing store — IPC integration', () => {
     expect(store.error).toBeNull();
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('routing store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('approveCommand sends commandId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue({ approved: true });
+    const store = useRoutingStore();
+    await store.approveCommand('cmd-001', true);
+    expect(mockInvoke).toHaveBeenCalledWith('approve_remote_command', { commandId: 'cmd-001', remember: true });
+  });
+
+  it('denyCommand sends commandId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue({ approved: false });
+    const store = useRoutingStore();
+    await store.denyCommand('cmd-002', false);
+    expect(mockInvoke).toHaveBeenCalledWith('deny_remote_command', { commandId: 'cmd-002', block: false });
+  });
+
+  it('setDevicePermission sends deviceId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useRoutingStore();
+    await store.setDevicePermission('dev-abc', 'allow');
+    expect(mockInvoke).toHaveBeenCalledWith('set_device_permission', { deviceId: 'dev-abc', policy: 'allow' });
+  });
+});

@@ -141,6 +141,15 @@ pub struct VoiceConfig {
     pub asr_provider: Option<String>,
     /// Selected TTS provider ID, or `None` for text-only output.
     pub tts_provider: Option<String>,
+    /// Edge TTS voice name (e.g. "en-US-AnaNeural"). When `None`, uses
+    /// the default female voice.
+    pub tts_voice: Option<String>,
+    /// Edge TTS pitch offset in Hz (e.g. 50 = +50Hz higher). Default 0.
+    #[serde(default)]
+    pub tts_pitch: i32,
+    /// Edge TTS rate offset in percent (e.g. 15 = +15% faster). Default 0.
+    #[serde(default)]
+    pub tts_rate: i32,
     /// Optional API key for cloud providers (stored in app-data, not source).
     pub api_key: Option<String>,
     /// Optional endpoint URL for custom cloud providers.
@@ -260,6 +269,9 @@ mod tests {
         let cfg = VoiceConfig {
             asr_provider: Some("whisper-api".into()),
             tts_provider: Some("edge-tts".into()),
+            tts_voice: None,
+            tts_pitch: 0,
+            tts_rate: 0,
             api_key: Some("sk-test".into()),
             endpoint_url: Some("http://localhost:8000".into()),
             hotwords: vec![],
@@ -285,6 +297,9 @@ mod tests {
         let cfg = VoiceConfig {
             asr_provider: Some("stub".into()),
             tts_provider: None,
+            tts_voice: None,
+            tts_pitch: 0,
+            tts_rate: 0,
             api_key: None,
             endpoint_url: None,
             hotwords: vec![

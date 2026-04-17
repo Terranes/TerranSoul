@@ -22,6 +22,10 @@ const SAMPLE_RATE: u32 = 24000;
 /// Edge TTS engine that synthesizes text using Microsoft's free neural voices.
 pub struct EdgeTts {
     voice_name: String,
+    /// Pitch offset in Hz (e.g. 50 = +50Hz higher).
+    pitch: i32,
+    /// Rate offset in percent (e.g. 15 = +15% faster).
+    rate: i32,
 }
 
 impl EdgeTts {
@@ -29,6 +33,8 @@ impl EdgeTts {
     pub fn new() -> Self {
         Self {
             voice_name: DEFAULT_VOICE.to_string(),
+            pitch: 0,
+            rate: 0,
         }
     }
 
@@ -37,6 +43,17 @@ impl EdgeTts {
     pub fn with_voice(voice_name: impl Into<String>) -> Self {
         Self {
             voice_name: voice_name.into(),
+            pitch: 0,
+            rate: 0,
+        }
+    }
+
+    /// Create an Edge TTS engine with voice, pitch and rate.
+    pub fn with_prosody(voice_name: impl Into<String>, pitch: i32, rate: i32) -> Self {
+        Self {
+            voice_name: voice_name.into(),
+            pitch,
+            rate,
         }
     }
 }
@@ -86,6 +103,8 @@ impl TtsEngine for EdgeTts {
     async fn synthesize(&self, text: &str) -> Result<SynthesisResult, String> {
         let voice_name = self.voice_name.clone();
         let text = text.to_string();
+        let pitch = self.pitch;
+        let rate = self.rate;
 
         // Run the sync WebSocket client on a blocking thread to avoid
         // conflicting with the Tokio runtime.
@@ -95,8 +114,8 @@ impl TtsEngine for EdgeTts {
             let config = SpeechConfig {
                 voice_name,
                 audio_format: AUDIO_FORMAT.to_string(),
-                pitch: 0,
-                rate: 0,
+                pitch,
+                rate,
                 volume: 0,
             };
 
@@ -122,14 +141,16 @@ impl TtsEngine for EdgeTts {
     async fn health_check(&self) -> bool {
         // Synthesize a tiny text to verify the connection works.
         let voice_name = self.voice_name.clone();
+        let pitch = self.pitch;
+        let rate = self.rate;
         let ok = tokio::task::spawn_blocking(move || {
             use msedge_tts::tts::{client::connect, SpeechConfig};
 
             let config = SpeechConfig {
                 voice_name,
                 audio_format: AUDIO_FORMAT.to_string(),
-                pitch: 0,
-                rate: 0,
+                pitch,
+                rate,
                 volume: 0,
             };
 
@@ -158,6 +179,23 @@ mod tests {
     fn edge_tts_custom_voice() {
         let engine = EdgeTts::with_voice("ja-JP-NanamiNeural");
         assert_eq!(engine.voice_name, "ja-JP-NanamiNeural");
+        assert_eq!(engine.pitch, 0);
+        assert_eq!(engine.rate, 0);
+    }
+
+    #[test]
+    fn edge_tts_with_prosody() {
+        let engine = EdgeTts::with_prosody("en-US-AnaNeural", 50, 15);
+        assert_eq!(engine.voice_name, "en-US-AnaNeural");
+        assert_eq!(engine.pitch, 50);
+        assert_eq!(engine.rate, 15);
+    }
+
+    #[test]
+    fn edge_tts_default_has_zero_prosody() {
+        let engine = EdgeTts::new();
+        assert_eq!(engine.pitch, 0);
+        assert_eq!(engine.rate, 0);
     }
 
     #[test]

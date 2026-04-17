@@ -32,6 +32,11 @@ use commands::{
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
+    docker::{
+        auto_setup_local_llm, check_docker_status, check_ollama_container,
+        docker_pull_model, ensure_ollama_container, start_docker_desktop,
+        stop_docker_desktop, wait_for_docker,
+    },
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
@@ -72,8 +77,11 @@ use commands::{
     voice::{
         add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
         get_voice_config, list_asr_providers, list_tts_providers, remove_hotword,
-        set_asr_provider, set_tts_provider, set_voice_api_key, set_voice_endpoint,
+        set_asr_provider, set_tts_provider, set_tts_prosody, set_tts_voice, set_voice_api_key, set_voice_endpoint,
         synthesize_tts, transcribe_audio,
+    },
+    quest::{
+        get_quest_tracker, save_quest_tracker,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -134,7 +142,11 @@ impl AppState {
             package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(active_brain),
             brain_mode: Mutex::new(brain_mode),
-            ollama_client: reqwest::Client::new(),
+            ollama_client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(120))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: data_dir.to_path_buf(),
             memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
             registry_server_handle: TokioMutex::new(None),
@@ -164,7 +176,11 @@ impl AppState {
             package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(None),
             brain_mode: Mutex::new(None),
-            ollama_client: reqwest::Client::new(),
+            ollama_client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(120))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: std::path::PathBuf::from("."),
             memory_store: Mutex::new(memory::MemoryStore::in_memory()),
             registry_server_handle: TokioMutex::new(None),
@@ -258,6 +274,8 @@ pub fn run() {
             get_voice_config,
             set_asr_provider,
             set_tts_provider,
+            set_tts_voice,
+            set_tts_prosody,
             set_voice_api_key,
             set_voice_endpoint,
             clear_voice_config,
@@ -272,11 +290,21 @@ pub fn run() {
             save_app_settings,
             get_model_camera_positions,
             save_model_camera_position,
+            get_quest_tracker,
+            save_quest_tracker,
             capture_screen,
             analyze_screen,
             list_languages,
             translate_text,
             detect_language,
+            check_docker_status,
+            start_docker_desktop,
+            stop_docker_desktop,
+            wait_for_docker,
+            check_ollama_container,
+            ensure_ollama_container,
+            docker_pull_model,
+            auto_setup_local_llm,
         ])
         .setup(|app| {
             let data_dir = app

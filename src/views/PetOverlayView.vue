@@ -22,7 +22,7 @@
 
     <!-- Expandable chat input (visible on hover or click) -->
     <Transition name="chat-slide">
-      <div v-if="chatExpanded" class="pet-chat" @click.stop>
+      <div v-if="petChatExpanded" class="pet-chat" @click.stop>
         <div class="pet-chat-messages" ref="messagesRef">
           <div
             v-for="msg in recentMessages"
@@ -54,7 +54,7 @@
     </Transition>
 
     <!-- Pet mode controls (bottom-right) — always visible initially, then hover-only -->
-    <div class="pet-controls" :class="{ visible: hovered || chatExpanded || showInitialHint }">
+    <div class="pet-controls" :class="{ visible: hovered || petChatExpanded || showInitialHint }">
       <button class="pet-ctrl-btn" title="Toggle chat" @click.stop="toggleChat">💬</button>
       <button class="pet-ctrl-btn" title="Exit pet mode" @click.stop="exitPetMode">✕</button>
     </div>
@@ -75,6 +75,7 @@ import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useWindowStore } from '../stores/window';
 import { useStreamingStore } from '../stores/streaming';
+import { useChatExpansion } from '../composables/useChatExpansion';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
 
@@ -83,9 +84,9 @@ const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const windowStore = useWindowStore();
 const streaming = useStreamingStore();
+const { petChatExpanded, setPetChatExpanded, togglePetChat } = useChatExpansion();
 
 const inputText = ref('');
-const chatExpanded = ref(true);
 const hovered = ref(false);
 const showBubble = ref(false);
 const showInitialHint = ref(true);
@@ -123,8 +124,8 @@ const EMOTION_MAP: Record<CharacterState, string> = {
 const emotionEmoji = computed(() => EMOTION_MAP[characterStore.state] || '');
 
 function toggleChat() {
-  chatExpanded.value = !chatExpanded.value;
-  if (chatExpanded.value) {
+  const isExpanded = togglePetChat();
+  if (isExpanded) {
     showBubble.value = false;
     // Enable click events on this window
     windowStore.setCursorPassthrough(false);
@@ -143,7 +144,7 @@ function onMouseEnter() {
 function onMouseLeave() {
   hovered.value = false;
   // If chat is not expanded, allow click-through
-  if (!chatExpanded.value) {
+  if (!petChatExpanded.value) {
     windowStore.setCursorPassthrough(true);
   }
 }
@@ -163,7 +164,7 @@ async function handleSend() {
 }
 
 async function exitPetMode() {
-  chatExpanded.value = false;
+  setPetChatExpanded(false);
   await windowStore.setMode('window');
 }
 
@@ -171,15 +172,15 @@ async function exitPetMode() {
 watch(
   () => conversationStore.messages.length,
   () => {
-    if (chatExpanded.value) {
+    if (petChatExpanded.value) {
       nextTick(() => scrollToBottom());
     }
     // Show bubble on new assistant message
-    if (!chatExpanded.value) {
+    if (!petChatExpanded.value) {
       showBubble.value = true;
       // Auto-hide bubble after 8 seconds
       setTimeout(() => {
-        if (!chatExpanded.value) showBubble.value = false;
+        if (!petChatExpanded.value) showBubble.value = false;
       }, 8000);
     }
   },

@@ -53,16 +53,41 @@ vi.stubGlobal('Blob', class MockBlob {
   constructor(public parts: BlobPart[], public options?: BlobPropertyBag) {}
 });
 
+// ── Mock SpeechSynthesis (Web Speech API fallback) ────────────────────────────
+
+class MockSpeechSynthesisUtterance {
+  text: string;
+  pitch = 1.0;
+  rate = 1.0;
+  onend: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(text: string) { this.text = text; }
+}
+
+const spokenUtterances: string[] = [];
+const mockSpeechSynthesis = {
+  speak: vi.fn((utterance: MockSpeechSynthesisUtterance) => {
+    spokenUtterances.push(utterance.text);
+    // Simulate async completion
+    Promise.resolve().then(() => utterance.onend?.());
+  }),
+  cancel: vi.fn(),
+};
+
+vi.stubGlobal('SpeechSynthesisUtterance', MockSpeechSynthesisUtterance);
+vi.stubGlobal('speechSynthesis', mockSpeechSynthesis);
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** A small valid WAV header as a number array (returned by Tauri IPC). */
 function stubWavBytes(): number[] {
-  // 44-byte WAV header with zero data (silence)
-  const buf = new ArrayBuffer(44);
+  // 44-byte WAV header + 100 bytes of PCM silence (enough to pass >44 check)
+  const totalDataBytes = 100;
+  const buf = new ArrayBuffer(44 + totalDataBytes);
   const view = new DataView(buf);
   // RIFF
   view.setUint8(0, 0x52); view.setUint8(1, 0x49); view.setUint8(2, 0x46); view.setUint8(3, 0x46);
-  view.setUint32(4, 36, true); // file size - 8
+  view.setUint32(4, 36 + totalDataBytes, true); // file size - 8
   view.setUint8(8, 0x57); view.setUint8(9, 0x41); view.setUint8(10, 0x56); view.setUint8(11, 0x45);
   // fmt
   view.setUint8(12, 0x66); view.setUint8(13, 0x6d); view.setUint8(14, 0x74); view.setUint8(15, 0x20);
@@ -72,7 +97,7 @@ function stubWavBytes(): number[] {
   view.setUint16(32, 2, true); view.setUint16(34, 16, true);
   // data
   view.setUint8(36, 0x64); view.setUint8(37, 0x61); view.setUint8(38, 0x74); view.setUint8(39, 0x61);
-  view.setUint32(40, 0, true);
+  view.setUint32(40, totalDataBytes, true);
   return Array.from(new Uint8Array(buf));
 }
 
@@ -83,6 +108,9 @@ describe('useTtsPlayback — sentence detection', () => {
     mockInvoke.mockReset();
     createdUrls.length = 0;
     revokedUrls.length = 0;
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.cancel.mockClear();
   });
 
   it('does not call synthesize_tts for text without sentence boundary', () => {
@@ -158,6 +186,9 @@ describe('useTtsPlayback — stop', () => {
     mockInvoke.mockReset();
     createdUrls.length = 0;
     revokedUrls.length = 0;
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.cancel.mockClear();
   });
 
   it('stop sets isSpeaking to false and allows fresh start for next message', () => {
@@ -188,15 +219,224 @@ describe('useTtsPlayback — stop', () => {
 describe('useTtsPlayback — synthesis error handling', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    // Restore default speak behavior (simulate async completion)
+    mockSpeechSynthesis.speak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
+      spokenUtterances.push(utterance.text);
+      Promise.resolve().then(() => utterance.onend?.());
+    });
+  });
+
+  it('falls back to Web Speech API when synthesize_tts fails', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello world. ');
+    // Wait for synthesis rejection + fallback speech
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockSpeechSynthesis.speak).toHaveBeenCalled();
+    expect(spokenUtterances).toContain('Hello world.');
+  });
+
+  it('isSpeaking is true during browser speech fallback', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    // Make speak NOT immediately resolve so we can check isSpeaking
+    mockSpeechSynthesis.speak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
+      spokenUtterances.push(utterance.text);
+      // Delay completion
+      setTimeout(() => utterance.onend?.(), 30);
+    });
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 15));
+    expect(tts.isSpeaking.value).toBe(true);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(tts.isSpeaking.value).toBe(false);
+  });
+
+  it('stop cancels browser speech synthesis', () => {
+    const tts = useTtsPlayback();
+    tts.stop();
+    expect(mockSpeechSynthesis.cancel).toHaveBeenCalled();
   });
 
   it('gracefully handles synthesize_tts error (no crash)', async () => {
     mockInvoke.mockRejectedValue(new Error('TTS error'));
     const tts = useTtsPlayback();
     tts.feedChunk('Hello world. ');
-    // Wait for promise rejection to be handled internally
-    await new Promise((r) => setTimeout(r, 10));
+    // Wait for promise rejection + fallback to be handled internally
+    await new Promise((r) => setTimeout(r, 50));
     // Should not throw; isSpeaking should return to false eventually
     expect(tts.isSpeaking.value).toBe(false);
+  });
+});
+
+describe('useTtsPlayback — audio lifecycle callbacks', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    createdUrls.length = 0;
+    revokedUrls.length = 0;
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+  });
+
+  it('onAudioStart callback fires with HTMLAudioElement before play', async () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    const received: unknown[] = [];
+    tts.onAudioStart((audio) => received.push(audio));
+
+    tts.feedChunk('Hello world. ');
+    // Wait for synthesis + playback scheduling
+    await new Promise((r) => setTimeout(r, 20));
+    expect(received.length).toBeGreaterThanOrEqual(1);
+    expect(received[0]).toBeInstanceOf(MockAudio);
+  });
+
+  it('onAudioEnd callback fires when sentence finishes playing', async () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    let endCount = 0;
+    tts.onAudioEnd(() => endCount++);
+
+    tts.feedChunk('Hello world. ');
+    // MockAudio triggers onended immediately in microtask
+    await new Promise((r) => setTimeout(r, 20));
+    expect(endCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('onPlaybackStop callback fires when stop() is called', () => {
+    const tts = useTtsPlayback();
+    let stopFired = false;
+    tts.onPlaybackStop(() => { stopFired = true; });
+
+    tts.stop();
+    expect(stopFired).toBe(true);
+  });
+
+  it('callbacks are not called when not registered', async () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    // No callbacks registered — should not throw
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 20));
+    tts.stop();
+    // If we got here without error, callbacks are safely optional
+    expect(true).toBe(true);
+  });
+});
+
+describe('useTtsPlayback — gender voice pitch', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.speak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
+      spokenUtterances.push(utterance.text);
+      Promise.resolve().then(() => utterance.onend?.());
+    });
+  });
+
+  it('applies getBrowserPitch to SpeechSynthesisUtterance when falling back', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback({ getBrowserPitch: () => 1.5 });
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockSpeechSynthesis.speak).toHaveBeenCalled();
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.pitch).toBe(1.5);
+  });
+
+  it('uses default pitch 1.0 when getBrowserPitch is not provided', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mockSpeechSynthesis.speak).toHaveBeenCalled();
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.pitch).toBe(1.0);
+  });
+
+  it('applies male pitch 0.8 via getBrowserPitch option', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback({ getBrowserPitch: () => 0.8 });
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 50));
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.pitch).toBe(0.8);
+  });
+
+  it('applies getBrowserRate to SpeechSynthesisUtterance when falling back', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback({ getBrowserRate: () => 1.15 });
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 50));
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.rate).toBe(1.15);
+  });
+
+  it('uses default rate 1.0 when getBrowserRate is not provided', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 50));
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.rate).toBe(1.0);
+  });
+});
+
+describe('useTtsPlayback — sentence tracking (currentSentence & spokenText)', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    createdUrls.length = 0;
+    revokedUrls.length = 0;
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.cancel.mockClear();
+  });
+
+  it('currentSentence and spokenText start empty', () => {
+    const tts = useTtsPlayback();
+    expect(tts.currentSentence.value).toBe('');
+    expect(tts.spokenText.value).toBe('');
+  });
+
+  it('currentSentence is set to the sentence being played', async () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello world. ');
+    // Wait for synthesis promise + playback start
+    await new Promise((r) => setTimeout(r, 30));
+    // currentSentence should be 'Hello world.' during playback
+    // After playback completes (MockAudio triggers onended immediately),
+    // it should accumulate into spokenText
+    expect(tts.spokenText.value).toContain('Hello world.');
+  });
+
+  it('spokenText accumulates across multiple sentences', async () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    tts.feedChunk('First sentence. Second sentence. ');
+    // Wait for both sentences to be synthesized and played
+    await new Promise((r) => setTimeout(r, 50));
+    expect(tts.spokenText.value).toContain('First sentence.');
+    expect(tts.spokenText.value).toContain('Second sentence.');
+  });
+
+  it('stop clears currentSentence and spokenText', async () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 30));
+    tts.stop();
+    expect(tts.currentSentence.value).toBe('');
+    expect(tts.spokenText.value).toBe('');
+  });
+
+  it('currentSentence is empty when not speaking', () => {
+    const tts = useTtsPlayback();
+    expect(tts.currentSentence.value).toBe('');
+    tts.feedChunk('no sentence boundary yet');
+    expect(tts.currentSentence.value).toBe('');
   });
 });

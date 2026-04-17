@@ -200,3 +200,40 @@ describe('voice store', () => {
     expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'edge-tts' });
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('voice store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('setAsrProvider sends providerId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setAsrProvider('groq-whisper');
+    expect(mockInvoke).toHaveBeenCalledWith('set_asr_provider', { providerId: 'groq-whisper' });
+  });
+
+  it('setTtsProvider sends providerId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setTtsProvider('edge-tts');
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'edge-tts' });
+  });
+
+  it('setApiKey sends apiKey (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setApiKey('sk-test-key');
+    expect(mockInvoke).toHaveBeenCalledWith('set_voice_api_key', { apiKey: 'sk-test-key' });
+  });
+
+  it('setEndpointUrl sends endpointUrl (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setEndpointUrl('https://custom.api/v1');
+    expect(mockInvoke).toHaveBeenCalledWith('set_voice_endpoint', { endpointUrl: 'https://custom.api/v1' });
+  });
+});

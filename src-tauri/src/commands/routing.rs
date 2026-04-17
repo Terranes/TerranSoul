@@ -32,7 +32,7 @@ pub async fn list_pending_commands(state: State<'_, AppState>) -> Result<Vec<Pen
 }
 
 /// Approve a pending command. Optionally remember the device (auto-allow future commands).
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn approve_remote_command(
     command_id: String,
     remember: bool,
@@ -45,7 +45,7 @@ pub async fn approve_remote_command(
 }
 
 /// Deny a pending command. Optionally block the device.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn deny_remote_command(
     command_id: String,
     block: bool,
@@ -58,7 +58,7 @@ pub async fn deny_remote_command(
 }
 
 /// Set the permission policy for a device.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_device_permission(
     device_id: String,
     policy: String,

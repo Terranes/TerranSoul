@@ -60,10 +60,10 @@
       </div>
     </Transition>
 
-    <!-- Floating subtitle — shows latest AI response on the canvas -->
+    <!-- Floating subtitle — shows AI response synced with TTS voice -->
     <Transition name="subtitle">
-      <div v-if="subtitleText" class="subtitle-overlay" :key="subtitleKey">
-        <p class="subtitle-text">{{ subtitleText }}</p>
+      <div v-if="subtitleVisible" class="subtitle-overlay" :key="subtitleKey">
+        <div class="subtitle-text" ref="subtitleRef" v-html="subtitleHtml"></div>
       </div>
     </Transition>
 
@@ -94,16 +94,17 @@
     />
 
     <!-- Bottom chat panel — input always visible, history toggles via 💬 button -->
-    <div class="bottom-panel" :class="{ expanded: showDrawer }">
+    <div class="bottom-panel" :class="{ expanded: chatDrawerExpanded }">
       <!-- Chat history (shown when expanded) -->
       <Transition name="chat-panel">
-        <div v-if="showDrawer" class="chat-history" @click.stop>
+        <div v-if="chatDrawerExpanded" class="chat-history" @click.stop>
           <ChatMessageList
             :messages="conversationStore.messages"
             :is-thinking="conversationStore.isThinking"
             :streaming-text="conversationStore.streamingText"
             :is-streaming="conversationStore.isStreaming"
             @suggest="handleSend"
+            @quest-choice="handleQuestChoice"
           />
         </div>
       </Transition>
@@ -112,8 +113,8 @@
         <div class="input-row">
           <button
             class="chat-drawer-toggle"
-            :class="{ active: showDrawer }"
-            @click="showDrawer = !showDrawer"
+            :class="{ active: chatDrawerExpanded }"
+            @click="toggleChatDrawer()"
             aria-label="Toggle chat history"
           >💬</button>
           <button
@@ -138,7 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useConversationStore, detectSentiment } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
@@ -148,9 +149,14 @@ import { useSettingsStore } from '../stores/settings';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
+import { useLipSyncBridge } from '../composables/useLipSyncBridge';
+import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
+import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
 import type { UpgradeOption } from '../components/UpgradeDialog.vue';
+import { useSkillTreeStore } from '../stores/skill-tree';
+import { useChatExpansion } from '../composables/useChatExpansion';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
@@ -162,17 +168,50 @@ const brain = useBrainStore();
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const settingsStore = useSettingsStore();
-const tts = useTtsPlayback();
+const skillTree = useSkillTreeStore();
+const { chatDrawerExpanded, toggleChatDrawer, setChatDrawerExpanded } = useChatExpansion();
+const tts = useTtsPlayback({
+  getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
+  getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+});
 const asr = useAsrManager({
   onTranscript: (text: string) => handleSend(text),
 });
-const showDrawer = ref(false);
 const selectedBrain = ref('');
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
+let unlistenLlmAnimation: (() => void) | null = null;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
+
+/** Access the AvatarStateMachine from the viewport (null before mount). */
+function getAsm(): AvatarStateMachine | null {
+  return viewportRef.value?.avatarStateMachine ?? null;
+}
+
+// LipSync ↔ TTS bridge: feeds TTS audio into LipSync → AvatarState.viseme
+const lipSyncBridge = useLipSyncBridge(tts, getAsm);
+
+/**
+ * Set coarse avatar state: updates the AvatarStateMachine (read by render loop)
+ * AND the characterStore (for the UI pill label). This is the single bridge point.
+ */
+function setAvatarState(charState: CharacterState): void {
+  characterStore.setState(charState);
+  const asm = getAsm();
+  if (!asm) return;
+  switch (charState) {
+    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
+    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
+    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
+    case 'happy':     asm.setEmotion('happy');     break;
+    case 'sad':       asm.setEmotion('sad');       break;
+    case 'angry':     asm.setEmotion('angry');     break;
+    case 'relaxed':   asm.setEmotion('relaxed');   break;
+    case 'surprised': asm.setEmotion('surprised'); break;
+  }
+}
 
 // ── Upgrade dialog state ──────────────────────────────────────────
 const showUpgradeDialog = ref(false);
@@ -228,18 +267,97 @@ const upgradeOptions = computed<UpgradeOption[]>(() => {
 // ── Keyboard detection ────────────────────────────────────────────
 const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
 
-// ── Subtitle system ──────────────────────────────────────────────
-const MAX_SUBTITLE_LENGTH = 150;
-const SUBTITLE_DURATION_MS = 8000;
-const subtitleText = ref('');
+// ── Subtitle system — karaoke-style word highlight synced with TTS ───
 const subtitleKey = ref(0);
-let subtitleTimer: ReturnType<typeof setTimeout> | null = null;
+const subtitleRef = ref<HTMLElement | null>(null);
+/** Full text of the current AI response for subtitle display. */
+const subtitleFullText = ref('');
+/** Whether the subtitle overlay is visible. */
+const subtitleVisible = ref(false);
+let subtitleHideTimer: ReturnType<typeof setTimeout> | null = null;
+/** Duration to keep the subtitle visible after TTS finishes. */
+const SUBTITLE_LINGER_MS = 3000;
 
+/**
+ * Build subtitle HTML with karaoke-style highlighting.
+ * Spoken text is dimmed, the current sentence is bright/highlighted,
+ * and upcoming text is at normal opacity.
+ */
+const subtitleHtml = computed(() => {
+  const full = subtitleFullText.value;
+  if (!full) return '';
+
+  const spoken = tts.spokenText.value ?? '';
+  const current = tts.currentSentence.value ?? '';
+
+  if (!current && !spoken) {
+    // Not speaking yet — show full text at normal opacity
+    return escapeHtml(full);
+  }
+
+  // Find where the current sentence starts in the full text
+  const spokenLen = spoken.length;
+  // The spoken text may not align exactly character-by-character with fullText
+  // because fullText comes from streaming while spoken is from sentence splits.
+  // Use the current sentence to find a reliable anchor.
+  let currentStart = -1;
+  if (current) {
+    // Search for the current sentence starting from after spoken portion
+    const searchFrom = Math.max(0, spokenLen - 20); // small overlap for safety
+    currentStart = full.indexOf(current, searchFrom);
+    if (currentStart === -1) {
+      // Fallback: search from beginning
+      currentStart = full.indexOf(current);
+    }
+  }
+
+  if (currentStart === -1 && current) {
+    // Can't find exact match — just highlight what we can
+    return escapeHtml(full);
+  }
+
+  const parts: string[] = [];
+
+  // Spoken portion (before current sentence)
+  const dimEnd = currentStart !== -1 ? currentStart : full.length;
+  if (dimEnd > 0) {
+    parts.push(`<span class="subtitle-spoken">${escapeHtml(full.slice(0, dimEnd))}</span>`);
+  }
+
+  // Current sentence (highlighted)
+  if (current && currentStart !== -1) {
+    const currentEnd = currentStart + current.length;
+    parts.push(`<span class="subtitle-active">${escapeHtml(full.slice(currentStart, currentEnd))}</span>`);
+
+    // Upcoming text
+    if (currentEnd < full.length) {
+      parts.push(`<span class="subtitle-upcoming">${escapeHtml(full.slice(currentEnd))}</span>`);
+    }
+  }
+
+  return parts.join('');
+});
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Show the subtitle with the full response text. */
 function showSubtitle(text: string) {
-  subtitleText.value = text.length > MAX_SUBTITLE_LENGTH ? text.slice(0, MAX_SUBTITLE_LENGTH) + '…' : text;
+  if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
+  subtitleFullText.value = text;
+  subtitleVisible.value = true;
   subtitleKey.value++;
-  if (subtitleTimer) clearTimeout(subtitleTimer);
-  subtitleTimer = setTimeout(() => { subtitleText.value = ''; }, SUBTITLE_DURATION_MS);
+}
+
+/** Hide the subtitle after a linger delay. */
+function scheduleSubtitleHide() {
+  if (subtitleHideTimer) clearTimeout(subtitleHideTimer);
+  subtitleHideTimer = setTimeout(() => {
+    subtitleVisible.value = false;
+    subtitleFullText.value = '';
+    subtitleHideTimer = null;
+  }, SUBTITLE_LINGER_MS);
 }
 
 // ── State label ──────────────────────────────────────────────────
@@ -323,7 +441,7 @@ async function handleSend(message: string) {
   const userSentiment = detectSentiment(message);
   pendingEmotion.value = sentimentToState(userSentiment);
 
-  characterStore.setState('thinking');
+  setAvatarState('thinking');
   await conversationStore.sendMessage(message);
 
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
@@ -331,7 +449,7 @@ async function handleSend(message: string) {
     ? sentimentToState(lastMsg.sentiment)
     : pendingEmotion.value;
 
-  characterStore.setState(reactionState);
+  setAvatarState(reactionState);
   pendingEmotion.value = 'idle';
 
   // Show the AI's response as a floating subtitle
@@ -348,7 +466,13 @@ async function handleSend(message: string) {
     }
   }
 
-  setTimeout(() => characterStore.setState('idle'), 6000);
+  setTimeout(() => {
+    // Only reset to idle if TTS is not still playing — the TTS isSpeaking
+    // watcher will handle the idle transition when playback finishes.
+    if (!tts.isSpeaking.value) {
+      setAvatarState('idle');
+    }
+  }, 6000);
 }
 
 /** Handle user accepting an upgrade option from the game dialog. */
@@ -369,7 +493,7 @@ async function handleUpgradeAccept(optionId: string) {
       conversationStore.messages.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: '[happy] Brain upgraded! I switched to Groq for better responses. You can get a free API key at groq.com for even better performance!',
+        content: 'Brain upgraded! I switched to Groq for better responses. You can get a free API key at groq.com for even better performance!',
         agentName: 'TerranSoul',
         sentiment: 'happy',
         timestamp: Date.now(),
@@ -382,7 +506,7 @@ async function handleUpgradeAccept(optionId: string) {
       conversationStore.messages.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `[happy] Great choice! I'm downloading ${brain.topRecommendation!.display_name} now. This may take a few minutes...`,
+        content: `Great choice! I'm downloading ${brain.topRecommendation!.display_name} now. This may take a few minutes...`,
         agentName: 'TerranSoul',
         sentiment: 'happy',
         timestamp: Date.now(),
@@ -398,7 +522,7 @@ async function handleUpgradeAccept(optionId: string) {
         conversationStore.messages.push({
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `[happy] ${brain.topRecommendation!.display_name} is installed and active! I'm much smarter now. Try asking me something complex!`,
+          content: `${brain.topRecommendation!.display_name} is installed and active! I'm much smarter now. Try asking me something complex!`,
           agentName: 'TerranSoul',
           sentiment: 'happy',
           timestamp: Date.now(),
@@ -407,7 +531,7 @@ async function handleUpgradeAccept(optionId: string) {
         conversationStore.messages.push({
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `[sad] Download failed: ${brain.pullError ?? 'unknown error'}. Make sure Ollama is running (ollama serve).`,
+          content: `Download failed: ${brain.pullError ?? 'unknown error'}. Make sure Ollama is running (ollama serve).`,
           agentName: 'TerranSoul',
           sentiment: 'sad',
           timestamp: Date.now(),
@@ -419,7 +543,7 @@ async function handleUpgradeAccept(optionId: string) {
     conversationStore.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: '[happy] To set up a paid API, open the Marketplace (🏪) and configure your API key in the LLM settings section.',
+      content: 'To set up a paid API, open the Marketplace (🏪) and configure your API key in the LLM settings section.',
       agentName: 'TerranSoul',
       sentiment: 'happy',
       timestamp: Date.now(),
@@ -427,14 +551,83 @@ async function handleUpgradeAccept(optionId: string) {
   }
 }
 
-/** Set up Tauri event listener for llm-chunk events (streaming LLM). */
+const emit = defineEmits<{ navigate: [target: string] }>();
+
+/** Handle quest choice button clicks from ChatMessageList. */
+async function handleQuestChoice(questId: string, choiceValue: string) {
+  // Open the drawer so user sees the conversation
+  setChatDrawerExpanded(true);
+
+  // Handle auto-configuration choices
+  if (choiceValue.startsWith('auto-config:')) {
+    const questIdToConfig = choiceValue.slice('auto-config:'.length);
+    const node = skillTree.nodes.find(n => n.id === questIdToConfig);
+    
+    if (node) {
+      // Auto-configure based on quest type
+      if (questIdToConfig === 'gift-of-speech') {
+        // Auto-configure voice/TTS
+        try {
+          await voice.setTtsProvider('edge-tts');
+          await voice.setTtsProvider(null); // Use default voice
+          
+          // Add confirmation message
+          await conversationStore.addMessage({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `Perfect! I've configured Edge TTS (free Microsoft neural voices) for you. You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
+            agentName: 'TerranSoul',
+            sentiment: 'happy',
+            timestamp: Date.now(),
+          });
+          
+        } catch (error) {
+          console.warn('Auto-config failed:', error);
+          // Show error message
+          await conversationStore.addMessage({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `I had trouble setting up voice automatically. You can configure it manually in the Voice tab.`,
+            agentName: 'TerranSoul',
+            sentiment: 'sad',
+            timestamp: Date.now(),
+          });
+        }
+      } else if (questIdToConfig === 'superior-intellect') {
+        // Guide to brain setup
+        emit('navigate', 'marketplace');
+      } else {
+        // Generic quest acceptance
+        await skillTree.handleQuestChoice(questId, 'accept');
+      }
+      
+      // Mark quest as completed if auto-config succeeded
+      skillTree.triggerQuestEvent(questIdToConfig);
+    }
+    return;
+  }
+
+  // Handle navigation choices — emit to App.vue for tab switching
+  if (choiceValue.startsWith('navigate:')) {
+    const target = choiceValue.slice('navigate:'.length);
+    await skillTree.handleQuestChoice(questId, choiceValue);
+    emit('navigate', target);
+    return;
+  }
+
+  await skillTree.handleQuestChoice(questId, choiceValue);
+}
+
+/** Set up Tauri event listeners for dual-stream LLM events. */
 async function setupTauriEventListener() {
   try {
     const { listen } = await import('@tauri-apps/api/event');
-    const unlisten = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
+
+    // Text stream — already clean (anim blocks stripped by Rust parser).
+    const unlistenChunk = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
 
-      // Feed chunks into streaming TTS when a TTS provider is configured.
+      // Feed text directly into TTS — no tag stripping needed.
       if (voice.config.tts_provider) {
         if (event.payload.done) {
           tts.flush();
@@ -443,7 +636,21 @@ async function setupTauriEventListener() {
         }
       }
     });
-    unlistenLlmChunk = unlisten;
+    unlistenLlmChunk = unlistenChunk;
+
+    // Animation stream — structured JSON from Rust parser.
+    const unlistenAnim = await listen<{ emotion?: string; motion?: string }>('llm-animation', (event) => {
+      streaming.handleAnimation(event.payload);
+
+      // Apply emotion to avatar immediately during streaming.
+      if (event.payload.emotion) {
+        const state = sentimentToState(event.payload.emotion);
+        if (state !== 'idle') {
+          setAvatarState(state);
+        }
+      }
+    });
+    unlistenLlmAnimation = unlistenAnim;
   } catch {
     // Tauri event API not available (browser mode) — streaming handled via fetch
   }
@@ -452,7 +659,7 @@ async function setupTauriEventListener() {
 watch(
   () => conversationStore.isThinking,
   (thinking) => {
-    if (thinking) characterStore.setState('thinking');
+    if (thinking) setAvatarState('thinking');
   },
 );
 
@@ -463,18 +670,58 @@ watch(
     if (active) {
       // Use pre-detected emotion from user input if available,
       // otherwise fall back to generic 'talking' animation.
-      characterStore.setState(pendingEmotion.value !== 'idle' ? pendingEmotion.value : 'talking');
+      setAvatarState(pendingEmotion.value !== 'idle' ? pendingEmotion.value : 'talking');
+    } else if (streaming.currentEmotion) {
+      // Stream done — set final emotion from parsed tags (once, not per-chunk)
+      setAvatarState(sentimentToState(streaming.currentEmotion));
     }
   },
 );
 
-// Update subtitle during streaming
+// Update subtitle text during streaming (don't re-key, just update content)
 watch(
   () => conversationStore.streamingText,
   (text) => {
     if (text) {
-      showSubtitle(text);
+      if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
+      subtitleFullText.value = text;
+      subtitleVisible.value = true;
     }
+  },
+);
+
+// TTS speaking state → body='talk', done → body='idle' + schedule subtitle hide
+watch(tts.isSpeaking, (speaking) => {
+  const asm = getAsm();
+  if (!asm) return;
+  if (speaking) {
+    asm.forceBody('talk');
+    characterStore.setState('talking');
+    // Keep subtitle visible while speaking
+    if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
+    subtitleVisible.value = true;
+  } else {
+    asm.forceBody('idle');
+    characterStore.setState('idle');
+    // TTS finished — schedule subtitle to fade away
+    if (subtitleFullText.value) {
+      scheduleSubtitleHide();
+    }
+  }
+});
+
+// Auto-scroll subtitle to keep the highlighted sentence visible
+watch(
+  () => tts.currentSentence.value,
+  () => {
+    nextTick(() => {
+      const el = subtitleRef.value;
+      if (!el) return;
+      const active = el.querySelector('.subtitle-active') as HTMLElement | null;
+      if (active) {
+        active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
   },
 );
 
@@ -507,6 +754,9 @@ onMounted(async () => {
   } catch {
     // Settings unavailable — proceed with defaults
   }
+
+  // Start the LipSync ↔ TTS bridge (per-frame viseme updates)
+  lipSyncBridge.start();
 });
 
 onUnmounted(() => {
@@ -514,8 +764,13 @@ onUnmounted(() => {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
   }
-  if (subtitleTimer) clearTimeout(subtitleTimer);
+  if (unlistenLlmAnimation) {
+    unlistenLlmAnimation();
+    unlistenLlmAnimation = null;
+  }
+  if (subtitleHideTimer) clearTimeout(subtitleHideTimer);
   tts.stop();
+  lipSyncBridge.dispose();
 });
 </script>
 
@@ -618,29 +873,52 @@ onUnmounted(() => {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
-/* ── Floating subtitle overlay ── */
+/* ── Floating subtitle overlay — karaoke-style word sync ── */
 .subtitle-overlay {
   position: absolute;
   bottom: 90px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 12;
-  width: 65%;
-  max-width: 560px;
+  width: 75%;
+  max-width: 620px;
   pointer-events: none;
 }
 .subtitle-text {
   margin: 0;
-  padding: 10px 20px;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
   border-radius: var(--ts-radius-lg);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.92);
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.92rem;
+  line-height: 1.6;
   text-align: center;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  max-height: 5.6em;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+.subtitle-text::-webkit-scrollbar { display: none; }
+/* Spoken text — dimmed */
+:deep(.subtitle-spoken) {
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.3s ease;
+}
+/* Currently speaking sentence — bright highlight */
+:deep(.subtitle-active) {
+  color: #fff;
+  background: rgba(124, 111, 255, 0.25);
+  border-radius: 3px;
+  padding: 1px 2px;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+/* Upcoming text — normal but slightly dimmed */
+:deep(.subtitle-upcoming) {
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 0.3s ease;
 }
 
 /* Subtitle transition */

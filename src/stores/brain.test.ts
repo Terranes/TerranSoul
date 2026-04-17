@@ -292,3 +292,28 @@ describe('brain store', () => {
     expect(store.isLoading).toBe(false);
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+// Verify exact parameter names sent to invoke() match Rust #[tauri::command]
+// signatures (Rust uses snake_case with rename_all = "camelCase").
+
+describe('brain store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('pullModel sends modelName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    await store.pullModel('gemma3:4b');
+    expect(mockInvoke).toHaveBeenCalledWith('pull_ollama_model', { modelName: 'gemma3:4b' });
+  });
+
+  it('setActiveBrain sends modelName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    await store.setActiveBrain('phi-4:latest');
+    expect(mockInvoke).toHaveBeenCalledWith('set_active_brain', { modelName: 'phi-4:latest' });
+  });
+});

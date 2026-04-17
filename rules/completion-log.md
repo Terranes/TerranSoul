@@ -6,6 +6,202 @@
 
 ---
 
+## Chunk 126 — On-demand Rendering + Idle Optimization
+
+**Date:** 2026-04-18
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Reduce GPU/CPU load when avatar is idle by throttling render rate to ~15 FPS when animation is settled, restoring 60 FPS on any state change.
+
+**Architecture:**
+- **`CharacterAnimator.isAnimationSettled(epsilon)`** — checks `AvatarStateMachine.isSettled()`, then iterates all EXPR_COUNT expression channels and all bone channels, comparing current vs target within epsilon (default 0.002).
+- **Frame-skip logic in `CharacterViewport.vue`** render loop — tracks `idleAccum` elapsed time. When `isAnimationSettled() && body==='idle' && !needsRender`, accumulates delta and skips render if < 66ms (IDLE_INTERVAL = 1/15). On any active state, resets accumulator and renders every frame.
+- **`needsRender` one-shot flag** — cleared after each render frame, used for immediate wake-up on state mutations.
+
+**Files modified:**
+- `src/renderer/character-animator.ts` — added `isAnimationSettled()` method
+- `src/components/CharacterViewport.vue` — added frame-skip logic with `IDLE_INTERVAL` and `idleAccum`
+
+**Files tested:**
+- `src/renderer/character-animator.test.ts` — 5 new tests (settled after convergence, false after state change, false with active visemes, false when not idle, custom epsilon)
+
+**Test counts:**
+- 5 new Vitest tests (38 total in character-animator.test.ts)
+- 668 total tests passing (46 test files)
+
+---
+
+## Chunk 125 — LipSync ↔ TTS Audio Pipeline
+
+**Date:** 2026-04-18
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Wire TTS audio playback into LipSync engine, feeding 5-channel viseme values into AvatarStateMachine for real-time lip animation.
+
+**Architecture:**
+- **`useTtsPlayback` callback hooks** — 3 new lifecycle hooks:
+  - `onAudioStart(cb)` — fires with `HTMLAudioElement` before `play()`, enabling `MediaElementAudioSourceNode` creation
+  - `onAudioEnd(cb)` — fires on sentence `onended`/`onerror`
+  - `onPlaybackStop(cb)` — fires on hard `stop()` call
+- **`useLipSyncBridge` composable** — new bridge wiring TTS → LipSync → AvatarState:
+  - Single shared `AudioContext` across TTS lifetime
+  - `onAudioStart`: creates `MediaElementAudioSourceNode` → `AnalyserNode` → `LipSync.connectAnalyser()`
+  - Per-frame `tick()` via rAF: reads `lipSync.getVisemeValues()` → `asm.setViseme()`
+  - `onAudioEnd`/`onPlaybackStop`: cleans up source node, zeroes visemes
+  - `start()`/`dispose()` lifecycle for mount/unmount
+- **ChatView integration** — `lipSyncBridge.start()` in `onMounted`, `lipSyncBridge.dispose()` in `onUnmounted`
+
+**Files created:**
+- `src/composables/useLipSyncBridge.ts` — bridge composable
+- `src/composables/useLipSyncBridge.test.ts` — 8 tests (callback registration, rAF loop, idempotent start, dispose cleanup, zero visemes on end/stop, null ASM safety, audio start safety)
+
+**Files modified:**
+- `src/composables/useTtsPlayback.ts` — added `TtsPlaybackHandle` interface extensions, callback fields, hook invocations
+- `src/composables/useTtsPlayback.test.ts` — 4 new tests (onAudioStart, onAudioEnd, onPlaybackStop, optional callbacks)
+- `src/views/ChatView.vue` — wired lipSyncBridge start/dispose
+
+**Test counts:**
+- 12 new Vitest tests (8 bridge + 4 TTS hooks)
+- 668 total tests passing (46 test files)
+
+---
+
+## Chunk 124 — Decouple IPC from Animation — Coarse State Bridge
+
+**Date:** 2026-04-18
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Remove per-frame reactive state updates from streaming/IPC path. Bridge coarse body/emotion transitions through a single `setAvatarState()` function that updates both the Pinia store (for UI pill) and the AvatarStateMachine (for render loop).
+
+**Architecture:**
+- **`setAvatarState()` bridge** in `ChatView.vue` — updates `characterStore.setState(name)` (UI) AND `asm.forceBody()`/`asm.setEmotion()` (render loop) in one call
+- **`getAsm()` accessor** — reads `CharacterViewport.defineExpose({ avatarStateMachine })` via template ref
+- **All 5 `characterStore.setState()` calls** replaced with `setAvatarState()`: thinking (on send), talking (on first chunk), emotion (on stream done + parseTags), idle (on timeout)
+- **TTS watcher** — `watch(tts.isSpeaking)`: `true` → `setAvatarState('talking')`, `false` → `setAvatarState('idle')`
+- **Emotion from streaming** — reads `streaming.currentEmotion` once when stream completes
+
+**Files modified:**
+- `src/components/CharacterViewport.vue` — added `defineExpose({ avatarStateMachine })` getter
+- `src/views/ChatView.vue` — added `setAvatarState()`, `getAsm()`, replaced all setState calls, added TTS/emotion watchers
+
+**Test counts:**
+- No new tests (wiring-only changes in view components)
+- 668 total tests passing (46 test files)
+
+---
+
+## Chunk 123 — Audio Analysis Web Worker
+
+**Date:** 2026-04-17
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Move FFT processing, RMS calculation, and frequency band extraction off the main thread into a Web Worker. LipSync class delegates to worker when available, falls back to main-thread analysis.
+
+**Architecture:**
+- **`src/workers/audio-analyzer.worker.ts`** — standalone worker with message protocol:
+  - `analyze` message: receives `Float32Array` time-domain + `Uint8Array` frequency data, returns `{ volume, visemes: {aa,ih,ou,ee,oh} }`
+  - `configure` message: updates silence threshold and sensitivity
+- **Pure computation functions** exported for direct testing: `calculateRMS()`, `computeBandEnergies()`, `analyzeAudio()`
+- **Worker integration in `LipSync`**:
+  - `enableWorker()` — creates worker via `new URL()` + Vite module worker, sends initial config
+  - `disableWorker()` — terminates worker, reverts to main-thread
+  - `getVisemeValues()` — when worker ready: sends raw data off-thread (copies for transfer), returns last result immediately (non-blocking); when worker busy, returns cached last result; when no worker, falls back to synchronous main-thread FFT analysis
+  - `disconnect()` — also tears down worker
+- **Zero-copy transfer**: `Float32Array.buffer` transferred to worker; `Uint8Array` copied (small)
+- **Graceful degradation**: if Worker constructor unavailable (SSR, old browser), stays on main thread
+
+**Files created:**
+- `src/workers/audio-analyzer.worker.ts` — worker + exported pure functions
+- `src/workers/audio-analyzer.worker.test.ts` — 21 tests (RMS, band energies, analyzeAudio, message protocol types)
+
+**Files modified:**
+- `src/renderer/lip-sync.ts` — worker fields, `enableWorker()`, `disableWorker()`, worker delegation in `getVisemeValues()`
+- `src/renderer/lip-sync.test.ts` — 4 new tests (workerReady default, enableWorker safety, disableWorker safety, disconnect cleanup)
+
+**Test counts:**
+- 25 new Vitest tests (21 worker + 4 lip-sync integration)
+- 651 total tests passing (45 test files)
+
+---
+
+## Chunk 122 — 5-Channel VRM Viseme Lip Sync
+
+**Date:** 2026-04-17
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Extend `LipSync` class to produce 5 VRM visemes (`aa`, `ih`, `ou`, `ee`, `oh`) via FFT frequency-band analysis instead of just 2-channel `aa`/`oh`. Feed viseme values into `AvatarState.viseme` mutable ref. Keep backward-compatible 2-channel `getMouthValues()`.
+
+**Architecture:**
+- **5 frequency bands** mapped to VRM visemes: low (0–12% Nyquist) → `aa` (open jaw), mid-low (12–25%) → `ou` (round), mid (25–45%) → `oh` (half-round), mid-high (45–65%) → `ee` (spread), high (65–100%) → `ih` (narrow).
+- **`getVisemeValues(): VisemeValues`** — new method using `getByteFrequencyData()` for FFT band analysis + `getFloatTimeDomainData()` for RMS volume gating.
+- **`visemeValuesFromBands()`** — static factory for pre-computed band energies (Web Worker path in Chunk 123).
+- **`VisemeValues`** type alias to `VisemeWeights` from `avatar-state.ts` — shared type between LipSync and AvatarState.
+- **`frequencyData: Uint8Array`** — allocated alongside `timeDomainData` in `connectAudioElement()` and `connectAnalyser()`.
+- **Backward compatible**: `getMouthValues()` still works as 2-channel fallback (RMS-based `aa`/`oh`).
+- **`CharacterAnimator`** already reads `AvatarState.viseme` and damps at λ=18 (from Chunk 121).
+
+**Files modified:**
+- `src/renderer/lip-sync.ts` — added 5-channel FFT analysis, `getVisemeValues()`, `visemeValuesFromBands()`, `VisemeValues` type, `BAND_EDGES`, `computeBandEnergies()`
+- `src/renderer/lip-sync.test.ts` — 9 new tests (getVisemeValues inactive, VisemeValues type, visemeValuesFromBands: clamping, zeroes, per-band mapping, sensitivity, negatives)
+
+**Test counts:**
+- 9 new Vitest tests (23 total in lip-sync.test.ts)
+- 626 total tests passing (44 test files)
+
+---
+
+## Chunk 121 — Exponential Damping Render Loop
+
+**Date:** 2026-04-17
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Replace linear `smoothStep` interpolation in `CharacterAnimator` with proper exponential damping (`damp`). Replace `Map`-based expression/bone tracking with flat `Float64Array` typed arrays for zero-alloc frame loops. Integrate `AvatarStateMachine` for blink cycle and viseme reading. Apply per-channel damping rates: λ=8 emotions, λ=18 visemes, λ=25 blink, λ=6 bones.
+
+**Architecture:**
+- New `damp(current, target, lambda, delta)` function: `current + (target - current) * (1 - exp(-lambda * delta))` — frame-rate independent.
+- 12-channel flat `Float64Array` for expressions: 6 emotions + 5 visemes + 1 blink, each with per-channel λ from `EXPR_LAMBDAS`.
+- Flat `Float64Array` for bone rotations (7 bones × 3 components = 21 floats), damped at λ=6.
+- `AvatarStateMachine` integrated: `setState(CharacterState)` bridges to body+emotion; blink delegated to `AvatarStateMachine.tickBlink()`.
+- Public `avatarStateMachine` getter for external code to read/write layered state directly.
+- All existing placeholder + VRM animation behavior preserved.
+
+**Files modified:**
+- `src/renderer/character-animator.ts` — replaced smoothStep→damp, Maps→Float64Arrays, added AvatarStateMachine, per-channel lambda damping
+- `src/renderer/character-animator.test.ts` — 12 new tests (7 damp + 5 AvatarStateMachine integration)
+
+**Test counts:**
+- 12 new Vitest tests
+- 617 total tests passing (44 test files)
+
+---
+
+## Chunk 120 — AvatarState Model + Animation State Machine
+
+**Date:** 2026-04-17
+**Phase:** 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+**Goal:** Define a layered `AvatarState` type with body/emotion/viseme/blink/lookAt channels and an `AvatarStateMachine` class enforcing valid body transitions while keeping all other layers independent.
+
+**Architecture:**
+- `AvatarState` is a plain mutable object — NOT Vue reactive — for zero-overhead frame-loop reads.
+- Body layer: `idle | listen | think | talk` with enforced transition graph (idle→listen→think→talk→idle; idle always reachable; talk→think allowed for re-think).
+- Emotion layer: `neutral | happy | sad | angry | relaxed | surprised` — overlays any body state, always settable.
+- Viseme layer: 5 VRM channels (`aa/ih/ou/ee/oh`, 0–1) — only applied when body=talk; auto-zeroed otherwise.
+- Blink layer: self-running randomised cycle (2–6s intervals, 150ms duration); overridable for expressions like surprise.
+- LookAt layer: normalised (x,y) gaze offset — independent of all other layers.
+- `needsRender` flag set on any channel change for future on-demand rendering (Chunk 126).
+- `isSettled()` method for idle detection.
+
+**Files created:**
+- `src/renderer/avatar-state.ts` — AvatarState type, AvatarStateMachine class, createAvatarState factory
+- `src/renderer/avatar-state.test.ts` — 53 unit tests
+
+**Test counts:**
+- 53 new Vitest tests (body transitions, emotion, viseme, blink, lookAt, layer independence, reset, constructor)
+- 605 total tests passing (44 test files)
+
+---
+
 ## Chunk 110 — Background Music
 
 **Date:** 2026-04-15

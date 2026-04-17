@@ -309,3 +309,19 @@ describe('package store — registry server', () => {
     expect(store.isLoading).toBe(false);
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('package store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('removeAgent sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = usePackageStore();
+    await store.removeAgent('stub-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('remove_agent', { agentName: 'stub-agent' });
+  });
+});

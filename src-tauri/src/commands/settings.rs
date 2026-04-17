@@ -34,7 +34,7 @@ pub async fn get_model_camera_positions(
 }
 
 /// Save a camera position for a specific model and persist to disk.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn save_model_camera_position(
     model_id: String,
     azimuth: f32,

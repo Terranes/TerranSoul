@@ -2,13 +2,14 @@ import * as THREE from 'three';
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm';
 import type { CharacterState } from '../types';
 import { GestureBlender } from './gesture-blender';
+import { AvatarStateMachine } from './avatar-state';
 
 /**
- * Smooth interpolation helper — lerps a value toward a target each frame.
- * This produces exponential ease-out, which feels natural.
+ * Exponential damping — frame-rate-independent smooth interpolation.
+ * Produces identical visual results regardless of frame rate.
  */
-function smoothStep(current: number, target: number, speed: number, delta: number): number {
-  return current + (target - current) * Math.min(1, speed * delta);
+export function damp(current: number, target: number, lambda: number, delta: number): number {
+  return current + (target - current) * (1 - Math.exp(-lambda * delta));
 }
 
 // ── Expression targets per state ──────────────────────────────────────
@@ -34,17 +35,104 @@ interface BonePose {
   hips?: [number, number, number];
   leftUpperArm?: [number, number, number];
   rightUpperArm?: [number, number, number];
+  leftLowerArm?: [number, number, number];
+  rightLowerArm?: [number, number, number];
+  leftShoulder?: [number, number, number];
+  rightShoulder?: [number, number, number];
   neck?: [number, number, number];
 }
 
-const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
-  idle: {
+// ── Multiple idle pose variations for natural randomization ──
+const IDLE_POSES: BonePose[] = [
+  // Pose 1: Neutral standing (original idle pose)
+  {
     head:  [0, 0, 0],
     spine: [0, 0, 0],
     chest: [0, 0, 0],
     hips:  [0, 0, 0],
     neck:  [0, 0, 0],
+    leftUpperArm:  [0, 0, 1.35],    // arms down (natural pose)
+    rightUpperArm: [0, 0, -1.35],
+    leftLowerArm:  [0, 0, 0.15],    // slight elbow bend
+    rightLowerArm: [0, 0, -0.15],
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.05],
   },
+  // Pose 2: Weight shifted to left hip with slight body lean
+  {
+    head:  [0, -0.03, 0.02],        // head angles to balance body shift
+    spine: [0, -0.02, 0],
+    chest: [0, -0.015, 0],
+    hips:  [0, -0.04, 0],           // shifted left
+    neck:  [0, -0.01, 0],
+    leftUpperArm:  [0, 0, 1.40],    // left arm slightly more relaxed
+    rightUpperArm: [0, 0, -1.30],   // right arm tighter to body
+    leftLowerArm:  [0, 0, 0.20],
+    rightLowerArm: [0, 0, -0.10],
+    leftShoulder:  [0, 0, 0.08],
+    rightShoulder: [0, 0, -0.03],
+  },
+  // Pose 3: Weight shifted to right hip with crossed stance
+  {
+    head:  [0, 0.02, -0.02],        // head angles opposite to hip shift
+    spine: [0, 0.02, 0],
+    chest: [0, 0.015, 0],
+    hips:  [0, 0.04, 0],            // shifted right
+    neck:  [0, 0.01, -0.01],
+    leftUpperArm:  [0, 0, 1.30],    // left arm closer to body
+    rightUpperArm: [0, 0, -1.40],   // right arm more relaxed
+    leftLowerArm:  [0, 0, 0.10],
+    rightLowerArm: [0, 0, -0.20],
+    leftShoulder:  [0, 0, 0.03],
+    rightShoulder: [0, 0, -0.08],
+  },
+  // Pose 4: Slight forward lean (attentive stance)
+  {
+    head:  [-0.02, 0, 0],           // slight forward nod
+    spine: [0.03, 0, 0],            // leaning forward
+    chest: [0.02, 0, 0],
+    hips:  [0.01, 0, 0],
+    neck:  [-0.01, 0, 0],
+    leftUpperArm:  [0, 0, 1.25],    // arms slightly forward
+    rightUpperArm: [0, 0, -1.25],
+    leftLowerArm:  [0, 0, 0.20],
+    rightLowerArm: [0, 0, -0.20],
+    leftShoulder:  [0, 0, 0.06],
+    rightShoulder: [0, 0, -0.06],
+  },
+  // Pose 5: One hand on hip (confident stance)
+  {
+    head:  [0, 0.01, 0.01],         // slight head tilt
+    spine: [0, 0, 0],
+    chest: [0, 0, 0],
+    hips:  [0, 0.01, 0],
+    neck:  [0, 0.01, 0],
+    leftUpperArm:  [0, 0, 1.35],    // left arm neutral
+    rightUpperArm: [0.15, -0.08, -1.0], // right arm akimbo
+    leftLowerArm:  [0, 0, 0.15],
+    rightLowerArm: [0, 0, -0.60],   // hand on hip
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.10],
+  },
+  // Pose 6: Arms behind back (at ease stance)
+  {
+    head:  [0, 0, 0],
+    spine: [-0.01, 0, 0],           // chest out slightly
+    chest: [-0.01, 0, 0],
+    hips:  [0, 0, 0],
+    neck:  [0, 0, 0],
+    leftUpperArm:  [0.05, 0, 1.50], // arms further back
+    rightUpperArm: [0.05, 0, -1.50],
+    leftLowerArm:  [0, 0, 0.40],    // hands behind back
+    rightLowerArm: [0, 0, -0.40],
+    leftShoulder:  [-0.02, 0, 0.10],
+    rightShoulder: [-0.02, 0, -0.10],
+  },
+];
+
+const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
+  // idle will be dynamically selected from IDLE_POSES array
+  idle: IDLE_POSES[0], // default to first pose
   thinking: {
     head:  [0.08, 0.12, 0.04],     // tilted slightly, looking up-right
     spine: [0.02, 0, 0],
@@ -53,6 +141,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [0.04, 0.08, 0],
     leftUpperArm:  [0, 0, 1.45],    // left arm crosses slightly more
     rightUpperArm: [0.2, -0.1, -1.20], // right hand toward chin
+    leftLowerArm:  [0, 0, 0.15],
+    rightLowerArm: [0, 0, -0.45],   // forearm raised toward face
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.05],
   },
   talking: {
     head:  [0, 0, 0],
@@ -62,6 +154,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [0, 0, 0],
     leftUpperArm:  [0, 0, 1.25],   // arms slightly out for gesturing
     rightUpperArm: [0, 0, -1.25],
+    leftLowerArm:  [0, 0, 0.2],
+    rightLowerArm: [0, 0, -0.2],
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.05],
   },
   happy: {
     head:  [-0.06, 0, 0.04],       // head up, slight tilt
@@ -71,6 +167,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [-0.04, 0, 0.02],
     leftUpperArm:  [-0.1, 0, 1.15],  // arms wider (open body language)
     rightUpperArm: [-0.1, 0, -1.15],
+    leftLowerArm:  [0, 0, 0.25],
+    rightLowerArm: [0, 0, -0.25],
+    leftShoulder:  [0, 0, 0.08],
+    rightShoulder: [0, 0, -0.08],
   },
   sad: {
     head:  [0.15, 0, -0.02],       // head down
@@ -80,6 +180,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [0.08, 0, 0],
     leftUpperArm:  [0.05, 0, 1.45], // arms closer to body
     rightUpperArm: [0.05, 0, -1.45],
+    leftLowerArm:  [0, 0, 0.1],
+    rightLowerArm: [0, 0, -0.1],
+    leftShoulder:  [0, 0.05, 0.08],
+    rightShoulder: [0, -0.05, -0.08],
   },
   angry: {
     head:  [0.06, 0, 0],           // chin down, intense
@@ -89,6 +193,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [0.04, 0, 0],
     leftUpperArm:  [0, 0.1, 1.20],  // arms tense, slightly out
     rightUpperArm: [0, -0.1, -1.20],
+    leftLowerArm:  [0, 0, 0.3],
+    rightLowerArm: [0, 0, -0.3],
+    leftShoulder:  [0, 0.03, 0.06],
+    rightShoulder: [0, -0.03, -0.06],
   },
   relaxed: {
     head:  [-0.04, 0.03, 0.02],    // head slightly back, gentle tilt
@@ -98,6 +206,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [-0.02, 0, 0.01],
     leftUpperArm:  [0, 0, 1.30],
     rightUpperArm: [0, 0, -1.30],
+    leftLowerArm:  [0, 0, 0.12],
+    rightLowerArm: [0, 0, -0.12],
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.05],
   },
   surprised: {
     head:  [-0.10, 0, 0],          // head back (recoil)
@@ -107,6 +219,10 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     neck:  [-0.06, 0, 0],
     leftUpperArm:  [-0.15, 0, 1.10], // arms up/out
     rightUpperArm: [-0.15, 0, -1.10],
+    leftLowerArm:  [0, 0, 0.35],
+    rightLowerArm: [0, 0, -0.35],
+    leftShoulder:  [0, 0, 0.1],
+    rightShoulder: [0, 0, -0.1],
   },
 };
 
@@ -114,7 +230,46 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
 const ANIMATED_BONES: VRMHumanBoneName[] = [
   'head', 'spine', 'chest', 'hips', 'neck',
   'leftUpperArm', 'rightUpperArm',
+  'leftLowerArm', 'rightLowerArm',
+  'leftShoulder', 'rightShoulder',
 ];
+
+// ── Expression channel layout (flat typed arrays, zero-alloc frame loop) ──
+
+// Emotion channels (named for readability; used via EXPR_NAMES lookup)
+// const EXPR_HAPPY = 0;
+// const EXPR_SAD = 1;
+// const EXPR_ANGRY = 2;
+// const EXPR_RELAXED = 3;
+// const EXPR_SURPRISED = 4;
+// const EXPR_NEUTRAL = 5;
+// Viseme channels
+const EXPR_AA = 6;
+const EXPR_IH = 7;
+const EXPR_OU = 8;
+const EXPR_EE = 9;
+const EXPR_OH = 10;
+// Blink channel
+const EXPR_BLINK = 11;
+const EXPR_COUNT = 12;
+
+/** VRM expression names corresponding to each channel index. */
+const EXPR_NAMES: readonly string[] = [
+  'happy', 'sad', 'angry', 'relaxed', 'surprised', 'neutral',
+  'aa', 'ih', 'ou', 'ee', 'oh',
+  'blink',
+];
+
+/** Per-channel damping rates: λ=8 emotions, λ=18 visemes, λ=25 blink. */
+const EXPR_LAMBDAS = new Float64Array([
+  8, 8, 8, 8, 8, 8,
+  18, 18, 18, 18, 18,
+  25,
+]);
+
+/** Damping rate for bone rotations. */
+const BONE_LAMBDA = 6;
+const BONE_STRIDE = 3;
 
 /**
  * VRM animator that drives procedural bone animation, facial expressions,
@@ -135,25 +290,24 @@ export class CharacterAnimator {
   private elapsed = 0;
   private baseRotationY = 0;
 
-  // Blink timing constants
-  private static readonly BLINK_DURATION = 0.15;
-  private static readonly MIN_BLINK_INTERVAL = 2.0;
-  private static readonly MAX_BLINK_INTERVAL = 6.0;
+  // AvatarStateMachine — canonical animation state (read in frame loop)
+  private _asm = new AvatarStateMachine();
 
-  // Smooth blink state
-  private nextBlinkTime = CharacterAnimator.randomBlinkInterval();
-  private blinkValue = 0;
-  private isBlinking = false;
-  private blinkTimer = 0;
+  // Idle pose randomization
+  private currentIdlePoseIndex = 0;
+  private idlePoseChangeTime = 0;
+  private nextIdlePoseChangeAt = 8;
 
-  // Smooth expression targets (interpolated each frame)
-  private expressionTargets: Map<string, number> = new Map();
-  private expressionCurrent: Map<string, number> = new Map();
+  /** Exposes the layered AvatarStateMachine for external mutation. */
+  get avatarStateMachine(): AvatarStateMachine { return this._asm; }
 
-  // Smooth bone rotation targets (interpolated each frame)
-  // Key = VRMHumanBoneName, Value = target Euler [x, y, z]
-  private boneTargets: Map<string, [number, number, number]> = new Map();
-  private boneCurrent: Map<string, [number, number, number]> = new Map();
+  // Flat typed arrays for zero-alloc per-frame expression damping
+  private exprTargets = new Float64Array(EXPR_COUNT);
+  private exprCurrent = new Float64Array(EXPR_COUNT);
+
+  // Flat typed arrays for bone rotation damping
+  private boneTargetArr = new Float64Array(ANIMATED_BONES.length * BONE_STRIDE);
+  private boneCurrentArr = new Float64Array(ANIMATED_BONES.length * BONE_STRIDE);
 
   // Mouth animation elapsed for talking state
   private mouthElapsed = 0;
@@ -165,24 +319,24 @@ export class CharacterAnimator {
 
   private blender = new GestureBlender();
 
-  private static randomBlinkInterval(): number {
-    return CharacterAnimator.MIN_BLINK_INTERVAL +
-      Math.random() * (CharacterAnimator.MAX_BLINK_INTERVAL - CharacterAnimator.MIN_BLINK_INTERVAL);
-  }
-
   setVRM(vrm: VRM, rotationY = 0) {
     this.vrm = vrm;
     this.vrmScene = vrm.scene;
     this.baseRotationY = rotationY;
     this.placeholder = null;
-    // Reset blink timing
-    this.nextBlinkTime = CharacterAnimator.randomBlinkInterval();
-    this.blinkValue = 0;
-    this.isBlinking = false;
-    this.blinkTimer = 0;
-    // Reset bone interpolation state
-    this.boneCurrent.clear();
-    this.boneTargets.clear();
+    // Reset flat arrays
+    this.exprCurrent.fill(0);
+    this.exprTargets.fill(0);
+    this.boneTargetArr.fill(0);
+    // Initialize bone current values to idle pose so we don't damp from T-pose
+    const idlePose = STATE_BONE_POSES.idle;
+    for (let i = 0; i < ANIMATED_BONES.length; i++) {
+      const boneName = ANIMATED_BONES[i];
+      const base = idlePose[boneName as keyof BonePose] ?? [0, 0, 0];
+      this.boneCurrentArr[i * BONE_STRIDE]     = base[0];
+      this.boneCurrentArr[i * BONE_STRIDE + 1] = base[1];
+      this.boneCurrentArr[i * BONE_STRIDE + 2] = base[2];
+    }
   }
 
   /** Configure the VRM lookAt target so the model's eyes track the camera. */
@@ -204,15 +358,62 @@ export class CharacterAnimator {
     this.state = state;
     this.elapsed = 0;
     this.mouthElapsed = 0;
+    // Bridge to AvatarStateMachine
+    this.bridgeStateToAvatar(state);
   }
 
   getState(): CharacterState {
     return this.state;
   }
 
+  /** Map legacy CharacterState to body + emotion on the AvatarStateMachine. */
+  private bridgeStateToAvatar(state: CharacterState): void {
+    const asm = this._asm;
+    switch (state) {
+      case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
+      case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
+      case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
+      case 'happy':     asm.forceBody('idle');  asm.setEmotion('happy');     break;
+      case 'sad':       asm.forceBody('idle');  asm.setEmotion('sad');       break;
+      case 'angry':     asm.forceBody('idle');  asm.setEmotion('angry');     break;
+      case 'relaxed':   asm.forceBody('idle');  asm.setEmotion('relaxed');   break;
+      case 'surprised': asm.forceBody('idle');  asm.setEmotion('surprised'); break;
+    }
+  }
+
+  /**
+   * Check if all damped expression/bone values have converged to their targets
+   * (within epsilon). Used for on-demand rendering — when settled, render rate drops.
+   */
+  isAnimationSettled(epsilon = 0.002): boolean {
+    // Check AvatarStateMachine layer
+    if (!this._asm.isSettled()) return false;
+    // Check all expression channels
+    for (let i = 0; i < EXPR_COUNT; i++) {
+      if (Math.abs(this.exprCurrent[i] - this.exprTargets[i]) > epsilon) return false;
+    }
+    // Check all bone channels
+    for (let i = 0; i < this.boneCurrentArr.length; i++) {
+      if (Math.abs(this.boneCurrentArr[i] - this.boneTargetArr[i]) > epsilon) return false;
+    }
+    return true;
+  }
+
   update(delta: number) {
     this.elapsed += delta;
     const t = this.elapsed;
+
+    // Handle idle pose randomization when in idle state
+    if (this.state === 'idle') {
+      this.idlePoseChangeTime += delta;
+      if (this.idlePoseChangeTime >= this.nextIdlePoseChangeAt) {
+        this.selectNextIdlePose();
+      }
+    } else {
+      // Reset idle pose timer when not in idle state
+      this.idlePoseChangeTime = 0; 
+      this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+    }
 
     if (this.vrm && this.vrmScene) {
       this.applyVRMAnimation(t, delta);
@@ -242,6 +443,34 @@ export class CharacterAnimator {
     this.useExternalLipSync = false;
   }
 
+  /**
+   * Select the next idle pose randomly, avoiding repeating the same pose.
+   * Updates the STATE_BONE_POSES.idle reference to point to the new pose.
+   */
+  private selectNextIdlePose() {
+    let newIndex = this.currentIdlePoseIndex;
+    // Ensure we don't repeat the same pose (unless there's only one pose)
+    if (IDLE_POSES.length > 1) {
+      do {
+        newIndex = Math.floor(Math.random() * IDLE_POSES.length);
+      } while (newIndex === this.currentIdlePoseIndex);
+    }
+    
+    this.currentIdlePoseIndex = newIndex;
+    STATE_BONE_POSES.idle = IDLE_POSES[newIndex];
+    
+    // Reset timer with some randomization
+    this.idlePoseChangeTime = 0;
+    this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+  }
+
+  /**
+   * Get a random interval for the next idle pose change between 3-8 seconds.
+   */
+  private getRandomIdleInterval(): number {
+    return 3 + Math.random() * 5; // 3-8 seconds for more frequent variation
+  }
+
   // ── VRM animation (bones + expressions + blink) ────────────────────
 
   private applyVRMAnimation(t: number, delta: number) {
@@ -251,19 +480,19 @@ export class CharacterAnimator {
     this.vrmScene.position.set(0, 0, 0);
     this.vrmScene.rotation.set(0, this.baseRotationY, 0);
 
-    // Natural blinking with random intervals
-    this.updateBlink(delta);
+    // Tick the AvatarStateMachine's auto-blink cycle
+    this._asm.tickBlink(delta);
 
-    // Set expression targets for the current state
-    this.applyStateExpressions(t, delta);
+    // Compute per-channel expression targets from current state
+    this.computeExpressionTargets(t, delta);
 
-    // Smoothly interpolate all expressions toward their targets
+    // Damp all expression channels toward their targets
     this.flushExpressions(delta);
 
     // Set bone pose targets for the current state (with idle breathing overlay)
     this.applyStateBonePose(t);
 
-    // Smoothly interpolate bones toward their targets
+    // Damp bones toward their targets
     this.flushBones(delta);
 
     // vrm.update() transfers normalized bones → raw skeleton,
@@ -271,30 +500,43 @@ export class CharacterAnimator {
     this.vrm.update(delta);
   }
 
-  // ── State-based expression targets ─────────────────────────────────
+  // ── Expression target computation (writes to flat exprTargets) ────────
 
-  private applyStateExpressions(_t: number, delta: number) {
-    // Clear all expression targets first
-    this.clearExpressionTargets();
+  private computeExpressionTargets(_t: number, delta: number) {
+    // Zero all targets
+    this.exprTargets.fill(0);
 
-    // Apply per-state base expressions
-    const targets = STATE_EXPRESSIONS[this.state];
-    for (const [name, value] of Object.entries(targets)) {
-      this.setExpressionTarget(name, value);
+    // ── Emotion layer: base expression weights from STATE_EXPRESSIONS ──
+    const stateExprs = STATE_EXPRESSIONS[this.state];
+    for (const [name, value] of Object.entries(stateExprs)) {
+      const idx = EXPR_NAMES.indexOf(name);
+      if (idx >= 0) this.exprTargets[idx] = value;
     }
 
-    // Mouth flap for talking state — use external lip sync when available,
-    // otherwise fall back to procedural sine wave
+    // ── Viseme layer: read from AvatarState mutable ref ───────────────
+    const viseme = this._asm.state.viseme;
     if (this.state === 'talking') {
       if (this.useExternalLipSync) {
-        this.setExpressionTarget('aa', this.externalMouthAa);
-        this.setExpressionTarget('oh', this.externalMouthOh);
+        this.exprTargets[EXPR_AA] = this.externalMouthAa;
+        this.exprTargets[EXPR_OH] = this.externalMouthOh;
+      } else if (viseme.aa > 0 || viseme.ih > 0 || viseme.ou > 0 ||
+                 viseme.ee > 0 || viseme.oh > 0) {
+        // AvatarState visemes take priority over procedural fallback
+        this.exprTargets[EXPR_AA] = viseme.aa;
+        this.exprTargets[EXPR_IH] = viseme.ih;
+        this.exprTargets[EXPR_OU] = viseme.ou;
+        this.exprTargets[EXPR_EE] = viseme.ee;
+        this.exprTargets[EXPR_OH] = viseme.oh;
       } else {
+        // Procedural sine-wave mouth fallback
         this.mouthElapsed += delta;
         const mouth = ((Math.sin(this.mouthElapsed * 5.5) + 1) * 0.5) * 0.5;
-        this.setExpressionTarget('aa', mouth);
+        this.exprTargets[EXPR_AA] = mouth;
       }
     }
+
+    // ── Blink layer: read from AvatarState (driven by AvatarStateMachine.tickBlink)
+    this.exprTargets[EXPR_BLINK] = this._asm.state.blink;
   }
 
   // ── State-based bone pose targets (with breathing overlay) ─────────
@@ -306,7 +548,6 @@ export class CharacterAnimator {
     // to keep the character feeling alive
     const breathCycle = Math.sin(t * 1.2);     // ~0.6 Hz breathing rate
     const breathAmt = 0.015;                   // subtle breath amplitude
-    const swayCycle = Math.sin(t * 0.4);       // slow idle sway
 
     // Per-state additional movement overlays
     let headOscX = 0;
@@ -315,15 +556,45 @@ export class CharacterAnimator {
     let spineOscX = 0;
     let spineOscY = 0;
     let hipsOscY = 0;
+    let armLOscZ = 0;
+    let armROscZ = 0;
+    let lowerArmLOscZ = 0;
+    let lowerArmROscZ = 0;
+    let shoulderOscZ = 0;
 
     switch (this.state) {
-      case 'idle':
-        // Gentle head sway + breathing
-        headOscY = Math.sin(t * 0.5) * 0.03;
-        headOscZ = Math.sin(t * 0.35) * 0.015;
-        spineOscY = swayCycle * 0.01;
-        hipsOscY = swayCycle * 0.008;
+      case 'idle': {
+        // ── Multi-layered idle animation with pose-specific variations ──
+        // Layer 1: Breathing — diaphragmatic breath cycle ~0.6Hz
+        const breathPhase = t * 1.2;   // ~0.6 Hz
+        const breathIn = Math.sin(breathPhase);
+        // Layer 2: Weight shift — slow lateral hip/spine sway ~0.08Hz
+        const shiftPhase = t * 0.16;
+        const weightShift = Math.sin(shiftPhase);
+        const weightShift2 = Math.cos(shiftPhase * 0.7);
+        // Layer 3: Look-around — periodic slow head drift ~0.1Hz
+        const lookPhase = t * 0.22;
+        const lookY = Math.sin(lookPhase) * 0.6 + Math.sin(lookPhase * 2.3) * 0.4;
+        const lookZ = Math.sin(lookPhase * 0.7 + 1.2) * 0.5;
+        // Layer 4: Micro-fidget — very subtle fast noise for liveliness
+        const fidgetX = Math.sin(t * 3.7) * 0.003;
+        const fidgetY = Math.sin(t * 4.3) * 0.003;
+        // Layer 5: Pose-specific modulation based on current pose index
+        const poseVariation = Math.sin(t * 0.1 + this.currentIdlePoseIndex) * 0.02;
+
+        headOscY = lookY * 0.04 + fidgetY + poseVariation;
+        headOscZ = lookZ * 0.02;
+        headOscX = fidgetX;
+        spineOscX = breathIn * 0.003;
+        spineOscY = weightShift * 0.012 + poseVariation * 0.5;
+        hipsOscY = weightShift * 0.008 + weightShift2 * 0.005;
+        armLOscZ = Math.sin(t * 0.3 + 0.5 + this.currentIdlePoseIndex) * 0.02;   // pose-aware arm sway
+        armROscZ = Math.sin(t * 0.3 + 0.5 + this.currentIdlePoseIndex) * -0.02;
+        lowerArmLOscZ = Math.sin(t * 0.25) * 0.015;
+        lowerArmROscZ = Math.sin(t * 0.25) * -0.015;
+        shoulderOscZ = breathIn * 0.008;               // shoulders rise on inhale
         break;
+      }
       case 'thinking':
         // Head tilting rhythmically as if pondering
         headOscX = Math.sin(t * 0.8) * 0.04;
@@ -370,7 +641,8 @@ export class CharacterAnimator {
     const alpha = this.blender.getTransitionAlpha(t);
     const prevState = this.blender.getPreviousState();
 
-    for (const boneName of ANIMATED_BONES) {
+    for (let i = 0; i < ANIMATED_BONES.length; i++) {
+      const boneName = ANIMATED_BONES[i];
       const base = pose[boneName as keyof BonePose] ?? [0, 0, 0];
       let x = base[0];
       let y = base[1];
@@ -391,6 +663,18 @@ export class CharacterAnimator {
       } else if (boneName === 'neck') {
         x += headOscX * 0.4; // neck follows head partially
         y += headOscY * 0.3;
+      } else if (boneName === 'leftUpperArm') {
+        z += armLOscZ;
+      } else if (boneName === 'rightUpperArm') {
+        z += armROscZ;
+      } else if (boneName === 'leftLowerArm') {
+        z += lowerArmLOscZ;
+      } else if (boneName === 'rightLowerArm') {
+        z += lowerArmROscZ;
+      } else if (boneName === 'leftShoulder') {
+        z += shoulderOscZ;
+      } else if (boneName === 'rightShoulder') {
+        z += -shoulderOscZ;
       }
 
       const curOffset = this.blender.computeOffset(boneName, this.state, t);
@@ -405,86 +689,46 @@ export class CharacterAnimator {
         z += curOffset[2];
       }
 
-      this.boneTargets.set(boneName, [x, y, z]);
+      this.boneTargetArr[i * BONE_STRIDE]     = x;
+      this.boneTargetArr[i * BONE_STRIDE + 1] = y;
+      this.boneTargetArr[i * BONE_STRIDE + 2] = z;
     }
   }
 
-  // ── Smooth bone interpolation ──────────────────────────────────────
+  // ── Exponential-damped bone interpolation (λ=6) ────────────────────
 
   private flushBones(delta: number) {
     if (!this.vrm) return;
 
-    const boneSpeed = 4.0; // lerp speed for bone transitions
-
-    for (const [boneName, target] of this.boneTargets) {
-      const current = this.boneCurrent.get(boneName) ?? [0, 0, 0];
-      const next: [number, number, number] = [
-        smoothStep(current[0], target[0], boneSpeed, delta),
-        smoothStep(current[1], target[1], boneSpeed, delta),
-        smoothStep(current[2], target[2], boneSpeed, delta),
-      ];
-      this.boneCurrent.set(boneName, next);
+    for (let i = 0; i < ANIMATED_BONES.length; i++) {
+      const off = i * BONE_STRIDE;
+      this.boneCurrentArr[off]     = damp(this.boneCurrentArr[off],     this.boneTargetArr[off],     BONE_LAMBDA, delta);
+      this.boneCurrentArr[off + 1] = damp(this.boneCurrentArr[off + 1], this.boneTargetArr[off + 1], BONE_LAMBDA, delta);
+      this.boneCurrentArr[off + 2] = damp(this.boneCurrentArr[off + 2], this.boneTargetArr[off + 2], BONE_LAMBDA, delta);
 
       // Apply to VRM humanoid normalized bone via the standard API
-      const node = this.vrm.humanoid?.getNormalizedBoneNode(boneName as VRMHumanBoneName);
+      const node = this.vrm.humanoid?.getNormalizedBoneNode(ANIMATED_BONES[i]);
       if (node) {
-        node.rotation.set(next[0], next[1], next[2]);
+        node.rotation.set(
+          this.boneCurrentArr[off],
+          this.boneCurrentArr[off + 1],
+          this.boneCurrentArr[off + 2],
+        );
       }
     }
   }
 
-  // ── Natural blink system with random timing ────────────────────────
-
-  private updateBlink(delta: number) {
-    if (!this.isBlinking) {
-      this.nextBlinkTime -= delta;
-      if (this.nextBlinkTime <= 0) {
-        this.isBlinking = true;
-        this.blinkTimer = 0;
-      }
-    }
-
-    if (this.isBlinking) {
-      this.blinkTimer += delta;
-      const half = CharacterAnimator.BLINK_DURATION / 2;
-      if (this.blinkTimer < half) {
-        this.blinkValue = this.blinkTimer / half;
-      } else if (this.blinkTimer < CharacterAnimator.BLINK_DURATION) {
-        this.blinkValue = 1.0 - (this.blinkTimer - half) / half;
-      } else {
-        this.blinkValue = 0;
-        this.isBlinking = false;
-        this.nextBlinkTime = CharacterAnimator.randomBlinkInterval();
-      }
-    }
-
-    this.setExpressionTarget('blink', this.blinkValue);
-  }
-
-  // ── Smooth expression system ───────────────────────────────────────
-
-  private setExpressionTarget(name: string, value: number) {
-    this.expressionTargets.set(name, value);
-  }
-
-  private clearExpressionTargets() {
-    for (const name of ['aa', 'oh', 'happy', 'sad', 'angry', 'relaxed', 'surprised', 'neutral']) {
-      this.expressionTargets.set(name, 0);
-    }
-  }
+  // ── Exponential-damped expression interpolation (per-channel λ) ────
 
   /**
-   * Smoothly interpolate current expression values toward targets each frame.
-   * This prevents harsh snapping between expression states.
+   * Damp all expression channels toward their targets each frame.
+   * Uses per-channel lambda from EXPR_LAMBDAS for differentiated smoothing.
    */
   private flushExpressions(delta: number) {
-    const expressionSpeed = 8.0;
-    for (const [name, target] of this.expressionTargets) {
-      const current = this.expressionCurrent.get(name) ?? 0;
-      const next = smoothStep(current, target, expressionSpeed, delta);
-      this.expressionCurrent.set(name, next);
+    for (let i = 0; i < EXPR_COUNT; i++) {
+      this.exprCurrent[i] = damp(this.exprCurrent[i], this.exprTargets[i], EXPR_LAMBDAS[i], delta);
       try {
-        this.vrm?.expressionManager?.setValue(name, next);
+        this.vrm?.expressionManager?.setValue(EXPR_NAMES[i], this.exprCurrent[i]);
       } catch { /* expression not available on this model */ }
     }
   }
