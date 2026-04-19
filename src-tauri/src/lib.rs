@@ -333,6 +333,7 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
 
             TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().unwrap())
                 .menu(&menu)
                 .tooltip("TerranSoul")
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -377,9 +378,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            #[cfg(debug_assertions)]
-            {
-                let window = app.get_webview_window("main").unwrap();
+            // Set the window icon so the taskbar / title bar shows the app icon
+            // instead of the default WebView icon during development.
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    let _ = window.set_icon(icon);
+                }
+                #[cfg(debug_assertions)]
                 window.open_devtools();
             }
             Ok(())

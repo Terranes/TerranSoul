@@ -1,260 +1,164 @@
 /**
  * useBgmPlayer — ambient background music player.
  *
- * Provides looping ambient audio playback with fade-in / fade-out transitions.
+ * Provides looping audio playback with fade-in / fade-out transitions.
  * BGM state (enabled, volume, track) is persisted through the settings store
  * and restored on app launch.
  *
  * Architecture:
- *  - Uses the Web Audio API for precise gain control and smooth fading.
- *  - Falls back to HTMLAudioElement.volume when Web Audio is unavailable.
- *  - Tracks are procedurally generated ambient loops using OscillatorNode +
- *    noise buffers, so no external audio files are needed.
+ *  - All tracks (built-in and user-added) are played via HTMLAudioElement.
+ *  - Built-in tracks are WAV files shipped in public/audio/.
+ *  - Users can add custom tracks from local files or URLs.
  *
  * Usage in CharacterViewport.vue:
  *   const bgm = useBgmPlayer();
- *   bgm.play('ambient-calm');
+ *   bgm.play('prelude');
  *   bgm.setVolume(0.3);
  *   bgm.stop();
  */
 
-import { ref, readonly } from 'vue';
+import { ref, readonly, computed, type DeepReadonly, type Ref, type ComputedRef } from 'vue';
 
 // ── Preset track definitions ─────────────────────────────────────────────────
 
 export interface BgmTrack {
   id: string;
   name: string;
+  /** Audio source URL (public asset path, object-URL, or remote URL). */
+  src?: string;
+  /** Whether this track can be removed by the user. */
+  removable?: boolean;
 }
 
-/** Available ambient music tracks (procedurally generated). */
+/** Available ambient music tracks (shipped as WAV files in public/audio/). */
 export const BGM_TRACKS: BgmTrack[] = [
-  { id: 'ambient-calm', name: 'Calm Ambience' },
-  { id: 'ambient-night', name: 'Night Breeze' },
-  { id: 'ambient-space', name: 'Cosmic Drift' },
+  { id: 'prelude',   name: 'Crystal Prelude',       src: '/audio/prelude.wav' },
+  { id: 'moonflow',  name: 'Dream of Zanarkand',    src: '/audio/moonflow.wav' },
+  { id: 'sanctuary', name: 'Promised Land',          src: '/audio/sanctuary.wav' },
 ];
 
 /** Default volume for BGM (0–1 range). */
 export const DEFAULT_BGM_VOLUME = 0.15;
 
-/** Fade duration in seconds for play/stop transitions. */
-const FADE_DURATION_S = 0.35;
-
-// ── Procedural audio generation ──────────────────────────────────────────────
-
-/**
- * Create a low-amplitude noise buffer (white noise filtered to be very soft).
- * Used as the base texture for all ambient tracks.
- */
-function createNoiseBuffer(ctx: AudioContext, durationS: number): AudioBuffer {
-  const sampleRate = ctx.sampleRate;
-  const length = Math.floor(sampleRate * durationS);
-  const buffer = ctx.createBuffer(1, length, sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < length; i++) {
-    data[i] = (Math.random() * 2 - 1) * 0.02;
-  }
-  return buffer;
-}
-
-/**
- * Build an ambient audio graph for the given track ID.
- * Returns the master gain node that connects to ctx.destination.
- */
-function buildTrackGraph(
-  ctx: AudioContext,
-  trackId: string,
-  masterGain: GainNode,
-): { sources: AudioNode[]; cleanup: () => void } {
-  const sources: AudioNode[] = [];
-
-  // Base layer: filtered noise (all tracks share this)
-  const noiseBuf = createNoiseBuffer(ctx, 4);
-  const noiseSource = ctx.createBufferSource();
-  noiseSource.buffer = noiseBuf;
-  noiseSource.loop = true;
-  const noiseFilter = ctx.createBiquadFilter();
-  noiseFilter.type = 'lowpass';
-  noiseFilter.frequency.value = 400;
-  noiseSource.connect(noiseFilter);
-  noiseFilter.connect(masterGain);
-  noiseSource.start();
-  sources.push(noiseSource);
-
-  // Track-specific tonal layers
-  if (trackId === 'ambient-calm') {
-    // Soft pad chord: C3 + E3 + G3
-    for (const freq of [130.81, 164.81, 196.0]) {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const oscGain = ctx.createGain();
-      oscGain.gain.value = 0.015;
-      osc.connect(oscGain);
-      oscGain.connect(masterGain);
-      osc.start();
-      sources.push(osc);
-    }
-  } else if (trackId === 'ambient-night') {
-    // Lower pad: A2 + C3 with slight detuning
-    for (const freq of [110.0, 130.81]) {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      osc.detune.value = Math.random() * 4 - 2;
-      const oscGain = ctx.createGain();
-      oscGain.gain.value = 0.012;
-      osc.connect(oscGain);
-      oscGain.connect(masterGain);
-      osc.start();
-      sources.push(osc);
-    }
-  } else if (trackId === 'ambient-space') {
-    // Deep drone: F2 with triangle wave
-    const osc = ctx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.value = 87.31; // F2
-    const oscGain = ctx.createGain();
-    oscGain.gain.value = 0.018;
-    osc.connect(oscGain);
-    oscGain.connect(masterGain);
-    osc.start();
-    sources.push(osc);
-
-    // High shimmer: very quiet sine
-    const shimmer = ctx.createOscillator();
-    shimmer.type = 'sine';
-    shimmer.frequency.value = 523.25; // C5
-    const shimmerGain = ctx.createGain();
-    shimmerGain.gain.value = 0.004;
-    shimmer.connect(shimmerGain);
-    shimmerGain.connect(masterGain);
-    shimmer.start();
-    sources.push(shimmer);
-  }
-
-  function cleanup() {
-    for (const src of sources) {
-      try {
-        if ('stop' in src && typeof (src as OscillatorNode).stop === 'function') {
-          (src as OscillatorNode).stop();
-        }
-        src.disconnect();
-      } catch {
-        // Already stopped/disconnected
-      }
-    }
-  }
-
-  return { sources, cleanup };
-}
+/** Fade duration in milliseconds for play/stop transitions. */
+const FADE_DURATION_MS = 350;
+const FADE_STEPS = 20;
 
 // ── Composable ───────────────────────────────────────────────────────────────
 
 export interface BgmPlayerHandle {
   /** Whether BGM is currently playing. */
-  isPlaying: Readonly<ReturnType<typeof ref<boolean>>>;
+  isPlaying: DeepReadonly<Ref<boolean>>;
   /** Current volume (0–1). */
-  volume: Readonly<ReturnType<typeof ref<number>>>;
+  volume: DeepReadonly<Ref<number>>;
   /** Current track ID, or null if nothing is loaded. */
-  currentTrackId: Readonly<ReturnType<typeof ref<string | null>>>;
+  currentTrackId: DeepReadonly<Ref<string | null>>;
+  /** All available tracks (presets + user-added). */
+  allTracks: ComputedRef<BgmTrack[]>;
   /** Start playing the specified track with a fade-in. */
   play(trackId: string): void;
   /** Stop playback with a fade-out. */
   stop(): void;
   /** Set the master volume (0–1). Takes effect immediately. */
   setVolume(v: number): void;
+  /** Add a custom track from a file, video, or URL. Returns the new track ID. */
+  addCustomTrack(name: string, src: string): string;
+  /** Remove a custom track by ID. Returns true if removed. */
+  removeTrack(trackId: string): boolean;
+  /** Load persisted custom tracks (call once on startup). */
+  loadCustomTracks(tracks: BgmTrack[]): void;
+  /** User-added custom tracks (for persistence). */
+  customTracks: DeepReadonly<Ref<BgmTrack[]>>;
 }
 
 export function useBgmPlayer(): BgmPlayerHandle {
   const isPlaying = ref(false);
   const volume = ref(DEFAULT_BGM_VOLUME);
   const currentTrackId = ref<string | null>(null);
+  const customTracks = ref<BgmTrack[]>([]);
 
-  let audioCtx: AudioContext | null = null;
-  let masterGain: GainNode | null = null;
-  let trackCleanup: (() => void) | null = null;
+  /** All tracks: builtins + custom */
+  const allTracks = computed<BgmTrack[]>(() => [...BGM_TRACKS, ...customTracks.value]);
 
-  function ensureContext(): AudioContext {
-    if (!audioCtx) {
-      audioCtx = new AudioContext();
+  /** Currently playing HTMLAudioElement. */
+  let audioEl: HTMLAudioElement | null = null;
+  /** Active fade interval ID. */
+  let fadeInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Cancel any running fade animation. */
+  function cancelFade(): void {
+    if (fadeInterval !== null) {
+      clearInterval(fadeInterval);
+      fadeInterval = null;
     }
-    // Resume if suspended (browser autoplay policy).
-    // resume() returns a Promise; we call it fire-and-forget here but
-    // the AudioContext will start processing as soon as it resolves.
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => { /* gesture not yet available */ });
+  }
+
+  /** Stop and release the current audio element. */
+  function stopAudio(): void {
+    cancelFade();
+    if (audioEl) {
+      audioEl.pause();
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl = null;
     }
-    return audioCtx;
+  }
+
+  /** Fade audio element volume from `from` to `to` over FADE_DURATION_MS. */
+  function fade(el: HTMLAudioElement, from: number, to: number, onDone?: () => void): void {
+    cancelFade();
+    let step = 0;
+    const stepMs = FADE_DURATION_MS / FADE_STEPS;
+    el.volume = Math.max(0, Math.min(1, from));
+    fadeInterval = setInterval(() => {
+      step++;
+      const progress = step / FADE_STEPS;
+      el.volume = Math.max(0, Math.min(1, from + (to - from) * progress));
+      if (step >= FADE_STEPS) {
+        cancelFade();
+        onDone?.();
+      }
+    }, stepMs);
   }
 
   function play(trackId: string): void {
-    // Stop previous track if playing
-    if (trackCleanup) {
-      stopImmediate();
-    }
+    // Stop any previous playback
+    stopAudio();
 
-    const ctx = ensureContext();
+    const track = allTracks.value.find(t => t.id === trackId);
+    if (!track?.src) return;
 
-    // If the context is still suspended after resume attempt, listen for
-    // state change and start playback when it becomes 'running'.
-    if (ctx.state === 'suspended') {
-      const onStateChange = () => {
-        if (ctx.state === 'running') {
-          ctx.removeEventListener('statechange', onStateChange);
-          play(trackId);
-        }
-      };
-      ctx.addEventListener('statechange', onStateChange);
-      return;
-    }
+    const audio = new Audio(track.src);
+    audio.loop = true;
+    audio.volume = 0;
+    audioEl = audio;
 
-    masterGain = ctx.createGain();
-    masterGain.connect(ctx.destination);
+    audio.play().then(() => {
+      fade(audio, 0, volume.value);
+    }).catch(() => {
+      // Autoplay blocked — will become audible after next user gesture
+      audio.volume = volume.value;
+    });
 
-    const { cleanup } = buildTrackGraph(ctx, trackId, masterGain);
-    trackCleanup = cleanup;
-
-    // Fade in — setValueAtTime anchors the ramp start (required by spec)
-    const now = ctx.currentTime;
-    masterGain.gain.setValueAtTime(0, now);
-    masterGain.gain.linearRampToValueAtTime(Math.max(volume.value, 0.01), now + FADE_DURATION_S);
-
-    currentTrackId.value = trackId;
+    currentTrackId.value = track.id;
     isPlaying.value = true;
   }
 
   function stop(): void {
-    if (!masterGain || !audioCtx) {
-      stopImmediate();
+    if (!audioEl) {
+      isPlaying.value = false;
+      currentTrackId.value = null;
       return;
     }
 
-    // Fade out, then clean up
-    const now = audioCtx.currentTime;
-    masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.linearRampToValueAtTime(0, now + FADE_DURATION_S);
+    const el = audioEl;
+    fade(el, el.volume, 0, () => {
+      el.pause();
+      if (audioEl === el) {
+        audioEl = null;
+      }
+    });
 
-    const cleanupRef = trackCleanup;
-    const gainRef = masterGain;
-    trackCleanup = null;
-    masterGain = null;
-
-    setTimeout(() => {
-      cleanupRef?.();
-      try { gainRef?.disconnect(); } catch { /* already disconnected */ }
-    }, FADE_DURATION_S * 1000 + 100);
-
-    isPlaying.value = false;
-    currentTrackId.value = null;
-  }
-
-  function stopImmediate(): void {
-    trackCleanup?.();
-    trackCleanup = null;
-    try { masterGain?.disconnect(); } catch { /* already disconnected */ }
-    masterGain = null;
     isPlaying.value = false;
     currentTrackId.value = null;
   }
@@ -262,21 +166,44 @@ export function useBgmPlayer(): BgmPlayerHandle {
   function setVolume(v: number): void {
     const clamped = Math.max(0, Math.min(1, v));
     volume.value = clamped;
-
-    if (masterGain && audioCtx) {
-      const now = audioCtx.currentTime;
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-      masterGain.gain.linearRampToValueAtTime(clamped, now + 0.1);
+    if (audioEl) {
+      audioEl.volume = clamped;
     }
+  }
+
+  function addCustomTrack(name: string, src: string): string {
+    const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    customTracks.value = [...customTracks.value, { id, name, src, removable: true }];
+    return id;
+  }
+
+  function removeTrack(trackId: string): boolean {
+    const before = customTracks.value.length;
+    customTracks.value = customTracks.value.filter(t => t.id !== trackId);
+    if (customTracks.value.length < before) {
+      if (currentTrackId.value === trackId) {
+        stop();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function loadCustomTracks(tracks: BgmTrack[]): void {
+    customTracks.value = tracks.map(t => ({ ...t, removable: true }));
   }
 
   return {
     isPlaying: readonly(isPlaying),
     volume: readonly(volume),
     currentTrackId: readonly(currentTrackId),
+    allTracks,
+    customTracks: readonly(customTracks),
     play,
     stop,
     setVolume,
+    addCustomTrack,
+    removeTrack,
+    loadCustomTracks,
   };
 }

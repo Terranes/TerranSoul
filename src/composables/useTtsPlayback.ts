@@ -116,10 +116,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
 
     const synthPromise = invoke<number[]>('synthesize_tts', { text: trimmed })
       .then((bytes) => (generation === myGen ? new Uint8Array(bytes) : null))
-      .catch((err) => {
-        console.warn('synthesize_tts failed, will use browser fallback:', err);
-        return null;
-      });
+      .catch(() => null);
 
     synthQueue.push({ text: trimmed, wav: synthPromise });
 

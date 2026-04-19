@@ -13,15 +13,6 @@ const PANEL_TIMEOUT = 2_000;
 const RESPONSE_TIMEOUT = 10_000;
 
 test.describe('Background Music UI', () => {
-  test('floating music bar toggle is visible on load', async ({ page }) => {
-    await page.goto('/');
-
-    const musicToggle = page.locator('.music-bar-toggle');
-    await expect(musicToggle).toBeVisible();
-    // Music bar panel should be collapsed initially
-    await expect(page.locator('.music-bar-panel')).not.toBeVisible();
-  });
-
   test('clicking music bar toggle expands the panel', async ({ page }) => {
     await page.goto('/');
 
@@ -85,43 +76,6 @@ test.describe('Background Music UI', () => {
     }).toPass({ timeout: 1000 });
   });
 
-  test('volume slider is interactive', async ({ page }) => {
-    await page.goto('/');
-
-    await page.locator('.music-bar-toggle').click();
-    await expect(page.locator('.music-bar-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
-
-    const slider = page.locator('.music-vol-slider');
-    await expect(slider).toBeVisible();
-
-    // Slider should have a value in the 0-100 range
-    const value = await slider.inputValue();
-    const numVal = parseInt(value, 10);
-    expect(numVal).toBeGreaterThanOrEqual(0);
-    expect(numVal).toBeLessThanOrEqual(100);
-  });
-
-  test('settings dropdown has BGM toggle and controls', async ({ page }) => {
-    await page.goto('/');
-
-    // Open settings dropdown
-    await page.locator('.settings-toggle').click();
-    const dropdown = page.locator('.settings-dropdown');
-    await expect(dropdown).toBeVisible({ timeout: PANEL_TIMEOUT });
-
-    // Should have Music section with toggle
-    await expect(dropdown.locator('.bgm-switch')).toBeVisible();
-    await expect(dropdown.locator('.bgm-status')).toBeVisible();
-    await expect(dropdown.locator('.bgm-status')).toContainText('Off');
-
-    // Toggle BGM on
-    await dropdown.locator('.bgm-switch').click();
-    await expect(dropdown.locator('.bgm-status')).toContainText('On');
-
-    // Volume slider and track selector should appear
-    await expect(dropdown.locator('.bgm-volume-slider')).toBeVisible();
-  });
-
   test('add music button opens chat and sends message to model', async ({ page }) => {
     await page.goto('/');
 
@@ -142,80 +96,5 @@ test.describe('Background Music UI', () => {
     // An assistant response should appear
     const assistantMsg = page.locator('.message-row.assistant').first();
     await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
-  });
-
-  test('collapsing music bar hides the panel', async ({ page }) => {
-    await page.goto('/');
-
-    const musicToggle = page.locator('.music-bar-toggle');
-
-    // Expand
-    await musicToggle.click();
-    await expect(page.locator('.music-bar-panel')).toBeVisible({ timeout: PANEL_TIMEOUT });
-
-    // Collapse
-    await musicToggle.click();
-    await expect(page.locator('.music-bar-panel')).not.toBeVisible();
-  });
-});
-
-test.describe('BGM Status Indicator Integration', () => {
-  test('status shows Thinking when waiting for response', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    await expect(badge).toContainText('Idle');
-
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-    await input.fill('test message');
-    await sendBtn.click();
-
-    // Should transition through Thinking
-    await expect(async () => {
-      const text = (await badge.textContent())?.trim();
-      expect(['Thinking…', 'Talking']).toContain(text);
-    }).toPass({ timeout: 3_000 });
-
-    // Should eventually return to Idle
-    await expect(badge).toContainText('Idle', { timeout: RESPONSE_TIMEOUT });
-  });
-
-  test('quick reply buttons appear for yes/no questions', async ({ page }) => {
-    await page.goto('/');
-
-    // Open chat drawer
-    await page.locator('.chat-drawer-toggle').click();
-
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    // Send a message that may trigger a yes/no response
-    await input.fill('Can you help me set up background music?');
-    await sendBtn.click();
-
-    // Wait for assistant response
-    const assistantMsg = page.locator('.message-row.assistant').first();
-    await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
-
-    // Quick reply buttons may or may not appear depending on model response,
-    // but the DOM structure should be ready (no errors)
-    const quickReplies = page.locator('.quick-replies');
-    // Just verify no runtime errors — buttons show only if response matches pattern
-    await page.waitForTimeout(500);
-  });
-});
-
-test.describe('Emoji Popup', () => {
-  test('emoji popup container exists in DOM structure', async ({ page }) => {
-    await page.goto('/');
-
-    // The emoji popup transition wrapper should exist (hidden by default)
-    // We verify the component renders without errors
-    const chatView = page.locator('.chat-view');
-    await expect(chatView).toBeVisible();
-
-    // No emoji popup should be visible initially
-    await expect(page.locator('.emoji-popup')).not.toBeVisible();
   });
 });

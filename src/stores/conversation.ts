@@ -5,6 +5,7 @@ import type { Message } from '../types';
 import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
+import { useSkillTreeStore } from './skill-tree';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -32,6 +33,40 @@ export function detectSentiment(text: string): 'happy' | 'sad' | 'angry' | 'rela
     return 'happy';
   }
   return 'neutral';
+}
+
+/**
+ * Patterns that indicate a provider/service warning in the response text.
+ * When detected, the warning is stripped and converted into a quest suggestion.
+ */
+const WARNING_PATTERNS = [
+  /⚠️?\s*\*{0,2}IMPORTANT NOTICE\*{0,2}[\s\S]*?(?:deprecated|shutting down|end of life|discontinued)[\s\S]*?(?:\n\n|$)/i,
+  /⚠️?\s*\*{0,2}(?:Deprecation|Service|Migration)\s*(?:Notice|Warning|Alert)\*{0,2}[:\s][\s\S]*?(?:\n\n|$)/i,
+  /(?:^|\n)\[?(?:WARNING|NOTICE)\]?:?\s*(?:This|The)\s+(?:API|service|endpoint|model)[\s\S]*?(?:deprecated|removed|sunset|discontinued)[\s\S]*?(?:\n\n|$)/i,
+];
+
+/** Detect and extract a provider warning from response text. Returns cleaned text and the warning if found. */
+function extractWarning(text: string): { clean: string; warning: string | null } {
+  for (const pattern of WARNING_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      const warning = match[0].trim();
+      const clean = text.replace(pattern, '').trim();
+      return { clean, warning };
+    }
+  }
+  return { clean: text, warning: null };
+}
+
+/** Convert a warning into quest choices attached to the message. */
+function applyWarningAsQuest(msg: Message, _warning: string): void {
+  msg.questId = 'migrate-brain';
+  msg.questChoices = [
+    { label: 'Upgrade to Paid API', value: 'navigate:brain-setup', icon: '⚡' },
+    { label: 'Use llmfit (Local AI)', value: 'navigate:brain-setup', icon: '🏰' },
+    { label: 'Switch Provider', value: 'navigate:marketplace', icon: '🔄' },
+    { label: 'Dismiss', value: 'dismiss', icon: '💤' },
+  ];
 }
 
 /** Browser-side persona fallback when no brain is configured at all. */
@@ -73,6 +108,46 @@ function createPersonaResponse(content: string): Message {
 /** Detect if the Tauri IPC bridge is available (synchronous check). */
 function isTauriAvailable(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/**
+ * After the LLM responds, check if the user should be shown a quest overlay.
+ *
+ * Uses a hybrid approach:
+ * 1. Check if the LLM response mentions quests (brain-driven detection)
+ * 2. Check if the user's original message expressed getting-started intent
+ *
+ * If either signal is present AND there are available quests, show the overlay.
+ * This avoids hard-coded regex that blocks the LLM, while still ensuring
+ * quest suggestions appear reliably for getting-started queries.
+ */
+function maybeShowQuestFromResponse(responseText: string, userInput?: string): void {
+  const responseLower = responseText.toLowerCase();
+  const inputLower = (userInput ?? '').toLowerCase();
+
+  // Signal 1: LLM response specifically mentions quests (word-boundary match to avoid
+  // false positives like "requests" containing "quest" as a substring)
+  const questWordRe = /\bquest\b/i;
+  const hasResponseSignal = questWordRe.test(responseText) || responseLower.includes('skill tree');
+
+  // Signal 2: User's intent is getting-started (broad keyword matching, not strict regex)
+  const gettingStartedWords = ['start', 'begin', 'first', 'should i do', 'can i do', 'what next', 'get started', 'where do i', 'how do i'];
+  const hasInputSignal = gettingStartedWords.some(w => inputLower.includes(w));
+
+  if (!hasResponseSignal && !hasInputSignal) return;
+
+  try {
+    const skillTree = useSkillTreeStore();
+    const availableQuests = skillTree.nodes.filter(n => {
+      try { return skillTree.getSkillStatus(n.id) === 'available'; }
+      catch { return false; }
+    });
+    if (availableQuests.length > 0) {
+      skillTree.triggerQuestEvent(availableQuests[0].id);
+    }
+  } catch {
+    // Skill tree not ready — skip quest overlay
+  }
 }
 
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
@@ -244,34 +319,6 @@ export const useConversationStore = defineStore('conversation', () => {
 
     const brain = useBrainStore();
 
-    // ── Quest analysis (silent background processing) ──────────────────
-    // Check if the message might be quest-related and trigger background analysis
-    const questKeywords = ['goal', 'quest', 'mission', 'task', 'adventure', 'journey', 'story', 'explore', 'build', 'create', 'learn'];
-    const hasQuestContent = questKeywords.some(keyword => content.toLowerCase().includes(keyword));
-    
-    if (hasQuestContent) {
-      // Trigger silent quest analysis in the background
-      brain.processPromptSilently(`Analyze this user message for potential quest opportunities: "${content}". Provide brief insights on what quests or adventures might be relevant.`)
-        .then((analysis) => {
-          if (analysis) {
-            // Add silent analysis result to conversation history for context
-            const analysisMessage: Message = {
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              content: `*Background analysis: ${analysis}*`,
-              agentName: 'QuestAnalyzer',
-              sentiment: 'neutral',
-              timestamp: Date.now(),
-              system: true, // Mark as system message to hide from main chat UI
-            };
-            addMessage(analysisMessage);
-          }
-        })
-        .catch(() => {
-          // Silent failure - don't disrupt the main conversation
-        });
-    }
-
     const llmCmd = detectLlmCommand(content);
     if (llmCmd) {
       const response = await executeLlmCommand(llmCmd, brain);
@@ -300,9 +347,15 @@ export const useConversationStore = defineStore('conversation', () => {
           }
         }, 50);
 
+        const TAURI_STREAM_TIMEOUT_MS = 60_000; // 60s timeout
         let sendOk = false;
         try {
-          sendOk = await streaming.sendStreaming(content);
+          sendOk = await Promise.race([
+            streaming.sendStreaming(content),
+            new Promise<boolean>((_, reject) =>
+              setTimeout(() => reject(new Error('Tauri streaming timeout')), TAURI_STREAM_TIMEOUT_MS),
+            ),
+          ]);
         } finally {
           clearInterval(syncInterval);
         }
@@ -311,7 +364,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
         // Grace period for any in-flight events after invoke resolves.
         if (streaming.isStreaming) {
-          const graceWait = 3_000;
+          const graceWait = 1_500;
           const start = Date.now();
           while (streaming.isStreaming && Date.now() - start < graceWait) {
             streamingText.value = streaming.streamText;
@@ -330,16 +383,19 @@ export const useConversationStore = defineStore('conversation', () => {
         if (cleanText) {
           // Emotion comes from the streaming store (set by llm-animation events).
           const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
+          const { clean, warning } = extractWarning(cleanText);
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: cleanText,
+            content: clean || cleanText,
             agentName: 'TerranSoul',
             sentiment: sentiment as Message['sentiment'],
             timestamp: Date.now(),
             emoji: parsed.emoji ?? undefined,
           };
+          if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
+          maybeShowQuestFromResponse(clean || cleanText, content);
         } else {
           // Streaming completed but no text accumulated (events not received or
           // API returned empty) — fall back to non-streaming invoke which also
@@ -348,18 +404,28 @@ export const useConversationStore = defineStore('conversation', () => {
         }
         streaming.reset();
       } catch {
-        // Tauri streaming failed — fall back to non-streaming invoke
+        // Tauri streaming failed — fall back to non-streaming invoke with timeout
         try {
-          const response = await invoke<Message>('send_message', {
-            message: content,
-            agentId: currentAgent.value === 'auto' ? null : currentAgent.value,
-          });
+          const FALLBACK_TIMEOUT_MS = 30_000;
+          const response = await Promise.race([
+            invoke<Message>('send_message', {
+              message: content,
+              agentId: currentAgent.value === 'auto' ? null : currentAgent.value,
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Fallback invoke timeout')), FALLBACK_TIMEOUT_MS),
+            ),
+          ]);
           messages.value.push(response);
+          maybeShowQuestFromResponse(response.content, content);
         } catch {
           messages.value.push(createPersonaResponse(content));
+          pushNetworkOrProviderWarning();
         }
       } finally {
         isThinking.value = false;
+        isStreaming.value = false;
+        streamingText.value = '';
       }
       return;
     }
@@ -368,6 +434,7 @@ export const useConversationStore = defineStore('conversation', () => {
     if (brain.hasBrain) {
       const provider = resolveFreeProvider(brain);
       if (provider) {
+        try {
         const healthStore = useProviderHealthStore();
         const history = buildHistory(
           messages.value.map((m) => ({ role: m.role, content: m.content })),
@@ -397,8 +464,11 @@ export const useConversationStore = defineStore('conversation', () => {
             // Use enhanced prompt for non-Pollinations providers (upgraded models)
             const useEnhanced = provId !== 'pollinations';
 
+            const STREAM_TIMEOUT_MS = 30_000; // 30s timeout to prevent stuck thinking
             const fullText = await new Promise<string>((resolve, reject) => {
-              streamChatCompletion(
+              let timeout: ReturnType<typeof setTimeout> | undefined;
+              let settled = false;
+              const abortController = streamChatCompletion(
                 prov.baseUrl,
                 prov.model,
                 prov.apiKey,
@@ -411,11 +481,14 @@ export const useConversationStore = defineStore('conversation', () => {
                     }
                     streamingText.value += text;
                   },
-                  onDone: (full) => resolve(full),
-                  onError: (err) => reject(new Error(err)),
+                  onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
+                  onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },
                 getSystemPrompt(useEnhanced),
               );
+              timeout = setTimeout(() => {
+                if (!settled) { settled = true; abortController.abort(); reject(new Error('Stream timeout: no response within 60s')); }
+              }, STREAM_TIMEOUT_MS);
             });
 
             isStreaming.value = false;
@@ -424,16 +497,19 @@ export const useConversationStore = defineStore('conversation', () => {
             const parsed = parseTags(fullText);
             // Use keyword detection on user input as fallback when LLM has no emotion tags
             const sentiment = parsed.emotion ?? detectSentiment(content);
+            const { clean, warning } = extractWarning(parsed.text);
             const assistantMsg: Message = {
               id: crypto.randomUUID(),
               role: 'assistant',
-              content: parsed.text,
+              content: clean || parsed.text,
               agentName: 'TerranSoul',
               sentiment: sentiment as Message['sentiment'],
               timestamp: Date.now(),
               emoji: parsed.emoji ?? undefined,
             };
+            if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
+            maybeShowQuestFromResponse(clean || parsed.text, content);
             succeeded = true;
             break;
           } catch (err) {
@@ -445,6 +521,11 @@ export const useConversationStore = defineStore('conversation', () => {
               healthStore.markRateLimited(provId);
               continue; // Try next provider
             }
+            // Check for network / timeout errors
+            if (errMsg.includes('Network error') || errMsg.includes('Network timeout') || errMsg.includes('Stream timeout') || errMsg.includes('Failed to fetch')) {
+              // Network issue — try next provider
+              continue;
+            }
             // Other error — don't retry
             break;
           }
@@ -452,9 +533,13 @@ export const useConversationStore = defineStore('conversation', () => {
 
         if (!succeeded) {
           messages.value.push(createPersonaResponse(content));
-          pushProviderWarning();
+          pushNetworkOrProviderWarning();
         }
-        isThinking.value = false;
+        } finally {
+          isThinking.value = false;
+          isStreaming.value = false;
+          streamingText.value = '';
+        }
         return;
       }
     }
@@ -477,16 +562,43 @@ export const useConversationStore = defineStore('conversation', () => {
       content:
         '⚠️ The free AI providers are currently rate-limited. ' +
         'Responses may be slower or use a basic fallback until limits reset.\n\n' +
-        'You can upgrade to a paid API or run a local model for unlimited, faster responses!',
+        'You can upgrade to a paid API or use llmfit to run a local model for unlimited, faster responses!',
       agentName: 'System',
       sentiment: 'neutral',
       timestamp: Date.now(),
       questChoices: [
         { label: 'Upgrade to Paid API', value: 'navigate:brain-setup', icon: '⚡' },
-        { label: 'Run AI Locally', value: 'navigate:brain-setup', icon: '🏰' },
+        { label: 'Use llmfit (Local AI)', value: 'navigate:brain-setup', icon: '🏰' },
         { label: 'I\'ll wait', value: 'dismiss', icon: '⏳' },
       ],
       questId: 'paid-brain',
+    });
+  }
+
+  /**
+   * Detect whether the failure was network-related and push the appropriate
+   * warning. Falls back to the rate-limit warning when no network signal is
+   * found.
+   */
+  function pushNetworkOrProviderWarning(): void {
+    const recent = messages.value.slice(-5);
+    if (recent.some(m => m.agentName === 'System' && (m.content.includes('network') || m.content.includes('rate limit')))) return;
+
+    messages.value.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content:
+        '⚠️ Could not reach the AI provider — this is likely a network issue or the service is temporarily down.\n\n' +
+        'For a more reliable experience, consider installing a **local LLM** so TerranSoul can work offline without depending on external servers.',
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+      questChoices: [
+        { label: 'Install Local LLM (Recommended)', value: 'navigate:brain-setup', icon: '🏰' },
+        { label: 'Upgrade to Paid API', value: 'navigate:brain-setup', icon: '⚡' },
+        { label: 'Retry', value: 'retry', icon: '🔄' },
+      ],
+      questId: 'local-brain',
     });
   }
 

@@ -623,8 +623,10 @@ mod tests {
 
     #[test]
     fn tts_voice_persists_in_config() {
-        let mut cfg = voice::VoiceConfig::default();
-        cfg.tts_voice = Some("en-US-AnaNeural".to_string());
+        let cfg = voice::VoiceConfig {
+            tts_voice: Some("en-US-AnaNeural".to_string()),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: voice::VoiceConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.tts_voice, Some("en-US-AnaNeural".to_string()));
@@ -632,9 +634,11 @@ mod tests {
 
     #[test]
     fn tts_prosody_persists_in_config() {
-        let mut cfg = voice::VoiceConfig::default();
-        cfg.tts_pitch = 50;
-        cfg.tts_rate = 15;
+        let cfg = voice::VoiceConfig {
+            tts_pitch: 50,
+            tts_rate: 15,
+            ..Default::default()
+        };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: voice::VoiceConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.tts_pitch, 50);

@@ -37,7 +37,7 @@ pub const DEFAULT_MODEL_ID: &str = "annabelle";
 pub const DEFAULT_BGM_VOLUME: f32 = 0.15;
 
 /// Default BGM track.
-pub const DEFAULT_BGM_TRACK_ID: &str = "ambient-calm";
+pub const DEFAULT_BGM_TRACK_ID: &str = "prelude";
 
 /// Persisted application settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -201,7 +201,7 @@ mod tests {
             camera_distance: 3.2,
             bgm_enabled: true,
             bgm_volume: 0.3,
-            bgm_track_id: "ambient-night".into(),
+            bgm_track_id: "moonflow".into(),
             model_camera_positions: positions,
         };
         let json = serde_json::to_string(&s).unwrap();
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn serde_fills_model_camera_positions_default_when_missing() {
         // JSON without model_camera_positions field — should default to empty map
-        let json = r#"{"version":2,"selected_model_id":"annabelle","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"ambient-calm"}"#;
+        let json = r#"{"version":2,"selected_model_id":"annabelle","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(parsed.model_camera_positions.is_empty());
     }

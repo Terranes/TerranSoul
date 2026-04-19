@@ -87,7 +87,7 @@ mod tests {
             "camera_distance": 3.0,
             "bgm_enabled": true,
             "bgm_volume": 0.25,
-            "bgm_track_id": "ambient-calm",
+            "bgm_track_id": "prelude",
             "model_camera_positions": {
                 "annabelle": { "azimuth": 0.5, "distance": 3.0 }
             }

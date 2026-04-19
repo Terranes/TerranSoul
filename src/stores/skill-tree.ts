@@ -111,6 +111,8 @@ export interface QuestTrackerData {
   dailySuggestionReason: string | null;
   /** Timestamps of first skill activation (for progress timeline). */
   activationTimestamps: Record<string, number>;
+  /** IDs of quests the user has manually marked as completed. */
+  manuallyCompletedIds: string[];
 }
 
 export interface DailySuggestion {
@@ -130,6 +132,7 @@ function freshTracker(): QuestTrackerData {
     dailySuggestionIds: [],
     dailySuggestionReason: null,
     activationTimestamps: {},
+    manuallyCompletedIds: [],
   };
 }
 
@@ -157,6 +160,8 @@ function migrateTracker(raw: unknown): QuestTrackerData {
       Object.entries(obj.activationTimestamps as Record<string, unknown>)
         .filter(([, v]) => typeof v === 'number'),
     ) as Record<string, number>;
+  if (Array.isArray(obj.manuallyCompletedIds))
+    base.manuallyCompletedIds = obj.manuallyCompletedIds.filter((id): id is string => typeof id === 'string');
   return base;
 }
 
@@ -169,6 +174,7 @@ function mergeTrackers(a: QuestTrackerData, b: QuestTrackerData): QuestTrackerDa
   const merged = freshTracker();
   merged.dismissedQuestIds = [...new Set([...a.dismissedQuestIds, ...b.dismissedQuestIds])];
   merged.pinnedQuestIds = [...new Set([...a.pinnedQuestIds, ...b.pinnedQuestIds])];
+  merged.manuallyCompletedIds = [...new Set([...a.manuallyCompletedIds, ...b.manuallyCompletedIds])];
   // Keep the latest suggestion set
   if ((a.lastSuggestionDate ?? '') >= (b.lastSuggestionDate ?? '')) {
     merged.lastSuggestionDate = a.lastSuggestionDate;
@@ -253,11 +259,11 @@ const SKILL_NODES: SkillNode[] = [
     id: 'bgm',
     name: 'Ambient Aura',
     tagline: 'Enable background music',
-    description: 'Procedural ambient tracks (calm, night, space) fill the silence with atmosphere. Generated in real-time via Web Audio API.',
+    description: 'Original JRPG-style ambient tracks (Crystal Theme, Starlit Village, Eternity) fill the silence with warm atmosphere.',
     icon: '🎵',
     tier: 'foundation',
     requires: [],
-    rewards: ['Ambient background music', '3 procedural tracks', 'Volume control'],
+    rewards: ['Ambient background music', '3 built-in tracks', 'Volume control'],
     rewardIcons: ['🎶', '🎹', '🔉'],
     questSteps: [
       { label: 'Open Settings (gear icon in chat view)', action: 'info' },
@@ -268,7 +274,83 @@ const SKILL_NODES: SkillNode[] = [
     videoRef: 'dQw4w9WgXcQ',
   },
 
+  // ── BGM CHAIN (advanced / ultimate) ─────────────────────────────────────
+  {
+    id: 'bgm-custom',
+    name: 'Jukebox',
+    tagline: 'Add your own music tracks',
+    description: 'Import custom audio files or paste URLs to build your personal playlist. Your companion\'s world, your soundtrack.',
+    icon: '📀',
+    tier: 'advanced',
+    requires: ['bgm'],
+    rewards: ['Import local audio files', 'Add tracks from URL', 'Delete custom tracks', 'Persistent playlist'],
+    rewardIcons: ['📁', '🔗', '🗑️', '💾'],
+    questSteps: [
+      { label: 'Open the floating music bar (bottom of chat view)', action: 'info' },
+      { label: 'Click the + button to add a file or URL', action: 'configure', target: 'bgm_custom' },
+      { label: 'Play your custom track!', action: 'info' },
+    ],
+    category: 'utility',
+    combos: [
+      {
+        withSkills: ['tts'],
+        name: 'DJ Companion',
+        description: 'Custom BGM + TTS = your companion narrates over your personal soundtrack.',
+        icon: '🎧',
+      },
+    ],
+  },
+  {
+    id: 'bgm-video',
+    name: 'Watch Party',
+    tagline: 'Watch videos with your companion',
+    description: 'Paste a video URL and watch it together with your AI companion. They can react, comment, and discuss what you\'re watching!',
+    icon: '🎬',
+    tier: 'ultimate',
+    requires: ['bgm-custom', 'free-brain'],
+    rewards: ['Video playback in-app', 'Companion reacts to videos', 'Shared watch experience', 'Video discussion in chat'],
+    rewardIcons: ['▶️', '😮', '👫', '💬'],
+    questSteps: [
+      { label: 'Open the floating music bar', action: 'info' },
+      { label: 'Click + and paste a video URL (YouTube, etc.)', action: 'configure', target: 'bgm_video' },
+      { label: 'Ask your companion about the video in chat!', action: 'info' },
+    ],
+    category: 'utility',
+    combos: [
+      {
+        withSkills: ['paid-brain'],
+        name: 'Film Critic',
+        description: 'Watch Party + Premium AI = deeper analysis and personalized commentary on videos.',
+        icon: '🎥',
+      },
+      {
+        withSkills: ['tts'],
+        name: 'Movie Night',
+        description: 'Watch Party + TTS = your companion narrates reactions out loud during the video.',
+        icon: '🍿',
+      },
+    ],
+  },
+
   // ── ADVANCED TIER ──────────────────────────────────────────────────────
+  {
+    id: 'migrate-brain',
+    name: 'Evolve Beyond',
+    tagline: 'Migrate from the deprecated Pollinations API',
+    description: 'The Pollinations legacy text API is being deprecated. Upgrade to a paid API (OpenAI, Anthropic, Groq) or run locally with llmfit before service ends.',
+    icon: '⚠️',
+    tier: 'advanced',
+    requires: ['free-brain'],
+    rewards: ['Future-proof AI connection', 'Better reliability', 'Faster responses', 'No deprecation risk'],
+    rewardIcons: ['🛡️', '🔄', '⚡', '✅'],
+    questSteps: [
+      { label: 'Open Brain Setup', action: 'navigate', target: 'brain-setup' },
+      { label: 'Choose a new provider: Paid API or use llmfit for local AI', action: 'configure', target: 'brain_mode' },
+      { label: 'Verify your companion still responds in chat', action: 'navigate', target: 'chat' },
+    ],
+    category: 'brain',
+    combos: [],
+  },
   {
     id: 'asr',
     name: 'Voice Command',
@@ -321,17 +403,17 @@ const SKILL_NODES: SkillNode[] = [
   {
     id: 'local-brain',
     name: 'Inner Sanctum',
-    tagline: 'Run AI locally with Ollama',
-    description: 'Full privacy — no data leaves your machine. Install Ollama, pull a model, and run locally. Requires decent hardware (8GB+ RAM).',
+    tagline: 'Run AI locally with llmfit',
+    description: 'Full privacy — no data leaves your machine. Use llmfit to automatically select and run the best local model for your hardware. Requires decent hardware (8GB+ RAM).',
     icon: '🏰',
     tier: 'advanced',
     requires: ['free-brain'],
     rewards: ['100% private AI', 'No API costs', 'Offline capability', 'Unlimited usage'],
     rewardIcons: ['🔒', '💰', '✈️', '♾️'],
     questSteps: [
-      { label: 'Install Ollama from ollama.ai', action: 'external', target: 'https://ollama.ai' },
+      { label: 'Install llmfit from GitHub', action: 'external', target: 'https://github.com/AlexsJones/llmfit' },
       { label: 'Open Brain Setup', action: 'navigate', target: 'brain-setup' },
-      { label: 'Choose "Local Ollama" tier and select a model', action: 'configure', target: 'brain_mode' },
+      { label: 'Choose "Local" tier and let llmfit pick the best model', action: 'configure', target: 'brain_mode' },
     ],
     category: 'brain',
     combos: [
@@ -736,13 +818,16 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
     const voice = useVoiceStore();
     const settings = useSettingsStore();
 
+    // Manual completion override — user explicitly marked as done
+    if (tracker.value.manuallyCompletedIds.includes(skillId)) return 'active';
+
     const isActive = checkActive(skillId, brain, voice, settings);
     if (isActive) return 'active';
 
     const node = nodes.value.find(n => n.id === skillId);
     if (!node) return 'locked';
 
-    const prereqsMet = node.requires.every(reqId => checkActive(reqId, brain, voice, settings));
+    const prereqsMet = node.requires.every(reqId => getSkillStatus(reqId) === 'active');
     return prereqsMet ? 'available' : 'locked';
   }
 
@@ -768,7 +853,11 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       case 'avatar':
         return true; // Always loaded by default
       case 'bgm':
-        return settings.settings.bgm_enabled;
+        return settings.settings?.bgm_enabled ?? false;
+      case 'bgm-custom':
+        return (settings.settings?.bgm_custom_tracks?.length ?? 0) > 0;
+      case 'bgm-video':
+        return false; // Requires manual completion
       case 'hotwords':
         return voice.config.asr_provider !== null;
       case 'memory':
@@ -858,6 +947,19 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
 
   function unpinQuest(skillId: string): void {
     tracker.value.pinnedQuestIds = tracker.value.pinnedQuestIds.filter(id => id !== skillId);
+    saveTracker();
+  }
+
+  function markComplete(skillId: string): void {
+    if (!tracker.value.manuallyCompletedIds.includes(skillId)) {
+      tracker.value.manuallyCompletedIds.push(skillId);
+      saveTracker();
+      recordActivations();
+    }
+  }
+
+  function unmarkComplete(skillId: string): void {
+    tracker.value.manuallyCompletedIds = tracker.value.manuallyCompletedIds.filter(id => id !== skillId);
     saveTracker();
   }
 
@@ -1123,6 +1225,8 @@ Respond with ONLY valid JSON (no markdown):
       dismiss: '💤 Maybe later',
       start_step: '🏃 Let\'s begin!',
       pin: '📌 Pin this quest',
+      'bgm-autoplay': '🎶 Autoplay BGM',
+      self: '💪 I\'ll handle it myself',
     };
     conversation.messages.push({
       id: crypto.randomUUID(),
@@ -1196,10 +1300,16 @@ Respond with ONLY valid JSON (no markdown):
       const firstStep = quest.questSteps[0];
       const navigationChoices: QuestChoice[] = [];
 
-      if (firstStep?.target) {
-        navigationChoices.push({ label: `Go to ${firstStep.target}`, value: `navigate:${firstStep.target}`, icon: '🧭' });
+      // BGM quest gets special choices: autoplay or manual
+      if (questId === 'bgm') {
+        navigationChoices.push({ label: 'Autoplay BGM', value: 'bgm-autoplay', icon: '🎶' });
+        navigationChoices.push({ label: "I'll handle it myself", value: 'self', icon: '💪' });
+      } else {
+        if (firstStep?.target) {
+          navigationChoices.push({ label: `Go to ${firstStep.target}`, value: `navigate:${firstStep.target}`, icon: '🧭' });
+        }
+        navigationChoices.push({ label: "I'll handle it myself", value: 'self', icon: '💪' });
       }
-      navigationChoices.push({ label: 'I\'ll handle it myself', value: 'self', icon: '💪' });
 
       conversation.messages.push({
         id: crypto.randomUUID(),
@@ -1223,6 +1333,21 @@ Respond with ONLY valid JSON (no markdown):
       questEventActive.value = false;
       questEventNode.value = null;
       // The view layer handles actual navigation via the emitted event
+      return;
+    }
+
+    // Handle BGM autoplay choice
+    if (choiceValue === 'bgm-autoplay') {
+      conversation.messages.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `🎶 **BGM is now playing!** Ambient music will fill the background. Use the floating music bar to change tracks or adjust volume.`,
+        agentName: 'Quest Guide',
+        sentiment: 'happy',
+        timestamp: Date.now(),
+      });
+      questEventActive.value = false;
+      questEventNode.value = null;
       return;
     }
 
@@ -1268,9 +1393,10 @@ Respond with ONLY valid JSON (no markdown):
       () => [
         brain.brainMode,
         brain.hasBrain,
-        voice.config.tts_provider,
-        voice.config.asr_provider,
-        settings.settings.bgm_enabled,
+        voice.config?.tts_provider,
+        voice.config?.asr_provider,
+        settings.settings?.bgm_enabled,
+        settings.settings?.bgm_custom_tracks?.length ?? 0,
       ],
       () => recordActivations(),
     );
@@ -1307,6 +1433,8 @@ Respond with ONLY valid JSON (no markdown):
     pinQuest,
     unpinQuest,
     pinnedQuests,
+    markComplete,
+    unmarkComplete,
     // Daily suggestions
     dailySuggestions,
     needsRefresh,

@@ -6,6 +6,112 @@
 
 ---
 
+## Post-Phase — 3D Model Loading Robustness
+
+**Date:** 2026-04-18
+**Phase:** Post-phase polish
+
+**Goal:** Fix 3D VRM model failing to load silently, show error UI, and add placeholder fallback.
+
+**Architecture:**
+- **URL encoding** — `loadVRM()` in `vrm-loader.ts` now applies `encodeURI()` to HTTP paths (preserving blob:/data: URLs) before passing to Three.js `GLTFLoader`, fixing models with spaces in filenames (e.g. "Annabelle the Sorcerer.vrm").
+- **Error overlay** — `CharacterViewport.vue` template now renders `characterStore.loadError` in a visible overlay with ⚠️ icon and a "Retry" button when VRM loading fails.
+- **Placeholder fallback** — On `loadVRMSafe` returning null, `createPlaceholderCharacter()` is called to add a simple geometric figure to the scene so it's not empty.
+- **Retry action** — `retryModelLoad()` re-triggers `selectModel()` on the current selection.
+
+**Files modified:**
+- `src/renderer/vrm-loader.ts` — encodeURI for HTTP paths
+- `src/components/CharacterViewport.vue` — error overlay, placeholder fallback, retry button, imported `createPlaceholderCharacter`
+
+**Files tested:**
+- `src/renderer/vrm-loader.test.ts` — 4 new tests (placeholder creation, URL encoding)
+- `src/stores/character.test.ts` — 3 new tests (error state management)
+- `src/config/default-models.test.ts` — 5 new tests (path validation, encoding, uniqueness)
+
+**Test counts:** 893 total tests passing (52 test files)
+
+---
+
+## Post-Phase — Streaming Timeout Fix (Stuck Thinking)
+
+**Date:** 2026-04-18
+**Phase:** Post-phase polish
+
+**Goal:** Prevent chat from getting permanently stuck in "Thinking" state when streaming or backend calls hang.
+
+**Architecture:**
+- **Tauri streaming timeout** — `conversation.ts` wraps `streaming.sendStreaming()` in `Promise.race` with 60s timeout
+- **Fallback invoke timeout** — `invoke('send_message')` wrapped in `Promise.race` with 30s timeout
+- **Grace period reduced** — 3s → 1.5s for stream completion grace period
+- **Finally cleanup** — `finally` block resets `isStreaming` and `streamingText` in addition to `isThinking`
+
+**Files modified:**
+- `src/stores/conversation.ts` — timeout wrappers on both streaming paths
+
+**Test counts:** 893 total tests passing (52 test files)
+
+---
+
+## Post-Phase — Music Bar Redesign (Always-Visible Play/Stop)
+
+**Date:** 2026-04-18
+**Phase:** Post-phase polish
+
+**Goal:** Make BGM play/stop button always visible without expanding the track selector panel.
+
+**Architecture:**
+- Split old single toggle into two buttons: `.music-bar-play` (▶️/⏸ always visible) and `.music-bar-expand` (🎵/◀ for track controls)
+- Updated mobile responsive CSS for both buttons
+
+**Files modified:**
+- `src/components/CharacterViewport.vue` — music bar template + CSS
+
+**Test counts:** 893 total tests passing (52 test files)
+
+---
+
+## Post-Phase — Splash Screen
+
+**Date:** 2026-04-18
+**Phase:** Post-phase polish
+
+**Goal:** Show a cute animated loading screen during app initialization instead of a blank screen.
+
+**Architecture:**
+- **`SplashScreen.vue`** — CSS-animated kawaii cat with bouncing, blinking eyes, waving paws, sparkle effects, "TerranSoul..." text
+- **`App.vue` integration** — `appLoading` ref starts true, shows splash during init, fades out with transition when ready
+
+**Files created:**
+- `src/components/SplashScreen.vue`
+
+**Files modified:**
+- `src/App.vue` — appLoading state, SplashScreen import, v-show gating
+
+**Test counts:** 893 total tests passing (52 test files)
+
+---
+
+## Post-Phase — BGM Track Replacement (JRPG-Style)
+
+**Date:** 2026-04-18
+**Phase:** Post-phase polish
+
+**Goal:** Replace placeholder BGM tracks with original JRPG-style synthesized compositions. 40-second loops with multi-tap reverb, resonant filters, plucked string models, and soft limiter.
+
+**Tracks:**
+- **Crystal Theme** (prelude.wav) — Harp arpeggios in C major pentatonic
+- **Starlit Village** (moonflow.wav) — Acoustic town theme with warm pad and plucked melody
+- **Eternity** (sanctuary.wav) — Save-point ambience with ethereal pad and bell tones
+
+**Files modified:**
+- `scripts/generate-bgm.cjs` — complete rewrite with new synthesis engine
+- `src/composables/useBgmPlayer.ts` — updated track display names
+- `src/stores/skill-tree.ts` — updated BGM quest description
+
+**Test counts:** 893 total tests passing (52 test files)
+
+---
+
 ## Chunk 126 — On-demand Rendering + Idle Optimization
 
 **Date:** 2026-04-18

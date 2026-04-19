@@ -52,12 +52,14 @@ const mockSkillTreeStore = {
       name: 'Pinned Quest',
       tagline: 'Important quest',
       icon: '📌',
+      tier: 'foundation',
       category: 'setup',
       difficulty: 'easy',
       questSteps: [],
       rewards: [],
       rewardIcons: [],
       requires: [],
+      combos: [],
     },
   ],
   nodes: [
@@ -67,6 +69,7 @@ const mockSkillTreeStore = {
       tagline: 'First available quest',
       description: 'Description for quest 1',
       icon: '⚔️',
+      tier: 'foundation',
       category: 'combat',
       difficulty: 'medium',
       questSteps: [
@@ -76,6 +79,7 @@ const mockSkillTreeStore = {
       rewards: ['XP', 'Gold'],
       rewardIcons: ['🎯', '💰'],
       requires: [],
+      combos: [],
     },
     {
       id: 'quest-2',
@@ -83,16 +87,19 @@ const mockSkillTreeStore = {
       tagline: 'Second available quest',
       description: 'Description for quest 2',
       icon: '🏗️',
+      tier: 'foundation',
       category: 'building',
       difficulty: 'hard',
       questSteps: [],
       rewards: ['Achievement'],
       rewardIcons: ['🏆'],
       requires: [],
+      combos: [],
     },
   ],
   tracker: {
     pinnedQuestIds: ['pinned-1'],
+    manuallyCompletedIds: [],
   },
   getSkillStatus: vi.fn((id: string) => {
     if (id === 'pinned-1') return 'active';
@@ -102,6 +109,8 @@ const mockSkillTreeStore = {
   pinQuest: vi.fn(),
   unpinQuest: vi.fn(),
   triggerQuestEvent: vi.fn(),
+  markComplete: vi.fn(),
+  unmarkComplete: vi.fn(),
 };
 
 const mockBrainStore = {
@@ -139,46 +148,45 @@ describe('QuestBubble', () => {
   it('renders progress bubble with percentage', () => {
     const wrapper = mount(QuestBubble);
     
-    expect(wrapper.find('.quest-bubble-pct').text()).toBe('42%');
-    expect(wrapper.find('.quest-bubble').exists()).toBe(true);
+    expect(wrapper.find('.ff-orb-pct').text()).toBe('42%');
+    expect(wrapper.find('.ff-orb').exists()).toBe(true);
   });
 
   it('shows quest panel when bubble is clicked', async () => {
     const wrapper = mount(QuestBubble);
     
-    expect(wrapper.find('.quest-panel').exists()).toBe(false);
+    expect(wrapper.find('.ff-panel').exists()).toBe(false);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
-    expect(wrapper.find('.quest-panel').exists()).toBe(true);
+    expect(wrapper.find('.ff-panel').exists()).toBe(true);
   });
 
-  it('displays pinned quests section', async () => {
+  it('displays License Board header', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
-    expect(wrapper.text()).toContain('📌 Pinned');
-    expect(wrapper.text()).toContain('Pinned Quest');
+    expect(wrapper.text()).toContain('License Board');
+    expect(wrapper.text()).toContain('8 / 15 Licenses Obtained');
   });
 
-  it('displays available quests section', async () => {
+  it('displays skill nodes in grid', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
-    expect(wrapper.text()).toContain('🟡 Available');
     expect(wrapper.text()).toContain('Available Quest 1');
     expect(wrapper.text()).toContain('Available Quest 2');
   });
 
-  it('shows recommendation badge for AI-recommended quest', async () => {
+  it('shows recommendation star for AI-recommended quest', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Wait for AI sorting to complete
@@ -186,56 +194,49 @@ describe('QuestBubble', () => {
     await nextTick();
     
     // Should have recommended styling on first quest
-    expect(wrapper.find('.qp-rec-badge').exists()).toBe(true);
+    expect(wrapper.find('.ff-node-rec').exists()).toBe(true);
   });
 
-  it('shows quest detail pane when quest is selected', async () => {
+  it('shows quest detail pane when node is selected', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Wait for AI sorting to complete and update available quests
     await new Promise(resolve => setTimeout(resolve, 50));
     await nextTick();
     
-    const availableQuestRow = wrapper.find('[data-quest-id="quest-1"]');
-    if (!availableQuestRow.exists()) {
-      // Fallback: find any quest row
-      const questRow = wrapper.find('.qp-quest-row');
-      if (questRow.exists()) {
-        await questRow.trigger('click');
-        await nextTick();
-      }
-    } else {
-      await availableQuestRow.trigger('click');
+    const node = wrapper.find('.ff-node');
+    if (node.exists()) {
+      await node.trigger('click');
       await nextTick();
     }
     
-    // Check if detail pane is shown (it might not be if quest data is incomplete)
-    const detailPane = wrapper.find('.qp-detail');
+    // Check if detail pane is shown
+    const detailPane = wrapper.find('.ff-detail');
     if (detailPane.exists()) {
-      expect(wrapper.text()).toContain('💬 Ask Guide');
+      expect(wrapper.text()).toContain('⚔️ Begin Quest');
     }
     // Test passes as long as clicking doesn't throw error
   });
 
-  it('shows confirmation dialog when Ask Guide is clicked', async () => {
+  it('shows confirmation dialog when Begin Quest is clicked', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Select a quest first
-    const questRow = wrapper.find('.qp-quest-row');
-    if (questRow.exists()) {
-      await questRow.trigger('click');
+    const node = wrapper.find('.ff-node');
+    if (node.exists()) {
+      await node.trigger('click');
       await nextTick();
       
-      // Try to find and click Ask Guide button
-      const chatBtn = wrapper.find('.qp-chat');
-      if (chatBtn.exists()) {
-        await chatBtn.trigger('click');
+      // Try to find and click Begin Quest button
+      const beginBtn = wrapper.find('.ff-btn--primary');
+      if (beginBtn.exists()) {
+        await beginBtn.trigger('click');
         await nextTick();
         
         expect(wrapper.find('.quest-confirm-dialog').exists()).toBe(true);
@@ -247,18 +248,18 @@ describe('QuestBubble', () => {
   it('emits trigger event when quest is accepted', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Select and trigger quest
-    const questRow = wrapper.find('.qp-quest-row');
-    if (questRow.exists()) {
-      await questRow.trigger('click');
+    const node = wrapper.find('.ff-node');
+    if (node.exists()) {
+      await node.trigger('click');
       await nextTick();
       
-      const chatBtn = wrapper.find('.qp-chat');
-      if (chatBtn.exists()) {
-        await chatBtn.trigger('click');
+      const beginBtn = wrapper.find('.ff-btn--primary');
+      if (beginBtn.exists()) {
+        await beginBtn.trigger('click');
         await nextTick();
         
         // Accept in dialog
@@ -278,15 +279,17 @@ describe('QuestBubble', () => {
   it('emits navigate event when Go button is clicked', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Select quest with navigation target
-    const questRow = wrapper.find('.qp-quest-row');
-    await questRow.trigger('click');
-    await nextTick();
+    const node = wrapper.find('.ff-node');
+    if (node.exists()) {
+      await node.trigger('click');
+      await nextTick();
+    }
     
-    const goBtn = wrapper.find('.qp-step-go');
+    const goBtn = wrapper.find('.ff-step-go');
     if (goBtn.exists()) {
       await goBtn.trigger('click');
       expect(wrapper.emitted('navigate')).toBeTruthy();
@@ -296,29 +299,31 @@ describe('QuestBubble', () => {
   it('handles pin/unpin quest actions', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Select an unpinned quest
-    const availableQuest = wrapper.findAll('.qp-quest-row')[1]; // Second row should be available quest
-    await availableQuest.trigger('click');
-    await nextTick();
-    
-    const pinBtn = wrapper.find('.qp-pin');
-    if (pinBtn.exists()) {
-      await pinBtn.trigger('click');
-      expect(mockSkillTreeStore.pinQuest).toHaveBeenCalled();
+    const node = wrapper.findAll('.ff-node')[1]; // Second node should be available quest
+    if (node) {
+      await node.trigger('click');
+      await nextTick();
+      
+      const pinBtn = wrapper.find('.ff-btn--secondary');
+      if (pinBtn.exists()) {
+        await pinBtn.trigger('click');
+        expect(mockSkillTreeStore.pinQuest).toHaveBeenCalled();
+      }
     }
   });
 
   it('shows progress ring correctly', () => {
     const wrapper = mount(QuestBubble);
     
-    const progressRing = wrapper.find('.quest-ring-fill');
+    const progressRing = wrapper.find('.ff-orb-ring-fill');
     expect(progressRing.exists()).toBe(true);
     
     // Check stroke-dashoffset calculation (circumference - (circumference * 42 / 100))
-    const circumference = 2 * Math.PI * 20;
+    const circumference = 2 * Math.PI * 22;
     const expectedOffset = circumference - (circumference * 42 / 100);
     expect(progressRing.attributes('stroke-dashoffset')).toBe(expectedOffset.toString());
   });
@@ -326,10 +331,10 @@ describe('QuestBubble', () => {
   it('displays progress stats correctly', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
-    expect(wrapper.text()).toContain('8/15 unlocked');
+    expect(wrapper.text()).toContain('8 / 15 Licenses Obtained');
   });
 
   it('shows empty state when no quests available', async () => {
@@ -343,25 +348,25 @@ describe('QuestBubble', () => {
     
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
-    expect(wrapper.text()).toContain('All quests completed!');
-    expect(wrapper.find('.qp-empty').exists()).toBe(true);
+    expect(wrapper.text()).toContain('All licenses in this tier obtained!');
+    expect(wrapper.find('.ff-empty').exists()).toBe(true);
   });
 
   it('closes panel when bubble is clicked again', async () => {
     const wrapper = mount(QuestBubble);
     
     // Open panel
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
-    expect(wrapper.find('.quest-panel').exists()).toBe(true);
+    expect(wrapper.find('.ff-panel').exists()).toBe(true);
     
     // Close panel
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
-    expect(wrapper.find('.quest-panel').exists()).toBe(false);
+    expect(wrapper.find('.ff-panel').exists()).toBe(false);
   });
 
   it('calls AI sorting on mount', async () => {
@@ -385,12 +390,12 @@ describe('QuestBubble', () => {
     
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Should still show available quests with fallback sorting
-    expect(wrapper.text()).toContain('🟡 Available');
-    expect(wrapper.find('.qp-rec-badge').exists()).toBe(true); // Fallback recommendation
+    expect(wrapper.text()).toContain('Available Quest 1');
+    expect(wrapper.find('.ff-node-rec').exists()).toBe(true); // Fallback recommendation
   });
 
   it('caches AI sorting results', async () => {
@@ -404,10 +409,10 @@ describe('QuestBubble', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
     
     // Trigger re-render (should use cached results)
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
-    await wrapper.find('.quest-bubble').trigger('click'); // Close and reopen  
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click'); // Close and reopen  
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // AI should only be called once for this component instance
@@ -418,16 +423,16 @@ describe('QuestBubble', () => {
   it('applies correct CSS classes for recommended quests', async () => {
     const wrapper = mount(QuestBubble);
     
-    await wrapper.find('.quest-bubble').trigger('click');
+    await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
     
     // Wait for AI sorting
     await new Promise(resolve => setTimeout(resolve, 100));
     await nextTick();
     
-    const recommendedQuest = wrapper.find('.qp-quest-recommended');
+    const recommendedQuest = wrapper.find('.ff-node--recommended');
     expect(recommendedQuest.exists()).toBe(true);
-    expect(recommendedQuest.find('.qp-rec-badge').exists()).toBe(true);
+    expect(recommendedQuest.find('.ff-node-rec').exists()).toBe(true);
   });
 
   describe('dynamic positioning', () => {

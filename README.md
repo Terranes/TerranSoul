@@ -1,6 +1,6 @@
 # TerranSoul
 
-> **🚧 This project is just an idea and under construction from 10/04/2026.**
+> **🚧 This project is under active construction since 10/04/2026.**
 > If you are interested, please discuss via <https://discord.gg/RzXcvsabKD> to become a contributor.
 
 > **💡 Why TerranSoul?**
@@ -9,6 +9,109 @@
 **J.A.R.V.I.S. in Real Life — chat-first · cross-device · open-source**
 
 [![TerranSoul CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
+
+---
+
+## Design Philosophy — Build Your AI Like an RPG Character
+
+Most AI tools give you a settings page full of toggles and dropdowns. TerranSoul does it differently: **you level up your AI the same way you level up a character in a game.**
+
+Every capability your AI can learn — voice, memory, vision, music — is a **quest** you complete. Quests teach you how each feature works and reward you with a smarter companion. Unlock the right combination of skills and you trigger **combos** — powerful synergies like "Offline Sage" (local LLM + memory) or "Omniscient Companion" (vision + memory + voice input).
+
+### Your AI Has a Brain — And You Build It
+
+TerranSoul's architecture mirrors the human brain. Each region maps to a real AI subsystem you progressively unlock:
+
+| Human Brain                | AI System                          | RPG Stat             |
+| -------------------------- | ---------------------------------- | -------------------- |
+| Prefrontal Cortex          | Reasoning Engine (LLM + Agents)    | 🧠 Intelligence      |
+| Hippocampus                | Long-term Memory                   | 📖 Wisdom            |
+| Working Memory Network     | Short-term Memory                  | 🎯 Focus             |
+| Neocortex                  | Retrieval System (RAG / Knowledge) | 📚 Knowledge         |
+| Basal Ganglia / Cerebellum | Control & Execution Layer          | ⚡ Dexterity         |
+
+As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
+
+### The Skill Tree — FF16 Constellation Map
+
+Skills are laid out on an **FF16 Abilities-style constellation map** — a full-screen dark star-field with circular category clusters arranged radially, each containing skill nodes in concentric rings:
+
+![Skill Tree — FF16 Constellation Map](recording/skill-tree.png)
+<!-- ⬆ Capture this screenshot after Chunk 128-129 implementation is complete -->
+
+Each **category cluster** (Brain, Voice, Avatar, Social, Utility) is a radial wheel of nodes — like the Eikon ability circles in Final Fantasy XVI. Foundation skills sit in the inner ring, Advanced in the middle ring, and Ultimate on the outer ring. Glowing connection lines trace the prerequisite chains between nodes. Clicking a cluster zooms in; clicking a node opens its quest detail.
+
+```
+         ┌─ Voice (🗣️ jade) ──────┐     ┌── Avatar (✨ gold) ──┐
+         │  🗣️ Gift of Speech      │     │  ✨ Summon Avatar     │
+         │  🎤 Voice Command       │     │  🐾 Desktop Familiar  │
+         │  🐉 Dragon's Ear        │     └───────────────────────┘
+         │  🔤 Power Words         │
+         │  🎭 Voice Splitter      │            ┌── Social (🔗 sapphire) ──┐
+         └─────────────────────────┘            │  🔗 Soul Link            │
+                                                │  🤖 Agent Summoning      │
+    ┌── Brain (🧠 crimson) ────────────┐        └──────────────────────────┘
+    │  🧠 Awaken the Mind              │
+    │  ⚡ Superior Intellect            │   ┌── Utility (📀 amethyst) ──────┐
+    │  🏰 Inner Sanctum                │   │  🎵 Ambient Aura              │
+    │  📖 Long-Term Memory             │   │  📀 Jukebox  🎬 Watch Party    │
+    │  📸 All-Seeing Eye               │   │  👁️ Sixth Sense  🌍 Babel Tongue│
+    │  ⚠️ Evolve Beyond                │   │  🏗️ System Integration         │
+    └──────────────────────────────────┘   └────────────────────────────────┘
+```
+
+### Quests — Learn by Doing
+
+Each skill node is a **quest** with objectives, rewards, and a story-style description. For example:
+
+> **🧠 Awaken the Mind** — *Connect to a free cloud AI*
+>
+> Your companion awakens! Connect to a free LLM API and watch your AI come alive with real-time conversation, emotion-tagged responses, and avatar reactions.
+>
+> **Rewards:** Real-time AI chat · Emotion-tagged responses · Sentiment-based avatar reactions
+
+When you send "Where can I start?" or "What should I do?", your AI responds naturally and suggests the next available quest — no rigid menus, just a conversation with your companion about what to unlock next.
+
+<!-- TODO: Add screenshot of quest overlay with Accept/Tell me more/Maybe later tiles -->
+<!-- ![Quest Overlay](recording/quest-overlay.png) -->
+
+### Combos — Skill Synergies
+
+Unlock the right combination of skills and you trigger **combos** — bonus capabilities that emerge from synergy:
+
+| Combo                    | Skills                               | What You Get                               |
+| ------------------------ | ------------------------------------ | ------------------------------------------ |
+| 🎧 DJ Companion          | Voice + Custom Music                 | AI curates music based on mood             |
+| 💬 Full Conversation     | Voice Input + Voice Output           | Hands-free voice chat                      |
+| 🧠 True Recall           | Paid Brain + Memory                  | Context-aware responses from full history  |
+| 🏔️ Offline Sage          | Local Brain + Memory                 | Full AI offline with persistent memory     |
+| 👂 Perfect Hearing       | Whisper ASR + Hotwords               | Boosted speech recognition accuracy        |
+| 👥 Social Memory         | Speaker ID + Memory                  | Remembers who said what                    |
+| 🌐 Universal Translator  | Translation + Voice Input            | Real-time voice translation                |
+| 👁️ Omniscient Companion  | Vision + Memory + Voice              | Sees, hears, and remembers everything      |
+| 🐝 Hive Mind             | Agents + Device Link                 | Multi-device agent orchestration           |
+| 🐾 Living Desktop Pet    | Pet Mode + Voice + Presence          | Reactive floating desktop companion        |
+| ⚡ Instant Companion     | Keyboard Shortcuts + Pet Mode        | Global hotkey summons your AI              |
+| 🏠 Always There          | Auto-Start + Pet Mode + Presence     | AI greets you every time you boot up       |
+
+<!-- TODO: Add screenshot of combo unlock animation -->
+<!-- ![Combo Unlock](recording/combo-unlock.png) -->
+
+### Brain Evolution Paths
+
+There are multiple paths to evolve your AI's brain — each with different tradeoffs:
+
+```
+🧠 Free Brain (Pollinations/Groq)
+├── ⚡ Superior Intellect (Paid API — OpenAI/Anthropic)
+│   ├── 🤖 Agent Summoning (community AI agents)
+│   ├── 🌍 Babel Tongue (real-time translation)
+│   └── 📸 All-Seeing Eye (screen vision)
+└── 🏰 Inner Sanctum (Local LLM via llmfit)
+    └── Full offline operation — no internet needed
+```
+
+Each path is a quest chain. The free brain auto-configures on first launch (zero setup). From there, you choose: pay for power (Superior Intellect), or invest time in local setup for privacy and offline capability (Inner Sanctum).
 
 ---
 
@@ -28,7 +131,87 @@ TerranSoul includes a **TerranSoul Link** layer that securely connects all your 
 - 🖥️ Control other devices remotely (send commands to run on your PC from your phone)
 - 🤖 Orchestrate multiple AI agents (OpenClaw, Claude Cowork, etc.)
 
-> **Phase 1 requirement:** Start with **text chat + 3D character only** (no voice). Voice can be added later.
+---
+
+## What's Implemented
+
+TerranSoul has completed **10 phases of development** (126 chunks). Here's what's working today:
+
+### � Skill Tree / Quest System (RPG Brain Configuration)
+- **FF16 Abilities-style constellation map** — full-screen radial cluster layout (coming: Chunk 128-129)
+- Currently: FF-style **License Board** panel with crystal progress orb
+- **3 tiers:** Foundation (5 nodes) → Advanced (12 nodes) → Ultimate (7 nodes)
+- **24 skill nodes** across Brain, Voice, Avatar, Music, Windows, Social categories
+- **15 combos** triggered by unlocking skill pairs/triples (DJ Companion, Hive Mind, Offline Sage, etc.)
+- Quest nodes with prerequisites, rewards, objectives, and story descriptions
+- Brain-based quest detection — your AI suggests quests conversationally, not via rigid menus
+- Hot-seat overlay with Accept / Tell me more / Maybe later choice tiles
+- Daily AI-prioritized quest suggestions
+- Pin/dismiss/manual-complete quests
+- Quest confirmation dialog + reward panel with choices
+- Persistent tracker (Tauri file + localStorage fallback, merged on load)
+
+### 🎭 3D Character System
+- **VRM 1.0 & 0.x** model support via Three.js + `@pixiv/three-vrm`
+- 3 bundled default models (Annabelle, M58, GENSHIN) + custom VRM import
+- Natural relaxed pose (not T-pose), spring bone warmup, frustum culling disabled
+- **AvatarStateMachine** — 5 body states (idle, thinking, talking, happy, sad) with expression-driven animation
+- **Exponential damping** for smooth bone/expression transitions
+- **5-channel FFT lip sync** (Aa, Ih, Ou, Ee, Oh) via Web Worker audio analysis
+- **Gesture blending** (MANN-inspired procedural animation)
+- **On-demand rendering** — throttles to ~15 FPS when idle, 60 FPS when active
+- Placeholder fallback character if VRM loading fails
+- Error overlay with retry button
+
+### 🧠 Brain System (LLM Integration — The "Prefrontal Cortex")
+- **4 modes:** Free API (Groq/Pollinations), Paid API (OpenAI/Anthropic), Local Ollama, Stub fallback
+- Zero-setup first launch — free brain auto-configures with no API keys needed
+- Streaming responses with real-time token display
+- Provider health monitoring with automatic failover
+- Provider migration detection — warns users and suggests brain upgrades when APIs deprecate
+- Chat-based LLM switching ("switch to groq", "use pollinations")
+- Persona-based fallback when no LLM is configured
+- 60s streaming timeout + 30s fallback timeout to prevent stuck states
+
+### 🗣️ Voice System (The "Charisma" Stats)
+- **ASR:** Web Speech API, Whisper, Groq speech-to-text
+- **TTS:** Edge TTS with gender-matched voices (pitch/rate prosody per character)
+- **Hotword detection** for wake-word activation
+- **Speaker diarization** support
+- LipSync ↔ TTS audio pipeline for real-time mouth animation
+
+### 💾 Memory System (The "Hippocampus")
+- Long-term + short-term memory stores
+- Semantic graph visualization (Cytoscape.js)
+- Memory extraction and summarization
+
+### 🔗 TerranSoul Link
+- Device identity + pairing with QR codes
+- Cross-device conversation sync
+- Settings synchronization
+
+### 📦 AI Package Manager
+- Install / update / remove / start / stop agents
+- Package registry with marketplace UI
+- WASM sandbox for agent isolation
+
+### 🖥️ Window Modes
+- Standard desktop window
+- Transparent always-on-top overlay
+- **Pet mode** — compact desktop companion
+
+### 🎵 Audio & Ambience
+- Procedural JRPG-style BGM (Crystal Theme, Starlit Village, Eternity)
+- Volume control with persistence
+- Always-visible play/stop button + expandable track selector
+
+### 🎨 UI Polish
+- Animated splash screen (kawaii cat loading)
+- Chat export (copy/download)
+- Typing indicator
+- Mobile-responsive layout
+- Keyboard detector for virtual keyboard handling
+- Background selection + custom import
 
 ---
 
@@ -41,7 +224,7 @@ Built on **Tauri 2.0** as a unified shell across desktop + mobile:
 | Backend | Rust (shared) |
 | UI Shell | WebView (shared) |
 | Frontend | Vue 3 + TypeScript (shared) |
-| 3D Rendering | Three.js with WebGPU (fallback to WebGL2) |
+| 3D Rendering | Three.js with WebGL2 |
 
 **Platform notes:**
 
@@ -52,20 +235,35 @@ Built on **Tauri 2.0** as a unified shell across desktop + mobile:
 
 ## Core Products (What Users See)
 
-### A) Chat + 3D Assistant (Phase 1)
+### A) Chat + 3D + Voice Assistant
 
 A single screen showing:
 
-- 🎭 3D character viewport (VRM model)
-- 💬 Chat message list
-- ⌨️ Text input bar
-- 🤖 Optional agent selector ("auto" or choose agent)
+- 🎭 3D character viewport (VRM model with lip sync + expressions)
+- 💬 Chat message list with streaming responses
+- ⌨️ Text input bar (+ voice input via ASR)
+- 🤖 Agent selector ("auto" or choose agent)
+- 🎵 Ambient BGM player
+- 🎮 Skill tree / quest progression system
+- ⚙️ Settings panel (model, background, camera)
 
-### B) Settings / Management
+### B) RPG Brain Configuration (Quest-Driven Setup)
+
+Instead of traditional setup wizards, TerranSoul guides you through configuration via quests:
+
+- **"Awaken the Mind" quest** → connects your first LLM brain (free, zero config)
+- **"Gift of Speech" quest** → enables TTS so your character speaks aloud
+- **"Voice Command" quest** → enables ASR so you can talk to your companion
+- **"Superior Intellect" quest** → upgrades to a paid API for better responses
+- **"Inner Sanctum" quest** → sets up a local LLM for offline + private operation
+
+Each quest teaches you what the feature does, walks you through setup, and rewards you with stat boosts and potential combo unlocks.
+
+### C) Settings / Management
 
 - **Agents:** install · update · remove · start · stop
 - **Characters:** import VRM · select built-ins
-- **Plugins:** enable/disable (later)
+- **Memory:** view graph · extract · summarize
 - **Link devices:** pair + list devices + permissions + remote control
 
 ---
@@ -76,47 +274,52 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Frontend (WebView)                                 │
-│  ├── 3D Character Viewport (Three.js)               │
-│  ├── Chatbox UI (Vue)                               │
-│  └── Settings UI (Vue)                              │
+│  Frontend (WebView — Vue 3 + TypeScript)            │
+│  ├── 3D Character Viewport (Three.js + VRM)         │
+│  │   ├── AvatarStateMachine (expression-driven)     │
+│  │   ├── 5-Channel LipSync (FFT via Web Worker)     │
+│  │   └── Gesture Blender (MANN-inspired)            │
+│  ├── Chat UI (messages, streaming, typing indicator)│
+│  ├── Skill Tree / Quest Board (License Board UI)    │
+│  ├── Setup Wizards (Brain, Voice)                   │
+│  ├── Memory Graph (Cytoscape.js)                    │
+│  ├── Pet Overlay / Window Modes                     │
+│  └── BGM Player (procedural Web Audio)              │
+├─────────────────────────────────────────────────────┤
+│  Pinia Stores (state management)                    │
+│  ├── brain, conversation, streaming                 │
+│  ├── character, identity, memory                    │
+│  ├── skill-tree, voice, settings                    │
+│  ├── link, sync, messaging, routing                 │
+│  └── package, sandbox, provider-health, window      │
 ├─────────────────────────────────────────────────────┤
 │  Rust Core Engine                                   │
+│  ├── Brain (Ollama/OpenAI/Anthropic/Free API)       │
 │  ├── AI Package Manager                             │
-│  ├── Agent Orchestrator                             │
-│  ├── Conversation Router (text → agent)             │
-│  ├── TerranSoul Link (cross-device sync + routing)  │
-│  └── Plugin Loader (WASM sandbox; later)            │
+│  ├── Agent Orchestrator + Routing                   │
+│  ├── Memory (long-term + short-term)                │
+│  ├── TTS (Edge TTS)                                 │
+│  ├── TerranSoul Link (cross-device sync + pairing)  │
+│  ├── Messaging (pub/sub IPC)                        │
+│  └── Sandbox (WASM agent isolation)                 │
 ├─────────────────────────────────────────────────────┤
 │  AI Agents (separate processes or services)         │
-│  ├── OpenClaw                                       │
-│  ├── Claude Cowork bridge                           │
-│  ├── Local LLM runtimes (optional)                  │
-│  └── Other community integrations                   │
+│  ├── Local LLM runtimes (Ollama)                    │
+│  ├── Remote API providers (OpenAI, Anthropic, Groq) │
+│  └── Community integrations                         │
 └─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase 1 Scope (Chat-First, No Voice)
+## Development Status
 
-Phase 1 delivers:
+**Completed phases:** 10 (126 implementation chunks)
+**Test suite:** 893 unit tests + 53 E2E tests — all passing
+**Current focus:** Phase 11 — RPG Brain Configuration (stat sheets, combo animations, quest rewards)
+**Next planned:** Chunk 130 — Brain config UI as RPG stat sheet
 
-- [x] Text chat UI
-- [x] 3D character rendering
-- [ ] Basic character reactions driven by chat state (no voice):
-  - "thinking" when waiting for response
-  - "talking" during streaming text (optional)
-  - "happy/sad" based on success/failure
-  - "idle" when inactive
-- [ ] Agent orchestration (minimal):
-  - At least one working agent integration OR a stub "local agent" for early testing
-- [ ] Character import:
-  - Load VRM files
-  - Select a default character
-- [ ] TerranSoul Link (minimal):
-  - Device pairing
-  - Conversation sync across devices (optional in Phase 1; can be Phase 2/3)
+See [rules/milestones.md](rules/milestones.md) for upcoming work and [rules/completion-log.md](rules/completion-log.md) for the detailed record of all completed work.
 
 ---
 
@@ -124,28 +327,25 @@ Phase 1 delivers:
 
 | Property | Choice |
 |----------|--------|
-| Primary avatar format | **VRM 1.0** |
-| Fallback | glTF 2.0 (non-humanoid props / simpler assets) |
+| Primary avatar format | **VRM 1.0 & 0.x** |
+| Rendering | Three.js WebGL2 + `@pixiv/three-vrm` |
+| Animation | AvatarStateMachine (expression-driven, exponential damping) |
+| Lip Sync | 5-channel FFT viseme analysis via Web Worker |
+| Gestures | MANN-inspired procedural gesture blending |
 
-**Why VRM:**
+**Key features:**
 
-- Standard humanoid skeleton
-- Facial expressions via BlendShapes
-- Spring bone physics (hair/clothes)
-- Metadata (author/license) helpful for open-source sharing
-- Based on glTF 2.0 — works well with Three.js using `@pixiv/three-vrm`
-
-**3D rendering approach:**
-
-- Three.js renderer: prefer **WebGPU** on modern devices, fallback to **WebGL2**
-- Performance rules:
-  - Cap pixel ratio (especially on mobile)
-  - Keep model polycount moderate for Phase 1
-  - Use simple lighting and minimal post-processing initially
+- Standard humanoid skeleton with spring bone physics (hair/clothes)
+- Facial expressions via BlendShapes (Aa, Ih, Ou, Ee, Oh for speech + emotion blends)
+- Natural relaxed pose on load (not T-pose), spring bone warmup for physics settling
+- Camera auto-framing per model height
+- On-demand rendering: ~15 FPS when idle, 60 FPS on animation
+- Placeholder geometric character fallback on load failure
+- Persistent camera state (azimuth + distance)
 
 ---
 
-## Chat System (Text)
+## Chat System
 
 **Conversation model:**
 
@@ -159,16 +359,16 @@ interface Message {
 }
 ```
 
-**UI supports:**
+**Features:**
 
-- Message list
-- Typing indicator
+- Message list with streaming token display
+- Typing/thinking indicator
 - Agent badge per assistant message
-- "Auto agent" routing
-
-**Conversation routing:**
-
-- Conversation Router inspects user message and decides which agent to use (auto) or respects user-selected agent
+- "Auto agent" routing via conversation router
+- Emotion detection from responses (happy, sad, thinking, etc.)
+- Chat export (copy to clipboard / download)
+- Streaming timeouts (60s streaming, 30s fallback) to prevent stuck states
+- Persona-based fallback when no LLM brain is configured
 
 ---
 
@@ -242,22 +442,34 @@ npm run tauri build
 ```
 TerranSoul/
 ├── src/                    # Vue 3 frontend
-│   ├── components/         # UI components (ChatInput, ChatMessageList, etc.)
-│   ├── views/              # Page-level views (ChatView)
-│   ├── stores/             # Pinia stores (character, conversation)
-│   ├── renderer/           # Three.js rendering (scene, VRM loader, animator)
+│   ├── components/         # UI components (Chat, Quest, Model, Splash, etc.)
+│   ├── views/              # Page-level views (Chat, Brain/Voice setup, Memory, etc.)
+│   ├── stores/             # Pinia stores (brain, character, conversation, memory, skill-tree, etc.)
+│   ├── composables/        # Reusable composables (ASR, TTS, BGM, lip-sync, hotwords, etc.)
+│   ├── renderer/           # Three.js rendering (scene, VRM, animator, lip-sync, gestures)
+│   ├── config/             # Configuration (default models, gender voices)
+│   ├── utils/              # Utilities (API client, emotion parser, VAD, markdown)
+│   ├── workers/            # Web Workers (audio analysis)
 │   └── types/              # TypeScript type definitions
 ├── src-tauri/              # Rust backend (Tauri)
 │   └── src/
-│       ├── agent/          # AI agent management
-│       ├── orchestrator/   # Agent orchestration
-│       ├── commands/        # Tauri commands
+│       ├── brain/          # LLM integration (Ollama, OpenAI, Anthropic, free APIs)
+│       ├── memory/         # Long-term + short-term memory
+│       ├── messaging/      # Pub/sub IPC messaging
+│       ├── routing/        # Agent routing
+│       ├── sandbox/        # WASM agent sandbox
+│       ├── commands/       # Tauri IPC commands (60+)
 │       ├── lib.rs
 │       └── main.rs
-├── rules/                  # Architecture & coding standards docs
+├── scripts/                # Build scripts (BGM generation, etc.)
+├── rules/                  # Architecture, coding standards, milestones, completion log
+├── instructions/           # User-facing docs (extending, importing models)
+├── e2e/                    # Playwright end-to-end tests
+├── public/                 # Static assets (models, backgrounds, audio)
 ├── .github/workflows/      # CI/CD pipelines
 ├── package.json
 ├── vite.config.ts
+├── vitest.config.ts
 └── tsconfig.json
 ```
 

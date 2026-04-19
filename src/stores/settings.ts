@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import type { BgmTrack } from '../composables/useBgmPlayer';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,8 @@ export interface AppSettings {
   bgm_volume: number;
   /** ID of the selected ambient track. */
   bgm_track_id: string;
+  /** User-added custom BGM tracks (file/URL). */
+  bgm_custom_tracks: BgmTrack[];
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -28,7 +31,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   camera_distance: 2.8,
   bgm_enabled: false,
   bgm_volume: 0.15,
-  bgm_track_id: 'ambient-calm',
+  bgm_track_id: 'prelude',
+  bgm_custom_tracks: [],
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

@@ -166,4 +166,36 @@ describe('character store — IPC integration', () => {
     expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AndrewNeural' });
     expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: -10, rate: 0 });
   });
+
+  it('setLoadError stores and clears error message', () => {
+    const store = useCharacterStore();
+    expect(store.loadError).toBeUndefined();
+
+    store.setLoadError('Failed to load VRM model');
+    expect(store.loadError).toBe('Failed to load VRM model');
+
+    store.setLoadError(undefined);
+    expect(store.loadError).toBeUndefined();
+  });
+
+  it('loadVrm clears loadError before loading', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    store.setLoadError('previous error');
+
+    await store.loadVrm('/models/test.vrm');
+
+    expect(store.loadError).toBeUndefined();
+    expect(store.isLoading).toBe(true);
+  });
+
+  it('loadError persists across setLoaded calls', () => {
+    const store = useCharacterStore();
+    store.setLoadError('Failed to load VRM model');
+    store.setLoaded();
+
+    // Error should still be visible after loading overlay dismisses
+    expect(store.loadError).toBe('Failed to load VRM model');
+    expect(store.isLoading).toBe(false);
+  });
 });

@@ -2,7 +2,11 @@
   <div class="chat-view" :style="{ '--keyboard-offset': keyboardHeight + 'px' }">
     <!-- Full-screen character viewport — the star of the show -->
     <div class="viewport-layer">
-      <CharacterViewport ref="viewportRef" @request-add-music="handleRequestAddMusic" />
+      <CharacterViewport ref="viewportRef" @request-add-music="handleAddMusicRequest" />
+      <!-- Teleport target for the music bar (left side, below settings button).
+           Must live inside .viewport-layer so its z-index competes with the
+           settings dropdown rather than sitting above the entire viewport. -->
+      <div id="music-bar-portal" class="music-bar-portal" />
     </div>
 
     <!-- ── Floating overlays on top of the character ── -->
@@ -61,8 +65,8 @@
     </Transition>
 
     <!-- Floating subtitle — shows AI response synced with TTS voice -->
-    <Transition name="subtitle">
-      <div v-if="subtitleVisible" class="subtitle-overlay" :key="subtitleKey">
+    <Transition name="subtitle" mode="out-in">
+      <div v-if="subtitleVisible" class="subtitle-overlay" :style="{ bottom: subtitleBottom }" :key="subtitleKey">
         <div class="subtitle-text" ref="subtitleRef" v-html="subtitleHtml"></div>
       </div>
     </Transition>
@@ -100,18 +104,21 @@
       @dismiss="showUpgradeDialog = false"
     />
 
-    <!-- Bottom chat panel — input always visible, history toggles via 💬 button -->
+    <!-- Bottom chat panel — input always visible, history toggles via button -->
     <div class="bottom-panel" :class="{ expanded: chatDrawerExpanded }">
       <!-- Chat history (shown when expanded) -->
       <Transition name="chat-panel">
         <div v-if="chatDrawerExpanded" class="chat-history" @click.stop>
+          <div class="chat-history-header">
+            <span class="chat-history-title">Chat History</span>
+            <button class="chat-history-close" @click="toggleChatDrawer()" aria-label="Close chat history">&times;</button>
+          </div>
           <ChatMessageList
             :messages="conversationStore.messages"
             :is-thinking="conversationStore.isThinking"
             :streaming-text="conversationStore.streamingText"
             :is-streaming="conversationStore.isStreaming"
             @suggest="handleSend"
-            @quest-choice="handleQuestChoice"
             @start-quest="handleStartQuest"
             @navigate="(target: string) => emit('navigate', target)"
           />
@@ -119,13 +126,26 @@
       </Transition>
       <!-- Input footer — always visible -->
       <div class="input-footer">
+        <!-- Quest choice strip — inline above the input row -->
+        <QuestChoiceOverlay
+          :choices="activeQuestChoices"
+          :quest-id="activeQuestId"
+          :question-text="activeQuestQuestion"
+          @pick="handleQuestChoice"
+          @dismiss="dismissHotseat"
+        />
         <div class="input-row">
           <button
             class="chat-drawer-toggle"
             :class="{ active: chatDrawerExpanded }"
             @click="toggleChatDrawer()"
-            aria-label="Toggle chat history"
-          >💬</button>
+            :aria-label="chatDrawerExpanded ? 'Hide chat' : 'Show chat'"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span class="toggle-label">{{ chatDrawerExpanded ? 'Hide' : 'Chat' }}</span>
+          </button>
           <button
             v-if="voice.config.asr_provider"
             class="mic-btn"
@@ -170,6 +190,7 @@ import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
+import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -277,6 +298,52 @@ const upgradeOptions = computed<UpgradeOption[]>(() => {
 // ── Keyboard detection ────────────────────────────────────────────
 const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
 
+// ── Millionaire Hot-Seat overlay — quest choices on-screen ────────
+/** Whether the user explicitly dismissed the current set of choices. */
+const hotseatDismissed = ref(false);
+/** Track the message ID that the user last picked a choice from, so we don't
+ *  immediately re-show the same set of choices when the skill-tree pushes
+ *  follow-up messages in response. */
+const lastPickedMessageId = ref<string | null>(null);
+
+/** The most recent message that has quest choices (drives the overlay). */
+const activeQuestMessage = computed(() => {
+  if (hotseatDismissed.value) return null;
+  const msgs = conversationStore.messages;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].questChoices?.length) return msgs[i];
+  }
+  return null;
+});
+const activeQuestChoices = computed(() => activeQuestMessage.value?.questChoices ?? []);
+const activeQuestId = computed(() => activeQuestMessage.value?.questId ?? '');
+const activeQuestQuestion = computed(() => {
+  const msg = activeQuestMessage.value;
+  if (!msg) return '';
+  // Pull first line as a short question, or the whole text if short
+  const first = stripMarkdownForSubtitle(msg.content).split(/[.\n]/)[0].trim();
+  return first || 'What would you like to do?';
+});
+
+function dismissHotseat() {
+  hotseatDismissed.value = true;
+}
+
+// Reset dismissed flag when a new quest message with choices arrives.
+// Compare against the last-picked message ID so we don't re-show the exact
+// same choices, but DO show follow-up choices from the same quest.
+watch(() => conversationStore.messages.length, () => {
+  const msgs = conversationStore.messages;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].questChoices?.length) {
+      if (msgs[i].id !== lastPickedMessageId.value) {
+        hotseatDismissed.value = false;
+      }
+      return;
+    }
+  }
+});
+
 // ── Emoji popup — floating emoji above character head ─────────────
 const emojiPopupVisible = ref(false);
 const emojiPopupText = ref('');
@@ -305,6 +372,15 @@ const subtitleVisible = ref(false);
 let subtitleHideTimer: ReturnType<typeof setTimeout> | null = null;
 /** Duration to keep the subtitle visible after TTS finishes. */
 const SUBTITLE_LINGER_MS = 3000;
+
+/** Dynamic bottom offset for subtitle — stays above the bottom panel. */
+const subtitleBottom = computed(() => {
+  // Base: input footer height (~60px) + gap
+  let offset = 70;
+  if (activeQuestChoices.value.length > 0) offset += 60; // quest choice strip
+  if (chatDrawerExpanded.value) offset = Math.max(offset, 320); // chat history open
+  return `${offset}px`;
+});
 
 /**
  * Build subtitle HTML with karaoke-style highlighting.
@@ -372,10 +448,24 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/** Strip markdown so subtitle text matches TTS-stripped sentences. */
+function stripMarkdownForSubtitle(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/#+\s/g, '')
+    .replace(/^[-*+]\s/gm, '')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .trim();
+}
+
 /** Show the subtitle with the full response text. */
 function showSubtitle(text: string) {
   if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
-  subtitleFullText.value = text;
+  subtitleFullText.value = stripMarkdownForSubtitle(text);
   subtitleVisible.value = true;
   subtitleKey.value++;
 }
@@ -458,12 +548,10 @@ async function toggleMic() {
   }
 }
 
-function handleRequestAddMusic() {
-  // Expand chat and send a request to the model for music suggestions
-  if (!chatDrawerExpanded.value) {
-    toggleChatDrawer();
-  }
-  handleSend('I want to add more background music. What songs or ambient tracks would you recommend? Can you suggest some music links or describe the kind of audio I should look for?');
+/** Handle "add music" request from the floating music bar. */
+function handleAddMusicRequest() {
+  setChatDrawerExpanded(true);
+  handleSend('Can you suggest some good background music for me?');
 }
 
 async function handleSend(message: string) {
@@ -493,6 +581,11 @@ async function handleSend(message: string) {
   // Show the AI's response as a floating subtitle
   if (lastMsg?.role === 'assistant') {
     showSubtitle(lastMsg.content);
+
+    // Speak quest messages via TTS (they bypass LLM streaming so feedChunk is never called)
+    if (lastMsg.questChoices?.length) {
+      speakQuestText(lastMsg.content);
+    }
 
     // Show emoji popup above character if the response included one
     if (lastMsg.emoji) {
@@ -596,19 +689,40 @@ async function handleUpgradeAccept(optionId: string) {
 
 const emit = defineEmits<{ navigate: [target: string] }>();
 
+/**
+ * Speak quest/non-streamed text via TTS.
+ * Quest messages are injected directly (not via LLM streaming),
+ * so the normal feedChunk pipeline is bypassed. This feeds the
+ * full text and flushes immediately.
+ */
+function speakQuestText(text: string) {
+  tts.stop();
+  tts.feedChunk(text);
+  tts.flush();
+}
+
 /** Trigger the first available quest from the welcome screen. */
 function handleStartQuest() {
   setChatDrawerExpanded(true);
   const availableQuests = skillTree.nodes.filter(n => skillTree.getSkillStatus(n.id) === 'available');
   if (availableQuests.length > 0) {
     skillTree.triggerQuestEvent(availableQuests[0].id);
+    // Speak the newly injected quest message
+    const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
+    if (lastMsg?.role === 'assistant') {
+      showSubtitle(lastMsg.content);
+      speakQuestText(lastMsg.content);
+    }
   }
 }
 
-/** Handle quest choice button clicks from ChatMessageList. */
+/** Handle quest choice button clicks from hot-seat overlay or ChatMessageList. */
 async function handleQuestChoice(questId: string, choiceValue: string) {
-  // Open the drawer so user sees the conversation
-  setChatDrawerExpanded(true);
+  // Record which message we picked from BEFORE dismissing, because
+  // activeQuestMessage is computed from hotseatDismissed and returns null
+  // once dismissed. Without this order, the watcher would re-show the overlay.
+  lastPickedMessageId.value = activeQuestMessage.value?.id ?? null;
+  hotseatDismissed.value = true;
 
   // Handle auto-configuration choices
   if (choiceValue.startsWith('auto-config:')) {
@@ -621,7 +735,6 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
         // Auto-configure voice/TTS
         try {
           await voice.setTtsProvider('edge-tts');
-          await voice.setTtsProvider(null); // Use default voice
           
           // Add confirmation message
           await conversationStore.addMessage({
@@ -667,7 +780,19 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     return;
   }
 
+  // Auto-enable BGM when user picks "Autoplay BGM"
+  if (questId === 'bgm' && choiceValue === 'bgm-autoplay') {
+    viewportRef.value?.enableBgm();
+  }
+
   await skillTree.handleQuestChoice(questId, choiceValue);
+
+  // Speak the follow-up quest response via TTS
+  const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
+  if (lastMsg?.role === 'assistant') {
+    showSubtitle(lastMsg.content);
+    speakQuestText(lastMsg.content);
+  }
 }
 
 /** Set up Tauri event listeners for dual-stream LLM events. */
@@ -742,7 +867,7 @@ watch(
   (text) => {
     if (text) {
       if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
-      subtitleFullText.value = text;
+      subtitleFullText.value = stripMarkdownForSubtitle(text);
       subtitleVisible.value = true;
     }
   },
@@ -844,10 +969,11 @@ onUnmounted(() => {
 .chat-view {
   position: relative;
   width: 100%;
-  /* Use 100% to fill the parent .app-main flex container exactly.
-     100vh/100dvh would overflow on mobile where .app-main is shorter
-     than the viewport (viewport − bottom nav bar height). */
+  /* flex: 1 + min-height: 0 fills the .app-main flex column reliably.
+     height: 100% is kept as a fallback for non-flex parents. */
   height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -859,6 +985,19 @@ onUnmounted(() => {
   z-index: 0;
 }
 
+/* Portal for the music bar — top-left, below settings button to avoid
+   overlapping with the quest bubble in the top-right */
+.music-bar-portal {
+  position: absolute;
+  top: 56px;
+  left: 16px;
+  z-index: 16;
+  pointer-events: none;
+}
+.music-bar-portal > * {
+  pointer-events: auto;
+}
+
 /* ── AI State Indicator — animated pill ── */
 .ai-state-pill {
   position: absolute;
@@ -867,14 +1006,14 @@ onUnmounted(() => {
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 14px;
+  gap: 7px;
+  padding: 6px 16px;
   border-radius: var(--ts-radius-pill);
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  background: rgba(11, 17, 32, 0.72);
+  background: rgba(11, 17, 32, 0.78);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.88);
@@ -941,13 +1080,14 @@ onUnmounted(() => {
 /* ── Floating subtitle overlay — karaoke-style word sync ── */
 .subtitle-overlay {
   position: absolute;
-  bottom: 90px;
+  bottom: 70px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 12;
+  z-index: 20;
   width: 75%;
   max-width: 620px;
   pointer-events: none;
+  transition: bottom 0.3s ease;
 }
 .subtitle-text {
   margin: 0;
@@ -1054,6 +1194,38 @@ onUnmounted(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.10);
   scrollbar-width: thin;
   scrollbar-color: rgba(255,255,255,0.15) transparent;
+  display: flex;
+  flex-direction: column;
+}
+.chat-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+.chat-history-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ts-text-muted);
+}
+.chat-history-close {
+  background: none;
+  border: none;
+  color: var(--ts-text-dim);
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  border-radius: var(--ts-radius-sm);
+  transition: color 0.15s, background 0.15s;
+}
+.chat-history-close:hover {
+  color: var(--ts-text-primary);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* Chat history slide transition */
@@ -1075,38 +1247,43 @@ onUnmounted(() => {
   gap: 8px;
 }
 
-/* ── Chat toggle button (💬) — inline in the input row ── */
+/* ── Chat toggle button — pill with icon + label ── */
 .chat-drawer-toggle {
-  width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0 14px;
+  border-radius: var(--ts-radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(11, 17, 32, 0.72);
   backdrop-filter: blur(10px);
-  color: #fff;
-  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.72rem;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
   flex-shrink: 0;
-  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
+.toggle-label {
+  letter-spacing: 0.03em;
+}
 .chat-drawer-toggle:hover {
-  background: rgba(124, 111, 255, 0.55);
-  transform: scale(1.08);
-  box-shadow: 0 4px 24px rgba(124, 111, 255, 0.3);
+  background: rgba(124, 111, 255, 0.45);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.25);
 }
 .chat-drawer-toggle.active {
-  background: rgba(124, 111, 255, 0.70);
-  border-color: rgba(124, 111, 255, 0.5);
+  background: rgba(124, 111, 255, 0.65);
+  border-color: rgba(124, 111, 255, 0.4);
+  color: #fff;
 }
 
 /* ── Mic button — voice input toggle ── */
 .mic-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(11, 17, 32, 0.72);
@@ -1177,15 +1354,20 @@ onUnmounted(() => {
 
 /* ── Mobile adjustments ── */
 @media (max-width: 640px) {
+  /* The bottom panel sits at bottom:0 inside .chat-view, which already
+     stops 56px above the viewport bottom (due to .app-main's padding-bottom).
+     No extra offset needed — the mobile nav bar occupies that padding area. */
   .bottom-panel { max-height: 50vh; }
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
-  .ai-state-pill { right: 10px; top: 8px; padding: 3px 10px; font-size: 0.65rem; }
+  .ai-state-pill { right: 10px; top: 8px; padding: 4px 10px; font-size: 0.65rem; }
+  .music-bar-portal { top: 50px; left: 10px; }
   .brain-overlay { width: 92vw; }
   /* Shift brain status pill left to avoid collision with AI state pill */
   .brain-status-pill { left: 40%; font-size: 0.62rem; padding: 3px 10px; }
   /* Compact the input footer */
   .input-footer { padding: 6px 8px 8px; }
-  .chat-drawer-toggle { width: 34px; height: 34px; font-size: 1rem; }
+  .chat-drawer-toggle { height: 34px; padding: 0 10px; }
+  .toggle-label { display: none; }
 }
 </style>

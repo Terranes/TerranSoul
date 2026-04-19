@@ -183,9 +183,9 @@ const emit = defineEmits<{
 }>();
 
 // Audio state
-const systemVolume = ref(100);
-const bgmVolume = ref(75);
-const bgmTrackId = ref('ambient-calm');
+const systemVolume = ref(1.0);
+const bgmVolume = ref(0.15);
+const bgmTrackId = ref('prelude');
 const systemMuted = ref(false);
 const bgmMuted = ref(false);
 const micMuted = ref(false);
@@ -220,11 +220,13 @@ async function loadAudioDevices() {
 
 function handleSystemVolumeChange(e: Event) {
   const volume = parseInt((e.target as HTMLInputElement).value) / 100;
+  systemVolume.value = volume;
   emit('update:systemVolume', volume);
 }
 
 function handleBgmVolumeChange(e: Event) {
   const volume = parseInt((e.target as HTMLInputElement).value) / 100;
+  bgmVolume.value = volume;
   emit('update:bgmVolume', volume);
 }
 

@@ -135,11 +135,11 @@ pub struct Hotword {
 }
 
 /// Persisted voice configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VoiceConfig {
     /// Selected ASR provider ID, or `None` for text-only input.
     pub asr_provider: Option<String>,
-    /// Selected TTS provider ID, or `None` for text-only output.
+    /// Selected TTS provider ID. Defaults to `"edge-tts"` (free, no API key).
     pub tts_provider: Option<String>,
     /// Edge TTS voice name (e.g. "en-US-AnaNeural"). When `None`, uses
     /// the default female voice.
@@ -157,6 +157,21 @@ pub struct VoiceConfig {
     /// User-defined hotwords for ASR boosting.
     #[serde(default)]
     pub hotwords: Vec<Hotword>,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            asr_provider: None,
+            tts_provider: Some("edge-tts".into()),
+            tts_voice: None,
+            tts_pitch: 0,
+            tts_rate: 0,
+            api_key: None,
+            endpoint_url: None,
+            hotwords: vec![],
+        }
+    }
 }
 
 // ── Built-in Provider Catalogue ───────────────────────────────────────────────
@@ -256,10 +271,10 @@ mod tests {
     }
 
     #[test]
-    fn voice_config_default_is_empty() {
+    fn voice_config_default_uses_edge_tts() {
         let cfg = VoiceConfig::default();
         assert!(cfg.asr_provider.is_none());
-        assert!(cfg.tts_provider.is_none());
+        assert_eq!(cfg.tts_provider.as_deref(), Some("edge-tts"));
         assert!(cfg.api_key.is_none());
         assert!(cfg.endpoint_url.is_none());
     }

@@ -15,6 +15,7 @@ Your capabilities:
 - Recommending AI tools and software based on the user's needs
 - Guiding users through installing packages via the TerranSoul Package Manager
 - Switching LLM providers when asked (e.g. "Switch to Groq" or "Use OpenAI with my API key")
+- Quest system — TerranSoul has an RPG-style skill tree with quests. When users ask questions like "What should I do?", "Where can I start?", "What's next?", or any getting-started question, recommend they start a quest. The app will automatically show quest options.
 
 Animation: When expressing an emotion or gesture, output a JSON block on its own line before the related text:
 <anim>{"emotion":"happy"}</anim>
@@ -34,8 +35,12 @@ Your capabilities:
   Commands: terransoul install <agent>, terransoul update <agent>, terransoul remove <agent>, terransoul list, terransoul start <agent>, terransoul stop <agent>
 - Memory system — you can recall facts from past conversations. When users share preferences or important info, acknowledge that you'll remember it
 - Device management — TerranSoul Link connects multiple devices. You can help pair devices, sync conversations, and send commands across machines
-- LLM provider switching — users can ask you to change models ("Switch to GPT-4o", "Use local Ollama")
+- LLM provider switching — users can ask you to change models ("Switch to GPT-4o", "Use llmfit for local AI")
 - Voice interaction — when configured, you respond via TTS and listen via ASR
+- Quest system — TerranSoul has an RPG-style skill tree with quests users can complete to unlock abilities:
+  Foundation quests: Awaken the Mind (free AI), Gift of Speech (TTS), Summon Avatar, Ambient Aura (BGM)
+  Advanced quests: Voice Command (ASR), Superior Intellect (paid API), Inner Sanctum (local AI via llmfit), and more
+  When users ask "What should I do?", "Where can I start?", "What's next?", or any getting-started question, recommend they start a quest. The app will automatically present quest options as interactive buttons.
 
 Tool interaction patterns (use these when appropriate):
 - When a user asks to install something: guide them through the package manager
@@ -113,12 +118,25 @@ export function streamChatCompletion(
   // Run the async fetch in the background
   (async () => {
     try {
+      // Combine user abort with a 15s connection timeout so network
+      // failures surface quickly instead of waiting for the outer 60s guard.
+      const timeoutMs = 15_000;
+      let connTimeout: ReturnType<typeof setTimeout> | undefined;
+      const timeoutAbort = new AbortController();
+      connTimeout = setTimeout(() => timeoutAbort.abort(), timeoutMs);
+      // Abort if either the caller or the connection timeout fires.
+      const combinedSignal = controller.signal.aborted
+        ? controller.signal
+        : timeoutAbort.signal;
+      controller.signal.addEventListener('abort', () => timeoutAbort.abort(), { once: true });
+
       const resp = await fetch(url, {
         method: 'POST',
         headers,
         body,
-        signal: controller.signal,
+        signal: combinedSignal,
       });
+      clearTimeout(connTimeout);
 
       if (!resp.ok) {
         const errorText = await resp.text().catch(() => '');
@@ -175,8 +193,17 @@ export function streamChatCompletion(
       // Stream ended without [DONE] — still finalize
       callbacks.onDone(fullText);
     } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-      callbacks.onError(String(err));
+      if ((err as Error).name === 'AbortError') {
+        // If the caller aborted, stay silent. If our connection timeout
+        // fired, surface it as a network error so the UI can react.
+        if (!controller.signal.aborted) {
+          callbacks.onError('Network timeout: server did not respond within 15 seconds');
+        }
+        return;
+      }
+      // Tag fetch / network errors so callers can distinguish them.
+      const isNetwork = (err instanceof TypeError) || String(err).includes('NetworkError') || String(err).includes('Failed to fetch');
+      callbacks.onError(isNetwork ? `Network error: ${String(err)}` : String(err));
     }
   })();
 

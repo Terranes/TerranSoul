@@ -26,6 +26,22 @@ export interface SceneContext {
    * view — so every character appears centred regardless of their height.
    */
   frameCameraToCharacter: (vrmScene: THREE.Object3D) => void;
+  /**
+   * Register the current VRM scene so the ResizeObserver can re-frame the
+   * camera when the canvas transitions from hidden (0×0) to visible.
+   * This fixes the case where the model loads while the DOM is display:none
+   * (e.g. v-show="!appLoading") and frameCameraToCharacter runs with
+   * degenerate 1×1 dimensions.
+   */
+  setCurrentModel: (vrmScene: THREE.Object3D | null) => void;
+  /**
+   * Per-frame auto-resize check.  Compares the canvas display-size against
+   * the last known dimensions and, if they changed, resizes the renderer
+   * and camera.  Returns true when the size actually changed.
+   * Call this every frame in the animation loop so the model is never
+   * invisible due to a stale 1×1 backbuffer after a v-show transition.
+   */
+  checkResize: () => boolean;
   dispose: () => void;
   /** Register a callback that fires after the user finishes orbiting or zooming.
    *  Receives (azimuth, distance) so the caller can persist the camera state. */
@@ -55,14 +71,14 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.setClearColor(0x000000, 0);
 
-  renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+  renderer.setSize(canvas.clientWidth || 1, canvas.clientHeight || 1, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   const scene = new THREE.Scene();
 
   const camera = new THREE.PerspectiveCamera(
     30,
-    canvas.clientWidth / canvas.clientHeight,
+    (canvas.clientWidth || 1) / (canvas.clientHeight || 1),
     0.02,
     1000,
   );
@@ -71,7 +87,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   // the character's arms don't extend beyond the viewport edges.
   const CAMERA_Z_LANDSCAPE = 2.8;
   const CAMERA_Z_PORTRAIT = 3.8;
-  const aspect = canvas.clientWidth / canvas.clientHeight;
+  const aspect = (canvas.clientWidth || 1) / (canvas.clientHeight || 1);
   const cameraZ = aspect < 1 ? CAMERA_Z_PORTRAIT : CAMERA_Z_LANDSCAPE;
   camera.position.set(0.0, 1.0, cameraZ);
 
@@ -115,8 +131,11 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
    */
   function updateZoomTarget() {
     const dist = controls.getDistance();
+    if (isNaN(dist)) return; // camera not positioned yet
     const t = Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
-    controls.target.y = faceY + t * (bodyY - faceY);
+    const newY = faceY + t * (bodyY - faceY);
+    if (isNaN(newY)) return; // faceY/bodyY not computed yet
+    controls.target.y = newY;
   }
 
   /**
@@ -127,6 +146,12 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
    * Should be called each time a new model is loaded.
    */
   function frameCameraToCharacter(vrmScene: THREE.Object3D) {
+    // Guard: if the canvas is hidden (display:none via v-show) its dimensions
+    // are 0×0 which makes the aspect ratio NaN and poisons the camera position.
+    // Bail out — the deferred-reframe mechanism in checkResize() will call us
+    // again once the canvas has real dimensions.
+    if (canvas.clientWidth <= 1 || canvas.clientHeight <= 1) return;
+
     const box = new THREE.Box3().setFromObject(vrmScene);
     if (box.isEmpty()) return;
 
@@ -237,25 +262,78 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
 
   const clock = new THREE.Clock();
 
-  // Use ResizeObserver for accurate per-element resize handling
-  const resizeObserver = new ResizeObserver(() => {
+  // ── Deferred reframe state ────────────────────────────────────────
+  // Tracks the current VRM scene so the ResizeObserver can re-frame the
+  // camera when the canvas transitions from hidden (0×0) to real dimensions.
+  let pendingReframeModel: THREE.Object3D | null = null;
+  /** True once the canvas has had valid (>1) dimensions and been framed. */
+  let hasValidSize = false;
+  /** True when a model is loaded but hasn't been properly framed yet. */
+  let needsReframe = false;
+  /** Last known canvas dimensions — used by the render-loop auto-resize. */
+  let lastKnownWidth = 0;
+  let lastKnownHeight = 0;
+
+  function setCurrentModel(vrmScene: THREE.Object3D | null) {
+    pendingReframeModel = vrmScene;
+    // If the canvas currently has degenerate dimensions, mark for deferred reframe
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (w === 0 || h === 0) return;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-
-    // Adjust camera distance for portrait vs landscape so the character
-    // stays fully visible on narrow mobile screens.
-    const currentDist = controls.getDistance();
-    const targetZ = (w / h) < 1 ? defaultCameraZPortrait : defaultCameraZLandscape;
-    const ZOOM_TOLERANCE = 0.1;
-    // Only adjust if the user hasn't manually zoomed away from the default.
-    if (Math.abs(currentDist - defaultCameraZLandscape) < ZOOM_TOLERANCE ||
-        Math.abs(currentDist - defaultCameraZPortrait)  < ZOOM_TOLERANCE) {
-      camera.position.setZ(targetZ);
+    if (vrmScene && (w <= 1 || h <= 1)) {
+      hasValidSize = false;
+      needsReframe = true;
     }
+  }
+
+  /**
+   * Called every frame from the animation loop.  Acts as a bulletproof
+   * fallback for ResizeObserver — if the canvas display-size changed
+   * (e.g. v-show transition, window resize, orientation change) the
+   * renderer and camera are updated immediately so the model is never
+   * invisible due to a stale 1×1 backbuffer.
+   */
+  function checkResize(): boolean {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (w <= 0 || h <= 0) return false;
+
+    const changed = w !== lastKnownWidth || h !== lastKnownHeight;
+    if (changed) {
+      lastKnownWidth = w;
+      lastKnownHeight = h;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    // Deferred reframe: model loaded while canvas was hidden/tiny
+    if ((!hasValidSize || needsReframe) && w > 1 && h > 1 && pendingReframeModel) {
+      hasValidSize = true;
+      needsReframe = false;
+      frameCameraToCharacter(pendingReframeModel);
+      return true;
+    }
+
+    if (changed) {
+      // Adjust camera distance for portrait vs landscape
+      const currentDist = controls.getDistance();
+      const targetZ = (w / h) < 1 ? defaultCameraZPortrait : defaultCameraZLandscape;
+      const ZOOM_TOLERANCE = 0.1;
+      if (Math.abs(currentDist - defaultCameraZLandscape) < ZOOM_TOLERANCE ||
+          Math.abs(currentDist - defaultCameraZPortrait)  < ZOOM_TOLERANCE) {
+        camera.position.setZ(targetZ);
+      }
+    }
+    return changed;
+  }
+
+  // Use ResizeObserver for accurate per-element resize handling.
+  // checkResize() in the render loop is the primary mechanism; this
+  // observer triggers a render tick so idle-throttled frames pick up
+  // the change promptly.
+  const resizeObserver = new ResizeObserver(() => {
+    // Handled by checkResize() in the render loop — just poke a render.
+    checkResize();
   });
   resizeObserver.observe(canvas.parentElement ?? canvas);
 
@@ -290,5 +368,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, frameCameraToCharacter, dispose, onCameraChange };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, frameCameraToCharacter, setCurrentModel, checkResize, dispose, onCameraChange };
 }

@@ -167,7 +167,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
     expect(store.messages[2].agentName).toBe('System');
-    expect(store.messages[2].content).toContain('rate-limited');
+    expect(store.messages[2].content).toContain('Could not reach the AI provider');
     expect(store.isThinking).toBe(false);
   });
 });
@@ -236,9 +236,11 @@ describe('conversation store — Tauri backend available', () => {
     const store = useConversationStore();
     await store.sendMessage('hello');
 
-    expect(store.messages).toHaveLength(2);
+    expect(store.messages).toHaveLength(3);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.messages[2].agentName).toBe('System');
+    expect(store.messages[2].content).toContain('Could not reach the AI provider');
     expect(store.isThinking).toBe(false);
   });
 

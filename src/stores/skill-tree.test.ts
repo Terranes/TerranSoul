@@ -256,6 +256,7 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       dailySuggestionIds: ['asr'],
       dailySuggestionReason: 'test reason',
       activationTimestamps: { avatar: 1000 },
+      manuallyCompletedIds: [],
     };
     localStorageData['terransoul-quest-tracker'] = JSON.stringify(data);
 
@@ -295,6 +296,7 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       dailySuggestionIds: ['asr'],
       dailySuggestionReason: 'old reason',
       activationTimestamps: { avatar: 1000 },
+      manuallyCompletedIds: [],
     };
     mockInvoke.mockResolvedValue(JSON.stringify(tauriData));
     localStorageData['terransoul-quest-tracker'] = JSON.stringify({
@@ -305,6 +307,7 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       dailySuggestionIds: ['bgm'],
       dailySuggestionReason: 'new reason',
       activationTimestamps: { avatar: 500, tts: 2000 },
+      manuallyCompletedIds: [],
     } as QuestTrackerData);
 
     const store = useSkillTreeStore();
@@ -627,5 +630,137 @@ describe('useSkillTreeStore — quest event system', () => {
     store.triggerQuestEvent('nonexistent-quest-id');
     // Should still pick a random quest since the ID doesn't exist
     expect(conversation.messages.length).toBe(before + 1);
+  });
+});
+
+describe('useSkillTreeStore — BGM quest chain', () => {
+  it('bgm-custom node exists and requires bgm', () => {
+    const store = useSkillTreeStore();
+    const node = store.nodes.find(n => n.id === 'bgm-custom');
+    expect(node).toBeDefined();
+    expect(node!.tier).toBe('advanced');
+    expect(node!.requires).toContain('bgm');
+  });
+
+  it('bgm-video node exists and requires bgm-custom and free-brain', () => {
+    const store = useSkillTreeStore();
+    const node = store.nodes.find(n => n.id === 'bgm-video');
+    expect(node).toBeDefined();
+    expect(node!.tier).toBe('ultimate');
+    expect(node!.requires).toContain('bgm-custom');
+    expect(node!.requires).toContain('free-brain');
+  });
+
+  it('bgm-custom is locked when bgm is not active', () => {
+    const store = useSkillTreeStore();
+    // bgm starts as available (not active), so bgm-custom should be locked
+    expect(store.getSkillStatus('bgm-custom')).toBe('locked');
+  });
+
+  it('bgm-video is locked when bgm-custom is not active', () => {
+    const store = useSkillTreeStore();
+    expect(store.getSkillStatus('bgm-video')).toBe('locked');
+  });
+});
+
+describe('useSkillTreeStore — manual completion', () => {
+  it('markComplete makes a skill return active status', () => {
+    const store = useSkillTreeStore();
+    expect(store.getSkillStatus('bgm')).toBe('available');
+    store.markComplete('bgm');
+    expect(store.getSkillStatus('bgm')).toBe('active');
+  });
+
+  it('markComplete persists to tracker', () => {
+    const store = useSkillTreeStore();
+    store.markComplete('tts');
+    expect(store.tracker.manuallyCompletedIds).toContain('tts');
+    const saved = JSON.parse(localStorageData['terransoul-quest-tracker']);
+    expect(saved.manuallyCompletedIds).toContain('tts');
+  });
+
+  it('markComplete is idempotent', () => {
+    const store = useSkillTreeStore();
+    store.markComplete('bgm');
+    store.markComplete('bgm');
+    expect(store.tracker.manuallyCompletedIds.filter(id => id === 'bgm').length).toBe(1);
+  });
+
+  it('unmarkComplete removes manual completion', () => {
+    const store = useSkillTreeStore();
+    store.markComplete('bgm');
+    expect(store.getSkillStatus('bgm')).toBe('active');
+    store.unmarkComplete('bgm');
+    expect(store.tracker.manuallyCompletedIds).not.toContain('bgm');
+    expect(store.getSkillStatus('bgm')).toBe('available');
+  });
+
+  it('manual completion unlocks dependent quests', () => {
+    const store = useSkillTreeStore();
+    // Mark bgm as manually complete — bgm-custom should become available
+    store.markComplete('bgm');
+    expect(store.getSkillStatus('bgm-custom')).toBe('available');
+  });
+
+  it('loadTracker preserves manuallyCompletedIds from localStorage', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    localStorageData['terransoul-quest-tracker'] = JSON.stringify({
+      version: 1,
+      dismissedQuestIds: [],
+      pinnedQuestIds: [],
+      lastSuggestionDate: '',
+      dailySuggestionIds: [],
+      dailySuggestionReason: '',
+      activationTimestamps: {},
+      manuallyCompletedIds: ['bgm', 'tts'],
+    });
+
+    const store = useSkillTreeStore();
+    await store.loadTracker();
+    expect(store.tracker.manuallyCompletedIds).toContain('bgm');
+    expect(store.tracker.manuallyCompletedIds).toContain('tts');
+  });
+
+  it('loadTracker merges manuallyCompletedIds from both sources', async () => {
+    const tauriData: QuestTrackerData = {
+      version: 1,
+      dismissedQuestIds: [],
+      pinnedQuestIds: [],
+      lastSuggestionDate: '',
+      dailySuggestionIds: [],
+      dailySuggestionReason: '',
+      activationTimestamps: {},
+      manuallyCompletedIds: ['bgm'],
+    };
+    mockInvoke.mockResolvedValue(JSON.stringify(tauriData));
+    localStorageData['terransoul-quest-tracker'] = JSON.stringify({
+      version: 1,
+      dismissedQuestIds: [],
+      pinnedQuestIds: [],
+      lastSuggestionDate: '',
+      dailySuggestionIds: [],
+      dailySuggestionReason: '',
+      activationTimestamps: {},
+      manuallyCompletedIds: ['tts'],
+    });
+
+    const store = useSkillTreeStore();
+    await store.loadTracker();
+    expect(store.tracker.manuallyCompletedIds).toContain('bgm');
+    expect(store.tracker.manuallyCompletedIds).toContain('tts');
+  });
+
+  it('migrateTracker provides default manuallyCompletedIds for old data', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    localStorageData['terransoul-quest-tracker'] = JSON.stringify({
+      version: 1,
+      dismissedQuestIds: ['paid-brain'],
+      pinnedQuestIds: [],
+    });
+
+    const store = useSkillTreeStore();
+    await store.loadTracker();
+    expect(Array.isArray(store.tracker.manuallyCompletedIds)).toBe(true);
+    expect(store.tracker.manuallyCompletedIds).toEqual([]);
   });
 });

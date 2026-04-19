@@ -204,13 +204,50 @@ export const useBrainStore = defineStore('brain', () => {
   async function processPromptSilently(prompt: string): Promise<string> {
     try {
       if (!hasBrain.value) return '';
-      
-      const response = await invoke<string>('process_prompt_silently', { 
-        prompt,
-        mode: brainMode.value 
+
+      const mode = brainMode.value;
+      if (!mode) return '';
+
+      // Resolve the API endpoint and model for the current brain mode.
+      let baseUrl: string;
+      let model: string;
+      let apiKey: string | null = null;
+
+      if (mode.mode === 'free_api') {
+        if (freeProviders.value.length === 0) return '';
+        const provider = freeProviders.value.find(
+          p => p.id === mode.provider_id,
+        ) ?? freeProviders.value[0];
+        baseUrl = provider.base_url;
+        model = provider.model;
+        apiKey = provider.requires_api_key ? (mode.api_key ?? null) : null;
+      } else if (mode.mode === 'paid_api') {
+        baseUrl = mode.base_url;
+        model = mode.model;
+        apiKey = mode.api_key;
+      } else if (mode.mode === 'local_ollama') {
+        baseUrl = 'http://localhost:11434';
+        model = mode.model;
+      } else {
+        return '';
+      }
+
+      const { streamChatCompletion } = await import('../utils/free-api-client');
+      return new Promise<string>((resolve) => {
+        let text = '';
+        streamChatCompletion(
+          baseUrl,
+          model,
+          apiKey,
+          [{ role: 'user', content: prompt }],
+          {
+            onChunk(chunk: string) { text += chunk; },
+            onDone() { resolve(text); },
+            onError() { resolve(''); },
+          },
+          'You are a helpful assistant. Respond with only the requested JSON format.',
+        );
       });
-      
-      return response;
     } catch (error) {
       console.warn('Silent prompt processing failed:', error);
       return '';

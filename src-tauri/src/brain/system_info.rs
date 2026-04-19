@@ -72,15 +72,7 @@ pub fn collect() -> SystemInfo {
     let cpu_name = sys
         .cpus()
         .first()
-        .map(|c| {
-            let brand = c.brand().trim();
-            // Clean up CPU name for better display
-            if brand.contains("(R)") || brand.contains("(TM)") {
-                brand.to_string()
-            } else {
-                brand.to_string()
-            }
-        })
+        .map(|c| c.brand().trim().to_string())
         .unwrap_or_else(|| "Unknown CPU".to_string());
 
     // Enhanced OS detection for Windows

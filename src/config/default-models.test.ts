@@ -54,3 +54,38 @@ describe('default-models — gender configuration', () => {
     expect(model).toBeDefined();
   });
 });
+
+describe('default-models — path validation', () => {
+  it('all model paths start with /', () => {
+    for (const model of DEFAULT_MODELS) {
+      expect(model.path).toMatch(/^\//);
+    }
+  });
+
+  it('all model paths end with .vrm', () => {
+    for (const model of DEFAULT_MODELS) {
+      expect(model.path).toMatch(/\.vrm$/i);
+    }
+  });
+
+  it('model paths are valid URIs when encoded (no raw spaces)', () => {
+    for (const model of DEFAULT_MODELS) {
+      const encoded = encodeURI(model.path);
+      expect(encoded).toBeTruthy();
+      expect(encoded).not.toContain(' ');
+    }
+  });
+
+  it('model ids are unique', () => {
+    const ids = DEFAULT_MODELS.map(m => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('all models have required fields', () => {
+    for (const model of DEFAULT_MODELS) {
+      expect(model.id).toBeTruthy();
+      expect(model.name).toBeTruthy();
+      expect(model.path).toBeTruthy();
+    }
+  });
+});

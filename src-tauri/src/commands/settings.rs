@@ -73,7 +73,7 @@ mod tests {
             camera_distance: 3.0,
             bgm_enabled: true,
             bgm_volume: 0.25,
-            bgm_track_id: "ambient-space".into(),
+            bgm_track_id: "sanctuary".into(),
             model_camera_positions: std::collections::HashMap::new(),
         };
         // Directly update in-memory state (simulating command effect)
@@ -86,7 +86,7 @@ mod tests {
         assert!((loaded.camera_azimuth - 1.0).abs() < 0.001);
         assert!(loaded.bgm_enabled);
         assert!((loaded.bgm_volume - 0.25).abs() < 0.001);
-        assert_eq!(loaded.bgm_track_id, "ambient-space");
+        assert_eq!(loaded.bgm_track_id, "sanctuary");
     }
 
     #[test]
@@ -99,7 +99,7 @@ mod tests {
             camera_distance: 4.0,
             bgm_enabled: false,
             bgm_volume: 0.15,
-            bgm_track_id: "ambient-calm".into(),
+            bgm_track_id: "prelude".into(),
             model_camera_positions: std::collections::HashMap::new(),
         };
         config_store::save(dir.path(), &settings).unwrap();
