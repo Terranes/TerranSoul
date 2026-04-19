@@ -14,18 +14,29 @@ export interface SittingProps {
   teacup: THREE.Group;
 }
 
-/** Create the sofa primitive — a low-poly two-seat couch in a warm neutral tone. */
+/** Create the sofa primitive — a low-poly two-seat couch in a warm neutral tone.
+ *
+ * Coordinate convention (matches the VRM scene):
+ *  - +Z is toward the camera (viewer)
+ *  - Character root is at origin; when sitting, the body is lowered by
+ *    SITTING_BODY_Y_OFFSET (≈ -0.42m).
+ *
+ * We place the sofa so the seat cushion surface sits at y = 0.13 (just below
+ * the lowered hip level) with the cushion extending forward to z = +0.45 so
+ * the camera sees the couch beneath the character and the character reads
+ * as sitting ON the sofa rather than standing behind it.
+ */
 function createSofa(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'sitting-sofa';
 
   const fabricMat = new THREE.MeshStandardMaterial({
-    color: 0x8a6f5c,
+    color: 0x7a5a47,
     roughness: 0.85,
     metalness: 0.02,
   });
   const cushionMat = new THREE.MeshStandardMaterial({
-    color: 0xa78672,
+    color: 0x9b7660,
     roughness: 0.85,
     metalness: 0.02,
   });
@@ -35,50 +46,57 @@ function createSofa(): THREE.Group {
     metalness: 0.1,
   });
 
-  // Base / seat — wide box the character sits on
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.25, 0.7), fabricMat);
-  seat.position.set(0, 0.32, -0.15);
+  // Geometry reference: cushion top at y = 0.17 (seat) + 0.06 (cushion half) = 0.20
+  // Back of couch at z = -0.15 (behind character), front of cushion at z = +0.45
+  // Arms flare outward so camera sees the couch silhouette on both sides.
+
+  // Seat block (wide, shallow)
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.72), fabricMat);
+  seat.position.set(0, 0.12, 0.12);
   group.add(seat);
 
-  // Seat cushion — slightly offset upward for layered look
-  const cushion = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.14, 0.62), cushionMat);
-  cushion.position.set(0, 0.48, -0.13);
+  // Cushion on top of seat
+  const cushion = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.10, 0.66), cushionMat);
+  cushion.position.set(0, 0.25, 0.12);
   group.add(cushion);
 
-  // Back rest
-  const back = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.6, 0.22), fabricMat);
-  back.position.set(0, 0.72, -0.46);
+  // Back rest — tall panel behind the character
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.7, 0.18), fabricMat);
+  back.position.set(0, 0.55, -0.32);
   group.add(back);
 
-  // Arm rests
-  const armGeo = new THREE.BoxGeometry(0.15, 0.45, 0.7);
+  // Soft back cushion on top
+  const backCushion = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.55, 0.14), cushionMat);
+  backCushion.position.set(0, 0.58, -0.21);
+  group.add(backCushion);
+
+  // Arm rests — flare outward so the camera reads them clearly on both sides
+  const armGeo = new THREE.BoxGeometry(0.18, 0.42, 0.72);
   const leftArm = new THREE.Mesh(armGeo, fabricMat);
-  leftArm.position.set(-0.7, 0.52, -0.15);
+  leftArm.position.set(-0.72, 0.36, 0.12);
   group.add(leftArm);
   const rightArm = new THREE.Mesh(armGeo, fabricMat);
-  rightArm.position.set(0.7, 0.52, -0.15);
+  rightArm.position.set(0.72, 0.36, 0.12);
   group.add(rightArm);
 
-  // Legs — four short cylinders
-  const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 12);
+  // Legs — four short cylinders at the corners, slightly visible under the seat
+  const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.12, 12);
   const legOffsets: [number, number][] = [
-    [-0.6, -0.45],
-    [0.6, -0.45],
-    [-0.6, 0.15],
-    [0.6, 0.15],
+    [-0.62, -0.18],
+    [0.62, -0.18],
+    [-0.62, 0.40],
+    [0.62, 0.40],
   ];
   for (const [x, z] of legOffsets) {
     const leg = new THREE.Mesh(legGeo, legMat);
-    leg.position.set(x, 0.1, z);
+    leg.position.set(x, 0.06, z);
     group.add(leg);
   }
 
-  // Position so the seat cushion is at the character's root-relative hip
-  // height. Character feet at y=0, seated hip roughly at y≈0.55. Sofa cushion
-  // top is at 0.48 + 0.07 = 0.55, so character's hips land on the cushion.
-  // Place the sofa slightly behind the character so the front cushion edge
-  // lines up with the character's thighs.
-  group.position.set(0, 0, -0.05);
+  // Group root sits at the scene origin (floor).  The character is translated
+  // down by SITTING_BODY_Y_OFFSET when the sitting idle is active, so their
+  // hips land on the cushion at y ≈ 0.28 (cushion top).
+  group.position.set(0, 0, 0);
 
   return group;
 }

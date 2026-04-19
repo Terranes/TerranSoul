@@ -5,7 +5,7 @@
  *   - Left-click character        → toggle chat
  *   - Hold + drag on character    → reposition within overlay (persists in localStorage)
  *   - Right-click character       → open PetContextMenu at cursor
- *   - Top-right "Pet" toggle pill → exit to desktop mode
+ *   - The desktop⇄pet toggle is rendered at the App level, not inside this view.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
@@ -80,11 +80,12 @@ describe('PetOverlayView', () => {
     expect(wrapper.find('.pet-character').exists()).toBe(true);
   });
 
-  it('renders the floating pet-mode toggle pill', () => {
+  it('does NOT render a mode toggle inside the overlay (lives at App level)', () => {
     const wrapper = mount(PetOverlayView, {
       global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
-    expect(wrapper.find('.pet-mode-toggle .pet-mode-switch').exists()).toBe(true);
+    expect(wrapper.find('.pet-mode-toggle').exists()).toBe(false);
+    expect(wrapper.find('.pet-mode-switch').exists()).toBe(false);
   });
 
   it('left-click on character toggles chat', async () => {
@@ -94,14 +95,16 @@ describe('PetOverlayView', () => {
     // Chat is collapsed by default in the redesigned overlay
     expect(wrapper.find('.pet-chat').exists()).toBe(false);
 
-    // Simulate a quick left click: mousedown + mouseup on the character
+    // Simulate a quick left click: mousedown on character, then mouseup at document level.
     const character = wrapper.find('.pet-character');
     await character.trigger('mousedown', { button: 0, clientX: 100, clientY: 100 });
-    await wrapper.find('.pet-overlay').trigger('mouseup', { clientX: 100, clientY: 100 });
+    // The overlay listens to document-level mouseup (once handler) to end the press.
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100 }));
+    await wrapper.vm.$nextTick();
 
     expect(wrapper.find('.pet-chat').exists()).toBe(true);
 
-    // Click again to collapse (via the in-chat close button)
+    // Click again via the in-chat close button
     await wrapper.find('.pet-chat-close').trigger('click');
     expect(wrapper.find('.pet-chat').exists()).toBe(false);
   });
@@ -114,15 +117,6 @@ describe('PetOverlayView', () => {
     });
     const input = wrapper.find('.pet-chat-input input');
     expect(input.exists()).toBe(true);
-  });
-
-  it('pet-mode toggle pill calls setMode window', async () => {
-    const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
-    });
-    await wrapper.find('.pet-mode-toggle .pet-mode-switch').trigger('click');
-
-    expect(mockInvoke).toHaveBeenCalledWith('set_window_mode', { mode: 'window' });
   });
 
   it('right-click on character opens the context menu', async () => {

@@ -153,20 +153,20 @@ const IDLE_POSES: BonePose[] = [
   // Pose 7: Seated with teacup (sofa idle variant).
   // The sofa + teacup props are shown whenever this pose index is active —
   // see SITTING_POSE_INDEX below and CharacterViewport's onIdlePoseChange handler.
-  // Knee bones aren't in ANIMATED_BONES, so the sofa is positioned so the
-  // character's natural leg pose reads as a relaxed seated posture.
+  // Legs aren't in ANIMATED_BONES; the animator translates the body down by
+  // SITTING_BODY_Y_OFFSET so the character reads as sitting on the cushion.
   {
-    head:  [0.02, -0.04, 0.01],          // gentle forward tilt toward cup
-    spine: [0.08, 0, 0],                 // slight forward lean
-    chest: [0.04, 0, 0],
-    hips:  [0, 0, 0],                    // keep upright — sofa provides the "sit" illusion
-    neck:  [0.02, -0.02, 0],
-    leftUpperArm:  [0.05, 0, 1.20],      // left arm resting on lap
-    rightUpperArm: [0.25, -0.12, -1.05], // right arm raised to bring cup near face
-    leftLowerArm:  [0, 0, 0.35],         // left forearm resting
-    rightLowerArm: [0, 0, -0.50],        // clamped within DRESS_LOWER_ARM_Z_MAX
-    leftShoulder:  [0, 0, 0.05],
-    rightShoulder: [0, 0, -0.10],
+    head:  [0.04, -0.08, 0.02],          // tilt downward toward cup, gentle side tilt
+    spine: [0.12, 0, 0],                 // forward lean as if sipping
+    chest: [0.06, 0, 0],
+    hips:  [0.05, 0, 0],                 // mild hip flex to sell the sit
+    neck:  [0.05, -0.04, 0],
+    leftUpperArm:  [0.10, 0.02, 1.15],   // left arm resting on lap, slight forward
+    rightUpperArm: [0.30, -0.15, -0.90], // right arm brought up to chest/face height
+    leftLowerArm:  [0, 0, 0.40],         // left forearm folded across lap
+    rightLowerArm: [0, 0, -0.48],        // clamped within DRESS_LOWER_ARM_Z_MAX (0.50)
+    leftShoulder:  [0, 0, 0.08],
+    rightShoulder: [0, 0, -0.12],
   },
 ];
 
@@ -174,6 +174,11 @@ const IDLE_POSES: BonePose[] = [
  *  viewport to show/hide the sofa + teacup props, and by the Mood submenu's
  *  "Sitting" option when pinning a manual idle pose. */
 export const SITTING_POSE_INDEX = 6;
+
+/** Vertical offset (metres) applied to the character root when the sitting
+ *  pose is active.  Negative = lower so the character's hips land on the
+ *  sofa cushion. Tuned against the default Annabelle model (~1.6m). */
+export const SITTING_BODY_Y_OFFSET = -0.42;
 
 const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
   // idle will be dynamically selected from IDLE_POSES array
@@ -371,6 +376,11 @@ export class CharacterAnimator {
   /** Optional listener fired whenever the active idle pose index changes.
    *  CharacterViewport uses this to toggle the sofa + teacup props. */
   private idlePoseChangeListener: ((index: number) => void) | null = null;
+  /** Damped vertical body offset (metres).  Used to translate the VRM scene
+   *  root downward so the character appears seated on the sofa during the
+   *  sitting idle pose, without requiring per-leg bone animation. */
+  private bodyYCurrent = 0;
+  private bodyYTarget = 0;
 
   /** Exposes the layered AvatarStateMachine for external mutation. */
   get avatarStateMachine(): AvatarStateMachine { return this._asm; }
@@ -470,6 +480,8 @@ export class CharacterAnimator {
     for (let i = 0; i < this.boneCurrentArr.length; i++) {
       if (Math.abs(this.boneCurrentArr[i] - this.boneTargetArr[i]) > epsilon) return false;
     }
+    // Body Y translation must also be settled
+    if (Math.abs(this.bodyYCurrent - this.bodyYTarget) > epsilon) return false;
     return true;
   }
 
@@ -545,6 +557,10 @@ export class CharacterAnimator {
     if (index === this.currentIdlePoseIndex) return;
     this.currentIdlePoseIndex = index;
     STATE_BONE_POSES.idle = IDLE_POSES[index];
+    // The seated idle needs the whole body translated downward so the
+    // character reads as sitting on the sofa cushion.  Other idle variants
+    // keep the body at floor level.
+    this.bodyYTarget = (index === SITTING_POSE_INDEX) ? SITTING_BODY_Y_OFFSET : 0;
     if (this.idlePoseChangeListener) {
       this.idlePoseChangeListener(index);
     }
@@ -554,12 +570,22 @@ export class CharacterAnimator {
    * Pin the idle-pose rotation to a specific pose index, or release the pin
    * and resume random rotation when `index` is null.  Used by the Mood
    * submenu's "Sitting" option to force the seated pose.
+   *
+   * When releasing the pin while the current pose is the seated variant,
+   * immediately snap to the default standing pose (index 0) so the sofa and
+   * teacup props disappear — otherwise they'd linger until the next random
+   * rotation picks a different pose.
    */
   forceIdlePose(index: number | null) {
     this.pinnedIdlePoseIndex = index;
     if (index !== null) {
       this.setActiveIdlePose(index);
       // Reset timer so the pinned pose doesn't get swapped on the next tick
+      this.idlePoseChangeTime = 0;
+      this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+    } else if (this.currentIdlePoseIndex === SITTING_POSE_INDEX) {
+      // Unpinning while seated — snap out of the seated idle right away.
+      this.setActiveIdlePose(0);
       this.idlePoseChangeTime = 0;
       this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
     }
@@ -591,8 +617,13 @@ export class CharacterAnimator {
   private applyVRMAnimation(t: number, delta: number) {
     if (!this.vrm || !this.vrmScene) return;
 
-    // Pin scene root — only preserve the loader's base rotation
-    this.vrmScene.position.set(0, 0, 0);
+    // Damp bodyY toward its target so seated ↔ standing transitions look smooth.
+    // Uses the same exponential damping as bones (BONE_LAMBDA).
+    this.bodyYCurrent = damp(this.bodyYCurrent, this.bodyYTarget, BONE_LAMBDA, delta);
+
+    // Pin scene root — only preserve the loader's base rotation.  The Y
+    // translation lowers the character into the sofa for the sitting idle.
+    this.vrmScene.position.set(0, this.bodyYCurrent, 0);
     this.vrmScene.rotation.set(0, this.baseRotationY, 0);
 
     // Tick the AvatarStateMachine's auto-blink cycle

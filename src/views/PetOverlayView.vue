@@ -2,18 +2,16 @@
   <div
     class="pet-overlay"
     :class="{ 'pet-overlay--chat': petChatExpanded, 'pet-overlay--dragging': isDragging }"
-    @mousemove="onMouseMove"
-    @mouseup="onMouseUp"
-    @mouseleave="onContainerMouseLeave"
   >
-    <!-- Draggable 3D character viewport (transparent background) -->
+    <!-- Draggable 3D character viewport (transparent background).
+         Use .capture so the wrapper intercepts mousedown before it reaches the
+         Three.js canvas, and .stop to prevent OrbitControls from also reacting
+         to what's really a pet-mode drag/click. -->
     <div
       class="pet-character"
       :style="characterStyle"
-      @mouseenter="onCharacterEnter"
-      @mouseleave="onCharacterLeave"
-      @mousedown="onCharacterMouseDown"
-      @contextmenu.prevent="onCharacterContextMenu"
+      @mousedown.capture.stop="onCharacterMouseDown"
+      @contextmenu.prevent.stop="onCharacterContextMenu"
     >
       <CharacterViewport />
     </div>
@@ -69,31 +67,17 @@
 
     <!-- Onboarding tooltip — shown once on first use of pet mode -->
     <Transition name="fade">
-      <div v-if="showOnboarding" class="pet-onboarding" @click.stop>
+      <div v-if="showOnboarding" class="pet-onboarding" @click.stop @mousedown.stop>
         <p class="pet-onboarding-title">Welcome to pet mode</p>
         <ul class="pet-onboarding-list">
-          <li><strong>Left-click</strong> character to toggle chat</li>
-          <li><strong>Hold &amp; drag</strong> to reposition</li>
+          <li><strong>Click</strong> character to toggle chat</li>
+          <li><strong>Hold &amp; drag</strong> to move them around</li>
           <li><strong>Right-click</strong> for menu (mood, settings…)</li>
+          <li>Use the <strong>top-right toggle</strong> to return to desktop</li>
         </ul>
         <button class="pet-onboarding-dismiss" @click.stop="dismissOnboarding">Got it</button>
       </div>
     </Transition>
-
-    <!-- Top-right floating toggle (switch back to desktop) -->
-    <div class="pet-mode-toggle" @click.stop>
-      <button
-        class="pet-mode-switch"
-        aria-pressed="true"
-        title="Switch to desktop mode"
-        @click="exitPetMode"
-      >
-        <span class="pet-mode-track">
-          <span class="pet-mode-thumb">🐾</span>
-        </span>
-        <span class="pet-mode-label">Pet</span>
-      </button>
-    </div>
 
     <!-- Emotion badge -->
     <Transition name="fade">
@@ -230,6 +214,12 @@ function onCharacterMouseDown(e: MouseEvent) {
   pressOriginPosX = characterPos.value.x;
   pressOriginPosY = characterPos.value.y;
 
+  // Bind drag handlers at the document level so dragging continues even if
+  // the cursor briefly leaves the character element.  These are removed on
+  // mouseup to avoid listener leaks between presses.
+  document.addEventListener('mousemove', onDocMouseMove);
+  document.addEventListener('mouseup', onDocMouseUp, { once: true });
+
   // Arm a hold timer — if the user keeps the mouse down past the threshold
   // without moving much, we enter drag mode.
   if (holdTimer) clearTimeout(holdTimer);
@@ -240,13 +230,14 @@ function onCharacterMouseDown(e: MouseEvent) {
   }, HOLD_THRESHOLD_MS);
 }
 
-function onMouseMove(e: MouseEvent) {
+function onDocMouseMove(e: MouseEvent) {
   if (!pressActive) return;
   const dx = e.clientX - pressStartX;
   const dy = e.clientY - pressStartY;
 
-  // If the user drags significantly before the hold timer, still promote to drag.
-  if (!isDragging.value && Math.hypot(dx, dy) > 6) {
+  // Promote to drag when the user exceeds the click tolerance, even before
+  // the hold timer fires.
+  if (!isDragging.value && Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE * 2) {
     isDragging.value = true;
   }
 
@@ -259,8 +250,10 @@ function onMouseMove(e: MouseEvent) {
   }
 }
 
-function onMouseUp(e: MouseEvent) {
+function onDocMouseUp(e: MouseEvent) {
+  document.removeEventListener('mousemove', onDocMouseMove);
   if (!pressActive) return;
+
   const dx = e.clientX - pressStartX;
   const dy = e.clientY - pressStartY;
   const duration = performance.now() - pressStartTime;
@@ -274,7 +267,6 @@ function onMouseUp(e: MouseEvent) {
   isDragging.value = false;
 
   if (wasDragging) {
-    // Persist new position
     try {
       localStorage.setItem(POSITION_KEY, JSON.stringify(characterPos.value));
     } catch {
@@ -292,18 +284,6 @@ function onMouseUp(e: MouseEvent) {
   }
 }
 
-function onContainerMouseLeave() {
-  // Cancel any pending hold/drag if the cursor leaves the overlay
-  if (pressActive) {
-    pressActive = false;
-    isDragging.value = false;
-    if (holdTimer) {
-      clearTimeout(holdTimer);
-      holdTimer = null;
-    }
-  }
-}
-
 // ── Right-click menu ──────────────────────────────────────────────────────────
 const menuVisible = ref(false);
 const menuX = ref(0);
@@ -313,33 +293,6 @@ function onCharacterContextMenu(e: MouseEvent) {
   menuX.value = e.clientX;
   menuY.value = e.clientY;
   menuVisible.value = true;
-  // Ensure clicks land while menu is open
-  windowStore.setCursorPassthrough(false);
-}
-
-watch(menuVisible, (open) => {
-  if (!open) {
-    // Restore appropriate passthrough after menu closes
-    if (!petChatExpanded.value && !hoveredCharacter.value) {
-      windowStore.setCursorPassthrough(true);
-    }
-  }
-});
-
-// ── Cursor passthrough ────────────────────────────────────────────────────────
-const hoveredCharacter = ref(false);
-
-function onCharacterEnter() {
-  hoveredCharacter.value = true;
-  windowStore.setCursorPassthrough(false);
-}
-
-function onCharacterLeave() {
-  hoveredCharacter.value = false;
-  // Only enable passthrough when no interactive element requires clicks
-  if (!petChatExpanded.value && !menuVisible.value && !isDragging.value) {
-    windowStore.setCursorPassthrough(true);
-  }
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -372,13 +325,7 @@ function toggleChat() {
   const isExpanded = togglePetChat();
   if (isExpanded) {
     showBubble.value = false;
-    windowStore.setCursorPassthrough(false);
     nextTick(() => scrollToBottom());
-  } else {
-    // When chat collapses, enable passthrough if the character isn't hovered
-    if (!hoveredCharacter.value && !menuVisible.value) {
-      windowStore.setCursorPassthrough(true);
-    }
   }
 }
 
@@ -394,11 +341,6 @@ async function handleSend() {
   inputText.value = '';
   await conversationStore.sendMessage(text);
   nextTick(() => scrollToBottom());
-}
-
-async function exitPetMode() {
-  setPetChatExpanded(false);
-  await windowStore.setMode('window');
 }
 
 function dismissOnboarding() {
@@ -474,14 +416,20 @@ onMounted(async () => {
     // No Tauri — browser-side streaming is handled by conversation store
   }
 
-  // Start with passthrough ENABLED so the empty areas of the overlay are
-  // click-through; the character element itself disables passthrough on enter.
-  windowStore.setCursorPassthrough(true);
+  // Pet mode keeps click-through OFF: Tauri's set_ignore_cursor_events is
+  // all-or-nothing for the whole window — toggling it on mouseenter/leave
+  // creates a dead state where events are swallowed by the OS and the window
+  // can never regain focus.  Instead the overlay captures all clicks; the
+  // transparent areas show the desktop visually but don't forward clicks.
+  windowStore.setCursorPassthrough(false);
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', onWindowResize);
+  document.removeEventListener('mousemove', onDocMouseMove);
   if (holdTimer) clearTimeout(holdTimer);
+  // Re-enable passthrough clean-up isn't needed — the window-mode change
+  // back to desktop already makes the window fully interactive again.
   if (unlistenLlmChunk) {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
@@ -495,6 +443,10 @@ onUnmounted(() => {
   inset: 0;
   overflow: hidden;
   background: transparent;
+  /* Pet-mode overlay is transparent; empty areas should let clicks through
+   * to UI behind the overlay (e.g. the floating mode-toggle pill rendered
+   * by App.vue).  Interactive children opt in with pointer-events: auto. */
+  pointer-events: none;
 }
 
 .pet-overlay--dragging {
@@ -654,56 +606,6 @@ onUnmounted(() => {
 .chat-slide-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .chat-slide-enter-from,
 .chat-slide-leave-to { opacity: 0; transform: translateY(20px); }
-
-/* ── Pet-mode toggle pill (top-right) ── */
-.pet-mode-toggle {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  pointer-events: auto;
-}
-.pet-mode-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px 6px 6px;
-  border-radius: 20px;
-  border: 1px solid rgba(108, 99, 255, 0.55);
-  background: rgba(15, 23, 42, 0.85);
-  color: #e2e8f0;
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 600;
-  backdrop-filter: blur(8px);
-  transition: background 0.15s, transform 0.15s;
-}
-.pet-mode-switch:hover {
-  background: rgba(108, 99, 255, 0.25);
-  transform: translateY(-1px);
-}
-.pet-mode-track {
-  position: relative;
-  width: 32px;
-  height: 16px;
-  border-radius: 10px;
-  background: rgba(108, 99, 255, 0.45);
-  display: inline-flex;
-}
-.pet-mode-thumb {
-  position: absolute;
-  top: 50%;
-  left: calc(100% - 14px);
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.55rem;
-}
-.pet-mode-label { letter-spacing: 0.04em; }
 
 /* ── Emotion badge ── */
 .pet-emotion {

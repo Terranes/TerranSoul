@@ -7,6 +7,28 @@
   </Transition>
 
   <div v-show="!appLoading" class="app-shell" :class="{ 'pet-mode': isPetMode }">
+    <!-- Floating mode-toggle pill — visible in BOTH desktop and pet mode.
+         This is the ONLY pet-mode toggle in the app; nothing lives in the
+         sidebar/bottom-nav. -->
+    <div
+      v-if="tauriAvailable && !appLoading"
+      class="mode-toggle-pill"
+      :class="{ 'is-pet': isPetMode }"
+    >
+      <button
+        class="mode-toggle-btn"
+        role="switch"
+        :aria-checked="isPetMode"
+        :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
+        @click="togglePetMode"
+      >
+        <span class="mode-toggle-track">
+          <span class="mode-toggle-thumb">{{ isPetMode ? '🐾' : '🖥' }}</span>
+        </span>
+        <span class="mode-toggle-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
+      </button>
+    </div>
+
     <!-- Pet overlay mode: transparent character + floating chat -->
     <PetOverlayView v-if="isPetMode" />
 
@@ -41,22 +63,6 @@
             <span class="nav-label">Brain</span>
           </button>
 
-          <!-- Pet/Desktop mode toggle switch (only when Tauri is available) -->
-          <button
-            v-if="tauriAvailable"
-            class="nav-btn nav-pet-toggle"
-            :class="{ 'is-pet': isPetMode }"
-            :aria-pressed="isPetMode"
-            :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
-            @click="togglePetMode"
-          >
-            <span class="pet-switch">
-              <span class="pet-switch-track">
-                <span class="pet-switch-thumb">{{ isPetMode ? '🐾' : '🖥' }}</span>
-              </span>
-            </span>
-            <span class="nav-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
-          </button>
         </nav>
 
         <!-- Mobile bottom tab bar (replaces hamburger menu) -->
@@ -69,18 +75,6 @@
           >
             <span class="mobile-tab-icon" v-html="tab.svg"></span>
             <span class="mobile-tab-label">{{ tab.label }}</span>
-          </button>
-          <!-- Pet/Desktop mode toggle switch (only when Tauri is available) -->
-          <button
-            v-if="tauriAvailable"
-            class="mobile-tab mobile-pet-toggle"
-            :class="{ 'is-pet': isPetMode }"
-            :aria-pressed="isPetMode"
-            :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
-            @click="togglePetMode"
-          >
-            <span class="mobile-tab-icon">{{ isPetMode ? '🐾' : '🖥' }}</span>
-            <span class="mobile-tab-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
           </button>
         </nav>
 
@@ -317,34 +311,57 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 }
 .nav-spacer { flex: 1; }
 .nav-brain-warn { color: var(--ts-warning); }
-.nav-pet-toggle { color: var(--ts-accent-violet); }
-.nav-pet-toggle:hover { background: rgba(139, 92, 246, 0.15); }
-.nav-pet-toggle.is-pet { color: var(--ts-accent); background: rgba(108, 99, 255, 0.12); }
-.mobile-pet-toggle { color: var(--ts-accent-violet) !important; }
-.mobile-pet-toggle.is-pet { color: var(--ts-accent) !important; }
-
-/* ── Pet / Desktop toggle switch ── */
-.pet-switch {
+/* ── Floating Desktop/Pet mode-toggle pill ──
+ * Always-visible, fixed-position toggle — lives outside the sidebar so it
+ * remains reachable in pet mode (where the sidebar disappears). */
+.mode-toggle-pill {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 1000;
+  pointer-events: auto;
+}
+.mode-toggle-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 20px;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 20px;
+  border: 1px solid rgba(108, 99, 255, 0.35);
+  background: rgba(15, 23, 42, 0.82);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s, transform 0.15s, border-color 0.15s;
 }
-.pet-switch-track {
+.mode-toggle-btn:hover {
+  background: rgba(108, 99, 255, 0.25);
+  transform: translateY(-1px);
+}
+.mode-toggle-pill.is-pet .mode-toggle-btn {
+  border-color: rgba(108, 99, 255, 0.7);
+  background: rgba(40, 30, 80, 0.8);
+}
+.mode-toggle-track {
   position: relative;
   width: 36px;
   height: 18px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast);
+  display: inline-flex;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
 }
-.nav-pet-toggle.is-pet .pet-switch-track {
-  background: rgba(108, 99, 255, 0.35);
-  border-color: rgba(108, 99, 255, 0.55);
+.mode-toggle-pill.is-pet .mode-toggle-track {
+  background: rgba(108, 99, 255, 0.45);
+  border-color: rgba(108, 99, 255, 0.6);
 }
-.pet-switch-thumb {
+.mode-toggle-thumb {
   position: absolute;
   top: 50%;
   left: 2px;
@@ -358,13 +375,14 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   font-size: 0.55rem;
   line-height: 1;
   transform: translateY(-50%);
-  transition: left var(--ts-transition-fast), background var(--ts-transition-fast);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: left 0.18s ease, background 0.15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
-.nav-pet-toggle.is-pet .pet-switch-thumb {
+.mode-toggle-pill.is-pet .mode-toggle-thumb {
   left: calc(100% - 16px);
   background: #fff;
 }
+.mode-toggle-label { white-space: nowrap; }
 .app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* ── Mobile bottom tab bar ── */

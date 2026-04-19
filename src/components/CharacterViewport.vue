@@ -228,7 +228,7 @@ import { useSettingsStore } from '../stores/settings';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, EYE_TARGET_DISTANCE, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
-import { CharacterAnimator, SITTING_POSE_INDEX } from '../renderer/character-animator';
+import { CharacterAnimator, SITTING_POSE_INDEX, SITTING_BODY_Y_OFFSET } from '../renderer/character-animator';
 import { createSittingProps, applyTeacupHandOffset, type SittingProps } from '../renderer/props';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -583,12 +583,14 @@ onMounted(async () => {
   sittingProps = createSittingProps();
   ctx.scene.add(sittingProps.sofa);
 
-  // Drive prop visibility from the animator's active idle pose.
+  // Drive prop visibility from the animator's active idle pose and also
+  // shift the camera focus down so the seated character stays centred.
   animator.onIdlePoseChange((index) => {
-    if (!sittingProps) return;
+    if (!sittingProps || !sceneCtx) return;
     const sitting = index === SITTING_POSE_INDEX;
     sittingProps.sofa.visible = sitting;
     sittingProps.teacup.visible = sitting;
+    sceneCtx.setFocusYOffset(sitting ? SITTING_BODY_Y_OFFSET : 0);
   });
 
   // Persist camera state after user finishes orbiting or zooming.
