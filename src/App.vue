@@ -41,14 +41,21 @@
             <span class="nav-label">Brain</span>
           </button>
 
-          <!-- Pet mode toggle (only when Tauri is available) -->
+          <!-- Pet/Desktop mode toggle switch (only when Tauri is available) -->
           <button
             v-if="tauriAvailable"
             class="nav-btn nav-pet-toggle"
-            @click="enterPetMode"
+            :class="{ 'is-pet': isPetMode }"
+            :aria-pressed="isPetMode"
+            :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
+            @click="togglePetMode"
           >
-            <span class="nav-icon">🐾</span>
-            <span class="nav-label">Pet</span>
+            <span class="pet-switch">
+              <span class="pet-switch-track">
+                <span class="pet-switch-thumb">{{ isPetMode ? '🐾' : '🖥' }}</span>
+              </span>
+            </span>
+            <span class="nav-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
           </button>
         </nav>
 
@@ -63,14 +70,17 @@
             <span class="mobile-tab-icon" v-html="tab.svg"></span>
             <span class="mobile-tab-label">{{ tab.label }}</span>
           </button>
-          <!-- Pet mode toggle (only when Tauri is available) -->
+          <!-- Pet/Desktop mode toggle switch (only when Tauri is available) -->
           <button
             v-if="tauriAvailable"
             class="mobile-tab mobile-pet-toggle"
-            @click="enterPetMode"
+            :class="{ 'is-pet': isPetMode }"
+            :aria-pressed="isPetMode"
+            :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
+            @click="togglePetMode"
           >
-            <span class="mobile-tab-icon">🐾</span>
-            <span class="mobile-tab-label">Pet</span>
+            <span class="mobile-tab-icon">{{ isPetMode ? '🐾' : '🖥' }}</span>
+            <span class="mobile-tab-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
           </button>
         </nav>
 
@@ -134,8 +144,8 @@ async function onBrainDone() {
   skipSetup.value = true;
 }
 
-async function enterPetMode() {
-  await windowStore.setMode('pet');
+async function togglePetMode() {
+  await windowStore.toggleMode();
 }
 
 
@@ -309,7 +319,52 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 .nav-brain-warn { color: var(--ts-warning); }
 .nav-pet-toggle { color: var(--ts-accent-violet); }
 .nav-pet-toggle:hover { background: rgba(139, 92, 246, 0.15); }
+.nav-pet-toggle.is-pet { color: var(--ts-accent); background: rgba(108, 99, 255, 0.12); }
 .mobile-pet-toggle { color: var(--ts-accent-violet) !important; }
+.mobile-pet-toggle.is-pet { color: var(--ts-accent) !important; }
+
+/* ── Pet / Desktop toggle switch ── */
+.pet-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 20px;
+}
+.pet-switch-track {
+  position: relative;
+  width: 36px;
+  height: 18px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast);
+}
+.nav-pet-toggle.is-pet .pet-switch-track {
+  background: rgba(108, 99, 255, 0.35);
+  border-color: rgba(108, 99, 255, 0.55);
+}
+.pet-switch-thumb {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #0b1120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  line-height: 1;
+  transform: translateY(-50%);
+  transition: left var(--ts-transition-fast), background var(--ts-transition-fast);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.nav-pet-toggle.is-pet .pet-switch-thumb {
+  left: calc(100% - 16px);
+  background: #fff;
+}
 .app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* ── Mobile bottom tab bar ── */

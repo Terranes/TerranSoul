@@ -226,9 +226,10 @@ import { useCharacterStore } from '../stores/character';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
 import { DEFAULT_MODELS } from '../config/default-models';
-import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
+import { initScene, EYE_TARGET_DISTANCE, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
-import { CharacterAnimator } from '../renderer/character-animator';
+import { CharacterAnimator, SITTING_POSE_INDEX } from '../renderer/character-animator';
+import { createSittingProps, applyTeacupHandOffset, type SittingProps } from '../renderer/props';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import SystemInfoPanel from './SystemInfoPanel.vue';
 import AudioControlsPanel from './AudioControlsPanel.vue';
@@ -463,6 +464,12 @@ let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
+// ── Sitting props (sofa + teacup) ─────────────────────────────────────────────
+// Created once on scene init; sofa is added to the scene, teacup is parented
+// to the right-hand bone when a VRM is loaded.  Visibility is driven by the
+// animator's idle pose index (auto rotation) and by characterStore.sittingPinned
+// (manual selection via the Mood submenu).
+let sittingProps: SittingProps | null = null;
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
 defineExpose({
@@ -571,6 +578,19 @@ onMounted(async () => {
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
 
+  // Create sitting props and add sofa to the scene (initially hidden).
+  // The teacup is parented to the right-hand bone when a VRM loads.
+  sittingProps = createSittingProps();
+  ctx.scene.add(sittingProps.sofa);
+
+  // Drive prop visibility from the animator's active idle pose.
+  animator.onIdlePoseChange((index) => {
+    if (!sittingProps) return;
+    const sitting = index === SITTING_POSE_INDEX;
+    sittingProps.sofa.visible = sitting;
+    sittingProps.teacup.visible = sitting;
+  });
+
   // Persist camera state after user finishes orbiting or zooming.
   ctx.onCameraChange((azimuth, distance) => {
     settingsStore.saveCameraState(azimuth, distance);
@@ -623,8 +643,14 @@ onMounted(async () => {
     // Update OrbitControls (damping requires per-frame update)
     ctx.controls.update();
 
-    // Keep lookAt target at camera position so VRM eyes track the viewer
-    ctx.lookAtTarget.position.copy(ctx.camera.position);
+    // Eye tracking: place the lookAt target a fixed distance in front of the
+    // camera along its view direction so the character's gaze tracks the
+    // viewer's direction of view, not the camera's spatial position. Uses a
+    // pre-allocated scratch vector (ctx._eyeForward) — no per-frame allocation.
+    ctx.camera.getWorldDirection(ctx._eyeForward);
+    ctx.lookAtTarget.position
+      .copy(ctx.camera.position)
+      .addScaledVector(ctx._eyeForward, EYE_TARGET_DISTANCE);
 
     const asm = animator.avatarStateMachine;
     const settled = animator.isAnimationSettled();
@@ -675,6 +701,17 @@ watch(
   (newState) => animator.setState(newState),
 );
 
+// Pin or release the idle-pose rotation based on the Mood submenu's
+// "Sitting" selection.  When pinned, the animator also fires its idle-pose
+// change listener so the sofa + teacup visibility stays in sync.
+watch(
+  () => characterStore.sittingPinned,
+  (pinned) => {
+    animator.forceIdlePose(pinned ? SITTING_POSE_INDEX : null);
+  },
+  { immediate: true },
+);
+
 // Watch for VRM path changes and load the model
 watch(
   () => characterStore.vrmPath,
@@ -716,6 +753,20 @@ async function loadModelIntoScene(newPath: string | undefined) {
         // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
         animator.setLookAtTarget(sceneCtx.lookAtTarget);
         characterStore.setMetadata(result.metadata);
+
+        // Parent the teacup to the VRM's right-hand bone so it stays in hand
+        // during the seated idle.  Removes any prior parenting from a previous
+        // model so switching characters doesn't leave orphans.
+        if (sittingProps) {
+          if (sittingProps.teacup.parent) {
+            sittingProps.teacup.parent.remove(sittingProps.teacup);
+          }
+          const rightHandBone = result.vrm.humanoid?.getNormalizedBoneNode('rightHand');
+          if (rightHandBone) {
+            rightHandBone.add(sittingProps.teacup);
+            applyTeacupHandOffset(sittingProps.teacup);
+          }
+        }
 
         // Expose VRM for E2E testing — allows Playwright to verify bone positions
         (window as unknown as Record<string, unknown>).__terransoul_vrm__ = result.vrm;

@@ -13,9 +13,17 @@ export const useCharacterStore = defineStore('character', () => {
   const isLoading = ref(true);
   const selectedModelId = ref<string>(DEFAULT_MODEL_ID);
   const defaultModels = ref<DefaultModel[]>(DEFAULT_MODELS);
+  /** When true, the character-animator pins the idle pose rotation to the
+   *  seated pose and the sofa + teacup props are visible. Set via the Mood
+   *  submenu or via the animator when it rotates into the seated idle. */
+  const sittingPinned = ref(false);
 
   function setState(newState: CharacterState) {
     state.value = newState;
+  }
+
+  function setSittingPinned(pinned: boolean) {
+    sittingPinned.value = pinned;
   }
 
   function setMetadata(metadata: VrmMetadata) {
@@ -84,5 +92,5 @@ export const useCharacterStore = defineStore('character', () => {
     selectedModelId.value = DEFAULT_MODEL_ID;
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, setState, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender };
+  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, sittingPinned, setState, setSittingPinned, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender };
 });

@@ -7,6 +7,9 @@ export interface RendererInfo {
   programs: number;
 }
 
+/** Distance (metres) in front of the camera to place the eye-tracking target. */
+export const EYE_TARGET_DISTANCE = 1.5;
+
 export interface SceneContext {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -14,6 +17,10 @@ export interface SceneContext {
   clock: THREE.Clock;
   controls: OrbitControls;
   lookAtTarget: THREE.Object3D;
+  /** Pre-allocated scratch Vector3 used to read camera.getWorldDirection() each
+   *  frame without allocating.  Owned by SceneContext so the render loop can
+   *  reuse it for eye tracking. */
+  _eyeForward: THREE.Vector3;
   getRendererInfo: () => RendererInfo;
   /** Call each frame before controls.update() — smoothly adjusts the orbit
    *  target height so zooming in frames the face and zooming out shows the
@@ -201,9 +208,16 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     controls.update();
   }
 
-  // LookAt target — placed in scene (not on camera) for VRM eye tracking
+  // LookAt target — placed in scene (not on camera) for VRM eye tracking.
+  // Positioned each frame a fixed distance in front of the camera using
+  // camera.getWorldDirection() so the character's gaze tracks the viewer's
+  // direction of view rather than the camera position itself.
   const lookAtTarget = new THREE.Object3D();
   scene.add(lookAtTarget);
+
+  // Pre-allocated scratch vector used by the render loop to read
+  // camera.getWorldDirection() each frame without allocation.
+  const _eyeForward = new THREE.Vector3();
 
   // ── Lighting: matches VRoid Hub's 5-light setup ───────────────────────────
   // Ambient fill — ensures no part of the model is completely dark
@@ -368,5 +382,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, frameCameraToCharacter, setCurrentModel, checkResize, dispose, onCameraChange };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, _eyeForward, getRendererInfo, updateZoomTarget, frameCameraToCharacter, setCurrentModel, checkResize, dispose, onCameraChange };
 }

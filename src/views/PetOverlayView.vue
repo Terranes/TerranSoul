@@ -1,28 +1,42 @@
 <template>
   <div
     class="pet-overlay"
-    @mouseenter="onMouseEnter"
-    @mouseleave="onMouseLeave"
+    :class="{ 'pet-overlay--chat': petChatExpanded, 'pet-overlay--dragging': isDragging }"
+    @mousemove="onMouseMove"
+    @mouseup="onMouseUp"
+    @mouseleave="onContainerMouseLeave"
   >
-    <!-- 3D character viewport (transparent background) -->
-    <div class="pet-character">
+    <!-- Draggable 3D character viewport (transparent background) -->
+    <div
+      class="pet-character"
+      :style="characterStyle"
+      @mouseenter="onCharacterEnter"
+      @mouseleave="onCharacterLeave"
+      @mousedown="onCharacterMouseDown"
+      @contextmenu.prevent="onCharacterContextMenu"
+    >
       <CharacterViewport />
     </div>
 
     <!-- Floating chat bubble (shows recent message) -->
     <Transition name="bubble">
       <div
-        v-if="showBubble && lastAssistantText"
+        v-if="showBubble && lastAssistantText && !petChatExpanded"
         class="pet-bubble"
+        :style="bubbleStyle"
         @click.stop="toggleChat"
       >
         <p class="pet-bubble-text">{{ truncatedMessage }}</p>
       </div>
     </Transition>
 
-    <!-- Expandable chat input (visible on hover or click) -->
+    <!-- Expandable chat input -->
     <Transition name="chat-slide">
-      <div v-if="petChatExpanded" class="pet-chat" @click.stop>
+      <div v-if="petChatExpanded" class="pet-chat" @click.stop @mousedown.stop>
+        <div class="pet-chat-header">
+          <span class="pet-chat-title">Chat</span>
+          <button class="pet-chat-close" @click.stop="toggleChat" title="Close chat">×</button>
+        </div>
         <div class="pet-chat-messages" ref="messagesRef">
           <div
             v-for="msg in recentMessages"
@@ -53,18 +67,52 @@
       </div>
     </Transition>
 
-    <!-- Pet mode controls (bottom-right) — always visible initially, then hover-only -->
-    <div class="pet-controls" :class="{ visible: hovered || petChatExpanded || showInitialHint }">
-      <button class="pet-ctrl-btn" title="Toggle chat" @click.stop="toggleChat">💬</button>
-      <button class="pet-ctrl-btn" title="Exit pet mode" @click.stop="exitPetMode">✕</button>
+    <!-- Onboarding tooltip — shown once on first use of pet mode -->
+    <Transition name="fade">
+      <div v-if="showOnboarding" class="pet-onboarding" @click.stop>
+        <p class="pet-onboarding-title">Welcome to pet mode</p>
+        <ul class="pet-onboarding-list">
+          <li><strong>Left-click</strong> character to toggle chat</li>
+          <li><strong>Hold &amp; drag</strong> to reposition</li>
+          <li><strong>Right-click</strong> for menu (mood, settings…)</li>
+        </ul>
+        <button class="pet-onboarding-dismiss" @click.stop="dismissOnboarding">Got it</button>
+      </div>
+    </Transition>
+
+    <!-- Top-right floating toggle (switch back to desktop) -->
+    <div class="pet-mode-toggle" @click.stop>
+      <button
+        class="pet-mode-switch"
+        aria-pressed="true"
+        title="Switch to desktop mode"
+        @click="exitPetMode"
+      >
+        <span class="pet-mode-track">
+          <span class="pet-mode-thumb">🐾</span>
+        </span>
+        <span class="pet-mode-label">Pet</span>
+      </button>
     </div>
 
-    <!-- Emotion display -->
+    <!-- Emotion badge -->
     <Transition name="fade">
-      <div v-if="characterStore.state !== 'idle'" class="pet-emotion">
+      <div
+        v-if="characterStore.state !== 'idle'"
+        class="pet-emotion"
+        :style="emotionStyle"
+      >
         {{ emotionEmoji }}
       </div>
     </Transition>
+
+    <!-- Right-click context menu -->
+    <PetContextMenu
+      :visible="menuVisible"
+      :x="menuX"
+      :y="menuY"
+      @close="menuVisible = false"
+    />
   </div>
 </template>
 
@@ -78,6 +126,7 @@ import { useStreamingStore } from '../stores/streaming';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import type { CharacterState } from '../types';
 import CharacterViewport from '../components/CharacterViewport.vue';
+import PetContextMenu from '../components/PetContextMenu.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -86,19 +135,215 @@ const windowStore = useWindowStore();
 const streaming = useStreamingStore();
 const { petChatExpanded, setPetChatExpanded, togglePetChat } = useChatExpansion();
 
+// ── UI state ──────────────────────────────────────────────────────────────────
 const inputText = ref('');
-const hovered = ref(false);
 const showBubble = ref(false);
-const showInitialHint = ref(true);
+const showOnboarding = ref(false);
 const messagesRef = ref<HTMLElement | null>(null);
 
-let unlistenLlmChunk: (() => void) | null = null;
+// ── Character position (persisted via localStorage) ───────────────────────────
+const CHARACTER_WIDTH = 350;
+const CHARACTER_HEIGHT = 500;
+const POSITION_KEY = 'ts.pet.character_position';
+const ONBOARDING_KEY = 'ts.pet.onboarded';
 
-// Show only the last 20 messages in pet mode
-const recentMessages = computed(() => {
-  const msgs = conversationStore.messages;
-  return msgs.slice(-20);
+interface CharacterPosition {
+  x: number;
+  y: number;
+}
+
+function defaultPosition(): CharacterPosition {
+  // Default: bottom-right corner (preserves the original layout).
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
+  return { x: vw - CHARACTER_WIDTH, y: vh - CHARACTER_HEIGHT };
+}
+
+function loadSavedPosition(): CharacterPosition {
+  try {
+    const raw = localStorage.getItem(POSITION_KEY);
+    if (!raw) return defaultPosition();
+    const parsed = JSON.parse(raw) as CharacterPosition;
+    if (typeof parsed?.x !== 'number' || typeof parsed?.y !== 'number') {
+      return defaultPosition();
+    }
+    return clampToViewport(parsed);
+  } catch {
+    return defaultPosition();
+  }
+}
+
+function clampToViewport(pos: CharacterPosition): CharacterPosition {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
+  const maxX = Math.max(0, vw - CHARACTER_WIDTH);
+  const maxY = Math.max(0, vh - CHARACTER_HEIGHT);
+  return {
+    x: Math.max(0, Math.min(maxX, pos.x)),
+    y: Math.max(0, Math.min(maxY, pos.y)),
+  };
+}
+
+const characterPos = ref<CharacterPosition>(defaultPosition());
+
+const characterStyle = computed(() => ({
+  left: `${characterPos.value.x}px`,
+  top: `${characterPos.value.y}px`,
+  width: `${CHARACTER_WIDTH}px`,
+  height: `${CHARACTER_HEIGHT}px`,
+}));
+
+const bubbleStyle = computed(() => {
+  const x = characterPos.value.x + CHARACTER_WIDTH / 2 - 140;
+  const y = Math.max(8, characterPos.value.y - 80);
+  return {
+    left: `${Math.max(8, Math.min(window.innerWidth - 296, x))}px`,
+    top: `${y}px`,
+  };
 });
+
+const emotionStyle = computed(() => ({
+  left: `${characterPos.value.x + CHARACTER_WIDTH - 56}px`,
+  top: `${characterPos.value.y + 40}px`,
+}));
+
+// ── Drag handling ─────────────────────────────────────────────────────────────
+const HOLD_THRESHOLD_MS = 150; // hold duration before drag starts
+const CLICK_MOVE_TOLERANCE = 4; // pixels — treat as click if moved less than this
+
+const isDragging = ref(false);
+let pressStartX = 0;
+let pressStartY = 0;
+let pressStartTime = 0;
+let pressOriginPosX = 0;
+let pressOriginPosY = 0;
+let pressActive = false;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onCharacterMouseDown(e: MouseEvent) {
+  // Only primary button (left). Ignore right-click (handled by contextmenu).
+  if (e.button !== 0) return;
+  pressActive = true;
+  pressStartX = e.clientX;
+  pressStartY = e.clientY;
+  pressStartTime = performance.now();
+  pressOriginPosX = characterPos.value.x;
+  pressOriginPosY = characterPos.value.y;
+
+  // Arm a hold timer — if the user keeps the mouse down past the threshold
+  // without moving much, we enter drag mode.
+  if (holdTimer) clearTimeout(holdTimer);
+  holdTimer = setTimeout(() => {
+    if (pressActive && !isDragging.value) {
+      isDragging.value = true;
+    }
+  }, HOLD_THRESHOLD_MS);
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!pressActive) return;
+  const dx = e.clientX - pressStartX;
+  const dy = e.clientY - pressStartY;
+
+  // If the user drags significantly before the hold timer, still promote to drag.
+  if (!isDragging.value && Math.hypot(dx, dy) > 6) {
+    isDragging.value = true;
+  }
+
+  if (isDragging.value) {
+    const next: CharacterPosition = {
+      x: pressOriginPosX + dx,
+      y: pressOriginPosY + dy,
+    };
+    characterPos.value = clampToViewport(next);
+  }
+}
+
+function onMouseUp(e: MouseEvent) {
+  if (!pressActive) return;
+  const dx = e.clientX - pressStartX;
+  const dy = e.clientY - pressStartY;
+  const duration = performance.now() - pressStartTime;
+  const wasDragging = isDragging.value;
+
+  if (holdTimer) {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+  pressActive = false;
+  isDragging.value = false;
+
+  if (wasDragging) {
+    // Persist new position
+    try {
+      localStorage.setItem(POSITION_KEY, JSON.stringify(characterPos.value));
+    } catch {
+      // localStorage unavailable — position lives for this session only
+    }
+    return;
+  }
+
+  // Treat as a click: short duration and minimal movement.
+  if (
+    duration < HOLD_THRESHOLD_MS &&
+    Math.hypot(dx, dy) <= CLICK_MOVE_TOLERANCE
+  ) {
+    toggleChat();
+  }
+}
+
+function onContainerMouseLeave() {
+  // Cancel any pending hold/drag if the cursor leaves the overlay
+  if (pressActive) {
+    pressActive = false;
+    isDragging.value = false;
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+  }
+}
+
+// ── Right-click menu ──────────────────────────────────────────────────────────
+const menuVisible = ref(false);
+const menuX = ref(0);
+const menuY = ref(0);
+
+function onCharacterContextMenu(e: MouseEvent) {
+  menuX.value = e.clientX;
+  menuY.value = e.clientY;
+  menuVisible.value = true;
+  // Ensure clicks land while menu is open
+  windowStore.setCursorPassthrough(false);
+}
+
+watch(menuVisible, (open) => {
+  if (!open) {
+    // Restore appropriate passthrough after menu closes
+    if (!petChatExpanded.value && !hoveredCharacter.value) {
+      windowStore.setCursorPassthrough(true);
+    }
+  }
+});
+
+// ── Cursor passthrough ────────────────────────────────────────────────────────
+const hoveredCharacter = ref(false);
+
+function onCharacterEnter() {
+  hoveredCharacter.value = true;
+  windowStore.setCursorPassthrough(false);
+}
+
+function onCharacterLeave() {
+  hoveredCharacter.value = false;
+  // Only enable passthrough when no interactive element requires clicks
+  if (!petChatExpanded.value && !menuVisible.value && !isDragging.value) {
+    windowStore.setCursorPassthrough(true);
+  }
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+const recentMessages = computed(() => conversationStore.messages.slice(-20));
 
 const lastAssistantText = computed(() => {
   const assistantMsgs = conversationStore.messages.filter((m) => m.role === 'assistant');
@@ -127,25 +372,13 @@ function toggleChat() {
   const isExpanded = togglePetChat();
   if (isExpanded) {
     showBubble.value = false;
-    // Enable click events on this window
     windowStore.setCursorPassthrough(false);
     nextTick(() => scrollToBottom());
   } else {
-    showBubble.value = true;
-  }
-}
-
-function onMouseEnter() {
-  hovered.value = true;
-  // Ensure clicks work on the character/controls
-  windowStore.setCursorPassthrough(false);
-}
-
-function onMouseLeave() {
-  hovered.value = false;
-  // If chat is not expanded, allow click-through
-  if (!petChatExpanded.value) {
-    windowStore.setCursorPassthrough(true);
+    // When chat collapses, enable passthrough if the character isn't hovered
+    if (!hoveredCharacter.value && !menuVisible.value) {
+      windowStore.setCursorPassthrough(true);
+    }
   }
 }
 
@@ -168,6 +401,15 @@ async function exitPetMode() {
   await windowStore.setMode('window');
 }
 
+function dismissOnboarding() {
+  showOnboarding.value = false;
+  try {
+    localStorage.setItem(ONBOARDING_KEY, '1');
+  } catch {
+    // Ignore — tooltip will show again next session
+  }
+}
+
 // Scroll on new messages
 watch(
   () => conversationStore.messages.length,
@@ -175,10 +417,8 @@ watch(
     if (petChatExpanded.value) {
       nextTick(() => scrollToBottom());
     }
-    // Show bubble on new assistant message
     if (!petChatExpanded.value) {
       showBubble.value = true;
-      // Auto-hide bubble after 8 seconds
       setTimeout(() => {
         if (!petChatExpanded.value) showBubble.value = false;
       }, 8000);
@@ -197,8 +437,28 @@ watch(
   },
 );
 
-// Set up streaming event listener
+// Keep character inside the viewport when the window resizes
+function onWindowResize() {
+  characterPos.value = clampToViewport(characterPos.value);
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+let unlistenLlmChunk: (() => void) | null = null;
+
 onMounted(async () => {
+  characterPos.value = loadSavedPosition();
+  window.addEventListener('resize', onWindowResize);
+
+  // Onboarding tooltip: show only if never dismissed before
+  try {
+    showOnboarding.value = !localStorage.getItem(ONBOARDING_KEY);
+  } catch {
+    showOnboarding.value = true;
+  }
+
+  // Collapse chat by default — the character is the focus in pet mode
+  setPetChatExpanded(false);
+
   try {
     await brain.loadActiveBrain();
   } catch {
@@ -214,16 +474,14 @@ onMounted(async () => {
     // No Tauri — browser-side streaming is handled by conversation store
   }
 
-  // Start with click-through disabled since chat is expanded
-  windowStore.setCursorPassthrough(false);
-
-  // Auto-dismiss initial hint after 5 seconds
-  setTimeout(() => {
-    showInitialHint.value = false;
-  }, 5000);
+  // Start with passthrough ENABLED so the empty areas of the overlay are
+  // click-through; the character element itself disables passthrough on enter.
+  windowStore.setCursorPassthrough(true);
 });
 
 onUnmounted(() => {
+  window.removeEventListener('resize', onWindowResize);
+  if (holdTimer) clearTimeout(holdTimer);
   if (unlistenLlmChunk) {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
@@ -236,28 +494,36 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  /* Transparent background — the character floats on the desktop */
   background: transparent;
+}
+
+.pet-overlay--dragging {
+  cursor: grabbing;
 }
 
 .pet-character {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 350px;
-  height: 500px;
   pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: left, top;
+  transition: transform 0.15s ease-out;
+}
+.pet-overlay--dragging .pet-character {
+  cursor: grabbing;
+  transform: scale(1.01);
+  transition: none;
 }
 
 /* ── Chat bubble ── */
 .pet-bubble {
   position: absolute;
-  bottom: 420px;
-  right: 20px;
   max-width: 280px;
+  width: fit-content;
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 16px 16px 4px 16px;
+  border-radius: 16px 16px 16px 4px;
   padding: 12px 16px;
   color: #e2e8f0;
   font-size: 0.85rem;
@@ -267,29 +533,20 @@ onUnmounted(() => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   pointer-events: auto;
 }
+.pet-bubble-text { margin: 0; }
 
-.pet-bubble-text {
-  margin: 0;
-}
-
-/* Bubble transitions */
 .bubble-enter-active,
-.bubble-leave-active {
-  transition: opacity 0.3s, transform 0.3s;
-}
+.bubble-leave-active { transition: opacity 0.3s, transform 0.3s; }
 .bubble-enter-from,
-.bubble-leave-to {
-  opacity: 0;
-  transform: translateY(10px) scale(0.95);
-}
+.bubble-leave-to { opacity: 0; transform: translateY(10px) scale(0.95); }
 
-/* ── Expandable chat ── */
+/* ── Expandable chat panel — anchored to left side so it never clips the character ── */
 .pet-chat {
   position: absolute;
   bottom: 20px;
   left: 20px;
-  width: 340px;
-  max-height: 500px;
+  width: 360px;
+  max-height: 520px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(139, 92, 246, 0.25);
   border-radius: 16px;
@@ -301,6 +558,33 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
+.pet-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.pet-chat-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.pet-chat-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.pet-chat-close:hover { background: rgba(255, 255, 255, 0.12); }
+
 .pet-chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -310,7 +594,6 @@ onUnmounted(() => {
   gap: 8px;
   max-height: 380px;
 }
-
 .pet-msg {
   padding: 8px 12px;
   border-radius: 12px;
@@ -319,30 +602,22 @@ onUnmounted(() => {
   max-width: 85%;
   word-wrap: break-word;
 }
-
 .pet-msg.user {
   background: rgba(108, 99, 255, 0.25);
   align-self: flex-end;
   border-radius: 12px 12px 4px 12px;
 }
-
 .pet-msg.assistant {
   background: rgba(255, 255, 255, 0.08);
   align-self: flex-start;
   border-radius: 12px 12px 12px 4px;
 }
+.pet-msg-text { color: #e2e8f0; }
 
-.pet-msg-text {
-  color: #e2e8f0;
-}
-
-.pet-thinking {
-  animation: pet-pulse 1s ease-in-out infinite;
-}
-
+.pet-thinking { animation: pet-pulse 1s ease-in-out infinite; }
 @keyframes pet-pulse {
   0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  50%      { opacity: 1; }
 }
 
 .pet-chat-input {
@@ -351,7 +626,6 @@ onUnmounted(() => {
   padding: 10px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
-
 .pet-chat-input input {
   flex: 1;
   padding: 8px 14px;
@@ -362,11 +636,7 @@ onUnmounted(() => {
   font-size: 0.82rem;
   outline: none;
 }
-
-.pet-chat-input input:focus {
-  border-color: #6c63ff;
-}
-
+.pet-chat-input input:focus { border-color: #6c63ff; }
 .pet-chat-input button {
   width: 34px;
   height: 34px;
@@ -378,75 +648,111 @@ onUnmounted(() => {
   font-size: 0.9rem;
   flex-shrink: 0;
 }
+.pet-chat-input button:disabled { opacity: 0.35; cursor: not-allowed; }
 
-.pet-chat-input button:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-/* Chat slide transitions */
 .chat-slide-enter-active,
-.chat-slide-leave-active {
-  transition: opacity 0.25s, transform 0.25s;
-}
+.chat-slide-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .chat-slide-enter-from,
-.chat-slide-leave-to {
-  opacity: 0;
-  transform: translateY(20px);
-}
+.chat-slide-leave-to { opacity: 0; transform: translateY(20px); }
 
-/* ── Controls ── */
-.pet-controls {
+/* ── Pet-mode toggle pill (top-right) ── */
+.pet-mode-toggle {
   position: absolute;
-  bottom: 10px;
-  right: 10px;
-  display: flex;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.2s;
+  top: 14px;
+  right: 14px;
   pointer-events: auto;
 }
-
-.pet-controls.visible {
-  opacity: 1;
-}
-
-.pet-ctrl-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+.pet-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 20px;
+  border: 1px solid rgba(108, 99, 255, 0.55);
   background: rgba(15, 23, 42, 0.85);
   color: #e2e8f0;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s, transform 0.15s;
+}
+.pet-mode-switch:hover {
+  background: rgba(108, 99, 255, 0.25);
+  transform: translateY(-1px);
+}
+.pet-mode-track {
+  position: relative;
+  width: 32px;
+  height: 16px;
+  border-radius: 10px;
+  background: rgba(108, 99, 255, 0.45);
+  display: inline-flex;
+}
+.pet-mode-thumb {
+  position: absolute;
+  top: 50%;
+  left: calc(100% - 14px);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
-  transition: background 0.15s, transform 0.15s;
+  font-size: 0.55rem;
 }
-
-.pet-ctrl-btn:hover {
-  background: rgba(108, 99, 255, 0.35);
-  transform: scale(1.1);
-}
+.pet-mode-label { letter-spacing: 0.04em; }
 
 /* ── Emotion badge ── */
 .pet-emotion {
   position: absolute;
-  top: calc(100% - 530px);
-  right: 140px;
   font-size: 1.5rem;
   pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
 }
 
+/* ── Onboarding ── */
+.pet-onboarding {
+  position: absolute;
+  top: 60px;
+  right: 14px;
+  width: 260px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+.pet-onboarding-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+  color: var(--ts-accent, #7c6fff);
+}
+.pet-onboarding-list {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+.pet-onboarding-dismiss {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: #6c63ff;
+  color: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.pet-onboarding-dismiss:hover { background: #7c6fff; }
+
 .fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s;
-}
+.fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+.fade-leave-to { opacity: 0; }
 </style>

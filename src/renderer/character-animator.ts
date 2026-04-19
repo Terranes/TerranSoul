@@ -150,7 +150,30 @@ const IDLE_POSES: BonePose[] = [
     leftShoulder:  [-0.02, 0, 0.08],
     rightShoulder: [-0.02, 0, -0.08],
   },
+  // Pose 7: Seated with teacup (sofa idle variant).
+  // The sofa + teacup props are shown whenever this pose index is active —
+  // see SITTING_POSE_INDEX below and CharacterViewport's onIdlePoseChange handler.
+  // Knee bones aren't in ANIMATED_BONES, so the sofa is positioned so the
+  // character's natural leg pose reads as a relaxed seated posture.
+  {
+    head:  [0.02, -0.04, 0.01],          // gentle forward tilt toward cup
+    spine: [0.08, 0, 0],                 // slight forward lean
+    chest: [0.04, 0, 0],
+    hips:  [0, 0, 0],                    // keep upright — sofa provides the "sit" illusion
+    neck:  [0.02, -0.02, 0],
+    leftUpperArm:  [0.05, 0, 1.20],      // left arm resting on lap
+    rightUpperArm: [0.25, -0.12, -1.05], // right arm raised to bring cup near face
+    leftLowerArm:  [0, 0, 0.35],         // left forearm resting
+    rightLowerArm: [0, 0, -0.50],        // clamped within DRESS_LOWER_ARM_Z_MAX
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.10],
+  },
 ];
+
+/** Index of the "seated, holding teacup" pose in IDLE_POSES.  Used by the
+ *  viewport to show/hide the sofa + teacup props, and by the Mood submenu's
+ *  "Sitting" option when pinning a manual idle pose. */
+export const SITTING_POSE_INDEX = 6;
 
 const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
   // idle will be dynamically selected from IDLE_POSES array
@@ -342,6 +365,12 @@ export class CharacterAnimator {
   private currentIdlePoseIndex = 0;
   private idlePoseChangeTime = 0;
   private nextIdlePoseChangeAt = 8;
+  /** When non-null, the animator pins the idle pose to this index and disables
+   *  random rotation.  Set via forceIdlePose() from the Mood submenu. */
+  private pinnedIdlePoseIndex: number | null = null;
+  /** Optional listener fired whenever the active idle pose index changes.
+   *  CharacterViewport uses this to toggle the sofa + teacup props. */
+  private idlePoseChangeListener: ((index: number) => void) | null = null;
 
   /** Exposes the layered AvatarStateMachine for external mutation. */
   get avatarStateMachine(): AvatarStateMachine { return this._asm; }
@@ -448,15 +477,16 @@ export class CharacterAnimator {
     this.elapsed += delta;
     const t = this.elapsed;
 
-    // Handle idle pose randomization when in idle state
-    if (this.state === 'idle') {
+    // Handle idle pose randomization when in idle state.
+    // When a pose is pinned (forceIdlePose), skip random rotation entirely.
+    if (this.state === 'idle' && this.pinnedIdlePoseIndex === null) {
       this.idlePoseChangeTime += delta;
       if (this.idlePoseChangeTime >= this.nextIdlePoseChangeAt) {
         this.selectNextIdlePose();
       }
     } else {
-      // Reset idle pose timer when not in idle state
-      this.idlePoseChangeTime = 0; 
+      // Reset idle pose timer when not in idle state (or when pinned)
+      this.idlePoseChangeTime = 0;
       this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
     }
 
@@ -500,13 +530,53 @@ export class CharacterAnimator {
         newIndex = Math.floor(Math.random() * IDLE_POSES.length);
       } while (newIndex === this.currentIdlePoseIndex);
     }
-    
-    this.currentIdlePoseIndex = newIndex;
-    STATE_BONE_POSES.idle = IDLE_POSES[newIndex];
-    
+
+    this.setActiveIdlePose(newIndex);
+
     // Reset timer with some randomization
     this.idlePoseChangeTime = 0;
     this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+  }
+
+  /** Update the active idle pose, fire the change listener, and wire the
+   *  STATE_BONE_POSES.idle slot so the frame loop picks up the new pose. */
+  private setActiveIdlePose(index: number) {
+    if (index < 0 || index >= IDLE_POSES.length) return;
+    if (index === this.currentIdlePoseIndex) return;
+    this.currentIdlePoseIndex = index;
+    STATE_BONE_POSES.idle = IDLE_POSES[index];
+    if (this.idlePoseChangeListener) {
+      this.idlePoseChangeListener(index);
+    }
+  }
+
+  /**
+   * Pin the idle-pose rotation to a specific pose index, or release the pin
+   * and resume random rotation when `index` is null.  Used by the Mood
+   * submenu's "Sitting" option to force the seated pose.
+   */
+  forceIdlePose(index: number | null) {
+    this.pinnedIdlePoseIndex = index;
+    if (index !== null) {
+      this.setActiveIdlePose(index);
+      // Reset timer so the pinned pose doesn't get swapped on the next tick
+      this.idlePoseChangeTime = 0;
+      this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+    }
+  }
+
+  /** Subscribe to idle-pose-change events (fires when the animator rotates
+   *  between idle variants or when forceIdlePose() picks a new pose). */
+  onIdlePoseChange(cb: (index: number) => void) {
+    this.idlePoseChangeListener = cb;
+    // Fire once synchronously so the listener can sync props to the
+    // current pose without waiting for the first rotation.
+    cb(this.currentIdlePoseIndex);
+  }
+
+  /** Get the active idle pose index. */
+  getCurrentIdlePoseIndex(): number {
+    return this.currentIdlePoseIndex;
   }
 
   /**
