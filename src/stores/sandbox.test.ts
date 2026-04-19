@@ -143,3 +143,47 @@ describe('sandbox store — IPC integration', () => {
     expect(store.error).toBeNull();
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('sandbox store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('grantCapability sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useSandboxStore();
+    await store.grantCapability('test-agent', 'network');
+    expect(mockInvoke).toHaveBeenCalledWith('grant_agent_capability', { agentName: 'test-agent', capability: 'network' });
+  });
+
+  it('revokeCapability sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useSandboxStore();
+    await store.revokeCapability('test-agent', 'file_read');
+    expect(mockInvoke).toHaveBeenCalledWith('revoke_agent_capability', { agentName: 'test-agent', capability: 'file_read' });
+  });
+
+  it('listCapabilities sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue([]);
+    const store = useSandboxStore();
+    await store.listCapabilities('test-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('list_agent_capabilities', { agentName: 'test-agent' });
+  });
+
+  it('clearCapabilities sends agentName (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useSandboxStore();
+    await store.clearCapabilities('test-agent');
+    expect(mockInvoke).toHaveBeenCalledWith('clear_agent_capabilities', { agentName: 'test-agent' });
+  });
+
+  it('runInSandbox sends agentName and wasmBytes (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(0);
+    const store = useSandboxStore();
+    await store.runInSandbox('test-agent', [0, 1, 2]);
+    expect(mockInvoke).toHaveBeenCalledWith('run_agent_in_sandbox', { agentName: 'test-agent', wasmBytes: [0, 1, 2] });
+  });
+});

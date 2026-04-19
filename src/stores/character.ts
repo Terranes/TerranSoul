@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { CharacterState, VrmMetadata } from '../types';
-import { DEFAULT_MODELS, DEFAULT_MODEL_ID, type DefaultModel } from '../config/default-models';
+import { DEFAULT_MODELS, DEFAULT_MODEL_ID, GENDER_VOICES, type DefaultModel, type ModelGender } from '../config/default-models';
 import { useSettingsStore } from './settings';
 
 export const useCharacterStore = defineStore('character', () => {
@@ -40,11 +40,25 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
+  /** Get the gender of the currently selected model. */
+  function currentGender(): ModelGender {
+    const model = DEFAULT_MODELS.find(m => m.id === selectedModelId.value);
+    return model?.gender ?? 'female';
+  }
+
   async function selectModel(modelId: string) {
     const model = DEFAULT_MODELS.find(m => m.id === modelId);
     if (!model) return;
     selectedModelId.value = modelId;
     await loadVrm(model.path);
+    // Set TTS voice and prosody to match the character's gender
+    const voiceInfo = GENDER_VOICES[model.gender ?? 'female'];
+    try {
+      await invoke('set_tts_voice', { voiceName: voiceInfo.edgeVoice });
+      await invoke('set_tts_prosody', { pitch: voiceInfo.edgePitch, rate: voiceInfo.edgeRate });
+    } catch {
+      // Tauri unavailable — voice will use browser fallback pitch instead
+    }
     // Persist the model selection across sessions
     try {
       const settingsStore = useSettingsStore();
@@ -70,5 +84,5 @@ export const useCharacterStore = defineStore('character', () => {
     selectedModelId.value = DEFAULT_MODEL_ID;
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, setState, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter };
+  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, setState, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender };
 });

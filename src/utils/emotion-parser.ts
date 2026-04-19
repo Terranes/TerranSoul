@@ -16,18 +16,39 @@ const EMOTION_TAGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Parse emotion tags from a text chunk.
+ * Parse emotion/motion data from LLM text.
  *
- * Recognized tags:
- * - Emotion: `[happy]`, `[sad]`, `[angry]`, `[relaxed]`, `[surprised]`, `[neutral]`
+ * Handles two formats:
+ * - Schema: `<anim>{"emotion":"happy","motion":"wave"}</anim>` (primary)
+ * - Legacy: `[happy]`, `[motion:wave]` bracket tags (backward-compat)
  *
- * Tags are stripped from the returned text. Only the first emotion tag
- * per chunk is used (subsequent ones are stripped).
+ * Tags/blocks are stripped from the returned text. Only the first emotion
+ * and first motion per call are used.
  */
 export function parseTags(input: string): ParsedLlmChunk {
   let text = input;
   let emotion: EmotionTag | null = null;
+  let motion: string | null = null;
+  let emoji: string | null = null;
 
+  // Primary: parse <anim>JSON</anim> blocks
+  const animRegex = /<anim>([\s\S]*?)<\/anim>\s*/g;
+  text = text.replace(animRegex, (_match, jsonStr: string) => {
+    try {
+      const cmd = JSON.parse(jsonStr);
+      if (cmd.emotion && EMOTION_TAGS.has(cmd.emotion.toLowerCase()) && emotion === null) {
+        emotion = cmd.emotion.toLowerCase() as EmotionTag;
+      }
+      if (cmd.motion && motion === null) {
+        motion = String(cmd.motion).toLowerCase();
+      }
+    } catch {
+      // Invalid JSON — strip the block anyway
+    }
+    return '';
+  });
+
+  // Legacy fallback: bracket tags [happy], [motion:wave]
   const tagRegex = /\[([^\]]+)\]\s*/g;
   text = text.replace(tagRegex, (_match, tagContent: string) => {
     const lower = tagContent.toLowerCase();
@@ -38,13 +59,43 @@ export function parseTags(input: string): ParsedLlmChunk {
       return '';
     }
 
+    // Motion tags like [motion:wave], [motion:nod]
+    if (lower.startsWith('motion:')) {
+      if (motion === null) {
+        motion = lower.slice(7); // e.g. 'wave'
+      }
+      return '';
+    }
+
     // Not a recognized tag — leave it in place
     return `[${tagContent}] `;
   });
 
+  // JSON-wrapped response fallback: LLM sometimes returns bare JSON like
+  // {"text":"Hello","emoji":"🎧"} — extract the text and emoji fields.
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (typeof obj.text === 'string') {
+        text = obj.text;
+        if (typeof obj.emoji === 'string') {
+          emoji = obj.emoji;
+        }
+        if (obj.emotion && EMOTION_TAGS.has(String(obj.emotion).toLowerCase()) && emotion === null) {
+          emotion = String(obj.emotion).toLowerCase() as EmotionTag;
+        }
+      }
+    } catch {
+      // Not valid JSON — keep text as-is
+    }
+  }
+
   return {
     text: text.trim(),
     emotion,
+    motion,
+    emoji,
   };
 }
 

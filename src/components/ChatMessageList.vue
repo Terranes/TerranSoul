@@ -5,14 +5,29 @@
       <div class="welcome-glow" />
       <div class="welcome-icon">✨</div>
       <p class="welcome-title">Welcome to TerranSoul</p>
-      <p class="welcome-hint">Your AI companion is ready. Type a message below to start a conversation.</p>
-      <div class="welcome-suggestions">
-        <button
-          v-for="suggestion in suggestions"
-          :key="suggestion"
-          class="suggestion-chip"
-          @click="$emit('suggest', suggestion)"
-        >{{ suggestion }}</button>
+      <p class="welcome-hint">Your AI companion is ready. Pick a quest to begin your adventure!</p>
+      <div class="welcome-quests">
+        <button class="welcome-quest-btn primary" @click="$emit('startQuest')">
+          <span class="wq-icon">⚔️</span>
+          <span class="wq-text">
+            <span class="wq-label">Start First Quest</span>
+            <span class="wq-hint">Recommended for you</span>
+          </span>
+        </button>
+        <button class="welcome-quest-btn" @click="$emit('suggest', 'Tell me about yourself')">
+          <span class="wq-icon">💬</span>
+          <span class="wq-text">
+            <span class="wq-label">Just Chat</span>
+            <span class="wq-hint">Talk freely</span>
+          </span>
+        </button>
+        <button class="welcome-quest-btn" @click="$emit('navigate', 'skills')">
+          <span class="wq-icon">🗺️</span>
+          <span class="wq-text">
+            <span class="wq-label">View All Quests</span>
+            <span class="wq-hint">Browse the skill tree</span>
+          </span>
+        </button>
       </div>
     </div>
     <TransitionGroup name="msg">
@@ -37,14 +52,21 @@
       </div>
     </div>
     <TypingIndicator v-if="isThinking && !isStreaming" />
+    <!-- Quick-reply buttons when model asks a yes/no question -->
+    <div v-if="showQuickReplies" class="quick-replies">
+      <button class="quick-reply-btn yes" @click="sendQuickReply('Yes, let\'s do it!')">✅ Yes</button>
+      <button class="quick-reply-btn no" @click="sendQuickReply('No, not right now.')">❌ No</button>
+      <button class="quick-reply-btn more" @click="sendQuickReply('Tell me more about it first.')">💬 Tell me more</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import type { Message } from '../types';
 import AgentBadge from './AgentBadge.vue';
 import TypingIndicator from './TypingIndicator.vue';
+import { renderMarkdown } from '../utils/render-markdown';
 
 const props = defineProps<{
   messages: Message[];
@@ -53,56 +75,37 @@ const props = defineProps<{
   isStreaming?: boolean;
 }>();
 
-defineEmits<{ suggest: [message: string] }>();
-
-const suggestions = [
-  'Tell me about yourself',
-  'How are you feeling today?',
-  'What can you help me with?',
-];
+const emit = defineEmits<{
+  suggest: [message: string];
+  startQuest: [];
+  navigate: [target: string];
+}>();
 
 const listRef = ref<HTMLElement | null>(null);
+
+/** Detect if a message ends with a yes/no question. */
+const YES_NO_PATTERN = /(?:shall we|would you like|want me to|ready to|do you want|should i|can i|activate it|shall i|want to try)\s*\??$/i;
+
+/** Whether the last assistant message asks a yes/no question (and it's the most recent message). */
+const showQuickReplies = computed(() => {
+  if (props.isThinking || props.isStreaming) return false;
+  const msgs = props.messages;
+  if (msgs.length === 0) return false;
+  const last = msgs[msgs.length - 1];
+  if (last.role !== 'assistant') return false;
+  if (last.questChoices?.length) return false; // already has quest buttons
+  return YES_NO_PATTERN.test(last.content.trim());
+});
+
+function sendQuickReply(text: string) {
+  emit('suggest', text);
+}
 
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-/**
- * Lightweight markdown renderer — handles **bold**, *italic*, `code`,
- * ```code blocks```, and line breaks. No external dependency needed
- * for the subset we support.
- */
-function renderMarkdown(text: string): string {
-  /**
-   * XSS Safety: Content is first escaped via escapeHtml() which replaces
-   * all &, <, >, " characters with HTML entities. Only then are markdown
-   * patterns converted to safe, known HTML tags (<strong>, <em>, <code>,
-   * <pre>). No raw user content is ever inserted as HTML.
-   */
-  let html = escapeHtml(text);
-  // Code blocks (```...```)
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre class="md-code-block"><code>$2</code></pre>');
-  // Inline code (`...`)
-  html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
-  // Bold (**...** or __...__) — must come before italic
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  // Italic (*...* or _..._) — uses simple non-greedy match for broad
-  // browser compatibility (avoids lookbehind which Safari <16.4 lacks).
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  html = html.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
-  // Line breaks
-  html = html.replace(/\n/g, '<br/>');
-  return html;
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// renderMarkdown and escapeHtml imported from '../utils/render-markdown'
 
 async function scrollToBottom() {
   await nextTick();
@@ -239,32 +242,65 @@ watch(() => props.streamingText, scrollToBottom);
   line-height: 1.5;
 }
 
-.welcome-suggestions {
+.welcome-quests {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
-  margin-top: 8px;
-  max-width: 340px;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+  max-width: 300px;
 }
 
-.suggestion-chip {
-  padding: 7px 16px;
-  border-radius: var(--ts-radius-pill);
-  border: 1px solid rgba(124, 111, 255, 0.35);
-  background: rgba(124, 111, 255, 0.10);
-  color: rgba(124, 111, 255, 0.95);
-  font-size: 0.78rem;
-  font-weight: 500;
+.welcome-quest-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--ts-radius-lg);
+  border: 1px solid rgba(124, 111, 255, 0.25);
+  background: rgba(124, 111, 255, 0.08);
+  color: var(--ts-text-primary);
   cursor: pointer;
+  text-align: left;
   transition: all var(--ts-transition-fast);
 }
 
-.suggestion-chip:hover {
-  background: rgba(124, 111, 255, 0.22);
-  border-color: rgba(124, 111, 255, 0.55);
+.welcome-quest-btn:hover {
+  background: rgba(124, 111, 255, 0.18);
+  border-color: rgba(124, 111, 255, 0.5);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(124, 111, 255, 0.15);
+  box-shadow: 0 4px 12px rgba(124, 111, 255, 0.2);
+}
+
+.welcome-quest-btn.primary {
+  border-color: rgba(124, 111, 255, 0.5);
+  background: rgba(124, 111, 255, 0.15);
+}
+
+.welcome-quest-btn.primary:hover {
+  background: rgba(124, 111, 255, 0.28);
+  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
+}
+
+.wq-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.wq-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wq-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.wq-hint {
+  font-size: 0.72rem;
+  color: var(--ts-text-dim);
 }
 
 /* Streaming cursor blink */
@@ -310,5 +346,60 @@ watch(() => props.streamingText, scrollToBottom);
 :deep(em) {
   font-style: italic;
   opacity: 0.9;
+}
+
+
+
+/* ── Quick-reply buttons (yes/no/more) ── */
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 16px 10px;
+  animation: quick-replies-in 0.25s ease;
+}
+@keyframes quick-replies-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.quick-reply-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 16px;
+  border-radius: var(--ts-radius-pill);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.10);
+  color: rgba(56, 189, 248, 0.95);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.quick-reply-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.15);
+}
+.quick-reply-btn.yes {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.10);
+  color: #86efac;
+}
+.quick-reply-btn.yes:hover {
+  background: rgba(34, 197, 94, 0.22);
+  border-color: rgba(34, 197, 94, 0.6);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.15);
+}
+.quick-reply-btn.no {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  color: #fca5a5;
+}
+.quick-reply-btn.no:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
 }
 </style>

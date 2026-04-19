@@ -23,7 +23,8 @@ const SCHEMA_V1_SETTINGS: AppSettings = {
   camera_distance: 3.2,
   bgm_enabled: false,
   bgm_volume: 0.15,
-  bgm_track_id: 'ambient-calm',
+  bgm_track_id: 'prelude',
+  bgm_custom_tracks: [],
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -42,7 +43,7 @@ describe('useSettingsStore', () => {
     expect(store.settings.version).toBe(2);
     expect(store.settings.bgm_enabled).toBe(false);
     expect(store.settings.bgm_volume).toBeCloseTo(0.15);
-    expect(store.settings.bgm_track_id).toBe('ambient-calm');
+    expect(store.settings.bgm_track_id).toBe('prelude');
   });
 
   it('loadSettings populates settings from Tauri IPC', async () => {

@@ -49,7 +49,7 @@ pub async fn get_ollama_models(
 
 /// Pull an Ollama model from the registry (downloads it locally).
 /// This may take several minutes for large models.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn pull_ollama_model(
     model_name: String,
     state: State<'_, AppState>,
@@ -60,7 +60,7 @@ pub async fn pull_ollama_model(
 
 /// Set the active brain model. Persists the choice to disk.
 /// After calling this, subsequent chat messages will be routed through Ollama.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_active_brain(
     model_name: String,
     state: State<'_, AppState>,
@@ -153,7 +153,7 @@ pub async fn health_check_providers(
 
 /// Return the next healthy, non-rate-limited provider id (fastest first).
 #[tauri::command]
-pub fn get_next_provider(
+pub async fn get_next_provider(
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
     let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;

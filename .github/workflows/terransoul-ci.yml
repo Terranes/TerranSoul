@@ -78,6 +78,37 @@ jobs:
       - name: Run Vitest
         run: npm run test
 
+      # ── Feature verification gate ─────────────────────────────────────────
+      # These checks ensure that the critical features promised by the app
+      # are actually implemented and testable, not just passing stub tests.
+      - name: Verify desktop auto-configuration is tested
+        run: |
+          echo "Checking that brain auto-configuration tests exist and pass..."
+          npx vitest run --reporter=verbose src/stores/brain.test.ts 2>&1 | tee /tmp/brain-test.log
+          grep -q "autoConfigureForDesktop persists to Tauri backend" /tmp/brain-test.log || \
+            (echo "❌ Missing test: autoConfigureForDesktop" && exit 1)
+          grep -q "initialise succeeds even when Ollama commands fail" /tmp/brain-test.log || \
+            (echo "❌ Missing test: initialise resilience" && exit 1)
+          echo "✅ Brain auto-configuration tests verified"
+
+      - name: Verify voice auto-configuration is tested
+        run: |
+          echo "Checking that voice auto-configuration tests exist and pass..."
+          npx vitest run --reporter=verbose src/stores/voice.test.ts 2>&1 | tee /tmp/voice-test.log
+          grep -q "autoConfigureVoice enables Web Speech API and Edge TTS" /tmp/voice-test.log || \
+            (echo "❌ Missing test: voice auto-configuration" && exit 1)
+          echo "✅ Voice auto-configuration tests verified"
+
+      - name: Verify chat-based LLM switching is tested
+        run: |
+          echo "Checking that chat-based LLM switching tests exist and pass..."
+          npx vitest run --reporter=verbose src/stores/conversation.test.ts 2>&1 | tee /tmp/conv-test.log
+          grep -q 'detects "switch to groq"' /tmp/conv-test.log || \
+            (echo "❌ Missing test: chat-based LLM switching" && exit 1)
+          grep -q "switches to pollinations via chat command" /tmp/conv-test.log || \
+            (echo "❌ Missing test: chat command integration" && exit 1)
+          echo "✅ Chat-based LLM switching tests verified"
+
   # ── Playwright E2E ──────────────────────────────────────────────────────────
   playwright-e2e:
     runs-on: ubuntu-latest

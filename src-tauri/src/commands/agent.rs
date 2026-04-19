@@ -10,27 +10,27 @@ pub struct Agent {
 }
 
 #[tauri::command]
-pub fn list_agents() -> Vec<Agent> {
-    vec![Agent {
+pub async fn list_agents() -> Result<Vec<Agent>, String> {
+    Ok(vec![Agent {
         id: "stub".to_string(),
         name: "TerranSoul Stub".to_string(),
         description: "A built-in stub agent for local testing.".to_string(),
         status: "running".to_string(),
         capabilities: vec!["chat".to_string(), "sentiment".to_string()],
-    }]
+    }])
 }
 
 #[tauri::command]
-pub fn get_agent_status(id: String) -> Option<Agent> {
+pub async fn get_agent_status(id: String) -> Result<Option<Agent>, String> {
     if id == "stub" {
-        Some(Agent {
+        Ok(Some(Agent {
             id: "stub".to_string(),
             name: "TerranSoul Stub".to_string(),
             description: "A built-in stub agent for local testing.".to_string(),
             status: "running".to_string(),
             capabilities: vec!["chat".to_string(), "sentiment".to_string()],
-        })
+        }))
     } else {
-        None
+        Ok(None)
     }
 }

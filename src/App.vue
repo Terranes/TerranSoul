@@ -1,7 +1,12 @@
 <template>
   <Analytics />
   <SpeedInsights />
-  <div class="app-shell" :class="{ 'pet-mode': isPetMode }">
+  <!-- Loading splash shown during app initialization -->
+  <Transition name="splash-fade">
+    <SplashScreen v-if="appLoading" />
+  </Transition>
+
+  <div v-show="!appLoading" class="app-shell" :class="{ 'pet-mode': isPetMode }">
     <!-- Pet overlay mode: transparent character + floating chat -->
     <PetOverlayView v-if="isPetMode" />
 
@@ -13,83 +18,73 @@
       <template v-else>
         <!-- Desktop side navigation -->
         <nav class="app-nav desktop-nav">
+          <div class="nav-logo"><img src="/icon.png" alt="TerranSoul" class="nav-logo-img" /></div>
           <button
             v-for="tab in tabs"
             :key="tab.id"
             :class="['nav-btn', { active: activeTab === tab.id }]"
-            :title="tab.label"
             @click="activeTab = tab.id"
-          >{{ tab.icon }}</button>
+          >
+            <span class="nav-icon" v-html="tab.svg"></span>
+            <span class="nav-label">{{ tab.label }}</span>
+          </button>
+
+          <div class="nav-spacer" />
 
           <!-- "No brain" warning pill -->
           <button
             v-if="!hasBrain"
             class="nav-btn nav-brain-warn"
-            title="No brain — click to set up"
             @click="skipSetup = false"
-          >⚠</button>
+          >
+            <span class="nav-icon">⚠</span>
+            <span class="nav-label">Brain</span>
+          </button>
 
           <!-- Pet mode toggle (only when Tauri is available) -->
           <button
             v-if="tauriAvailable"
             class="nav-btn nav-pet-toggle"
-            title="Switch to pet mode"
             @click="enterPetMode"
-          >🐾</button>
+          >
+            <span class="nav-icon">🐾</span>
+            <span class="nav-label">Pet</span>
+          </button>
         </nav>
 
-        <!-- Mobile hamburger menu (top-left dropdown, collapsed by default) -->
-        <div class="mobile-menu" ref="mobileMenuRef">
+        <!-- Mobile bottom tab bar (replaces hamburger menu) -->
+        <nav class="mobile-bottom-nav">
           <button
-            class="mobile-menu-toggle"
-            :class="{ open: mobileMenuOpen }"
-            aria-label="Menu"
-            @click.stop="mobileMenuOpen = !mobileMenuOpen"
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="['mobile-tab', { active: activeTab === tab.id }]"
+            @click="activeTab = tab.id"
           >
-            <span class="hamburger-line" />
-            <span class="hamburger-line" />
-            <span class="hamburger-line" />
+            <span class="mobile-tab-icon" v-html="tab.svg"></span>
+            <span class="mobile-tab-label">{{ tab.label }}</span>
           </button>
-          <Transition name="mobile-dropdown">
-            <div v-if="mobileMenuOpen" class="mobile-menu-dropdown" @click.stop>
-              <button
-                v-for="tab in tabs"
-                :key="tab.id"
-                :class="['mobile-menu-item', { active: activeTab === tab.id }]"
-                @click="activeTab = tab.id; mobileMenuOpen = false"
-              >
-                <span class="mobile-menu-icon">{{ tab.icon }}</span>
-                <span class="mobile-menu-label">{{ tab.label }}</span>
-              </button>
-
-              <button
-                v-if="!hasBrain"
-                class="mobile-menu-item mobile-menu-warn"
-                @click="skipSetup = false; mobileMenuOpen = false"
-              >
-                <span class="mobile-menu-icon">⚠</span>
-                <span class="mobile-menu-label">Set up Brain</span>
-              </button>
-
-              <button
-                v-if="tauriAvailable"
-                class="mobile-menu-item mobile-menu-pet"
-                @click="enterPetMode(); mobileMenuOpen = false"
-              >
-                <span class="mobile-menu-icon">🐾</span>
-                <span class="mobile-menu-label">Pet Mode</span>
-              </button>
-            </div>
-          </Transition>
-        </div>
+          <!-- Pet mode toggle (only when Tauri is available) -->
+          <button
+            v-if="tauriAvailable"
+            class="mobile-tab mobile-pet-toggle"
+            @click="enterPetMode"
+          >
+            <span class="mobile-tab-icon">🐾</span>
+            <span class="mobile-tab-label">Pet</span>
+          </button>
+        </nav>
 
         <!-- Main area -->
         <main class="app-main">
-          <ChatView v-show="activeTab === 'chat'" />
+          <ChatView v-show="activeTab === 'chat'" @navigate="handleSkillNavigate" />
+          <SkillTreeView v-if="activeTab === 'skills'" @navigate="handleSkillNavigate" />
           <MemoryView v-if="activeTab === 'memory'" />
           <MarketplaceView v-if="activeTab === 'marketplace'" />
           <VoiceSetupView v-if="activeTab === 'voice'" @done="activeTab = 'chat'" />
         </main>
+
+        <!-- Floating quest progress bubble -->
+        <QuestBubble @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
       </template>
     </template>
 
@@ -97,34 +92,42 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useBrainStore } from './stores/brain';
+import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
+import { useSkillTreeStore } from './stores/skill-tree';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import BrainSetupView from './views/BrainSetupView.vue';
 import VoiceSetupView from './views/VoiceSetupView.vue';
+import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
+import QuestBubble from './components/QuestBubble.vue';
+import SplashScreen from './components/SplashScreen.vue';
 import { Analytics } from '@vercel/analytics/vue';
 import { SpeedInsights } from '@vercel/speed-insights/vue';
 
 const brain = useBrainStore();
+const voice = useVoiceStore();
 const windowStore = useWindowStore();
-const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice'>('chat');
+const skillTree = useSkillTreeStore();
+const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills'>('chat');
+const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
-const mobileMenuOpen = ref(false);
-const mobileMenuRef = ref<HTMLElement | null>(null);
+
 
 const hasBrain = computed(() => brain.hasBrain);
 const isPetMode = computed(() => windowStore.mode === 'pet');
 
 const tabs = [
-  { id: 'chat' as const, icon: '💬', label: 'Chat' },
-  { id: 'memory' as const, icon: '🧠', label: 'Memory' },
-  { id: 'marketplace' as const, icon: '🏪', label: 'Marketplace' },
-  { id: 'voice' as const, icon: '🎤', label: 'Voice' },
+  { id: 'chat' as const, label: 'Chat', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
+  { id: 'skills' as const, label: 'Quests', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
+  { id: 'memory' as const, label: 'Memory', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg>' },
+  { id: 'marketplace' as const, label: 'Market', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' },
+  { id: 'voice' as const, label: 'Voice', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>' },
 ];
 
 async function onBrainDone() {
@@ -135,10 +138,28 @@ async function enterPetMode() {
   await windowStore.setMode('pet');
 }
 
-function handleClickOutsideMenu(e: MouseEvent) {
-  if (mobileMenuRef.value && e.target instanceof Node && !mobileMenuRef.value.contains(e.target)) {
-    mobileMenuOpen.value = false;
+
+
+function handleSkillNavigate(target: string) {
+  const tabMap: Record<string, typeof activeTab.value> = {
+    chat: 'chat',
+    memory: 'memory',
+    marketplace: 'marketplace',
+    voice: 'voice',
+    'brain-setup': 'chat', // brain setup opens from chat context
+  };
+  const tab = tabMap[target];
+  if (tab) {
+    activeTab.value = tab;
   }
+  // 'brain-setup' target: re-open the brain wizard
+  if (target === 'brain-setup') {
+    skipSetup.value = false;
+  }
+}
+
+function handleQuestBubble() {
+  activeTab.value = 'chat';
 }
 
 // Watch for window mode changes (e.g. from tray icon toggle)
@@ -155,8 +176,6 @@ watch(
 );
 
 onMounted(async () => {
-  document.addEventListener('click', handleClickOutsideMenu);
-
   try {
     await brain.loadActiveBrain();
     tauriAvailable.value = true;
@@ -167,6 +186,10 @@ onMounted(async () => {
     // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
     brain.autoConfigureFreeApi();
     skipSetup.value = true;
+    // Also auto-configure voice so it works out of the box
+    await voice.autoConfigureVoice();
+    await skillTree.initialise();
+    appLoading.value = false;
     return;
   }
 
@@ -174,18 +197,38 @@ onMounted(async () => {
   try {
     await brain.loadBrainMode();
   } catch {
-    // Ignore — will fall through to setup
+    // Ignore — will fall through to auto-configure
+  }
+
+  // Load voice config from backend
+  try {
+    await voice.initialise();
+  } catch {
+    // Voice unavailable — will auto-configure below
   }
 
   // If brain is already set (either legacy or new mode), skip the onboarding.
   if (brain.hasBrain) {
     skipSetup.value = true;
+  } else {
+    // Desktop first launch: auto-configure free API (same as browser) and persist
+    // to the Tauri backend so `send_message_stream` knows the brain mode.
+    await brain.autoConfigureForDesktop();
+    skipSetup.value = true;
   }
+
+  // If voice is not configured, auto-enable Web Speech API + Edge TTS
+  if (!voice.hasVoice) {
+    await voice.autoConfigureVoice();
+  }
+
+  // Initialise skill tree (load quest tracker, refresh daily suggestions)
+  await skillTree.initialise();
+
+  appLoading.value = false;
 });
 
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutsideMenu);
-});
+
 </script>
 
 <style>
@@ -194,182 +237,141 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 </style>
 
 <style scoped>
+/* Splash fade-out transition */
+.splash-fade-leave-active { transition: opacity 0.5s ease; }
+.splash-fade-leave-to { opacity: 0; }
+
 .app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 .app-shell.pet-mode { background: transparent; }
+
+/* ── Desktop sidebar navigation ── */
 .app-nav {
-  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
-  padding: 0.75rem 0.5rem;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px 6px;
   background: var(--ts-bg-nav);
-  border-right: 1px solid var(--ts-bg-surface);
-  width: 52px; flex-shrink: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  width: 72px; flex-shrink: 0;
   position: relative;
+}
+.nav-logo {
+  width: 36px; height: 36px;
+  border-radius: var(--ts-radius-md);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.nav-logo-img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  border-radius: var(--ts-radius-md);
 }
 .nav-btn {
-  width: 38px; height: 38px; border: none;
+  width: 60px; height: 52px; border: none;
   border-radius: var(--ts-radius-md);
-  background: transparent; cursor: pointer; font-size: 1.2rem;
-  display: flex; align-items: center; justify-content: center;
+  background: transparent; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
   position: relative;
   transition: background var(--ts-transition-fast), transform var(--ts-transition-fast);
+  color: var(--ts-text-muted);
 }
-.nav-btn:hover { background: var(--ts-bg-surface); transform: scale(1.06); }
-.nav-btn.active { background: var(--ts-bg-surface); }
-.nav-btn.active::after {
+.nav-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  transition: color var(--ts-transition-fast);
+}
+.nav-icon :deep(svg) { width: 20px; height: 20px; }
+.nav-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-align: center;
+}
+.nav-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--ts-text-secondary); }
+.nav-btn.active {
+  background: rgba(124, 111, 255, 0.15);
+  color: var(--ts-accent);
+}
+.nav-btn.active::before {
   content: '';
   position: absolute;
-  left: -0.5rem;
+  left: -6px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
-  height: 20px;
+  height: 24px;
   background: var(--ts-accent);
-  border-radius: 0 var(--ts-radius-sm) var(--ts-radius-sm) 0;
+  border-radius: 0 3px 3px 0;
 }
-.nav-brain-warn { color: var(--ts-warning); margin-top: auto; }
-.nav-pet-toggle { color: var(--ts-accent-violet); margin-top: auto; }
-.nav-pet-toggle:hover { background: rgba(139, 92, 246, 0.2); }
-.app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.nav-spacer { flex: 1; }
+.nav-brain-warn { color: var(--ts-warning); }
+.nav-pet-toggle { color: var(--ts-accent-violet); }
+.nav-pet-toggle:hover { background: rgba(139, 92, 246, 0.15); }
+.mobile-pet-toggle { color: var(--ts-accent-violet) !important; }
+.app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
-/* Tooltip on hover for nav buttons */
-.nav-btn::before {
-  content: attr(title);
-  position: absolute;
-  left: calc(100% + 8px);
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 4px 10px;
-  border-radius: var(--ts-radius-sm);
-  background: var(--ts-bg-surface);
-  color: var(--ts-text-primary);
-  font-size: var(--ts-text-xs);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--ts-transition-fast);
-  z-index: 100;
-  box-shadow: var(--ts-shadow-sm);
-}
-.nav-btn:hover::before {
-  opacity: 1;
-}
-
-/* ── Mobile menu (hamburger dropdown) ── */
-.mobile-menu {
+/* ── Mobile bottom tab bar ── */
+.mobile-bottom-nav {
   display: none;
   position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 50;
-}
-
-.mobile-menu-toggle {
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--ts-radius-md);
-  background: rgba(11, 17, 32, 0.82);
-  backdrop-filter: blur(12px);
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px;
-  transition: background var(--ts-transition-fast), transform var(--ts-transition-fast), box-shadow var(--ts-transition-fast);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-.mobile-menu-toggle:hover {
-  background: rgba(124, 111, 255, 0.45);
-  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.25);
-}
-.mobile-menu-toggle.open {
-  background: rgba(124, 111, 255, 0.6);
-}
-.hamburger-line {
-  display: block;
-  width: 16px;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 1px;
-  transition: transform 0.25s ease, opacity 0.25s ease;
-}
-.mobile-menu-toggle.open .hamburger-line:nth-child(1) {
-  transform: translateY(6px) rotate(45deg);
-}
-.mobile-menu-toggle.open .hamburger-line:nth-child(2) {
-  opacity: 0;
-}
-.mobile-menu-toggle.open .hamburger-line:nth-child(3) {
-  transform: translateY(-6px) rotate(-45deg);
-}
-
-.mobile-menu-dropdown {
-  position: absolute;
-  top: 42px;
+  bottom: 0;
   left: 0;
-  min-width: 180px;
-  padding: 6px;
-  border-radius: var(--ts-radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(11, 17, 32, 0.95);
-  backdrop-filter: blur(24px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.mobile-menu-item {
-  display: flex;
+  right: 0;
+  z-index: 50;
+  height: 56px;
+  background: rgba(9, 14, 28, 0.95);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 4px;
+  flex-direction: row;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border: none;
+  justify-content: space-around;
+}
+.mobile-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  border: none; background: transparent; cursor: pointer;
+  color: var(--ts-text-muted);
+  padding: 6px 8px;
   border-radius: var(--ts-radius-md);
-  background: transparent;
-  color: var(--ts-text-secondary);
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background var(--ts-transition-fast), color var(--ts-transition-fast);
+  transition: color var(--ts-transition-fast), background var(--ts-transition-fast);
+  min-width: 52px;
+  position: relative;
 }
-.mobile-menu-item:hover {
-  background: var(--ts-bg-hover);
-  color: var(--ts-text-primary);
+.mobile-tab-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
 }
-.mobile-menu-item.active {
-  background: rgba(124, 111, 255, 0.2);
-  color: var(--ts-text-primary);
-}
-.mobile-menu-item.active .mobile-menu-icon {
-  transform: scale(1.1);
-}
-.mobile-menu-icon {
-  font-size: 1.1rem;
-  flex-shrink: 0;
-  transition: transform var(--ts-transition-fast);
-}
-.mobile-menu-label {
+.mobile-tab-icon :deep(svg) { width: 20px; height: 20px; }
+.mobile-tab-label {
+  font-size: 0.58rem;
+  font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1;
 }
-.mobile-menu-warn { color: var(--ts-warning); }
-.mobile-menu-pet { color: var(--ts-accent-violet); }
+.mobile-tab:hover { color: var(--ts-text-secondary); }
+.mobile-tab.active {
+  color: var(--ts-accent);
+}
+.mobile-tab.active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 2px;
+  background: var(--ts-accent);
+  border-radius: 0 0 2px 2px;
+}
 
-/* Mobile dropdown transition */
-.mobile-dropdown-enter-active, .mobile-dropdown-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.mobile-dropdown-enter-from, .mobile-dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-8px) scale(0.95);
-}
-
-/* Mobile: hide sidebar, show hamburger menu */
+/* Mobile: hide sidebar, show bottom nav, add bottom padding for the tab bar */
 @media (max-width: 640px) {
   .app-shell { flex-direction: column; }
   .desktop-nav { display: none; }
-  .mobile-menu { display: block; }
-  .app-main { flex: 1; min-height: 0; }
+  .mobile-bottom-nav { display: flex; }
+  .app-main { flex: 1; min-height: 0; padding-bottom: 56px; }
 }
 </style>

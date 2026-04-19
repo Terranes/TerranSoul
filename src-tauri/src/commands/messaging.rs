@@ -45,7 +45,7 @@ pub async fn publish_agent_message(
 }
 
 /// Subscribe an agent to a topic.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn subscribe_agent_topic(
     agent_name: String,
     topic: String,
@@ -57,7 +57,7 @@ pub async fn subscribe_agent_topic(
 }
 
 /// Unsubscribe an agent from a topic.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn unsubscribe_agent_topic(
     agent_name: String,
     topic: String,
@@ -69,7 +69,7 @@ pub async fn unsubscribe_agent_topic(
 }
 
 /// Get and drain all pending messages for an agent.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn get_agent_messages(
     agent_name: String,
     state: State<'_, AppState>,
@@ -80,7 +80,7 @@ pub async fn get_agent_messages(
 }
 
 /// List all topics an agent is subscribed to.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn list_agent_subscriptions(
     agent_name: String,
     state: State<'_, AppState>,

@@ -119,8 +119,7 @@ async function handleImport() {
   isLoading.value = true;
   characterStore.setLoadError(undefined);
   try {
-    // TODO: Replace with @tauri-apps/plugin-dialog for native file picker in production.
-    // Currently uses window.prompt() as a fallback for browser preview mode.
+    // Uses window.prompt() as a portable fallback for VRM path input.
     const path = window.prompt('Enter the path to a .vrm file:');
     if (path) {
       await characterStore.loadVrm(path);

@@ -163,4 +163,77 @@ describe('voice store', () => {
     expect(store.selectedAsrProvider?.id).toBe('whisper-api');
     expect(store.selectedTtsProvider?.id).toBe('edge-tts');
   });
+
+  // ── autoConfigureVoice Tests ────────────────────────────────────────────
+
+  it('autoConfigureVoice enables Web Speech API and Edge TTS', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    expect(store.isTextOnly).toBe(true);
+
+    await store.autoConfigureVoice();
+
+    expect(store.config.asr_provider).toBe('web-speech');
+    expect(store.config.tts_provider).toBe('edge-tts');
+    expect(store.hasVoice).toBe(true);
+    expect(store.isTextOnly).toBe(false);
+  });
+
+  it('autoConfigureVoice works when Tauri is unavailable', async () => {
+    mockInvoke.mockRejectedValue(new Error('no Tauri'));
+    const store = useVoiceStore();
+
+    await store.autoConfigureVoice();
+
+    expect(store.config.asr_provider).toBe('web-speech');
+    expect(store.config.tts_provider).toBe('edge-tts');
+    expect(store.hasVoice).toBe(true);
+  });
+
+  it('autoConfigureVoice persists to Tauri when available', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+
+    await store.autoConfigureVoice();
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_asr_provider', { providerId: 'web-speech' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'edge-tts' });
+  });
+});
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('voice store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('setAsrProvider sends providerId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setAsrProvider('groq-whisper');
+    expect(mockInvoke).toHaveBeenCalledWith('set_asr_provider', { providerId: 'groq-whisper' });
+  });
+
+  it('setTtsProvider sends providerId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setTtsProvider('edge-tts');
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'edge-tts' });
+  });
+
+  it('setApiKey sends apiKey (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setApiKey('sk-test-key');
+    expect(mockInvoke).toHaveBeenCalledWith('set_voice_api_key', { apiKey: 'sk-test-key' });
+  });
+
+  it('setEndpointUrl sends endpointUrl (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useVoiceStore();
+    await store.setEndpointUrl('https://custom.api/v1');
+    expect(mockInvoke).toHaveBeenCalledWith('set_voice_endpoint', { endpointUrl: 'https://custom.api/v1' });
+  });
 });

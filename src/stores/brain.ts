@@ -135,9 +135,9 @@ export const useBrainStore = defineStore('brain', () => {
   }
 
   /**
-   * Auto-configure free API as the default brain mode.
-   * Called when Tauri backend is unavailable or Ollama is not running.
-   * This enables zero-setup usage with cloud LLM providers.
+   * Auto-configure free API as the default brain mode (browser-side only).
+   * Sets state in the Pinia store but does NOT persist to the Tauri backend.
+   * Use {@link autoConfigureForDesktop} when Tauri is available.
    */
   function autoConfigureFreeApi(): void {
     freeProviders.value = FALLBACK_FREE_PROVIDERS;
@@ -148,14 +148,45 @@ export const useBrainStore = defineStore('brain', () => {
     };
   }
 
+  /**
+   * Auto-configure free API on desktop: persists to the Tauri backend
+   * so that the Rust `send_message_stream` command knows the brain mode.
+   * Without this, the backend's AppState keeps `brain_mode = None` and
+   * returns a stub response instead of calling the real LLM API.
+   */
+  async function autoConfigureForDesktop(): Promise<void> {
+    const mode: BrainMode = {
+      mode: 'free_api',
+      provider_id: 'pollinations',
+      api_key: null,
+    };
+    try {
+      await setBrainMode(mode);
+    } catch {
+      // setBrainMode invoke failed — set locally as fallback
+      brainMode.value = mode;
+    }
+    if (freeProviders.value.length === 0) {
+      freeProviders.value = FALLBACK_FREE_PROVIDERS;
+    }
+  }
+
   /** Full initialisation for the brain setup wizard. */
   async function initialise(): Promise<void> {
     isLoading.value = true;
     try {
+      // Core commands that must succeed for the brain to be usable:
+      //   - loadActiveBrain: legacy brain state
+      //   - loadBrainMode: three-tier brain config (free_api, paid_api, local_ollama)
+      //   - fetchFreeProviders: catalogue of free providers for the config UI
       await Promise.all([
         loadActiveBrain(),
         loadBrainMode(),
         fetchFreeProviders(),
+      ]);
+      // Non-critical: load hardware info and Ollama status for the setup wizard.
+      // These may fail if Ollama isn't installed — that's fine, we still function.
+      await Promise.allSettled([
         fetchSystemInfo(),
         fetchRecommendations(),
         checkOllamaStatus(),
@@ -166,6 +197,60 @@ export const useBrainStore = defineStore('brain', () => {
       autoConfigureFreeApi();
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /** Process a prompt silently (for quest analysis) without adding to conversation history. */
+  async function processPromptSilently(prompt: string): Promise<string> {
+    try {
+      if (!hasBrain.value) return '';
+
+      const mode = brainMode.value;
+      if (!mode) return '';
+
+      // Resolve the API endpoint and model for the current brain mode.
+      let baseUrl: string;
+      let model: string;
+      let apiKey: string | null = null;
+
+      if (mode.mode === 'free_api') {
+        if (freeProviders.value.length === 0) return '';
+        const provider = freeProviders.value.find(
+          p => p.id === mode.provider_id,
+        ) ?? freeProviders.value[0];
+        baseUrl = provider.base_url;
+        model = provider.model;
+        apiKey = provider.requires_api_key ? (mode.api_key ?? null) : null;
+      } else if (mode.mode === 'paid_api') {
+        baseUrl = mode.base_url;
+        model = mode.model;
+        apiKey = mode.api_key;
+      } else if (mode.mode === 'local_ollama') {
+        baseUrl = 'http://localhost:11434';
+        model = mode.model;
+      } else {
+        return '';
+      }
+
+      const { streamChatCompletion } = await import('../utils/free-api-client');
+      return new Promise<string>((resolve) => {
+        let text = '';
+        streamChatCompletion(
+          baseUrl,
+          model,
+          apiKey,
+          [{ role: 'user', content: prompt }],
+          {
+            onChunk(chunk: string) { text += chunk; },
+            onDone() { resolve(text); },
+            onError() { resolve(''); },
+          },
+          'You are a helpful assistant. Respond with only the requested JSON format.',
+        );
+      });
+    } catch (error) {
+      console.warn('Silent prompt processing failed:', error);
+      return '';
     }
   }
 
@@ -195,6 +280,8 @@ export const useBrainStore = defineStore('brain', () => {
     loadBrainMode,
     setBrainMode,
     autoConfigureFreeApi,
+    autoConfigureForDesktop,
     initialise,
+    processPromptSilently,
   };
 });

@@ -5,6 +5,20 @@ export interface Message {
   agentName?: string;
   sentiment?: 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral';
   timestamp: number;
+  /** RPG-style quest choices attached to this message. */
+  questChoices?: QuestChoice[];
+  /** Associated quest/skill ID for quest-related messages. */
+  questId?: string;
+  /** Mark as system message (hidden from main chat UI). */
+  system?: boolean;
+  /** Emoji extracted from the model response, shown as a floating popup. */
+  emoji?: string;
+}
+
+export interface QuestChoice {
+  label: string;
+  value: string;
+  icon?: string;
 }
 
 export type CharacterState = 'idle' | 'thinking' | 'talking' | 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised';
@@ -110,6 +124,7 @@ export interface SystemInfo {
   cpu_name: string;
   os_name: string;
   arch: string;
+  gpu_name?: string;
 }
 
 export interface ModelRecommendation {
@@ -215,6 +230,10 @@ export interface ParsedLlmChunk {
   text: string;
   /** Emotion tag found in this chunk, if any. */
   emotion: EmotionTag | null;
+  /** Motion gesture tag found (e.g. 'wave', 'nod'), if any. */
+  motion: string | null;
+  /** Emoji extracted from JSON-wrapped response, if any. */
+  emoji: string | null;
 }
 
 // ── Three-Tier Brain ──────────────────────────────────────────────────────────

@@ -113,7 +113,10 @@ export async function loadVRM(
   // When false, humanoid.update() is a no-op and the model stays in T-pose.
   loader.register((parser) => new VRMLoaderPlugin(parser));
 
-  const gltf = await loader.loadAsync(path, (event) => {
+  // Encode spaces/special chars for HTTP paths; leave blob:/data: URLs untouched
+  const url = path.startsWith('blob:') || path.startsWith('data:') ? path : encodeURI(path);
+
+  const gltf = await loader.loadAsync(url, (event) => {
     if (onProgress && event.lengthComputable) {
       onProgress(event.loaded, event.total);
     }
@@ -179,9 +182,12 @@ export async function loadVRMSafe(
   onProgress?: ProgressCallback,
 ): Promise<VrmLoadResult | null> {
   try {
-    return await loadVRM(scene, path, onProgress);
+    console.log('[TerranSoul] Loading VRM:', path);
+    const result = await loadVRM(scene, path, onProgress);
+    console.log('[TerranSoul] VRM loaded successfully:', path);
+    return result;
   } catch (error) {
-    console.error('VRM load failed, using placeholder:', error);
+    console.error('[TerranSoul] VRM load failed, using placeholder:', error);
     return null;
   }
 }

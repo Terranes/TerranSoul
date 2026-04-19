@@ -30,11 +30,11 @@ pub struct VisionAnalysis {
 
 /// Capture a screenshot of the current screen (stub).
 ///
-/// In the future this will use Tauri's window capture API or platform-specific
-/// screen capture. For now returns a stub frame.
+/// Returns a minimal 1×1 PNG stub frame. Screen capture requires
+/// platform-specific APIs that are not yet integrated.
 #[tauri::command]
 pub async fn capture_screen() -> Result<ScreenFrame, String> {
-    // Stub: return a minimal 1x1 PNG placeholder
+    // Return a minimal 1x1 PNG as a stub response
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -51,8 +51,8 @@ pub async fn capture_screen() -> Result<ScreenFrame, String> {
 
 /// Analyze a screen frame using the LLM brain (stub).
 ///
-/// In the future this will send the image to a vision-capable LLM
-/// for analysis. For now returns a stub analysis.
+/// Returns a fixed analysis based on frame metadata. Vision-capable LLM
+/// integration is not yet available.
 #[tauri::command]
 pub async fn analyze_screen(frame: ScreenFrame) -> Result<VisionAnalysis, String> {
     if frame.image_b64.is_empty() {

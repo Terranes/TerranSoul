@@ -23,7 +23,7 @@ pub async fn get_voice_config(state: State<'_, AppState>) -> Result<VoiceConfig,
 }
 
 /// Set the ASR provider. Pass `null` to disable ASR (text-only input).
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_asr_provider(
     provider_id: Option<String>,
     state: State<'_, AppState>,
@@ -43,7 +43,7 @@ pub async fn set_asr_provider(
 }
 
 /// Set the TTS provider. Pass `null` to disable TTS (text-only output).
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_tts_provider(
     provider_id: Option<String>,
     state: State<'_, AppState>,
@@ -63,7 +63,7 @@ pub async fn set_tts_provider(
 }
 
 /// Set the API key for cloud voice providers.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_voice_api_key(
     api_key: Option<String>,
     state: State<'_, AppState>,
@@ -74,8 +74,36 @@ pub async fn set_voice_api_key(
     Ok(())
 }
 
+/// Set the Edge TTS voice name (e.g. "en-US-AnaNeural").
+/// Pass `null` to revert to the default female voice.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_tts_voice(
+    voice_name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut config = state.voice_config.lock().map_err(|e| e.to_string())?;
+    config.tts_voice = voice_name;
+    voice::config_store::save(&state.data_dir, &config)?;
+    Ok(())
+}
+
+/// Set Edge TTS prosody (pitch offset in Hz, rate offset in %).
+/// Called when switching character gender to tune how cute/deep the voice sounds.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_tts_prosody(
+    pitch: i32,
+    rate: i32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut config = state.voice_config.lock().map_err(|e| e.to_string())?;
+    config.tts_pitch = pitch;
+    config.tts_rate = rate;
+    voice::config_store::save(&state.data_dir, &config)?;
+    Ok(())
+}
+
 /// Set the endpoint URL for custom cloud voice providers.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn set_voice_endpoint(
     endpoint_url: Option<String>,
     state: State<'_, AppState>,
@@ -265,7 +293,14 @@ pub async fn synthesize_tts(text: String, state: State<'_, AppState>) -> Result<
             engine.synthesize(&trimmed).await.map(|r| r.audio)
         }
         Some("edge-tts") => {
-            let engine = voice::edge_tts::EdgeTts::new();
+            let (voice_name, pitch, rate) = {
+                let config = state.voice_config.lock().map_err(|e| e.to_string())?;
+                (config.tts_voice.clone(), config.tts_pitch, config.tts_rate)
+            };
+            let engine = match voice_name {
+                Some(v) => voice::edge_tts::EdgeTts::with_prosody(v, pitch, rate),
+                None => voice::edge_tts::EdgeTts::new(),
+            };
             engine.synthesize(&trimmed).await.map(|r| r.audio)
         }
         Some(id) => Err(format!("Unsupported TTS provider: {id}")),
@@ -569,6 +604,89 @@ mod tests {
         let before = hotwords.len();
         let after: Vec<_> = hotwords.into_iter().filter(|h| h.phrase != "Zagara").collect();
         assert_eq!(after.len(), before, "nothing should be removed");
+    }
+
+    // ── tts_voice (gender-based voice selection) tests ──────────────────────
+
+    #[test]
+    fn tts_voice_default_is_none() {
+        let cfg = voice::VoiceConfig::default();
+        assert!(cfg.tts_voice.is_none());
+    }
+
+    #[test]
+    fn tts_prosody_defaults_to_zero() {
+        let cfg = voice::VoiceConfig::default();
+        assert_eq!(cfg.tts_pitch, 0);
+        assert_eq!(cfg.tts_rate, 0);
+    }
+
+    #[test]
+    fn tts_voice_persists_in_config() {
+        let cfg = voice::VoiceConfig {
+            tts_voice: Some("en-US-AnaNeural".to_string()),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: voice::VoiceConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.tts_voice, Some("en-US-AnaNeural".to_string()));
+    }
+
+    #[test]
+    fn tts_prosody_persists_in_config() {
+        let cfg = voice::VoiceConfig {
+            tts_pitch: 50,
+            tts_rate: 15,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let parsed: voice::VoiceConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.tts_pitch, 50);
+        assert_eq!(parsed.tts_rate, 15);
+    }
+
+    #[test]
+    fn tts_voice_deserializes_as_none_when_missing() {
+        // Simulate old config files that don't have the tts_voice field
+        let json = r#"{"asr_provider":null,"tts_provider":"edge-tts","api_key":null,"endpoint_url":null}"#;
+        let cfg: voice::VoiceConfig = serde_json::from_str(json).unwrap();
+        assert!(cfg.tts_voice.is_none());
+        assert_eq!(cfg.tts_pitch, 0);
+        assert_eq!(cfg.tts_rate, 0);
+    }
+
+    #[test]
+    fn synthesize_tts_edge_uses_prosody() {
+        // Verify the routing logic: when tts_voice and prosody are set, with_prosody is used
+        let voice_name = Some("en-US-AnaNeural".to_string());
+        let pitch = 50;
+        let rate = 15;
+        let engine = match &voice_name {
+            Some(v) => voice::edge_tts::EdgeTts::with_prosody(v.clone(), pitch, rate),
+            None => voice::edge_tts::EdgeTts::new(),
+        };
+        assert_eq!(engine.id(), "edge-tts");
+    }
+
+    #[test]
+    fn synthesize_tts_edge_uses_custom_voice_name() {
+        // Verify the routing logic: when tts_voice is set, EdgeTts::with_voice is used
+        let voice_name = Some("en-US-AndrewNeural".to_string());
+        let engine = match &voice_name {
+            Some(v) => voice::edge_tts::EdgeTts::with_voice(v.clone()),
+            None => voice::edge_tts::EdgeTts::new(),
+        };
+        assert_eq!(engine.id(), "edge-tts");
+    }
+
+    #[test]
+    fn synthesize_tts_edge_default_voice_when_none() {
+        let voice_name: Option<String> = None;
+        let engine = match &voice_name {
+            Some(v) => voice::edge_tts::EdgeTts::with_voice(v.clone()),
+            None => voice::edge_tts::EdgeTts::new(),
+        };
+        assert_eq!(engine.id(), "edge-tts");
     }
 }
 

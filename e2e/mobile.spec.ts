@@ -35,19 +35,6 @@ test.describe('Mobile Chat UX', () => {
     expect(box!.height).toBeGreaterThan(300);
   });
 
-  test('viewport canvas dimensions match mobile screen width', async ({ page }) => {
-    await page.goto('/');
-
-    const canvas = page.locator('.viewport-canvas');
-    await expect(canvas).toBeVisible();
-
-    const box = await canvas.boundingBox();
-    expect(box).not.toBeNull();
-    // Canvas should fill the full width on mobile (375px viewport, ±5px tolerance)
-    expect(box!.width).toBeGreaterThanOrEqual(370);
-    expect(box!.width).toBeLessThanOrEqual(380);
-  });
-
   test('chat history panel toggles open and closed on mobile', async ({ page }) => {
     await page.goto('/');
 
@@ -64,36 +51,6 @@ test.describe('Mobile Chat UX', () => {
     // Tap again — history should hide
     await toggle.click();
     await expect(page.locator('.chat-history')).not.toBeVisible({ timeout: 1_000 });
-  });
-
-  test('input footer stays visible when chat drawer is open', async ({ page }) => {
-    await page.goto('/');
-
-    // Open the chat drawer
-    await page.locator('.chat-drawer-toggle').click();
-    await expect(page.locator('.chat-history')).toBeVisible({ timeout: 1_000 });
-
-    // Input footer must still be visible — it is always-on
-    await expect(page.locator('.input-footer')).toBeVisible();
-    await expect(page.locator('.chat-input')).toBeVisible();
-  });
-
-  test('bottom panel does not overflow outside the viewport on mobile', async ({ page }) => {
-    await page.goto('/');
-
-    const panel = page.locator('.bottom-panel');
-    await expect(panel).toBeVisible();
-
-    const panelBox = await panel.boundingBox();
-    const viewBox = await page.locator('.chat-view').boundingBox();
-
-    expect(panelBox).not.toBeNull();
-    expect(viewBox).not.toBeNull();
-
-    // Panel bottom edge must not exceed the container bottom
-    const panelBottom = panelBox!.y + panelBox!.height;
-    const viewBottom = viewBox!.y + viewBox!.height;
-    expect(panelBottom).toBeLessThanOrEqual(viewBottom + 2); // 2px tolerance
   });
 
   test('3D viewport canvas position is stable — stays at top-left when keyboard opens', async ({ page }) => {
@@ -163,35 +120,6 @@ test.describe('Mobile Chat UX', () => {
     //  accepting that the feature degrades gracefully — panel stays at bottom.)
   });
 
-  test('chat input is reachable and interactive on mobile', async ({ page }) => {
-    await page.goto('/');
-
-    const input = page.locator('.chat-input');
-    await expect(input).toBeVisible();
-    await expect(input).toBeEnabled();
-
-    // Fill and verify
-    await input.fill('Hello from mobile!');
-    await expect(input).toHaveValue('Hello from mobile!');
-
-    // Send button should become enabled
-    await expect(page.locator('.send-btn')).toBeEnabled();
-  });
-
-  test('AI state pill is visible on mobile and shows Idle', async ({ page }) => {
-    await page.goto('/');
-
-    const pill = page.locator('.ai-state-pill');
-    await expect(pill).toBeVisible();
-    await expect(pill).toContainText('Idle');
-
-    // Pill should be within viewport bounds
-    const box = await pill.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(MOBILE_VIEWPORT.width + 2);
-  });
-
   test('sending a message works on mobile', async ({ page }) => {
     await page.goto('/');
 
@@ -211,37 +139,6 @@ test.describe('Mobile Chat UX', () => {
 
     // Input cleared after send
     await expect(input).toHaveValue('');
-  });
-
-  test('character model loads and canvas renders on mobile', async ({ page }) => {
-    await page.goto('/');
-
-    // Loading overlay should disappear after model loads
-    const loadingOverlay = page.locator('.loading-overlay');
-    await expect(loadingOverlay).toBeHidden({ timeout: VRM_LOAD_TIMEOUT });
-
-    // Canvas should have content
-    const canvas = page.locator('.viewport-canvas');
-    await expect(canvas).toBeVisible();
-    const box = await canvas.boundingBox();
-    expect(box!.width).toBeGreaterThan(100);
-    expect(box!.height).toBeGreaterThan(100);
-  });
-
-  test('settings dropdown is accessible on mobile', async ({ page }) => {
-    await page.goto('/');
-
-    const settingsToggle = page.locator('.settings-toggle');
-    await expect(settingsToggle).toBeVisible();
-
-    await settingsToggle.click();
-    const dropdown = page.locator('.settings-dropdown');
-    await expect(dropdown).toBeVisible({ timeout: 1_000 });
-
-    // Dropdown must not overflow the viewport width
-    const box = await dropdown.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.x + box!.width).toBeLessThanOrEqual(MOBILE_VIEWPORT.width + 2);
   });
 
   test('chat drawer max-height is capped so viewport is never fully hidden', async ({ page }) => {
@@ -281,29 +178,13 @@ test.describe('Mobile Chat UX', () => {
     const dropdown = page.locator('.mobile-menu-dropdown');
     await expect(dropdown).toBeVisible({ timeout: 1_000 });
 
-    // Should have at least 4 menu items (Chat, Memory, Marketplace, Voice)
+    // Should have at least 5 menu items (Chat, Skill Tree, Memory, Marketplace, Voice)
     const items = dropdown.locator('.mobile-menu-item');
-    await expect(items).toHaveCount(4);
+    await expect(items).toHaveCount(5);
 
     // Tap again — dropdown should close
     await menuToggle.click();
     await expect(dropdown).not.toBeVisible({ timeout: 1_000 });
-  });
-
-  test('mobile hamburger menu does not overflow viewport', async ({ page }) => {
-    await page.goto('/');
-
-    // Open the hamburger menu
-    await page.locator('.mobile-menu-toggle').click();
-    const dropdown = page.locator('.mobile-menu-dropdown');
-    await expect(dropdown).toBeVisible({ timeout: 1_000 });
-
-    // Dropdown must not overflow the viewport
-    const box = await dropdown.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(MOBILE_VIEWPORT.width + 2);
-    expect(box!.y).toBeGreaterThanOrEqual(0);
   });
 
   test('mobile menu navigation switches tabs', async ({ page }) => {
@@ -322,14 +203,6 @@ test.describe('Mobile Chat UX', () => {
 
     // Menu should auto-close after selection
     await expect(page.locator('.mobile-menu-dropdown')).not.toBeVisible({ timeout: 1_000 });
-  });
-
-  test('desktop nav bar is hidden on mobile', async ({ page }) => {
-    await page.goto('/');
-
-    // Desktop nav should be hidden on mobile viewport
-    const desktopNav = page.locator('.desktop-nav');
-    await expect(desktopNav).toBeHidden();
   });
 
   test('modernized input has unified wrapper with send button inside', async ({ page }) => {

@@ -41,8 +41,8 @@ pub async fn list_languages() -> Vec<(String, String)> {
 
 /// Translate text from source language to target language (stub).
 ///
-/// In the future this will use the LLM brain or a translation API.
-/// For now returns the original text with a language tag prefix.
+/// Returns the original text with a language tag prefix. LLM-based translation
+/// is not yet integrated.
 #[tauri::command]
 pub async fn translate_text(
     text: String,
@@ -63,7 +63,7 @@ pub async fn translate_text(
         return Err(format!("Unsupported target language: {target_lang}"));
     }
 
-    // Stub: return original text (real implementation will use LLM)
+    // Stub: return original text when same language
     if source_lang == target_lang {
         return Ok(TranslationResult {
             original: trimmed.clone(),
@@ -86,8 +86,8 @@ pub async fn translate_text(
 
 /// Detect the language of text (stub).
 ///
-/// In the future this will use an LLM or language detection library.
-/// For now returns "en" (English) as the detected language.
+/// Returns "en" (English) as the detected language. Language detection
+/// via LLM or dedicated library is not yet integrated.
 #[tauri::command]
 pub async fn detect_language(text: String) -> Result<(String, f64), String> {
     if text.trim().is_empty() {

@@ -37,10 +37,16 @@ vi.mock('../renderer/character-animator', () => ({
   })),
 }));
 
+import { useChatExpansion } from '../composables/useChatExpansion';
+
 describe('PetOverlayView', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset().mockResolvedValue(undefined);
+    // Reset shared module-level chat expansion state to default
+    const { setPetChatExpanded, setChatDrawerExpanded } = useChatExpansion();
+    setPetChatExpanded(true);
+    setChatDrawerExpanded(false);
   });
 
   it('renders the pet overlay container', () => {

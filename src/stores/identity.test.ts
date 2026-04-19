@@ -122,3 +122,19 @@ describe('identity store — IPC integration', () => {
     expect(store.isLoading).toBe(false);
   });
 });
+
+// ── IPC Contract Tests ─────────────────────────────────────────────────────
+
+describe('identity store — IPC contract', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('removeTrustedDevice sends deviceId (camelCase)', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useIdentityStore();
+    await store.removeTrustedDevice('device-123').catch(() => {});
+    expect(mockInvoke).toHaveBeenCalledWith('remove_trusted_device_cmd', { deviceId: 'device-123' });
+  });
+});

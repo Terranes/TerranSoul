@@ -342,3 +342,127 @@ wasmtime 36.0.7 (Cranelift), CapabilityStore (file-backed JSON consent), HostCon
 > VRM desktop companion use. See `rules/research-reverse-engineering.md` §7.
 
 ✅ Phase 8 complete (chunks 080–084) — see completion-log.md
+
+---
+
+## Phase 10 — Avatar Animation Architecture (VRM Expression-Driven)
+
+✅ Phase 10 complete — see completion-log.md
+
+---
+
+## Phase 11 — RPG Brain Configuration (Configure Your AI Like an RPG Character)
+
+> **Goal:** Reframe the entire AI configuration experience as an RPG progression system.
+> Instead of dry settings panels, users "build their brain" by unlocking capabilities
+> through quests, combos, and tier upgrades — the same way a gamer builds a character.
+>
+> **Design Principle:** Your AI assistant is a living character. Its capabilities are
+> skills you unlock, not checkboxes you toggle. Every configuration choice is a quest
+> that teaches you something and rewards you with a smarter companion.
+
+### The Human Brain → AI System Mapping
+
+TerranSoul's architecture mirrors how a real brain works:
+
+| Human Brain                | AI System                          | RPG Equivalent              |
+| -------------------------- | ---------------------------------- | --------------------------- |
+| Prefrontal Cortex          | Reasoning Engine (LLM + Agents)    | Intelligence stat           |
+| Hippocampus                | Long-term Memory                   | Wisdom stat                 |
+| Working Memory Network     | Short-term Memory                  | Focus / Concentration       |
+| Neocortex                  | Retrieval System (RAG / Knowledge) | Knowledge / Lore stat       |
+| Basal Ganglia / Cerebellum | Control & Execution Layer          | Dexterity / Reflexes stat   |
+
+Each "brain region" maps to a real AI subsystem that the user progressively unlocks:
+
+- **Prefrontal Cortex → Reasoning:** Start with a free LLM (`free-brain`), evolve to paid API (`paid-brain`) or local LLM (`local-brain`). Each upgrade is a quest that boosts the "Intelligence" stat.
+- **Hippocampus → Memory:** Unlock `memory` to give your AI persistent recall. Combine with `diarization` for the **Social Memory** combo — your AI remembers who said what.
+- **Working Memory → Context:** Short-term memory (last 20 messages) is auto-injected. Upgrade to RAG with `paid-brain` + `memory` for the **True Recall** combo.
+- **Neocortex → Knowledge:** Install community agents (`agents`) to expand your AI's knowledge domains. Combine with `device-link` for the **Hive Mind** combo.
+- **Basal Ganglia → Execution:** `pet-mode`, `windows-shortcuts`, `windows-startup` — the motor cortex of your AI. Enable combos like **Instant Companion** and **Always There**.
+
+### Visual Design: The FF16 Constellation Map
+
+The skill tree renders as an **FF16 Abilities-style constellation map** — a full-screen dark
+star-field with circular category clusters arranged radially. Each cluster is a wheel of nodes
+like the Eikon ability circles in Final Fantasy XVI:
+
+![FF16 Abilities Reference](recording/ff16-abilities-reference.png)
+
+**Layout:**
+- 5 category clusters (Brain, Voice, Avatar, Social, Utility) positioned on a deep-blue background
+- Each cluster is a **radial wheel**: center emblem + concentric rings of nodes
+  - Inner ring: Foundation skills
+  - Middle ring: Advanced skills
+  - Outer ring: Ultimate skills
+- Glowing connection lines between prerequisite nodes
+- Clusters connected by faint constellation lines across the map
+- Pannable + zoomable (touch + mouse wheel)
+
+**Cluster Color Themes:**
+- 🧠 Brain — crimson/red diamond border (like Ifrit in FF16)
+- 🗣️ Voice — jade/green diamond border (like Garuda)
+- ✨ Avatar — gold diamond border (like Titan)
+- 🔗 Social — sapphire/blue diamond border (like Shiva)
+- 📀 Utility — amethyst/purple diamond border (like Odin)
+
+**Node States (same as before):**
+- **Locked:** Dim, desaturated, 0.35 opacity
+- **Available:** Gold breathing border + cost label below
+- **Active:** Full glow + completed checkmark
+
+**Interaction Flow:**
+1. Click floating orb → full-screen constellation view
+2. Click a cluster → zoom into that category's radial wheel
+3. Click a node → quest detail overlay (objectives, rewards, prereqs)
+4. Breadcrumb navigation: "All Clusters > Brain > Awaken the Mind"
+5. Minimap in corner shows all clusters with colored status dots
+
+### Stat Boosts & Combo System
+
+When the user unlocks specific skill combinations, they trigger **combos** that
+provide bonus capabilities — like equipping a matching armor set in an RPG:
+
+| Combo Name             | Required Skills                     | Bonus Effect                          |
+| ---------------------- | ----------------------------------- | ------------------------------------- |
+| 🎧 DJ Companion        | `tts` + `bgm-custom`               | AI curates music based on mood        |
+| 💬 Full Conversation   | `asr` + `tts`                       | Hands-free voice chat                 |
+| 🎬 Film Critic         | `bgm-video` + `paid-brain`         | AI comments on videos you watch       |
+| 🧠 True Recall         | `paid-brain` + `memory`            | Context-aware responses from history  |
+| 🏔️ Offline Sage        | `local-brain` + `memory`           | Full AI offline with memory           |
+| 👂 Perfect Hearing     | `whisper-asr` + `hotwords`         | Boosted recognition accuracy          |
+| 👥 Social Memory       | `diarization` + `memory`           | Remembers who said what               |
+| 🌐 Universal Translator| `translation` + `asr`              | Real-time voice translation           |
+| 👁️ Omniscient Companion| `vision` + `memory` + `asr`        | Sees, hears, and remembers everything |
+| 🐝 Hive Mind           | `agents` + `device-link`           | Multi-device agent orchestration      |
+| 🐾 Living Desktop Pet  | `pet-mode` + `asr` + `presence`    | Reactive floating companion           |
+| ⚡ Instant Companion   | `windows-shortcuts` + `pet-mode`   | Global hotkey summons your AI         |
+| 🏠 Always There        | `windows-startup` + `pet-mode` + `presence` | AI greets you every boot     |
+
+### Game-Style Stat Progression
+
+Each unlocked skill boosts one or more character stats displayed in the UI:
+
+| Stat          | Icon | Boosted By                                                     |
+| ------------- | ---- | -------------------------------------------------------------- |
+| Intelligence  | 🧠   | `free-brain`, `paid-brain`, `local-brain`, `agents`            |
+| Wisdom        | 📖   | `memory`, `device-link`                                        |
+| Charisma      | 🗣️   | `tts`, `asr`, `translation`, `diarization`                     |
+| Perception    | 👁️   | `vision`, `presence`, `hotwords`, `whisper-asr`                |
+| Dexterity     | ⚡   | `pet-mode`, `windows-shortcuts`, `windows-startup`, `bgm`     |
+| Endurance     | 🛡️   | `local-brain` (offline), `device-link` (redundancy)            |
+
+### Implementation Chunks
+
+| Chunk | Description | Status |
+|-------|-------------|--------|
+| 128 | **FF16 Constellation Skill Tree — Full-screen layout redesign.** Replace the 360px CSS grid panel in QuestBubble.vue with a full-screen (or large overlay) **FF16 Abilities-style constellation map**. Each category (Brain, Voice, Avatar, Social, Utility) becomes a **circular cluster** of nodes arranged radially — like the Eikon wheels in FF16. Clusters are positioned on a dark deep-blue background with subtle particle/star-field effects. Each cluster has: (a) a central **category emblem** with the category icon + Ability Points cost, (b) skill nodes arranged in concentric rings around the center (foundation = inner ring, advanced = middle ring, ultimate = outer ring), (c) glowing connection lines between prerequisite nodes, (d) a colored diamond border matching the category (red/crimson for Brain, green/jade for Voice, gold for Avatar, blue/sapphire for Social, purple/amethyst for Utility). Nodes use the same locked/available/active states but rendered as circular gems with cost labels below. The orb floats over the viewport and clicking it opens the full-screen constellation view. Must be pannable + zoomable (touch + mouse). **Reference:** FF16 Abilities screen (circular Eikon clusters with radial node layouts). | `not-started` |
+| 129 | **Constellation cluster interaction & detail panel.** Clicking a cluster zooms into it (smooth camera transition). Inside, each node is clickable to show the quest detail overlay (objectives, rewards, prerequisites) — reuse existing `.ff-detail` content. Add a breadcrumb: "All Clusters > Brain > Awaken the Mind". Back button zooms out to full constellation. Clicking an available node's "Begin Quest" starts the quest. Add a minimap in the corner showing all clusters with dots for active/available/locked status. | `not-started` |
+| 130 | Brain config UI as RPG stat sheet — show Intelligence/Wisdom/Charisma/Perception/Dexterity/Endurance stats with animated bars. Each stat computed from unlocked skills. Visual feedback on stat increase when a new skill is unlocked. | `not-started` |
+| 131 | Combo detection & notification system — when the user unlocks the second skill of a combo pair, show an RPG-style "Combo Unlocked!" animation with the combo name, icon, and bonus description. Persist combo state in skill-tree store. | `not-started` |
+| 132 | Quest reward ceremony — after completing a quest, show a "Level Up" style reward screen with stat changes (before → after), new combos unlocked, and next recommended quest. Include particle effects and sound. | `not-started` |
+| 133 | Brain evolution path visualization — show the brain upgrade tree (Free → Paid/Local) as a glowing neural pathway in the skill tree. Animate signals flowing along completed paths. Dim locked paths. | `not-started` |
+| 134 | Stat-based AI behavior scaling — use the computed stats to actually influence AI behavior: higher Intelligence = longer context window, higher Wisdom = better memory recall, higher Charisma = more expressive TTS, higher Perception = faster hotword detection. | `not-started` |
+
+> **Next Chunk:** 128 — FF16 Constellation Skill Tree layout redesign
+

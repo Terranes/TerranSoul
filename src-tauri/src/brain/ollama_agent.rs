@@ -77,10 +77,15 @@ impl OllamaAgent {
 
     /// Create an agent with a custom Ollama base URL (useful for tests).
     pub fn with_url(model: &str, base_url: &str) -> Self {
+        let client = Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .unwrap_or_else(|_| Client::new());
         OllamaAgent {
             model: model.to_string(),
             base_url: base_url.to_string(),
-            client: Client::new(),
+            client,
         }
     }
 

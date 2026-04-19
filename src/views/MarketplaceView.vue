@@ -209,6 +209,133 @@
 
       <!-- Desktop mode: full marketplace -->
       <template v-else>
+        <!-- LLM Configuration section (also available on desktop) -->
+        <div class="llm-config llm-config-desktop">
+          <div class="llm-config-header" @click="showLlmConfig = !showLlmConfig">
+            <span>🧠</span>
+            <strong>Configure LLM</strong>
+            <span v-if="brainStore.hasBrain" class="llm-active-badge">
+              {{ activeBrainBadge }}
+            </span>
+            <span class="llm-config-hint">{{ showLlmConfig ? '▾' : '▸' }}</span>
+          </div>
+
+          <div v-if="showLlmConfig" class="llm-config-body">
+            <!-- Tab bar: Free / Paid / Local -->
+            <div class="llm-tier-tabs">
+              <button :class="['llm-tier-tab', { active: llmTier === 'free' }]" @click="llmTier = 'free'">☁️ Free Cloud</button>
+              <button :class="['llm-tier-tab', { active: llmTier === 'paid' }]" @click="llmTier = 'paid'">💳 Paid API</button>
+              <button :class="['llm-tier-tab', { active: llmTier === 'local' }]" @click="llmTier = 'local'">🖥 Local Ollama</button>
+            </div>
+
+            <!-- Free provider selection -->
+            <div v-if="llmTier === 'free'" class="llm-providers">
+              <div
+                v-for="p in brainStore.freeProviders"
+                :key="p.id"
+                :class="['llm-provider-card', { active: llmSelectedProvider === p.id }]"
+                @click="llmSelectedProvider = p.id"
+              >
+                <div class="llm-provider-row">
+                  <strong>{{ p.display_name }}</strong>
+                  <span v-if="p.id === currentFreeProviderId" class="llm-current-badge">current</span>
+                  <span v-if="p.id === 'pollinations'" class="llm-rec-badge">⭐ no key needed</span>
+                </div>
+                <small>{{ p.notes }}</small>
+                <small class="llm-provider-model">Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM{{ p.requires_api_key ? ' · API key required' : '' }}</small>
+              </div>
+              <div v-if="selectedFreeProviderNeedsKey" class="llm-field">
+                <label>API Key:</label>
+                <input v-model="llmFreeApiKey" type="password" placeholder="Enter API key…" class="llm-input" />
+              </div>
+              <button
+                class="btn-primary btn-sm llm-apply-btn"
+                :disabled="!llmSelectedProvider || (selectedFreeProviderNeedsKey && !llmFreeApiKey)"
+                @click="applyFreeProvider"
+              >
+                Apply {{ llmSelectedProviderName }}
+              </button>
+            </div>
+
+            <!-- Paid API configuration -->
+            <div v-if="llmTier === 'paid'" class="llm-paid-form">
+              <div class="llm-field">
+                <label>Provider:</label>
+                <select v-model="llmPaidProvider" class="llm-select">
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="custom">Custom endpoint</option>
+                </select>
+              </div>
+              <div class="llm-field">
+                <label>API Key:</label>
+                <input v-model="llmPaidApiKey" type="password" placeholder="sk-…" class="llm-input" />
+              </div>
+              <div class="llm-field">
+                <label>Model:</label>
+                <input v-model="llmPaidModel" type="text" placeholder="gpt-4o" class="llm-input" />
+              </div>
+              <div v-if="llmPaidProvider === 'custom'" class="llm-field">
+                <label>Base URL:</label>
+                <input v-model="llmPaidBaseUrl" type="url" placeholder="https://api.example.com" class="llm-input" />
+              </div>
+              <button
+                class="btn-primary btn-sm llm-apply-btn"
+                :disabled="!llmPaidApiKey || !llmPaidModel"
+                @click="applyPaidProvider"
+              >
+                Apply {{ llmPaidProvider === 'custom' ? 'Custom' : llmPaidProvider }} API
+              </button>
+            </div>
+
+            <!-- Local Ollama configuration -->
+            <div v-if="llmTier === 'local'" class="llm-local-form">
+              <div :class="['bs-status-indicator', brainStore.ollamaStatus.running ? 'ok' : 'error']">
+                {{ brainStore.ollamaStatus.running ? '✅ Ollama is running' : '❌ Ollama is not running — start it with `ollama serve`' }}
+              </div>
+              <div v-if="brainStore.recommendations.length" class="llm-local-models">
+                <div
+                  v-for="m in brainStore.recommendations"
+                  :key="m.model_tag"
+                  :class="['llm-provider-card', { active: llmLocalModel === m.model_tag }]"
+                  @click="llmLocalModel = m.model_tag"
+                >
+                  <div class="llm-provider-row">
+                    <strong>{{ m.display_name }}</strong>
+                    <span v-if="m.is_top_pick" class="llm-rec-badge">⭐ Recommended</span>
+                  </div>
+                  <small>{{ m.description }}</small>
+                </div>
+              </div>
+              <button
+                class="btn-primary btn-sm llm-apply-btn"
+                :disabled="!brainStore.ollamaStatus.running || !llmLocalModel"
+                @click="applyLocalModel"
+              >
+                Install & Activate {{ llmLocalModel || '…' }}
+              </button>
+            </div>
+
+            <!-- Confirmation after switching -->
+            <div v-if="llmConfirmation" class="llm-confirmation">
+              <span class="llm-confirm-icon">✅</span>
+              <div>
+                <strong>{{ llmConfirmation.name }}</strong> is now active.
+                <span v-if="llmConfirmation.url" class="llm-confirm-url">
+                  Verify at: <a :href="llmConfirmation.url" target="_blank" rel="noopener">{{ llmConfirmation.url }}</a>
+                </span>
+              </div>
+            </div>
+
+            <!-- Chat hint -->
+            <p class="llm-chat-hint">
+              💬 <strong>Tip:</strong> You can also ask TerranSoul in chat to change the model —
+              e.g. <em>"Switch to Groq"</em> or <em>"Use my OpenAI API key"</em>.
+            </p>
+          </div>
+        </div>
+
+        <h3 class="mp-section-title">🤖 Agents</h3>
         <div class="mp-search-row">
           <input
             v-model="searchQuery"
@@ -392,11 +519,20 @@ const activeProviderName = computed(() => {
   return p?.display_name ?? mode.provider_id ?? '';
 });
 
+/** Human-readable badge text for the currently active brain mode. */
+const activeBrainBadge = computed(() => {
+  const mode = brainStore.brainMode;
+  if (!mode) return '';
+  if (mode.mode === 'free_api') return '☁️ ' + activeProviderName.value;
+  if (mode.mode === 'paid_api') return '💳 ' + (mode as { model?: string }).model;
+  return '🖥 Local';
+});
+
 const showDetails = ref(false);
 
 // ── LLM configuration state ──────────────────────────────────────────────────
 const showLlmConfig = ref(false);
-const llmTier = ref<'free' | 'paid'>('free');
+const llmTier = ref<'free' | 'paid' | 'local'>('free');
 const llmSelectedProvider = ref(
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
 );
@@ -408,6 +544,9 @@ const llmPaidProvider = ref('openai');
 const llmPaidApiKey = ref('');
 const llmPaidModel = ref('gpt-4o');
 const llmPaidBaseUrl = ref('');
+
+// Local Ollama fields
+const llmLocalModel = ref(brainStore.topRecommendation?.model_tag ?? '');
 
 const currentFreeProviderId = computed(() =>
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : null,
@@ -463,6 +602,26 @@ function applyPaidProvider() {
   llmConfirmation.value = {
     name: `${llmPaidProvider.value} / ${llmPaidModel.value}`,
     url: baseUrl,
+  };
+}
+
+async function applyLocalModel() {
+  const model = llmLocalModel.value;
+  if (!model) return;
+  const installed = brainStore.installedModels.some((m) => m.name === model);
+  if (!installed) {
+    const ok = await brainStore.pullModel(model);
+    if (!ok) return;
+  }
+  await brainStore.setActiveBrain(model);
+  const mode = { mode: 'local_ollama' as const, model };
+  brainStore.brainMode = mode;
+  brainStore.setBrainMode(mode).catch(() => { /* expected in browser */ });
+
+  const rec = brainStore.recommendations.find((m) => m.model_tag === model);
+  llmConfirmation.value = {
+    name: rec?.display_name ?? model,
+    url: '',
   };
 }
 
@@ -830,4 +989,14 @@ onMounted(async () => {
 }
 .llm-chat-hint strong { color: #94a3b8; }
 .llm-chat-hint em { color: #60a5fa; font-style: normal; }
+
+/* Desktop LLM config section */
+.llm-config-desktop { margin-bottom: 1rem; }
+.llm-active-badge { font-size: 0.75rem; background: #1a2e1a; color: #86efac; padding: 0.1rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; }
+.mp-section-title { font-size: 1rem; color: #94a3b8; margin: 0.5rem 0; }
+.bs-status-indicator { padding: 0.75rem 1rem; border-radius: 8px; font-weight: 500; font-size: 0.85rem; }
+.bs-status-indicator.ok { background: #1a2e1a; color: #86efac; }
+.bs-status-indicator.error { background: #2d1c1c; color: #fca5a5; }
+.llm-local-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.llm-local-models { display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto; }
 </style>

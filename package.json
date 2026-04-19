@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/check-port.cjs && vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -32,6 +32,7 @@
     "@types/three": "^0.183.1",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "^2.4.6",
+    "cypress": "^15.14.0",
     "jsdom": "^29.0.2",
     "typescript": "^5.8.3",
     "vite": "^6.3.2",

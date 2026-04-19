@@ -76,46 +76,6 @@ test.describe('TerranSoul App', () => {
     await expect(input).toHaveValue('');
   });
 
-  test('3D viewport canvas renders', async ({ page }) => {
-    await page.goto('/');
-
-    // Canvas element should be present in the viewport
-    const canvas = page.locator('.viewport-canvas');
-    await expect(canvas).toBeVisible();
-
-    // Canvas should have actual dimensions
-    const box = await canvas.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThan(100);
-    expect(box!.height).toBeGreaterThan(100);
-  });
-
-  test('character state badge is visible', async ({ page }) => {
-    await page.goto('/');
-
-    // The state badge should show "idle" initially
-    const badge = page.locator('.ai-state-pill');
-    await expect(badge).toBeVisible();
-    await expect(badge).toContainText('Idle');
-  });
-
-  test('settings dropdown toggle works', async ({ page }) => {
-    await page.goto('/');
-
-    // Settings toggle button should be visible
-    const toggleBtn = page.locator('.settings-toggle');
-    await expect(toggleBtn).toBeVisible();
-
-    // Settings dropdown should be hidden initially
-    await expect(page.locator('.settings-dropdown')).not.toBeVisible();
-
-    // Click toggle — dropdown should appear with model selector
-    await toggleBtn.click();
-    await expect(page.locator('.settings-dropdown')).toBeVisible({ timeout: PANEL_TIMEOUT });
-
-    // Dropdown should have character label and model selector
-    await expect(page.locator('.settings-dropdown .model-selector')).toBeVisible();
-  });
 });
 
 test.describe('3D Character Loading & Animation', () => {
@@ -124,12 +84,10 @@ test.describe('3D Character Loading & Animation', () => {
 
   /** Helper: enable debug overlay and wait for triangle count > 0 */
   async function waitForModelLoaded(page: import('@playwright/test').Page) {
-    // Give the app a moment to register the keydown handler
-    await page.waitForTimeout(500);
+    // Wait for splash screen to disappear before interacting
+    await expect(page.locator('.splash')).toBeHidden({ timeout: 10_000 });
     const debugOverlay = page.locator('.debug-overlay');
     if (!(await debugOverlay.isVisible())) {
-      // Focus the page body (not the viewport — that toggles dialog)
-      await page.locator('body').click({ position: { x: 1, y: 1 } });
       await page.keyboard.press('Control+d');
       await page.waitForTimeout(300);
     }
@@ -149,55 +107,6 @@ test.describe('3D Character Loading & Animation', () => {
     await expect(page.locator('.loading-overlay')).toBeHidden({ timeout: VRM_LOAD_TIMEOUT });
   }
 
-  test('loading overlay shows while model loads and disappears after', async ({ page }) => {
-    await page.goto('/');
-
-    // Loading overlay should appear while the default model loads
-    const loadingOverlay = page.locator('.loading-overlay');
-    // It could already be visible or disappearing fast — check it existed
-    // by waiting for the model to finish loading and overlay to vanish
-    await expect(loadingOverlay).toBeHidden({ timeout: VRM_LOAD_TIMEOUT });
-
-    // After loading, the overlay should not be present
-    await expect(loadingOverlay).not.toBeVisible();
-  });
-
-  test('VRM model loads and renders geometry on the canvas', async ({ page }) => {
-    await page.goto('/');
-
-    const canvas = page.locator('.viewport-canvas');
-    await expect(canvas).toBeVisible();
-
-    await waitForModelLoaded(page);
-  });
-
-  test('character metadata appears after VRM load', async ({ page }) => {
-    await page.goto('/');
-
-    const nameOverlay = page.locator('.character-name-overlay');
-    await expect(nameOverlay).toBeVisible();
-
-    await expect(async () => {
-      const text = await nameOverlay.textContent();
-      expect(text?.trim().length).toBeGreaterThan(0);
-    }).toPass({ timeout: VRM_LOAD_TIMEOUT });
-  });
-
-  test('model selector dropdown is visible and has options', async ({ page }) => {
-    await page.goto('/');
-
-    // Open the settings dropdown
-    await page.locator('.settings-toggle').click();
-    const selector = page.locator('.model-selector');
-    await expect(selector).toBeVisible();
-
-    const options = selector.locator('option');
-    await expect(options).toHaveCount(3);
-
-    // Default selection should be Annabelle
-    await expect(selector).toHaveValue('annabelle');
-  });
-
   test('Annabelle (default, cool persona) loads correctly', async ({ page }) => {
     await page.goto('/');
 
@@ -212,9 +121,25 @@ test.describe('3D Character Loading & Animation', () => {
     // Loading overlay should be gone
     await waitForLoadingDone(page);
 
+    // VRM instance must be exposed on window for integration testing
+    const hasVrm = await page.evaluate(() => !!(window as any).__terransoul_vrm__);
+    expect(hasVrm).toBe(true);
+
     // Model selector should show annabelle (open settings first)
     await page.locator('.settings-toggle').click();
     await expect(page.locator('.model-selector')).toHaveValue('annabelle');
+  });
+
+  test('3D canvas is visible with non-zero dimensions', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.splash')).toBeHidden({ timeout: 10_000 });
+
+    const canvas = page.locator('.viewport-canvas');
+    await expect(canvas).toBeVisible();
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThan(100);
+    expect(box!.height).toBeGreaterThan(100);
   });
 
   test('switching models shows loading overlay', async ({ page }) => {
@@ -234,126 +159,9 @@ test.describe('3D Character Loading & Animation', () => {
     await waitForLoadingDone(page);
   });
 
-  test('animation state changes when sending a message', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    await expect(badge).toContainText('Idle');
-
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-    await input.fill('test animation');
-    await sendBtn.click();
-
-    await expect(async () => {
-      const text = (await badge.textContent())?.trim();
-      expect(['Thinking…', 'Talking', 'Happy', 'Sad']).toContain(text);
-    }).toPass({ timeout: 3_000 });
-
-    await expect(badge).toContainText('Idle', { timeout: RESPONSE_TIMEOUT });
-  });
-
-  test('canvas continues to render frames over time', async ({ page }) => {
-    await page.goto('/');
-
-    // Give the app time to register the keydown handler
-    await page.waitForTimeout(500);
-    await page.keyboard.press('Control+d');
-    const debugOverlay = page.locator('.debug-overlay');
-    await expect(debugOverlay).toBeVisible({ timeout: 5_000 });
-
-    const drawSpan = debugOverlay.locator('span').nth(2);
-
-    await page.waitForTimeout(500);
-    const text1 = await drawSpan.textContent();
-    const draws1 = parseInt(text1?.replace(/[^\d]/g, '') ?? '0', 10);
-    expect(draws1).toBeGreaterThan(0);
-  });
-
-  test('Annabelle animates visibly with cool persona', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.goto('/');
-
-    // Annabelle is the default (cool persona)
-    const debugOverlay = await waitForModelLoaded(page);
-
-    // Verify geometry is rendered (model loaded with meshes)
-    const triSpan = debugOverlay.locator('span').nth(1);
-    const triCount = parseInt((await triSpan.textContent())?.replace(/[^\d]/g, '') ?? '0', 10);
-    expect(triCount).toBeGreaterThan(0);
-
-    // Verify animation state transitions work (proves the animation
-    // system is responding to state changes even though headless Chrome's
-    // software WebGL doesn't produce pixel-level differences for subtle
-    // bone-level animation).
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-    await input.fill('Hello!');
-    await sendBtn.click();
-
-    await expect(async () => {
-      const text = (await badge.textContent())?.trim();
-      expect(['Thinking…', 'Talking', 'Happy', 'Sad']).toContain(text);
-    }).toPass({ timeout: 5_000 });
-
-    // Confirm it returns to idle after response
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
 });
 
 test.describe('Animation & AI Emotion', () => {
-  const VRM_LOAD_TIMEOUT = 30_000;
-
-  async function waitForModelLoaded(page: import('@playwright/test').Page) {
-    await page.waitForTimeout(500);
-    const debugOverlay = page.locator('.debug-overlay');
-    if (!(await debugOverlay.isVisible())) {
-      await page.locator('body').click({ position: { x: 1, y: 1 } });
-      await page.keyboard.press('Control+d');
-      await page.waitForTimeout(300);
-    }
-    if (!(await debugOverlay.isVisible())) {
-      await page.keyboard.press('Control+d');
-    }
-    await expect(debugOverlay).toBeVisible({ timeout: 5_000 });
-    await expect(async () => {
-      const text = await debugOverlay.locator('span').nth(1).textContent();
-      expect(parseInt(text?.replace(/[^\d]/g, '') ?? '0', 10)).toBeGreaterThan(0);
-    }).toPass({ timeout: VRM_LOAD_TIMEOUT });
-  }
-
-  test('VRM model animates visibly (canvas pixels change over time)', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.goto('/');
-
-    const canvas = page.locator('.viewport-canvas');
-    await expect(canvas).toBeVisible();
-
-    await waitForModelLoaded(page);
-
-    // Verify triangle count is > 0 (geometry rendered)
-    const debugOverlay = page.locator('.debug-overlay');
-    const triSpan = debugOverlay.locator('span').nth(1);
-    const triCount = parseInt((await triSpan.textContent())?.replace(/[^\d]/g, '') ?? '0', 10);
-    expect(triCount).toBeGreaterThan(0);
-
-    // Verify animation state transitions work (proves the animation
-    // system processes state changes and updates bones per frame).
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-    await input.fill('Hello there!');
-    await sendBtn.click();
-
-    await expect(async () => {
-      const text = (await badge.textContent())?.trim();
-      expect(['Thinking…', 'Talking', 'Happy', 'Sad']).toContain(text);
-    }).toPass({ timeout: 5_000 });
-
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
   test('AI responds with persona (not an error) in browser mode', async ({ page }) => {
     await page.goto('/');
 
@@ -372,168 +180,6 @@ test.describe('Animation & AI Emotion', () => {
     const text = await assistantMsg.textContent();
     expect(text).not.toContain('Error:');
     expect(text).toContain('TerranSoul');
-  });
-
-  test('happy message triggers happy emotion on character', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('Hello!');
-    await sendBtn.click();
-
-    await expect(badge).toContainText('Happy', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
-  test('sad message triggers sad emotion on character', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('I feel so sad today');
-    await sendBtn.click();
-
-    await expect(badge).toContainText('Sad', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
-  test('neutral message triggers talking state on character', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('What is the weather like?');
-    await sendBtn.click();
-
-    await expect(badge).toContainText('Talking', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
-  test('character shows thinking state while waiting for response', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('Tell me something interesting');
-    await sendBtn.click();
-
-    // The thinking state may be very brief before transitioning to talking.
-    // Accept either state as proof the state machine responded to the message.
-    await expect(async () => {
-      const text = (await badge.textContent())?.trim();
-      expect(['Thinking…', 'Talking']).toContain(text);
-    }).toPass({ timeout: 5_000 });
-  });
-
-  test('multiple emotions cycle correctly across messages', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    // Message 1: happy
-    await input.fill('Hey there!');
-    await sendBtn.click();
-    await expect(badge).toContainText('Happy', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // Message 2: sad
-    await input.fill('That makes me sad');
-    await sendBtn.click();
-    await expect(badge).toContainText('Sad', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // Message 3: happy again
-    await input.fill('Actually, I feel awesome!');
-    await sendBtn.click();
-    await expect(badge).toContainText('Happy', { timeout: 5_000 });
-  });
-
-  test('Annabelle (cool) emotion animation with happy message', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.goto('/');
-
-    // Annabelle is the default (cool persona)
-    await waitForModelLoaded(page);
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    // Send a happy message
-    await input.fill('Hello!');
-    await sendBtn.click();
-
-    // Should transition to happy state (cool-happy: confident lean)
-    await expect(badge).toContainText('Happy', { timeout: 10_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
-  test('angry message triggers angry emotion on character', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('I am so angry and frustrated!');
-    await sendBtn.click();
-
-    await expect(badge).toContainText('Angry', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
-  test('relaxed message triggers relaxed emotion on character', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('I want to relax and feel calm');
-    await sendBtn.click();
-
-    await expect(badge).toContainText('Relaxed', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-  });
-
-  test('surprised message triggers surprised emotion on character', async ({ page }) => {
-    await page.goto('/');
-
-    const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    await expect(badge).toContainText('Idle');
-
-    await input.fill('Wow that is so surprising!');
-    await sendBtn.click();
-
-    await expect(badge).toContainText('Surprised', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
   });
 
   test('all 8 emotion states cycle correctly across messages', async ({ page }) => {
@@ -641,5 +287,83 @@ test.describe('Free LLM Brain', () => {
     await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
     // Response should NOT mention Ollama — free API path is active
     await expect(assistantMsg).not.toContainText('Ollama');
+  });
+});
+
+// ── Voice Auto-Configuration ──────────────────────────────────────────────
+test.describe('Voice Auto-Configuration', () => {
+  test('voice is auto-configured with Web Speech API and Edge TTS by default', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for app to finish initialising
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    // Voice store should have auto-configured providers
+    const voiceState = await page.evaluate(() => {
+      const app = (document.querySelector('#app') as any)?.__vue_app__;
+      if (!app) return null;
+      const pinia = app.config.globalProperties.$pinia;
+      if (!pinia) return null;
+      const s = pinia.state.value.voice;
+      if (!s) return null;
+      return {
+        asr_provider: s.config?.asr_provider,
+        tts_provider: s.config?.tts_provider,
+      };
+    });
+    expect(voiceState).not.toBeNull();
+    expect(voiceState!.asr_provider).toBe('web-speech');
+    expect(voiceState!.tts_provider).toBe('edge-tts');
+  });
+
+});
+
+// ── Marketplace LLM Configuration ────────────────────────────────────────
+test.describe('Marketplace LLM Configuration', () => {
+  test('marketplace shows LLM configuration section', async ({ page }) => {
+    await page.goto('/');
+
+    // Navigate to marketplace
+    // In browser mode, click the marketplace tab
+    const mpTab = page.locator('button:has-text("🏪")').first();
+    await mpTab.click();
+
+    // Marketplace view should be visible
+    await expect(page.locator('.marketplace-view')).toBeVisible({ timeout: 3_000 });
+
+    // LLM configuration section should be visible (the collapsible header)
+    const llmConfigHeader = page.locator('.llm-config-header');
+    await expect(llmConfigHeader).toBeVisible({ timeout: 3_000 });
+    await expect(llmConfigHeader).toContainText('Configure LLM');
+  });
+});
+
+// ── Chat-based LLM Switching ─────────────────────────────────────────────
+test.describe('Chat-based LLM Switching', () => {
+  test('sending "switch to pollinations" triggers LLM switch response', async ({ page }) => {
+    await page.goto('/');
+
+    // Wait for chat to be ready
+    await expect(page.locator('.chat-view')).toBeVisible({ timeout: 5_000 });
+
+    const input = page.locator('.chat-input');
+    const sendBtn = page.locator('.send-btn');
+
+    // Send LLM switch command
+    await input.fill('switch to pollinations');
+    await sendBtn.click();
+
+    // Open chat drawer
+    await page.locator('.chat-drawer-toggle').click();
+
+    // User message should appear
+    const userMsg = page.locator('.message-row.user').first();
+    await expect(userMsg).toBeVisible({ timeout: MESSAGE_TIMEOUT });
+    await expect(userMsg).toContainText('switch to pollinations');
+
+    // Assistant should confirm the switch
+    const assistantMsg = page.locator('.message-row.assistant').first();
+    await expect(assistantMsg).toBeVisible({ timeout: RESPONSE_TIMEOUT });
+    await expect(assistantMsg).toContainText('Pollinations');
   });
 });

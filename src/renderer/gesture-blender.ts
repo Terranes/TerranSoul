@@ -26,6 +26,10 @@ const BONE_PHASE_OFFSETS: Record<string, number> = {
   neck: 6.3,
   leftUpperArm: 8.2,
   rightUpperArm: 10.5,
+  leftLowerArm: 12.1,
+  rightLowerArm: 14.3,
+  leftShoulder: 16.0,
+  rightShoulder: 17.8,
 };
 
 function valueNoise(t: number): number {

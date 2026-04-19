@@ -122,4 +122,80 @@ describe('character store — IPC integration', () => {
     expect(store.defaultModels[0].id).toBe('annabelle');
     expect(store.defaultModels[1].id).toBe('m58');
   });
+
+  it('currentGender returns female for annabelle', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    await store.selectModel('annabelle');
+    expect(store.currentGender()).toBe('female');
+  });
+
+  it('currentGender returns male for m58', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    await store.selectModel('m58');
+    expect(store.currentGender()).toBe('male');
+  });
+
+  it('currentGender returns female for genshin', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    await store.selectModel('genshin');
+    expect(store.currentGender()).toBe('female');
+  });
+
+  it('currentGender defaults to female for unknown model', () => {
+    const store = useCharacterStore();
+    // Force an unknown model id that bypasses selectModel validation
+    store.selectedModelId = 'unknown-id';
+    expect(store.currentGender()).toBe('female');
+  });
+
+  it('selectModel sets Edge TTS voice for female character', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    await store.selectModel('annabelle');
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AnaNeural' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: 50, rate: 15 });
+  });
+
+  it('selectModel sets Edge TTS voice for male character', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    await store.selectModel('m58');
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AndrewNeural' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: -10, rate: 0 });
+  });
+
+  it('setLoadError stores and clears error message', () => {
+    const store = useCharacterStore();
+    expect(store.loadError).toBeUndefined();
+
+    store.setLoadError('Failed to load VRM model');
+    expect(store.loadError).toBe('Failed to load VRM model');
+
+    store.setLoadError(undefined);
+    expect(store.loadError).toBeUndefined();
+  });
+
+  it('loadVrm clears loadError before loading', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    store.setLoadError('previous error');
+
+    await store.loadVrm('/models/test.vrm');
+
+    expect(store.loadError).toBeUndefined();
+    expect(store.isLoading).toBe(true);
+  });
+
+  it('loadError persists across setLoaded calls', () => {
+    const store = useCharacterStore();
+    store.setLoadError('Failed to load VRM model');
+    store.setLoaded();
+
+    // Error should still be visible after loading overlay dismisses
+    expect(store.loadError).toBe('Failed to load VRM model');
+    expect(store.isLoading).toBe(false);
+  });
 });

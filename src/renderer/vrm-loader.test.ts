@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { extractVrmMetadata } from './vrm-loader';
+import { extractVrmMetadata, createPlaceholderCharacter } from './vrm-loader';
 import type { VRM } from '@pixiv/three-vrm';
+import * as THREE from 'three';
 
 // We cannot test loadVRM with real Three.js in jsdom (no WebGL),
 // so we focus on testable pure functions and error path logic.
@@ -116,12 +117,56 @@ describe('loadVRM validation', () => {
   it('loadVRMSafe logs error message when load fails', async () => {
     const { loadVRMSafe } = await import('./vrm-loader');
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const fakeScene = {} as any;
     await loadVRMSafe(fakeScene, '');
     expect(consoleSpy).toHaveBeenCalledWith(
-      'VRM load failed, using placeholder:',
+      '[TerranSoul] VRM load failed, using placeholder:',
       expect.any(Error),
     );
     consoleSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+});
+
+describe('createPlaceholderCharacter', () => {
+  it('adds a group to the scene with body and head meshes', () => {
+    const scene = new THREE.Scene();
+    const group = createPlaceholderCharacter(scene);
+    expect(group).toBeInstanceOf(THREE.Group);
+    expect(scene.children).toContain(group);
+    // Should have at least body, head, and two eyes
+    expect(group.children.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('positions head above body', () => {
+    const scene = new THREE.Scene();
+    const group = createPlaceholderCharacter(scene);
+    const positions = group.children.map(c => c.position.y);
+    // Head (y=1.6) should be above body (y=0.85)
+    expect(Math.max(...positions)).toBeGreaterThan(1);
+  });
+});
+
+describe('loadVRM URL encoding', () => {
+  it('encodes spaces in file paths', async () => {
+    // We cannot do a real load in jsdom, but we can verify the encoding logic
+    // by checking the loadVRM function rejects with an error (not a path error)
+    // when given a path with spaces — the path validation passes, meaning
+    // encoding is applied before the fetch.
+    const { loadVRM } = await import('./vrm-loader');
+    const fakeScene = { add: vi.fn() } as any;
+    // This will fail at the Three.js loader level (no WebGL), but the path
+    // should be accepted (not rejected as invalid string)
+    await expect(loadVRM(fakeScene, '/models/default/Annabelle the Sorcerer.vrm'))
+      .rejects.toThrow(); // Will throw from GLTFLoader, not path validation
+  });
+
+  it('does not encode blob: URLs', async () => {
+    const { loadVRM } = await import('./vrm-loader');
+    const fakeScene = { add: vi.fn() } as any;
+    // blob: URLs should pass path validation and fail at loader level
+    await expect(loadVRM(fakeScene, 'blob:http://localhost/fake-id'))
+      .rejects.toThrow();
   });
 });

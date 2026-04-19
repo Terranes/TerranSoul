@@ -162,10 +162,12 @@ describe('conversation store — brain configured (browser-side free API)', () =
     const store = useConversationStore();
     await store.sendMessage('hello');
 
-    // Should fall back to persona
-    expect(store.messages).toHaveLength(2);
+    // Should fall back to persona + show provider warning
+    expect(store.messages).toHaveLength(3);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.messages[2].agentName).toBe('System');
+    expect(store.messages[2].content).toContain('Could not reach the AI provider');
     expect(store.isThinking).toBe(false);
   });
 });
@@ -184,32 +186,27 @@ describe('conversation store — Tauri backend available', () => {
   });
 
   it('uses streaming IPC when Tauri is available', async () => {
-    // send_message_stream resolves immediately, then streaming store gets handleChunk
-    mockInvoke.mockResolvedValue(undefined);
-
-    const store = useConversationStore();
-    // sendMessage will try streaming → send_message_stream
-    // Since streaming store won't receive done chunk in test, it will time out.
-    // But the invoke should be called.
-    const promise = store.sendMessage('hello');
-
-    // Give the async poll loop a tick
-    await new Promise((r) => setTimeout(r, 150));
-
-    expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'hello' });
-
-    // Simulate the streaming store being done
+    // Simulate chunks arriving during the invoke call via the streaming store.
+    // In the real app, Tauri events fire during the invoke; here we inject
+    // chunks inside the mocked invoke so they arrive before it resolves.
     const { useStreamingStore } = await import('./streaming');
     const streaming = useStreamingStore();
-    streaming.handleChunk({ text: 'Hi there!', done: false });
-    streaming.handleChunk({ text: '', done: true });
 
-    await promise;
+    mockInvoke.mockImplementation(async () => {
+      // Simulate chunks arriving during the invoke
+      streaming.handleChunk({ text: 'Hi there!', done: false });
+      streaming.handleChunk({ text: '', done: true });
+    });
 
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+
+    expect(mockInvoke).toHaveBeenCalledWith('send_message_stream', { message: 'hello' });
     expect(store.messages).toHaveLength(2);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].content).toBe('Hi there!');
     expect(store.isThinking).toBe(false);
+    expect(store.isStreaming).toBe(false);
   });
 
   it('falls back to send_message on streaming failure', async () => {
@@ -239,9 +236,44 @@ describe('conversation store — Tauri backend available', () => {
     const store = useConversationStore();
     await store.sendMessage('hello');
 
-    expect(store.messages).toHaveLength(2);
+    expect(store.messages).toHaveLength(3);
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
+    expect(store.messages[2].agentName).toBe('System');
+    expect(store.messages[2].content).toContain('Could not reach the AI provider');
+    expect(store.isThinking).toBe(false);
+  });
+
+  it('falls back to non-streaming invoke when streaming produces no text', async () => {
+    // First invoke (send_message_stream) resolves OK but no chunks arrive
+    mockInvoke.mockResolvedValueOnce(undefined);
+    // Second invoke (send_message) returns a proper response
+    const fallbackResponse: Message = {
+      id: 'fb-1',
+      role: 'assistant',
+      content: 'Hello from non-streaming!',
+      agentName: 'TerranSoul',
+      sentiment: 'happy',
+      timestamp: Date.now(),
+    };
+    mockInvoke.mockResolvedValueOnce(fallbackResponse);
+
+    const store = useConversationStore();
+    const promise = store.sendMessage('Hi');
+
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Simulate the streaming ending with zero content (empty done chunk)
+    const { useStreamingStore } = await import('./streaming');
+    const streaming = useStreamingStore();
+    streaming.handleChunk({ text: '', done: true });
+
+    await promise;
+
+    // Should fall back to non-streaming invoke and use its response
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0].content).toBe('Hi');
+    expect(store.messages[1]).toEqual(fallbackResponse);
     expect(store.isThinking).toBe(false);
   });
 });
@@ -321,5 +353,118 @@ describe('detectSentiment — keyword-based fallback', () => {
   it('returns neutral for unknown content', async () => {
     const { detectSentiment } = await import('./conversation');
     expect(detectSentiment('What is the weather like?')).toBe('neutral');
+  });
+});
+
+describe('detectLlmCommand — chat-based LLM switching', () => {
+  it('detects "switch to groq"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('switch to groq');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('groq');
+    }
+  });
+
+  it('detects "use pollinations"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('use pollinations');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('pollinations');
+    }
+  });
+
+  it('detects "change to cerebras"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('change to cerebras');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('cerebras');
+    }
+  });
+
+  it('detects "switch to mistral"', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('switch to mistral');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_free');
+    if (cmd!.type === 'switch_free') {
+      expect(cmd!.providerId).toBe('mistral');
+    }
+  });
+
+  it('detects paid API key command', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    const cmd = detectLlmCommand('use my openai api key sk-abc123def456');
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('switch_paid');
+    if (cmd!.type === 'switch_paid') {
+      expect(cmd!.apiKey).toBe('sk-abc123def456');
+    }
+  });
+
+  it('returns null for normal messages', async () => {
+    const { detectLlmCommand } = await import('./conversation');
+    expect(detectLlmCommand('What is the weather today?')).toBeNull();
+    expect(detectLlmCommand('Tell me a joke')).toBeNull();
+    expect(detectLlmCommand('How does machine learning work?')).toBeNull();
+  });
+});
+
+describe('conversation store — chat-based LLM switching integration', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('switches to pollinations via chat command', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockResolvedValue(undefined);
+
+    const store = useConversationStore();
+    await store.sendMessage('switch to pollinations');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0].content).toBe('switch to pollinations');
+    expect(store.messages[1].role).toBe('assistant');
+    expect(store.messages[1].content).toContain('Pollinations');
+    expect(store.isThinking).toBe(false);
+  });
+
+  it('warns about API key requirement for groq', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    const store = useConversationStore();
+    await store.sendMessage('switch to groq');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].content).toContain('API key');
+    expect(store.messages[1].content).toContain('Marketplace');
+  });
+
+  it('normal messages are NOT treated as LLM commands', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
+        callbacks.onDone('42 is the answer');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('What is the meaning of life?');
+
+    // Should go through normal chat path, not command path
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(store.messages[1].content).toBe('42 is the answer');
   });
 });

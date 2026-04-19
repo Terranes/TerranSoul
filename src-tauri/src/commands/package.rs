@@ -132,7 +132,7 @@ pub async fn update_agent(
 }
 
 /// Remove an installed agent.
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn remove_agent(
     agent_name: String,
     state: State<'_, AppState>,

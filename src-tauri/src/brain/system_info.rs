@@ -53,6 +53,8 @@ pub struct SystemInfo {
     pub os_name: String,
     /// Architecture (e.g. "x86_64", "aarch64").
     pub arch: String,
+    /// GPU information if available.
+    pub gpu_name: Option<String>,
 }
 
 /// Collect hardware information from the host system.
@@ -65,21 +67,47 @@ pub fn collect() -> SystemInfo {
 
     let tier = RamTier::from_mb(total_ram_mb);
     let cpu_cores = sys.cpus().len();
+    
+    // Get more detailed CPU information
     let cpu_name = sys
         .cpus()
         .first()
         .map(|c| c.brand().trim().to_string())
         .unwrap_or_else(|| "Unknown CPU".to_string());
 
-    let os_name = format!(
-        "{} {}",
-        System::name().unwrap_or_else(|| "Unknown OS".to_string()),
-        System::os_version().unwrap_or_default()
-    )
-    .trim()
-    .to_string();
+    // Enhanced OS detection for Windows
+    let os_name = if cfg!(target_os = "windows") {
+        // Try to get Windows version more accurately
+        match System::name() {
+            Some(name) => {
+                let version = System::os_version().unwrap_or_default();
+                if version.starts_with("10.0.") {
+                    let build = version.split('.').nth(2).unwrap_or("0").parse::<u32>().unwrap_or(0);
+                    if build >= 22000 {
+                        "Windows 11".to_string()
+                    } else {
+                        "Windows 10".to_string()
+                    }
+                } else {
+                    format!("{} {}", name, version)
+                }
+            }
+            None => "Windows".to_string(),
+        }
+    } else {
+        format!(
+            "{} {}",
+            System::name().unwrap_or_else(|| "Unknown OS".to_string()),
+            System::os_version().unwrap_or_default()
+        )
+        .trim()
+        .to_string()
+    };
 
     let arch = std::env::consts::ARCH.to_string();
+    
+    // Try to detect GPU - basic detection for now
+    let gpu_name = detect_gpu();
 
     SystemInfo {
         total_ram_mb,
@@ -88,6 +116,24 @@ pub fn collect() -> SystemInfo {
         cpu_name,
         os_name,
         arch,
+        gpu_name,
+    }
+}
+
+/// Attempt to detect GPU information (basic implementation)
+fn detect_gpu() -> Option<String> {
+    // On Windows, try to get GPU info via WMI or registry
+    #[cfg(target_os = "windows")]
+    {
+        // This is a simplified detection - in a full implementation
+        // you'd use Windows APIs like DXGI or WMI
+        // For now, return None and let the frontend handle it
+        None
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
     }
 }
 

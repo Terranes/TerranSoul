@@ -21,7 +21,7 @@ fn parse_capability(s: &str) -> Result<Capability, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn grant_agent_capability(
     agent_name: String,
     capability: String,
@@ -33,7 +33,7 @@ pub async fn grant_agent_capability(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn revoke_agent_capability(
     agent_name: String,
     capability: String,
@@ -45,7 +45,7 @@ pub async fn revoke_agent_capability(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn list_agent_capabilities(
     agent_name: String,
     state: State<'_, AppState>,
@@ -69,7 +69,7 @@ pub async fn list_agent_capabilities(
         .collect())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn run_agent_in_sandbox(
     agent_name: String,
     wasm_bytes: Vec<u8>,
@@ -92,7 +92,7 @@ pub async fn run_agent_in_sandbox(
     runner.run_module(&wasm_bytes, &agent_name, cap_store)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn clear_agent_capabilities(
     agent_name: String,
     state: State<'_, AppState>,

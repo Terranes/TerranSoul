@@ -12,7 +12,7 @@ use crate::{
 
 /// Return the public identity of this device (device_id, public key, name).
 #[tauri::command]
-pub fn get_device_identity(state: State<'_, AppState>) -> Result<crate::identity::DeviceInfo, String> {
+pub async fn get_device_identity(state: State<'_, AppState>) -> Result<crate::identity::DeviceInfo, String> {
     let identity = state.device_identity.lock().map_err(|e| e.to_string())?;
     match identity.as_ref() {
         Some(id) => Ok(id.device_info(&device_name())),
@@ -22,7 +22,7 @@ pub fn get_device_identity(state: State<'_, AppState>) -> Result<crate::identity
 
 /// Return an SVG QR code encoding the pairing payload for this device.
 #[tauri::command]
-pub fn get_pairing_qr(state: State<'_, AppState>) -> Result<String, String> {
+pub async fn get_pairing_qr(state: State<'_, AppState>) -> Result<String, String> {
     let identity = state.device_identity.lock().map_err(|e| e.to_string())?;
     match identity.as_ref() {
         Some(id) => generate_pairing_qr(&id.device_info(&device_name())),
@@ -32,17 +32,17 @@ pub fn get_pairing_qr(state: State<'_, AppState>) -> Result<String, String> {
 
 /// Return the list of trusted (paired) devices.
 #[tauri::command]
-pub fn list_trusted_devices(state: State<'_, AppState>) -> Vec<TrustedDevice> {
-    state
+pub async fn list_trusted_devices(state: State<'_, AppState>) -> Result<Vec<TrustedDevice>, String> {
+    Ok(state
         .trusted_devices
         .lock()
         .map(|d| d.clone())
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
 /// Add a device to the trusted list and persist the change.
 #[tauri::command]
-pub fn add_trusted_device_cmd(
+pub async fn add_trusted_device_cmd(
     device: TrustedDevice,
     state: State<'_, AppState>,
     app: AppHandle,
@@ -54,8 +54,8 @@ pub fn add_trusted_device_cmd(
 }
 
 /// Remove a device from the trusted list by its `device_id` and persist.
-#[tauri::command]
-pub fn remove_trusted_device_cmd(
+#[tauri::command(rename_all = "camelCase")]
+pub async fn remove_trusted_device_cmd(
     device_id: String,
     state: State<'_, AppState>,
     app: AppHandle,

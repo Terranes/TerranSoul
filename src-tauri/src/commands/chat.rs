@@ -6,6 +6,8 @@ use uuid::Uuid;
 use crate::agent::stub_agent::{Sentiment, StubAgent};
 use crate::agent::AgentProvider;
 use crate::brain::OllamaAgent;
+use crate::brain::brain_config::BrainMode;
+use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
 use crate::AppState;
 
 /// System prompt used by `send_message_stream` (streaming LLM).
@@ -16,10 +18,13 @@ Your capabilities:
 - Helpful conversation and answering questions on any topic
 - Recommending AI tools and software based on the user's needs
 - Guiding users through installing packages via the TerranSoul Package Manager
+- Quest system — TerranSoul has an RPG-style skill tree with quests. When users ask "What should I do?", "Where can I start?", "What's next?", or any getting-started question, recommend they start a quest. The app will automatically show quest options as interactive buttons.
 
-Emotion tags: You may optionally start a sentence with an emotion tag to express how you feel about what you're saying. Tags: [happy], [sad], [angry], [relaxed], [surprised], [neutral].
-Motion tags: You may optionally use [motion:wave] or [motion:nod] to suggest gestures.
-Use these tags naturally and sparingly — only when the emotion is clearly appropriate.
+Animation: When expressing an emotion or gesture, output a JSON block on its own line before the related text:
+<anim>{"emotion":"happy"}</anim>
+<anim>{"emotion":"surprised","motion":"wave"}</anim>
+Valid emotions: happy, sad, angry, relaxed, surprised, neutral. Valid motions: wave, nod.
+Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
 
 Keep responses concise and warm."#;
 
@@ -76,40 +81,95 @@ pub async fn process_message(
         app_state.active_brain.lock().map_err(|e| e.to_string())?.clone()
     };
 
-    // Route through the active brain (Ollama) if one is configured; otherwise use StubAgent.
-    let (agent_name, content, sentiment) = if let Some(ref model) = model_opt {
-        // Build short-term memory: last 20 conversation messages as history pairs.
-        let history: Vec<(String, String)> = {
-            let conv = app_state.conversation.lock().map_err(|e| e.to_string())?;
-            conv.iter()
-                .rev()
-                .take(20)
-                .rev()
-                .map(|m| (m.role.clone(), m.content.clone()))
-                .collect()
-        }; // lock released before await
+    // Read brain_mode for free/paid API routing.
+    let brain_mode: Option<BrainMode> = {
+        app_state.brain_mode.lock().map_err(|e| e.to_string())?.clone()
+    };
 
-        // Pre-load memory entries so no MutexGuard is held across the async LLM call.
-        let memory_entries: Vec<crate::memory::MemoryEntry> = {
-            let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
-            mem_store.get_all().unwrap_or_default()
-        }; // lock released before await
+    // Build conversation history (needed for all LLM paths).
+    let history: Vec<(String, String)> = {
+        let conv = app_state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.iter()
+            .rev()
+            .take(20)
+            .rev()
+            .map(|m| (m.role.clone(), m.content.clone()))
+            .collect()
+    };
 
-        let memories: Vec<String> =
-            crate::memory::brain_memory::semantic_search_entries(model, message, &memory_entries, 5)
-                .await
-                .into_iter()
-                .map(|e| e.content)
-                .collect();
-
-        let agent = OllamaAgent::new(model);
-        let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
-        (agent.name().to_string(), text, sent)
-    } else {
-        let agent = StubAgent::new(agent_id.unwrap_or("stub"));
-        let name = agent.name().to_string();
-        let (text, sent) = agent.respond(message).await;
-        (name, text, sent)
+    // Route through the configured brain mode, then legacy active_brain, then stub.
+    let (agent_name, content, sentiment) = match brain_mode {
+        Some(BrainMode::FreeApi { provider_id, api_key }) => {
+            // Use the free provider's OpenAI-compatible API (non-streaming).
+            let effective_provider_id = {
+                let mut rotator = app_state.provider_rotator.lock().map_err(|e| e.to_string())?;
+                rotator.next_healthy_provider()
+                    .map(|p| p.id.clone())
+                    .unwrap_or(provider_id)
+            };
+            let provider = crate::brain::get_free_provider(&effective_provider_id)
+                .ok_or_else(|| format!("Unknown free provider: {effective_provider_id}"))?;
+            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let mut msgs = vec![OpenAiMessage {
+                role: "system".to_string(),
+                content: SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+            }];
+            for (role, c) in &history {
+                msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
+            }
+            let text = client.chat(msgs).await.map_err(|e| format!("Free API error: {e}"))?;
+            ("TerranSoul".to_string(), text, Sentiment::Neutral)
+        }
+        Some(BrainMode::PaidApi { api_key, model, base_url, .. }) => {
+            let client = OpenAiClient::new(&base_url, &model, Some(&api_key));
+            let mut msgs = vec![OpenAiMessage {
+                role: "system".to_string(),
+                content: SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+            }];
+            for (role, c) in &history {
+                msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
+            }
+            let text = client.chat(msgs).await.map_err(|e| format!("Paid API error: {e}"))?;
+            ("TerranSoul".to_string(), text, Sentiment::Neutral)
+        }
+        Some(BrainMode::LocalOllama { model }) => {
+            let memory_entries: Vec<crate::memory::MemoryEntry> = {
+                let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+                mem_store.get_all().unwrap_or_default()
+            };
+            let memories: Vec<String> =
+                crate::memory::brain_memory::semantic_search_entries(&model, message, &memory_entries, 5)
+                    .await
+                    .into_iter()
+                    .map(|e| e.content)
+                    .collect();
+            let agent = OllamaAgent::new(&model);
+            let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
+            (agent.name().to_string(), text, sent)
+        }
+        None => {
+            // Legacy path: check active_brain for Ollama, otherwise stub.
+            if let Some(ref model) = model_opt {
+                let memory_entries: Vec<crate::memory::MemoryEntry> = {
+                    let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+                    mem_store.get_all().unwrap_or_default()
+                };
+                let memories: Vec<String> =
+                    crate::memory::brain_memory::semantic_search_entries(model, message, &memory_entries, 5)
+                        .await
+                        .into_iter()
+                        .map(|e| e.content)
+                        .collect();
+                let agent = OllamaAgent::new(model);
+                let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
+                (agent.name().to_string(), text, sent)
+            } else {
+                let agent = StubAgent::new(agent_id.unwrap_or("stub"));
+                let name = agent.name().to_string();
+                let (text, sent) = agent.respond(message).await;
+                (name, text, sent)
+            }
+        }
     };
 
     let response = Message {
@@ -137,7 +197,7 @@ pub fn fetch_conversation(app_state: &AppState) -> Vec<Message> {
         .unwrap_or_default()
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn send_message(
     message: String,
     agent_id: Option<String>,
@@ -147,8 +207,8 @@ pub async fn send_message(
 }
 
 #[tauri::command]
-pub fn get_conversation(state: State<'_, AppState>) -> Vec<Message> {
-    fetch_conversation(&state)
+pub async fn get_conversation(state: State<'_, AppState>) -> Result<Vec<Message>, String> {
+    Ok(fetch_conversation(&state))
 }
 
 /// Export the full conversation history as a pretty-printed JSON string.
@@ -156,7 +216,7 @@ pub fn get_conversation(state: State<'_, AppState>) -> Vec<Message> {
 /// Returns the serialised `Vec<Message>` for the frontend to save via a file
 /// dialog or download link.
 #[tauri::command]
-pub fn export_chat_log(state: State<'_, AppState>) -> Result<String, String> {
+pub async fn export_chat_log(state: State<'_, AppState>) -> Result<String, String> {
     let conversation = state.conversation.lock().map_err(|e| e.to_string())?;
     serde_json::to_string_pretty(&*conversation)
         .map_err(|e| format!("Failed to serialize: {e}"))

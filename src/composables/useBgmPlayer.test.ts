@@ -1,97 +1,45 @@
 /**
  * Tests for useBgmPlayer composable.
  *
- * Web Audio API is not available in jsdom, so we test the reactive state
- * transitions and API contract with a lightweight AudioContext mock.
+ * All tracks (built-in and custom) use HTMLAudioElement, so we mock `Audio`
+ * globally and test reactive state transitions + API contract.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useBgmPlayer, BGM_TRACKS, DEFAULT_BGM_VOLUME } from './useBgmPlayer';
 
-// ── Web Audio API mock ────────────────────────────────────────────────────────
+// ── HTMLAudioElement mock ─────────────────────────────────────────────────────
 
-function createMockGainNode(): GainNode {
-  return {
-    gain: {
-      value: 0,
-      cancelScheduledValues: vi.fn().mockReturnThis(),
-      setValueAtTime: vi.fn().mockReturnThis(),
-      linearRampToValueAtTime: vi.fn().mockReturnThis(),
-    },
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-  } as unknown as GainNode;
+function stubAudio() {
+  const instances: Record<string, unknown>[] = [];
+  vi.stubGlobal('Audio', class {
+    loop = false;
+    volume = 1;
+    src = '';
+    play = vi.fn(() => Promise.resolve());
+    pause = vi.fn();
+    removeAttribute = vi.fn();
+    load = vi.fn();
+    constructor(src?: string) {
+      if (src) (this as Record<string, unknown>).src = src;
+      instances.push(this as unknown as Record<string, unknown>);
+    }
+  });
+  return instances;
 }
 
-function createMockOscillator(): OscillatorNode {
-  return {
-    type: 'sine',
-    frequency: { value: 0, setValueAtTime: vi.fn() },
-    detune: { value: 0 },
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-  } as unknown as OscillatorNode;
-}
-
-function createMockBufferSource(): AudioBufferSourceNode {
-  return {
-    buffer: null,
-    loop: false,
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn(),
-  } as unknown as AudioBufferSourceNode;
-}
-
-const mockAudioContext = {
-  currentTime: 0,
-  sampleRate: 44100,
-  destination: {},
-  createGain: vi.fn(() => createMockGainNode()),
-  createOscillator: vi.fn(() => createMockOscillator()),
-  createBufferSource: vi.fn(() => createMockBufferSource()),
-  createBiquadFilter: vi.fn(() => ({
-    type: 'lowpass',
-    frequency: { value: 0 },
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-  })),
-  createBuffer: vi.fn((_channels: number, length: number, _sampleRate: number) => ({
-    getChannelData: vi.fn(() => new Float32Array(length)),
-    length,
-  })),
-} as unknown as AudioContext;
-
-// Override global AudioContext
-const originalAudioContext = globalThis.AudioContext;
-beforeEach(() => {
-  // vi.fn() produces a function, but `new AudioContext()` needs a constructor.
-  // Wrapping in a class ensures `new` works correctly.
-  (globalThis as Record<string, unknown>).AudioContext = class {
-    currentTime = mockAudioContext.currentTime;
-    sampleRate = mockAudioContext.sampleRate;
-    destination = mockAudioContext.destination;
-    createGain = mockAudioContext.createGain;
-    createOscillator = mockAudioContext.createOscillator;
-    createBufferSource = mockAudioContext.createBufferSource;
-    createBiquadFilter = mockAudioContext.createBiquadFilter;
-    createBuffer = mockAudioContext.createBuffer;
-  };
-});
 afterEach(() => {
-  (globalThis as Record<string, unknown>).AudioContext = originalAudioContext;
+  vi.unstubAllGlobals();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('useBgmPlayer', () => {
-  it('exports preset tracks', () => {
+  it('exports preset tracks with src', () => {
     expect(BGM_TRACKS.length).toBeGreaterThanOrEqual(3);
     expect(BGM_TRACKS[0]).toHaveProperty('id');
     expect(BGM_TRACKS[0]).toHaveProperty('name');
+    expect(BGM_TRACKS[0]).toHaveProperty('src');
   });
 
   it('has sensible default volume', () => {
@@ -107,26 +55,29 @@ describe('useBgmPlayer', () => {
   });
 
   it('play() sets isPlaying and currentTrackId', () => {
+    stubAudio();
     const bgm = useBgmPlayer();
-    bgm.play('ambient-calm');
+    bgm.play('prelude');
     expect(bgm.isPlaying.value).toBe(true);
-    expect(bgm.currentTrackId.value).toBe('ambient-calm');
+    expect(bgm.currentTrackId.value).toBe('prelude');
   });
 
   it('stop() clears playing state', () => {
+    stubAudio();
     const bgm = useBgmPlayer();
-    bgm.play('ambient-calm');
+    bgm.play('prelude');
     bgm.stop();
     expect(bgm.isPlaying.value).toBe(false);
     expect(bgm.currentTrackId.value).toBeNull();
   });
 
   it('play() switches tracks when already playing', () => {
+    stubAudio();
     const bgm = useBgmPlayer();
-    bgm.play('ambient-calm');
-    expect(bgm.currentTrackId.value).toBe('ambient-calm');
-    bgm.play('ambient-night');
-    expect(bgm.currentTrackId.value).toBe('ambient-night');
+    bgm.play('prelude');
+    expect(bgm.currentTrackId.value).toBe('prelude');
+    bgm.play('moonflow');
+    expect(bgm.currentTrackId.value).toBe('moonflow');
     expect(bgm.isPlaying.value).toBe(true);
   });
 
@@ -141,8 +92,9 @@ describe('useBgmPlayer', () => {
   });
 
   it('setVolume() updates while playing', () => {
+    stubAudio();
     const bgm = useBgmPlayer();
-    bgm.play('ambient-calm');
+    bgm.play('prelude');
     bgm.setVolume(0.7);
     expect(bgm.volume.value).toBeCloseTo(0.7);
     expect(bgm.isPlaying.value).toBe(true);
@@ -157,5 +109,86 @@ describe('useBgmPlayer', () => {
   it('all preset track IDs are unique', () => {
     const ids = BGM_TRACKS.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // ── Custom track management ───────────────────────────────────────
+
+  it('allTracks includes both builtins and custom tracks', () => {
+    const bgm = useBgmPlayer();
+    expect(bgm.allTracks.value.length).toBe(BGM_TRACKS.length);
+    bgm.addCustomTrack('My Song', 'https://example.com/song.mp3');
+    expect(bgm.allTracks.value.length).toBe(BGM_TRACKS.length + 1);
+  });
+
+  it('addCustomTrack returns a unique ID', () => {
+    const bgm = useBgmPlayer();
+    const id1 = bgm.addCustomTrack('Song 1', 'https://example.com/1.mp3');
+    const id2 = bgm.addCustomTrack('Song 2', 'https://example.com/2.mp3');
+    expect(id1).toBeTruthy();
+    expect(id2).toBeTruthy();
+    expect(id1).not.toBe(id2);
+    expect(bgm.customTracks.value.length).toBe(2);
+  });
+
+  it('removeTrack removes a custom track and returns true', () => {
+    const bgm = useBgmPlayer();
+    const id = bgm.addCustomTrack('My Song', 'https://example.com/song.mp3');
+    expect(bgm.removeTrack(id)).toBe(true);
+    expect(bgm.customTracks.value.length).toBe(0);
+  });
+
+  it('removeTrack returns false for non-existent track', () => {
+    const bgm = useBgmPlayer();
+    expect(bgm.removeTrack('nonexistent')).toBe(false);
+  });
+
+  it('removeTrack stops playback if removed track was playing', () => {
+    stubAudio();
+    const bgm = useBgmPlayer();
+    const id = bgm.addCustomTrack('My Song', 'https://example.com/song.mp3');
+    bgm.play(id);
+    expect(bgm.isPlaying.value).toBe(true);
+    bgm.removeTrack(id);
+    expect(bgm.isPlaying.value).toBe(false);
+  });
+
+  it('loadCustomTracks replaces custom tracks', () => {
+    const bgm = useBgmPlayer();
+    bgm.addCustomTrack('Old Track', 'https://example.com/old.mp3');
+    bgm.loadCustomTracks([
+      { id: 'c1', name: 'Track A', src: 'https://example.com/a.mp3' },
+      { id: 'c2', name: 'Track B', src: 'https://example.com/b.mp3' },
+    ]);
+    expect(bgm.customTracks.value.length).toBe(2);
+    expect(bgm.customTracks.value[0].name).toBe('Track A');
+    expect(bgm.customTracks.value[0].removable).toBe(true);
+  });
+
+  it('play() uses HTMLAudioElement for tracks with src', () => {
+    const instances = stubAudio();
+    const bgm = useBgmPlayer();
+    bgm.play('prelude');
+    expect(bgm.isPlaying.value).toBe(true);
+    expect(bgm.currentTrackId.value).toBe('prelude');
+    const last = instances[instances.length - 1];
+    expect(last.loop).toBe(true);
+    expect(last.play).toHaveBeenCalled();
+  });
+
+  it('setVolume updates HTMLAudioElement volume', () => {
+    const instances = stubAudio();
+    const bgm = useBgmPlayer();
+    bgm.play('prelude');
+    bgm.setVolume(0.3);
+    expect(bgm.volume.value).toBeCloseTo(0.3);
+    const last = instances[instances.length - 1];
+    expect(last.volume).toBeCloseTo(0.3);
+  });
+
+  it('play() does nothing for unknown track without src', () => {
+    const bgm = useBgmPlayer();
+    bgm.play('nonexistent');
+    expect(bgm.isPlaying.value).toBe(false);
+    expect(bgm.currentTrackId.value).toBeNull();
   });
 });
