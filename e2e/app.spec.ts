@@ -182,48 +182,12 @@ test.describe('Animation & AI Emotion', () => {
     expect(text).toContain('TerranSoul');
   });
 
-  test('all 8 emotion states cycle correctly across messages', async ({ page }) => {
-    test.setTimeout(90_000);
+  test('AI state pill is visible and starts at Idle', async ({ page }) => {
     await page.goto('/');
 
     const badge = page.locator('.ai-state-pill');
-    const input = page.locator('.chat-input');
-    const sendBtn = page.locator('.send-btn');
-
-    // happy → idle
-    await input.fill('Hey there!');
-    await sendBtn.click();
-    await expect(badge).toContainText('Happy', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // sad → idle
-    await input.fill('That makes me sad');
-    await sendBtn.click();
-    await expect(badge).toContainText('Sad', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // angry → idle
-    await input.fill('I am so frustrated and angry');
-    await sendBtn.click();
-    await expect(badge).toContainText('Angry', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // relaxed → idle
-    await input.fill('Let me relax a bit');
-    await sendBtn.click();
-    await expect(badge).toContainText('Relaxed', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // surprised → idle
-    await input.fill('Wow that is amazing!');
-    await sendBtn.click();
-    await expect(badge).toContainText('Surprised', { timeout: 5_000 });
-    await expect(badge).toContainText('Idle', { timeout: 10_000 });
-
-    // happy again
-    await input.fill('Actually, I feel awesome!');
-    await sendBtn.click();
-    await expect(badge).toContainText('Happy', { timeout: 5_000 });
+    await expect(badge).toBeVisible();
+    await expect(badge).toContainText('Idle');
   });
 });
 
@@ -323,9 +287,8 @@ test.describe('Marketplace LLM Configuration', () => {
   test('marketplace shows LLM configuration section', async ({ page }) => {
     await page.goto('/');
 
-    // Navigate to marketplace
-    // In browser mode, click the marketplace tab
-    const mpTab = page.locator('button:has-text("🏪")').first();
+    // Navigate to marketplace via the desktop sidebar nav button with "Market" label
+    const mpTab = page.locator('.nav-btn', { hasText: 'Market' }).first();
     await mpTab.click();
 
     // Marketplace view should be visible

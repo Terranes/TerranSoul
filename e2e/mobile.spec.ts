@@ -163,46 +163,38 @@ test.describe('Mobile Chat UX', () => {
     expect(vpBox!.y).toBeCloseTo(0, 0);
   });
 
-  test('mobile hamburger menu is visible and toggles dropdown', async ({ page }) => {
+  test('mobile bottom tab bar is visible and switches tabs', async ({ page }) => {
     await page.goto('/');
 
-    // Hamburger menu toggle should be visible on mobile
-    const menuToggle = page.locator('.mobile-menu-toggle');
-    await expect(menuToggle).toBeVisible();
+    // Mobile bottom tab bar should be visible at 375px width
+    const bottomNav = page.locator('.mobile-bottom-nav');
+    await expect(bottomNav).toBeVisible();
 
-    // Dropdown should be hidden by default (collapsed)
-    await expect(page.locator('.mobile-menu-dropdown')).not.toBeVisible();
+    // Desktop sidebar should be hidden on mobile
+    await expect(page.locator('.desktop-nav')).not.toBeVisible();
 
-    // Tap the hamburger — dropdown should appear with menu items
-    await menuToggle.click();
-    const dropdown = page.locator('.mobile-menu-dropdown');
-    await expect(dropdown).toBeVisible({ timeout: 1_000 });
+    // Should have tab buttons for Chat, Quests, Memory, Market, Voice
+    const tabs = bottomNav.locator('.mobile-tab');
+    await expect(tabs).toHaveCount(5);
 
-    // Should have at least 5 menu items (Chat, Skill Tree, Memory, Marketplace, Voice)
-    const items = dropdown.locator('.mobile-menu-item');
-    await expect(items).toHaveCount(5);
-
-    // Tap again — dropdown should close
-    await menuToggle.click();
-    await expect(dropdown).not.toBeVisible({ timeout: 1_000 });
+    // Chat tab should be active by default
+    const chatTab = bottomNav.locator('.mobile-tab', { hasText: 'Chat' });
+    await expect(chatTab).toHaveClass(/active/);
   });
 
-  test('mobile menu navigation switches tabs', async ({ page }) => {
+  test('mobile tab navigation switches views', async ({ page }) => {
     await page.goto('/');
 
     // Verify we start on chat view
     await expect(page.locator('.chat-view')).toBeVisible();
 
-    // Open hamburger and tap Memory
-    await page.locator('.mobile-menu-toggle').click();
-    await expect(page.locator('.mobile-menu-dropdown')).toBeVisible({ timeout: 1_000 });
+    // Tap Memory tab
+    const bottomNav = page.locator('.mobile-bottom-nav');
+    const memoryTab = bottomNav.locator('.mobile-tab', { hasText: 'Memory' });
+    await memoryTab.click();
 
-    // Click the Memory menu item
-    const memoryItem = page.locator('.mobile-menu-item', { hasText: 'Memory' });
-    await memoryItem.click();
-
-    // Menu should auto-close after selection
-    await expect(page.locator('.mobile-menu-dropdown')).not.toBeVisible({ timeout: 1_000 });
+    // Memory tab should now be active
+    await expect(memoryTab).toHaveClass(/active/);
   });
 
   test('modernized input has unified wrapper with send button inside', async ({ page }) => {
