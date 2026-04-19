@@ -247,7 +247,7 @@ impl MemoryStore {
             })
             .collect();
 
-        scored.sort_by_key(|b| std::cmp::Reverse(b.0));
+        scored.sort_by_key(|item| std::cmp::Reverse(item.0));
         scored
             .iter()
             .take(limit)
