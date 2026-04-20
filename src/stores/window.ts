@@ -37,8 +37,11 @@ export const useWindowStore = defineStore('window', () => {
       await ensurePassthroughOff();
       return true;
     } catch (err) {
+      // Tauri unavailable (browser / e2e) — fall back to a local mode flip
+      // so the UI is still switchable for testing and pure-web builds.
       error.value = String(err);
-      return false;
+      mode.value = newMode;
+      return true;
     } finally {
       isLoading.value = false;
     }
@@ -53,8 +56,12 @@ export const useWindowStore = defineStore('window', () => {
       await ensurePassthroughOff();
       return newMode;
     } catch (err) {
+      // Tauri unavailable — perform a local flip so the UI remains usable
+      // in the browser/e2e context where the backend command is missing.
       error.value = String(err);
-      return mode.value;
+      const next: WindowMode = mode.value === 'pet' ? 'window' : 'pet';
+      mode.value = next;
+      return next;
     } finally {
       isLoading.value = false;
     }

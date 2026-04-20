@@ -985,12 +985,12 @@ onUnmounted(() => {
   z-index: 0;
 }
 
-/* Portal for the music bar — top-left, below settings button to avoid
-   overlapping with the quest bubble in the top-right */
+/* Portal for the music bar — top-left, directly below the settings button
+   (which was shifted right to clear the floating mode-toggle pill). */
 .music-bar-portal {
   position: absolute;
   top: 56px;
-  left: 16px;
+  left: 150px;
   z-index: 16;
   pointer-events: none;
 }
@@ -1361,7 +1361,7 @@ onUnmounted(() => {
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
   .ai-state-pill { right: 10px; top: 8px; padding: 4px 10px; font-size: 0.65rem; }
-  .music-bar-portal { top: 50px; left: 10px; }
+  .music-bar-portal { top: 50px; left: 120px; }
   .brain-overlay { width: 92vw; }
   /* Shift brain status pill left to avoid collision with AI state pill */
   .brain-status-pill { left: 40%; font-size: 0.62rem; padding: 3px 10px; }

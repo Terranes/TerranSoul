@@ -67,6 +67,26 @@
               @change="handleVrmImport"
             />
           </div>
+          <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
+               so desktop and pet modes offer the same configurable states. -->
+          <div class="dropdown-section">
+            <label class="dropdown-label">Mood / Pose</label>
+            <div class="mood-grid" role="radiogroup" aria-label="Character mood">
+              <button
+                v-for="mood in MOOD_ENTRIES"
+                :key="mood.key"
+                class="mood-chip"
+                :class="{ active: isMoodActive(mood, characterStore) }"
+                role="radio"
+                :aria-checked="isMoodActive(mood, characterStore)"
+                :title="mood.label"
+                @click="handleMoodPick(mood)"
+              >
+                <span class="mood-chip-emoji">{{ mood.emoji }}</span>
+                <span class="mood-chip-label">{{ mood.label }}</span>
+              </button>
+            </div>
+          </div>
           <!-- Background selector -->
           <div class="dropdown-section">
             <label class="dropdown-label">Background</label>
@@ -169,8 +189,11 @@
     </div>
     <!-- ── Floating Music Bar (teleported to left side of viewport) ──
          Hidden in pet mode — music playback continues but the UI chrome is
-         desktop-mode only. -->
-    <Teleport to="#music-bar-portal" defer>
+         desktop-mode only.  The Teleport is disabled in pet mode because
+         #music-bar-portal only exists inside ChatView; trying to teleport
+         to a missing target throws during Vue's component update phase and
+         breaks subsequent reactivity. -->
+    <Teleport to="#music-bar-portal" defer :disabled="isPetMode">
     <div v-if="!isPetMode" class="music-bar" :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }">
       <button class="music-bar-toggle" @click.stop="bgmBarExpanded = !bgmBarExpanded" :title="bgmBarExpanded ? 'Collapse' : 'Music'">
         <span class="music-bar-toggle-icon" :class="{ open: bgmBarExpanded }">{{ bgmBarExpanded ? '▶' : '🎵' }}</span>
@@ -241,6 +264,7 @@ import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader'
 import { CharacterAnimator, SITTING_POSE_INDEX, SITTING_BODY_Y_OFFSET } from '../renderer/character-animator';
 import { createSittingProps, applyTeacupHandOffset, type SittingProps } from '../renderer/props';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
+import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
 import AudioControlsPanel from './AudioControlsPanel.vue';
 
@@ -505,6 +529,10 @@ defineExpose({
 function handleModelChange(e: Event) {
   const select = e.target as HTMLSelectElement;
   characterStore.selectModel(select.value);
+}
+
+function handleMoodPick(mood: MoodEntry) {
+  applyMood(mood, characterStore);
 }
 
 function retryModelLoad() {
@@ -873,10 +901,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   display: block;
 }
 
+/* Top-left chrome shares a row with the floating mode-toggle pill that
+ * App.vue renders at (left: 82px, width ~116px). To prevent overlap every
+ * in-viewport overlay is nudged right to start after the pill + a gap. */
 .character-name-overlay {
   position: absolute;
   top: 12px;
-  left: 56px;
+  left: 280px;
   font-size: var(--ts-text-lg);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.92);
@@ -888,7 +919,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .character-meta-overlay {
   position: absolute;
   top: 34px;
-  left: 56px;
+  left: 280px;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.55);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
@@ -900,7 +931,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .settings-corner {
   position: absolute;
   top: 12px;
-  left: 16px;
+  left: 150px;
   z-index: 20;
 }
 
@@ -1012,6 +1043,49 @@ async function loadModelIntoScene(newPath: string | undefined) {
   gap: 4px;
 }
 
+/* ── Mood grid ── */
+.mood-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.mood-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: var(--ts-radius-sm);
+  border: 1px solid var(--ts-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
+}
+.mood-chip:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+.mood-chip.active {
+  background: rgba(124, 111, 255, 0.85);
+  border-color: rgba(200, 210, 255, 0.85);
+  color: #fff;
+}
+.mood-chip-emoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.mood-chip-label {
+  font-size: 0.62rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 /* Dropdown transition */
 .dropdown-enter-active, .dropdown-leave-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -1101,13 +1175,16 @@ async function loadModelIntoScene(newPath: string | undefined) {
   letter-spacing: 0.02em;
 }
 
-/* Mobile adjustments for viewport overlays */
+/* Mobile adjustments for viewport overlays.
+ * Mobile hides the sidebar and places the mode pill at left:12px. The
+ * settings button sits after the pill on the same row; the character
+ * name/meta drop to a second row so they are never covered. */
 @media (max-width: 640px) {
   .character-name-overlay { font-size: 0.85rem; top: 52px; left: 16px; }
   .character-meta-overlay { font-size: 0.62rem; top: 70px; left: 16px; }
   .settings-toggle { height: 32px; padding: 0 10px; }
   .settings-label { display: none; }
-  .settings-corner { top: 10px; left: 10px; }
+  .settings-corner { top: 10px; left: 120px; }
   .settings-dropdown { width: 260px; padding: 10px; gap: 10px; }
 }
 .loading-overlay {

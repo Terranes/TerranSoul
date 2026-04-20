@@ -50,13 +50,16 @@ describe('window store — IPC integration', () => {
     expect(store.isLoading).toBe(false);
   });
 
-  it('setMode handles failure', async () => {
+  it('setMode falls back to local flip when Tauri is unavailable', async () => {
+    // Browser / e2e path: invoke throws because the Tauri backend is missing.
+    // The store should still flip the local mode so the UI is switchable,
+    // and record the error so callers can surface it if they want to.
     mockInvoke.mockRejectedValue(new Error('window error'));
     const store = useWindowStore();
     const success = await store.setMode('pet');
-    expect(success).toBe(false);
+    expect(success).toBe(true);
     expect(store.error).toBe('Error: window error');
-    expect(store.mode).toBe('window'); // unchanged
+    expect(store.mode).toBe('pet'); // local flip applied
   });
 
   it('toggleMode toggles and returns new mode', async () => {
@@ -68,11 +71,17 @@ describe('window store — IPC integration', () => {
     expect(store.mode).toBe('pet');
   });
 
-  it('toggleMode handles failure', async () => {
+  it('toggleMode falls back to local flip when Tauri is unavailable', async () => {
     mockInvoke.mockRejectedValue(new Error('toggle error'));
     const store = useWindowStore();
-    const result = await store.toggleMode();
-    expect(result).toBe('window'); // unchanged
+    // First call: window → pet locally.
+    const first = await store.toggleMode();
+    expect(first).toBe('pet');
+    expect(store.mode).toBe('pet');
+    // Second call: pet → window locally.
+    const second = await store.toggleMode();
+    expect(second).toBe('window');
+    expect(store.mode).toBe('window');
     expect(store.error).toBeTruthy();
   });
 
