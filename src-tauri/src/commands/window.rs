@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State, WebviewWindow};
 use tauri::webview::Color;
+#[cfg(target_os = "windows")]
 use tauri::Emitter;
 
 use crate::AppState;
@@ -308,7 +309,7 @@ mod win_cursor {
 /// macOS natively supports transparent-pixel click-through.
 #[tauri::command]
 pub async fn start_pet_cursor_poll(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     // Prevent duplicate polling tasks.
@@ -320,7 +321,7 @@ pub async fn start_pet_cursor_poll(
     #[cfg(target_os = "windows")]
     {
         let active = state.pet_cursor_active.clone();
-        let handle = app_handle.clone();
+        let handle = _app_handle.clone();
 
         tokio::spawn(async move {
             while active.load(Ordering::Relaxed) {
