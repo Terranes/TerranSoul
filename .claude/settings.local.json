@@ -1,11 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx vue-tsc:*)",
-      "Bash(echo \"EXIT: $?\")",
-      "Bash(npx vitest:*)",
-      "Bash(npm run:*)",
-      "Bash(npx playwright:*)"
+      "Bash(*)"
     ]
   }
 }
