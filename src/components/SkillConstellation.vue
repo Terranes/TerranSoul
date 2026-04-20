@@ -257,12 +257,12 @@
               <button
                 v-if="!isPinned(selectedNode.id)"
                 class="sc-btn sc-btn--secondary"
-                @click="skillTree.pinQuest(selectedNode!.id)"
+                @click="() => { skillTree.pinQuest(selectedNode!.id); emit('close'); }"
               >📌 Pin</button>
               <button
                 v-else
                 class="sc-btn sc-btn--secondary"
-                @click="skillTree.unpinQuest(selectedNode!.id)"
+                @click="() => { skillTree.unpinQuest(selectedNode!.id); emit('close'); }"
               >📌 Unpin</button>
               <button
                 v-if="selectedStatus !== 'locked'"
@@ -592,6 +592,7 @@ function goCluster() { selectedQuestId.value = null; }
 function goHome() { resetView(); selectedQuestId.value = null; }
 
 function beginQuest(id: string) {
+  emit('close');
   emit('begin', id);
 }
 
