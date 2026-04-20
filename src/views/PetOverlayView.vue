@@ -615,21 +615,24 @@ onUnmounted(() => {
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
 }
 
-/* ── Onboarding ── */
+/* ── Onboarding ──
+   Anchored bottom-left so it doesn't cover the character (who defaults to
+   the bottom-right corner) and is clear of the top-right toggle pill. */
 .pet-onboarding {
   position: absolute;
-  top: 60px;
-  right: 14px;
-  width: 260px;
+  bottom: 20px;
+  left: 20px;
+  max-width: 240px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(139, 92, 246, 0.35);
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   color: #e2e8f0;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(10px);
   pointer-events: auto;
+  z-index: 100;
 }
 .pet-onboarding-title {
   margin: 0 0 8px;

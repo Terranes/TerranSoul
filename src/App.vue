@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useBrainStore } from './stores/brain';
 import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
@@ -179,6 +179,15 @@ watch(
   },
 );
 
+// Safety escape hatch: pressing Escape while in pet mode returns to desktop
+// mode.  Guards against any scenario where the toggle pill might be
+// unreachable (e.g. covered by another app on top).
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && isPetMode.value) {
+    windowStore.setMode('window');
+  }
+}
+
 onMounted(async () => {
   try {
     await brain.loadActiveBrain();
@@ -229,7 +238,28 @@ onMounted(async () => {
   // Initialise skill tree (load quest tracker, refresh daily suggestions)
   await skillTree.initialise();
 
+  // Listen for the tray-driven 'window-mode-changed' event so the frontend
+  // state stays in sync when the user toggles via the system-tray menu.
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    await listen<string>('window-mode-changed', (e) => {
+      const m = e.payload as 'window' | 'pet';
+      if (m === 'window' || m === 'pet') {
+        windowStore.$patch({ mode: m });
+      }
+    });
+  } catch {
+    // Not in Tauri — ignore
+  }
+
+  // Global Escape-to-exit-pet-mode safety net.
+  window.addEventListener('keydown', onKeyDown);
+
   appLoading.value = false;
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown);
 });
 
 
@@ -313,13 +343,28 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 .nav-brain-warn { color: var(--ts-warning); }
 /* ── Floating Desktop/Pet mode-toggle pill ──
  * Always-visible, fixed-position toggle — lives outside the sidebar so it
- * remains reachable in pet mode (where the sidebar disappears). */
+ * remains reachable in pet mode (where the sidebar disappears).
+ *
+ * Position is mode-aware so the pill never covers the character's status:
+ *  - Desktop mode: anchored just right of the sidebar at the top so it sits
+ *    clear of the IDLE state pill and other chat-header chrome.
+ *  - Pet mode: top-right corner (the only decoration there). */
 .mode-toggle-pill {
   position: fixed;
   top: 12px;
-  right: 14px;
+  left: 82px;
   z-index: 1000;
   pointer-events: auto;
+}
+.mode-toggle-pill.is-pet {
+  left: auto;
+  right: 14px;
+}
+@media (max-width: 640px) {
+  /* No sidebar on mobile; pin to top-left with a small gutter. */
+  .mode-toggle-pill {
+    left: 12px;
+  }
 }
 .mode-toggle-btn {
   display: inline-flex;

@@ -1,7 +1,9 @@
 <template>
-  <div class="viewport-wrapper">
-    <div class="background-layer" :style="backgroundStyle" />
-    <div class="background-tint" />
+  <div class="viewport-wrapper" :class="{ 'viewport-wrapper--pet': isPetMode }">
+    <!-- Background layers: scenic background + tint.  Hidden in pet mode so
+         only the character floats above the desktop. -->
+    <div v-if="!isPetMode" class="background-layer" :style="backgroundStyle" />
+    <div v-if="!isPetMode" class="background-tint" />
     <canvas ref="canvasRef" class="viewport-canvas" />
     <!-- Loading overlay -->
     <Transition name="fade">
@@ -18,13 +20,18 @@
         <button class="load-error-retry" @click="retryModelLoad">Retry</button>
       </div>
     </Transition>
-    <div class="character-name-overlay">{{ characterName }}</div>
-    <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
-      <span>by {{ characterStore.vrmMetadata.author }}</span>
-    </div>
+    <!-- Character name / author / settings — hidden in pet mode (which has
+         its own minimal chrome anchored at the app level). -->
+    <template v-if="!isPetMode">
+      <div class="character-name-overlay">{{ characterName }}</div>
+      <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
+        <span>by {{ characterStore.vrmMetadata.author }}</span>
+      </div>
+    </template>
 
-    <!-- ── Corner settings button (clearly labeled) ── -->
-    <div class="settings-corner" ref="settingsRef">
+    <!-- ── Corner settings button — hidden in pet mode (the PetContextMenu
+         exposes pet-specific options instead) ── -->
+    <div v-if="!isPetMode" class="settings-corner" ref="settingsRef">
       <button class="settings-toggle" @click.stop="settingsOpen = !settingsOpen" aria-label="Settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
@@ -160,9 +167,11 @@
     <div v-if="backgroundStore.importError" class="background-error-banner">
       {{ backgroundStore.importError }}
     </div>
-    <!-- ── Floating Music Bar (teleported to left side of viewport) ── -->
+    <!-- ── Floating Music Bar (teleported to left side of viewport) ──
+         Hidden in pet mode — music playback continues but the UI chrome is
+         desktop-mode only. -->
     <Teleport to="#music-bar-portal" defer>
-    <div class="music-bar" :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }">
+    <div v-if="!isPetMode" class="music-bar" :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }">
       <button class="music-bar-toggle" @click.stop="bgmBarExpanded = !bgmBarExpanded" :title="bgmBarExpanded ? 'Collapse' : 'Music'">
         <span class="music-bar-toggle-icon" :class="{ open: bgmBarExpanded }">{{ bgmBarExpanded ? '▶' : '🎵' }}</span>
       </button>
@@ -225,6 +234,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
+import { useWindowStore } from '../stores/window';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, EYE_TARGET_DISTANCE, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
@@ -242,6 +252,10 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
 const settingsStore = useSettingsStore();
+const windowStoreLocal = useWindowStore();
+/** Viewport behaves differently in pet mode: no background, no chrome,
+ *  transparent clear colour, and pedestal hidden in the 3D scene. */
+const isPetMode = computed(() => windowStoreLocal.mode === 'pet');
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 const backgroundInputRef = ref<HTMLInputElement | null>(null);
@@ -578,6 +592,12 @@ onMounted(async () => {
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
 
+  // Apply the current pet-mode state now that the scene is available.
+  // The reactive watch below only fires on subsequent changes — this
+  // initial call catches the case where the user mounted already in pet
+  // mode (e.g. re-open to a saved state).
+  ctx.setPedestalVisible(!isPetMode.value);
+
   // Create sitting props and add sofa to the scene (initially hidden).
   // The teacup is parented to the right-hand bone when a VRM loads.
   sittingProps = createSittingProps();
@@ -701,6 +721,16 @@ onUnmounted(() => {
 watch(
   () => characterStore.state,
   (newState) => animator.setState(newState),
+);
+
+// Hide the pedestal (and any other floor decorations) in pet mode so the
+// character floats cleanly on the desktop with nothing visible behind.
+watch(
+  () => isPetMode.value,
+  (pet) => {
+    if (sceneCtx) sceneCtx.setPedestalVisible(!pet);
+  },
+  { immediate: true },
 );
 
 // Pin or release the idle-pose rotation based on the Mood submenu's

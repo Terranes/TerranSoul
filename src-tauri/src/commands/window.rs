@@ -34,6 +34,45 @@ pub fn apply_window_mode(window: &WebviewWindow, mode: WindowMode) -> Result<(),
     Ok(())
 }
 
+/// Default window size applied when leaving pet mode without a saved size.
+/// Matches the value in `tauri.conf.json` so a fresh Pet → Window transition
+/// always looks the same as first launch.
+const DEFAULT_WINDOW_WIDTH: u32 = 420;
+const DEFAULT_WINDOW_HEIGHT: u32 = 700;
+
+/// Save the window's current inner size so it can be restored on the next
+/// Pet → Window transition.  Silently no-ops on error — losing the size
+/// just means falling back to the default dimensions on restore.
+fn save_window_size(window: &WebviewWindow, state: &State<'_, AppState>) {
+    if let Ok(size) = window.inner_size() {
+        if let Ok(mut slot) = state.saved_window_size.lock() {
+            *slot = Some((size.width, size.height));
+        }
+    }
+}
+
+/// Restore the window to its previously-saved size, or to the configured
+/// default if nothing has been saved.  Used on Pet → Window transitions so
+/// the desktop window never stays stretched from a pet-mode span-all-monitors.
+fn restore_window_size(window: &WebviewWindow, state: &State<'_, AppState>) {
+    let (w, h) = state
+        .saved_window_size
+        .lock()
+        .ok()
+        .and_then(|slot| *slot)
+        .unwrap_or((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT));
+    let _ = window.set_size(tauri::PhysicalSize::new(w, h));
+    // Also re-centre on the active monitor so the window doesn't land
+    // off-screen after the resize.
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let screen = monitor.size();
+        let pos = monitor.position();
+        let cx = pos.x + ((screen.width as i32 - w as i32) / 2).max(0);
+        let cy = pos.y + ((screen.height as i32 - h as i32) / 2).max(0);
+        let _ = window.set_position(tauri::PhysicalPosition::new(cx, cy));
+    }
+}
+
 /// Set the window mode (window or pet).
 #[tauri::command]
 pub async fn set_window_mode(
@@ -44,7 +83,19 @@ pub async fn set_window_mode(
     let window = app_handle
         .get_webview_window("main")
         .ok_or("Main window not found")?;
+    let previous = {
+        let current = state.window_mode.lock().map_err(|e| e.to_string())?;
+        *current
+    };
+    // Save the desktop size BEFORE flipping to pet mode so we can restore it.
+    if previous == WindowMode::Window && mode == WindowMode::Pet {
+        save_window_size(&window, &state);
+    }
     apply_window_mode(&window, mode)?;
+    // Restore the saved desktop size AFTER flipping back from pet mode.
+    if previous == WindowMode::Pet && mode == WindowMode::Window {
+        restore_window_size(&window, &state);
+    }
     let mut current = state.window_mode.lock().map_err(|e| e.to_string())?;
     *current = mode;
     Ok(())
@@ -65,17 +116,24 @@ pub async fn toggle_window_mode(
     app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<WindowMode, String> {
-    let new_mode = {
+    let previous = {
         let current = state.window_mode.lock().map_err(|e| e.to_string())?;
-        match *current {
-            WindowMode::Window => WindowMode::Pet,
-            WindowMode::Pet => WindowMode::Window,
-        }
+        *current
+    };
+    let new_mode = match previous {
+        WindowMode::Window => WindowMode::Pet,
+        WindowMode::Pet => WindowMode::Window,
     };
     let window = app_handle
         .get_webview_window("main")
         .ok_or("Main window not found")?;
+    if previous == WindowMode::Window && new_mode == WindowMode::Pet {
+        save_window_size(&window, &state);
+    }
     apply_window_mode(&window, new_mode)?;
+    if previous == WindowMode::Pet && new_mode == WindowMode::Window {
+        restore_window_size(&window, &state);
+    }
     let mut current = state.window_mode.lock().map_err(|e| e.to_string())?;
     *current = new_mode;
     Ok(new_mode)

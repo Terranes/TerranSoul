@@ -53,6 +53,10 @@ export interface SceneContext {
    *  the sitting-idle prop system to keep the seated character centred in
    *  the viewport when the animator translates the body downward. */
   setFocusYOffset: (offset: number) => void;
+  /** Toggle visibility of the decorative pedestal (floor disc + ring) so
+   *  the character stands on nothing in pet mode.  Accepts `true` to show
+   *  the pedestal in desktop mode, `false` to hide it in pet mode. */
+  setPedestalVisible: (visible: boolean) => void;
   dispose: () => void;
   /** Register a callback that fires after the user finishes orbiting or zooming.
    *  Receives (azimuth, distance) so the caller can persist the camera state. */
@@ -305,6 +309,11 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   pedestalRing.position.y = 0.012;
   scene.add(pedestalRing);
 
+  function setPedestalVisible(visible: boolean) {
+    pedestal.visible = visible;
+    pedestalRing.visible = visible;
+  }
+
   const clock = new THREE.Clock();
 
   // ── Deferred reframe state ────────────────────────────────────────
@@ -413,5 +422,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, _eyeForward, getRendererInfo, updateZoomTarget: updateZoomTargetWithFocus, frameCameraToCharacter, setCurrentModel, checkResize, setFocusYOffset, dispose, onCameraChange };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, _eyeForward, getRendererInfo, updateZoomTarget: updateZoomTargetWithFocus, frameCameraToCharacter, setCurrentModel, checkResize, setFocusYOffset, setPedestalVisible, dispose, onCameraChange };
 }

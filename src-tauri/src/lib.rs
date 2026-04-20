@@ -114,6 +114,11 @@ pub struct AppState {
     pub message_bus: TokioMutex<messaging::MessageBus>,
     /// Current window mode (window or pet).
     pub window_mode: Mutex<commands::window::WindowMode>,
+    /// Saved window inner size (width, height) captured on the last
+    /// Window → Pet transition so the desktop size can be restored exactly
+    /// on the next Pet → Window transition.  Prevents the "stuck in pet
+    /// resolution" bug when pet mode resizes the window implicitly. */
+    pub saved_window_size: Mutex<Option<(u32, u32)>>,
     /// Voice provider configuration (ASR/TTS selections).
     pub voice_config: Mutex<voice::VoiceConfig>,
     /// Provider rotation and rate-limit tracking for free API providers.
@@ -153,6 +158,7 @@ impl AppState {
             capability_store: TokioMutex::new(sandbox::CapabilityStore::new(data_dir)),
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
+            saved_window_size: Mutex::new(None),
             voice_config: Mutex::new(voice::config_store::load(data_dir)),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
@@ -187,6 +193,7 @@ impl AppState {
             capability_store: TokioMutex::new(sandbox::CapabilityStore::in_memory()),
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
+            saved_window_size: Mutex::new(None),
             voice_config: Mutex::new(voice::VoiceConfig::default()),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
             app_settings: Mutex::new(settings::AppSettings::default()),
@@ -350,14 +357,34 @@ pub fn run() {
                     "mode_toggle" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let state = app.state::<AppState>();
-                            let new_mode = {
-                                let current = state.window_mode.lock().unwrap();
-                                match *current {
-                                    commands::window::WindowMode::Window => commands::window::WindowMode::Pet,
-                                    commands::window::WindowMode::Pet => commands::window::WindowMode::Window,
-                                }
+                            let previous = { *state.window_mode.lock().unwrap() };
+                            let new_mode = match previous {
+                                commands::window::WindowMode::Window => commands::window::WindowMode::Pet,
+                                commands::window::WindowMode::Pet => commands::window::WindowMode::Window,
                             };
+                            // Mirror the save/restore behaviour from the
+                            // commands so a tray-driven toggle also restores
+                            // the desktop window size correctly.
+                            if previous == commands::window::WindowMode::Window
+                                && new_mode == commands::window::WindowMode::Pet
+                            {
+                                if let Ok(size) = window.inner_size() {
+                                    *state.saved_window_size.lock().unwrap() =
+                                        Some((size.width, size.height));
+                                }
+                            }
                             let _ = commands::window::apply_window_mode(&window, new_mode);
+                            if previous == commands::window::WindowMode::Pet
+                                && new_mode == commands::window::WindowMode::Window
+                            {
+                                let (w, h) = state
+                                    .saved_window_size
+                                    .lock()
+                                    .ok()
+                                    .and_then(|s| *s)
+                                    .unwrap_or((420, 700));
+                                let _ = window.set_size(tauri::PhysicalSize::new(w, h));
+                            }
                             *state.window_mode.lock().unwrap() = new_mode;
                             // Emit event so frontend can react
                             let _ = window.emit("window-mode-changed", new_mode);
