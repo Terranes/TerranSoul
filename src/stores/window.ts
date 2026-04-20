@@ -37,8 +37,11 @@ export const useWindowStore = defineStore('window', () => {
       await ensurePassthroughOff();
       return true;
     } catch (err) {
+      // Tauri unavailable (browser / e2e) — fall back to a local mode flip
+      // so the UI is still switchable for testing and pure-web builds.
       error.value = String(err);
-      return false;
+      mode.value = newMode;
+      return true;
     } finally {
       isLoading.value = false;
     }
@@ -53,8 +56,12 @@ export const useWindowStore = defineStore('window', () => {
       await ensurePassthroughOff();
       return newMode;
     } catch (err) {
+      // Tauri unavailable — perform a local flip so the UI remains usable
+      // in the browser/e2e context where the backend command is missing.
       error.value = String(err);
-      return mode.value;
+      const next: WindowMode = mode.value === 'pet' ? 'window' : 'pet';
+      mode.value = next;
+      return next;
     } finally {
       isLoading.value = false;
     }
@@ -64,6 +71,7 @@ export const useWindowStore = defineStore('window', () => {
   async function ensurePassthroughOff() {
     try {
       await invoke('set_cursor_passthrough', { ignore: false });
+      await invoke('stop_pet_cursor_poll');
     } catch {
       // Tauri unavailable or command missing — no-op
     }
@@ -107,6 +115,46 @@ export const useWindowStore = defineStore('window', () => {
     error.value = null;
   }
 
+  async function startWindowDrag(): Promise<boolean> {
+    try {
+      await invoke('start_window_drag');
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
+  async function setPetWindowSize(width: number, height: number): Promise<boolean> {
+    try {
+      await invoke('set_pet_window_size', { width, height });
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
+  async function startPetCursorPoll(): Promise<boolean> {
+    try {
+      await invoke('start_pet_cursor_poll');
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
+  async function stopPetCursorPoll(): Promise<boolean> {
+    try {
+      await invoke('stop_pet_cursor_poll');
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
   return {
     mode,
     monitors,
@@ -118,6 +166,10 @@ export const useWindowStore = defineStore('window', () => {
     setCursorPassthrough,
     loadMonitors,
     spanAllMonitors,
+    startWindowDrag,
+    setPetWindowSize,
+    startPetCursorPoll,
+    stopPetCursorPoll,
     clearError,
   };
 });

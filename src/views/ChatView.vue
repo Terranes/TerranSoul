@@ -969,12 +969,14 @@ onUnmounted(() => {
 .chat-view {
   position: relative;
   width: 100%;
-  /* flex: 1 + min-height: 0 fills the .app-main flex column reliably.
-     height: 100% is kept as a fallback for non-flex parents. */
+  /* Fill the parent .app-main flex column and ensure absolute children
+     (viewport, bottom-panel) reference this element's full height. */
   height: 100%;
-  flex: 1;
+  flex: 1 1 0%;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* The 3D viewport is always full-size and never shifts.
@@ -985,12 +987,12 @@ onUnmounted(() => {
   z-index: 0;
 }
 
-/* Portal for the music bar — top-left, below settings button to avoid
-   overlapping with the quest bubble in the top-right */
+/* Portal for the music bar — top-left, directly below the settings button
+   (which was shifted right to clear the floating mode-toggle pill). */
 .music-bar-portal {
   position: absolute;
   top: 56px;
-  left: 16px;
+  left: 150px;
   z-index: 16;
   pointer-events: none;
 }
@@ -1175,6 +1177,7 @@ onUnmounted(() => {
   z-index: 15;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   max-height: 65vh;
   pointer-events: none;
   /* Slide the panel up by the keyboard height when the virtual keyboard
@@ -1354,18 +1357,30 @@ onUnmounted(() => {
 
 /* ── Mobile adjustments ── */
 @media (max-width: 640px) {
-  /* The bottom panel sits at bottom:0 inside .chat-view, which already
-     stops 56px above the viewport bottom (due to .app-main's padding-bottom).
-     No extra offset needed — the mobile nav bar occupies that padding area. */
   .bottom-panel { max-height: 50vh; }
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
-  .ai-state-pill { right: 10px; top: 8px; padding: 4px 10px; font-size: 0.65rem; }
-  .music-bar-portal { top: 50px; left: 10px; }
+  /* AI state pill: compact, tucked below the top-right settings gear */
+  .ai-state-pill {
+    top: 44px;
+    right: 10px;
+    padding: 2px 8px;
+    font-size: 0.58rem;
+    gap: 3px;
+  }
+  .ai-state-dot { width: 4px; height: 4px; }
+  /* Brain status: below mode-toggle pill on the left */
+  .brain-status-pill {
+    left: 10px;
+    top: 44px;
+    transform: none;
+    font-size: 0.58rem;
+    padding: 2px 8px;
+  }
+  /* Music bar: below brain status */
+  .music-bar-portal { top: 66px; left: 10px; }
   .brain-overlay { width: 92vw; }
-  /* Shift brain status pill left to avoid collision with AI state pill */
-  .brain-status-pill { left: 40%; font-size: 0.62rem; padding: 3px 10px; }
-  /* Compact the input footer */
+  /* Compact input footer */
   .input-footer { padding: 6px 8px 8px; }
   .chat-drawer-toggle { height: 34px; padding: 0 10px; }
   .toggle-label { display: none; }

@@ -57,6 +57,9 @@ export interface SceneContext {
    *  the character stands on nothing in pet mode.  Accepts `true` to show
    *  the pedestal in desktop mode, `false` to hide it in pet mode. */
   setPedestalVisible: (visible: boolean) => void;
+  /** Reset camera to full-body view using the last model set via
+   *  setCurrentModel().  No-op if no model has been registered yet. */
+  resetToFullBody: () => void;
   dispose: () => void;
   /** Register a callback that fires after the user finishes orbiting or zooming.
    *  Receives (azimuth, distance) so the caller can persist the camera state. */
@@ -210,9 +213,9 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     bodyY = charBottom + charHeight * 0.50;
 
     // Minimum camera distance to fit the full character height inside the
-    // vertical FOV, with 10% padding above and below.
+    // vertical FOV, with 20% padding above and below so shoes aren't clipped.
     const vFovRad = THREE.MathUtils.degToRad(camera.fov);
-    const padding = 1.10;
+    const padding = 1.20;
     const heightBasedDist = (charHeight * padding / 2) / Math.tan(vFovRad / 2);
 
     // In portrait mode the character's arm span can clip the horizontal edges —
@@ -416,11 +419,17 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     cameraChangeCallback = cb;
   }
 
+  function resetToFullBody() {
+    if (pendingReframeModel) {
+      frameCameraToCharacter(pendingReframeModel);
+    }
+  }
+
   function dispose() {
     resizeObserver.disconnect();
     controls.dispose();
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, _eyeForward, getRendererInfo, updateZoomTarget: updateZoomTargetWithFocus, frameCameraToCharacter, setCurrentModel, checkResize, setFocusYOffset, setPedestalVisible, dispose, onCameraChange };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, _eyeForward, getRendererInfo, updateZoomTarget: updateZoomTargetWithFocus, frameCameraToCharacter, setCurrentModel, checkResize, setFocusYOffset, setPedestalVisible, resetToFullBody, dispose, onCameraChange };
 }

@@ -44,7 +44,6 @@ vi.mock('../renderer/character-animator', () => ({
     forceIdlePose: vi.fn(),
     onIdlePoseChange: vi.fn(),
   })),
-  SITTING_POSE_INDEX: 6,
 }));
 
 import { useChatExpansion } from '../composables/useChatExpansion';

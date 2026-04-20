@@ -67,6 +67,26 @@
               @change="handleVrmImport"
             />
           </div>
+          <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
+               so desktop and pet modes offer the same configurable states. -->
+          <div class="dropdown-section">
+            <label class="dropdown-label">Mood / Pose</label>
+            <div class="mood-grid" role="radiogroup" aria-label="Character mood">
+              <button
+                v-for="mood in MOOD_ENTRIES"
+                :key="mood.key"
+                class="mood-chip"
+                :class="{ active: isMoodActive(mood, characterStore) }"
+                role="radio"
+                :aria-checked="isMoodActive(mood, characterStore)"
+                :title="mood.label"
+                @click="handleMoodPick(mood)"
+              >
+                <span class="mood-chip-emoji">{{ mood.emoji }}</span>
+                <span class="mood-chip-label">{{ mood.label }}</span>
+              </button>
+            </div>
+          </div>
           <!-- Background selector -->
           <div class="dropdown-section">
             <label class="dropdown-label">Background</label>
@@ -169,8 +189,11 @@
     </div>
     <!-- ── Floating Music Bar (teleported to left side of viewport) ──
          Hidden in pet mode — music playback continues but the UI chrome is
-         desktop-mode only. -->
-    <Teleport to="#music-bar-portal" defer>
+         desktop-mode only.  The Teleport is disabled in pet mode because
+         #music-bar-portal only exists inside ChatView; trying to teleport
+         to a missing target throws during Vue's component update phase and
+         breaks subsequent reactivity. -->
+    <Teleport to="#music-bar-portal" defer :disabled="isPetMode">
     <div v-if="!isPetMode" class="music-bar" :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }">
       <button class="music-bar-toggle" @click.stop="bgmBarExpanded = !bgmBarExpanded" :title="bgmBarExpanded ? 'Collapse' : 'Music'">
         <span class="music-bar-toggle-icon" :class="{ open: bgmBarExpanded }">{{ bgmBarExpanded ? '▶' : '🎵' }}</span>
@@ -238,9 +261,9 @@ import { useWindowStore } from '../stores/window';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, EYE_TARGET_DISTANCE, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
-import { CharacterAnimator, SITTING_POSE_INDEX, SITTING_BODY_Y_OFFSET } from '../renderer/character-animator';
-import { createSittingProps, applyTeacupHandOffset, type SittingProps } from '../renderer/props';
+import { CharacterAnimator } from '../renderer/character-animator';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
+import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
 import AudioControlsPanel from './AudioControlsPanel.vue';
 
@@ -478,12 +501,6 @@ let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
-// ── Sitting props (sofa + teacup) ─────────────────────────────────────────────
-// Created once on scene init; sofa is added to the scene, teacup is parented
-// to the right-hand bone when a VRM is loaded.  Visibility is driven by the
-// animator's idle pose index (auto rotation) and by characterStore.sittingPinned
-// (manual selection via the Mood submenu).
-let sittingProps: SittingProps | null = null;
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
 defineExpose({
@@ -500,11 +517,19 @@ defineExpose({
       settingsStore.saveBgmState(true, bgmVolume.value, bgmTrackId.value);
     }
   },
+  /** Scene context — used by PetOverlayView to project 3D positions and rotate. */
+  get sceneContext() {
+    return sceneCtx;
+  },
 });
 
 function handleModelChange(e: Event) {
   const select = e.target as HTMLSelectElement;
   characterStore.selectModel(select.value);
+}
+
+function handleMoodPick(mood: MoodEntry) {
+  applyMood(mood, characterStore);
 }
 
 function retryModelLoad() {
@@ -597,21 +622,13 @@ onMounted(async () => {
   // initial call catches the case where the user mounted already in pet
   // mode (e.g. re-open to a saved state).
   ctx.setPedestalVisible(!isPetMode.value);
-
-  // Create sitting props and add sofa to the scene (initially hidden).
-  // The teacup is parented to the right-hand bone when a VRM loads.
-  sittingProps = createSittingProps();
-  ctx.scene.add(sittingProps.sofa);
-
-  // Drive prop visibility from the animator's active idle pose and also
-  // shift the camera focus down so the seated character stays centred.
-  animator.onIdlePoseChange((index) => {
-    if (!sittingProps || !sceneCtx) return;
-    const sitting = index === SITTING_POSE_INDEX;
-    sittingProps.sofa.visible = sitting;
-    sittingProps.teacup.visible = sitting;
-    sceneCtx.setFocusYOffset(sitting ? SITTING_BODY_Y_OFFSET : 0);
-  });
+  if (isPetMode.value) {
+    ctx.controls.mouseButtons = {
+      LEFT: null as unknown as THREE.MOUSE,
+      MIDDLE: THREE.MOUSE.ROTATE,
+      RIGHT: null as unknown as THREE.MOUSE,
+    };
+  }
 
   // Persist camera state after user finishes orbiting or zooming.
   ctx.onCameraChange((azimuth, distance) => {
@@ -619,9 +636,10 @@ onMounted(async () => {
   });
 
   // Restore persisted camera state (azimuth + distance).
+  // Skip in pet mode — always start with full-body framing.
   const savedAzimuth = settingsStore.settings.camera_azimuth;
   const savedDistance = settingsStore.settings.camera_distance;
-  if (savedDistance > 0) {
+  if (savedDistance > 0 && !isPetMode.value) {
     // Set camera position from saved spherical coordinates (elevation = 0 = equatorial)
     const x = savedDistance * Math.sin(savedAzimuth);
     const z = savedDistance * Math.cos(savedAzimuth);
@@ -725,21 +743,32 @@ watch(
 
 // Hide the pedestal (and any other floor decorations) in pet mode so the
 // character floats cleanly on the desktop with nothing visible behind.
+// Remap mouse buttons: left-drag moves the pet (handled by PetOverlayView),
+// middle-click drag rotates the 3D model, scroll wheel zooms.
 watch(
   () => isPetMode.value,
   (pet) => {
-    if (sceneCtx) sceneCtx.setPedestalVisible(!pet);
-  },
-  { immediate: true },
-);
-
-// Pin or release the idle-pose rotation based on the Mood submenu's
-// "Sitting" selection.  When pinned, the animator also fires its idle-pose
-// change listener so the sofa + teacup visibility stays in sync.
-watch(
-  () => characterStore.sittingPinned,
-  (pinned) => {
-    animator.forceIdlePose(pinned ? SITTING_POSE_INDEX : null);
+    if (sceneCtx) {
+      sceneCtx.setPedestalVisible(!pet);
+      if (pet) {
+        // Disable left-click rotation; use middle-button drag to rotate instead
+        sceneCtx.controls.mouseButtons = {
+          LEFT: null as unknown as THREE.MOUSE,
+          MIDDLE: THREE.MOUSE.ROTATE,
+          RIGHT: null as unknown as THREE.MOUSE,
+        };
+        // Reset camera to full-body zoom so the entire character is visible
+        // by default in pet mode (including legs and shoes).
+        sceneCtx.resetToFullBody();
+      } else {
+        // Restore default OrbitControls mouse mapping
+        sceneCtx.controls.mouseButtons = {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
+      }
+    }
   },
   { immediate: true },
 );
@@ -785,20 +814,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
         // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
         animator.setLookAtTarget(sceneCtx.lookAtTarget);
         characterStore.setMetadata(result.metadata);
-
-        // Parent the teacup to the VRM's right-hand bone so it stays in hand
-        // during the seated idle.  Removes any prior parenting from a previous
-        // model so switching characters doesn't leave orphans.
-        if (sittingProps) {
-          if (sittingProps.teacup.parent) {
-            sittingProps.teacup.parent.remove(sittingProps.teacup);
-          }
-          const rightHandBone = result.vrm.humanoid?.getNormalizedBoneNode('rightHand');
-          if (rightHandBone) {
-            rightHandBone.add(sittingProps.teacup);
-            applyTeacupHandOffset(sittingProps.teacup);
-          }
-        }
 
         // Expose VRM for E2E testing — allows Playwright to verify bone positions
         (window as unknown as Record<string, unknown>).__terransoul_vrm__ = result.vrm;
@@ -873,10 +888,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   display: block;
 }
 
+/* Top-left chrome shares a row with the floating mode-toggle pill that
+ * App.vue renders at (left: 82px, width ~116px). To prevent overlap every
+ * in-viewport overlay is nudged right to start after the pill + a gap. */
 .character-name-overlay {
   position: absolute;
   top: 12px;
-  left: 56px;
+  left: 280px;
   font-size: var(--ts-text-lg);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.92);
@@ -888,7 +906,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .character-meta-overlay {
   position: absolute;
   top: 34px;
-  left: 56px;
+  left: 280px;
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.55);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
@@ -900,7 +918,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .settings-corner {
   position: absolute;
   top: 12px;
-  left: 16px;
+  left: 150px;
   z-index: 20;
 }
 
@@ -1012,6 +1030,49 @@ async function loadModelIntoScene(newPath: string | undefined) {
   gap: 4px;
 }
 
+/* ── Mood grid ── */
+.mood-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.mood-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: var(--ts-radius-sm);
+  border: 1px solid var(--ts-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
+}
+.mood-chip:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+.mood-chip.active {
+  background: rgba(124, 111, 255, 0.85);
+  border-color: rgba(200, 210, 255, 0.85);
+  color: #fff;
+}
+.mood-chip-emoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.mood-chip-label {
+  font-size: 0.62rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 /* Dropdown transition */
 .dropdown-enter-active, .dropdown-leave-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -1101,14 +1162,40 @@ async function loadModelIntoScene(newPath: string | undefined) {
   letter-spacing: 0.02em;
 }
 
-/* Mobile adjustments for viewport overlays */
+/* Mobile adjustments for viewport overlays.
+ * On mobile (<= 640px) the sidebar is hidden and space is limited.
+ * We hide character name/meta (the user already knows their character)
+ * and show only the essential controls: mode toggle (top-left), settings
+ * gear (top-right beside AI pill), with brain/music below. */
 @media (max-width: 640px) {
-  .character-name-overlay { font-size: 0.85rem; top: 52px; left: 16px; }
-  .character-meta-overlay { font-size: 0.62rem; top: 70px; left: 16px; }
-  .settings-toggle { height: 32px; padding: 0 10px; }
+  /* Hide character name & meta on mobile — screen is too narrow */
+  .character-name-overlay { display: none; }
+  .character-meta-overlay { display: none; }
+  /* Settings gear: compact circle in top-right area */
+  .settings-toggle {
+    height: 32px;
+    width: 32px;
+    padding: 0;
+    font-size: 0.7rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .settings-label { display: none; }
-  .settings-corner { top: 10px; left: 10px; }
-  .settings-dropdown { width: 260px; padding: 10px; gap: 10px; }
+  .settings-corner {
+    top: 6px;
+    left: auto;
+    right: 10px;
+  }
+  /* Dropdown opens right-aligned so it doesn't clip the left edge */
+  .settings-dropdown {
+    width: min(280px, calc(100vw - 20px));
+    padding: 10px;
+    gap: 10px;
+    right: 0;
+    left: auto;
+  }
 }
 .loading-overlay {
   position: absolute;

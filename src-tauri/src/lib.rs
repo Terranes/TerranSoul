@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use tauri::Manager;
 use tauri::Emitter;
 use tauri::menu::{Menu, MenuItem};
@@ -68,7 +70,8 @@ use commands::{
     },
     window::{
         get_all_monitors, get_window_mode, set_cursor_passthrough, set_pet_mode_bounds,
-        set_window_mode, toggle_window_mode,
+        set_window_mode, start_window_drag, set_pet_window_size, toggle_window_mode,
+        start_pet_cursor_poll, stop_pet_cursor_poll, exit_app,
     },
     streaming::send_message_stream,
     translation::{list_languages, translate_text, detect_language},
@@ -125,6 +128,8 @@ pub struct AppState {
     pub provider_rotator: Mutex<brain::ProviderRotator>,
     /// Persistent application settings (model selection, camera state).
     pub app_settings: Mutex<settings::AppSettings>,
+    /// Whether the pet-mode cursor-tracking poll loop is active.
+    pub pet_cursor_active: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -162,6 +167,7 @@ impl AppState {
             voice_config: Mutex::new(voice::config_store::load(data_dir)),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
+            pet_cursor_active: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -197,6 +203,7 @@ impl AppState {
             voice_config: Mutex::new(voice::VoiceConfig::default()),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
             app_settings: Mutex::new(settings::AppSettings::default()),
+            pet_cursor_active: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -270,6 +277,11 @@ pub fn run() {
             set_cursor_passthrough,
             get_all_monitors,
             set_pet_mode_bounds,
+            start_window_drag,
+            set_pet_window_size,
+            start_pet_cursor_poll,
+            stop_pet_cursor_poll,
+            exit_app,
             send_message_stream,
             list_free_providers,
             get_brain_mode,
