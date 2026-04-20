@@ -6,6 +6,84 @@
 
 ---
 
+## Table of Contents
+
+Entries are in **reverse chronological order** (newest first).
+
+| Entry | Date |
+|-------|------|
+| [Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration](#chunks-130134--phase-11-finale-rpg-brain-configuration) | 2026-04-20 |
+| [Chunk 128 — FF16 Constellation Skill Tree](#chunk-128--ff16-constellation-skill-tree-full-screen-layout) | 2026-04-20 |
+| [Chunk 129 — Constellation Cluster Interaction & Detail Panel](#chunk-129--constellation-cluster-interaction--detail-panel) | 2026-04-20 |
+| [Post-Phase — 3D Model Loading Robustness](#post-phase--3d-model-loading-robustness) | 2026-04-18 |
+| [Post-Phase — Streaming Timeout Fix](#post-phase--streaming-timeout-fix-stuck-thinking) | 2026-04-18 |
+| [Post-Phase — Music Bar Redesign](#post-phase--music-bar-redesign-always-visible-playstop) | 2026-04-18 |
+| [Post-Phase — Splash Screen](#post-phase--splash-screen) | 2026-04-18 |
+| [Post-Phase — BGM Track Replacement](#post-phase--bgm-track-replacement-jrpg-style) | 2026-04-18 |
+| [Chunk 126 — On-demand Rendering + Idle Optimization](#chunk-126--on-demand-rendering--idle-optimization) | 2026-04-18 |
+| [Chunk 125 — LipSync ↔ TTS Audio Pipeline](#chunk-125--lipsync--tts-audio-pipeline) | 2026-04-18 |
+| [Chunk 124 — Decouple IPC from Animation](#chunk-124--decouple-ipc-from-animation--coarse-state-bridge) | 2026-04-18 |
+| [Chunk 123 — Audio Analysis Web Worker](#chunk-123--audio-analysis-web-worker) | 2026-04-17 |
+| [Chunk 122 — 5-Channel VRM Viseme Lip Sync](#chunk-122--5-channel-vrm-viseme-lip-sync) | 2026-04-17 |
+| [Chunk 121 — Exponential Damping Render Loop](#chunk-121--exponential-damping-render-loop) | 2026-04-17 |
+| [Chunk 120 — AvatarState Model + Animation State Machine](#chunk-120--avatarstate-model--animation-state-machine) | 2026-04-17 |
+| [Chunk 110 — Background Music](#chunk-110--background-music) | 2026-04-15 |
+| [Chunk 109 — Idle Action Sequences](#chunk-109--idle-action-sequences) | 2026-04-15 |
+| [Chunk 108 — Settings Persistence + Env Overrides](#chunk-108--settings-persistence--env-overrides) | 2026-04-15 |
+| [Chunk 107 — Multi-ASR Provider Abstraction](#chunk-107--multi-asr-provider-abstraction) | 2026-04-15 |
+| [Chunk 106 — Streaming TTS](#chunk-106--streaming-tts) | 2026-04-15 |
+| [Chunk 085 — UI/UX Overhaul](#chunk-085--uiux-overhaul-open-llm-vtuber-layout-patterns) | 2026-04-14 |
+| [Phase 8 Summary (Chunks 080–084)](#phase-8-summary) | 2026-04-14 |
+| [Chunk 084 — Autoregressive Pose Feedback](#chunk-084--autoregressive-pose-feedback-done) | 2026-04-14 |
+| [Chunk 083 — Gesture Tag System](#chunk-083--gesture-tag-system-done) | 2026-04-14 |
+| [Chunk 082 — LLM Pose Prompt Engineering](#chunk-082--llm-pose-prompt-engineering-done) | 2026-04-14 |
+| [Chunk 081 — Pose Blending Engine](#chunk-081--pose-blending-engine-done) | 2026-04-14 |
+| [Chunk 080 — Pose Preset Library](#chunk-080--pose-preset-library-done) | 2026-04-14 |
+| [Chunk 068 — Navigation Polish](#chunk-068--navigation-polish--micro-interactions-done) | 2026-04-14 |
+| [Chunk 067 — Enhanced Chat UX](#chunk-067--enhanced-chat-ux-done) | 2026-04-14 |
+| [Chunk 066 — New Background Art](#chunk-066--new-background-art-done) | 2026-04-14 |
+| [Chunk 065 — Design System & Global CSS Variables](#chunk-065--design-system--global-css-variables-done) | 2026-04-14 |
+| [Chunk 064 — Desktop Pet Overlay](#chunk-064--desktop-pet-overlay-with-floating-chat-done) | 2026-04-13 |
+| [Chunk 063 — Rewrite Voice in Rust](#chunk-063--remove-open-llm-vtuber--rewrite-voice-in-rust-done) | 2026-04-13 |
+| [Chunk 062 — Voice Activity Detection](#chunk-062--voice-activity-detection) | 2026-04-13 |
+| [Chunk 061 — Web Audio Lip Sync](#chunk-061--web-audio-lip-sync) | 2026-04-13 |
+| [Chunk 060 — Voice Abstraction Layer](#chunk-060--voice-abstraction-layer--open-llm-vtuber-integration) | 2026-04-13 |
+| [Chunk 059 — Provider Health Check & Rate-Limit Rotation](#chunk-059--provider-health-check--rate-limit-rotation) | 2026-04-13 |
+| [Chunk 058 — Emotion Expansion & UI Fixes](#chunk-058--emotion-expansion--ui-fixes) | 2026-04-13 |
+| [Chunk 056+057 — Streaming BrainMode Routing](#chunk-056057--streaming-brainmode-routing-auto-selection--wizard-redesign) | 2026-04-13 |
+| [Chunk 055 — Free LLM API Provider Registry](#chunk-055--free-llm-api-provider-registry--openai-compatible-client) | 2026-04-13 |
+| [Chunk 054 — Emotion Tags in LLM Responses](#chunk-054--emotion-tags-in-llm-responses) | 2026-04-13 |
+| [Chunk 053 — Streaming LLM Responses](#chunk-053--streaming-llm-responses) | 2026-04-13 |
+| [Chunk 052 — Multi-Monitor Pet Mode](#chunk-052--multi-monitor-pet-mode) | 2026-04-13 |
+| [Chunk 051 — Selective Click-Through](#chunk-051--selective-click-through) | 2026-04-13 |
+| [Chunk 050 — Window Mode System](#chunk-050--window-mode-system) | 2026-04-13 |
+| [Chunk 035 — Agent-to-Agent Messaging](#chunk-035--agent-to-agent-messaging) | 2026-04-13 |
+| [Chunk 034 — Agent Marketplace UI](#chunk-034--agent-marketplace-ui) | 2026-04-13 |
+| [Chunk 033 — Agent Sandboxing](#chunk-033--agent-sandboxing) | 2026-04-13 |
+| [Chunk 032 — Agent Registry](#chunk-032--agent-registry) | 2026-04-13 |
+| [Chunk 041 — Long/Short-term Memory](#chunk-041--longshort-term-memory--brain-powered-recall) | 2026-04-12 |
+| [Chunk 040 — Brain (Local LLM via Ollama)](#chunk-040--brain-local-llm-via-ollama) | 2026-04-12 |
+| [Chunk 031 — Install / Update / Remove Commands](#chunk-031--install--update--remove-commands) | 2026-04-11 |
+| [Chunk 030 — Package Manifest Format](#chunk-030--package-manifest-format) | 2026-04-11 |
+| [Chunk 023 — Remote Command Routing](#chunk-023--remote-command-routing) | 2026-04-10 |
+| [Chunk 022 — CRDT Sync Engine](#chunk-022--crdt-sync-engine) | 2026-04-10 |
+| [Chunk 021 — Link Transport Layer](#chunk-021--link-transport-layer) | 2026-04-10 |
+| [Chunk 020 — Device Identity & Pairing](#chunk-020--device-identity--pairing) | 2026-04-10 |
+| [Chunk 009 — Playwright E2E Test Infrastructure](#chunk-009--playwright-e2e-test-infrastructure) | 2026-04-10 |
+| [Chunk 008 — Tauri IPC Bridge Integration Tests](#chunk-008--tauri-ipc-bridge-integration-tests) | 2026-04-10 |
+| [Chunk 011 — VRM Import + Character Selection UI](#chunk-011--vrm-import--character-selection-ui) | 2026-04-10 |
+| [Chunk 010 — Character Reactions — Full Integration](#chunk-010--character-reactions--full-integration) | 2026-04-10 |
+| [Chunk 007 — Agent Orchestrator Hardening](#chunk-007--agent-orchestrator-hardening) | 2026-04-10 |
+| [Chunk 006 — Rust Chat Commands — Unit Tests](#chunk-006--rust-chat-commands--unit-tests) | 2026-04-10 |
+| [Chunk 005 — Character State Machine Tests](#chunk-005--character-state-machine-tests) | 2026-04-10 |
+| [Chunk 004 — VRM Model Loading & Fallback](#chunk-004--vrm-model-loading--fallback) | 2026-04-10 |
+| [Chunk 003 — Three.js Scene Polish + WebGPU Detection](#chunk-003--threejs-scene-polish--webgpu-detection) | 2026-04-10 |
+| [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
+| [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
+| [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
 ## Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration
 
 **Date:** 2026-04-20
@@ -494,7 +572,7 @@ initiates conversation with a natural greeting, cycling through variants so it n
 
 ---
 
-
+## Chunk 108 — Settings Persistence + Env Overrides
 
 **Date:** 2026-04-15
 **Status:** ✅ Done
@@ -585,7 +663,7 @@ browser Web Speech API (zero setup), OpenAI Whisper (best quality), and Groq Whi
 
 ---
 
-
+## Chunk 106 — Streaming TTS
 
 **Date:** 2026-04-15
 **Status:** ✅ Done
