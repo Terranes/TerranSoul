@@ -64,6 +64,7 @@ import type { RewardChoice } from './QuestRewardPanel.vue';
 const emit = defineEmits<{
   navigate: [target: string];
   trigger: [];
+  'update:constellationOpen': [value: boolean];
 }>();
 
 interface QuestWithPriority {
@@ -77,6 +78,7 @@ const brain = useBrainStore();
 const conversationStore = useConversationStore();
 useChatExpansion();
 const constellationOpen = ref(false);
+watch(constellationOpen, (val) => emit('update:constellationOpen', val));
 const screenWidth = ref(window.innerWidth);
 // Reward panel state
 const showRewardPanel = ref(false);

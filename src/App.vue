@@ -7,12 +7,12 @@
   </Transition>
 
   <div v-show="!appLoading" class="app-shell" :class="{ 'pet-mode': isPetMode }">
-    <!-- Floating mode-toggle pill — visible on the Chat tab and always in pet
-         mode (where it's the only way back to desktop mode).  Hidden on all
-         other tabs so it doesn't overlap Memory, Marketplace, Voice, or the
-         Skill tree. -->
+    <!-- Floating mode-toggle pill — visible on the Chat tab (but not while the
+         quest constellation panel is open) and always in pet mode (where it's
+         the only way back to desktop mode).  Hidden on all other tabs so it
+         doesn't overlap Memory, Marketplace, Voice, or the Skill tree. -->
     <div
-      v-if="!appLoading && (activeTab === 'chat' || isPetMode)"
+      v-if="!appLoading && ((activeTab === 'chat' && !questConstellationOpen) || isPetMode)"
       class="mode-toggle-pill"
       :class="{ 'is-pet': isPetMode }"
     >
@@ -90,7 +90,7 @@
 
         <!-- Floating quest progress bubble — chat tab only so it doesn't
              overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
-        <QuestBubble v-if="activeTab === 'chat'" @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
+        <QuestBubble v-if="activeTab === 'chat'" @trigger="handleQuestBubble" @navigate="handleSkillNavigate" @update:constellation-open="questConstellationOpen = $event" />
 
         <!-- Combo unlock notifications (Chunk 131) -->
         <ComboToast />
@@ -131,6 +131,7 @@ const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills'>('c
 const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
+const questConstellationOpen = ref(false);
 
 
 const hasBrain = computed(() => brain.hasBrain);
