@@ -490,4 +490,4 @@ This project is in its **earliest stages**. We welcome contributors of all skill
 
 ## License
 
-This project is open-source. License details coming soon.
+Licensed under the [MIT License](./LICENSE).
