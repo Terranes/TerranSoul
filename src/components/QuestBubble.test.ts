@@ -83,6 +83,7 @@ const mockSkillTreeStore = {
   pinQuest: vi.fn(),
   unpinQuest: vi.fn(),
   triggerQuestEvent: vi.fn(),
+  handleQuestChoice: vi.fn().mockResolvedValue(undefined),
   markComplete: vi.fn(),
   unmarkComplete: vi.fn(),
 };
@@ -104,6 +105,7 @@ describe('QuestBubble', () => {
     mockConversationStore.isThinking = false;
     mockChatExpansion.isChatExpanded.value = false;
     mockSkillTreeStore.triggerQuestEvent.mockClear();
+    mockSkillTreeStore.handleQuestChoice.mockClear();
     mockSkillTreeStore.pinQuest.mockClear();
     mockSkillTreeStore.unpinQuest.mockClear();
   });
@@ -158,7 +160,7 @@ describe('QuestBubble', () => {
     expect(wrapper.find('.quest-confirm-dialog').exists()).toBe(true);
   });
 
-  it('emits trigger when quest is accepted in the confirmation dialog', async () => {
+  it('routes confirmation-dialog Accept directly to handleQuestChoice (no double prompt)', async () => {
     const wrapper = mount(QuestBubble);
     await wrapper.find('.ff-orb').trigger('click');
     await nextTick();
@@ -170,7 +172,10 @@ describe('QuestBubble', () => {
     await nextTick();
 
     expect(wrapper.emitted('trigger')).toBeTruthy();
-    expect(mockSkillTreeStore.triggerQuestEvent).toHaveBeenCalledWith('quest-1');
+    // The user already confirmed in the dialog — don't push another
+    // "A New Quest Appears!" prompt asking them to accept again.
+    expect(mockSkillTreeStore.triggerQuestEvent).not.toHaveBeenCalled();
+    expect(mockSkillTreeStore.handleQuestChoice).toHaveBeenCalledWith('quest-1', 'accept');
   });
 
   it('emits navigate when constellation emits navigate', async () => {

@@ -61,17 +61,41 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
-import { STAT_DESCRIPTORS, computeStats, type StatId } from '../utils/stats';
+import { useBrainStore } from '../stores/brain';
+import { STAT_DESCRIPTORS, computeStats, type StatId, type StatSnapshot } from '../utils/stats';
 import { computeModifiers } from '../utils/stat-modifiers';
+import { getModelBoost } from '../utils/model-benchmarks';
 
 const skillTree = useSkillTreeStore();
+const brain = useBrainStore();
 const statDescriptors = STAT_DESCRIPTORS;
 
 const activeSkillIds = computed(() =>
   skillTree.nodes.filter(n => skillTree.getSkillStatus(n.id) === 'active').map(n => n.id),
 );
 
-const stats = computed(() => computeStats(activeSkillIds.value));
+/**
+ * Per-stat boost contributed by the *currently selected* AI model.
+ *
+ * Reads `brainMode` + `freeProviders` from the brain store and resolves the
+ * model identifier (e.g. `claude-opus-4.7`, `gemma3:1b`, `llama-3.3-70b`)
+ * against the benchmark table. Falls back to an empty object when the brain
+ * isn't configured yet, so a fresh install reads the bare baseline.
+ */
+const brainBoost = computed<Partial<StatSnapshot>>(() => {
+  const mode = brain.brainMode;
+  if (!mode) return {};
+  if (mode.mode === 'free_api') {
+    const provider = brain.freeProviders.find(p => p.id === mode.provider_id);
+    return getModelBoost(provider?.model);
+  }
+  if (mode.mode === 'paid_api' || mode.mode === 'local_ollama') {
+    return getModelBoost(mode.model);
+  }
+  return {};
+});
+
+const stats = computed(() => computeStats(activeSkillIds.value, brainBoost.value));
 const modifiers = computed(() => computeModifiers(stats.value));
 
 /** "Level" is just the rounded average of all six stats — easy to read. */

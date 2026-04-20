@@ -216,9 +216,14 @@ function onConstellationBegin(questId: string) {
 
 function handleAcceptQuest() {
   if (questToConfirm.value) {
+    const questId = questToConfirm.value.id;
     showConfirmDialog.value = false;
     constellationOpen.value = false;
-    skillTree.triggerQuestEvent(questToConfirm.value.id);
+    // The user already confirmed via the dialog — don't re-prompt them with
+    // the "🗡️ A New Quest Appears!" Accept/Tell-me-more/Maybe-later buttons.
+    // Jump straight to the "Quest Accepted!" follow-up so the next thing the
+    // adventurer sees is the actual first step + navigation choice.
+    skillTree.handleQuestChoice(questId, 'accept');
     emit('trigger');
     questToConfirm.value = null;
     setTimeout(() => sortQuestsWithAI(), 1000);

@@ -12,20 +12,23 @@ describe('stats utility', () => {
 
   it('returns the baseline for an empty active list', () => {
     const base = computeStats([]);
-    // Baseline 5 across the board
-    expect(base.intelligence).toBe(5);
-    expect(base.wisdom).toBe(5);
-    expect(base.charisma).toBe(5);
-    expect(base.perception).toBe(5);
-    expect(base.dexterity).toBe(5);
-    expect(base.endurance).toBe(5);
+    // Baseline 1 across the board — fresh adventurer starts at level 1.
+    expect(base.intelligence).toBe(1);
+    expect(base.wisdom).toBe(1);
+    expect(base.charisma).toBe(1);
+    expect(base.perception).toBe(1);
+    expect(base.dexterity).toBe(1);
+    expect(base.endurance).toBe(1);
   });
 
   it('clamps to [0, 100]', () => {
-    // Many heavy contributors → must cap at 100
-    const heavy = ['free-brain', 'paid-brain', 'local-brain', 'agents', 'memory', 'vision'];
-    expect(computeStat('intelligence', heavy)).toBeLessThanOrEqual(100);
-    expect(computeStat('intelligence', heavy)).toBeGreaterThan(50);
+    // Many heavy contributors → must cap at 100.
+    // Brain skills no longer have flat weights here — supply a max-tier brain
+    // boost instead so the cap behaviour is still exercised.
+    const heavy = ['agents', 'memory', 'vision'];
+    const flagshipBoost = { intelligence: 70, wisdom: 25, dexterity: 15 };
+    expect(computeStat('intelligence', heavy, flagshipBoost)).toBeLessThanOrEqual(100);
+    expect(computeStat('intelligence', heavy, flagshipBoost)).toBeGreaterThan(50);
   });
 
   it('weights TTS heavily for charisma', () => {
@@ -67,5 +70,27 @@ describe('stats utility', () => {
     expect(delta.wisdom).toBeGreaterThan(0);
     expect(delta.intelligence).toBeGreaterThanOrEqual(0);
     expect(delta.endurance).toBe(0);
+  });
+
+  it('applies the brainBoost on top of the skill-derived sum', () => {
+    const baseInt = computeStat('intelligence', []);
+    const boosted = computeStat('intelligence', [], { intelligence: 30 });
+    expect(boosted - baseInt).toBe(30);
+  });
+
+  it('a flagship-tier brain boosts INT/WIS/DEX much more than basic', () => {
+    const basic = computeStats([], { intelligence: 5,  wisdom: 2,  dexterity: 2  });
+    const flag  = computeStats([], { intelligence: 70, wisdom: 25, dexterity: 15 });
+    expect(flag.intelligence - basic.intelligence).toBeGreaterThanOrEqual(60);
+    expect(flag.wisdom       - basic.wisdom).toBeGreaterThanOrEqual(20);
+    expect(flag.dexterity    - basic.dexterity).toBeGreaterThanOrEqual(10);
+  });
+
+  it('does not bleed brainBoost into unrelated stats', () => {
+    const before = computeStats([]);
+    const after  = computeStats([], { intelligence: 70 });
+    expect(after.intelligence).toBeGreaterThan(before.intelligence);
+    expect(after.endurance).toBe(before.endurance);
+    expect(after.charisma).toBe(before.charisma);
   });
 });

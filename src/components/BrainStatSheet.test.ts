@@ -3,8 +3,10 @@ import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import BrainStatSheet from './BrainStatSheet.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
+import { useBrainStore } from '../stores/brain';
 
 vi.mock('../stores/skill-tree');
+vi.mock('../stores/brain');
 
 interface FakeNode { id: string; }
 
@@ -16,14 +18,27 @@ const NODES: FakeNode[] = [
 
 const activeIds = new Set<string>();
 
-const mockStore = {
+const mockSkillTreeStore = {
   nodes: NODES,
   getSkillStatus: vi.fn((id: string) => activeIds.has(id) ? 'active' : 'available'),
 };
 
+// Default brain store mock — no brain configured. Individual tests override
+// `mockBrainStore.brainMode` / `freeProviders` as needed.
+const mockBrainStore: {
+  brainMode: { mode: string; provider_id?: string; model?: string } | null;
+  freeProviders: { id: string; model: string }[];
+} = {
+  brainMode: null,
+  freeProviders: [],
+};
+
 beforeEach(() => {
   activeIds.clear();
-  vi.mocked(useSkillTreeStore).mockReturnValue(mockStore as never);
+  mockBrainStore.brainMode = null;
+  mockBrainStore.freeProviders = [];
+  vi.mocked(useSkillTreeStore).mockReturnValue(mockSkillTreeStore as never);
+  vi.mocked(useBrainStore).mockReturnValue(mockBrainStore as never);
 });
 
 describe('BrainStatSheet', () => {
@@ -35,11 +50,13 @@ describe('BrainStatSheet', () => {
     }
   });
 
-  it('shows baseline values when no skills are active', () => {
+  it('starts at level 1 with all stats at 1 when no brain or skills are active', () => {
     const wrapper = mount(BrainStatSheet);
-    const intValue = wrapper.find('[data-testid="stat-value-intelligence"]').text();
-    expect(parseInt(intValue, 10)).toBeGreaterThanOrEqual(1);
-    expect(parseInt(intValue, 10)).toBeLessThan(20);
+    for (const id of ['intelligence', 'wisdom', 'charisma', 'perception', 'dexterity', 'endurance']) {
+      const value = parseInt(wrapper.find(`[data-testid="stat-value-${id}"]`).text(), 10);
+      expect(value).toBe(1);
+    }
+    expect(wrapper.text()).toMatch(/Lv\.\s*1/);
   });
 
   it('reflects activated skills in the stat values', async () => {
@@ -51,6 +68,32 @@ describe('BrainStatSheet', () => {
     const chaValue = parseInt(wrapper.find('[data-testid="stat-value-charisma"]').text(), 10);
     expect(wisValue).toBeGreaterThan(40);
     expect(chaValue).toBeGreaterThan(40);
+  });
+
+  it('boosts intelligence when a flagship paid model is selected', async () => {
+    mockBrainStore.brainMode = { mode: 'paid_api', model: 'claude-opus-4.7' };
+    const wrapper = mount(BrainStatSheet);
+    await nextTick();
+    const intValue = parseInt(wrapper.find('[data-testid="stat-value-intelligence"]').text(), 10);
+    // Tier S boost is +70 → with baseline 1 ⇒ 71. Allow some leeway in case
+    // weights are tuned later.
+    expect(intValue).toBeGreaterThanOrEqual(60);
+  });
+
+  it('a flagship boost is much higher than a basic free brain', async () => {
+    mockBrainStore.brainMode = { mode: 'free_api', provider_id: 'pollinations' };
+    mockBrainStore.freeProviders = [{ id: 'pollinations', model: 'openai' }];
+    const free = mount(BrainStatSheet);
+    await nextTick();
+    const freeInt = parseInt(free.find('[data-testid="stat-value-intelligence"]').text(), 10);
+
+    mockBrainStore.brainMode = { mode: 'paid_api', model: 'claude-opus-4.7' };
+    mockBrainStore.freeProviders = [];
+    const opus = mount(BrainStatSheet);
+    await nextTick();
+    const opusInt = parseInt(opus.find('[data-testid="stat-value-intelligence"]').text(), 10);
+
+    expect(opusInt - freeInt).toBeGreaterThanOrEqual(40);
   });
 
   it('renders the Active Modifiers panel (Chunk 134)', () => {

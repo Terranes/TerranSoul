@@ -64,21 +64,23 @@ export const STAT_DESCRIPTORS: StatDescriptor[] = [
  *
  * The values aren't tightly tuned: they only need to be ordinal so the bars
  * move sensibly as the user picks up skills.
+ *
+ * Note: the three brain-tier skills (`free-brain`, `paid-brain`,
+ * `local-brain`) intentionally have **no** flat weight here. The boost a
+ * brain contributes is derived from the *actual* model the user has selected
+ * via {@link ./model-benchmarks.ts} and applied through the `brainBoost`
+ * parameter on {@link computeStat} / {@link computeStats}. That keeps a
+ * fresh-install Pollinations adventurer at level 1 while a Claude Opus 4.7
+ * user picks up substantially more intelligence/wisdom.
  */
 const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
   intelligence: {
-    'free-brain':       30,
-    'paid-brain':       45,
-    'local-brain':      40,
     'agents':           20,
     'memory':           10,
     'vision':           15,
   },
   wisdom: {
     'memory':           50,
-    'free-brain':       15,
-    'paid-brain':       25,
-    'local-brain':      25,
     'presence':         10,
   },
   charisma: {
@@ -101,7 +103,6 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
     'whisper-asr':      15,
     'windows-shortcuts':25,
     'agents':           15,
-    'paid-brain':       10,
   },
   endurance: {
     'bgm':              30,
@@ -113,18 +114,36 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
   },
 };
 
-/** Baseline so even a fresh install reads a non-zero value. */
-const STAT_BASE = 5;
+/**
+ * Baseline so a brand-new install reads a sensible value.
+ *
+ * Set to `1` so a fresh adventurer who only has the auto-configured free
+ * brain starts at "Level 1, all stats at 1". Brain boosts and skill unlocks
+ * stack on top.
+ */
+const STAT_BASE = 1;
 
 /**
  * Compute a single stat from a list of active skill IDs.
  * Pure & deterministic — easy to unit-test.
+ *
+ * @param brainBoost optional per-stat boost derived from the active brain
+ *   model (see `model-benchmarks.ts`). Lets stronger models like Claude Opus
+ *   contribute much more than entry-level ones like Gemma 3 1B without
+ *   coupling this module to the brain store.
  */
-export function computeStat(statId: StatId, activeSkillIds: ReadonlyArray<string>): number {
+export function computeStat(
+  statId: StatId,
+  activeSkillIds: ReadonlyArray<string>,
+  brainBoost?: Partial<StatSnapshot>,
+): number {
   const weights = STAT_WEIGHTS[statId];
   let sum = STAT_BASE;
   for (const skillId of activeSkillIds) {
     sum += weights[skillId] ?? 0;
+  }
+  if (brainBoost) {
+    sum += brainBoost[statId] ?? 0;
   }
   return Math.max(0, Math.min(100, Math.round(sum)));
 }
@@ -139,14 +158,17 @@ export interface StatSnapshot {
 }
 
 /** Compute all six stats from active skill IDs in one call. */
-export function computeStats(activeSkillIds: ReadonlyArray<string>): StatSnapshot {
+export function computeStats(
+  activeSkillIds: ReadonlyArray<string>,
+  brainBoost?: Partial<StatSnapshot>,
+): StatSnapshot {
   return {
-    intelligence: computeStat('intelligence', activeSkillIds),
-    wisdom:       computeStat('wisdom',       activeSkillIds),
-    charisma:     computeStat('charisma',     activeSkillIds),
-    perception:   computeStat('perception',   activeSkillIds),
-    dexterity:    computeStat('dexterity',    activeSkillIds),
-    endurance:    computeStat('endurance',    activeSkillIds),
+    intelligence: computeStat('intelligence', activeSkillIds, brainBoost),
+    wisdom:       computeStat('wisdom',       activeSkillIds, brainBoost),
+    charisma:     computeStat('charisma',     activeSkillIds, brainBoost),
+    perception:   computeStat('perception',   activeSkillIds, brainBoost),
+    dexterity:    computeStat('dexterity',    activeSkillIds, brainBoost),
+    endurance:    computeStat('endurance',    activeSkillIds, brainBoost),
   };
 }
 
