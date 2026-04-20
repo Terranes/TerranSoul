@@ -7,12 +7,12 @@
   </Transition>
 
   <div v-show="!appLoading" class="app-shell" :class="{ 'pet-mode': isPetMode }">
-    <!-- Floating mode-toggle pill — visible in BOTH desktop and pet mode,
-         and in browser/dev where the store falls back to a local flip so the
-         overlay UI is still reachable.  This is the ONLY pet-mode toggle in
-         the app; nothing lives in the sidebar/bottom-nav. -->
+    <!-- Floating mode-toggle pill — visible on the Chat tab and always in pet
+         mode (where it's the only way back to desktop mode).  Hidden on all
+         other tabs so it doesn't overlap Memory, Marketplace, Voice, or the
+         Skill tree. -->
     <div
-      v-if="!appLoading"
+      v-if="!appLoading && (activeTab === 'chat' || isPetMode)"
       class="mode-toggle-pill"
       :class="{ 'is-pet': isPetMode }"
     >
@@ -88,8 +88,9 @@
           <VoiceSetupView v-if="activeTab === 'voice'" @done="activeTab = 'chat'" />
         </main>
 
-        <!-- Floating quest progress bubble -->
-        <QuestBubble @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
+        <!-- Floating quest progress bubble — chat tab only so it doesn't
+             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
+        <QuestBubble v-if="activeTab === 'chat'" @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
 
         <!-- Combo unlock notifications (Chunk 131) -->
         <ComboToast />
