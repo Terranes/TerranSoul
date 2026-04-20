@@ -90,6 +90,12 @@
 
         <!-- Floating quest progress bubble -->
         <QuestBubble @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
+
+        <!-- Combo unlock notifications (Chunk 131) -->
+        <ComboToast />
+
+        <!-- Quest reward ceremony overlay (Chunk 132) -->
+        <QuestRewardCeremony />
       </template>
     </template>
 
@@ -110,6 +116,8 @@ import VoiceSetupView from './views/VoiceSetupView.vue';
 import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
 import QuestBubble from './components/QuestBubble.vue';
+import ComboToast from './components/ComboToast.vue';
+import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import { Analytics } from '@vercel/analytics/vue';
 import { SpeedInsights } from '@vercel/speed-insights/vue';

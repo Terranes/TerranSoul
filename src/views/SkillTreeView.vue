@@ -16,6 +16,9 @@
       </div>
     </header>
 
+    <!-- ── Brain RPG Stat Sheet (Chunk 130) ── -->
+    <BrainStatSheet />
+
     <!-- ── Daily Quests Banner ── -->
     <section v-if="dailySuggestions.length > 0" class="st-daily-section">
       <div class="st-daily-header">
@@ -167,6 +170,7 @@
 import { computed } from 'vue';
 import { useSkillTreeStore, type SkillTier, type SkillNode } from '../stores/skill-tree';
 import QuestDialog from '../components/QuestDialog.vue';
+import BrainStatSheet from '../components/BrainStatSheet.vue';
 
 const emit = defineEmits<{
   navigate: [target: string];

@@ -454,13 +454,7 @@ Each unlocked skill boosts one or more character stats displayed in the UI:
 
 ### Implementation Chunks
 
-| Chunk | Description | Status |
-|-------|-------------|--------|
-| 130 | Brain config UI as RPG stat sheet — show Intelligence/Wisdom/Charisma/Perception/Dexterity/Endurance stats with animated bars. Each stat computed from unlocked skills. Visual feedback on stat increase when a new skill is unlocked. | `not-started` |
-| 131 | Combo detection & notification system — when the user unlocks the second skill of a combo pair, show an RPG-style "Combo Unlocked!" animation with the combo name, icon, and bonus description. Persist combo state in skill-tree store. | `not-started` |
-| 132 | Quest reward ceremony — after completing a quest, show a "Level Up" style reward screen with stat changes (before → after), new combos unlocked, and next recommended quest. Include particle effects and sound. | `not-started` |
-| 133 | Brain evolution path visualization — show the brain upgrade tree (Free → Paid/Local) as a glowing neural pathway in the skill tree. Animate signals flowing along completed paths. Dim locked paths. | `not-started` |
-| 134 | Stat-based AI behavior scaling — use the computed stats to actually influence AI behavior: higher Intelligence = longer context window, higher Wisdom = better memory recall, higher Charisma = more expressive TTS, higher Perception = faster hotword detection. | `not-started` |
+> All chunks for Phase 11 are complete. See `rules/completion-log.md` for details.
 
-> **Next Chunk:** 130 — Brain config UI as RPG stat sheet
+> **Next Phase:** _(none — milestones backlog drained)_
 

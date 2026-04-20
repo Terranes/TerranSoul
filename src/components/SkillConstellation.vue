@@ -825,6 +825,38 @@ onUnmounted(() => {
   filter: drop-shadow(0 0 4px var(--cluster-glow, rgba(180,160,100,0.5)));
 }
 
+/* ── Chunk 133: Brain Evolution Path ─────────────────────────────────────
+ * Inside the brain cluster, edges become glowing "neural pathways":
+ *   - inactive edges: very dim, hint of structure only
+ *   - active edges: pulse a flowing dashed signal along the wire
+ * The animation is scoped to the brain cluster only so the other clusters
+ * keep their cleaner constellation look. */
+.sc-cluster--brain .sc-edge {
+  stroke: rgba(220, 80, 80, 0.18);
+  stroke-width: 1.5;
+  opacity: 0.55;
+}
+.sc-cluster--brain .sc-edge--active {
+  stroke: rgba(255, 150, 150, 0.95);
+  stroke-width: 2.5;
+  opacity: 1;
+  stroke-dasharray: 6 6;
+  animation: sc-neural-flow 2.4s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 100, 100, 0.7));
+}
+@keyframes sc-neural-flow {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+/* Locked brain nodes look like dormant synapses. */
+.sc-cluster--brain .sc-node--locked {
+  filter: grayscale(0.7) brightness(0.55);
+  opacity: 0.6;
+}
+.sc-cluster--brain .sc-node--active {
+  box-shadow: 0 0 14px rgba(255, 120, 120, 0.55), inset 0 0 8px rgba(255, 200, 200, 0.25);
+}
+
 /* Concentric rings */
 .sc-ring {
   position: absolute;

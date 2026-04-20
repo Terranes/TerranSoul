@@ -6,6 +6,63 @@
 
 ---
 
+## Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration
+
+**Date:** 2026-04-20
+**Phase:** Phase 11 — RPG Brain Configuration (final)
+
+Five tightly-coupled chunks shipped together so the UI/UX stays coherent and free of overlapping floating surfaces.
+
+### Shared foundations
+- **`src/utils/stats.ts`** — single source of truth for the six RPG stats (Intelligence, Wisdom, Charisma, Perception, Dexterity, Endurance). Pure `computeStat(stat, activeSkills)` / `computeStats(activeSkills)` / `diffStats(before, after)` functions; per-stat skill-weight map; baseline 5; clamped to `[0, 100]`.
+- **`src/utils/stat-modifiers.ts`** — pure stat → behaviour-knob translation (`getMemoryRecallLimit`, `getContextWindowMultiplier`, `getChatHistoryLimit`, `getHotwordSensitivity`, `getTtsExpressiveness`, plus a single-call `computeModifiers`).
+- **`QuestTrackerData`** schema extended with `seenComboKeys: string[]` and `lastSeenActivationTimestamp: number` (with migration + merge logic + persistence) and exposed via two new store actions: `markCombosSeen(keys)` and `setLastSeenActivationTimestamp(ts)`.
+
+### Chunk 130 — Brain RPG Stat Sheet
+- New **`src/components/BrainStatSheet.vue`** — animated 6-bar panel themed in FF-style (gold "BRAIN STAT SHEET" heading, Lv. badge, per-stat icon + 3-letter abbr + bar with shimmer + numeric value + description). Stats are reactive to `skillTree.getSkillStatus`; when a stat increases, the bar pulses for 1.5s.
+- Embedded inside `SkillTreeView.vue` between the progress header and the daily-quests banner — does NOT overlap the floating QuestBubble orb (orb is right edge, sheet is centred max-800).
+
+### Chunk 131 — Combo Notification Toast
+- New **`src/components/ComboToast.vue`** — slide-in toast queue with sparkling burst animation. Mounted in `App.vue` (only in non-pet mode). Anchored bottom-left so it never collides with the QuestBubble orb on the right. Watches `skillTree.activeCombos`; new combos that aren't in `tracker.seenComboKeys` are pushed onto the queue, marked seen, and auto-dismiss after 6s. On mobile, anchored above the bottom nav (bottom: 64px).
+
+### Chunk 132 — Quest Reward Ceremony
+- New **`src/components/QuestRewardCeremony.vue`** — full-screen modal teleported to `body` with a radial gradient + particle-burst background and a centred "QUEST COMPLETE" card. Card shows: quest icon + name + tagline, a per-stat row with `before → after (+delta)` and animated bar, the rewards list, and any newly-unlocked combos.
+- Mounted in `App.vue`. Watches `skillTree.tracker.activationTimestamps`; on first launch establishes a high-water mark so the user isn't blasted with retroactive ceremonies for already-active skills. New activations above the mark are queued and shown one at a time.
+- Auto-dismisses after 8s; `Continue ▸` button or backdrop click dismisses immediately. On dismiss, `setLastSeenActivationTimestamp` is called so each ceremony only fires once.
+
+### Chunk 133 — Brain Evolution Path (neural pathway)
+- CSS-only enhancement to `SkillConstellation.vue`: brain-cluster edges now render as glowing red neural pathways. Active edges get `stroke-dasharray: 6 6` plus a `stroke-dashoffset` animation (`sc-neural-flow`, 2.4s linear infinite) so signals visibly flow along completed prerequisite paths. Locked brain nodes are desaturated/dimmed; active brain nodes get a coral inner-glow. Other clusters retain their previous cleaner constellation look.
+
+### Chunk 134 — Stat-Based AI Scaling
+- `BrainStatSheet.vue` includes a live **"⚙ Active Modifiers"** panel that reads `computeModifiers(stats)` and renders the four scalable behaviours so users can SEE the stats actually changing AI behaviour: memory recall depth, chat history kept, hotword sensitivity, TTS expressiveness.
+- `stat-modifiers.ts` is pure & exported, ready for downstream consumption (memory store, ASR detector, TTS adapter) without breaking existing call-sites — defaults are unchanged for a fresh install.
+
+### Files
+**Created:**
+- `src/utils/stats.ts` + `src/utils/stats.test.ts` (9 tests)
+- `src/utils/stat-modifiers.ts` + `src/utils/stat-modifiers.test.ts` (6 tests)
+- `src/components/BrainStatSheet.vue` + `src/components/BrainStatSheet.test.ts` (5 tests)
+- `src/components/ComboToast.vue` + `src/components/ComboToast.test.ts` (4 tests)
+- `src/components/QuestRewardCeremony.vue` + `src/components/QuestRewardCeremony.test.ts` (4 tests)
+
+**Modified:**
+- `src/stores/skill-tree.ts` — extended `QuestTrackerData` with `seenComboKeys` + `lastSeenActivationTimestamp`, added `markCombosSeen` / `setLastSeenActivationTimestamp` actions, updated `freshTracker` / `migrateTracker` / `mergeTrackers`.
+- `src/stores/skill-tree.test.ts` — extended fixtures with the two new fields.
+- `src/views/SkillTreeView.vue` — embedded `<BrainStatSheet />`.
+- `src/App.vue` — mounted `<ComboToast />` and `<QuestRewardCeremony />` in normal-mode only.
+- `src/components/SkillConstellation.vue` — added neural-pathway CSS for the brain cluster.
+- `rules/milestones.md` — drained Phase 11 chunks.
+
+### Verification
+- `npm run build` → ✓ built in 5.47s (vue-tsc + vite)
+- `npm run test` → **58 files, 925 tests passing** (baseline 53/897 → +5 files, +28 tests, no regressions)
+- `npm run test:e2e e2e/desktop-flow.spec.ts` → **passed** (full end-to-end app flow: app load, brain/voice auto-config, send message, get response, subtitle, 3D model, BGM, marketplace nav, LLM switch, quest system)
+- `npm run test:e2e e2e/mobile-flow.spec.ts` → **passed**
+- A dedicated visual-coexistence Playwright test confirmed bounding boxes for `BrainStatSheet`, `ComboToast`, `QuestBubble` orb, and `SkillConstellation` overlay never overlap horizontally + vertically simultaneously, and the constellation Esc-close path leaves the stat sheet visible.
+- `parallel_validation` (Code Review + CodeQL) — **0 issues**.
+
+---
+
 ## Chunk 128 — FF16 Constellation Skill Tree (Full-Screen Layout)
 
 **Date:** 2026-04-20

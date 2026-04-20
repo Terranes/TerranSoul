@@ -113,6 +113,10 @@ export interface QuestTrackerData {
   activationTimestamps: Record<string, number>;
   /** IDs of quests the user has manually marked as completed. */
   manuallyCompletedIds: string[];
+  /** Combo keys the user has already been notified about (Chunk 131). */
+  seenComboKeys: string[];
+  /** Last activation timestamp the user has seen a reward ceremony for (Chunk 132). */
+  lastSeenActivationTimestamp: number;
 }
 
 export interface DailySuggestion {
@@ -133,6 +137,8 @@ function freshTracker(): QuestTrackerData {
     dailySuggestionReason: null,
     activationTimestamps: {},
     manuallyCompletedIds: [],
+    seenComboKeys: [],
+    lastSeenActivationTimestamp: 0,
   };
 }
 
@@ -162,6 +168,10 @@ function migrateTracker(raw: unknown): QuestTrackerData {
     ) as Record<string, number>;
   if (Array.isArray(obj.manuallyCompletedIds))
     base.manuallyCompletedIds = obj.manuallyCompletedIds.filter((id): id is string => typeof id === 'string');
+  if (Array.isArray(obj.seenComboKeys))
+    base.seenComboKeys = obj.seenComboKeys.filter((id): id is string => typeof id === 'string');
+  if (typeof obj.lastSeenActivationTimestamp === 'number')
+    base.lastSeenActivationTimestamp = obj.lastSeenActivationTimestamp;
   return base;
 }
 
@@ -175,6 +185,8 @@ function mergeTrackers(a: QuestTrackerData, b: QuestTrackerData): QuestTrackerDa
   merged.dismissedQuestIds = [...new Set([...a.dismissedQuestIds, ...b.dismissedQuestIds])];
   merged.pinnedQuestIds = [...new Set([...a.pinnedQuestIds, ...b.pinnedQuestIds])];
   merged.manuallyCompletedIds = [...new Set([...a.manuallyCompletedIds, ...b.manuallyCompletedIds])];
+  merged.seenComboKeys = [...new Set([...a.seenComboKeys, ...b.seenComboKeys])];
+  merged.lastSeenActivationTimestamp = Math.max(a.lastSeenActivationTimestamp || 0, b.lastSeenActivationTimestamp || 0);
   // Keep the latest suggestion set
   if ((a.lastSuggestionDate ?? '') >= (b.lastSuggestionDate ?? '')) {
     merged.lastSuggestionDate = a.lastSuggestionDate;
@@ -963,6 +975,24 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
     saveTracker();
   }
 
+  /** Mark one or more combo keys as already-notified-about. */
+  function markCombosSeen(keys: string[]): void {
+    if (keys.length === 0) return;
+    const before = tracker.value.seenComboKeys.length;
+    tracker.value.seenComboKeys = [
+      ...new Set([...tracker.value.seenComboKeys, ...keys]),
+    ];
+    if (tracker.value.seenComboKeys.length !== before) saveTracker();
+  }
+
+  /** Update the high-water mark for the most recent reward ceremony shown. */
+  function setLastSeenActivationTimestamp(ts: number): void {
+    if (ts > tracker.value.lastSeenActivationTimestamp) {
+      tracker.value.lastSeenActivationTimestamp = ts;
+      saveTracker();
+    }
+  }
+
   const pinnedQuests = computed(() =>
     tracker.value.pinnedQuestIds
       .map(id => nodes.value.find(n => n.id === id))
@@ -1435,6 +1465,8 @@ Respond with ONLY valid JSON (no markdown):
     pinnedQuests,
     markComplete,
     unmarkComplete,
+    markCombosSeen,
+    setLastSeenActivationTimestamp,
     // Daily suggestions
     dailySuggestions,
     needsRefresh,
