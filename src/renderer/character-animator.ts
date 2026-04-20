@@ -150,7 +150,35 @@ const IDLE_POSES: BonePose[] = [
     leftShoulder:  [-0.02, 0, 0.08],
     rightShoulder: [-0.02, 0, -0.08],
   },
+  // Pose 7: Seated with teacup (sofa idle variant).
+  // The sofa + teacup props are shown whenever this pose index is active —
+  // see SITTING_POSE_INDEX below and CharacterViewport's onIdlePoseChange handler.
+  // Legs aren't in ANIMATED_BONES; the animator translates the body down by
+  // SITTING_BODY_Y_OFFSET so the character reads as sitting on the cushion.
+  {
+    head:  [0.04, -0.08, 0.02],          // tilt downward toward cup, gentle side tilt
+    spine: [0.12, 0, 0],                 // forward lean as if sipping
+    chest: [0.06, 0, 0],
+    hips:  [0.05, 0, 0],                 // mild hip flex to sell the sit
+    neck:  [0.05, -0.04, 0],
+    leftUpperArm:  [0.10, 0.02, 1.15],   // left arm resting on lap, slight forward
+    rightUpperArm: [0.30, -0.15, -0.90], // right arm brought up to chest/face height
+    leftLowerArm:  [0, 0, 0.40],         // left forearm folded across lap
+    rightLowerArm: [0, 0, -0.48],        // clamped within DRESS_LOWER_ARM_Z_MAX (0.50)
+    leftShoulder:  [0, 0, 0.08],
+    rightShoulder: [0, 0, -0.12],
+  },
 ];
+
+/** Index of the "seated, holding teacup" pose in IDLE_POSES.  Used by the
+ *  viewport to show/hide the sofa + teacup props, and by the Mood submenu's
+ *  "Sitting" option when pinning a manual idle pose. */
+export const SITTING_POSE_INDEX = 6;
+
+/** Vertical offset (metres) applied to the character root when the sitting
+ *  pose is active.  Negative = lower so the character's hips land on the
+ *  sofa cushion. Tuned against the default Annabelle model (~1.6m). */
+export const SITTING_BODY_Y_OFFSET = -0.42;
 
 const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
   // idle will be dynamically selected from IDLE_POSES array
@@ -342,6 +370,17 @@ export class CharacterAnimator {
   private currentIdlePoseIndex = 0;
   private idlePoseChangeTime = 0;
   private nextIdlePoseChangeAt = 8;
+  /** When non-null, the animator pins the idle pose to this index and disables
+   *  random rotation.  Set via forceIdlePose() from the Mood submenu. */
+  private pinnedIdlePoseIndex: number | null = null;
+  /** Optional listener fired whenever the active idle pose index changes.
+   *  CharacterViewport uses this to toggle the sofa + teacup props. */
+  private idlePoseChangeListener: ((index: number) => void) | null = null;
+  /** Damped vertical body offset (metres).  Used to translate the VRM scene
+   *  root downward so the character appears seated on the sofa during the
+   *  sitting idle pose, without requiring per-leg bone animation. */
+  private bodyYCurrent = 0;
+  private bodyYTarget = 0;
 
   /** Exposes the layered AvatarStateMachine for external mutation. */
   get avatarStateMachine(): AvatarStateMachine { return this._asm; }
@@ -441,6 +480,8 @@ export class CharacterAnimator {
     for (let i = 0; i < this.boneCurrentArr.length; i++) {
       if (Math.abs(this.boneCurrentArr[i] - this.boneTargetArr[i]) > epsilon) return false;
     }
+    // Body Y translation must also be settled
+    if (Math.abs(this.bodyYCurrent - this.bodyYTarget) > epsilon) return false;
     return true;
   }
 
@@ -448,15 +489,16 @@ export class CharacterAnimator {
     this.elapsed += delta;
     const t = this.elapsed;
 
-    // Handle idle pose randomization when in idle state
-    if (this.state === 'idle') {
+    // Handle idle pose randomization when in idle state.
+    // When a pose is pinned (forceIdlePose), skip random rotation entirely.
+    if (this.state === 'idle' && this.pinnedIdlePoseIndex === null) {
       this.idlePoseChangeTime += delta;
       if (this.idlePoseChangeTime >= this.nextIdlePoseChangeAt) {
         this.selectNextIdlePose();
       }
     } else {
-      // Reset idle pose timer when not in idle state
-      this.idlePoseChangeTime = 0; 
+      // Reset idle pose timer when not in idle state (or when pinned)
+      this.idlePoseChangeTime = 0;
       this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
     }
 
@@ -500,13 +542,67 @@ export class CharacterAnimator {
         newIndex = Math.floor(Math.random() * IDLE_POSES.length);
       } while (newIndex === this.currentIdlePoseIndex);
     }
-    
-    this.currentIdlePoseIndex = newIndex;
-    STATE_BONE_POSES.idle = IDLE_POSES[newIndex];
-    
+
+    this.setActiveIdlePose(newIndex);
+
     // Reset timer with some randomization
     this.idlePoseChangeTime = 0;
     this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+  }
+
+  /** Update the active idle pose, fire the change listener, and wire the
+   *  STATE_BONE_POSES.idle slot so the frame loop picks up the new pose. */
+  private setActiveIdlePose(index: number) {
+    if (index < 0 || index >= IDLE_POSES.length) return;
+    if (index === this.currentIdlePoseIndex) return;
+    this.currentIdlePoseIndex = index;
+    STATE_BONE_POSES.idle = IDLE_POSES[index];
+    // The seated idle needs the whole body translated downward so the
+    // character reads as sitting on the sofa cushion.  Other idle variants
+    // keep the body at floor level.
+    this.bodyYTarget = (index === SITTING_POSE_INDEX) ? SITTING_BODY_Y_OFFSET : 0;
+    if (this.idlePoseChangeListener) {
+      this.idlePoseChangeListener(index);
+    }
+  }
+
+  /**
+   * Pin the idle-pose rotation to a specific pose index, or release the pin
+   * and resume random rotation when `index` is null.  Used by the Mood
+   * submenu's "Sitting" option to force the seated pose.
+   *
+   * When releasing the pin while the current pose is the seated variant,
+   * immediately snap to the default standing pose (index 0) so the sofa and
+   * teacup props disappear — otherwise they'd linger until the next random
+   * rotation picks a different pose.
+   */
+  forceIdlePose(index: number | null) {
+    this.pinnedIdlePoseIndex = index;
+    if (index !== null) {
+      this.setActiveIdlePose(index);
+      // Reset timer so the pinned pose doesn't get swapped on the next tick
+      this.idlePoseChangeTime = 0;
+      this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+    } else if (this.currentIdlePoseIndex === SITTING_POSE_INDEX) {
+      // Unpinning while seated — snap out of the seated idle right away.
+      this.setActiveIdlePose(0);
+      this.idlePoseChangeTime = 0;
+      this.nextIdlePoseChangeAt = this.getRandomIdleInterval();
+    }
+  }
+
+  /** Subscribe to idle-pose-change events (fires when the animator rotates
+   *  between idle variants or when forceIdlePose() picks a new pose). */
+  onIdlePoseChange(cb: (index: number) => void) {
+    this.idlePoseChangeListener = cb;
+    // Fire once synchronously so the listener can sync props to the
+    // current pose without waiting for the first rotation.
+    cb(this.currentIdlePoseIndex);
+  }
+
+  /** Get the active idle pose index. */
+  getCurrentIdlePoseIndex(): number {
+    return this.currentIdlePoseIndex;
   }
 
   /**
@@ -521,8 +617,13 @@ export class CharacterAnimator {
   private applyVRMAnimation(t: number, delta: number) {
     if (!this.vrm || !this.vrmScene) return;
 
-    // Pin scene root — only preserve the loader's base rotation
-    this.vrmScene.position.set(0, 0, 0);
+    // Damp bodyY toward its target so seated ↔ standing transitions look smooth.
+    // Uses the same exponential damping as bones (BONE_LAMBDA).
+    this.bodyYCurrent = damp(this.bodyYCurrent, this.bodyYTarget, BONE_LAMBDA, delta);
+
+    // Pin scene root — only preserve the loader's base rotation.  The Y
+    // translation lowers the character into the sofa for the sitting idle.
+    this.vrmScene.position.set(0, this.bodyYCurrent, 0);
     this.vrmScene.rotation.set(0, this.baseRotationY, 0);
 
     // Tick the AvatarStateMachine's auto-blink cycle

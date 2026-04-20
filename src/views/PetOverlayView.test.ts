@@ -1,5 +1,11 @@
 /**
  * Tests for PetOverlayView — desktop pet overlay with floating chat.
+ *
+ * Interaction model (post-redesign):
+ *   - Left-click character        → toggle chat
+ *   - Hold + drag on character    → reposition within overlay (persists in localStorage)
+ *   - Right-click character       → open PetContextMenu at cursor
+ *   - The desktop⇄pet toggle is rendered at the App level, not inside this view.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
@@ -23,6 +29,7 @@ vi.mock('../renderer/scene', () => ({
     renderer: { domElement: document.createElement('canvas'), render: vi.fn(), setSize: vi.fn(), dispose: vi.fn() },
     clock: { getDelta: () => 0.016 },
   }),
+  EYE_TARGET_DISTANCE: 1.5,
 }));
 
 vi.mock('../renderer/vrm-loader', () => ({
@@ -34,7 +41,10 @@ vi.mock('../renderer/character-animator', () => ({
     setVRM: vi.fn(),
     setState: vi.fn(),
     update: vi.fn(),
+    forceIdlePose: vi.fn(),
+    onIdlePoseChange: vi.fn(),
   })),
+  SITTING_POSE_INDEX: 6,
 }));
 
 import { useChatExpansion } from '../composables/useChatExpansion';
@@ -45,110 +55,88 @@ describe('PetOverlayView', () => {
     mockInvoke.mockReset().mockResolvedValue(undefined);
     // Reset shared module-level chat expansion state to default
     const { setPetChatExpanded, setChatDrawerExpanded } = useChatExpansion();
-    setPetChatExpanded(true);
+    setPetChatExpanded(false);
     setChatDrawerExpanded(false);
+    // Clear persisted pet position / onboarding so each test starts fresh
+    try {
+      localStorage.removeItem('ts.pet.character_position');
+      localStorage.removeItem('ts.pet.onboarded');
+    } catch {
+      /* ignore */
+    }
   });
 
   it('renders the pet overlay container', () => {
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
     expect(wrapper.find('.pet-overlay').exists()).toBe(true);
   });
 
   it('renders the character area', () => {
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
     expect(wrapper.find('.pet-character').exists()).toBe(true);
   });
 
-  it('renders pet controls', () => {
+  it('does NOT render a mode toggle inside the overlay (lives at App level)', () => {
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
-    const controls = wrapper.findAll('.pet-ctrl-btn');
-    expect(controls).toHaveLength(2); // chat toggle + exit
+    expect(wrapper.find('.pet-mode-toggle').exists()).toBe(false);
+    expect(wrapper.find('.pet-mode-switch').exists()).toBe(false);
   });
 
-  it('toggles chat on button click', async () => {
+  it('left-click on character toggles chat', async () => {
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
-    // Chat auto-expands on mount
-    expect(wrapper.find('.pet-chat').exists()).toBe(true);
-
-    // Click the chat toggle button to collapse
-    const chatBtn = wrapper.findAll('.pet-ctrl-btn').find((b) => b.text() === '💬');
-    expect(chatBtn).toBeDefined();
-    await chatBtn!.trigger('click');
-
+    // Chat is collapsed by default in the redesigned overlay
     expect(wrapper.find('.pet-chat').exists()).toBe(false);
 
-    // Click again to expand
-    await chatBtn!.trigger('click');
+    // Simulate a quick left click: mousedown on character, then mouseup at document level.
+    const character = wrapper.find('.pet-character');
+    await character.trigger('mousedown', { button: 0, clientX: 100, clientY: 100 });
+    // The overlay listens to document-level mouseup (once handler) to end the press.
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100 }));
+    await wrapper.vm.$nextTick();
+
     expect(wrapper.find('.pet-chat').exists()).toBe(true);
+
+    // Click again via the in-chat close button
+    await wrapper.find('.pet-chat-close').trigger('click');
+    expect(wrapper.find('.pet-chat').exists()).toBe(false);
   });
 
   it('chat input is present when expanded', async () => {
+    const { setPetChatExpanded } = useChatExpansion();
+    setPetChatExpanded(true);
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
-    // Chat auto-expands on mount
     const input = wrapper.find('.pet-chat-input input');
     expect(input.exists()).toBe(true);
   });
 
-  it('exit button calls setMode window', async () => {
+  it('right-click on character opens the context menu', async () => {
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
-    });
-    const exitBtn = wrapper.findAll('.pet-ctrl-btn').find((b) => b.text() === '✕');
-    await exitBtn!.trigger('click');
-
-    expect(mockInvoke).toHaveBeenCalledWith('set_window_mode', { mode: 'window' });
-  });
-
-  it('shows controls on mouse enter', async () => {
-    const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
-    });
-    await wrapper.find('.pet-overlay').trigger('mouseenter');
-
-    expect(wrapper.find('.pet-controls.visible').exists()).toBe(true);
-  });
-
-  it('hides controls on mouse leave when chat is collapsed and hint has dismissed', async () => {
-    vi.useFakeTimers();
-    const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
 
-    // Flush the async onMounted (loadActiveBrain, listen, etc.)
-    await vi.runAllTimersAsync();
-    await wrapper.vm.$nextTick();
+    const character = wrapper.find('.pet-character');
+    await character.trigger('contextmenu', { clientX: 200, clientY: 300 });
 
-    // Chat auto-expands; collapse it first
-    const chatBtn = wrapper.findAll('.pet-ctrl-btn').find((b) => b.text() === '💬');
-    await chatBtn!.trigger('click');
-
-    // Fast-forward past the initial hint timeout (5 seconds)
-    await vi.advanceTimersByTimeAsync(6000);
-    await wrapper.vm.$nextTick();
-
-    // Now hover and unhover
-    await wrapper.find('.pet-overlay').trigger('mouseenter');
-    expect(wrapper.find('.pet-controls.visible').exists()).toBe(true);
-
-    await wrapper.find('.pet-overlay').trigger('mouseleave');
-    expect(wrapper.find('.pet-controls.visible').exists()).toBe(false);
-
-    vi.useRealTimers();
+    const ctxMenu = wrapper.findComponent({ name: 'PetContextMenu' });
+    expect(ctxMenu.exists()).toBe(true);
+    expect(ctxMenu.props('visible')).toBe(true);
+    expect(ctxMenu.props('x')).toBe(200);
+    expect(ctxMenu.props('y')).toBe(300);
   });
 
   it('does not show bubble when no messages', () => {
     const wrapper = mount(PetOverlayView, {
-      global: { stubs: { CharacterViewport: true } },
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
     expect(wrapper.find('.pet-bubble').exists()).toBe(false);
   });

@@ -30,6 +30,11 @@ export const useWindowStore = defineStore('window', () => {
     try {
       await invoke('set_window_mode', { mode: newMode });
       mode.value = newMode;
+      // Safety net: every mode change forces cursor passthrough OFF so the
+      // window can never get stuck in a click-through state.  Pet mode in
+      // this app captures clicks via the transparent overlay instead of OS
+      // click-through, and desktop mode must obviously be interactive.
+      await ensurePassthroughOff();
       return true;
     } catch (err) {
       error.value = String(err);
@@ -45,12 +50,22 @@ export const useWindowStore = defineStore('window', () => {
     try {
       const newMode = await invoke<WindowMode>('toggle_window_mode');
       mode.value = newMode;
+      await ensurePassthroughOff();
       return newMode;
     } catch (err) {
       error.value = String(err);
       return mode.value;
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /** Fire-and-forget passthrough reset. */
+  async function ensurePassthroughOff() {
+    try {
+      await invoke('set_cursor_passthrough', { ignore: false });
+    } catch {
+      // Tauri unavailable or command missing — no-op
     }
   }
 

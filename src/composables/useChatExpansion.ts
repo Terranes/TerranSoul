@@ -6,7 +6,7 @@ import { useWindowStore } from '../stores/window';
  * Tracks whether chat interfaces are expanded across different views
  */
 const chatDrawerExpanded = ref(false); // Main chat view drawer state
-const petChatExpanded = ref(true); // Pet overlay chat state
+const petChatExpanded = ref(false); // Pet overlay chat state — starts collapsed so the character is the focus
 
 export function useChatExpansion() {
   const windowStore = useWindowStore();

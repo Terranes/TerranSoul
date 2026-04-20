@@ -7,6 +7,9 @@ export interface RendererInfo {
   programs: number;
 }
 
+/** Distance (metres) in front of the camera to place the eye-tracking target. */
+export const EYE_TARGET_DISTANCE = 1.5;
+
 export interface SceneContext {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
@@ -14,6 +17,10 @@ export interface SceneContext {
   clock: THREE.Clock;
   controls: OrbitControls;
   lookAtTarget: THREE.Object3D;
+  /** Pre-allocated scratch Vector3 used to read camera.getWorldDirection() each
+   *  frame without allocating.  Owned by SceneContext so the render loop can
+   *  reuse it for eye tracking. */
+  _eyeForward: THREE.Vector3;
   getRendererInfo: () => RendererInfo;
   /** Call each frame before controls.update() — smoothly adjusts the orbit
    *  target height so zooming in frames the face and zooming out shows the
@@ -42,6 +49,14 @@ export interface SceneContext {
    * invisible due to a stale 1×1 backbuffer after a v-show transition.
    */
   checkResize: () => boolean;
+  /** Shift the orbit-camera focus vertically by `offset` metres.  Used by
+   *  the sitting-idle prop system to keep the seated character centred in
+   *  the viewport when the animator translates the body downward. */
+  setFocusYOffset: (offset: number) => void;
+  /** Toggle visibility of the decorative pedestal (floor disc + ring) so
+   *  the character stands on nothing in pet mode.  Accepts `true` to show
+   *  the pedestal in desktop mode, `false` to hide it in pet mode. */
+  setPedestalVisible: (visible: boolean) => void;
   dispose: () => void;
   /** Register a callback that fires after the user finishes orbiting or zooming.
    *  Receives (azimuth, distance) so the caller can persist the camera state. */
@@ -118,6 +133,10 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   // once the real model is loaded and its bounding box is known.
   let faceY = 1.45;    // orbit target Y when zoomed in (face)
   let bodyY = 0.65;    // orbit target Y when zoomed out (full body, head to toes)
+  // Additional Y shift applied on top of faceY/bodyY.  Tracks the animator's
+  // body translation (e.g. for the seated idle) so the camera follows the
+  // character down and keeps them centred.
+  let focusYOffset = 0;
 
   // Default full-body camera distances used by the ResizeObserver — updated by
   // frameCameraToCharacter so portrait/landscape switching still works after load.
@@ -133,9 +152,32 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     const dist = controls.getDistance();
     if (isNaN(dist)) return; // camera not positioned yet
     const t = Math.max(0, Math.min(1, (dist - MIN_DIST) / (MAX_DIST - MIN_DIST)));
-    const newY = faceY + t * (bodyY - faceY);
+    const newY = faceY + t * (bodyY - faceY) + focusYOffset;
     if (isNaN(newY)) return; // faceY/bodyY not computed yet
     controls.target.y = newY;
+  }
+
+  /** Smoothly shift the camera orbit focus vertically.  Used so the seated
+   *  idle keeps the character centred when the animator translates the body
+   *  down.  Damped by the frame loop's per-frame updateZoomTarget. */
+  let focusYOffsetTarget = 0;
+  function setFocusYOffset(offset: number) {
+    focusYOffsetTarget = offset;
+  }
+  // Damp focus offset each frame so transitions are smooth.
+  // Invoked from updateZoomTarget below via a separate tick.
+  function tickFocusYOffset() {
+    const lambda = 6;
+    // Frame time approximated by clock.getDelta() is consumed by the caller;
+    // here we use a fixed 1/60 for deterministic easing.
+    const dt = 1 / 60;
+    focusYOffset += (focusYOffsetTarget - focusYOffset) * (1 - Math.exp(-lambda * dt));
+  }
+  // Hook into updateZoomTarget — call tickFocusYOffset before recomputing.
+  const _origUpdateZoomTarget = updateZoomTarget;
+  function updateZoomTargetWithFocus() {
+    tickFocusYOffset();
+    _origUpdateZoomTarget();
   }
 
   /**
@@ -201,9 +243,16 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     controls.update();
   }
 
-  // LookAt target — placed in scene (not on camera) for VRM eye tracking
+  // LookAt target — placed in scene (not on camera) for VRM eye tracking.
+  // Positioned each frame a fixed distance in front of the camera using
+  // camera.getWorldDirection() so the character's gaze tracks the viewer's
+  // direction of view rather than the camera position itself.
   const lookAtTarget = new THREE.Object3D();
   scene.add(lookAtTarget);
+
+  // Pre-allocated scratch vector used by the render loop to read
+  // camera.getWorldDirection() each frame without allocation.
+  const _eyeForward = new THREE.Vector3();
 
   // ── Lighting: matches VRoid Hub's 5-light setup ───────────────────────────
   // Ambient fill — ensures no part of the model is completely dark
@@ -259,6 +308,11 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   pedestalRing.rotation.x = -Math.PI / 2;
   pedestalRing.position.y = 0.012;
   scene.add(pedestalRing);
+
+  function setPedestalVisible(visible: boolean) {
+    pedestal.visible = visible;
+    pedestalRing.visible = visible;
+  }
 
   const clock = new THREE.Clock();
 
@@ -368,5 +422,5 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
     renderer.dispose();
   }
 
-  return { renderer, scene, camera, clock, controls, lookAtTarget, getRendererInfo, updateZoomTarget, frameCameraToCharacter, setCurrentModel, checkResize, dispose, onCameraChange };
+  return { renderer, scene, camera, clock, controls, lookAtTarget, _eyeForward, getRendererInfo, updateZoomTarget: updateZoomTargetWithFocus, frameCameraToCharacter, setCurrentModel, checkResize, setFocusYOffset, setPedestalVisible, dispose, onCameraChange };
 }
