@@ -368,7 +368,25 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 @media (max-width: 640px) {
   /* No sidebar on mobile; pin to top-left with a small gutter. */
   .mode-toggle-pill {
-    left: 12px;
+    top: 6px;
+    left: 10px;
+  }
+  .mode-toggle-btn {
+    padding: 3px 8px 3px 4px;
+    font-size: 0.65rem;
+    gap: 4px;
+  }
+  .mode-toggle-track {
+    width: 26px;
+    height: 13px;
+  }
+  .mode-toggle-thumb {
+    width: 9px;
+    height: 9px;
+    font-size: 0.38rem;
+  }
+  .mode-toggle-pill.is-pet .mode-toggle-thumb {
+    left: calc(100% - 11px);
   }
 }
 .mode-toggle-btn {

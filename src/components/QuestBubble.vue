@@ -256,8 +256,8 @@ const filteredNodes = computed(() =>
 // Dynamic positioning
 const questHubPosition = computed(() => {
   const isMobile = screenWidth.value <= 640;
-  const baseTop = isMobile ? 36 : 44;
-  const baseRight = isMobile ? 10 : 16;
+  const baseTop = isMobile ? 6 : 44;
+  const baseRight = isMobile ? 52 : 16;
   return {
     top: `${baseTop}px`,
     right: `${baseRight}px`,

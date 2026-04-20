@@ -1,101 +1,117 @@
 <template>
-  <div
-    class="pet-overlay"
-    :class="{ 'pet-overlay--chat': petChatExpanded, 'pet-overlay--dragging': isDragging }"
-  >
-    <!-- Draggable 3D character viewport (transparent background).
-         Use .capture so the wrapper intercepts mousedown before it reaches the
-         Three.js canvas, and .stop to prevent OrbitControls from also reacting
-         to what's really a pet-mode drag/click. -->
+  <div class="pet-overlay">
+    <!-- Character container — positioned absolutely within the full-screen window.
+         Dragging moves the CSS position.  Click toggles chat.  Right-click opens menu. -->
     <div
+      ref="charRef"
       class="pet-character"
-      :style="characterStyle"
-      @mousedown.capture.stop="onCharacterMouseDown"
+      :style="charStyle"
+      @mousedown.capture="onCharacterMouseDown"
+      @wheel.capture="onCharacterWheel"
       @contextmenu.prevent.stop="onCharacterContextMenu"
     >
-      <CharacterViewport />
+      <CharacterViewport ref="viewportRef" />
+
+      <!-- Floating chat bubble (shows recent message) -->
+      <Transition name="bubble">
+        <div
+          v-if="showBubble && lastAssistantText && !petChatExpanded"
+          class="pet-bubble"
+          @click.stop="toggleChat"
+        >
+          <p class="pet-bubble-text">{{ truncatedMessage }}</p>
+        </div>
+      </Transition>
+
+      <!-- Expandable chat input -->
+      <Transition name="chat-slide">
+        <div v-if="petChatExpanded" class="pet-chat" @click.stop @mousedown.stop>
+          <div class="pet-chat-header">
+            <span class="pet-chat-title">Chat</span>
+            <button class="pet-chat-close" @click.stop="closeChat" title="Close chat">×</button>
+          </div>
+          <div class="pet-chat-messages" ref="messagesRef">
+            <div
+              v-for="msg in recentMessages"
+              :key="msg.id"
+              :class="['pet-msg', msg.role]"
+            >
+              <span class="pet-msg-text">{{ msg.content }}</span>
+            </div>
+            <div v-if="conversationStore.isThinking" class="pet-msg assistant">
+              <span class="pet-msg-text pet-thinking">…</span>
+            </div>
+            <div v-if="conversationStore.isStreaming && conversationStore.streamingText" class="pet-msg assistant">
+              <span class="pet-msg-text">{{ conversationStore.streamingText }}</span>
+            </div>
+          </div>
+          <form class="pet-chat-input" @submit.prevent="handleSend">
+            <input
+              v-model="inputText"
+              type="text"
+              placeholder="Say something…"
+              :disabled="conversationStore.isThinking"
+              autocomplete="off"
+            />
+            <button type="submit" :disabled="conversationStore.isThinking || !inputText.trim()">
+              ➤
+            </button>
+          </form>
+        </div>
+      </Transition>
+
+      <!-- Onboarding tooltip — shown once on first use of pet mode -->
+      <Transition name="fade">
+        <div v-if="showOnboarding" class="pet-onboarding" @click.stop @mousedown.stop>
+          <p class="pet-onboarding-title">Welcome to pet mode</p>
+          <ul class="pet-onboarding-list">
+            <li><strong>Click</strong> character to toggle chat</li>
+            <li><strong>Drag</strong> to move</li>
+            <li><strong>Scroll wheel</strong> to zoom in/out</li>
+            <li><strong>Hold click + scroll</strong> to rotate</li>
+            <li><strong>Middle-click drag</strong> to rotate</li>
+            <li><strong>Right-click</strong> for menu (mood, settings…)</li>
+          </ul>
+          <button class="pet-onboarding-dismiss" @click.stop="dismissOnboarding">Got it</button>
+        </div>
+      </Transition>
+
+      <!-- Manga-style emotion speech bubble — positioned near model's head,
+           flips to left side when character is near the right screen edge -->
+      <Transition name="fade">
+        <div
+          v-if="characterStore.state !== 'idle'"
+          class="pet-emotion-bubble"
+          :class="{ 'pet-emotion-bubble--left': emotionOnLeft }"
+          :style="emotionBubbleStyle"
+        >
+          <span class="pet-emotion-emoji">{{ emotionEmoji }}</span>
+          <div class="pet-emotion-tail"></div>
+        </div>
+      </Transition>
+
+      <!-- Resize handle — visible only when resize mode is toggled on via context menu -->
+      <div
+        v-if="resizeActive"
+        class="pet-resize-handle"
+        @mousedown.stop.prevent="onResizeMouseDown"
+        title="Drag to resize"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <path d="M14 4L4 14M14 8L8 14M14 12L12 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
     </div>
 
-    <!-- Floating chat bubble (shows recent message) -->
-    <Transition name="bubble">
-      <div
-        v-if="showBubble && lastAssistantText && !petChatExpanded"
-        class="pet-bubble"
-        :style="bubbleStyle"
-        @click.stop="toggleChat"
-      >
-        <p class="pet-bubble-text">{{ truncatedMessage }}</p>
-      </div>
-    </Transition>
-
-    <!-- Expandable chat input -->
-    <Transition name="chat-slide">
-      <div v-if="petChatExpanded" class="pet-chat" @click.stop @mousedown.stop>
-        <div class="pet-chat-header">
-          <span class="pet-chat-title">Chat</span>
-          <button class="pet-chat-close" @click.stop="toggleChat" title="Close chat">×</button>
-        </div>
-        <div class="pet-chat-messages" ref="messagesRef">
-          <div
-            v-for="msg in recentMessages"
-            :key="msg.id"
-            :class="['pet-msg', msg.role]"
-          >
-            <span class="pet-msg-text">{{ msg.content }}</span>
-          </div>
-          <div v-if="conversationStore.isThinking" class="pet-msg assistant">
-            <span class="pet-msg-text pet-thinking">…</span>
-          </div>
-          <div v-if="conversationStore.isStreaming && conversationStore.streamingText" class="pet-msg assistant">
-            <span class="pet-msg-text">{{ conversationStore.streamingText }}</span>
-          </div>
-        </div>
-        <form class="pet-chat-input" @submit.prevent="handleSend">
-          <input
-            v-model="inputText"
-            type="text"
-            placeholder="Say something…"
-            :disabled="conversationStore.isThinking"
-            autocomplete="off"
-          />
-          <button type="submit" :disabled="conversationStore.isThinking || !inputText.trim()">
-            ➤
-          </button>
-        </form>
-      </div>
-    </Transition>
-
-    <!-- Onboarding tooltip — shown once on first use of pet mode -->
-    <Transition name="fade">
-      <div v-if="showOnboarding" class="pet-onboarding" @click.stop @mousedown.stop>
-        <p class="pet-onboarding-title">Welcome to pet mode</p>
-        <ul class="pet-onboarding-list">
-          <li><strong>Click</strong> character to toggle chat</li>
-          <li><strong>Hold &amp; drag</strong> to move them around</li>
-          <li><strong>Right-click</strong> for menu (mood, settings…)</li>
-          <li>Use the <strong>top-right toggle</strong> to return to desktop</li>
-        </ul>
-        <button class="pet-onboarding-dismiss" @click.stop="dismissOnboarding">Got it</button>
-      </div>
-    </Transition>
-
-    <!-- Emotion badge -->
-    <Transition name="fade">
-      <div
-        v-if="characterStore.state !== 'idle'"
-        class="pet-emotion"
-        :style="emotionStyle"
-      >
-        {{ emotionEmoji }}
-      </div>
-    </Transition>
-
-    <!-- Right-click context menu -->
+    <!-- Right-click context menu — rendered on the full-screen overlay so it
+         can extend beyond the character bounds in any direction. -->
     <PetContextMenu
       :visible="menuVisible"
       :x="menuX"
       :y="menuY"
+      :resize-active="resizeActive"
       @close="menuVisible = false"
+      @toggle-resize="resizeActive = !resizeActive"
     />
   </div>
 </template>
@@ -109,6 +125,7 @@ import { useWindowStore } from '../stores/window';
 import { useStreamingStore } from '../stores/streaming';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import type { CharacterState } from '../types';
+import * as THREE from 'three';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import PetContextMenu from '../components/PetContextMenu.vue';
 
@@ -124,110 +141,126 @@ const inputText = ref('');
 const showBubble = ref(false);
 const showOnboarding = ref(false);
 const messagesRef = ref<HTMLElement | null>(null);
+const charRef = ref<HTMLElement | null>(null);
+const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
-// ── Character position (persisted via localStorage) ───────────────────────────
-const CHARACTER_WIDTH = 350;
-const CHARACTER_HEIGHT = 500;
-const POSITION_KEY = 'ts.pet.character_position';
 const ONBOARDING_KEY = 'ts.pet.onboarded';
+const POS_KEY = 'ts.pet.charPos';
+const SIZE_KEY = 'ts.pet.charSize';
 
-interface CharacterPosition {
-  x: number;
-  y: number;
-}
+// ── Character position within the full-screen window ──────────────────────────
+// Starts bottom-right of the primary monitor, can be dragged anywhere.
+const charX = ref(0);
+const charY = ref(0);
+const charW = ref(350);
+const charH = ref(500);
+const resizeActive = ref(false);
 
-function defaultPosition(): CharacterPosition {
-  // Default: bottom-right corner (preserves the original layout).
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
-  return { x: vw - CHARACTER_WIDTH, y: vh - CHARACTER_HEIGHT };
-}
+const charStyle = computed(() => ({
+  left: `${charX.value}px`,
+  top: `${charY.value}px`,
+  width: `${charW.value}px`,
+  height: `${charH.value}px`,
+}));
 
-function loadSavedPosition(): CharacterPosition {
+function initCharPosition() {
+  // Restore saved size
   try {
-    const raw = localStorage.getItem(POSITION_KEY);
-    if (!raw) return defaultPosition();
-    const parsed = JSON.parse(raw) as CharacterPosition;
-    if (typeof parsed?.x !== 'number' || typeof parsed?.y !== 'number') {
-      return defaultPosition();
+    const savedSize = localStorage.getItem(SIZE_KEY);
+    if (savedSize) {
+      const sz = JSON.parse(savedSize);
+      charW.value = sz.w ?? 350;
+      charH.value = sz.h ?? 500;
     }
-    return clampToViewport(parsed);
-  } catch {
-    return defaultPosition();
-  }
+  } catch { /* use default */ }
+  // Restore saved position
+  try {
+    const saved = localStorage.getItem(POS_KEY);
+    if (saved) {
+      const pos = JSON.parse(saved);
+      charX.value = pos.x ?? 0;
+      charY.value = pos.y ?? 0;
+      return;
+    }
+  } catch { /* use default */ }
+  // Default: bottom-right corner of the viewport
+  charX.value = Math.max(0, window.innerWidth - charW.value - 40);
+  charY.value = Math.max(0, window.innerHeight - charH.value - 40);
 }
 
-function clampToViewport(pos: CharacterPosition): CharacterPosition {
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
-  const maxX = Math.max(0, vw - CHARACTER_WIDTH);
-  const maxY = Math.max(0, vh - CHARACTER_HEIGHT);
-  return {
-    x: Math.max(0, Math.min(maxX, pos.x)),
-    y: Math.max(0, Math.min(maxY, pos.y)),
-  };
+function saveCharPosition() {
+  try {
+    localStorage.setItem(POS_KEY, JSON.stringify({ x: charX.value, y: charY.value }));
+  } catch { /* best-effort */ }
 }
 
-const characterPos = ref<CharacterPosition>(defaultPosition());
+function saveCharSize() {
+  try {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ w: charW.value, h: charH.value }));
+  } catch { /* best-effort */ }
+}
+// ── Resize handling ─────────────────────────────────────────────────────────────────
+// Bottom-right drag handle to change character container dimensions.
+const MIN_SIZE = 150;
+const MAX_SIZE = 1200;
+let resizeStartX = 0;
+let resizeStartY = 0;
+let resizeStartW = 0;
+let resizeStartH = 0;
 
-const characterStyle = computed(() => ({
-  left: `${characterPos.value.x}px`,
-  top: `${characterPos.value.y}px`,
-  width: `${CHARACTER_WIDTH}px`,
-  height: `${CHARACTER_HEIGHT}px`,
-}));
+function onResizeMouseDown(e: MouseEvent) {
+  resizeStartX = e.clientX;
+  resizeStartY = e.clientY;
+  resizeStartW = charW.value;
+  resizeStartH = charH.value;
+  document.addEventListener('mousemove', onResizeMouseMove);
+  document.addEventListener('mouseup', onResizeMouseUp, { once: true });
+}
 
-const bubbleStyle = computed(() => {
-  const x = characterPos.value.x + CHARACTER_WIDTH / 2 - 140;
-  const y = Math.max(8, characterPos.value.y - 80);
-  return {
-    left: `${Math.max(8, Math.min(window.innerWidth - 296, x))}px`,
-    top: `${y}px`,
-  };
-});
+function onResizeMouseMove(e: MouseEvent) {
+  const dx = e.clientX - resizeStartX;
+  const dy = e.clientY - resizeStartY;
+  charW.value = Math.min(MAX_SIZE, Math.max(MIN_SIZE, resizeStartW + dx));
+  charH.value = Math.min(MAX_SIZE, Math.max(MIN_SIZE, resizeStartH + dy));
+}
 
-const emotionStyle = computed(() => ({
-  left: `${characterPos.value.x + CHARACTER_WIDTH - 56}px`,
-  top: `${characterPos.value.y + 40}px`,
-}));
-
+function onResizeMouseUp() {
+  document.removeEventListener('mousemove', onResizeMouseMove);
+  saveCharSize();
+}
 // ── Drag handling ─────────────────────────────────────────────────────────────
-const HOLD_THRESHOLD_MS = 150; // hold duration before drag starts
-const CLICK_MOVE_TOLERANCE = 4; // pixels — treat as click if moved less than this
+// Quick click = toggle chat.  Drag moves the character within the full-screen
+// transparent window (CSS-level movement, not OS window drag).
+const CLICK_MOVE_TOLERANCE = 6;
 
-const isDragging = ref(false);
 let pressStartX = 0;
 let pressStartY = 0;
+let charStartX = 0;
+let charStartY = 0;
 let pressStartTime = 0;
-let pressOriginPosX = 0;
-let pressOriginPosY = 0;
 let pressActive = false;
-let holdTimer: ReturnType<typeof setTimeout> | null = null;
+let dragStarted = false;
 
 function onCharacterMouseDown(e: MouseEvent) {
-  // Only primary button (left). Ignore right-click (handled by contextmenu).
+  // Only handle left-click; let middle-click pass through to canvas for OrbitControls rotation
   if (e.button !== 0) return;
+
+  // Don't process events originating from the chat panel, bubble, onboarding, or resize handle
+  const target = e.target as HTMLElement;
+  const interactiveChild = target.closest('.pet-chat, .pet-bubble, .pet-onboarding, .pet-resize-handle');
+  if (interactiveChild) return;
+
+  e.stopPropagation();
   pressActive = true;
+  dragStarted = false;
   pressStartX = e.clientX;
   pressStartY = e.clientY;
+  charStartX = charX.value;
+  charStartY = charY.value;
   pressStartTime = performance.now();
-  pressOriginPosX = characterPos.value.x;
-  pressOriginPosY = characterPos.value.y;
 
-  // Bind drag handlers at the document level so dragging continues even if
-  // the cursor briefly leaves the character element.  These are removed on
-  // mouseup to avoid listener leaks between presses.
   document.addEventListener('mousemove', onDocMouseMove);
   document.addEventListener('mouseup', onDocMouseUp, { once: true });
-
-  // Arm a hold timer — if the user keeps the mouse down past the threshold
-  // without moving much, we enter drag mode.
-  if (holdTimer) clearTimeout(holdTimer);
-  holdTimer = setTimeout(() => {
-    if (pressActive && !isDragging.value) {
-      isDragging.value = true;
-    }
-  }, HOLD_THRESHOLD_MS);
 }
 
 function onDocMouseMove(e: MouseEvent) {
@@ -235,18 +268,12 @@ function onDocMouseMove(e: MouseEvent) {
   const dx = e.clientX - pressStartX;
   const dy = e.clientY - pressStartY;
 
-  // Promote to drag when the user exceeds the click tolerance, even before
-  // the hold timer fires.
-  if (!isDragging.value && Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE * 2) {
-    isDragging.value = true;
+  if (!dragStarted && Math.hypot(dx, dy) > CLICK_MOVE_TOLERANCE) {
+    dragStarted = true;
   }
-
-  if (isDragging.value) {
-    const next: CharacterPosition = {
-      x: pressOriginPosX + dx,
-      y: pressOriginPosY + dy,
-    };
-    characterPos.value = clampToViewport(next);
+  if (dragStarted) {
+    charX.value = charStartX + dx;
+    charY.value = charStartY + dy;
   }
 }
 
@@ -257,29 +284,14 @@ function onDocMouseUp(e: MouseEvent) {
   const dx = e.clientX - pressStartX;
   const dy = e.clientY - pressStartY;
   const duration = performance.now() - pressStartTime;
-  const wasDragging = isDragging.value;
+  const wasDrag = dragStarted;
 
-  if (holdTimer) {
-    clearTimeout(holdTimer);
-    holdTimer = null;
-  }
   pressActive = false;
-  isDragging.value = false;
+  dragStarted = false;
 
-  if (wasDragging) {
-    try {
-      localStorage.setItem(POSITION_KEY, JSON.stringify(characterPos.value));
-    } catch {
-      // localStorage unavailable — position lives for this session only
-    }
-    return;
-  }
-
-  // Treat as a click: short duration and minimal movement.
-  if (
-    duration < HOLD_THRESHOLD_MS &&
-    Math.hypot(dx, dy) <= CLICK_MOVE_TOLERANCE
-  ) {
+  if (wasDrag) {
+    saveCharPosition();
+  } else if (duration < 300 && Math.hypot(dx, dy) <= CLICK_MOVE_TOLERANCE) {
     toggleChat();
   }
 }
@@ -293,6 +305,120 @@ function onCharacterContextMenu(e: MouseEvent) {
   menuX.value = e.clientX;
   menuY.value = e.clientY;
   menuVisible.value = true;
+}
+
+// ── Left-click + scroll wheel = rotate ────────────────────────────────────────
+// When the user holds the left mouse button and scrolls the wheel, rotate the
+// camera azimuth.  This is the pet-mode rotation gesture since left-drag moves
+// the character and middle-click may not be available on all mice.
+function onCharacterWheel(e: WheelEvent) {
+  // Any wheel interaction (zoom or rotate) changes the head's screen position
+  scheduleHeadScan();
+  // Also rescan after OrbitControls damping animation settles
+  setTimeout(scheduleHeadScan, 300);
+
+  if (!pressActive) return; // Only rotate when left button is held
+  e.preventDefault();
+  e.stopPropagation();
+  const ctx = viewportRef.value?.sceneContext;
+  if (!ctx) return;
+  // deltaY > 0 = scroll down = rotate clockwise
+  const rotateSpeed = 0.005;
+  const angle = e.deltaY * rotateSpeed;
+  // Rotate camera around the orbit target
+  const offset = ctx.camera.position.clone().sub(ctx.controls.target);
+  const sph = new THREE.Spherical().setFromVector3(offset);
+  sph.theta += angle;
+  offset.setFromSpherical(sph);
+  ctx.camera.position.copy(ctx.controls.target).add(offset);
+  ctx.controls.update();
+}
+
+// ── Cursor tracking + click-through (Open-LLM-VTuber pattern) ─────────────────
+// Rust polls OS cursor position (~33 Hz) and emits `pet-cursor-pos` events.
+// We check if the cursor is inside any interactive element (character, menu,
+// chat panel).  If yes → passthrough OFF (accept clicks).  If no → passthrough
+// ON (clicks fall through to the desktop underneath).
+let unlistenCursorPos: (() => void) | null = null;
+let lastPassthrough = true;
+
+/** Check if a point is over a visible (non-transparent) part of the 3D model
+ *  by reading the canvas pixel alpha at the cursor position, or over any
+ *  interactive UI overlay (chat panel, bubble, onboarding, resize handle). */
+function isPointOverInteractive(x: number, y: number): boolean {
+  const el = charRef.value;
+  if (!el) return false;
+  const charRect = el.getBoundingClientRect();
+
+  // First check if the cursor is over any overlay UI child (chat, bubble, etc.)
+  // These are opaque DOM elements that should always be interactive.
+  const overlays = el.querySelectorAll(
+    '.pet-bubble, .pet-chat, .pet-onboarding, .pet-resize-handle',
+  );
+  for (const overlay of overlays) {
+    const r = overlay.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      return true;
+    }
+  }
+
+  // Not over a UI overlay — check if over the bounding rect at all
+  if (x < charRect.left || x > charRect.right || y < charRect.top || y > charRect.bottom) {
+    return false;
+  }
+
+  // Inside the bounding rect — read the canvas pixel alpha to see if the
+  // cursor is over a visible part of the 3D model (not transparent background).
+  const canvas = el.querySelector('canvas');
+  if (!canvas) return true; // fallback: treat entire rect as interactive
+  const canvasRect = canvas.getBoundingClientRect();
+  const cx = x - canvasRect.left;
+  const cy = y - canvasRect.top;
+  if (cx < 0 || cy < 0 || cx >= canvasRect.width || cy >= canvasRect.height) {
+    return false;
+  }
+
+  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+  if (!gl) return true; // fallback
+  const dpr = window.devicePixelRatio || 1;
+  const px = Math.round(cx * dpr);
+  const py = Math.round((canvasRect.height - cy) * dpr); // WebGL y is flipped
+  const pixel = new Uint8Array(4);
+  gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  return pixel[3] > 10; // alpha > threshold → over the model
+}
+
+function handleCursorPos(payload: { x: number; y: number; inside: boolean }) {
+  // When the context menu is open its backdrop covers the whole window,
+  // so we always need to accept clicks to let the user dismiss/use it.
+  if (menuVisible.value) {
+    if (lastPassthrough) {
+      windowStore.setCursorPassthrough(false);
+      lastPassthrough = false;
+    }
+    return;
+  }
+
+  const { x, y, inside } = payload;
+  if (!inside) {
+    // Cursor is completely outside our window — passthrough ON.
+    if (!lastPassthrough) {
+      windowStore.setCursorPassthrough(true);
+      lastPassthrough = true;
+    }
+    return;
+  }
+
+  // Check if cursor is over a visible part of the model or a UI overlay
+  const overInteractive = isPointOverInteractive(x, y);
+
+  if (overInteractive && lastPassthrough) {
+    windowStore.setCursorPassthrough(false);
+    lastPassthrough = false;
+  } else if (!overInteractive && !lastPassthrough) {
+    windowStore.setCursorPassthrough(true);
+    lastPassthrough = true;
+  }
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -321,11 +447,125 @@ const EMOTION_MAP: Record<CharacterState, string> = {
 
 const emotionEmoji = computed(() => EMOTION_MAP[characterStore.state] || '');
 
+// ── Emotion bubble positioning ────────────────────────────────────────────────
+// Project the VRM head bone to screen coordinates via the Three.js camera.
+// This is model-independent, works at any zoom, and doesn't need a rendered frame.
+const headY = ref(0.15); // fraction of charH (0 = top, 1 = bottom)
+const headScreenX = ref(0.5); // fraction of charW (0 = left, 1 = right)
+
+// Scratch vector for 3D→2D projection (reused to avoid GC)
+const _projVec = new THREE.Vector3();
+
+function updateHeadPosition() {
+  const vrm = (window as unknown as Record<string, unknown>).__terransoul_vrm__ as
+    { humanoid?: { getNormalizedBoneNode(name: string): { getWorldPosition(v: THREE.Vector3): THREE.Vector3 } | null } } | undefined;
+  const ctx = viewportRef.value?.sceneContext;
+  if (!vrm?.humanoid || !ctx) return;
+
+  const headBone = vrm.humanoid.getNormalizedBoneNode('head');
+  if (!headBone) return;
+
+  headBone.getWorldPosition(_projVec);
+  _projVec.project(ctx.camera);
+  // NDC: x,y are -1..+1 where (-1,-1) is bottom-left and (1,1) is top-right
+  // Convert to 0..1 fractions of container (0,0 = top-left in CSS)
+  headScreenX.value = Math.max(0.1, Math.min(0.9, (_projVec.x + 1) / 2));
+  // y: NDC +1 = top, but CSS 0 = top, so invert. Subtract a small offset
+  // to position the bubble at forehead/hat level rather than bone center.
+  const rawY = (1 - _projVec.y) / 2;
+  headY.value = Math.max(0.02, Math.min(0.6, rawY - 0.06));
+}
+
+// Update head position when emotion activates, model loads, zoom/rotate changes
+let headScanTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleHeadScan() {
+  if (headScanTimer) clearTimeout(headScanTimer);
+  headScanTimer = setTimeout(updateHeadPosition, 60);
+}
+watch(() => characterStore.state, (s) => { if (s !== 'idle') scheduleHeadScan(); });
+// When model finishes loading (isLoading transitions false), rescan after the
+// camera reframes and the first render completes.  Multiple delays catch
+// different model load speeds and camera animation settling.
+watch(() => characterStore.isLoading, (loading) => {
+  if (!loading) {
+    setTimeout(scheduleHeadScan, 300);
+    setTimeout(scheduleHeadScan, 800);
+    setTimeout(scheduleHeadScan, 1500);
+  }
+});
+
+// Hook into OrbitControls 'change' event so the bubble tracks during zoom damping
+let orbitChangeCleanup: (() => void) | null = null;
+function hookOrbitControls() {
+  if (orbitChangeCleanup) orbitChangeCleanup();
+  const ctx = viewportRef.value?.sceneContext;
+  if (!ctx) return;
+  const handler = () => scheduleHeadScan();
+  ctx.controls.addEventListener('change', handler);
+  orbitChangeCleanup = () => ctx.controls.removeEventListener('change', handler);
+}
+
+/** Whether the emotion bubble should appear on the left side of the character.
+ *  Uses monitor-aware bounds so it flips at the current screen's right edge,
+ *  not the full spanning window's right edge. */
+const emotionOnLeft = computed(() => {
+  const monitors = windowStore.monitors;
+  const dpr = window.devicePixelRatio || 1;
+  const charRight = charX.value + charW.value + 60;
+  if (!monitors.length) {
+    return charRight > (typeof window !== 'undefined' ? window.innerWidth : 1920);
+  }
+  // Find which monitor contains the character's center
+  const minX = Math.min(...monitors.map(m => m.x));
+  const minY = Math.min(...monitors.map(m => m.y));
+  const charCenterPhysX = (charX.value + charW.value / 2) * dpr + minX;
+  const charCenterPhysY = (charY.value + charH.value / 2) * dpr + minY;
+  let monitor = monitors[0];
+  for (const m of monitors) {
+    if (charCenterPhysX >= m.x && charCenterPhysX < m.x + m.width &&
+        charCenterPhysY >= m.y && charCenterPhysY < m.y + m.height) {
+      monitor = m;
+      break;
+    }
+  }
+  const monRight = (monitor.x + monitor.width - minX) / dpr;
+  return charRight > monRight;
+});
+
+const emotionBubbleStyle = computed(() => {
+  // The bubble is 48px wide with transform: translateX(-50%).
+  // Position it beside the head bone's projected screen position.
+  // A fixed pixel offset from the head center works because the head bone
+  // is always at the skull center — no body/hat/hair contamination.
+  const OFFSET = 80; // px from head center to bubble center (~half head width + gap)
+  const containerW = charW.value || 350;
+  const headCenterPx = headScreenX.value * containerW;
+  if (emotionOnLeft.value) {
+    return {
+      top: `${headY.value * 100}%`,
+      left: `${Math.max(0, headCenterPx - OFFSET)}px`,
+    };
+  } else {
+    return {
+      top: `${headY.value * 100}%`,
+      left: `${Math.min(containerW, headCenterPx + OFFSET)}px`,
+    };
+  }
+});
+
 function toggleChat() {
+  // If chat is already open, don't close it — only open or toggle from closed state
+  if (petChatExpanded.value) return;
   const isExpanded = togglePetChat();
   if (isExpanded) {
     showBubble.value = false;
     nextTick(() => scrollToBottom());
+  }
+}
+
+function closeChat() {
+  if (petChatExpanded.value) {
+    setPetChatExpanded(false);
   }
 }
 
@@ -379,18 +619,10 @@ watch(
   },
 );
 
-// Keep character inside the viewport when the window resizes
-function onWindowResize() {
-  characterPos.value = clampToViewport(characterPos.value);
-}
-
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 let unlistenLlmChunk: (() => void) | null = null;
 
 onMounted(async () => {
-  characterPos.value = loadSavedPosition();
-  window.addEventListener('resize', onWindowResize);
-
   // Onboarding tooltip: show only if never dismissed before
   try {
     showOnboarding.value = !localStorage.getItem(ONBOARDING_KEY);
@@ -400,6 +632,18 @@ onMounted(async () => {
 
   // Collapse chat by default — the character is the focus in pet mode
   setPetChatExpanded(false);
+
+  // Position the character (from localStorage or default bottom-right)
+  initCharPosition();
+
+  // Span the window across all monitors so the character can be dragged
+  // anywhere and the context menu can appear without clipping.
+  // This is the Open-LLM-VTuber approach: full-screen transparent window
+  // with cursor-tracking for click-through on blank areas.
+  windowStore.spanAllMonitors();
+  // Load monitor info so the context menu and emotion bubble can detect
+  // which physical screen the cursor is on and avoid crossing monitor edges.
+  windowStore.loadMonitors();
 
   try {
     await brain.loadActiveBrain();
@@ -412,28 +656,43 @@ onMounted(async () => {
     unlistenLlmChunk = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
     });
+
+    // Start cursor-position polling from Rust.  On each event we decide
+    // whether the cursor is over an interactive component and toggle
+    // set_ignore_cursor_events accordingly.
+    unlistenCursorPos = await listen<{ x: number; y: number; inside: boolean }>(
+      'pet-cursor-pos',
+      (event) => handleCursorPos(event.payload),
+    );
+    windowStore.startPetCursorPoll();
+    // Default: pass-through ON so clicks on empty space go to the desktop.
+    windowStore.setCursorPassthrough(true);
+    lastPassthrough = true;
   } catch {
-    // No Tauri — browser-side streaming is handled by conversation store
+    // No Tauri — browser fallback: passthrough off so we can interact.
+    windowStore.setCursorPassthrough(false);
+    lastPassthrough = false;
   }
 
-  // Pet mode keeps click-through OFF: Tauri's set_ignore_cursor_events is
-  // all-or-nothing for the whole window — toggling it on mouseenter/leave
-  // creates a dead state where events are swallowed by the OS and the window
-  // can never regain focus.  Instead the overlay captures all clicks; the
-  // transparent areas show the desktop visually but don't forward clicks.
-  windowStore.setCursorPassthrough(false);
+  // Hook into OrbitControls once the viewport is ready so the emotion
+  // bubble tracks head position during zoom/rotate damping.
+  setTimeout(hookOrbitControls, 500);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', onWindowResize);
   document.removeEventListener('mousemove', onDocMouseMove);
-  if (holdTimer) clearTimeout(holdTimer);
-  // Re-enable passthrough clean-up isn't needed — the window-mode change
-  // back to desktop already makes the window fully interactive again.
+  if (orbitChangeCleanup) { orbitChangeCleanup(); orbitChangeCleanup = null; }
+  windowStore.stopPetCursorPoll();
+  if (unlistenCursorPos) {
+    unlistenCursorPos();
+    unlistenCursorPos = null;
+  }
   if (unlistenLlmChunk) {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
   }
+  // Restore non-passthrough so the next mode isn't stuck.
+  windowStore.setCursorPassthrough(false);
 });
 </script>
 
@@ -441,36 +700,31 @@ onUnmounted(() => {
 .pet-overlay {
   position: fixed;
   inset: 0;
-  overflow: hidden;
+  overflow: visible;
   background: transparent;
-  /* Pet-mode overlay is transparent; empty areas should let clicks through
-   * to UI behind the overlay (e.g. the floating mode-toggle pill rendered
-   * by App.vue).  Interactive children opt in with pointer-events: auto. */
+  /* The full-screen overlay must not capture events by default — only the
+     character container and its children should be interactive. */
   pointer-events: none;
-}
-
-.pet-overlay--dragging {
-  cursor: grabbing;
 }
 
 .pet-character {
   position: absolute;
-  pointer-events: auto;
   cursor: grab;
   user-select: none;
   -webkit-user-drag: none;
-  will-change: left, top;
-  transition: transform 0.15s ease-out;
+  /* Re-enable pointer events on the character container itself */
+  pointer-events: auto;
 }
-.pet-overlay--dragging .pet-character {
+.pet-character:active {
   cursor: grabbing;
-  transform: scale(1.01);
-  transition: none;
 }
 
 /* ── Chat bubble ── */
 .pet-bubble {
   position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -100%);
   max-width: 280px;
   width: fit-content;
   background: rgba(15, 23, 42, 0.92);
@@ -483,31 +737,30 @@ onUnmounted(() => {
   cursor: pointer;
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  pointer-events: auto;
 }
 .pet-bubble-text { margin: 0; }
 
 .bubble-enter-active,
 .bubble-leave-active { transition: opacity 0.3s, transform 0.3s; }
 .bubble-enter-from,
-.bubble-leave-to { opacity: 0; transform: translateY(10px) scale(0.95); }
+.bubble-leave-to { opacity: 0; transform: translate(-50%, -90%) scale(0.95); }
 
-/* ── Expandable chat panel — anchored to left side so it never clips the character ── */
+/* ── Expandable chat panel — anchored to bottom of the pet window ── */
 .pet-chat {
   position: absolute;
-  bottom: 20px;
-  left: 20px;
-  width: 360px;
-  max-height: 520px;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-height: 400px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(139, 92, 246, 0.25);
-  border-radius: 16px;
+  border-radius: 16px 16px 0 0;
   display: flex;
   flex-direction: column;
   backdrop-filter: blur(12px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
   overflow: hidden;
-  pointer-events: auto;
+  z-index: 10;
 }
 
 .pet-chat-header {
@@ -544,7 +797,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 380px;
+  max-height: 280px;
 }
 .pet-msg {
   padding: 8px 12px;
@@ -607,21 +860,56 @@ onUnmounted(() => {
 .chat-slide-enter-from,
 .chat-slide-leave-to { opacity: 0; transform: translateY(20px); }
 
-/* ── Emotion badge ── */
-.pet-emotion {
+/* ── Manga-style emotion speech bubble ── */
+.pet-emotion-bubble {
   position: absolute;
-  font-size: 1.5rem;
+  /* top and left are set dynamically via :style */
+  transform: translateX(-50%) translateY(-50%);
+  background: #fff;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   pointer-events: none;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+  z-index: 5;
+}
+/* Flip tail to the other side when bubble is on the left */
+.pet-emotion-bubble--left {
+  /* No extra positioning needed — left is set dynamically */
+}
+.pet-emotion-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.pet-emotion-tail {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  /* Default: bubble is to the right, tail points left toward head */
+  left: -6px;
+  border-right: 8px solid #fff;
+}
+/* When bubble is on the left, tail points right toward head */
+.pet-emotion-bubble--left .pet-emotion-tail {
+  left: auto;
+  right: -6px;
+  border-right: none;
+  border-left: 8px solid #fff;
 }
 
-/* ── Onboarding ──
-   Anchored bottom-left so it doesn't cover the character (who defaults to
-   the bottom-right corner) and is clear of the top-right toggle pill. */
+/* ── Onboarding ── */
 .pet-onboarding {
   position: absolute;
-  bottom: 20px;
-  left: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   max-width: 240px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(139, 92, 246, 0.35);
@@ -631,7 +919,6 @@ onUnmounted(() => {
   font-size: 0.78rem;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(10px);
-  pointer-events: auto;
   z-index: 100;
 }
 .pet-onboarding-title {
@@ -660,4 +947,28 @@ onUnmounted(() => {
 .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from,
 .fade-leave-to { opacity: 0; }
+
+/* ── Resize handle ── */
+.pet-resize-handle {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: nwse-resize;
+  color: rgba(139, 92, 246, 0.7);
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 6px 0 0 0;
+  border-left: 1px solid rgba(139, 92, 246, 0.3);
+  border-top: 1px solid rgba(139, 92, 246, 0.3);
+  z-index: 20;
+  transition: color 0.15s, background 0.15s;
+}
+.pet-resize-handle:hover {
+  color: rgba(139, 92, 246, 1);
+  background: rgba(15, 23, 42, 0.9);
+}
 </style>

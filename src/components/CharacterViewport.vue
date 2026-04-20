@@ -261,8 +261,7 @@ import { useWindowStore } from '../stores/window';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, EYE_TARGET_DISTANCE, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
-import { CharacterAnimator, SITTING_POSE_INDEX, SITTING_BODY_Y_OFFSET } from '../renderer/character-animator';
-import { createSittingProps, applyTeacupHandOffset, type SittingProps } from '../renderer/props';
+import { CharacterAnimator } from '../renderer/character-animator';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -502,12 +501,6 @@ let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
-// ── Sitting props (sofa + teacup) ─────────────────────────────────────────────
-// Created once on scene init; sofa is added to the scene, teacup is parented
-// to the right-hand bone when a VRM is loaded.  Visibility is driven by the
-// animator's idle pose index (auto rotation) and by characterStore.sittingPinned
-// (manual selection via the Mood submenu).
-let sittingProps: SittingProps | null = null;
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
 defineExpose({
@@ -523,6 +516,10 @@ defineExpose({
       bgm.play(bgmTrackId.value);
       settingsStore.saveBgmState(true, bgmVolume.value, bgmTrackId.value);
     }
+  },
+  /** Scene context — used by PetOverlayView to project 3D positions and rotate. */
+  get sceneContext() {
+    return sceneCtx;
   },
 });
 
@@ -625,21 +622,13 @@ onMounted(async () => {
   // initial call catches the case where the user mounted already in pet
   // mode (e.g. re-open to a saved state).
   ctx.setPedestalVisible(!isPetMode.value);
-
-  // Create sitting props and add sofa to the scene (initially hidden).
-  // The teacup is parented to the right-hand bone when a VRM loads.
-  sittingProps = createSittingProps();
-  ctx.scene.add(sittingProps.sofa);
-
-  // Drive prop visibility from the animator's active idle pose and also
-  // shift the camera focus down so the seated character stays centred.
-  animator.onIdlePoseChange((index) => {
-    if (!sittingProps || !sceneCtx) return;
-    const sitting = index === SITTING_POSE_INDEX;
-    sittingProps.sofa.visible = sitting;
-    sittingProps.teacup.visible = sitting;
-    sceneCtx.setFocusYOffset(sitting ? SITTING_BODY_Y_OFFSET : 0);
-  });
+  if (isPetMode.value) {
+    ctx.controls.mouseButtons = {
+      LEFT: null as unknown as THREE.MOUSE,
+      MIDDLE: THREE.MOUSE.ROTATE,
+      RIGHT: null as unknown as THREE.MOUSE,
+    };
+  }
 
   // Persist camera state after user finishes orbiting or zooming.
   ctx.onCameraChange((azimuth, distance) => {
@@ -647,9 +636,10 @@ onMounted(async () => {
   });
 
   // Restore persisted camera state (azimuth + distance).
+  // Skip in pet mode — always start with full-body framing.
   const savedAzimuth = settingsStore.settings.camera_azimuth;
   const savedDistance = settingsStore.settings.camera_distance;
-  if (savedDistance > 0) {
+  if (savedDistance > 0 && !isPetMode.value) {
     // Set camera position from saved spherical coordinates (elevation = 0 = equatorial)
     const x = savedDistance * Math.sin(savedAzimuth);
     const z = savedDistance * Math.cos(savedAzimuth);
@@ -753,21 +743,32 @@ watch(
 
 // Hide the pedestal (and any other floor decorations) in pet mode so the
 // character floats cleanly on the desktop with nothing visible behind.
+// Remap mouse buttons: left-drag moves the pet (handled by PetOverlayView),
+// middle-click drag rotates the 3D model, scroll wheel zooms.
 watch(
   () => isPetMode.value,
   (pet) => {
-    if (sceneCtx) sceneCtx.setPedestalVisible(!pet);
-  },
-  { immediate: true },
-);
-
-// Pin or release the idle-pose rotation based on the Mood submenu's
-// "Sitting" selection.  When pinned, the animator also fires its idle-pose
-// change listener so the sofa + teacup visibility stays in sync.
-watch(
-  () => characterStore.sittingPinned,
-  (pinned) => {
-    animator.forceIdlePose(pinned ? SITTING_POSE_INDEX : null);
+    if (sceneCtx) {
+      sceneCtx.setPedestalVisible(!pet);
+      if (pet) {
+        // Disable left-click rotation; use middle-button drag to rotate instead
+        sceneCtx.controls.mouseButtons = {
+          LEFT: null as unknown as THREE.MOUSE,
+          MIDDLE: THREE.MOUSE.ROTATE,
+          RIGHT: null as unknown as THREE.MOUSE,
+        };
+        // Reset camera to full-body zoom so the entire character is visible
+        // by default in pet mode (including legs and shoes).
+        sceneCtx.resetToFullBody();
+      } else {
+        // Restore default OrbitControls mouse mapping
+        sceneCtx.controls.mouseButtons = {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
+      }
+    }
   },
   { immediate: true },
 );
@@ -813,20 +814,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
         // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
         animator.setLookAtTarget(sceneCtx.lookAtTarget);
         characterStore.setMetadata(result.metadata);
-
-        // Parent the teacup to the VRM's right-hand bone so it stays in hand
-        // during the seated idle.  Removes any prior parenting from a previous
-        // model so switching characters doesn't leave orphans.
-        if (sittingProps) {
-          if (sittingProps.teacup.parent) {
-            sittingProps.teacup.parent.remove(sittingProps.teacup);
-          }
-          const rightHandBone = result.vrm.humanoid?.getNormalizedBoneNode('rightHand');
-          if (rightHandBone) {
-            rightHandBone.add(sittingProps.teacup);
-            applyTeacupHandOffset(sittingProps.teacup);
-          }
-        }
 
         // Expose VRM for E2E testing — allows Playwright to verify bone positions
         (window as unknown as Record<string, unknown>).__terransoul_vrm__ = result.vrm;
@@ -1176,16 +1163,39 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 
 /* Mobile adjustments for viewport overlays.
- * Mobile hides the sidebar and places the mode pill at left:12px. The
- * settings button sits after the pill on the same row; the character
- * name/meta drop to a second row so they are never covered. */
+ * On mobile (<= 640px) the sidebar is hidden and space is limited.
+ * We hide character name/meta (the user already knows their character)
+ * and show only the essential controls: mode toggle (top-left), settings
+ * gear (top-right beside AI pill), with brain/music below. */
 @media (max-width: 640px) {
-  .character-name-overlay { font-size: 0.85rem; top: 52px; left: 16px; }
-  .character-meta-overlay { font-size: 0.62rem; top: 70px; left: 16px; }
-  .settings-toggle { height: 32px; padding: 0 10px; }
+  /* Hide character name & meta on mobile — screen is too narrow */
+  .character-name-overlay { display: none; }
+  .character-meta-overlay { display: none; }
+  /* Settings gear: compact circle in top-right area */
+  .settings-toggle {
+    height: 32px;
+    width: 32px;
+    padding: 0;
+    font-size: 0.7rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   .settings-label { display: none; }
-  .settings-corner { top: 10px; left: 120px; }
-  .settings-dropdown { width: 260px; padding: 10px; gap: 10px; }
+  .settings-corner {
+    top: 6px;
+    left: auto;
+    right: 10px;
+  }
+  /* Dropdown opens right-aligned so it doesn't clip the left edge */
+  .settings-dropdown {
+    width: min(280px, calc(100vw - 20px));
+    padding: 10px;
+    gap: 10px;
+    right: 0;
+    left: auto;
+  }
 }
 .loading-overlay {
   position: absolute;

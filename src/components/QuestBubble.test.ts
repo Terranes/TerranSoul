@@ -490,8 +490,8 @@ describe('QuestBubble', () => {
       
       const questHub = wrapper.find('.quest-hub');
       const styleBinding = (questHub.element as HTMLElement).style;
-      expect(styleBinding.top).toBe('36px'); // Mobile top
-      expect(styleBinding.right).toBe('10px'); // Mobile right
+      expect(styleBinding.top).toBe('6px'); // Mobile top
+      expect(styleBinding.right).toBe('52px'); // Mobile right
     });
 
     it('should use fixed positioning with correct z-index', async () => {
