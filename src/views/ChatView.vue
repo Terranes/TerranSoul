@@ -229,6 +229,13 @@ const lipSyncBridge = useLipSyncBridge(tts, getAsm);
  * AND the characterStore (for the UI pill label). This is the single bridge point.
  */
 function setAvatarState(charState: CharacterState): void {
+  // When a VRMA mood animation is actively playing (e.g. angry.vrma),
+  // don't let transient states like 'talking' override the emotion or
+  // trigger mood watcher state changes that would kill the animation.
+  const vrmaActive = viewportRef.value?.isAnimationActive ?? false;
+  if (vrmaActive && (charState === 'talking' || charState === 'idle' || charState === 'thinking')) {
+    return;
+  }
   characterStore.setState(charState);
   const asm = getAsm();
   if (!asm) return;
@@ -582,6 +589,13 @@ async function handleSend(message: string) {
   if (lastMsg?.role === 'assistant') {
     showSubtitle(lastMsg.content);
 
+    // Trigger VRMA body animation from the LLM's motion tag (if any).
+    // For the Tauri streaming path the motion is applied live via llm-animation
+    // events, but for browser-side streaming/fallback it arrives here.
+    if (lastMsg.motion) {
+      viewportRef.value?.playMotion(lastMsg.motion);
+    }
+
     // Speak quest messages via TTS (they bypass LLM streaming so feedChunk is never called)
     if (lastMsg.questChoices?.length) {
       speakQuestText(lastMsg.content);
@@ -607,6 +621,7 @@ async function handleSend(message: string) {
     // watcher will handle the idle transition when playback finishes.
     if (!tts.isSpeaking.value) {
       setAvatarState('idle');
+      viewportRef.value?.stopMotion();
     }
   }, 6000);
 }
@@ -826,6 +841,11 @@ async function setupTauriEventListener() {
           setAvatarState(state);
         }
       }
+
+      // Trigger VRMA body animation if the LLM specified a motion.
+      if (event.payload.motion) {
+        viewportRef.value?.playMotion(event.payload.motion);
+      }
     });
     unlistenLlmAnimation = unlistenAnim;
 
@@ -875,17 +895,23 @@ watch(
 
 // TTS speaking state → body='talk', done → body='idle' + schedule subtitle hide
 watch(tts.isSpeaking, (speaking) => {
+  // Don't override state when a VRMA mood animation is active
+  const vrmaActive = viewportRef.value?.isAnimationActive ?? false;
   const asm = getAsm();
   if (!asm) return;
   if (speaking) {
-    asm.forceBody('talk');
-    characterStore.setState('talking');
+    if (!vrmaActive) {
+      asm.forceBody('talk');
+      characterStore.setState('talking');
+    }
     // Keep subtitle visible while speaking
     if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
     subtitleVisible.value = true;
   } else {
-    asm.forceBody('idle');
-    characterStore.setState('idle');
+    if (!vrmaActive) {
+      asm.forceBody('idle');
+      characterStore.setState('idle');
+    }
     // TTS finished — schedule subtitle to fade away
     if (subtitleFullText.value) {
       scheduleSubtitleHide();

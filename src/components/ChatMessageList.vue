@@ -30,20 +30,21 @@
         </button>
       </div>
     </div>
-    <TransitionGroup name="msg">
-      <div
-        v-for="msg in messages"
-        :key="msg.id"
-        class="message-row"
-        :class="msg.role"
-      >
-        <div class="bubble-wrapper">
-          <AgentBadge v-if="msg.role === 'assistant'" :name="msg.agentName ?? 'TerranSoul'" />
-          <div class="bubble" v-html="renderMarkdown(msg.content)" />
-          <span class="timestamp">{{ formatTime(msg.timestamp) }}</span>
-        </div>
+    <!-- Teams-style date separators -->
+    <div
+      v-for="item in messagesWithSeparators"
+      :key="item.key"
+      :class="item.type === 'separator' ? 'date-separator' : ['message-row', item.msg!.role]"
+    >
+      <!-- Date separator -->
+      <span v-if="item.type === 'separator'" class="date-separator-text">{{ item.label }}</span>
+      <!-- Message bubble -->
+      <div v-else class="bubble-wrapper">
+        <AgentBadge v-if="item.msg!.role === 'assistant'" :name="item.msg!.agentName ?? 'TerranSoul'" />
+        <div class="bubble" v-html="renderMarkdown(item.msg!.content)" />
+        <span class="timestamp">{{ formatTime(item.msg!.timestamp) }}</span>
       </div>
-    </TransitionGroup>
+    </div>
     <!-- Live streaming response bubble -->
     <div v-if="isStreaming && streamingText" class="message-row assistant" key="streaming">
       <div class="bubble-wrapper">
@@ -101,6 +102,43 @@ function sendQuickReply(text: string) {
   emit('suggest', text);
 }
 
+/** Format a date label like Microsoft Teams: "Today", "Yesterday", or "Wednesday, January 5". */
+function formatDateLabel(ts: number): string {
+  const date = new Date(ts);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - msgDay.getTime()) / 86_400_000);
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'long' });
+  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: now.getFullYear() !== date.getFullYear() ? 'numeric' : undefined });
+}
+
+/** Get the day key (YYYY-MM-DD) for grouping. */
+function dayKey(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+type SeparatorItem = { type: 'separator'; key: string; label: string; msg?: undefined };
+type MessageItem = { type: 'message'; key: string; msg: Message; label?: undefined };
+
+const messagesWithSeparators = computed<(SeparatorItem | MessageItem)[]>(() => {
+  const items: (SeparatorItem | MessageItem)[] = [];
+  let lastDay = '';
+  for (const msg of props.messages) {
+    const dk = dayKey(msg.timestamp);
+    if (dk !== lastDay) {
+      items.push({ type: 'separator', key: `sep-${dk}`, label: formatDateLabel(msg.timestamp) });
+      lastDay = dk;
+    }
+    items.push({ type: 'message', key: msg.id, msg });
+  }
+  return items;
+});
+
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -140,6 +178,30 @@ watch(() => props.streamingText, scrollToBottom);
 
 .message-row.assistant {
   justify-content: flex-start;
+}
+
+/* Teams-style date separator */
+.date-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  margin: 4px 0;
+}
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.date-separator-text {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ts-text-dim);
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .bubble-wrapper {

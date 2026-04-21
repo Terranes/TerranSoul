@@ -340,6 +340,19 @@ export class CharacterAnimator {
   // AvatarStateMachine — canonical animation state (read in frame loop)
   private _asm = new AvatarStateMachine();
 
+  // ── Cursor tracking for head/eye follow ──────────────────────────────
+  /** Normalized cursor position (-1..1) relative to the viewport centre.
+   *  Updated from CharacterViewport on mousemove/touchmove. */
+  private cursorX = 0;
+  private cursorY = 0;
+  /** Damped head rotation toward cursor (radians). */
+  private headCursorYaw = 0;
+  private headCursorPitch = 0;
+  /** Whether cursor tracking is active (disabled when VRMA animation plays). */
+  private cursorTrackingEnabled = true;
+  /** When true, a VRMA animation is driving bones — procedural bones are skipped. */
+  private _vrmaPlaying = false;
+
   // Idle pose randomization
   private currentIdlePoseIndex = 0;
   private idlePoseChangeTime = 0;
@@ -404,6 +417,29 @@ export class CharacterAnimator {
     }
   }
 
+  /**
+   * Update the cursor position for head/eye tracking.
+   * @param x Normalized X (-1 = left edge, +1 = right edge)
+   * @param y Normalized Y (-1 = top, +1 = bottom)
+   */
+  setCursorPosition(x: number, y: number) {
+    this.cursorX = Math.max(-1, Math.min(1, x));
+    this.cursorY = Math.max(-1, Math.min(1, y));
+  }
+
+  /** Notify the animator that a VRMA animation has started/stopped.
+   *  When playing, procedural bone animation is skipped and cursor tracking
+   *  only drives the VRM lookAt (eyes), not head bones. */
+  setVrmaPlaying(playing: boolean) {
+    this._vrmaPlaying = playing;
+    this.cursorTrackingEnabled = !playing;
+  }
+
+  /** Whether a VRMA animation is currently driving bones. */
+  get vrmaPlaying(): boolean {
+    return this._vrmaPlaying;
+  }
+
   setPlaceholder(group: THREE.Group) {
     this.placeholder = group;
     this.vrm = null;
@@ -444,6 +480,10 @@ export class CharacterAnimator {
    * (within epsilon). Used for on-demand rendering — when settled, render rate drops.
    */
   isAnimationSettled(epsilon = 0.002): boolean {
+    // VRMA animations are never "settled" — they always need updates
+    if (this._vrmaPlaying) return false;
+    // Cursor tracking keeps animation alive when cursor moves
+    if (Math.abs(this.headCursorYaw) > epsilon || Math.abs(this.headCursorPitch) > epsilon) return false;
     // Check AvatarStateMachine layer
     if (!this._asm.isSettled()) return false;
     // Check all expression channels
@@ -465,7 +505,7 @@ export class CharacterAnimator {
 
     // Handle idle pose randomization when in idle state.
     // When a pose is pinned (forceIdlePose), skip random rotation entirely.
-    if (this.state === 'idle' && this.pinnedIdlePoseIndex === null) {
+    if (this.state === 'idle' && this.pinnedIdlePoseIndex === null && !this._vrmaPlaying) {
       this.idlePoseChangeTime += delta;
       if (this.idlePoseChangeTime >= this.nextIdlePoseChangeAt) {
         this.selectNextIdlePose();
@@ -578,12 +618,16 @@ export class CharacterAnimator {
 
     // Damp bodyY toward its target so seated ↔ standing transitions look smooth.
     // Uses the same exponential damping as bones (BONE_LAMBDA).
-    this.bodyYCurrent = damp(this.bodyYCurrent, this.bodyYTarget, BONE_LAMBDA, delta);
+    if (!this._vrmaPlaying) {
+      this.bodyYCurrent = damp(this.bodyYCurrent, this.bodyYTarget, BONE_LAMBDA, delta);
+    }
 
     // Pin scene root — only preserve the loader's base rotation.  The Y
     // translation lowers the character into the sofa for the sitting idle.
-    this.vrmScene.position.set(0, this.bodyYCurrent, 0);
-    this.vrmScene.rotation.set(0, this.baseRotationY, 0);
+    if (!this._vrmaPlaying) {
+      this.vrmScene.position.set(0, this.bodyYCurrent, 0);
+      this.vrmScene.rotation.set(0, this.baseRotationY, 0);
+    }
 
     // Tick the AvatarStateMachine's auto-blink cycle
     this._asm.tickBlink(delta);
@@ -594,15 +638,80 @@ export class CharacterAnimator {
     // Damp all expression channels toward their targets
     this.flushExpressions(delta);
 
-    // Set bone pose targets for the current state (with idle breathing overlay)
-    this.applyStateBonePose(t);
+    if (this._vrmaPlaying) {
+      // ── VRMA mode: mixer drives bones; we only handle cursor-based eye tracking.
+      this.applyCursorEyeTracking(delta);
+    } else {
+      // ── Procedural mode: full bone pose + cursor head/eye tracking.
+      // Set bone pose targets for the current state (with idle breathing overlay)
+      this.applyStateBonePose(t);
 
-    // Damp bones toward their targets
-    this.flushBones(delta);
+      // Apply cursor-based head tracking (layered on top of bone targets)
+      this.applyCursorHeadTracking(delta);
+
+      // Apply cursor-based eye tracking so eyes follow cursor alongside head
+      this.applyCursorEyeTracking(delta);
+
+      // Damp bones toward their targets
+      this.flushBones(delta);
+    }
 
     // vrm.update() transfers normalized bones → raw skeleton,
     // then updates lookAt, expressions, and spring bones.
     this.vrm.update(delta);
+  }
+
+  // ── Cursor-based head tracking (procedural mode) ────────────────────
+
+  /** Maximum head rotation in radians for cursor tracking. */
+  private static readonly HEAD_YAW_MAX = 0.35;  // ~20°
+  private static readonly HEAD_PITCH_MAX = 0.20; // ~11°
+  private static readonly HEAD_TRACK_LAMBDA = 4; // damping rate
+
+  /**
+   * When no VRMA is playing, smoothly rotate the head toward the cursor.
+   * This adds yaw/pitch offsets to the head bone target computed in applyStateBonePose().
+   */
+  private applyCursorHeadTracking(delta: number) {
+    if (!this.cursorTrackingEnabled) return;
+
+    // Target yaw/pitch based on cursor position
+    const targetYaw = -this.cursorX * CharacterAnimator.HEAD_YAW_MAX;
+    const targetPitch = this.cursorY * CharacterAnimator.HEAD_PITCH_MAX;
+
+    // Smoothly damp toward targets
+    this.headCursorYaw = damp(this.headCursorYaw, targetYaw, CharacterAnimator.HEAD_TRACK_LAMBDA, delta);
+    this.headCursorPitch = damp(this.headCursorPitch, targetPitch, CharacterAnimator.HEAD_TRACK_LAMBDA, delta);
+
+    // Add cursor offset to the head bone target (index 0 in ANIMATED_BONES)
+    const headIdx = 0; // 'head' is first in ANIMATED_BONES
+    this.boneTargetArr[headIdx * BONE_STRIDE]     += this.headCursorPitch; // X = pitch
+    this.boneTargetArr[headIdx * BONE_STRIDE + 1] += this.headCursorYaw;  // Y = yaw
+
+    // Also add partial offset to neck for natural motion (index 4)
+    const neckIdx = 4; // 'neck' is 5th in ANIMATED_BONES
+    this.boneTargetArr[neckIdx * BONE_STRIDE]     += this.headCursorPitch * 0.3;
+    this.boneTargetArr[neckIdx * BONE_STRIDE + 1] += this.headCursorYaw * 0.3;
+  }
+
+  // ── Cursor-based eye tracking (works in both procedural and VRMA mode) ──
+
+  /** Apply cursor position to VRM lookAt for eye tracking. */
+  private applyCursorEyeTracking(_delta: number) {
+    if (!this.vrm?.lookAt) return;
+
+    // Convert cursor position to eye yaw/pitch in degrees.
+    // VRM lookAt uses degrees for yaw and pitch.
+    const eyeYawDeg = -this.cursorX * 25;   // max ~25° horizontal eye movement
+    const eyePitchDeg = this.cursorY * 15;   // max ~15° vertical eye movement
+
+    // When VRMA is playing, directly set lookAt yaw/pitch (no target object).
+    // This makes the eyes follow the cursor even during body animations.
+    this.vrm.lookAt.target = null;
+    this.vrm.lookAt.autoUpdate = false;
+    this.vrm.lookAt.yaw = eyeYawDeg;
+    this.vrm.lookAt.pitch = eyePitchDeg;
+    this.vrm.lookAt.update(0);
   }
 
   // ── Expression target computation (writes to flat exprTargets) ────────

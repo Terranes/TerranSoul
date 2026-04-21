@@ -13,6 +13,8 @@ export interface Message {
   system?: boolean;
   /** Emoji extracted from the model response, shown as a floating popup. */
   emoji?: string;
+  /** Body animation motion key from LLM <anim> tags (e.g. 'greeting', 'clapping'). */
+  motion?: string;
 }
 
 export interface QuestChoice {

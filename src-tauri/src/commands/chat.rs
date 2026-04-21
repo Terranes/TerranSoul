@@ -22,8 +22,11 @@ Your capabilities:
 
 Animation: When expressing an emotion or gesture, output a JSON block on its own line before the related text:
 <anim>{"emotion":"happy"}</anim>
-<anim>{"emotion":"surprised","motion":"wave"}</anim>
-Valid emotions: happy, sad, angry, relaxed, surprised, neutral. Valid motions: wave, nod.
+<anim>{"emotion":"happy","motion":"clap"}</anim>
+Valid emotions: happy, sad, angry, relaxed, surprised, neutral.
+Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump.
+Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
+Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
 Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
 
 Keep responses concise and warm."#;
