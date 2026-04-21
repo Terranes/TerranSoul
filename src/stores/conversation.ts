@@ -305,6 +305,21 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Whether a streaming response is in progress. */
   const isStreaming = ref(false);
 
+  /** Maximum total size of all message content in bytes (~1MB). */
+  const MAX_HISTORY_BYTES = 1_000_000;
+
+  /** Trim oldest messages when total content size exceeds the limit. */
+  function trimHistory(): void {
+    let totalBytes = 0;
+    for (const m of messages.value) {
+      totalBytes += m.content.length * 2; // rough UTF-16 estimate
+    }
+    while (totalBytes > MAX_HISTORY_BYTES && messages.value.length > 1) {
+      const removed = messages.value.shift();
+      if (removed) totalBytes -= removed.content.length * 2;
+    }
+  }
+
   async function sendMessage(content: string) {
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -313,6 +328,7 @@ export const useConversationStore = defineStore('conversation', () => {
       timestamp: Date.now(),
     };
     messages.value.push(userMsg);
+    trimHistory();
     isThinking.value = true;
     streamingText.value = '';
     isStreaming.value = false;
@@ -383,6 +399,7 @@ export const useConversationStore = defineStore('conversation', () => {
         if (cleanText) {
           // Emotion comes from the streaming store (set by llm-animation events).
           const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
+          const motion = streaming.currentMotion ?? parsed.motion ?? undefined;
           const { clean, warning } = extractWarning(cleanText);
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
@@ -392,6 +409,7 @@ export const useConversationStore = defineStore('conversation', () => {
             sentiment: sentiment as Message['sentiment'],
             timestamp: Date.now(),
             emoji: parsed.emoji ?? undefined,
+            motion,
           };
           if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
@@ -506,6 +524,7 @@ export const useConversationStore = defineStore('conversation', () => {
               sentiment: sentiment as Message['sentiment'],
               timestamp: Date.now(),
               emoji: parsed.emoji ?? undefined,
+              motion: parsed.motion ?? undefined,
             };
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
@@ -606,6 +625,7 @@ export const useConversationStore = defineStore('conversation', () => {
     try {
       const history = await invoke<Message[]>('get_conversation');
       messages.value = history;
+      trimHistory();
     } catch {
       // ignore
     }
@@ -614,6 +634,7 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Add a message directly to the conversation without AI processing. */
   function addMessage(message: Message): void {
     messages.value.push(message);
+    trimHistory();
   }
 
   return {

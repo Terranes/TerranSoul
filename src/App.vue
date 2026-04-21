@@ -12,7 +12,7 @@
          the only way back to desktop mode).  Hidden on all other tabs so it
          doesn't overlap Memory, Marketplace, Voice, or the Skill tree. -->
     <div
-      v-if="!appLoading && ((activeTab === 'chat' && !questConstellationOpen) || isPetMode)"
+      v-if="!appLoading && activeTab === 'chat' && !questConstellationOpen && !isPetMode"
       class="mode-toggle-pill"
       :class="{ 'is-pet': isPetMode }"
     >

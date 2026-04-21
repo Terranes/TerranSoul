@@ -23,21 +23,22 @@
         </div>
       </Transition>
 
-      <!-- Expandable chat input -->
+      <!-- Expandable chat panel — manga-style speech bubble positioned
+           relative to model head so it never covers the character -->
       <Transition name="chat-slide">
-        <div v-if="petChatExpanded" class="pet-chat" @click.stop @mousedown.stop>
+        <div v-if="petChatExpanded" class="pet-chat" :class="petChatClasses" :style="petChatStyle" @click.stop @mousedown.stop>
           <div class="pet-chat-header">
             <span class="pet-chat-title">Chat</span>
             <button class="pet-chat-close" @click.stop="closeChat" title="Close chat">×</button>
           </div>
           <div class="pet-chat-messages" ref="messagesRef">
-            <div
-              v-for="msg in recentMessages"
-              :key="msg.id"
-              :class="['pet-msg', msg.role]"
-            >
-              <span class="pet-msg-text">{{ msg.content }}</span>
-            </div>
+            <template v-for="(msg, idx) in recentMessages" :key="msg.id">
+              <div v-if="showDateSep(idx)" class="pet-date-sep">{{ dateSepLabel(msg.timestamp) }}</div>
+              <div :class="['pet-msg', msg.role]">
+                <span class="pet-msg-text">{{ msg.content }}</span>
+                <span class="pet-msg-time">{{ formatPetTime(msg.timestamp) }}</span>
+              </div>
+            </template>
             <div v-if="conversationStore.isThinking" class="pet-msg assistant">
               <span class="pet-msg-text pet-thinking">…</span>
             </div>
@@ -123,8 +124,13 @@ import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useWindowStore } from '../stores/window';
 import { useStreamingStore } from '../stores/streaming';
+import { useVoiceStore } from '../stores/voice';
 import { useChatExpansion } from '../composables/useChatExpansion';
+import { useTtsPlayback } from '../composables/useTtsPlayback';
+import { useLipSyncBridge } from '../composables/useLipSyncBridge';
+import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
+import type { AvatarStateMachine } from '../renderer/avatar-state';
 import * as THREE from 'three';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import PetContextMenu from '../components/PetContextMenu.vue';
@@ -134,7 +140,53 @@ const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const windowStore = useWindowStore();
 const streaming = useStreamingStore();
+const voice = useVoiceStore();
 const { petChatExpanded, setPetChatExpanded, togglePetChat } = useChatExpansion();
+
+// ── TTS + LipSync (same pipeline as ChatView) ────────────────────────────────
+const tts = useTtsPlayback({
+  getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
+  getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+});
+
+function getAsm(): AvatarStateMachine | null {
+  return viewportRef.value?.avatarStateMachine ?? null;
+}
+const lipSyncBridge = useLipSyncBridge(tts, getAsm);
+
+function sentimentToState(sentiment?: string): CharacterState {
+  switch (sentiment) {
+    case 'happy': return 'happy';
+    case 'sad': return 'sad';
+    case 'angry': return 'angry';
+    case 'relaxed': return 'relaxed';
+    case 'surprised': return 'surprised';
+    default: return 'talking';
+  }
+}
+
+function setAvatarState(charState: CharacterState): void {
+  // When a VRMA mood animation is actively playing (e.g. angry.vrma),
+  // don't let transient states like 'talking' override the emotion or
+  // trigger mood watcher state changes that would kill the animation.
+  const vrmaActive = viewportRef.value?.isAnimationActive ?? false;
+  if (vrmaActive && (charState === 'talking' || charState === 'idle' || charState === 'thinking')) {
+    return;
+  }
+  characterStore.setState(charState);
+  const asm = getAsm();
+  if (!asm) return;
+  switch (charState) {
+    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
+    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
+    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
+    case 'happy':     asm.setEmotion('happy');     break;
+    case 'sad':       asm.setEmotion('sad');       break;
+    case 'angry':     asm.setEmotion('angry');     break;
+    case 'relaxed':   asm.setEmotion('relaxed');   break;
+    case 'surprised': asm.setEmotion('surprised'); break;
+  }
+}
 
 // ── UI state ──────────────────────────────────────────────────────────────────
 const inputText = ref('');
@@ -362,6 +414,17 @@ function isPointOverInteractive(x: number, y: number): boolean {
     }
   }
 
+  // Not over a UI overlay within the container — but the chat panel may
+  // extend outside the character bounds (manga-style speech bubble).
+  // Check the pet-chat element directly in case it's positioned outside.
+  const chatPanel = el.querySelector('.pet-chat');
+  if (chatPanel) {
+    const chatRect = chatPanel.getBoundingClientRect();
+    if (x >= chatRect.left && x <= chatRect.right && y >= chatRect.top && y <= chatRect.bottom) {
+      return true;
+    }
+  }
+
   // Not over a UI overlay — check if over the bounding rect at all
   if (x < charRect.left || x > charRect.right || y < charRect.top || y > charRect.bottom) {
     return false;
@@ -423,6 +486,32 @@ function handleCursorPos(payload: { x: number; y: number; inside: boolean }) {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 const recentMessages = computed(() => conversationStore.messages.slice(-20));
+
+function formatPetTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function dateSepLabel(ts: number): string {
+  const date = new Date(ts);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - msgDay.getTime()) / 86_400_000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'long' });
+  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function showDateSep(idx: number): boolean {
+  const msgs = recentMessages.value;
+  if (idx === 0) return true;
+  const prev = new Date(msgs[idx - 1].timestamp);
+  const curr = new Date(msgs[idx].timestamp);
+  return prev.getFullYear() !== curr.getFullYear()
+    || prev.getMonth() !== curr.getMonth()
+    || prev.getDate() !== curr.getDate();
+}
 
 const lastAssistantText = computed(() => {
   const assistantMsgs = conversationStore.messages.filter((m) => m.role === 'assistant');
@@ -553,12 +642,84 @@ const emotionBubbleStyle = computed(() => {
   }
 });
 
+// ── Chat panel positioning — manga-style speech bubble ────────────────────────
+// Places the chat panel beside the character model (like a manga dialog) so
+// it never covers the character.  Flips side based on screen-edge proximity
+// and flips vertically when the character is near the top of the screen.
+
+/** Whether the chat bubble should appear on the left side of the character. */
+const chatOnLeft = computed(() => {
+  // Chat panel is ~300px wide.  If the character's right side + panel width
+  // exceeds the available screen width, flip to the left.
+  const monitors = windowStore.monitors ?? [];
+  const dpr = window.devicePixelRatio || 1;
+  const CHAT_WIDTH = 300;
+  const charRight = charX.value + charW.value + CHAT_WIDTH + 16;
+  if (!monitors.length) {
+    return charRight > (typeof window !== 'undefined' ? window.innerWidth : 1920);
+  }
+  const minX = Math.min(...monitors.map(m => m.x));
+  const minY = Math.min(...monitors.map(m => m.y));
+  const charCenterPhysX = (charX.value + charW.value / 2) * dpr + minX;
+  const charCenterPhysY = (charY.value + charH.value / 2) * dpr + minY;
+  let monitor = monitors[0];
+  for (const m of monitors) {
+    if (charCenterPhysX >= m.x && charCenterPhysX < m.x + m.width &&
+        charCenterPhysY >= m.y && charCenterPhysY < m.y + m.height) {
+      monitor = m;
+      break;
+    }
+  }
+  const monRight = (monitor.x + monitor.width - minX) / dpr;
+  return charRight > monRight;
+});
+
+const petChatClasses = computed(() => ({
+  'pet-chat--left': chatOnLeft.value,
+}));
+
+const petChatStyle = computed(() => {
+  // Anchor the chat beside the character's head bone, like a speech bubble.
+  // Clamp vertically so the panel never extends beyond the visible monitor.
+  const CHAT_MAX_H = 400; // matches CSS max-height
+  const headTopPx = headY.value * charH.value;
+  const chatAbsTop = charY.value + headTopPx;
+  const screenH = typeof window !== 'undefined' ? window.innerHeight : 1080;
+
+  // If the chat would overflow the bottom of the screen, shift it up
+  let topPx = headTopPx - (charH.value * 0.05);
+  if (chatAbsTop + CHAT_MAX_H > screenH - 16) {
+    topPx = Math.max(0, screenH - 16 - CHAT_MAX_H - charY.value);
+  }
+  // Also ensure it doesn't go above the screen
+  if (charY.value + topPx < 0) {
+    topPx = -charY.value;
+  }
+
+  const style: Record<string, string> = {
+    top: `${topPx}px`,
+  };
+  if (chatOnLeft.value) {
+    // Position to the left of the character container
+    style.right = '100%';
+    style.left = 'auto';
+    style.marginRight = '12px';
+  } else {
+    // Position to the right of the character container
+    style.left = '100%';
+    style.right = 'auto';
+    style.marginLeft = '12px';
+  }
+  return style;
+});
+
 function toggleChat() {
   // If chat is already open, don't close it — only open or toggle from closed state
   if (petChatExpanded.value) return;
   const isExpanded = togglePetChat();
   if (isExpanded) {
     showBubble.value = false;
+    scheduleHeadScan(); // Update head position so the chat bubble is placed correctly
     nextTick(() => scrollToBottom());
   }
 }
@@ -579,8 +740,41 @@ async function handleSend() {
   const text = inputText.value.trim();
   if (!text || conversationStore.isThinking) return;
   inputText.value = '';
+
+  // Stop any ongoing TTS before sending a new message
+  tts.stop();
+
+  setAvatarState('thinking');
   await conversationStore.sendMessage(text);
+
+  const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
+  const reactionState = lastMsg?.role === 'assistant'
+    ? sentimentToState(lastMsg.sentiment)
+    : 'idle';
+
+  setAvatarState(reactionState);
+
+  if (lastMsg?.role === 'assistant') {
+    // Trigger VRMA body animation from the LLM's motion tag (browser-side path)
+    if (lastMsg.motion) {
+      viewportRef.value?.playMotion(lastMsg.motion);
+    }
+    // Speak non-streamed responses (quest messages, fallback)
+    if (lastMsg.questChoices?.length) {
+      tts.stop();
+      tts.feedChunk(lastMsg.content);
+      tts.flush();
+    }
+  }
+
   nextTick(() => scrollToBottom());
+
+  setTimeout(() => {
+    if (!tts.isSpeaking.value) {
+      setAvatarState('idle');
+      viewportRef.value?.stopMotion();
+    }
+  }, 6000);
 }
 
 function dismissOnboarding() {
@@ -613,14 +807,50 @@ watch(
   () => streaming.currentEmotion,
   (emotion) => {
     if (emotion) {
-      characterStore.setState(emotion as CharacterState);
-      setTimeout(() => characterStore.setState('idle'), 6000);
+      setAvatarState(sentimentToState(emotion));
+      setTimeout(() => setAvatarState('idle'), 6000);
     }
   },
 );
 
+// Show 'thinking' animation during thinking
+watch(
+  () => conversationStore.isThinking,
+  (thinking) => {
+    if (thinking) setAvatarState('thinking');
+  },
+);
+
+// Show 'talking' animation during streaming
+watch(
+  () => conversationStore.isStreaming,
+  (active) => {
+    if (active) {
+      setAvatarState('talking');
+    } else if (streaming.currentEmotion) {
+      setAvatarState(sentimentToState(streaming.currentEmotion));
+    }
+  },
+);
+
+// TTS speaking state → body='talk', done → body='idle'
+watch(tts.isSpeaking, (speaking) => {
+  // Don't override state when a VRMA mood animation is active
+  if (viewportRef.value?.isAnimationActive) return;
+  const asm = getAsm();
+  if (!asm) return;
+  if (speaking) {
+    asm.forceBody('talk');
+    characterStore.setState('talking');
+  } else {
+    asm.forceBody('idle');
+    characterStore.setState('idle');
+  }
+});
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 let unlistenLlmChunk: (() => void) | null = null;
+let unlistenLlmAnimation: (() => void) | null = null;
 
 onMounted(async () => {
   // Onboarding tooltip: show only if never dismissed before
@@ -655,6 +885,31 @@ onMounted(async () => {
     const { listen } = await import('@tauri-apps/api/event');
     unlistenLlmChunk = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
+
+      // Feed text into TTS (same as ChatView)
+      if (voice.config.tts_provider) {
+        if (event.payload.done) {
+          tts.flush();
+        } else if (event.payload.text) {
+          tts.feedChunk(event.payload.text);
+        }
+      }
+    });
+
+    // Animation stream — structured JSON from Rust parser (same as ChatView)
+    unlistenLlmAnimation = await listen<{ emotion?: string; motion?: string }>('llm-animation', (event) => {
+      streaming.handleAnimation(event.payload);
+
+      if (event.payload.emotion) {
+        const state = sentimentToState(event.payload.emotion);
+        if (state !== 'idle') {
+          setAvatarState(state);
+        }
+      }
+
+      if (event.payload.motion) {
+        viewportRef.value?.playMotion(event.payload.motion);
+      }
     });
 
     // Start cursor-position polling from Rust.  On each event we decide
@@ -677,6 +932,16 @@ onMounted(async () => {
   // Hook into OrbitControls once the viewport is ready so the emotion
   // bubble tracks head position during zoom/rotate damping.
   setTimeout(hookOrbitControls, 500);
+
+  // Initialise voice store so TTS provider is available
+  try {
+    await voice.initialise();
+  } catch {
+    // No Tauri backend — voice stays in text-only mode
+  }
+
+  // Start the LipSync ↔ TTS bridge
+  lipSyncBridge.start();
 });
 
 onUnmounted(() => {
@@ -691,6 +956,12 @@ onUnmounted(() => {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
   }
+  if (unlistenLlmAnimation) {
+    unlistenLlmAnimation();
+    unlistenLlmAnimation = null;
+  }
+  tts.stop();
+  lipSyncBridge.dispose();
   // Restore non-passthrough so the next mode isn't stuck.
   windowStore.setCursorPassthrough(false);
 });
@@ -712,6 +983,7 @@ onUnmounted(() => {
   cursor: grab;
   user-select: none;
   -webkit-user-drag: none;
+  overflow: visible;
   /* Re-enable pointer events on the character container itself */
   pointer-events: auto;
 }
@@ -745,22 +1017,41 @@ onUnmounted(() => {
 .bubble-enter-from,
 .bubble-leave-to { opacity: 0; transform: translate(-50%, -90%) scale(0.95); }
 
-/* ── Expandable chat panel — anchored to bottom of the pet window ── */
+/* ── Expandable chat panel — manga-style speech bubble beside character ── */
 .pet-chat {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
+  /* top/left/right set dynamically via :style based on head bone position */
+  width: 300px;
   max-height: 400px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(139, 92, 246, 0.25);
-  border-radius: 16px 16px 0 0;
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   backdrop-filter: blur(12px);
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  overflow: visible;
   z-index: 10;
+}
+/* Speech bubble tail — triangle pointing toward the character */
+.pet-chat::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  /* Default: tail points left (chat is on the right side) */
+  left: -8px;
+  border-right: 10px solid rgba(15, 23, 42, 0.95);
+}
+/* When chat is on the left side, flip the tail to point right */
+.pet-chat--left::after {
+  left: auto;
+  right: -8px;
+  border-right: none;
+  border-left: 10px solid rgba(15, 23, 42, 0.95);
 }
 
 .pet-chat-header {
@@ -769,6 +1060,8 @@ onUnmounted(() => {
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px 16px 0 0;
+  background: rgba(15, 23, 42, 0.95);
 }
 .pet-chat-title {
   font-size: 0.8rem;
@@ -819,6 +1112,36 @@ onUnmounted(() => {
 }
 .pet-msg-text { color: #e2e8f0; }
 
+.pet-msg-time {
+  display: block;
+  font-size: 0.62rem;
+  color: rgba(203, 213, 225, 0.5);
+  margin-top: 2px;
+}
+.pet-msg.user .pet-msg-time { text-align: right; }
+
+.pet-date-sep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.pet-date-sep::before,
+.pet-date-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.pet-date-sep {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: rgba(203, 213, 225, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .pet-thinking { animation: pet-pulse 1s ease-in-out infinite; }
 @keyframes pet-pulse {
   0%, 100% { opacity: 0.4; }
@@ -858,7 +1181,7 @@ onUnmounted(() => {
 .chat-slide-enter-active,
 .chat-slide-leave-active { transition: opacity 0.25s, transform 0.25s; }
 .chat-slide-enter-from,
-.chat-slide-leave-to { opacity: 0; transform: translateY(20px); }
+.chat-slide-leave-to { opacity: 0; transform: scale(0.92); }
 
 /* ── Manga-style emotion speech bubble ── */
 .pet-emotion-bubble {

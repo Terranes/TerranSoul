@@ -259,9 +259,10 @@ import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
 import { useWindowStore } from '../stores/window';
 import { DEFAULT_MODELS } from '../config/default-models';
-import { initScene, EYE_TARGET_DISTANCE, type RendererInfo, type SceneContext } from '../renderer/scene';
+import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
+import { VrmaManager, getAnimationForMood, getAnimationForMotion } from '../renderer/vrma-manager';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -501,6 +502,12 @@ let getRendererInfo: (() => RendererInfo) | null = null;
 let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
+const vrmaManager = new VrmaManager();
+
+// Wire VRMA playback state to the animator
+vrmaManager.onPlaybackChange((playing) => {
+  animator.setVrmaPlaying(playing);
+});
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
 defineExpose({
@@ -520,6 +527,26 @@ defineExpose({
   /** Scene context — used by PetOverlayView to project 3D positions and rotate. */
   get sceneContext() {
     return sceneCtx;
+  },
+  /**
+   * Play a VRMA body animation by motion key (e.g. 'greeting', 'clapping').
+   * Called by ChatView when the LLM emits a motion tag.
+   * Suppresses mood-auto-play so the mood watcher doesn't override this.
+   */
+  playMotion(motionKey: string) {
+    const entry = getAnimationForMotion(motionKey);
+    if (entry) {
+      vrmaManager.suppressMoodAnimation();
+      vrmaManager.play(entry.path, entry.loop, 0.4);
+    }
+  },
+  /** Stop any playing VRMA animation and return to procedural. */
+  stopMotion() {
+    vrmaManager.stop(0.4);
+  },
+  /** Whether a mood-suppressed VRMA animation is actively playing (e.g. angry.vrma). */
+  get isAnimationActive(): boolean {
+    return vrmaManager.isMoodSuppressed && vrmaManager.isPlaying;
   },
 });
 
@@ -660,6 +687,23 @@ onMounted(async () => {
   canvas.addEventListener('webglcontextlost', handleContextLost);
   canvas.addEventListener('webglcontextrestored', handleContextRestored);
 
+  // ── Cursor tracking: head/eye follow mouse pointer ────────────────
+  // Converts mouse position to normalised viewport coords (-1..1) and
+  // feeds it into the animator each frame for head/eye tracking.
+  function handleCursorMove(e: MouseEvent) {
+    const rect = canvas!.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+    animator.setCursorPosition(nx, ny);
+  }
+  function handleCursorLeave() {
+    // Smoothly return to centre when cursor leaves viewport
+    animator.setCursorPosition(0, 0);
+  }
+  canvas.addEventListener('mousemove', handleCursorMove);
+  canvas.addEventListener('mouseleave', handleCursorLeave);
+
   // Restore BGM state (track, volume, enabled) from persisted settings.
   restoreBgmFromSettings();
 
@@ -683,20 +727,15 @@ onMounted(async () => {
     // Update OrbitControls (damping requires per-frame update)
     ctx.controls.update();
 
-    // Eye tracking: place the lookAt target a fixed distance in front of the
-    // camera along its view direction so the character's gaze tracks the
-    // viewer's direction of view, not the camera's spatial position. Uses a
-    // pre-allocated scratch vector (ctx._eyeForward) — no per-frame allocation.
-    ctx.camera.getWorldDirection(ctx._eyeForward);
-    ctx.lookAtTarget.position
-      .copy(ctx.camera.position)
-      .addScaledVector(ctx._eyeForward, EYE_TARGET_DISTANCE);
+    // Eye tracking is now handled by the CharacterAnimator via cursor position.
+    // The animator uses VRM lookAt yaw/pitch directly based on mouse position,
+    // providing cursor-following eyes in both procedural and VRMA modes.
 
     const asm = animator.avatarStateMachine;
     const settled = animator.isAnimationSettled();
     const idle = asm.state.body === 'idle';
 
-    if (settled && idle && !asm.state.needsRender) {
+    if (settled && idle && !asm.state.needsRender && !vrmaManager.isPlaying) {
       // Throttle: accumulate time, only render at ~15 FPS
       idleAccum += delta;
       if (idleAccum < IDLE_INTERVAL) return;
@@ -708,6 +747,8 @@ onMounted(async () => {
     // Clear the one-shot render flag
     if (asm.state.needsRender) asm.state.needsRender = false;
 
+    // Tick VRMA animation mixer (must be before animator.update which calls vrm.update)
+    vrmaManager.update(delta);
     animator.update(delta);
     ctx.renderer.render(ctx.scene, ctx.camera);
 
@@ -731,6 +772,7 @@ onUnmounted(() => {
     canvas.removeEventListener('webglcontextlost', handleContextLost);
     canvas.removeEventListener('webglcontextrestored', handleContextRestored);
   }
+  vrmaManager.dispose();
   if (localVrmObjectUrl.value) {
     URL.revokeObjectURL(localVrmObjectUrl.value);
   }
@@ -738,7 +780,20 @@ onUnmounted(() => {
 
 watch(
   () => characterStore.state,
-  (newState) => animator.setState(newState),
+  (newState) => {
+    animator.setState(newState);
+    // Skip mood auto-play when an explicit motion is active (e.g. LLM said "clapping")
+    if (vrmaManager.isMoodSuppressed) return;
+    // Try to play a VRMA animation mapped to this mood (one-shot, then return to procedural)
+    const entry = getAnimationForMood(newState);
+    if (entry) {
+      vrmaManager.suppressMoodAnimation();
+      vrmaManager.play(entry.path, false, 0.4);
+    } else if (newState === 'idle' || newState === 'talking') {
+      // Return to procedural animation for idle/talking
+      vrmaManager.stop(0.4);
+    }
+  },
 );
 
 // Hide the pedestal (and any other floor decorations) in pet mode so the
@@ -813,6 +868,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
         animator.setVRM(result.vrm, rotY);
         // Wire up eye tracking — lookAtTarget is in the scene, updated per frame
         animator.setLookAtTarget(sceneCtx.lookAtTarget);
+        // Bind VRMA manager to the loaded VRM for animation playback
+        vrmaManager.setVRM(result.vrm);
         characterStore.setMetadata(result.metadata);
 
         // Expose VRM for E2E testing — allows Playwright to verify bone positions

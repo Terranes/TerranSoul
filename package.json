@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.4.0",
+    "@pixiv/three-vrm-animation": "^3.5.2",
     "@ricky0123/vad-web": "^0.0.30",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-shell": "^2",
