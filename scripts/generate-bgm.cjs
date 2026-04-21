@@ -1,10 +1,10 @@
 /**
- * generate-bgm.cjs — Generate Final Fantasy-inspired BGM WAV files for TerranSoul.
+ * generate-bgm.cjs — Generate JRPG-inspired BGM WAV files for TerranSoul.
  *
- * Creates 3 original compositions evoking classic Final Fantasy soundtracks:
- *   1. Crystal Prelude — ascending/descending harp arpeggios (FF Prelude style)
- *   2. Dream of Zanarkand — emotional piano ballad (FFX style)
- *   3. Promised Land — ethereal orchestral rest/save theme (FFVII style)
+ * Creates 3 original compositions evoking classic JRPG soundtracks:
+ *   1. Crystal Prelude — ascending/descending harp arpeggios
+ *   2. Dream of Zanarkand — emotional piano ballad
+ *   3. Promised Land — ethereal orchestral rest/save theme
  *
  * All tracks are original synthesized compositions — no copyrighted music.
  * They are designed to loop seamlessly as background ambient music.
@@ -193,7 +193,7 @@ function noteFreq(note, octave) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Track 1: CRYSTAL PRELUDE — FF Prelude-style ascending/descending harp arpeggios
+// Track 1: CRYSTAL PRELUDE — Ascending/descending harp arpeggios
 //   The iconic ascending C-D-E-G arpeggio through multiple octaves,
 //   then descending, over warm string pads. Evokes the FF title screen.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -317,7 +317,7 @@ function generateCrystalPrelude() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Track 2: DREAM OF ZANARKAND — Emotional piano ballad (FFX style)
+// Track 2: DREAM OF ZANARKAND — Emotional piano ballad
 //   A melancholic, intimate piano piece with gentle string accompaniment.
 //   Key: Ab major, slow tempo, expressive dynamics.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -473,7 +473,7 @@ function generateDreamOfZanarkand() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Track 3: PROMISED LAND — Ethereal orchestral rest/save theme (FFVII style)
+// Track 3: PROMISED LAND — Ethereal orchestral rest/save theme
 //   Gentle music box melody, warm orchestral pads, and celeste bells.
 //   Key: Db major / Bbm, spacious and serene.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -623,7 +623,7 @@ function generatePromisedLand() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 const outDir = path.join(__dirname, '..', 'public', 'audio');
-console.log('Generating Final Fantasy-inspired BGM tracks (40s seamless loops)...\n');
+console.log('Generating JRPG-inspired BGM tracks (40s seamless loops)...\n');
 
 console.log('  1/3 Crystal Prelude (ascending/descending harp arpeggios)...');
 const crystal = generateCrystalPrelude();

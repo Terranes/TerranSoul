@@ -129,7 +129,7 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 - ✅ Chunk 126 — On-demand Rendering + Idle Optimization — see `completion-log.md`
 
 ### Phase 11 — RPG Brain Configuration
-- ✅ Chunk 128 — FF16 Constellation Skill Tree (Full-Screen Layout) — see `completion-log.md`
+- ✅ Chunk 128 — Constellation Skill Tree (Full-Screen Layout) — see `completion-log.md`
 - ✅ Chunk 129 — Constellation Cluster Interaction & Detail Panel — see `completion-log.md`
 - ✅ Chunk 130 — Brain RPG Stat Sheet — see `completion-log.md`
 - ✅ Chunk 131 — Combo Notification Toast — see `completion-log.md`

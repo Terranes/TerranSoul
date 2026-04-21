@@ -32,14 +32,13 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 
 As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
 
-### The Skill Tree — FF16 Constellation Map
+### The Skill Tree — Constellation Map
 
-Skills are laid out on an **FF16 Abilities-style constellation map** — a full-screen dark star-field with circular category clusters arranged radially, each containing skill nodes in concentric rings:
+Skills are laid out on a **constellation map** — a full-screen dark star-field with circular category clusters arranged radially, each containing skill nodes in concentric rings:
 
-![Skill Tree — FF16 Constellation Map](recording/skill-tree.png)
-<!-- ⬆ Capture this screenshot after Chunk 128-129 implementation is complete -->
+![Skill Tree — Constellation Map](recording/skill-tree.png)
 
-Each **category cluster** (Brain, Voice, Avatar, Social, Utility) is a radial wheel of nodes — like the Eikon ability circles in Final Fantasy XVI. Foundation skills sit in the inner ring, Advanced in the middle ring, and Ultimate on the outer ring. Glowing connection lines trace the prerequisite chains between nodes. Clicking a cluster zooms in; clicking a node opens its quest detail.
+Each **category cluster** (Brain, Voice, Avatar, Social, Utility) is a radial wheel of nodes. Foundation skills sit in the inner ring, Advanced in the middle ring, and Ultimate on the outer ring. Glowing connection lines trace the prerequisite chains between nodes. Clicking a cluster zooms in; clicking a node opens its quest detail.
 
 ```
          ┌─ Voice (🗣️ jade) ──────┐     ┌── Avatar (✨ gold) ──┐
@@ -138,11 +137,11 @@ TerranSoul includes a **TerranSoul Link** layer that securely connects all your 
 TerranSoul has completed **10 phases of development** (126 chunks). Here's what's working today:
 
 ### � Skill Tree / Quest System (RPG Brain Configuration)
-- **FF16 Abilities-style constellation map** — full-screen radial cluster layout (coming: Chunk 128-129)
-- Currently: FF-style **License Board** panel with crystal progress orb
-- **3 tiers:** Foundation (5 nodes) → Advanced (12 nodes) → Ultimate (7 nodes)
-- **24 skill nodes** across Brain, Voice, Avatar, Music, Windows, Social categories
-- **15 combos** triggered by unlocking skill pairs/triples (DJ Companion, Hive Mind, Offline Sage, etc.)
+- **Constellation map** — full-screen radial cluster layout with pan/zoom and minimap
+- Floating **crystal orb** progress indicator opens the constellation
+- **3 tiers:** Foundation → Advanced → Ultimate
+- **Skill nodes** across Brain, Voice, Avatar, Social and Utility categories
+- **Combo abilities** triggered by unlocking specific skill pairs/triples (DJ Companion, Hive Mind, Offline Sage, etc.)
 - Quest nodes with prerequisites, rewards, objectives, and story descriptions
 - Brain-based quest detection — your AI suggests quests conversationally, not via rigid menus
 - Hot-seat overlay with Accept / Tell me more / Maybe later choice tiles
