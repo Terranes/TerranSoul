@@ -11,8 +11,14 @@
 2. [Why SQLite?](#why-sqlite)
 3. [Schema & Migrations](#schema--migrations)
 4. [RAG Pipeline: How Memory Retrieval Works](#rag-pipeline-how-memory-retrieval-works)
-5. [Setup Walkthrough](#setup-walkthrough)
+5. [Setup Walkthrough (Screenshots)](#setup-walkthrough-screenshots)
 6. [Real-World Example: Law Firm Knowledge Base](#real-world-example-law-firm-knowledge-base)
+   - [The Scenario](#the-scenario)
+   - [Step-by-Step: First Day Setup](#step-by-step-first-day-setup)
+   - [Daily Sync: Credential-Based Source Ingestion](#daily-sync-credential-based-source-ingestion)
+   - [Handling Duplicates Across Sources](#handling-duplicates-across-sources)
+   - [Detecting and Removing Stale/Out-of-Date Knowledge](#detecting-and-removing-staleout-of-date-knowledge)
+   - [Day-in-the-Life: Attorney Sarah Uses TerranSoul](#day-in-the-life-attorney-sarah-uses-terransoul)
 7. [Debugging with SQLite](#debugging-with-sqlite)
 8. [Hardware Scaling](#hardware-scaling)
 9. [FAQ](#faq)
@@ -326,123 +332,295 @@ DUPLICATE DETECTED → Skip insert, return existing entry
 
 ---
 
-## Setup Walkthrough
+## Setup Walkthrough (Screenshots)
 
-### Step 1: Brain Setup
+### Screenshot 1: First Launch — Brain Setup Overlay (ChatView)
 
-When you first open TerranSoul, the chat view shows the Brain Setup overlay:
+When you first open TerranSoul, the 3D character is visible but a Brain Setup
+card floats on top. This is the quick-start path from `ChatView.vue`:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    TerranSoul                            │
 │                                                          │
+│         [ 3D VRM Character — Idle Animation ]            │
+│                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │              🧠 Set Up Your Brain                  │  │
+│  │  🧠  Set up your Brain                             │  │
 │  │                                                    │  │
-│  │  Choose how your companion thinks:                 │  │
+│  │  Start chatting instantly with a free cloud LLM:   │  │
+│  │                                                    │  │
+│  │        [ ☁️ Use Free Cloud API (no setup) ]        │  │
+│  │                                                    │  │
+│  │  Intel i7 · 65 GB RAM                              │  │
+│  │  Or run locally: gemma3:12b-it-qat                 │  │
+│  │    Fast, private, runs on your hardware            │  │
+│  │                                                    │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌───────────┐  │  │
+│  │  │gemma3:12b ⭐ │ │ phi4:14b     │ │llama3.3   │  │  │
+│  │  └──────────────┘ └──────────────┘ └───────────┘  │  │
+│  │                                                    │  │
+│  │  ❌ Ollama not running — start it first            │  │
+│  │     (ollama serve)               [ 🔄 Retry ]     │  │
+│  │                                                    │  │
+│  │       [ ⬇ Install & activate gemma3:12b ]          │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **For privacy-sensitive use cases (law firms, medical, finance)**: Choose the
+> local Ollama path. Zero data ever leaves the machine.
+
+### Screenshot 2: Brain Setup Wizard (BrainSetupView — Full Setup)
+
+For more control, navigate to Settings → Brain Setup. This is a multi-step wizard:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (●)─────(○)─────(○)─────(○)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │         🧠 Choose how to power your Brain          │  │
+│  │                                                    │  │
+│  │  TerranSoul needs an AI brain for conversations.   │  │
+│  │  Choose how you'd like to connect it.              │  │
 │  │                                                    │  │
 │  │  ┌──────────────────────────────────────────────┐  │  │
 │  │  │ ☁️  Free Cloud API                           │  │  │
-│  │  │ Instant — no setup required                  │  │  │
-│  │  │ Powered by Pollinations AI                   │  │  │
-│  │  │                          [ Use Free Cloud ]  │  │  │
+│  │  │ Use free LLM providers (Groq, Cerebras)      │  │  │
+│  │  │ No API key needed · Rate-limited              │  │  │
+│  │  │                           [ Instant — no setup]│  │  │
 │  │  └──────────────────────────────────────────────┘  │  │
 │  │                                                    │  │
 │  │  ┌──────────────────────────────────────────────┐  │  │
 │  │  │ 💳 Paid Cloud API                            │  │  │
-│  │  │ OpenAI / Anthropic / Groq                    │  │  │
-│  │  │ Requires your API key                        │  │  │
+│  │  │ OpenAI, Anthropic, or custom endpoint        │  │  │
+│  │  │ Best quality · Requires API key               │  │  │
 │  │  └──────────────────────────────────────────────┘  │  │
 │  │                                                    │  │
 │  │  ┌──────────────────────────────────────────────┐  │  │
-│  │  │ 🖥️  Local LLM (Ollama)                      │  │  │
-│  │  │ Private, offline, your hardware              │  │  │
-│  │  │                                              │  │  │
-│  │  │ System: Intel i7 · 65 GB RAM · RTX 3080 Ti  │  │  │
-│  │  │                                              │  │  │
-│  │  │ Recommended models:                          │  │  │
-│  │  │ ⭐ gemma3:12b-it-qat (7.1 GB)  [Install]   │  │  │
-│  │  │    phi4:14b           (9.1 GB)  [Install]   │  │  │
-│  │  │    llama3.3:latest    (4.7 GB)  [Install]   │  │  │
+│  │  │ 🖥  Local LLM (Ollama)           ← SELECTED  │  │  │
+│  │  │ Run locally, fully private, no internet       │  │  │
+│  │  │ Requires Ollama installed · Best for privacy  │  │  │
 │  │  └──────────────────────────────────────────────┘  │  │
 │  │                                                    │  │
-│  │  Ollama status: ✅ Running                         │  │
+│  │                                      [ Next → ]    │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 3: Hardware Analysis (Step 2)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(●)─────(○)─────(○)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │              🖥 Local LLM Setup                     │  │
+│  │                                                    │  │
+│  │  We'll analyse your hardware and recommend the     │  │
+│  │  best model for your machine.                      │  │
+│  │                                                    │  │
+│  │  💾 RAM    65 GB (High-End)                        │  │
+│  │  🖥 CPU    Intel i7-12700K · 12 cores              │  │
+│  │  🗂 OS     Windows 11 (x86_64)                     │  │
+│  │                                                    │  │
+│  │               [ ← Back ]  [ Next → ]               │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 4: Choose Model (Step 3)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(●)─────(○)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │          Choose your Brain                          │  │
+│  │  Based on your 65 GB of RAM, we recommend:         │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ ⭐ gemma3:12b-it-qat            ← SELECTED  │  │  │
+│  │  │    Fast and accurate for conversations       │  │  │
+│  │  │    Requires 8 GB RAM · tag: gemma3:12b-it-qat│  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │   phi4:14b                                   │  │  │
+│  │  │   Strong reasoning, good for analysis        │  │  │
+│  │  │   Requires 10 GB RAM · tag: phi4:14b         │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │   ☁️ kimi-k2.6  (Cloud)                      │  │  │
+│  │  │   Cloud-routed · no local RAM needed         │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │               [ ← Back ]  [ Next → ]               │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 5: Ollama Status Check (Step 4)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(✓)─────(●)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │              Check Ollama                           │  │
+│  │                                                    │  │
+│  │  TerranSoul uses Ollama to run models locally.     │  │
+│  │  It must be running before we can download.        │  │
+│  │                                                    │  │
+│  │           ✅ Ollama is running                      │  │
+│  │                                                    │  │
+│  │          [ ← Back ] [ 🔄 Retry ] [ Next → ]        │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 6: Download & Activate (Step 5)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(✓)─────(✓)─────(●)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │        Download gemma3:12b-it-qat                   │  │
+│  │                                                    │  │
+│  │  This will download the model via Ollama.          │  │
+│  │  It may take several minutes.                      │  │
+│  │                                                    │  │
+│  │           🔄 Downloading… this may take             │  │
+│  │              a few minutes.                         │  │
+│  │                                                    │  │
+│  │                          [ ← Back ]                 │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 7: Brain Connected! (Done)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(✓)─────(✓)─────(✓)              │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                    🎉                               │  │
+│  │             Brain connected!                        │  │
+│  │                                                    │  │
+│  │  Using gemma3:12b-it-qat via local Ollama.         │  │
+│  │  Fully private — no data leaves your machine.      │  │
+│  │                                                    │  │
+│  │              [ Start chatting → ]                   │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 8: Memory View — Managing Knowledge
+
+Navigate to the Memory tab (🧠 icon in nav) to see all stored memories:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract from session]          │
+│                        [📄 Summarize session]            │
+│                        [＋ Add memory]                    │
+│                                                          │
+│  [Graph]  [List]  [Session]                              │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ 🔍 Search memories…          [🔍 Search] [🤖 Sem] │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
-│           [  3D VRM Character Idle Animation  ]          │
+│  Filter: [fact] [preference] [context] [summary]         │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ fact          ★★★★★                                │  │
+│  │ Family law filings: 30-day deadline from service   │  │
+│  │ [ law ] [ family ] [ deadline ]                    │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ preference    ★★★★☆                                │  │
+│  │ Client Smith prefers email communication           │  │
+│  │ [ client ] [ preference ]                          │  │
+│  │ 2026-04-21                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★★                                │  │
+│  │ Section 14.3: Motion response window is 30 days   │  │
+│  │ [ law ] [ procedure ] [ motions ]                  │  │
+│  │ 2026-04-20                              [✏] [🗑]  │  │
+│  └────────────────────────────────────────────────────┘  │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**For the law firm use case**: Select "Local LLM (Ollama)" for data privacy. All documents and conversations stay on-machine — nothing leaves the network.
-
-### Step 2: Memory View — Managing Knowledge
-
-Navigate to the Memory tab to see all stored memories:
+### Screenshot 9: Session Tab — Short-Term Memory
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Memories                    [⬇ Extract] [📄 Sum] [+ ] │
+│  🧠 Memory            [⬇ Extract] [📄 Sum] [＋ Add]     │
 │                                                          │
-│  [Graph]  [List]                                        │
+│  [Graph]  [List]  [Session] ← active                     │
+│                                                          │
+│  Short-term memory — the last 20 messages of the         │
+│  current session that the brain reads before every reply. │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ 🔍 Search memories...          [Search] [Semantic] │  │
+│  │ You:  What are the rules for filing in family court│  │
+│  │ 🤖:   Based on Section 14.3, family law filings   │  │
+│  │       require a 30-day notice period from service. │  │
+│  │ You:  What about the Smith case specifically?      │  │
+│  │ 🤖:   Client Smith prefers email communication.    │  │
+│  │       I'll format the response accordingly.        │  │
 │  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ ★★★★★  Family law filings: 30-day deadline         │  │
-│  │        Tags: law, family, deadline                  │  │
-│  │        Type: fact · Accessed: 47 times              │  │
-│  │        Source: https://intranet.firm.com/rules/14   │  │
-│  ├────────────────────────────────────────────────────┤  │
-│  │ ★★★★☆  Client prefers email communication          │  │
-│  │        Tags: preference, client                     │  │
-│  │        Type: preference · Accessed: 12 times        │  │
-│  ├────────────────────────────────────────────────────┤  │
-│  │ ★★★★★  Section 14.3: Motion response window        │  │
-│  │        Tags: law, procedure, motions                │  │
-│  │        Type: fact · Accessed: 33 times              │  │
-│  │        Source: https://intranet.firm.com/rules/14.3 │  │
-│  ├────────────────────────────────────────────────────┤  │
-│  │ ★★★☆☆  Office closes at 5pm on Fridays             │  │
-│  │        Tags: office, schedule                       │  │
-│  │        Type: fact · Accessed: 3 times               │  │
-│  └────────────────────────────────────────────────────┘  │
-│                                                          │
-│  Total: 2,847 memories · 2,801 embedded · Schema V3     │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Semantic Search**: Click "Semantic" to use the vector search. Type "filing deadline rules" — TerranSoul finds relevant memories even if the exact words don't match, because it compares meaning vectors, not keywords.
-
-### Step 3: Chat with RAG Context
+### Screenshot 10: Chat with RAG Context
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                                                          │
-│            [ 3D VRM Character — Thinking ]               │
+│         [ 3D VRM Character — Thinking Animation ]        │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │                                                    │  │
-│  │  You: What's the deadline for filing a response    │  │
-│  │       to a family law motion?                      │  │
+│  │  You:  What's the deadline for filing a response   │  │
+│  │        to a family law motion?                     │  │
 │  │                                                    │  │
 │  │  ────────────────────────────────────────────────  │  │
 │  │                                                    │  │
-│  │  TerranSoul: Based on the firm's procedures,       │  │
-│  │  Section 14.3 requires responses to family law     │  │
-│  │  motions within 30 days of service. The filing     │  │
-│  │  must include a proof of service and be submitted  │  │
-│  │  through the court's electronic filing system.     │  │
-│  │                                                    │  │
-│  │  📎 Retrieved from 3 memories (2ms search)         │  │
+│  │  🤖:  Based on the firm's procedures, Section      │  │
+│  │       14.3 requires responses to family law        │  │
+│  │       motions within 30 days of service. The       │  │
+│  │       filing must include a proof of service and   │  │
+│  │       be submitted through the court's electronic  │  │
+│  │       filing system.                               │  │
 │  │                                                    │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │ Type a message...                        [Send ➤]  │  │
+│  │ Type a message…                          [Send ➤]  │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
@@ -450,91 +628,772 @@ Navigate to the Memory tab to see all stored memories:
 
 **What happened behind the scenes:**
 
-1. User's message was embedded: `embed_text("What's the deadline for filing...")` → 768-dim vector
-2. `vector_search()` scanned all 2,847 memory embeddings in **2ms**
-3. Top 5 most relevant memories injected into the system prompt as `[LONG-TERM MEMORY]`
-4. LLM generated the response with full context — accurate, fast, cited
+1. User's message was embedded: `embed_text("What's the deadline...")` → 768-dim vector (50ms)
+2. `vector_search()` scanned all memory embeddings in **<5ms** (pure cosine similarity)
+3. Top 5 most relevant memories injected into system prompt as `[LONG-TERM MEMORY]`
+4. LLM generated the response with full context — accurate and fast
 
 ---
 
 ## Real-World Example: Law Firm Knowledge Base
 
-### Scenario
+### The Scenario
 
-A medium law firm (50 attorneys) wants each attorney to have a private AI companion that knows:
-- Internal procedure manuals (500 pages)
-- Case filing rules by jurisdiction (200 documents)
-- Client preferences and communication history
-- Court deadlines and local rules
+**Morrison & Clark LLP** — a 50-attorney law firm in Chicago.
 
-### Document Ingestion Flow
+Their knowledge lives in multiple disconnected systems, all behind credentials:
 
-```
-Source Documents                    TerranSoul Memory
-─────────────────                   ──────────────────
-
-Intranet Wiki ──────┐
-  /rules/family-law  │              ┌─────────────────┐
-  /rules/civil       │   Chunked    │ id=1 "Filing     │
-  /rules/criminal    ├────────────> │ deadline: 30d"   │
-                     │   & Embedded │ source_url=...   │
-Firm Handbook ───────┤              │ source_hash=a1b2 │
-  policies.pdf       │              ├─────────────────┤
-  procedures.pdf     │              │ id=2 "Response   │
-                     │              │ format: ..."     │
-Client Notes ────────┤              │ source_url=...   │
-  meeting-notes.txt  │              ├─────────────────┤
-  preferences.json   │              │ id=3 "Client     │
-                     │              │ prefers email"   │
-Daily Updates ───────┘              │ ...              │
-  court-calendar.csv               │ id=15,000        │
-                                    └─────────────────┘
-```
-
-### Memory Scale for Law Firm
-
-| Content Type | Documents | Memory Entries | Embedding Size |
+| Source | URL | Auth | Update Frequency |
 |---|---|---|---|
-| Procedure manuals | 50 files | ~5,000 chunks | 15 MB |
-| Case filing rules | 200 docs | ~8,000 chunks | 24 MB |
-| Client preferences | 500 clients | ~2,000 entries | 6 MB |
-| Court deadlines | Daily feed | ~5,000 entries | 15 MB |
-| **Total** | **750+ docs** | **~20,000** | **~60 MB** |
+| Firm Intranet Wiki | `https://wiki.morrisonclark.com` | LDAP (Active Directory) | Daily edits |
+| Document Management | `https://dms.morrisonclark.com` | OAuth2 (Azure AD) | Hourly uploads |
+| Court Rules PDF Library | `https://ilcourts.gov/rules/` | Public (no auth) | Quarterly revisions |
+| Client Portal | `https://portal.morrisonclark.com` | Client-specific API keys | Real-time |
+| Training Materials | `\\fileserver\training\` | Windows network share | Monthly |
+| Slack/Teams | Microsoft Graph API | OAuth2 | Real-time |
 
-**Search time at 20,000 entries**: ~2ms (pure cosine similarity)
+**The problem**: Attorney Sarah needs to ask "What's the deadline for filing a response to a family law motion in Cook County?" — and the answer is spread across 3 different systems, some with outdated versions.
 
-### Staleness & Dedup Handling
+**The goal**: TerranSoul learns all of this daily, deduplicates overlapping info, detects when rules change, and gives instant answers with zero internet calls.
+
+---
+
+### Step-by-Step: First Day Setup
+
+#### Step 1: Install TerranSoul + Choose Local Brain
+
+Sarah installs TerranSoul on her work laptop (Windows 11, 32 GB RAM, no GPU).
 
 ```
-Daily sync job runs:
-                │
-                ▼
-┌──────────────────────────────────┐
-│ 1. Fetch document from source    │
-│    GET https://intranet/rules/14 │
-└──────────────┬───────────────────┘
-               ▼
-┌──────────────────────────────────┐
-│ 2. Hash content (SHA-256)        │
-│    new_hash = "a1b2c3d4..."      │
-└──────────────┬───────────────────┘
-               ▼
-┌──────────────────────────────────┐
-│ 3. Compare with stored hash      │
-│    SELECT source_hash             │
-│    FROM memories                  │
-│    WHERE source_url = '...'       │
-│                                   │
-│    Stored hash: "a1b2c3d4..."     │
-│    Match? → SKIP (no change)      │
-│    Mismatch? → UPDATE + re-embed  │
-└──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Idle Animation ]            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  🧠  Set up your Brain                             │  │
+│  │                                                    │  │
+│  │  Start chatting instantly with a free cloud LLM:   │  │
+│  │                                                    │  │
+│  │        [ ☁️ Use Free Cloud API (no setup) ]        │  │
+│  │                                                    │  │
+│  │  Intel i7-12700 · 32 GB RAM                        │  │
+│  │  Or run locally: phi4:14b                          │  │
+│  │    Strong reasoning, good for analysis             │  │
+│  │                                                    │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌───────────┐  │  │
+│  │  │ phi4:14b  ⭐ │ │ gemma3:4b    │ │ ☁️ kimi   │  │  │
+│  │  └──────────────┘ └──────────────┘ └───────────┘  │  │
+│  │                                                    │  │
+│  │       [ ⬇ Install & activate phi4:14b ]            │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
-The `source_hash` column (added in V3 migration) enables:
-- **Dedup**: Same content from different URLs → detected by embedding similarity (>0.97 cosine)
-- **Staleness**: Hash changed → content updated, re-embedded
-- **Expiry**: `expires_at` column for time-limited knowledge (e.g., "court is closed Dec 25-Jan 2")
+> Sarah clicks **"🖥 Local LLM"** because firm policy requires all data to
+> stay on-premise. No document content ever leaves her machine.
+
+#### Step 2: Bulk Load Firm Knowledge
+
+Sarah's IT admin provides a one-time ingestion script that reads from the firm's
+sources with proper credentials. Here's what happens for each source type:
+
+**Source Type A: Wiki Pages (LDAP Auth)**
+
+```
+Ingestion Script (runs on Sarah's machine)
+──────────────────────────────────────────
+1. Authenticate to wiki.morrisonclark.com
+   → POST /api/login { user: "sarah", pass: "***" }
+   → Receives session cookie
+
+2. Fetch page list
+   → GET /api/pages?space=legal-rules
+   → Returns 847 wiki pages
+
+3. For each page:
+   a. Download content → GET /api/pages/{id}/content
+   b. Chunk into ~500-word segments (overlap 50 words)
+   c. For each chunk:
+      → invoke('add_memory', {
+          content: chunk_text,
+          tags: "wiki,legal-rules,family-law",
+          importance: 4,
+          memoryType: "fact"
+        })
+      → TerranSoul auto-embeds via Ollama (768-dim vector)
+      → Stored in SQLite with source_url + source_hash
+```
+
+**Source Type B: PDF Documents (Public / File Share)**
+
+```
+Ingestion Script
+──────────────────
+1. Scan \\fileserver\training\*.pdf
+   → Found 120 PDF files
+
+2. For each PDF:
+   a. Extract text (via pdf-extract or similar)
+   b. Split into chunks by section headings
+   c. SHA-256 hash the content
+   d. Check for existing hash:
+      → SELECT id FROM memories WHERE source_hash = ?
+      → If exists: SKIP (already ingested)
+      → If new: invoke('add_memory', { ... })
+
+3. Track source metadata:
+   → source_url = "file:///fileserver/training/handbook-v12.pdf"
+   → source_hash = "a1b2c3d4e5f6..."
+   → expires_at = NULL (permanent)
+```
+
+**Source Type C: Court Rules Website (Public)**
+
+```
+Ingestion Script
+──────────────────
+1. Scrape https://ilcourts.gov/rules/family/
+   → Download all rule pages
+
+2. Each rule becomes a memory:
+   → content: "Cook County Family Law Rule 14.3: ..."
+   → tags: "court-rules,cook-county,family-law"
+   → importance: 5  (critical — these are binding rules)
+   → source_url: "https://ilcourts.gov/rules/family/14.3"
+   → source_hash: SHA-256 of page content
+   → expires_at: 1735689600000  (next quarterly review date)
+```
+
+#### Step 3: Verify Ingestion in Memory View
+
+After bulk load completes, Sarah opens the Memory tab:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract from session]          │
+│                        [📄 Summarize session]            │
+│                        [＋ Add memory]                    │
+│                                                          │
+│  [Graph]  [List] ← active  [Session]                     │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ 🔍 Search memories…          [🔍 Search] [🤖 Sem] │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  Filter: [fact ●] [preference] [context] [summary]       │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ fact          ★★★★★                                │  │
+│  │ Cook County Family Law Rule 14.3: Responses to     │  │
+│  │ motions must be filed within 30 days of service    │  │
+│  │ [ court-rules ] [ cook-county ] [ family-law ]     │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★☆                                │  │
+│  │ Firm Policy 7.2: All filings must be reviewed by   │  │
+│  │ a senior partner before submission                 │  │
+│  │ [ wiki ] [ firm-policy ] [ filing ]                │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★☆                                │  │
+│  │ Client Smith preferences: email only, no calls     │  │
+│  │ after 6pm, billing contact: jane@smith.com         │  │
+│  │ [ client ] [ smith ] [ preference ]                │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  Showing 3 of 12,453 memories                            │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Step 4: Verify Schema Info
+
+Sarah can check database health via the Tauri console or by asking TerranSoul:
+
+```typescript
+// From browser dev tools or a custom admin panel:
+const info = await invoke('get_schema_info');
+console.log(info);
+```
+
+```json
+{
+  "schema_version": 3,
+  "target_version": 3,
+  "total_memories": 12453,
+  "unembedded_count": 0,
+  "embedded_count": 12453,
+  "db_engine": "SQLite (WAL mode)",
+  "columns": {
+    "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+    "content": "TEXT NOT NULL — the memory text",
+    "tags": "TEXT — comma-separated tags",
+    "importance": "INTEGER 1-5 — priority ranking",
+    "memory_type": "TEXT — fact|preference|context|summary",
+    "created_at": "INTEGER — Unix timestamp (ms)",
+    "last_accessed": "INTEGER — last RAG hit timestamp",
+    "access_count": "INTEGER — times retrieved by RAG",
+    "embedding": "BLOB — 768-dim f32 vector (little-endian)",
+    "source_url": "TEXT — origin URL for ingested documents",
+    "source_hash": "TEXT — content hash for dedup/staleness",
+    "expires_at": "INTEGER — TTL for auto-expiry"
+  }
+}
+```
+
+---
+
+### Daily Sync: Credential-Based Source Ingestion
+
+Every morning at 6:00 AM, a scheduled task runs the sync script on Sarah's machine.
+The script authenticates to each source, downloads changes, and feeds them to TerranSoul.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DAILY SYNC WORKFLOW                          │
+│                     (runs at 06:00 AM)                           │
+│                                                                  │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐       │
+│  │ Wiki (LDAP) │     │ DMS (OAuth) │     │ Court Rules │       │
+│  │ 847 pages   │     │ 3,200 docs  │     │ 500 rules   │       │
+│  └──────┬──────┘     └──────┬──────┘     └──────┬──────┘       │
+│         │                   │                   │               │
+│         ▼                   ▼                   ▼               │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Credential Manager                       │       │
+│  │                                                       │       │
+│  │  Wiki: LDAP bind → session cookie                     │       │
+│  │  DMS:  OAuth2 client_credentials → bearer token       │       │
+│  │  Court: No auth (public)                              │       │
+│  │  Portal: API key from environment variable            │       │
+│  │  FileShare: Windows integrated auth (Kerberos)        │       │
+│  └──────────────────────┬────────────────────────────────┘       │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Change Detection                         │       │
+│  │                                                       │       │
+│  │  For each source document:                            │       │
+│  │  1. Download content with auth token                  │       │
+│  │  2. SHA-256 hash the content                          │       │
+│  │  3. Compare with stored source_hash in SQLite         │       │
+│  │                                                       │       │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │       │
+│  │  │ UNCHANGED   │  │ MODIFIED     │  │ NEW        │  │       │
+│  │  │ hash match  │  │ hash differs │  │ no record  │  │       │
+│  │  │ → SKIP      │  │ → UPDATE +   │  │ → INSERT + │  │       │
+│  │  │             │  │   re-embed   │  │   embed    │  │       │
+│  │  └─────────────┘  └──────────────┘  └────────────┘  │       │
+│  └──────────────────────┬────────────────────────────────┘       │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Dedup Check                              │       │
+│  │                                                       │       │
+│  │  Before inserting new content:                        │       │
+│  │  1. Embed the new text                                │       │
+│  │  2. find_duplicate(embedding, threshold=0.97)         │       │
+│  │  3. Cosine > 0.97? → SKIP (near-duplicate)           │       │
+│  │     Cosine < 0.97? → INSERT as new memory             │       │
+│  └──────────────────────┬────────────────────────────────┘       │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Expiry Cleanup                           │       │
+│  │                                                       │       │
+│  │  DELETE FROM memories                                 │       │
+│  │  WHERE expires_at IS NOT NULL                         │       │
+│  │    AND expires_at < current_timestamp                  │       │
+│  │                                                       │       │
+│  │  → Removes: old court calendars, temp announcements   │       │
+│  └──────────────────────────────────────────────────────┘       │
+│                                                                  │
+│  SYNC REPORT (emailed to admin):                                │
+│  ─────────────────────────────────────                          │
+│  Sources checked:     5                                          │
+│  Documents scanned:   4,547                                      │
+│  Unchanged (skipped): 4,489                                      │
+│  Modified (updated):  23                                         │
+│  New (inserted):      35                                         │
+│  Duplicates (skipped):7                                          │
+│  Expired (deleted):   12                                         │
+│  Embeddings created:  58                                         │
+│  Total sync time:     4m 32s                                     │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Example Sync Script (TypeScript — runs as a scheduled Tauri sidecar)
+
+```typescript
+// sync-firm-knowledge.ts — Daily knowledge sync for Morrison & Clark LLP
+import { invoke } from '@tauri-apps/api/core';
+import { createHash } from 'crypto';
+
+interface SyncSource {
+  name: string;
+  type: 'wiki' | 'dms' | 'web' | 'fileshare';
+  baseUrl: string;
+  auth: AuthConfig;
+  tags: string;
+  importance: number;
+  expiresInDays?: number;
+}
+
+interface AuthConfig {
+  method: 'ldap' | 'oauth2' | 'apikey' | 'kerberos' | 'none';
+  credentials?: string;  // env var name, NEVER hardcoded
+}
+
+const SOURCES: SyncSource[] = [
+  {
+    name: 'Firm Wiki',
+    type: 'wiki',
+    baseUrl: 'https://wiki.morrisonclark.com/api',
+    auth: { method: 'ldap', credentials: 'WIKI_SESSION_TOKEN' },
+    tags: 'wiki,firm-rules',
+    importance: 4,
+  },
+  {
+    name: 'Court Rules',
+    type: 'web',
+    baseUrl: 'https://ilcourts.gov/rules',
+    auth: { method: 'none' },
+    tags: 'court-rules,illinois',
+    importance: 5,
+    expiresInDays: 90,  // re-check quarterly
+  },
+  {
+    name: 'Client Portal',
+    type: 'dms',
+    baseUrl: 'https://portal.morrisonclark.com/api/v2',
+    auth: { method: 'oauth2', credentials: 'PORTAL_OAUTH_TOKEN' },
+    tags: 'client,portal',
+    importance: 3,
+  },
+];
+
+async function syncSource(source: SyncSource): Promise<SyncStats> {
+  const stats = { scanned: 0, unchanged: 0, modified: 0, inserted: 0, duplicates: 0 };
+
+  // 1. Authenticate (credentials from environment, NEVER hardcoded)
+  const token = await authenticate(source.auth);
+
+  // 2. Fetch document list from source
+  const documents = await fetchDocumentList(source.baseUrl, token);
+
+  for (const doc of documents) {
+    stats.scanned++;
+
+    // 3. Download content
+    const content = await fetchDocument(doc.url, token);
+    const hash = createHash('sha256').update(content).digest('hex');
+
+    // 4. Check if this URL already exists with same hash
+    const existing = await invoke<any[]>('search_memories', {
+      query: doc.url,
+    });
+
+    const match = existing.find(m => m.source_url === doc.url);
+
+    if (match && match.source_hash === hash) {
+      // Content unchanged — skip
+      stats.unchanged++;
+      continue;
+    }
+
+    // 5. Chunk the content (for long documents)
+    const chunks = chunkText(content, 500, 50);  // 500 words, 50 overlap
+
+    for (const chunk of chunks) {
+      // 6. Check for semantic duplicates
+      const isDuplicate = await invoke<number | null>('check_duplicate', {
+        content: chunk,
+      });
+
+      if (isDuplicate) {
+        stats.duplicates++;
+        continue;
+      }
+
+      // 7. Insert new memory (auto-embedded by TerranSoul)
+      const expiresAt = source.expiresInDays
+        ? Date.now() + source.expiresInDays * 86400000
+        : undefined;
+
+      await invoke('add_memory', {
+        content: chunk,
+        tags: source.tags,
+        importance: source.importance,
+        memoryType: 'fact',
+        // V3 columns:
+        sourceUrl: doc.url,
+        sourceHash: hash,
+        expiresAt,
+      });
+
+      if (match) {
+        stats.modified++;
+      } else {
+        stats.inserted++;
+      }
+    }
+  }
+
+  return stats;
+}
+
+function chunkText(text: string, maxWords: number, overlap: number): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += maxWords - overlap) {
+    chunks.push(words.slice(i, i + maxWords).join(' '));
+    if (i + maxWords >= words.length) break;
+  }
+  return chunks;
+}
+```
+
+---
+
+### Handling Duplicates Across Sources
+
+The same fact often appears in multiple places:
+
+```
+EXAMPLE: "Family law responses must be filed within 30 days"
+
+Source 1: Firm Wiki → /rules/family-law/deadlines
+  "A response to a family law motion must be filed
+   within thirty (30) days of service."
+
+Source 2: Court Rules → ilcourts.gov/rules/family/14.3
+  "Responses to motions in family law matters shall
+   be filed within 30 days after service."
+
+Source 3: Training Manual → handbook-v12.pdf, page 47
+  "Filing deadline: 30 days from service date for
+   all family law motion responses."
+```
+
+Without dedup, TerranSoul would store **3 separate memories** saying the same thing,
+wasting space and potentially confusing RAG ranking.
+
+#### How TerranSoul Handles This
+
+```
+Step 1: Source 1 arrives first
+  → embed_text("A response to a family law motion...")
+  → embedding = [0.82, -0.31, 0.56, ...]
+  → No existing duplicate found (empty DB)
+  → INSERT → id=1
+
+Step 2: Source 2 arrives
+  → embed_text("Responses to motions in family law...")
+  → embedding = [0.83, -0.30, 0.55, ...]
+  → find_duplicate(embedding, threshold=0.97)
+  → cosine_similarity with id=1 = 0.98  ← ABOVE THRESHOLD
+  → SKIP — this is a near-duplicate of id=1
+
+Step 3: Source 3 arrives
+  → embed_text("Filing deadline: 30 days from service...")
+  → embedding = [0.81, -0.32, 0.57, ...]
+  → find_duplicate(embedding, threshold=0.97)
+  → cosine_similarity with id=1 = 0.97  ← AT THRESHOLD
+  → SKIP — still a near-duplicate
+
+Result: Only 1 memory stored instead of 3
+  → id=1 "A response to a family law motion must be filed
+           within thirty (30) days of service."
+  → source_url = wiki (first source wins)
+```
+
+#### Dedup in the SQLite Database
+
+```sql
+-- Find all memories from the same source that might be redundant
+SELECT a.id, b.id AS similar_to, a.content, a.source_url
+FROM memories a
+JOIN memories b ON a.id > b.id
+WHERE a.source_url != b.source_url
+  AND a.embedding IS NOT NULL
+  AND b.embedding IS NOT NULL;
+-- Note: Actual cosine comparison happens in Rust, not SQL
+
+-- Admin query: find exact text duplicates (not just semantic)
+SELECT content, COUNT(*) AS copies, GROUP_CONCAT(id) AS ids
+FROM memories
+GROUP BY content
+HAVING copies > 1;
+```
+
+---
+
+### Detecting and Removing Stale/Out-of-Date Knowledge
+
+Legal rules change. Court deadlines shift. Firm policies get revised.
+TerranSoul uses three mechanisms to keep knowledge current:
+
+#### Mechanism 1: Source Hash Change Detection
+
+```
+Monday (initial sync):
+  Court Rule 14.3 → hash = "a1b2c3d4"
+  → Stored: id=42, source_hash="a1b2c3d4"
+
+Tuesday (daily sync):
+  Court Rule 14.3 → hash = "a1b2c3d4"  (same)
+  → SKIP — content unchanged
+
+Wednesday (rule amended):
+  Court Rule 14.3 → hash = "e5f6g7h8"  (DIFFERENT!)
+  → Detected: source_hash mismatch for source_url
+  → Action:
+    1. DELETE old memory (id=42)
+    2. INSERT new content with new hash
+    3. Auto-embed the new content
+    4. Log: "Updated: Court Rule 14.3 — content changed"
+```
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  STALENESS DETECTION                      │
+│                                                           │
+│   Source URL             Stored Hash    Current Hash      │
+│   ──────────────────     ───────────    ────────────      │
+│   /rules/family/14.3    a1b2c3d4       e5f6g7h8   ← STALE│
+│   /rules/family/14.4    f9g0h1i2       f9g0h1i2   ✓ OK   │
+│   /rules/civil/22.1     j3k4l5m6       j3k4l5m6   ✓ OK   │
+│   /policies/billing     n7o8p9q0       r1s2t3u4   ← STALE│
+│                                                           │
+│   Action: 2 memories updated, 2 re-embedded               │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### Mechanism 2: TTL Expiry (`expires_at` Column)
+
+Some knowledge has a natural shelf life:
+
+```sql
+-- Set expiry when ingesting time-sensitive content
+INSERT INTO memories (content, tags, importance, memory_type,
+                      created_at, source_url, expires_at)
+VALUES (
+  'Court closed Dec 25, 2026 – Jan 2, 2027 for holiday recess',
+  'court-calendar,holiday',
+  3,
+  'fact',
+  1713744000000,
+  'https://ilcourts.gov/calendar/2026',
+  1735776000000   -- expires Jan 2, 2027
+);
+
+-- Daily cleanup: remove expired memories
+DELETE FROM memories
+WHERE expires_at IS NOT NULL AND expires_at < strftime('%s','now') * 1000;
+```
+
+| Content Type | Typical TTL | Example |
+|---|---|---|
+| Court calendar events | Until event date + 1 day | "Hearing on May 15" |
+| Holiday schedules | Until end of holiday | "Closed Dec 25-Jan 2" |
+| Temporary policies | Duration of policy | "COVID masking required" |
+| Client case deadlines | Until deadline + 7 days | "Smith motion due Apr 30" |
+| Permanent rules | No expiry (`NULL`) | "30-day filing deadline" |
+
+#### Mechanism 3: Access Count Decay (Unused Knowledge)
+
+Memories that RAG never retrieves are probably not useful:
+
+```sql
+-- Find memories older than 90 days that were never accessed by RAG
+SELECT id, content, created_at, access_count
+FROM memories
+WHERE access_count = 0
+  AND created_at < strftime('%s','now') * 1000 - 7776000000  -- 90 days
+ORDER BY created_at ASC;
+
+-- Example output:
+-- id   | content                              | access_count
+-- 847  | 2025 holiday party menu choices       | 0
+-- 1203 | Old phone extension list (pre-move)   | 0
+-- 1456 | Draft policy that was never adopted   | 0
+```
+
+Admin can periodically review and prune these:
+
+```typescript
+// Cleanup script: archive zero-access memories older than 90 days
+const stale = await invoke<MemoryEntry[]>('search_memories', {
+  query: '',  // get all, then filter
+});
+
+const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+const unused = stale.filter(m =>
+  m.access_count === 0 && m.created_at < ninetyDaysAgo
+);
+
+for (const m of unused) {
+  // Archive to CSV before deleting
+  appendToArchive(m);
+  await invoke('delete_memory', { id: m.id });
+}
+console.log(`Archived and deleted ${unused.length} stale memories`);
+```
+
+---
+
+### Day-in-the-Life: Attorney Sarah Uses TerranSoul
+
+#### 8:30 AM — Sarah Opens TerranSoul
+
+The daily sync already ran at 6:00 AM. TerranSoul has 12,500+ memories
+from all firm sources, fully embedded and searchable.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                          │
+│         [ 3D VRM Character — Good morning wave ]         │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  You:  Good morning! I need to prepare a response  │  │
+│  │        to the Smith family law motion. What are     │  │
+│  │        the deadlines and filing requirements?       │  │
+│  │                                                    │  │
+│  │  ────────────────────────────────────────────────  │  │
+│  │                                                    │  │
+│  │  🤖:  Good morning! For the Smith case, here's     │  │
+│  │       what I found:                                │  │
+│  │                                                    │  │
+│  │       **Deadline**: Per Cook County Family Law      │  │
+│  │       Rule 14.3, you have 30 days from service     │  │
+│  │       to file your response.                       │  │
+│  │                                                    │  │
+│  │       **Firm Policy**: Policy 7.2 requires         │  │
+│  │       senior partner review before submission.     │  │
+│  │                                                    │  │
+│  │       **Client Preference**: Mr. Smith prefers     │  │
+│  │       email communication only, no calls after     │  │
+│  │       6pm. Billing contact: jane@smith.com         │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Type a message…                          [Send ➤]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Behind the scenes** — the RAG pipeline found 3 relevant memories in **<5ms**:
+
+```
+[LONG-TERM MEMORY]
+- Cook County Family Law Rule 14.3: Responses to motions must be
+  filed within 30 days of service.
+- Firm Policy 7.2: All filings must be reviewed by a senior partner
+  before submission.
+- Client Smith preferences: email only, no calls after 6pm, billing
+  contact: jane@smith.com
+[/LONG-TERM MEMORY]
+```
+
+#### 10:00 AM — Sarah Learns Something New in a Meeting
+
+Sarah: "I just learned that Judge Martinez's courtroom has a new
+local rule — all motions must include a certificate of compliance
+starting May 1st."
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                         │
+│  You:  Remember this: Judge Martinez's courtroom now    │
+│        requires a certificate of compliance for all     │
+│        motions starting May 1st, 2026.                  │
+│                                                         │
+│  🤖:   Got it! I've stored that as a high-importance    │
+│        fact. I'll remember this for future filings      │
+│        in Judge Martinez's courtroom.                   │
+│                                                         │
+└────────────────────────────────────────────────────────┘
+```
+
+TerranSoul auto-extracts this as a memory:
+
+```sql
+INSERT INTO memories
+  (content, tags, importance, memory_type, created_at, access_count)
+VALUES
+  ('Judge Martinez courtroom: certificate of compliance
+   required for all motions starting May 1st, 2026',
+   'judge-martinez,compliance,motions,new-rule',
+   5,
+   'fact',
+   1713780000000,
+   0);
+-- Auto-embedded via Ollama → 768-dim vector stored as BLOB
+```
+
+#### 2:00 PM — Sarah Asks About a Rule That Changed Overnight
+
+The daily sync detected that Court Rule 22.1 was amended:
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                         │
+│  You:  What's the current procedure for filing a        │
+│        civil motion in Cook County?                     │
+│                                                         │
+│  🤖:   Based on the updated Cook County Civil Rule      │
+│        22.1 (amended April 21, 2026):                   │
+│                                                         │
+│        1. Electronic filing is now MANDATORY (was        │
+│           optional before the amendment)                 │
+│        2. Paper copies are no longer accepted            │
+│        3. Filing fee increased to $350                   │
+│                                                         │
+│        Note: This rule was updated yesterday. The        │
+│        previous version required only e-filing for       │
+│        cases over $50,000.                               │
+│                                                         │
+└────────────────────────────────────────────────────────┘
+```
+
+**This works because** the daily sync at 6:00 AM:
+1. Downloaded the new version of Rule 22.1
+2. Detected the hash mismatch (`old_hash ≠ new_hash`)
+3. Deleted the old memory
+4. Inserted the new text
+5. Auto-embedded the new version
+6. Sarah gets the updated rule — automatically, no manual intervention
+
+#### 5:00 PM — End of Day: Extract Session Memories
+
+Sarah clicks "⬇ Extract from session" in the Memory tab:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract from session]          │
+│                        Working… extracting facts         │
+│                                                          │
+│  Extracted 4 new memories from today's session:          │
+│                                                          │
+│  ✓ "Judge Martinez requires certificate of compliance"   │
+│  ✓ "Smith case response deadline is April 30th"          │
+│  ✓ "New e-filing mandate for civil motions"              │
+│  ✓ "Sarah prefers to prepare filings in the morning"     │
+│                                                          │
+│  Total memories: 12,457 (was 12,453 this morning)        │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+These session facts are now part of the permanent long-term memory,
+available for RAG in all future conversations.
 
 ---
 
