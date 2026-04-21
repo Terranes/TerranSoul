@@ -439,12 +439,12 @@ onUnmounted(() => {
 .audio-controls-panel {
   width: min(520px, 90vw);
   max-height: 85vh;
-  background: rgba(15, 20, 35, 0.95);
+  background: var(--ts-bg-panel);
   border: 1px solid rgba(124, 111, 255, 0.3);
   border-radius: 12px;
   overflow: hidden;
   backdrop-filter: blur(20px);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+  box-shadow: var(--ts-shadow-lg);
 }
 
 .panel-header {
@@ -459,13 +459,13 @@ onUnmounted(() => {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--ts-text-primary);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   cursor: pointer;
   font-size: 1.5rem;
   padding: 4px;
@@ -474,7 +474,7 @@ onUnmounted(() => {
 }
 
 .close-btn:hover {
-  color: #e2e8f0;
+  color: var(--ts-text-primary);
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -503,7 +503,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #a78bfa;
+  color: var(--ts-accent-violet);
 }
 
 .mute-btn {
@@ -511,7 +511,7 @@ onUnmounted(() => {
   border: 1px solid rgba(124, 111, 255, 0.3);
   border-radius: 8px;
   padding: 8px 12px;
-  color: #a78bfa;
+  color: var(--ts-accent-violet);
   cursor: pointer;
   font-size: 1rem;
   transition: all 0.2s ease;
@@ -559,7 +559,7 @@ onUnmounted(() => {
   -webkit-appearance: none;
   width: 18px;
   height: 18px;
-  background: #a78bfa;
+  background: var(--ts-accent-violet);
   border-radius: 50%;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.1s ease;
@@ -573,7 +573,7 @@ onUnmounted(() => {
 .volume-slider::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  background: #a78bfa;
+  background: var(--ts-accent-violet);
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -587,7 +587,7 @@ onUnmounted(() => {
 
 .volume-display {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
   min-width: 40px;
   text-align: right;
@@ -605,7 +605,7 @@ onUnmounted(() => {
 .mic-device-selector label,
 .speaker-device-selector label {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   min-width: 60px;
 }
 
@@ -616,7 +616,7 @@ onUnmounted(() => {
   border: 1px solid rgba(124, 111, 255, 0.3);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
-  color: #e2e8f0;
+  color: var(--ts-text-primary);
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -631,7 +631,7 @@ onUnmounted(() => {
 .track-select:focus,
 .device-select:focus {
   outline: none;
-  border-color: #a78bfa;
+  border-color: var(--ts-accent-violet);
   box-shadow: 0 0 0 2px rgba(124, 111, 255, 0.2);
 }
 
@@ -643,7 +643,7 @@ onUnmounted(() => {
 
 .mic-level-label {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   min-width: 60px;
 }
 
@@ -664,7 +664,7 @@ onUnmounted(() => {
 
 .mic-level-text {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
   min-width: 40px;
   text-align: right;
@@ -681,7 +681,7 @@ onUnmounted(() => {
   border: 1px solid rgba(124, 111, 255, 0.3);
   border-radius: 8px;
   background: rgba(124, 111, 255, 0.1);
-  color: #a78bfa;
+  color: var(--ts-accent-violet);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 600;

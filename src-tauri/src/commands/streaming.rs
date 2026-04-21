@@ -347,10 +347,67 @@ async fn stream_ollama(
     history: &[(String, String)],
     model: &str,
 ) -> Result<(), String> {
+    // ── Local semantic-search RAG: retrieve relevant memories ───────────
+    let mut system_prompt = super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
+
+    // Extract the user's latest message for RAG query
+    let user_query = history
+        .iter()
+        .rev()
+        .find(|(role, _)| role == "user")
+        .map(|(_, content)| content.as_str())
+        .unwrap_or(_message);
+
+    // Fast vector path: embed query → cosine search → <10ms.
+    // Falls back to LLM ranking only when no embeddings exist yet.
+    //
+    // Step 1: Try vector search (lock held briefly, no await).
+    let vector_results: Vec<crate::memory::MemoryEntry> = {
+        let query_emb = crate::brain::OllamaAgent::embed_text(user_query, model).await;
+        match (query_emb, state.memory_store.lock()) {
+            (Some(emb), Ok(store)) => store.vector_search(&emb, 5).unwrap_or_default(),
+            _ => vec![],
+        }
+    };
+
+    // Step 2: If vector search returned nothing, try legacy LLM-rank fallback.
+    let relevant = if !vector_results.is_empty() {
+        vector_results
+    } else {
+        let entries: Vec<crate::memory::MemoryEntry> = {
+            match state.memory_store.lock() {
+                Ok(mem_store) => mem_store.get_all().unwrap_or_default(),
+                Err(_) => vec![],
+            }
+        };
+        if entries.is_empty() {
+            vec![]
+        } else {
+            crate::memory::brain_memory::semantic_search_entries(
+                model,
+                user_query,
+                &entries,
+                5,
+            )
+            .await
+        }
+    };
+
+    if !relevant.is_empty() {
+        let memory_block: String = relevant
+            .iter()
+            .map(|e| format!("- {}", e.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        system_prompt.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
     // Build Ollama message array
     let system_msg = ChatMessage {
         role: "system".to_string(),
-        content: super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+        content: system_prompt,
     };
     let mut messages = vec![system_msg];
     for (role, content) in history {

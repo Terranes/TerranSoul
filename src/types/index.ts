@@ -135,6 +135,7 @@ export interface ModelRecommendation {
   description: string;
   required_ram_mb: number;
   is_top_pick: boolean;
+  is_cloud?: boolean;
 }
 
 export interface OllamaStatus {

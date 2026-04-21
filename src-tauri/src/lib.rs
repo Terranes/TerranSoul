@@ -45,9 +45,9 @@ use commands::{
     },
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
     memory::{
-        add_memory, delete_memory, extract_memories_from_session, get_memories,
-        get_relevant_memories, get_short_term_memory, search_memories,
-        semantic_search_memories, summarize_session, update_memory,
+        add_memory, backfill_embeddings, delete_memory, extract_memories_from_session,
+        get_memories, get_relevant_memories, get_schema_info, get_short_term_memory,
+        search_memories, semantic_search_memories, summarize_session, update_memory,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message,
@@ -257,6 +257,8 @@ pub fn run() {
             extract_memories_from_session,
             summarize_session,
             semantic_search_memories,
+            backfill_embeddings,
+            get_schema_info,
             start_registry_server,
             stop_registry_server,
             get_registry_server_port,

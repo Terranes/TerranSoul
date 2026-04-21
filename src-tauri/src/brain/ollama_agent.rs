@@ -273,6 +273,72 @@ impl OllamaAgent {
         if clean.is_empty() { None } else { Some(clean) }
     }
 
+    // ── Embedding ──────────────────────────────────────────────────────────
+
+    /// Generate a vector embedding for `text` via Ollama `/api/embed`.
+    /// Uses `nomic-embed-text` (768-dim) if available, otherwise falls
+    /// back to the active chat model.  Returns `None` on any error.
+    pub async fn embed_text(text: &str, model_hint: &str) -> Option<Vec<f32>> {
+        // Prefer a dedicated embedding model; fall back to chat model.
+        let embed_model = if Self::model_exists("nomic-embed-text").await {
+            "nomic-embed-text".to_string()
+        } else {
+            model_hint.to_string()
+        };
+
+        let client = Client::new();
+        let body = serde_json::json!({
+            "model": embed_model,
+            "input": text,
+        });
+
+        let resp = client
+            .post(format!("{OLLAMA_BASE_URL}/api/embed"))
+            .json(&body)
+            .send()
+            .await
+            .ok()?;
+
+        if !resp.status().is_success() {
+            return None;
+        }
+
+        let json: serde_json::Value = resp.json().await.ok()?;
+        // Ollama returns { "embeddings": [[...]] }
+        let arr = json.get("embeddings")?.as_array()?.first()?.as_array()?;
+        let vec: Vec<f32> = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
+        if vec.is_empty() { None } else { Some(vec) }
+    }
+
+    /// Check if a model name is available locally in Ollama.
+    async fn model_exists(name: &str) -> bool {
+        let client = Client::new();
+        let resp = client
+            .get(format!("{OLLAMA_BASE_URL}/api/tags"))
+            .send()
+            .await;
+        match resp {
+            Ok(r) => {
+                if let Ok(json) = r.json::<serde_json::Value>().await {
+                    json.get("models")
+                        .and_then(|m| m.as_array())
+                        .map(|models| {
+                            models.iter().any(|m| {
+                                m.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|n| n.starts_with(name))
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            }
+            Err(_) => false,
+        }
+    }
+
     /// Ask the brain which stored memories are most relevant to a query.
     ///
     /// `candidates` is a list of (id, content) pairs.  

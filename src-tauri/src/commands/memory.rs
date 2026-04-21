@@ -4,6 +4,7 @@ use crate::memory::{MemoryEntry, MemoryUpdate, NewMemory};
 use crate::AppState;
 
 /// Add a new long-term memory.
+/// Automatically generates a vector embedding when a brain is configured.
 #[tauri::command]
 pub async fn add_memory(
     content: String,
@@ -14,15 +15,33 @@ pub async fn add_memory(
 ) -> Result<MemoryEntry, String> {
     let mt = serde_json::from_value(serde_json::Value::String(memory_type))
         .unwrap_or(crate::memory::MemoryType::Fact);
-    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store
-        .add(NewMemory {
-            content,
-            tags,
-            importance,
-            memory_type: mt,
-        })
-        .map_err(|e| e.to_string())
+
+    let entry = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .add(NewMemory {
+                content: content.clone(),
+                tags,
+                importance,
+                memory_type: mt,
+            })
+            .map_err(|e| e.to_string())?
+    }; // lock released before await
+
+    // Best-effort embedding — non-blocking, silently ignored on failure.
+    let model_opt = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+    if let Some(model) = model_opt {
+        if let Some(emb) = crate::brain::OllamaAgent::embed_text(&content, &model).await {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let _ = store.set_embedding(entry.id, &emb);
+        }
+    }
+
+    Ok(entry)
 }
 
 /// Return all stored memories.
@@ -168,7 +187,8 @@ pub async fn summarize_session(
 }
 
 /// Use the active brain to perform a semantic search across stored memories.
-/// Falls back to keyword search if the brain is unavailable.
+/// Uses fast vector search when embeddings exist, falls back to LLM ranking,
+/// then to keyword search if no brain is available.
 #[tauri::command]
 pub async fn semantic_search_memories(
     query: String,
@@ -182,23 +202,101 @@ pub async fn semantic_search_memories(
         .map_err(|e| e.to_string())?
         .clone();
 
-    let entries: Vec<crate::memory::MemoryEntry> = {
-        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-        store.get_all().map_err(|e| e.to_string())?
-    }; // lock released before any await
+    if let Some(model) = model_opt {
+        // Fast path: embed query → cosine search (no LLM call needed).
+        if let Some(query_emb) = crate::brain::OllamaAgent::embed_text(&query, &model).await {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let results = store.vector_search(&query_emb, limit).map_err(|e| e.to_string())?;
+            if !results.is_empty() {
+                return Ok(results);
+            }
+        }
 
-    let results = if let Some(model) = model_opt {
-        crate::memory::brain_memory::semantic_search_entries(&model, &query, &entries, limit).await
+        // Fallback: brute-force LLM ranking.
+        let entries: Vec<crate::memory::MemoryEntry> = {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            store.get_all().map_err(|e| e.to_string())?
+        };
+        let results = crate::memory::brain_memory::semantic_search_entries(
+            &model, &query, &entries, limit,
+        )
+        .await;
+        Ok(results)
     } else {
-        entries
+        // No brain — keyword fallback.
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let entries = store.get_all().map_err(|e| e.to_string())?;
+        Ok(entries
             .into_iter()
             .filter(|e| {
                 let q = query.to_lowercase();
                 e.content.to_lowercase().contains(&q) || e.tags.to_lowercase().contains(&q)
             })
             .take(limit)
-            .collect()
+            .collect())
+    }
+}
+
+/// Generate embeddings for all memories that don't have one yet.
+/// Returns the number of entries newly embedded.
+#[tauri::command]
+pub async fn backfill_embeddings(
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    let unembedded: Vec<(i64, String)> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.unembedded_ids().map_err(|e| e.to_string())?
     };
 
-    Ok(results)
+    let mut count = 0usize;
+    for (id, content) in &unembedded {
+        if let Some(emb) = crate::brain::OllamaAgent::embed_text(content, &model).await {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            if store.set_embedding(*id, &emb).is_ok() {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
+/// Return the current database schema version and migration status.
+#[tauri::command]
+pub async fn get_schema_info(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let version = store.schema_version();
+    let count = store.count();
+    let unembedded = store.unembedded_ids().map_err(|e| e.to_string())?.len();
+
+    Ok(serde_json::json!({
+        "schema_version": version,
+        "target_version": crate::memory::migrations::TARGET_VERSION,
+        "total_memories": count,
+        "unembedded_count": unembedded,
+        "embedded_count": count as usize - unembedded,
+        "db_engine": "SQLite (WAL mode)",
+        "columns": {
+            "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+            "content": "TEXT NOT NULL — the memory text",
+            "tags": "TEXT — comma-separated tags",
+            "importance": "INTEGER 1-5 — priority ranking",
+            "memory_type": "TEXT — fact|preference|context|summary",
+            "created_at": "INTEGER — Unix timestamp (ms)",
+            "last_accessed": "INTEGER — last RAG hit timestamp",
+            "access_count": "INTEGER — times retrieved by RAG",
+            "embedding": "BLOB — 768-dim f32 vector (little-endian)",
+            "source_url": "TEXT — origin URL for ingested documents",
+            "source_hash": "TEXT — content hash for dedup/staleness",
+            "expires_at": "INTEGER — TTL for auto-expiry"
+        }
+    }))
 }

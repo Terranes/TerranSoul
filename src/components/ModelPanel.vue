@@ -145,8 +145,8 @@ async function handleImport() {
 .model-panel {
   width: 300px;
   max-height: calc(100% - 16px);
-  background: rgba(20, 20, 35, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-border);
   border-radius: 12px;
   overflow: hidden;
   display: flex;
@@ -166,7 +166,7 @@ async function handleImport() {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #e8e8f0;
+  color: var(--ts-text-primary);
 }
 
 .close-btn {
@@ -212,7 +212,7 @@ async function handleImport() {
   border: 1px dashed rgba(108, 99, 255, 0.5);
   border-radius: 8px;
   background: rgba(108, 99, 255, 0.1);
-  color: #a09aff;
+  color: var(--ts-accent-violet);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
@@ -232,7 +232,7 @@ async function handleImport() {
 .import-hint {
   margin: 0;
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--ts-text-dim);
   text-align: center;
 }
 
@@ -245,15 +245,15 @@ async function handleImport() {
 .select-label {
   font-size: 0.78rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ts-text-secondary);
 }
 
 .model-select {
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--ts-border);
   background: rgba(255, 255, 255, 0.06);
-  color: #e8e8f0;
+  color: var(--ts-text-primary);
   font-size: 0.85rem;
   cursor: pointer;
   outline: none;
@@ -275,8 +275,8 @@ async function handleImport() {
 }
 
 .model-select option {
-  background: #1a1a2e;
-  color: #e8e8f0;
+  background: var(--ts-bg-surface);
+  color: var(--ts-text-primary);
 }
 
 .error-banner {
@@ -339,7 +339,7 @@ async function handleImport() {
 .model-name {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #e8e8f0;
+  color: var(--ts-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -347,7 +347,7 @@ async function handleImport() {
 
 .model-author {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ts-text-dim);
 }
 
 .panel-footer {
@@ -358,7 +358,7 @@ async function handleImport() {
 .footer-note {
   margin: 0;
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--ts-text-dim);
   line-height: 1.4;
 }
 

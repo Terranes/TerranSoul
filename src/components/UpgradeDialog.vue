@@ -115,7 +115,7 @@ function handleAccept() {
 
 .upgrade-dialog {
   width: min(420px, 92vw);
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  background: linear-gradient(135deg, var(--ts-bg-surface) 0%, var(--ts-bg-base) 100%);
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 16px;
   padding: 1.5rem;
@@ -150,7 +150,7 @@ function handleAccept() {
 .upgrade-title {
   margin: 0;
   font-size: 1.2rem;
-  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  background: linear-gradient(90deg, var(--ts-accent-blue), var(--ts-accent-violet));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -159,7 +159,7 @@ function handleAccept() {
 .upgrade-desc {
   margin: 0;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   line-height: 1.5;
 }
 
@@ -193,11 +193,11 @@ function handleAccept() {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #64748b;
+  color: var(--ts-text-muted);
 }
 
 .tier-badge.rec {
-  color: #60a5fa;
+  color: var(--ts-accent-blue);
 }
 
 .upgrade-tier strong {
@@ -205,13 +205,13 @@ function handleAccept() {
 }
 
 .upgrade-tier small {
-  color: #64748b;
+  color: var(--ts-text-muted);
   font-size: 0.72rem;
 }
 
 .upgrade-arrow {
   font-size: 1.2rem;
-  color: #3b82f6;
+  color: var(--ts-accent-blue-hover);
   flex-shrink: 0;
 }
 
@@ -236,14 +236,14 @@ function handleAccept() {
   transition: border-color 0.15s, background 0.15s;
 }
 
-.upgrade-opt-btn:hover { border-color: #334155; }
-.upgrade-opt-btn.selected { border-color: #3b82f6; background: rgba(59, 130, 246, 0.08); }
+.upgrade-opt-btn:hover { border-color: var(--ts-border-medium); }
+.upgrade-opt-btn.selected { border-color: var(--ts-accent-blue-hover); background: rgba(59, 130, 246, 0.08); }
 .upgrade-opt-btn.primary { border-color: rgba(59, 130, 246, 0.3); }
 
 .opt-icon { font-size: 1.2rem; flex-shrink: 0; }
 .opt-text { display: flex; flex-direction: column; }
 .opt-text strong { font-size: 0.8rem; }
-.opt-text small { color: #64748b; font-size: 0.7rem; }
+.opt-text small { color: var(--ts-text-muted); font-size: 0.7rem; }
 
 /* Action buttons */
 .upgrade-actions {
@@ -271,14 +271,15 @@ function handleAccept() {
 .btn-dismiss {
   padding: 0.5rem 1rem;
   background: transparent;
-  color: #64748b;
-  border: 1px solid #334155;
+  color: var(--ts-text-muted);
+  border: 1px solid var(--ts-border-medium);
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.8rem;
+  transition: color var(--ts-transition-fast), border-color var(--ts-transition-fast);
 }
 
-.btn-dismiss:hover { color: #94a3b8; border-color: #475569; }
+.btn-dismiss:hover { color: var(--ts-text-secondary); border-color: var(--ts-text-muted); }
 
 /* Transitions */
 .upgrade-slide-enter-active { transition: all 0.3s ease-out; }
