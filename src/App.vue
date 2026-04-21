@@ -7,12 +7,12 @@
   </Transition>
 
   <div v-show="!appLoading" class="app-shell" :class="{ 'pet-mode': isPetMode }">
-    <!-- Floating mode-toggle pill — visible in BOTH desktop and pet mode,
-         and in browser/dev where the store falls back to a local flip so the
-         overlay UI is still reachable.  This is the ONLY pet-mode toggle in
-         the app; nothing lives in the sidebar/bottom-nav. -->
+    <!-- Floating mode-toggle pill — visible on the Chat tab (but not while the
+         quest constellation panel is open) and always in pet mode (where it's
+         the only way back to desktop mode).  Hidden on all other tabs so it
+         doesn't overlap Memory, Marketplace, Voice, or the Skill tree. -->
     <div
-      v-if="!appLoading"
+      v-if="!appLoading && ((activeTab === 'chat' && !questConstellationOpen) || isPetMode)"
       class="mode-toggle-pill"
       :class="{ 'is-pet': isPetMode }"
     >
@@ -88,8 +88,15 @@
           <VoiceSetupView v-if="activeTab === 'voice'" @done="activeTab = 'chat'" />
         </main>
 
-        <!-- Floating quest progress bubble -->
-        <QuestBubble @trigger="handleQuestBubble" @navigate="handleSkillNavigate" />
+        <!-- Floating quest progress bubble — chat tab only so it doesn't
+             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
+        <QuestBubble v-if="activeTab === 'chat'" @trigger="handleQuestBubble" @navigate="handleSkillNavigate" @update:constellation-open="questConstellationOpen = $event" />
+
+        <!-- Combo unlock notifications (Chunk 131) -->
+        <ComboToast />
+
+        <!-- Quest reward ceremony overlay (Chunk 132) -->
+        <QuestRewardCeremony />
       </template>
     </template>
 
@@ -110,6 +117,8 @@ import VoiceSetupView from './views/VoiceSetupView.vue';
 import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
 import QuestBubble from './components/QuestBubble.vue';
+import ComboToast from './components/ComboToast.vue';
+import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import { Analytics } from '@vercel/analytics/vue';
 import { SpeedInsights } from '@vercel/speed-insights/vue';
@@ -122,6 +131,7 @@ const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills'>('c
 const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
+const questConstellationOpen = ref(false);
 
 
 const hasBrain = computed(() => brain.hasBrain);

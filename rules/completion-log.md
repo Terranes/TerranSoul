@@ -6,6 +6,195 @@
 
 ---
 
+## Table of Contents
+
+Entries are in **reverse chronological order** (newest first).
+
+| Entry | Date |
+|-------|------|
+| [Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration](#chunks-130134--phase-11-finale-rpg-brain-configuration) | 2026-04-20 |
+| [Chunk 128 — FF16 Constellation Skill Tree](#chunk-128--ff16-constellation-skill-tree-full-screen-layout) | 2026-04-20 |
+| [Chunk 129 — Constellation Cluster Interaction & Detail Panel](#chunk-129--constellation-cluster-interaction--detail-panel) | 2026-04-20 |
+| [Post-Phase — 3D Model Loading Robustness](#post-phase--3d-model-loading-robustness) | 2026-04-18 |
+| [Post-Phase — Streaming Timeout Fix](#post-phase--streaming-timeout-fix-stuck-thinking) | 2026-04-18 |
+| [Post-Phase — Music Bar Redesign](#post-phase--music-bar-redesign-always-visible-playstop) | 2026-04-18 |
+| [Post-Phase — Splash Screen](#post-phase--splash-screen) | 2026-04-18 |
+| [Post-Phase — BGM Track Replacement](#post-phase--bgm-track-replacement-jrpg-style) | 2026-04-18 |
+| [Chunk 126 — On-demand Rendering + Idle Optimization](#chunk-126--on-demand-rendering--idle-optimization) | 2026-04-18 |
+| [Chunk 125 — LipSync ↔ TTS Audio Pipeline](#chunk-125--lipsync--tts-audio-pipeline) | 2026-04-18 |
+| [Chunk 124 — Decouple IPC from Animation](#chunk-124--decouple-ipc-from-animation--coarse-state-bridge) | 2026-04-18 |
+| [Chunk 123 — Audio Analysis Web Worker](#chunk-123--audio-analysis-web-worker) | 2026-04-17 |
+| [Chunk 122 — 5-Channel VRM Viseme Lip Sync](#chunk-122--5-channel-vrm-viseme-lip-sync) | 2026-04-17 |
+| [Chunk 121 — Exponential Damping Render Loop](#chunk-121--exponential-damping-render-loop) | 2026-04-17 |
+| [Chunk 120 — AvatarState Model + Animation State Machine](#chunk-120--avatarstate-model--animation-state-machine) | 2026-04-17 |
+| [Chunk 110 — Background Music](#chunk-110--background-music) | 2026-04-15 |
+| [Chunk 109 — Idle Action Sequences](#chunk-109--idle-action-sequences) | 2026-04-15 |
+| [Chunk 108 — Settings Persistence + Env Overrides](#chunk-108--settings-persistence--env-overrides) | 2026-04-15 |
+| [Chunk 107 — Multi-ASR Provider Abstraction](#chunk-107--multi-asr-provider-abstraction) | 2026-04-15 |
+| [Chunk 106 — Streaming TTS](#chunk-106--streaming-tts) | 2026-04-15 |
+| [Chunk 085 — UI/UX Overhaul](#chunk-085--uiux-overhaul-open-llm-vtuber-layout-patterns) | 2026-04-14 |
+| [Phase 8 Summary (Chunks 080–084)](#phase-8-summary) | 2026-04-14 |
+| [Chunk 084 — Autoregressive Pose Feedback](#chunk-084--autoregressive-pose-feedback-done) | 2026-04-14 |
+| [Chunk 083 — Gesture Tag System](#chunk-083--gesture-tag-system-done) | 2026-04-14 |
+| [Chunk 082 — LLM Pose Prompt Engineering](#chunk-082--llm-pose-prompt-engineering-done) | 2026-04-14 |
+| [Chunk 081 — Pose Blending Engine](#chunk-081--pose-blending-engine-done) | 2026-04-14 |
+| [Chunk 080 — Pose Preset Library](#chunk-080--pose-preset-library-done) | 2026-04-14 |
+| [Chunk 068 — Navigation Polish](#chunk-068--navigation-polish--micro-interactions-done) | 2026-04-14 |
+| [Chunk 067 — Enhanced Chat UX](#chunk-067--enhanced-chat-ux-done) | 2026-04-14 |
+| [Chunk 066 — New Background Art](#chunk-066--new-background-art-done) | 2026-04-14 |
+| [Chunk 065 — Design System & Global CSS Variables](#chunk-065--design-system--global-css-variables-done) | 2026-04-14 |
+| [Chunk 064 — Desktop Pet Overlay](#chunk-064--desktop-pet-overlay-with-floating-chat-done) | 2026-04-13 |
+| [Chunk 063 — Rewrite Voice in Rust](#chunk-063--remove-open-llm-vtuber--rewrite-voice-in-rust-done) | 2026-04-13 |
+| [Chunk 062 — Voice Activity Detection](#chunk-062--voice-activity-detection) | 2026-04-13 |
+| [Chunk 061 — Web Audio Lip Sync](#chunk-061--web-audio-lip-sync) | 2026-04-13 |
+| [Chunk 060 — Voice Abstraction Layer](#chunk-060--voice-abstraction-layer--open-llm-vtuber-integration) | 2026-04-13 |
+| [Chunk 059 — Provider Health Check & Rate-Limit Rotation](#chunk-059--provider-health-check--rate-limit-rotation) | 2026-04-13 |
+| [Chunk 058 — Emotion Expansion & UI Fixes](#chunk-058--emotion-expansion--ui-fixes) | 2026-04-13 |
+| [Chunk 056+057 — Streaming BrainMode Routing](#chunk-056057--streaming-brainmode-routing-auto-selection--wizard-redesign) | 2026-04-13 |
+| [Chunk 055 — Free LLM API Provider Registry](#chunk-055--free-llm-api-provider-registry--openai-compatible-client) | 2026-04-13 |
+| [Chunk 054 — Emotion Tags in LLM Responses](#chunk-054--emotion-tags-in-llm-responses) | 2026-04-13 |
+| [Chunk 053 — Streaming LLM Responses](#chunk-053--streaming-llm-responses) | 2026-04-13 |
+| [Chunk 052 — Multi-Monitor Pet Mode](#chunk-052--multi-monitor-pet-mode) | 2026-04-13 |
+| [Chunk 051 — Selective Click-Through](#chunk-051--selective-click-through) | 2026-04-13 |
+| [Chunk 050 — Window Mode System](#chunk-050--window-mode-system) | 2026-04-13 |
+| [Chunk 035 — Agent-to-Agent Messaging](#chunk-035--agent-to-agent-messaging) | 2026-04-13 |
+| [Chunk 034 — Agent Marketplace UI](#chunk-034--agent-marketplace-ui) | 2026-04-13 |
+| [Chunk 033 — Agent Sandboxing](#chunk-033--agent-sandboxing) | 2026-04-13 |
+| [Chunk 032 — Agent Registry](#chunk-032--agent-registry) | 2026-04-13 |
+| [Chunk 041 — Long/Short-term Memory](#chunk-041--longshort-term-memory--brain-powered-recall) | 2026-04-12 |
+| [Chunk 040 — Brain (Local LLM via Ollama)](#chunk-040--brain-local-llm-via-ollama) | 2026-04-12 |
+| [Chunk 031 — Install / Update / Remove Commands](#chunk-031--install--update--remove-commands) | 2026-04-11 |
+| [Chunk 030 — Package Manifest Format](#chunk-030--package-manifest-format) | 2026-04-11 |
+| [Chunk 023 — Remote Command Routing](#chunk-023--remote-command-routing) | 2026-04-10 |
+| [Chunk 022 — CRDT Sync Engine](#chunk-022--crdt-sync-engine) | 2026-04-10 |
+| [Chunk 021 — Link Transport Layer](#chunk-021--link-transport-layer) | 2026-04-10 |
+| [Chunk 020 — Device Identity & Pairing](#chunk-020--device-identity--pairing) | 2026-04-10 |
+| [Chunk 009 — Playwright E2E Test Infrastructure](#chunk-009--playwright-e2e-test-infrastructure) | 2026-04-10 |
+| [Chunk 008 — Tauri IPC Bridge Integration Tests](#chunk-008--tauri-ipc-bridge-integration-tests) | 2026-04-10 |
+| [Chunk 011 — VRM Import + Character Selection UI](#chunk-011--vrm-import--character-selection-ui) | 2026-04-10 |
+| [Chunk 010 — Character Reactions — Full Integration](#chunk-010--character-reactions--full-integration) | 2026-04-10 |
+| [Chunk 007 — Agent Orchestrator Hardening](#chunk-007--agent-orchestrator-hardening) | 2026-04-10 |
+| [Chunk 006 — Rust Chat Commands — Unit Tests](#chunk-006--rust-chat-commands--unit-tests) | 2026-04-10 |
+| [Chunk 005 — Character State Machine Tests](#chunk-005--character-state-machine-tests) | 2026-04-10 |
+| [Chunk 004 — VRM Model Loading & Fallback](#chunk-004--vrm-model-loading--fallback) | 2026-04-10 |
+| [Chunk 003 — Three.js Scene Polish + WebGPU Detection](#chunk-003--threejs-scene-polish--webgpu-detection) | 2026-04-10 |
+| [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
+| [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
+| [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration
+
+**Date:** 2026-04-20
+**Phase:** Phase 11 — RPG Brain Configuration (final)
+
+Five tightly-coupled chunks shipped together so the UI/UX stays coherent and free of overlapping floating surfaces.
+
+### Shared foundations
+- **`src/utils/stats.ts`** — single source of truth for the six RPG stats (Intelligence, Wisdom, Charisma, Perception, Dexterity, Endurance). Pure `computeStat(stat, activeSkills)` / `computeStats(activeSkills)` / `diffStats(before, after)` functions; per-stat skill-weight map; baseline 5; clamped to `[0, 100]`.
+- **`src/utils/stat-modifiers.ts`** — pure stat → behaviour-knob translation (`getMemoryRecallLimit`, `getContextWindowMultiplier`, `getChatHistoryLimit`, `getHotwordSensitivity`, `getTtsExpressiveness`, plus a single-call `computeModifiers`).
+- **`QuestTrackerData`** schema extended with `seenComboKeys: string[]` and `lastSeenActivationTimestamp: number` (with migration + merge logic + persistence) and exposed via two new store actions: `markCombosSeen(keys)` and `setLastSeenActivationTimestamp(ts)`.
+
+### Chunk 130 — Brain RPG Stat Sheet
+- New **`src/components/BrainStatSheet.vue`** — animated 6-bar panel themed in FF-style (gold "BRAIN STAT SHEET" heading, Lv. badge, per-stat icon + 3-letter abbr + bar with shimmer + numeric value + description). Stats are reactive to `skillTree.getSkillStatus`; when a stat increases, the bar pulses for 1.5s.
+- Embedded inside `SkillTreeView.vue` between the progress header and the daily-quests banner — does NOT overlap the floating QuestBubble orb (orb is right edge, sheet is centred max-800).
+
+### Chunk 131 — Combo Notification Toast
+- New **`src/components/ComboToast.vue`** — slide-in toast queue with sparkling burst animation. Mounted in `App.vue` (only in non-pet mode). Anchored bottom-left so it never collides with the QuestBubble orb on the right. Watches `skillTree.activeCombos`; new combos that aren't in `tracker.seenComboKeys` are pushed onto the queue, marked seen, and auto-dismiss after 6s. On mobile, anchored above the bottom nav (bottom: 64px).
+
+### Chunk 132 — Quest Reward Ceremony
+- New **`src/components/QuestRewardCeremony.vue`** — full-screen modal teleported to `body` with a radial gradient + particle-burst background and a centred "QUEST COMPLETE" card. Card shows: quest icon + name + tagline, a per-stat row with `before → after (+delta)` and animated bar, the rewards list, and any newly-unlocked combos.
+- Mounted in `App.vue`. Watches `skillTree.tracker.activationTimestamps`; on first launch establishes a high-water mark so the user isn't blasted with retroactive ceremonies for already-active skills. New activations above the mark are queued and shown one at a time.
+- Auto-dismisses after 8s; `Continue ▸` button or backdrop click dismisses immediately. On dismiss, `setLastSeenActivationTimestamp` is called so each ceremony only fires once.
+
+### Chunk 133 — Brain Evolution Path (neural pathway)
+- CSS-only enhancement to `SkillConstellation.vue`: brain-cluster edges now render as glowing red neural pathways. Active edges get `stroke-dasharray: 6 6` plus a `stroke-dashoffset` animation (`sc-neural-flow`, 2.4s linear infinite) so signals visibly flow along completed prerequisite paths. Locked brain nodes are desaturated/dimmed; active brain nodes get a coral inner-glow. Other clusters retain their previous cleaner constellation look.
+
+### Chunk 134 — Stat-Based AI Scaling
+- `BrainStatSheet.vue` includes a live **"⚙ Active Modifiers"** panel that reads `computeModifiers(stats)` and renders the four scalable behaviours so users can SEE the stats actually changing AI behaviour: memory recall depth, chat history kept, hotword sensitivity, TTS expressiveness.
+- `stat-modifiers.ts` is pure & exported, ready for downstream consumption (memory store, ASR detector, TTS adapter) without breaking existing call-sites — defaults are unchanged for a fresh install.
+
+### Files
+**Created:**
+- `src/utils/stats.ts` + `src/utils/stats.test.ts` (9 tests)
+- `src/utils/stat-modifiers.ts` + `src/utils/stat-modifiers.test.ts` (6 tests)
+- `src/components/BrainStatSheet.vue` + `src/components/BrainStatSheet.test.ts` (5 tests)
+- `src/components/ComboToast.vue` + `src/components/ComboToast.test.ts` (4 tests)
+- `src/components/QuestRewardCeremony.vue` + `src/components/QuestRewardCeremony.test.ts` (4 tests)
+
+**Modified:**
+- `src/stores/skill-tree.ts` — extended `QuestTrackerData` with `seenComboKeys` + `lastSeenActivationTimestamp`, added `markCombosSeen` / `setLastSeenActivationTimestamp` actions, updated `freshTracker` / `migrateTracker` / `mergeTrackers`.
+- `src/stores/skill-tree.test.ts` — extended fixtures with the two new fields.
+- `src/views/SkillTreeView.vue` — embedded `<BrainStatSheet />`.
+- `src/App.vue` — mounted `<ComboToast />` and `<QuestRewardCeremony />` in normal-mode only.
+- `src/components/SkillConstellation.vue` — added neural-pathway CSS for the brain cluster.
+- `rules/milestones.md` — drained Phase 11 chunks.
+
+### Verification
+- `npm run build` → ✓ built in 5.47s (vue-tsc + vite)
+- `npm run test` → **58 files, 925 tests passing** (baseline 53/897 → +5 files, +28 tests, no regressions)
+- `npm run test:e2e e2e/desktop-flow.spec.ts` → **passed** (full end-to-end app flow: app load, brain/voice auto-config, send message, get response, subtitle, 3D model, BGM, marketplace nav, LLM switch, quest system)
+- `npm run test:e2e e2e/mobile-flow.spec.ts` → **passed**
+- A dedicated visual-coexistence Playwright test confirmed bounding boxes for `BrainStatSheet`, `ComboToast`, `QuestBubble` orb, and `SkillConstellation` overlay never overlap horizontally + vertically simultaneously, and the constellation Esc-close path leaves the stat sheet visible.
+- `parallel_validation` (Code Review + CodeQL) — **0 issues**.
+
+---
+
+## Chunk 128 — FF16 Constellation Skill Tree (Full-Screen Layout)
+
+**Date:** 2026-04-20
+**Phase:** Phase 11 — RPG Brain Configuration
+
+**Goal:** Replace the 360px CSS grid panel inside `QuestBubble.vue` with a full-screen FF16 Abilities-style constellation map. Each of the five categories (Brain, Voice, Avatar, Social, Utility) becomes a circular cluster of nodes laid out radially with concentric rings, glowing connection lines, a colored diamond border, and a star-field background. Pannable + zoomable.
+
+**Architecture:**
+- **`SkillConstellation.vue`** — new full-screen overlay teleported to `body`. World canvas of 1600×1200 with five `ClusterMeta` placements arranged in a pentagon. Each cluster renders:
+  - SVG diamond border + concentric dashed rings (`foundation` r=90, `advanced` r=155, `ultimate` r=220).
+  - Center emblem button (icon + label + `activeCount/total AP`).
+  - Skill nodes positioned by polar coordinates: `angle = 2π * i / count` per ring with a tier-staggered offset.
+  - Per-cluster SVG `<line>` edges for in-cluster prerequisite chains; `--active` class brightens edges where both endpoints are unlocked.
+  - CSS custom properties (`--cluster-color`, `--cluster-glow`) drive theme: Brain crimson, Voice jade, Avatar gold, Social sapphire, Utility amethyst.
+- **Star-field** — three layered animated CSS backgrounds (`sc-stars-1/2/3`) with drift + twinkle keyframes plus a blurred nebula gradient.
+- **Pan / zoom** — `transform: translate(...) scale(...)` on `.sc-world`. Anchor-aware mouse-wheel zoom (cursor stays under the same world point), drag-to-pan via `mousedown/move/up`, single-finger pan + two-finger pinch-zoom for touch. Scale clamped to `[0.35, 2.5]`. Reset/zoom-in/zoom-out buttons in the corner.
+- **`fitInitial()`** computes the initial fit-to-viewport scale & offset; `ResizeObserver` keeps the viewport size live.
+- **QuestBubble.vue** — drastically simplified (1046 → ~290 lines): orb is preserved with its progress ring and percentage, but clicking it now toggles the constellation overlay. The 360px `.ff-panel`, tabs, grid, detail pane, transitions, and ~600 lines of CSS were removed. AI quest sorting (`sortQuestsWithAI`) is preserved for downstream consumers.
+
+**Files created:**
+- `src/components/SkillConstellation.vue` (~1100 lines incl. styles)
+- `src/components/SkillConstellation.test.ts` (15 tests)
+
+**Files modified:**
+- `src/components/QuestBubble.vue` — replaced `.ff-panel` + grid + detail with `<SkillConstellation>`; orb behaviour preserved
+- `src/components/QuestBubble.test.ts` — rewritten for the new constellation-based wiring (13 tests)
+- `rules/milestones.md` — removed Chunk 128 row, updated `Next Chunk` pointer
+- `rules/completion-log.md` — this entry
+
+**Test counts:** 53 test files, 897 Vitest tests passing locally (`npm run test`). `npm run build` passes (`vue-tsc && vite build`).
+
+---
+
+## Chunk 129 — Constellation Cluster Interaction & Detail Panel
+
+**Date:** 2026-04-20
+**Phase:** Phase 11 — RPG Brain Configuration
+
+**Goal:** Make the FF16 constellation interactive — click a cluster to zoom into it, click a node to open a quest detail overlay (objectives, rewards, prerequisites), provide breadcrumb navigation, a back button, and a corner minimap with status dots.
+
+**Architecture (delivered together with Chunk 128):**
+- **Cluster zoom-in** — `zoomToCluster(id)` animates `tx/ty/scale` so the cluster centre is recentred at scale `1.6`; `animating` toggles a 450ms cubic-bezier CSS transition on `.sc-world`. Selecting a node in another cluster auto-focuses that cluster first.
+- **Detail overlay** — `.sc-detail` panel reuses the same content blocks as the legacy `.ff-detail`: tagline, description, objectives (with `▸` Go buttons that emit `navigate`), rewards, prerequisites (with `◆/◇` met/unmet markers), Pin/Unpin and Begin Quest actions. The Begin button is suppressed for `locked` nodes. Cluster-coloured border via `.sc-detail--{cluster}` modifiers.
+- **Breadcrumb** — top bar shows `✦ All Clusters › {Cluster} › {Quest}` reflecting current focus depth; each crumb segment is independently clickable.
+- **Back button** — appears whenever a cluster or node is focused. Pops state in order `detail → cluster → home`. `Esc` mirrors the same behaviour, falling through to `emit('close')` from the home view.
+- **Minimap** — fixed 180×135 SVG bottom-left mirroring the world coords, showing cluster outlines (per-cluster stroke colour), per-node dots tinted by status (`locked`/`available`/`active`), inter-cluster constellation lines, and a dashed yellow viewport rectangle that updates from `tx/ty/scale`.
+- **`QuestBubble.vue` integration** — `@begin` from `SkillConstellation` flows into the existing `QuestConfirmationDialog`, which on accept calls `skillTree.triggerQuestEvent(...)`, emits `trigger`, and re-runs `sortQuestsWithAI()`. `@navigate` is forwarded so existing tab routing (`brain-setup`, `voice`, etc.) still works. `@close` simply hides the overlay.
+
+**Files modified / created:** Same as Chunk 128 above (the layout and the interactions ship as one component).
+
+**Test counts:** Unchanged — 53 files, 897 Vitest tests. New tests covering 129 specifically include `zooms into a cluster and updates the breadcrumb`, `opens the detail overlay when a node is clicked`, `emits begin when the Begin Quest button is clicked`, `does not show Begin Quest for locked nodes`, `emits navigate when a step Go button is clicked`, `back button steps from detail → cluster → all clusters`, and `pin/unpin actions delegate to the store`.
+
+---
+
 ## Post-Phase — 3D Model Loading Robustness
 
 **Date:** 2026-04-18
@@ -383,7 +572,7 @@ initiates conversation with a natural greeting, cycling through variants so it n
 
 ---
 
-
+## Chunk 108 — Settings Persistence + Env Overrides
 
 **Date:** 2026-04-15
 **Status:** ✅ Done
@@ -474,7 +663,7 @@ browser Web Speech API (zero setup), OpenAI Whisper (best quality), and Groq Whi
 
 ---
 
-
+## Chunk 106 — Streaming TTS
 
 **Date:** 2026-04-15
 **Status:** ✅ Done

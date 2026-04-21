@@ -257,6 +257,8 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       dailySuggestionReason: 'test reason',
       activationTimestamps: { avatar: 1000 },
       manuallyCompletedIds: [],
+      seenComboKeys: [],
+      lastSeenActivationTimestamp: 0,
     };
     localStorageData['terransoul-quest-tracker'] = JSON.stringify(data);
 
@@ -297,6 +299,8 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       dailySuggestionReason: 'old reason',
       activationTimestamps: { avatar: 1000 },
       manuallyCompletedIds: [],
+      seenComboKeys: [],
+      lastSeenActivationTimestamp: 0,
     };
     mockInvoke.mockResolvedValue(JSON.stringify(tauriData));
     localStorageData['terransoul-quest-tracker'] = JSON.stringify({
@@ -308,6 +312,8 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       dailySuggestionReason: 'new reason',
       activationTimestamps: { avatar: 500, tts: 2000 },
       manuallyCompletedIds: [],
+      seenComboKeys: [],
+      lastSeenActivationTimestamp: 0,
     } as QuestTrackerData);
 
     const store = useSkillTreeStore();
@@ -713,6 +719,8 @@ describe('useSkillTreeStore — manual completion', () => {
       dailySuggestionReason: '',
       activationTimestamps: {},
       manuallyCompletedIds: ['bgm', 'tts'],
+      seenComboKeys: [],
+      lastSeenActivationTimestamp: 0,
     });
 
     const store = useSkillTreeStore();
@@ -731,6 +739,8 @@ describe('useSkillTreeStore — manual completion', () => {
       dailySuggestionReason: '',
       activationTimestamps: {},
       manuallyCompletedIds: ['bgm'],
+      seenComboKeys: [],
+      lastSeenActivationTimestamp: 0,
     };
     mockInvoke.mockResolvedValue(JSON.stringify(tauriData));
     localStorageData['terransoul-quest-tracker'] = JSON.stringify({
@@ -742,6 +752,8 @@ describe('useSkillTreeStore — manual completion', () => {
       dailySuggestionReason: '',
       activationTimestamps: {},
       manuallyCompletedIds: ['tts'],
+      seenComboKeys: [],
+      lastSeenActivationTimestamp: 0,
     });
 
     const store = useSkillTreeStore();
