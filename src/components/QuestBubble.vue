@@ -1,6 +1,6 @@
 <template>
   <div class="quest-hub" :style="questHubPosition">
-    <!-- FF-style floating crystal orb -->
+    <!-- Floating crystal orb -->
     <button
       class="ff-orb"
       :class="{ 'ff-orb--open': constellationOpen }"
@@ -20,7 +20,7 @@
       <span class="ff-orb-pct">{{ progressPercent }}%</span>
     </button>
 
-    <!-- Full-screen FF16-style constellation map -->
+    <!-- Full-screen constellation map -->
     <SkillConstellation
       :visible="constellationOpen"
       @close="constellationOpen = false"
@@ -254,7 +254,7 @@ function closeRewardPanel() {
 
 <style scoped>
 /* ═══════════════════════════════════════════════════════════════════════════
-   Floating Crystal Orb — opens the FF16-style Skill Constellation
+   Floating Crystal Orb — opens the Skill Constellation
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .ff-orb {

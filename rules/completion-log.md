@@ -13,7 +13,7 @@ Entries are in **reverse chronological order** (newest first).
 | Entry | Date |
 |-------|------|
 | [Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration](#chunks-130134--phase-11-finale-rpg-brain-configuration) | 2026-04-20 |
-| [Chunk 128 — FF16 Constellation Skill Tree](#chunk-128--ff16-constellation-skill-tree-full-screen-layout) | 2026-04-20 |
+| [Chunk 128 — Constellation Skill Tree](#chunk-128--constellation-skill-tree-full-screen-layout) | 2026-04-20 |
 | [Chunk 129 — Constellation Cluster Interaction & Detail Panel](#chunk-129--constellation-cluster-interaction--detail-panel) | 2026-04-20 |
 | [Post-Phase — 3D Model Loading Robustness](#post-phase--3d-model-loading-robustness) | 2026-04-18 |
 | [Post-Phase — Streaming Timeout Fix](#post-phase--streaming-timeout-fix-stuck-thinking) | 2026-04-18 |
@@ -141,12 +141,12 @@ Five tightly-coupled chunks shipped together so the UI/UX stays coherent and fre
 
 ---
 
-## Chunk 128 — FF16 Constellation Skill Tree (Full-Screen Layout)
+## Chunk 128 — Constellation Skill Tree (Full-Screen Layout)
 
 **Date:** 2026-04-20
 **Phase:** Phase 11 — RPG Brain Configuration
 
-**Goal:** Replace the 360px CSS grid panel inside `QuestBubble.vue` with a full-screen FF16 Abilities-style constellation map. Each of the five categories (Brain, Voice, Avatar, Social, Utility) becomes a circular cluster of nodes laid out radially with concentric rings, glowing connection lines, a colored diamond border, and a star-field background. Pannable + zoomable.
+**Goal:** Replace the 360px CSS grid panel inside `QuestBubble.vue` with a full-screen Abilities-style constellation map. Each of the five categories (Brain, Voice, Avatar, Social, Utility) becomes a circular cluster of nodes laid out radially with concentric rings, glowing connection lines, a colored diamond border, and a star-field background. Pannable + zoomable.
 
 **Architecture:**
 - **`SkillConstellation.vue`** — new full-screen overlay teleported to `body`. World canvas of 1600×1200 with five `ClusterMeta` placements arranged in a pentagon. Each cluster renders:
@@ -179,7 +179,7 @@ Five tightly-coupled chunks shipped together so the UI/UX stays coherent and fre
 **Date:** 2026-04-20
 **Phase:** Phase 11 — RPG Brain Configuration
 
-**Goal:** Make the FF16 constellation interactive — click a cluster to zoom into it, click a node to open a quest detail overlay (objectives, rewards, prerequisites), provide breadcrumb navigation, a back button, and a corner minimap with status dots.
+**Goal:** Make the constellation interactive — click a cluster to zoom into it, click a node to open a quest detail overlay (objectives, rewards, prerequisites), provide breadcrumb navigation, a back button, and a corner minimap with status dots.
 
 **Architecture (delivered together with Chunk 128):**
 - **Cluster zoom-in** — `zoomToCluster(id)` animates `tx/ty/scale` so the cluster centre is recentred at scale `1.6`; `animating` toggles a 450ms cubic-bezier CSS transition on `.sc-world`. Selecting a node in another cluster auto-focuses that cluster first.

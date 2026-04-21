@@ -644,7 +644,7 @@ onUnmounted(() => {
 
 <style scoped>
 /* ═══════════════════════════════════════════════════════════════════════
-   Skill Constellation — FF16 Abilities-style full-screen map
+   Skill Constellation — full-screen abilities map
    ═══════════════════════════════════════════════════════════════════════ */
 .skill-constellation {
   position: fixed;
