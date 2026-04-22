@@ -44,6 +44,8 @@ const FALLBACK_FREE_PROVIDERS: FreeProvider[] = [
   },
 ];
 
+const DEFAULT_LM_STUDIO_BASE_URL = 'http://127.0.0.1:1234';
+
 export const useBrainStore = defineStore('brain', () => {
   const activeBrain = ref<string | null>(null);
   const systemInfo = ref<SystemInfo | null>(null);
@@ -227,6 +229,9 @@ export const useBrainStore = defineStore('brain', () => {
         apiKey = mode.api_key;
       } else if (mode.mode === 'local_ollama') {
         baseUrl = 'http://localhost:11434';
+        model = mode.model;
+      } else if (mode.mode === 'local_lm_studio') {
+        baseUrl = mode.base_url || DEFAULT_LM_STUDIO_BASE_URL;
         model = mode.model;
       } else {
         return '';

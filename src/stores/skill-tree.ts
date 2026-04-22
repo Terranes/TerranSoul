@@ -1274,7 +1274,8 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       case 'paid-brain':
         return brain.brainMode?.mode === 'paid_api';
       case 'local-brain':
-        return brain.brainMode?.mode === 'local_ollama';
+        return brain.brainMode?.mode === 'local_ollama'
+          || brain.brainMode?.mode === 'local_lm_studio';
       case 'tts':
         return voice.config.tts_provider !== null;
       case 'asr':
@@ -1529,9 +1530,11 @@ Respond with ONLY valid JSON (no markdown):
         baseUrl = mode.base_url;
         model = mode.model;
         apiKey = mode.api_key;
-      } else {
-        // local_ollama — use local endpoint
+      } else if (mode.mode === 'local_ollama') {
         baseUrl = 'http://localhost:11434';
+        model = mode.model;
+      } else {
+        baseUrl = mode.base_url;
         model = mode.model;
       }
 

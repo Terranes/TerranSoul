@@ -5,7 +5,7 @@ use std::path::Path;
 /// File name for the JSON brain configuration.
 const BRAIN_CONFIG_FILE: &str = "brain_config.json";
 
-/// The three-tier brain mode: Free cloud API, Paid cloud API, or Local Ollama.
+/// The brain mode: Free cloud API, Paid cloud API, Local Ollama, or LM Studio.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode")]
 pub enum BrainMode {
@@ -34,6 +34,14 @@ pub enum BrainMode {
     LocalOllama {
         /// Ollama model tag (e.g. "gemma3:4b").
         model: String,
+    },
+    /// Use a locally running LM Studio OpenAI-compatible server.
+    #[serde(rename = "local_lm_studio")]
+    LocalLmStudio {
+        /// Model identifier exposed by LM Studio (e.g. "gemma4:e4b").
+        model: String,
+        /// Base URL for the local LM Studio server.
+        base_url: String,
     },
 }
 
@@ -157,6 +165,18 @@ mod tests {
     }
 
     #[test]
+    fn save_and_load_local_lm_studio() {
+        let dir = tempdir().unwrap();
+        let mode = BrainMode::LocalLmStudio {
+            model: "gemma4:e4b".into(),
+            base_url: "http://127.0.0.1:1234".into(),
+        };
+        save(dir.path(), &mode).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, mode);
+    }
+
+    #[test]
     fn clear_removes_config() {
         let dir = tempdir().unwrap();
         let mode = BrainMode::FreeApi {
@@ -230,6 +250,10 @@ mod tests {
             },
             BrainMode::LocalOllama {
                 model: "phi-4:latest".into(),
+            },
+            BrainMode::LocalLmStudio {
+                model: "gemma4:e4b".into(),
+                base_url: "http://127.0.0.1:1234".into(),
             },
         ];
         for v in variants {

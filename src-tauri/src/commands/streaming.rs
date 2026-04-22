@@ -236,6 +236,9 @@ pub async fn send_message_stream(
         Some(BrainMode::LocalOllama { model }) => {
             stream_ollama(&app_handle, &state, &message, &history, &model).await
         }
+        Some(BrainMode::LocalLmStudio { model, base_url }) => {
+            stream_openai_api(&app_handle, &state, &message, &history, "lm_studio", None, Some((&base_url, &model)),).await
+        }
         None => {
             // Check legacy active_brain
             if let Some(model) = legacy_model {
@@ -562,6 +565,21 @@ mod tests {
         match &mode {
             BrainMode::LocalOllama { model } => assert_eq!(model, "gemma3:4b"),
             _ => panic!("expected LocalOllama"),
+        }
+    }
+
+    #[test]
+    fn brain_mode_routes_local_lm_studio() {
+        let mode = BrainMode::LocalLmStudio {
+            model: "gemma4:e4b".to_string(),
+            base_url: "http://127.0.0.1:1234".to_string(),
+        };
+        match &mode {
+            BrainMode::LocalLmStudio { model, base_url } => {
+                assert_eq!(model, "gemma4:e4b");
+                assert_eq!(base_url, "http://127.0.0.1:1234");
+            }
+            _ => panic!("expected LocalLmStudio"),
         }
     }
 

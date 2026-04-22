@@ -26,7 +26,7 @@ const mockSkillTreeStore = {
 // Default brain store mock — no brain configured. Individual tests override
 // `mockBrainStore.brainMode` / `freeProviders` as needed.
 const mockBrainStore: {
-  brainMode: { mode: string; provider_id?: string; model?: string } | null;
+  brainMode: { mode: string; provider_id?: string; model?: string; base_url?: string } | null;
   freeProviders: { id: string; model: string }[];
 } = {
   brainMode: null,
@@ -78,6 +78,18 @@ describe('BrainStatSheet', () => {
     // Tier S boost is +70 → with baseline 1 ⇒ 71. Allow some leeway in case
     // weights are tuned later.
     expect(intValue).toBeGreaterThanOrEqual(60);
+  });
+
+  it('uses the LM Studio model for benchmark boosts', async () => {
+    mockBrainStore.brainMode = {
+      mode: 'local_lm_studio',
+      model: 'gemma4:e4b',
+      base_url: 'http://127.0.0.1:1234',
+    };
+    const wrapper = mount(BrainStatSheet);
+    await nextTick();
+    const intValue = parseInt(wrapper.find('[data-testid="stat-value-intelligence"]').text(), 10);
+    expect(intValue).toBeGreaterThanOrEqual(25);
   });
 
   it('a flagship boost is much higher than a basic free brain', async () => {

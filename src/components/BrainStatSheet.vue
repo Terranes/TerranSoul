@@ -89,7 +89,11 @@ const brainBoost = computed<Partial<StatSnapshot>>(() => {
     const provider = brain.freeProviders.find(p => p.id === mode.provider_id);
     return getModelBoost(provider?.model);
   }
-  if (mode.mode === 'paid_api' || mode.mode === 'local_ollama') {
+  if (
+    mode.mode === 'paid_api'
+    || mode.mode === 'local_ollama'
+    || mode.mode === 'local_lm_studio'
+  ) {
     return getModelBoost(mode.model);
   }
   return {};

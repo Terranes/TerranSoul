@@ -50,6 +50,16 @@
           <p>Run a model locally on your machine with Ollama. Fully private, no internet needed.</p>
           <small>Requires Ollama installed · Best for privacy</small>
         </div>
+        <div
+          :class="['bs-tier', { selected: selectedTier === 'lmstudio' }]"
+          @click="selectedTier = 'lmstudio'"
+        >
+          <div class="bs-tier-header">
+            <strong>LM Studio</strong>
+          </div>
+          <p>Connect to LM Studio through its local OpenAI-compatible server.</p>
+          <small>Defaults to Gemma 4 E4B · Uses port 1234 by default</small>
+        </div>
       </div>
       <button class="btn-primary" :disabled="!selectedTier" @click="goToTierStep">
         Next →
@@ -147,6 +157,44 @@
     </div>
 
     <!-- ── Step 2: Choose local model ── -->
+    <div v-else-if="step === 1 && selectedTier === 'lmstudio'" class="bs-card">
+      <h2>LM Studio</h2>
+      <p class="bs-desc">
+        Connect TerranSoul to LM Studio using its local OpenAI-compatible server.
+      </p>
+      <div class="bs-form">
+        <label for="lm-studio-model-input">Model:</label>
+        <input
+          id="lm-studio-model-input"
+          v-model="lmStudioModel"
+          type="text"
+          placeholder="gemma4:e4b"
+          class="bs-input"
+        />
+        <label for="lm-studio-base-url-input">Base URL:</label>
+        <input
+          id="lm-studio-base-url-input"
+          v-model="lmStudioBaseUrl"
+          type="url"
+          placeholder="http://127.0.0.1:1234"
+          class="bs-input"
+        />
+      </div>
+      <div class="bs-install-hint">
+        <p>Load your model in LM Studio and start the local server before activating this option.</p>
+      </div>
+      <div class="bs-nav">
+        <button class="btn-secondary" @click="step = 0">← Back</button>
+        <button
+          class="btn-primary"
+          :disabled="!lmStudioModel.trim() || !lmStudioBaseUrl.trim()"
+          @click="activateLmStudio"
+        >
+          Activate →
+        </button>
+      </div>
+    </div>
+
     <div v-else-if="step === 2" class="bs-card">
       <h2>Choose your Brain</h2>
       <p class="bs-desc">Based on your {{ formatRam(brain.systemInfo?.total_ram_mb ?? 0) }} of RAM, we recommend:</p>
@@ -248,6 +296,11 @@
         Using <strong>{{ paidModel }}</strong> via paid API.
         TerranSoul will use it for all future conversations.
       </p>
+      <p v-else-if="selectedTier === 'lmstudio'">
+        Using <strong>{{ lmStudioModel }}</strong> through LM Studio at
+        <strong>{{ lmStudioBaseUrl }}</strong>.
+        TerranSoul will use it for all future conversations.
+      </p>
       <p v-else>
         <strong>{{ selectedModel }}</strong> is now your local brain.
         TerranSoul will use it for all future conversations, memory extraction, and smart recall.
@@ -265,7 +318,7 @@ const emit = defineEmits<{ (e: 'done'): void }>();
 
 const brain = useBrainStore();
 const step = ref(0);
-const selectedTier = ref<'free' | 'paid' | 'local'>('free');
+const selectedTier = ref<'free' | 'paid' | 'local' | 'lmstudio'>('free');
 const selectedModel = ref('');
 const selectedProvider = ref('pollinations');
 const freeApiKey = ref<string | null>(null);
@@ -277,10 +330,13 @@ const paidProvider = ref('openai');
 const paidApiKey = ref('');
 const paidModel = ref('gpt-4o');
 const paidBaseUrl = ref('https://api.openai.com');
+const lmStudioModel = ref('gemma4:e4b');
+const lmStudioBaseUrl = ref('http://127.0.0.1:1234');
 
 const stepLabels = computed(() => {
   if (selectedTier.value === 'free') return ['Choose', 'Provider', 'Done'];
   if (selectedTier.value === 'paid') return ['Choose', 'API Key', 'Done'];
+  if (selectedTier.value === 'lmstudio') return ['Choose', 'LM Studio', 'Done'];
   return ['Choose', 'Hardware', 'Model', 'Ollama', 'Download', 'Done'];
 });
 
@@ -289,7 +345,8 @@ const modelAlreadyInstalled = computed(() =>
 );
 
 const selectedProviderName = computed(() =>
-  brain.freeProviders.find((p) => p.id === selectedProvider.value)?.display_name ?? selectedProvider.value,
+  brain.freeProviders.find((p) => p.id === selectedProvider.value)?.display_name
+    ?? selectedProvider.value,
 );
 
 const paidBaseUrlResolved = computed(() => {
@@ -343,6 +400,20 @@ async function activatePaidApi() {
       model: paidModel.value,
       base_url: paidBaseUrlResolved.value,
     };
+  }
+  step.value = 99;
+}
+
+async function activateLmStudio() {
+  const mode = {
+    mode: 'local_lm_studio' as const,
+    model: lmStudioModel.value.trim(),
+    base_url: lmStudioBaseUrl.value.trim(),
+  };
+  try {
+    await brain.setBrainMode(mode);
+  } catch {
+    brain.brainMode = mode;
   }
   step.value = 99;
 }

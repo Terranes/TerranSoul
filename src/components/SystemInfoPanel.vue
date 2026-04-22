@@ -44,10 +44,23 @@
               <span class="info-label">Mode:</span>
               <span class="info-value">{{ getBrainModeDisplay() }}</span>
             </div>
-            <div v-if="brain.brainMode?.mode === 'local_ollama' && brain.activeBrain" class="info-row">
+            <div
+              v-if="brain.brainMode?.mode === 'local_ollama' && brain.activeBrain"
+              class="info-row"
+            >
               <span class="info-label">Model:</span>
               <span class="info-value">{{ brain.activeBrain }}</span>
             </div>
+            <template v-if="brain.brainMode?.mode === 'local_lm_studio'">
+              <div class="info-row">
+                <span class="info-label">Model:</span>
+                <span class="info-value">{{ brain.brainMode.model }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Endpoint:</span>
+                <span class="info-value">{{ brain.brainMode.base_url }}</span>
+              </div>
+            </template>
             <div v-if="brain.brainMode?.mode === 'free_api'" class="info-row">
               <span class="info-label">Provider:</span>
               <span class="info-value">{{ getProviderName() }}</span>
@@ -162,6 +175,8 @@ function getBrainModeDisplay(): string {
       return 'Paid API';
     case 'local_ollama':
       return 'Local Ollama';
+    case 'local_lm_studio':
+      return 'LM Studio';
     default:
       return 'Unknown';
   }

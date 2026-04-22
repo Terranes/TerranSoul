@@ -176,8 +176,11 @@ Your job: Ask the user simple YES/NO questions to understand their setup and gui
       baseUrl = mode.base_url;
       model = mode.model;
       apiKey = mode.api_key;
-    } else {
+    } else if (mode.mode === 'local_ollama') {
       baseUrl = 'http://localhost:11434';
+      model = mode.model;
+    } else {
+      baseUrl = mode.base_url;
       model = mode.model;
     }
 

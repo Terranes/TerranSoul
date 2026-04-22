@@ -60,6 +60,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn brain_mode_local_lm_studio_deserializes() {
+        let payload = json!({
+            "mode": "local_lm_studio",
+            "model": "gemma4:e4b",
+            "base_url": "http://127.0.0.1:1234"
+        });
+        let mode: crate::brain::BrainMode = serde_json::from_value(payload).unwrap();
+        match mode {
+            crate::brain::BrainMode::LocalLmStudio { model, base_url } => {
+                assert_eq!(model, "gemma4:e4b");
+                assert_eq!(base_url, "http://127.0.0.1:1234");
+            }
+            _ => panic!("Expected LocalLmStudio variant"),
+        }
+    }
+
     // ── TrustedDevice serde ─────────────────────────────────────────────────
 
     #[test]

@@ -256,7 +256,8 @@ export interface FreeProvider {
 export type BrainMode =
   | { mode: 'free_api'; provider_id: string; api_key: string | null }
   | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string }
-  | { mode: 'local_ollama'; model: string };
+  | { mode: 'local_ollama'; model: string }
+  | { mode: 'local_lm_studio'; model: string; base_url: string };
 
 // ── Voice ──────────────────────────────────────────────────────────────────────
 

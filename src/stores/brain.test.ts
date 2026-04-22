@@ -175,6 +175,19 @@ describe('brain store', () => {
     expect(store.activeBrain).toBeNull();
   });
 
+  it('setBrainMode supports local_lm_studio mode', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useBrainStore();
+    const mode: BrainMode = {
+      mode: 'local_lm_studio',
+      model: 'gemma4:e4b',
+      base_url: 'http://127.0.0.1:1234',
+    };
+    await store.setBrainMode(mode);
+    expect(store.brainMode).toEqual(mode);
+    expect(store.activeBrain).toBeNull();
+  });
+
   it('hasBrain is true when brainMode is set even if activeBrain is null', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useBrainStore();

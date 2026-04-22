@@ -150,6 +150,24 @@ pub async fn process_message(
             let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
             (agent.name().to_string(), text, sent)
         }
+        Some(BrainMode::LocalLmStudio { model, base_url }) => {
+            let client = OpenAiClient::new(&base_url, &model, None);
+            let mut msgs = vec![OpenAiMessage {
+                role: "system".to_string(),
+                content: SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+            }];
+            for (role, c) in &history {
+                msgs.push(OpenAiMessage {
+                    role: role.clone(),
+                    content: c.clone(),
+                });
+            }
+            let text = client
+                .chat(msgs)
+                .await
+                .map_err(|e| format!("LM Studio error: {e}"))?;
+            ("TerranSoul".to_string(), text, Sentiment::Neutral)
+        }
         None => {
             // Legacy path: check active_brain for Ollama, otherwise stub.
             if let Some(ref model) = model_opt {
