@@ -1,0 +1,59 @@
+Commentary on Article 429 — Statute of Limitations for Contractual Disputes
+Vietnamese Civil Code 2015 (Law No. 91/2015/QH13)
+
+OVERVIEW
+Article 429 establishes a three-year statute of limitations for filing lawsuits
+related to contractual disputes. This article is part of Chapter XV (Common
+Provisions on Contracts) under Part Three (Civil Obligations and Contracts).
+
+KEY POINTS
+
+1. Duration: Three (3) years from the triggering date.
+
+2. Triggering date: The date on which the entitled person "knew or should have
+   known" that their lawful rights and interests were infringed.
+
+3. Scope: Applies to all contractual disputes governed by the Civil Code,
+   including sales contracts, service contracts, lease contracts, and loan
+   contracts.
+
+PRACTICAL IMPLICATIONS
+
+- Filing deadline calculation: If a breach of contract occurs on January 15, 2024,
+  the injured party has until January 15, 2027 to file suit.
+
+- "Should have known" standard: The court may determine that a party "should
+  have known" of a breach even if they did not actually discover it, provided a
+  reasonable person in similar circumstances would have discovered it.
+
+- Tolling and suspension: The statute of limitations may be suspended during
+  periods of force majeure (Article 156) or when the entitled person is a minor
+  without a legal representative.
+
+RELATIONSHIP TO OTHER ARTICLES
+
+- Article 351: General liability for breach of civil obligations
+- Article 352: Compensation for damages due to breach
+- Article 360: Compensation for damage due to breach of contract
+- Article 419: Specific rules on contractual damage compensation
+- Article 420: Penalty clauses for breach of contract
+- Article 421: Exemptions from liability (force majeure, fault of aggrieved party)
+- Article 468: Interest rate caps (20% per annum ceiling)
+
+CASE LAW EXAMPLES
+
+1. Supreme Court Resolution No. 01/2005: Clarified that the limitation period
+   begins when the breach causes actual damage, not when the contract was signed.
+
+2. Judgment No. 35/2020/KDTM: Held that continuous performance obligations
+   restart the limitation period for each missed payment or delivery.
+
+3. Provincial Court of Ho Chi Minh City (2021): Ruled that email notice of
+   default constitutes sufficient evidence of "knew or should have known" date.
+
+COMPARISON WITH COMMERCIAL LAW
+
+Under the Law on Commerce (2005), Article 319 prescribes a shorter two-year
+limitation period for commercial disputes. Practitioners should determine
+whether the dispute is commercial or civil in nature to apply the correct
+statute of limitations.

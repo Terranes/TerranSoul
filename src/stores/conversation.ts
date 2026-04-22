@@ -151,6 +151,47 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
   }
 }
 
+/**
+ * Detect if the user wants to deeply learn a topic and suggest a Knowledge Quest.
+ * Keywords: "learn", "teach me", "study", "deep dive", "ingest", "import".
+ * When detected, append a quest suggestion with scholar-quest choices.
+ */
+function maybeShowKnowledgeQuest(userInput: string, responseText: string): void {
+  const inputLower = userInput.toLowerCase();
+  const learningWords = [
+    'learn about', 'teach me', 'study', 'deep dive', 'train you',
+    'ingest', 'import document', 'import file', 'read this url',
+    'learn vietnamese', 'learn law', 'learn from',
+  ];
+  const hasLearningIntent = learningWords.some(w => inputLower.includes(w));
+  if (!hasLearningIntent) return;
+
+  // Extract topic from user message
+  const topicMatch = inputLower.match(
+    /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/
+  );
+  const topic = topicMatch ? topicMatch[1].trim() : 'this topic';
+
+  const conversation = useConversationStore();
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `I gave you my best general knowledge, but for expert-level answers about **${topic}**, ` +
+      `I'd need to study the actual source materials.\n\n` +
+      `Would you like to start a **📚 Scholar's Quest**? I'll guide you through adding URLs and files ` +
+      `so I can learn deeply and give you source-grounded answers.`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+    questId: 'scholar-quest',
+    questChoices: [
+      { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
+      { label: 'No thanks', value: 'dismiss', icon: '💤' },
+    ],
+  });
+}
+
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
 
 /** Known free-provider keywords mapped to provider IDs. */
@@ -458,6 +499,7 @@ export const useConversationStore = defineStore('conversation', () => {
           if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
           maybeShowQuestFromResponse(clean || cleanText, content);
+          maybeShowKnowledgeQuest(content, clean || cleanText);
         } else {
           // Streaming completed but no text accumulated (events not received or
           // API returned empty) — fall back to non-streaming invoke which also
@@ -480,6 +522,7 @@ export const useConversationStore = defineStore('conversation', () => {
           ]);
           messages.value.push(response);
           maybeShowQuestFromResponse(response.content, content);
+          maybeShowKnowledgeQuest(content, response.content);
         } catch {
           messages.value.push(createPersonaResponse(content));
           pushNetworkOrProviderWarning();
@@ -587,6 +630,7 @@ export const useConversationStore = defineStore('conversation', () => {
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
             maybeShowQuestFromResponse(clean || parsed.text, content);
+            maybeShowKnowledgeQuest(content, clean || parsed.text);
             succeeded = true;
             break;
           } catch (err) {

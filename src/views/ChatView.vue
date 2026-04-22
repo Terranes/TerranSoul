@@ -104,6 +104,14 @@
       @dismiss="showUpgradeDialog = false"
     />
 
+    <!-- FF-style Knowledge Quest chain dialog -->
+    <KnowledgeQuestDialog
+      :visible="showKnowledgeQuest"
+      :topic="knowledgeQuestTopic"
+      @close="showKnowledgeQuest = false"
+      @finish="handleKnowledgeQuestFinish"
+    />
+
     <!-- Bottom chat panel — input always visible, history toggles via button -->
     <div class="bottom-panel" :class="{ expanded: chatDrawerExpanded }">
       <!-- Chat history (shown when expanded) -->
@@ -194,6 +202,7 @@ import ChatInput from '../components/ChatInput.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
+import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -307,6 +316,10 @@ const upgradeOptions = computed<UpgradeOption[]>(() => {
 
 // ── Keyboard detection ────────────────────────────────────────────
 const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
+
+// ── Knowledge Quest dialog ────────────────────────────────────────
+const showKnowledgeQuest = ref(false);
+const knowledgeQuestTopic = ref('');
 
 // ── Millionaire Hot-Seat overlay — quest choices on-screen ────────
 /** Whether the user explicitly dismissed the current set of choices. */
@@ -751,6 +764,24 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
   lastPickedMessageId.value = activeQuestMessage.value?.id ?? null;
   hotseatDismissed.value = true;
 
+  // Handle Knowledge Quest start
+  if (choiceValue === 'knowledge-quest-start') {
+    // Extract topic from the most recent user message
+    const msgs = conversationStore.messages;
+    let topic = 'this topic';
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        const lower = msgs[i].content.toLowerCase();
+        const match = lower.match(/(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/);
+        if (match) topic = match[1].trim();
+        break;
+      }
+    }
+    knowledgeQuestTopic.value = topic;
+    showKnowledgeQuest.value = true;
+    return;
+  }
+
   // Handle auto-configuration choices
   if (choiceValue.startsWith('auto-config:')) {
     const questIdToConfig = choiceValue.slice('auto-config:'.length);
@@ -820,6 +851,22 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     showSubtitle(lastMsg.content);
     speakQuestText(lastMsg.content);
   }
+}
+
+/** Called when the Knowledge Quest chain completes — close dialog and notify. */
+function handleKnowledgeQuestFinish() {
+  showKnowledgeQuest.value = false;
+  setChatDrawerExpanded(true);
+  conversationStore.addMessage({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `📚 **Scholar's Quest Complete!** I've finished learning about **${knowledgeQuestTopic.value}**.\n\n` +
+      `Go ahead and ask me questions — my answers will now draw from the source materials you provided!`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+  });
 }
 
 /** Set up Tauri event listeners for dual-stream LLM events. */

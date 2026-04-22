@@ -817,6 +817,33 @@ const SKILL_NODES: SkillNode[] = [
     ],
   },
   {
+    id: 'scholar-quest',
+    name: 'Scholar\'s Quest',
+    tagline: 'Deep-dive into any topic with guided knowledge ingestion',
+    description: 'Start a chain quest to teach your companion about a specific topic. Provide URLs and files — TerranSoul will ingest, chunk, embed, and learn them for RAG-augmented answers.',
+    icon: '📚',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: ['Topic-specific RAG answers', 'Source-grounded knowledge', 'Persistent expert memory', 'Chain quest experience'],
+    rewardIcons: ['🎯', '📖', '🧠', '⚔️'],
+    questSteps: [
+      { label: 'Verify brain and memory systems are ready', action: 'info' },
+      { label: 'Add URLs or files about the topic', action: 'configure', target: 'knowledge_sources' },
+      { label: 'Wait for ingestion and embedding', action: 'info' },
+      { label: 'Ask questions to test your new knowledge', action: 'navigate', target: 'chat' },
+    ],
+    category: 'brain',
+    recommended: true,
+    combos: [
+      {
+        withSkills: ['paid-brain'],
+        name: 'Master Scholar',
+        description: 'Scholar\'s Quest + premium brain = research-grade deep dives with citations.',
+        icon: '🎓',
+      },
+    ],
+  },
+  {
     id: 'multi-agent',
     name: 'Council of Minds',
     tagline: 'Orchestrate multiple AI agents in parallel',
@@ -1304,6 +1331,8 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         const memStore = useMemoryStore();
         return brain.brainMode !== null && memStore.memories.length > 0;
       }
+      case 'scholar-quest':
+        return false; // Chain quest — manually completed via KnowledgeQuestDialog
       case 'presence':
         return brain.hasBrain && voice.config.tts_provider !== null;
       case 'device-link':
