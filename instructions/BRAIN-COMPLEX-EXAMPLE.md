@@ -6,9 +6,9 @@
 > - [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md) — full architecture (tiers, hybrid 6-signal RAG, decay/GC, knowledge-graph vision, Obsidian export)
 > - [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) — quick technical reference (commands, schema, debug recipes)
 
-This walkthrough follows **Linh**, a junior associate at a Vietnamese law firm,
+This walkthrough follows **Alice**, a junior associate at a Vietnamese law firm,
 as she asks TerranSoul to learn the country's online legal corpus
-(`http://thuvienphapluat.vn/` — *Thư Viện Pháp Luật*, a major Vietnamese law
+(`http://thuvienphapluat.vn/` — a major Vietnamese law
 database) plus an internal PDF of firm-specific rules. By the end of the guide
 TerranSoul can answer Vietnamese-law questions citing both sources, deduplicate
 overlapping text between the two, and surface conflicts when an article is
@@ -21,7 +21,7 @@ amended.
 1. [Design validation summary](#design-validation-summary)
 2. [Scenario at a glance](#scenario-at-a-glance)
 3. [Step 1 — Fresh launch & brain setup quest](#step-1--fresh-launch--brain-setup-quest)
-4. [Step 2 — Ask Linh's first question (no memories)](#step-2--ask-linhs-first-question-no-memories)
+4. [Step 2 — Ask Alice's first question (no memories)](#step-2--ask-Alices-first-question-no-memories)
 5. [Step 3 — "Learn from this website" — crawling thuvienphapluat.vn](#step-3--learn-from-this-website--crawling-thuvienphapluatvn)
 6. [Step 4 — "Also learn from this PDF" — internal rules sheet](#step-4--also-learn-from-this-pdf--internal-rules-sheet)
 7. [Step 5 — Sage's Library auto-activates RAG](#step-5--sages-library-auto-activates-rag)
@@ -89,7 +89,7 @@ workaround that exercises the same code path today.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Linh (junior associate, Hanoi)                                      │
+│  Alice (junior associate, Hanoi)                                      │
 │                                                                       │
 │  Goal:  Build a desktop AI assistant that knows                      │
 │         (a) Vietnamese statute text from thuvienphapluat.vn          │
@@ -127,7 +127,7 @@ workaround that exercises the same code path today.
 
 ## Step 1 — Fresh launch & brain setup quest
 
-Linh opens TerranSoul for the first time. The 3D character is idle and the
+Alice opens TerranSoul for the first time. The 3D character is idle and the
 chat input is disabled until a brain is chosen. The "Awaken the Mind" quest
 badge is the only call to action.
 
@@ -164,9 +164,9 @@ ready the quest completes, chat is enabled, and the next quest
 
 ---
 
-## Step 2 — Ask Linh's first question (no memories)
+## Step 2 — Ask Alice's first question (no memories)
 
-Before teaching it anything, Linh asks a Vietnamese-law question to
+Before teaching it anything, Alice asks a Vietnamese-law question to
 establish a baseline.
 
 ![Chat ready](screenshots/05-chat-ready.png)
@@ -198,7 +198,7 @@ establish a baseline.
 
 ## Step 3 — "Learn from this website" — crawling thuvienphapluat.vn
 
-Linh opens the **Memory** tab and clicks **➕ Learn from URL**. She pastes
+Alice opens the **Memory** tab and clicks **➕ Learn from URL**. She pastes
 `http://thuvienphapluat.vn/` and selects "Crawl whole site (depth 2,
 max 80 pages)". She tags the import `vn-law,thuvienphapluat,statute` and
 sets importance to **5** (binding source).
@@ -261,7 +261,7 @@ The Tasks panel shows live progress emitted from
 > task is checkpointed every chunk via `IngestCheckpoint`, so a power loss
 > resumes exactly where it left off.
 
-> **Resilience.** If Linh closes the laptop mid-crawl, the next launch
+> **Resilience.** If Alice closes the laptop mid-crawl, the next launch
 > surfaces a "Resume crawl?" toast that calls `resume_ingest_task(id)` and
 > picks up from `next_chunk_index` in the checkpoint.
 
@@ -269,7 +269,7 @@ The Tasks panel shows live progress emitted from
 
 ## Step 4 — "Also learn from this PDF" — internal rules sheet
 
-Linh drags `internal-rules-vn.pdf` (12 pages of firm-specific procedure)
+Alice drags `internal-rules-vn.pdf` (12 pages of firm-specific procedure)
 into the Memory tab. She tags it `vn-law,internal,firm-rules` and importance
 **4** (firm policy, overridden only by statute).
 
@@ -346,7 +346,7 @@ flips `rag-knowledge` to *active* (predicate:
 
 ## Step 6 — Same question — now precise & sourced
 
-Linh re-asks the original Vietnamese-law question:
+Alice re-asks the original Vietnamese-law question:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -408,7 +408,7 @@ The `[LONG-TERM MEMORY]` block injected into the system prompt for that turn:
 ## Step 7 — Cross-source dedup (web ↔ PDF overlap)
 
 `internal-rules-vn.pdf` cited statute text verbatim in its appendix, so when
-Linh ingested it the embeddings of the PDF appendix chunks were near-duplicates
+Alice ingested it the embeddings of the PDF appendix chunks were near-duplicates
 of statute chunks already crawled from `thuvienphapluat.vn`. The store
 detects this via `find_duplicate(embedding, threshold=0.97)` (see
 `store.rs:449`) and **skips the insert**, returning the canonical statute
@@ -438,7 +438,7 @@ sources grow.
 ## Step 8 — Detecting an amendment (conflict resolution)
 
 Three weeks later the National Assembly amends Article 429: the limitation
-period drops from 3 years to 2 years for certain commercial contracts. Linh
+period drops from 3 years to 2 years for certain commercial contracts. Alice
 re-runs the daily sync from the Memory tab.
 
 ```
@@ -498,7 +498,7 @@ it falls out of the top-5 RAG window.
 
 ## Step 9 — Memory graph & Obsidian export
 
-Linh switches the Memory tab to **Graph** view. The 511 nodes are coloured
+Alice switches the Memory tab to **Graph** view. The 511 nodes are coloured
 by `memory_type`, sized by `importance`, and dimmed by `decay_score`. Edges
 connect memories that share a tag, so all `vn-law` chunks form a dense
 cluster with a smaller `internal,firm-rules` cluster bridging it via the
