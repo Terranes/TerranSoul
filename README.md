@@ -6,7 +6,7 @@
 > **💡 Why TerranSoul?**
 > Tools like OpenClaw, Claude Cowork, and other AI agents can already perform like J.A.R.V.I.S. — but J.A.R.V.I.S. was never just an AI agent. It connected multiple devices, divided tasks across machines, hosted its own infrastructure, maintained the right RAG pipelines, and had persistent memory. Today's AI is powerful but fragmented: agents don't host infrastructure, don't manage retrieval or memory end-to-end, and can't split work across your PCs. So why not bring everything together under one roof? I'm just kicking this off — if you're interested, come drive it even further with your imagination.
 
-**J.A.R.V.I.S. in Real Life — chat-first · cross-device · open-source**
+**Your 3D AI companion for everyday life — cross-device, open-source, and built for full-context and harness engineering, with seamless integration with AI systems like OpenClaw**
 
 ## What this AI is
 
