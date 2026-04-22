@@ -272,26 +272,45 @@ async function executeLlmCommand(
 }
 
 /**
- * Resolve the free provider details (base_url, model, api_key) from the brain store
- * for browser-side streaming.
+ * Resolve the provider details (base_url, model, api_key) from the brain store
+ * for browser-side streaming.  Supports free_api, paid_api, and local_ollama modes.
  */
-function resolveFreeProvider(brain: ReturnType<typeof useBrainStore>): {
+function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
   baseUrl: string;
   model: string;
   apiKey: string | null;
 } | null {
-  if (!brain.brainMode || brain.brainMode.mode !== 'free_api') return null;
+  if (!brain.brainMode) return null;
 
-  const providerId = brain.brainMode.provider_id;
-  const apiKey = brain.brainMode.api_key ?? null;
-  const provider = brain.freeProviders.find((p) => p.id === providerId);
-  if (!provider) return null;
+  const mode = brain.brainMode;
 
-  return {
-    baseUrl: provider.base_url,
-    model: provider.model,
-    apiKey,
-  };
+  if (mode.mode === 'free_api') {
+    const provider = brain.freeProviders.find((p) => p.id === mode.provider_id);
+    if (!provider) return null;
+    return {
+      baseUrl: provider.base_url,
+      model: provider.model,
+      apiKey: mode.api_key ?? null,
+    };
+  }
+
+  if (mode.mode === 'paid_api') {
+    return {
+      baseUrl: mode.base_url,
+      model: mode.model,
+      apiKey: mode.api_key,
+    };
+  }
+
+  if (mode.mode === 'local_ollama') {
+    return {
+      baseUrl: 'http://localhost:11434',
+      model: mode.model,
+      apiKey: null,
+    };
+  }
+
+  return null;
 }
 
 // Re-export detectLlmCommand for tests
@@ -473,9 +492,9 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
-    // Path 2: No Tauri, but brain is configured with free API → browser-side streaming
+    // Path 2: No Tauri, but brain is configured → browser-side streaming
     if (brain.hasBrain) {
-      const provider = resolveFreeProvider(brain);
+      const provider = resolveBrowserProvider(brain);
       if (provider) {
         try {
         const healthStore = useProviderHealthStore();

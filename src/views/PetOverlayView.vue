@@ -878,7 +878,10 @@ onMounted(async () => {
   try {
     await brain.loadActiveBrain();
   } catch {
-    brain.autoConfigureFreeApi();
+    // Only auto-configure if brain isn't already set (avoid overwriting local_ollama/paid_api)
+    if (!brain.hasBrain) {
+      brain.autoConfigureFreeApi();
+    }
   }
 
   try {

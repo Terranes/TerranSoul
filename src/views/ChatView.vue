@@ -84,9 +84,9 @@
       <span class="ai-state-label">{{ stateLabel }}</span>
     </div>
 
-    <!-- Brain status (when free API active) -->
+    <!-- Brain status (shows active provider/model) -->
     <Transition name="fade">
-      <div v-if="brain.hasBrain && brain.isFreeApiMode" class="brain-status-pill">
+      <div v-if="brain.hasBrain" class="brain-status-pill">
         <span class="brain-pill-dot" />
         <span>{{ activeProviderName }}</span>
       </div>
@@ -505,9 +505,18 @@ const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characte
 
 const activeProviderName = computed(() => {
   const mode = brain.brainMode;
-  if (!mode || mode.mode !== 'free_api') return '';
-  const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
-  return p?.display_name ?? mode.provider_id ?? '';
+  if (!mode) return '';
+  if (mode.mode === 'free_api') {
+    const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
+    return p?.display_name ?? mode.provider_id ?? '';
+  }
+  if (mode.mode === 'local_ollama') {
+    return `Ollama · ${mode.model}`;
+  }
+  if (mode.mode === 'paid_api') {
+    return `${mode.provider} · ${mode.model}`;
+  }
+  return '';
 });
 
 function formatRam(mb: number): string {

@@ -1,3 +1,337 @@
+# Brain + RAG Walkthrough — Local Ollama & Pet Mode Demo
+
+> **TerranSoul v0.1** — Self-learning AI companion with persistent memory
+> Last updated: 2026-04-23
+>
+> **Technical references**:
+> - [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) — code map, schema, formulae, debug recipes
+
+This walkthrough covers the complete Brain + RAG flow using **local Ollama**
+(Docker container with `gemma3:4b`) — from Docker pre-flight through
+memory-augmented chat and the gamified skill tree. Every screenshot was
+captured by [`scripts/verify-brain-flow.mjs`](../scripts/verify-brain-flow.mjs)
+and **verified with exact Playwright assertions**:
+
+```
+78 passed, 0 failed, 2 skipped
+```
+
+The 2 skips are: (1) memory card persistence requires Tauri IPC (browser-only
+mode has no Rust backend), (2) pet chat panel requires Three.js canvas click
+propagation which doesn't work in headless Playwright.
+
+---
+
+## Step 0 — Pre-flight: Docker & Ollama
+
+Before launching the app, the script verifies the infrastructure and
+confirms the local LLM model responds:
+
+| Check | Assertion | Expected |
+|---|---|---|
+| Docker CLI | `docker --version` starts with `"Docker version"` | `Docker version 28.3.2, build 578ccf6` |
+| Ollama container | `docker ps` shows `ollama` with status starting with `"Up"` | `name=ollama image=ollama/ollama:latest status=Up 14 hours` |
+| Ollama API | `GET http://localhost:11434/api/tags` responds 200 | `models: [gemma3:4b]` |
+| Model installed | `ollamaModels.length > 0` | `count=1` |
+| Model tag | First model name | `"gemma3:4b"` |
+| Model responds | `POST /api/chat` with test prompt | Replies with text (e.g. `"Hello"`) |
+
+> **Note**: The Ollama container must have at least one model pulled.
+> Use `docker exec ollama ollama pull gemma3:4b` to install.
+
+---
+
+## Step 1 — Fresh launch
+
+The app opens in desktop mode with the 3D VRM character.
+
+![Fresh launch — chat view with character, quest orb, and pet toggle](screenshots/01-fresh-launch.png)
+
+**Exact assertions (12 checks)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Chat view | `.chat-view` | visible |
+| 3D viewport | `.viewport-layer` | visible |
+| Input footer | `.input-footer` | visible |
+| Desktop nav | `nav.desktop-nav` | visible |
+| Nav labels | `.nav-btn .nav-label` | `=== ["Chat","Quests","Memory","Market","Voice"]` |
+| AI state pill | `.ai-state-pill` | visible |
+| Quest orb | `.ff-orb` | visible |
+| Mode toggle | `.mode-toggle-pill` | visible |
+| Toggle label | `.mode-toggle-label` | `=== "Desktop"` |
+| Chat input | `input.chat-input` | visible |
+| Placeholder | `input.chat-input[placeholder]` | `=== "Type a message…"` |
+| Send button | `button.send-btn` | visible |
+
+---
+
+## Step 2 — Configure brain → Local Ollama
+
+The app auto-configures to Free Cloud API (Pollinations) on launch.
+The script then switches the brain to **local Ollama** via Pinia state
+injection, pointing to the `gemma3:4b` model.
+
+![Brain configured — Ollama · gemma3:4b](screenshots/02-brain-auto-configured.png)
+
+**Exact assertions (10 checks)**:
+
+| Check | Method | Expected |
+|---|---|---|
+| Brain Pinia store | `$pinia.state.brain` | exists (not null) |
+| Initial mode | `brainMode.mode` | `=== "free_api"` (auto-configured) |
+| Free providers | `freeProviders.length` | `> 0` (got 3) |
+| Switched mode | `brainMode.mode` | `=== "local_ollama"` |
+| Model tag | `brainMode.model` | `=== "gemma3:4b"` |
+| Status pill | `.brain-status-pill` | visible |
+| Pill text | `.brain-status-pill` textContent | `=== "Ollama · gemma3:4b"` |
+| Ollama running | `ollamaStatus.running` | `=== true` |
+| Model count | `ollamaStatus.model_count` | `=== 1` |
+| Setup overlay | `.brain-overlay` | not visible |
+
+---
+
+## Step 3 — Docker & LLM model exact verification
+
+Re-verify the Docker/Ollama infrastructure and confirm the exact model
+details from the Ollama API, plus the Pinia state and brain status pill.
+
+![Docker and LLM model verification](screenshots/03-docker-and-model.png)
+
+**Exact assertions (6 checks)**:
+
+| Check | Method | Expected |
+|---|---|---|
+| Docker version | `docker --version` | starts with `"Docker version"` |
+| Ollama container | `docker ps` status | starts with `"Up"` |
+| Model in API | `GET /api/tags` | `"gemma3:4b"` found (family=gemma3, params=4.3B, quant=Q4_K_M) |
+| Pinia mode | `brainMode.mode` | `=== "local_ollama"` |
+| Pinia model | `brainMode.model` | `=== "gemma3:4b"` |
+| Brain pill | `.brain-status-pill` text | `=== "Ollama · gemma3:4b"` |
+
+---
+
+## Step 4 — Quest constellation
+
+Click the crystal orb (top-right). It shows a percentage (e.g. `"22%"`).
+
+![Quest constellation — skill map](screenshots/04-quest-constellation.png)
+
+**Exact assertions (5 checks)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Orb percentage | `.ff-orb-pct` | matches `/^\d+%$/` |
+| Constellation | `.skill-constellation` | visible |
+| Close button | `.sc-close-btn` | visible |
+| Close text | `.sc-close-btn` textContent | `=== "✕"` |
+| Breadcrumb | `.sc-crumb--root` | `=== "✦ All Clusters"` |
+
+---
+
+## Step 5 — Pet mode
+
+Click the `"Desktop"` toggle to switch to pet mode. The character floats on
+a transparent overlay with an onboarding tooltip.
+
+![Pet mode — character overlay with onboarding](screenshots/05-pet-mode.png)
+
+**Exact assertions (6 checks)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Pet overlay | `.pet-overlay` | visible |
+| App shell class | `.app-shell` | has `.pet-mode` class |
+| Character | `.pet-character` | visible |
+| Onboarding title | `.pet-onboarding-title` | `=== "Welcome to pet mode"` |
+| Dismiss button | `.pet-onboarding-dismiss` | `=== "Got it"` |
+| Exit pet mode | Escape key | `.pet-overlay` not visible |
+
+---
+
+## Step 6 — Chat: first question (local Ollama, no memories)
+
+Back in desktop mode, type a question and send it. The local Ollama model
+(`gemma3:4b`) generates the response — no cloud API involved.
+
+![Chat with no memories — local Ollama response](screenshots/06-chat-no-memories.png)
+
+**Exact assertions (8 checks)**:
+
+| Check | Selector / Method | Expected |
+|---|---|---|
+| Input enabled | `input.chat-input` | not disabled |
+| Input filled | `.chat-input` value | `> 20` chars |
+| Send button | `button.send-btn` | visible |
+| Brain mode | `brainMode.mode` via Pinia | `=== "local_ollama"` |
+| Brain model | `brainMode.model` via Pinia | `=== "gemma3:4b"` |
+| Assistant reply | Pinia `conversation.messages` last | role=`assistant`, length > 20 chars |
+| User rows | `.message-row.user` count | `>= 1` |
+| Assistant rows | `.message-row.assistant` count | `>= 1` |
+
+---
+
+## Step 7 — Memory tab (empty)
+
+Navigate to the **Memory** tab. The empty state shows filters, actions,
+and search modes.
+
+![Memory tab — empty state with filters and actions](screenshots/07-memory-empty.png)
+
+**Exact assertions (7 checks)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Memory view | `.memory-view` | visible |
+| Header | `.mv-header h2` | `=== "🧠 Memory"` |
+| Add button | `.mv-header-actions .btn-primary` | `=== "＋ Add memory"` |
+| Sub-tabs | `.mv-tab` texts | `=== ["List","Graph","Session"]` |
+| Tier chips | `.mv-tier-chip` texts | `=== ["short","working","long"]` |
+| Type chips | `.mv-type-chip` texts | `=== ["fact","preference","context","summary"]` |
+| Actions | `.mv-header-actions .btn-secondary` texts | `=== ["⬇ Extract from session","📄 Summarize session","⏳ Decay","🧹 GC"]` |
+
+---
+
+## Step 8 — Add a memory
+
+Click **＋ Add memory** to open the modal. Enter knowledge manually —
+in this example, Vietnamese civil code statute text about Article 429.
+
+![Add memory modal with content and tags](screenshots/08-memory-add-modal.png)
+
+**Exact assertions (6 checks)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Modal | `.mv-modal` | visible |
+| Title | `.mv-modal h3` | `=== "Add memory"` |
+| Content placeholder | `textarea[placeholder]` | `=== "What should I remember?"` |
+| Tags placeholder | `input[placeholder]` | `=== "python, work, project"` |
+| Save button | `.btn-primary` text | `=== "Save"` |
+| Modal closed | `.mv-modal` after save | not visible |
+
+> In a full Tauri build, use `ingest_document` to crawl websites or ingest
+> PDFs automatically. See [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md` §7](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md#ingest-pipeline-url--file--crawl).
+
+---
+
+## Step 9 — Memories list ⏭
+
+> **Skipped in browser-only mode**: The `add_memory` Tauri IPC command is
+> unavailable without the Rust backend. Memory cards require persisting
+> through `MemoryStore` which needs SQLite (or Postgres/MSSQL/CassandraDB).
+
+![Memories list — requires Tauri backend](screenshots/09-memories-list.png)
+
+In a full Tauri build, memory cards display: type badge, tier badge,
+importance stars, decay bar, and tags.
+
+---
+
+## Step 10 — Memory graph
+
+Switch to the **Graph** sub-tab to see a Cytoscape.js visualization of
+memory nodes connected by shared tags.
+
+![Memory graph view](screenshots/10-memory-graph.png)
+
+**Exact assertions (1 check)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Graph panel | `.mv-graph-panel` | visible |
+
+---
+
+## Step 11 — Chat with RAG (local Ollama)
+
+Navigate back to **Chat** and ask the same question. Now the local Ollama
+model generates a longer, more detailed response. In a full Tauri build
+with persisted memories, `hybrid_search()` would inject the top-5 relevant
+memories as a `[LONG-TERM MEMORY]` block.
+
+![Chat with RAG — local Ollama response](screenshots/11-chat-with-rag.png)
+
+**Exact assertions (3 checks)**:
+
+| Check | Method | Expected |
+|---|---|---|
+| Chat view | `.chat-view` offsetParent | not null |
+| Brain mode | Pinia `brainMode` | `=== local_ollama/gemma3:4b` |
+| RAG reply | Pinia `conversation.messages` last | role=`assistant`, length > 20 chars |
+
+---
+
+## Step 12 — Skill tree
+
+Navigate to the **Quests** tab to see the Brain Stat Sheet, today's quests,
+and active combos.
+
+![Skill tree — stats, quests, combos](screenshots/12-skill-tree.png)
+
+**Exact assertions (7 checks)**:
+
+| Element | Selector | Expected |
+|---|---|---|
+| Skill tree view | `.skill-tree-view` | visible |
+| Title | `.st-title` | `=== "⚔️ Skill Tree"` |
+| Brain Stat Sheet | `.brain-stat-sheet` | visible |
+| Sheet header | `.bss-title` | `=== "⚔ Brain Stat Sheet"` |
+| Stat abbreviations | `.bss-stat-abbr` texts | `=== ["INT","WIS","CHA","PER","DEX","END"]` |
+| Level badge | `.bss-level` | matches `/^Lv\. \d+$/` (e.g. `"Lv. 47"`) |
+| Daily quests | `.st-daily-section` | visible |
+
+---
+
+## Step 13 — Pet mode with chat ⏭
+
+Toggle pet mode again — the character appears as a floating overlay.
+
+![Pet mode — character overlay](screenshots/13-pet-mode-chat.png)
+
+**Exact assertions (1 check + 1 skip)**:
+
+| Check | Selector | Expected |
+|---|---|---|
+| Pet overlay | `.pet-overlay` | visible ✅ |
+| Pet chat panel | `.pet-chat` | ⏭ skip (canvas click doesn't propagate in headless Playwright) |
+
+In the real app, clicking the character opens the chat panel with:
+- Input: `placeholder === "Say something…"`
+- Submit button: `=== "➤"`
+
+---
+
+## Verification summary
+
+All screenshots verified by [`scripts/verify-brain-flow.mjs`](../scripts/verify-brain-flow.mjs):
+
+```
+node scripts/verify-brain-flow.mjs
+# 78 passed, 0 failed, 2 skipped
+```
+
+| Step | Description | Checks | Status |
+|---:|---|---:|---|
+| 0 | Pre-flight: Docker & Ollama + model | 6 | ✅ |
+| 1 | Fresh launch | 12 | ✅ |
+| 2 | Configure brain → Local Ollama | 10 | ✅ |
+| 3 | Docker & LLM model verification | 6 | ✅ |
+| 4 | Quest constellation | 5 | ✅ |
+| 5 | Pet mode | 6 | ✅ |
+| 6 | Chat (local Ollama, no memories) | 8 | ✅ |
+| 7 | Memory tab (empty) | 7 | ✅ |
+| 8 | Add a memory (modal) | 6 | ✅ |
+| 9 | Memories list | 0 | ⏭ (Tauri IPC) |
+| 10 | Memory graph | 1 | ✅ |
+| 11 | Chat with RAG (local Ollama) | 3 | ✅ |
+| 12 | Skill tree | 7 | ✅ |
+| 13 | Pet mode with chat | 1 | ✅ (+1 ⏭) |
+| **Total** | | **78** | **78 ✅  2 ⏭** |
+
+For the full code-path map, hybrid search formula, decay maths, schema,
+ingest pipeline, and debug recipes, see
+[`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md).
 # Brain + RAG Walkthrough — Full Desktop & Pet Mode Demo
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory
