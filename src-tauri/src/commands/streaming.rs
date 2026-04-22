@@ -833,7 +833,9 @@ mod tests {
 
     /// Spawn an axum mock LLM server on a random port and return its base URL
     /// (e.g. `http://127.0.0.1:34567`). The `/v1/chat/completions` endpoint
-    /// streams the canned response.
+    /// streams the canned response. The listener is bound *before* this
+    /// function returns, so connections are immediately accepted — no sleep
+    /// needed.
     async fn spawn_mock_openai_server() -> String {
         let app = Router::new().route("/v1/chat/completions", post(mock_openai_sse_handler));
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -841,10 +843,17 @@ mod tests {
         tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         });
-        // Tiny grace period so the listener is accepting connections before
-        // the test issues its request.
-        tokio::time::sleep(Duration::from_millis(50)).await;
         format!("http://127.0.0.1:{port}")
+    }
+
+    /// Wait for `done_signal` to fire or fail with a clear timeout error
+    /// after `Duration`. Replaces non-deterministic `sleep`-based waits in
+    /// the streaming tests.
+    async fn await_done(notify: &tokio::sync::Notify, timeout: Duration) -> Result<(), &'static str> {
+        tokio::select! {
+            _ = notify.notified() => Ok(()),
+            _ = tokio::time::sleep(timeout) => Err("timed out waiting for done:true llm-chunk"),
+        }
     }
 
     /// End-to-end verification that the OpenAI-compatible streaming path
@@ -878,13 +887,20 @@ mod tests {
         }
         handle.manage(state);
 
-        // 4. Subscribe to the three event streams.
+        // 4. Subscribe to the three event streams. A Notify fires the moment
+        //    we observe the `done:true` sentinel — replaces sleep-based waits.
         let chunks: Arc<StdMutex<Vec<LlmChunk>>> = Arc::new(StdMutex::new(Vec::new()));
         let anims: Arc<StdMutex<Vec<AnimationCommand>>> = Arc::new(StdMutex::new(Vec::new()));
+        let done_signal = Arc::new(tokio::sync::Notify::new());
         let chunks_cb = Arc::clone(&chunks);
+        let done_cb = Arc::clone(&done_signal);
         handle.listen("llm-chunk", move |event| {
             if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                let is_done = c.done;
                 chunks_cb.lock().unwrap().push(c);
+                if is_done {
+                    done_cb.notify_one();
+                }
             }
         });
         let anims_cb = Arc::clone(&anims);
@@ -900,9 +916,11 @@ mod tests {
             .await
             .expect("run_chat_stream");
 
-        // Tauri events are dispatched on a background thread — yield long
-        // enough for all listeners to drain.
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        // Block deterministically until the `done:true` chunk has been
+        // dispatched to the listener thread.
+        await_done(&done_signal, Duration::from_secs(5))
+            .await
+            .expect("done sentinel");
 
         // 6. Assertions.
         let chunks_snap = chunks.lock().unwrap().clone();
@@ -996,10 +1014,16 @@ mod tests {
         handle.manage(state);
 
         let chunks: Arc<StdMutex<Vec<LlmChunk>>> = Arc::new(StdMutex::new(Vec::new()));
+        let done_signal = Arc::new(tokio::sync::Notify::new());
         let chunks_cb = Arc::clone(&chunks);
+        let done_cb = Arc::clone(&done_signal);
         handle.listen("llm-chunk", move |event| {
             if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                let is_done = c.done;
                 chunks_cb.lock().unwrap().push(c);
+                if is_done {
+                    done_cb.notify_one();
+                }
             }
         });
 
@@ -1007,7 +1031,9 @@ mod tests {
         run_chat_stream("ping".to_string(), &handle, state_ref.inner())
             .await
             .expect("run_chat_stream");
-        tokio::time::sleep(Duration::from_millis(80)).await;
+        await_done(&done_signal, Duration::from_secs(5))
+            .await
+            .expect("done sentinel");
 
         let chunks_snap = chunks.lock().unwrap().clone();
         assert!(
