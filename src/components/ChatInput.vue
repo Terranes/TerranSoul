@@ -88,7 +88,6 @@ async function handleFileSelected() {
   try {
     const { useTaskStore } = await import('../stores/tasks');
     const taskStore = useTaskStore();
-    const { invoke } = await import('@tauri-apps/api/core');
     const name = file.name;
     await taskStore.ingestDocument(name);
   } catch {

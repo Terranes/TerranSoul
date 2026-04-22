@@ -156,7 +156,7 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
  * Keywords: "learn", "teach me", "study", "deep dive", "ingest", "import".
  * When detected, append a quest suggestion with scholar-quest choices.
  */
-function maybeShowKnowledgeQuest(userInput: string, responseText: string): void {
+function maybeShowKnowledgeQuest(userInput: string, _responseText: string): void {
   const inputLower = userInput.toLowerCase();
   const learningWords = [
     'learn about', 'teach me', 'study', 'deep dive', 'train you',
