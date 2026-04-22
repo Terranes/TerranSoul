@@ -785,7 +785,7 @@ mod tests {
         assert_eq!(partial_prefix_len("", "<anim>"), 0);
     }
 
-    // ── Headless end-to-end stream verification ───────────────────────────────
+    // ── Headless end-to-end stream verification (Linux only) ──────────────────
     //
     // These tests prove the entire backend streaming pipeline works on Linux
     // *without* a frontend (no GTK/WebKit/X11) by driving it through Tauri's
@@ -793,22 +793,31 @@ mod tests {
     // server, listen for the three streams the frontend consumes
     // (`llm-chunk` text, `llm-animation`, `llm-chunk` done sentinel), and
     // assert on the contents of each.
-
-    use crate::brain::brain_config::BrainMode;
-    use crate::AppState;
-    use axum::{
-        response::sse::{Event, KeepAlive, Sse},
-        routing::post,
-        Router,
-    };
-    use futures_util::stream;
-    use std::convert::Infallible;
-    use std::sync::Arc;
-    use std::sync::Mutex as StdMutex;
-    use std::time::Duration;
-    use tauri::test::{mock_builder, mock_context, noop_assets};
-    use tauri::{Listener, Manager};
-    use tokio::net::TcpListener;
+    //
+    // OS split per project policy: Linux verifies the **streams** (no GUI
+    // available in CI), Windows verifies the **UI** through the existing
+    // Playwright suite (`e2e/animation-flow.spec.ts`) which exercises the
+    // same three-stream contract through a real browser. The cross-OS
+    // smoke for the streaming Pinia store lives in `src/stores/streaming.test.ts`
+    // (Vitest).
+    #[cfg(target_os = "linux")]
+    mod headless_linux {
+        use super::*;
+        use crate::brain::brain_config::BrainMode;
+        use crate::AppState;
+        use axum::{
+            response::sse::{Event, KeepAlive, Sse},
+            routing::post,
+            Router,
+        };
+        use futures_util::stream;
+        use std::convert::Infallible;
+        use std::sync::Arc;
+        use std::sync::Mutex as StdMutex;
+        use std::time::Duration;
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::{Listener, Manager};
+        use tokio::net::TcpListener;
 
     /// SSE handler that streams a deterministic OpenAI-compatible response
     /// containing an `<anim>` block, two text deltas, and an end-of-stream
@@ -1045,4 +1054,5 @@ mod tests {
             "stub must terminate with done=true sentinel"
         );
     }
+    } // end mod headless_linux
 }
