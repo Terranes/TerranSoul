@@ -8,6 +8,14 @@
 
 **J.A.R.V.I.S. in Real Life — chat-first · cross-device · open-source**
 
+## What this AI is
+
+- **For technical users:** A full 3D AI companion focused on full-context engineering and harness engineering.
+- **For non-technical users:** A 3D AI companion that helps with daily work on desktop and mobile.
+
+Try teaching your AI with our software and experiment with its capabilities yourself.  
+If you need tailored support for personal, commercial, small business, or enterprise use, please contact: **Darren.bui@terransoul.com**
+
 [![TerranSoul CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
 
 ---
