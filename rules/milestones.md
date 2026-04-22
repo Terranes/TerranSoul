@@ -152,7 +152,7 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
-| 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | See details below |
+| 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking pipeline complete; screenshots remain |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 
@@ -182,6 +182,12 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 - [x] Embedded the existing real screenshots from
       `instructions/screenshots/01-fresh-launch.png` … `11-skill-tree.png`
       throughout the walkthrough.
+- [x] **Source tracking pipeline** — Extended `NewMemory` + `MemoryEntry`
+      with `source_url`, `source_hash`, `expires_at`; updated `add()`,
+      `add_to_tier()`, all SELECTs, row mappers; added `find_by_source_hash()`,
+      `find_by_source_url()`, `delete_by_source_url()`, `delete_expired()`;
+      wired SHA-256 hashing + dedup/staleness into `run_ingest_task`;
+      added `sha2` + `hex` crates; 9 new tests. **570 Rust / 941 Vitest pass.**
 
 **Remaining (user environment / follow-up).**
 - [ ] Capture **scenario-specific** screenshots on a real Tauri build with
@@ -193,22 +199,21 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
       `playwright codegen --record-video` wrapping
       `scripts/brain-flow-screenshots.mjs`; convert with
       `ffmpeg -i in.webm out.mp4`; commit under `recording/`.
-- [ ] Phase-1 implementation gap noticed during validation:
-      `commands/ingest.rs::run_ingest_task` does not yet populate
-      `source_url` / `source_hash` on inserted chunks even though the V3
-      schema columns exist. Wire this in (extend `NewMemory` with optional
-      source fields, plumb through ingest, add unit tests for re-ingest
-      skip + content-change replace) so design §12 staleness detection
-      works end-to-end without a manual SQL workaround.
 
 **Files touched.**
 - `instructions/BRAIN-COMPLEX-EXAMPLE.md` (rewritten)
 - `instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md` (rewritten)
+- `src-tauri/Cargo.toml` (added sha2, hex)
+- `src-tauri/src/memory/store.rs` (NewMemory, MemoryEntry, add, queries, 4 new methods, 9 tests)
+- `src-tauri/src/memory/brain_memory.rs` (Default spreads)
+- `src-tauri/src/commands/ingest.rs` (SHA-256 hashing, dedup, staleness, 2 tests)
+- `src-tauri/src/commands/memory.rs` (Default spread)
 - `rules/milestones.md` (this entry)
+- `rules/completion-log.md` (logged source tracking pipeline)
 
 **Validation.**
-- `cd src-tauri && cargo test --all-targets` → 561/561 pass.
-- No code changes outside docs in this PR; markdown-only diff.
+- `cd src-tauri && cargo test --all-targets` → 570/570 pass.
+- `npx vitest run` → 941/941 pass.
 
 ---
 

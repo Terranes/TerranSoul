@@ -34,6 +34,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 scraper = "0.22"
 url = "2"
 futures-util = "0.3"
+sha2 = "0.10"
+hex = "0.4"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 msedge-tts = "0.3.0"

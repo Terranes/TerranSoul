@@ -165,6 +165,7 @@ pub fn save_facts(facts: &[String], store: &crate::memory::MemoryStore) -> usize
                     tags: "auto-extracted".to_string(),
                     importance: 3,
                     memory_type: MemoryType::Fact,
+                    ..Default::default()
                 })
                 .ok()
         })
@@ -179,6 +180,7 @@ pub fn save_summary(summary: &str, store: &crate::memory::MemoryStore) -> bool {
             tags: "session-summary".to_string(),
             importance: 4,
             memory_type: MemoryType::Summary,
+            ..Default::default()
         })
         .is_ok()
 }
@@ -202,6 +204,7 @@ mod tests {
             tags: "language".to_string(),
             importance: 4,
             memory_type: MemoryType::Preference,
+            ..Default::default()
         })
         .unwrap();
         s.add(NewMemory {
@@ -209,6 +212,7 @@ mod tests {
             tags: "project,ml".to_string(),
             importance: 5,
             memory_type: MemoryType::Context,
+            ..Default::default()
         })
         .unwrap();
         s

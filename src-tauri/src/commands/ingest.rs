@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use sha2::{Sha256, Digest};
 use tauri::{AppHandle, Emitter, Manager, State};
 use crate::AppState;
 use crate::memory::{MemoryType, NewMemory};
@@ -218,7 +219,7 @@ async fn run_ingest_task(
         return Err("Task cancelled".to_string());
     }
 
-    let (text, _source_url) = if source.starts_with("crawl:") {
+    let (text, source_url) = if source.starts_with("crawl:") {
         let url = source.strip_prefix("crawl:").unwrap().trim();
         let crawled = crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, app, state).await?;
         (crawled, url.to_string())
@@ -232,6 +233,25 @@ async fn run_ingest_task(
 
     if text.trim().is_empty() {
         return Err("Document is empty or could not be parsed.".to_string());
+    }
+
+    // Compute content hash for dedup / staleness detection.
+    let source_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(text.as_bytes());
+        hex::encode(hasher.finalize())
+    };
+
+    // Check if we already have content from this source with the same hash → skip.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        if let Ok(Some(existing)) = store.find_by_source_hash(&source_hash) {
+            // Content unchanged — skip re-ingest.
+            emit_progress(app, task_id, 100, "Content unchanged — skipped", 0, 0);
+            return Ok((0, existing.token_count as usize));
+        }
+        // Content changed or new — delete any stale entries from the same source URL.
+        let _ = store.delete_by_source_url(&source_url);
     }
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -276,6 +296,9 @@ async fn run_ingest_task(
             store.add(NewMemory {
                 content: chunk.clone(), tags: chunk_tags,
                 importance, memory_type: MemoryType::Fact,
+                source_url: Some(source_url.clone()),
+                source_hash: Some(source_hash.clone()),
+                ..Default::default()
             })
         };
         if result.is_ok() { created += 1; }
@@ -637,5 +660,23 @@ mod tests {
         assert_eq!(truncate_url("https://x.com"), "https://x.com");
         let long = "https://example.com/very/long/path/that/exceeds/sixty/characters/easily";
         assert!(truncate_url(long).ends_with('…'));
+    }
+
+    #[test]
+    fn sha256_hash_deterministic() {
+        use sha2::{Sha256, Digest};
+        let text = "Rule 14.3: Family law filings require 30-day notice.";
+        let hash1 = hex::encode(Sha256::digest(text.as_bytes()));
+        let hash2 = hex::encode(Sha256::digest(text.as_bytes()));
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64); // SHA-256 = 32 bytes = 64 hex chars
+    }
+
+    #[test]
+    fn sha256_hash_changes_with_content() {
+        use sha2::{Sha256, Digest};
+        let hash_v1 = hex::encode(Sha256::digest(b"30-day deadline"));
+        let hash_v2 = hex::encode(Sha256::digest(b"21-day deadline"));
+        assert_ne!(hash_v1, hash_v2);
     }
 }

@@ -22,10 +22,11 @@ fn auto_backup(data_dir: &Path) {
 }
 
 /// The category/purpose of a memory entry.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryType {
     /// A learned fact (e.g. "User's name is Alice").
+    #[default]
     Fact,
     /// A user preference (e.g. "User prefers Python").
     Preference,
@@ -118,16 +119,35 @@ pub struct MemoryEntry {
     pub parent_id: Option<i64>,
     /// Approximate token count of the content.
     pub token_count: i64,
+    /// Origin URL for ingested/crawled documents.
+    pub source_url: Option<String>,
+    /// SHA-256 content hash for dedup / staleness detection.
+    pub source_hash: Option<String>,
+    /// Optional TTL — Unix-ms timestamp after which memory auto-expires.
+    pub expires_at: Option<i64>,
 }
 
 /// Fields required to create a new memory.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct NewMemory {
     pub content: String,
     pub tags: String,
+    #[serde(default = "default_importance")]
     pub importance: i64,
+    #[serde(default)]
     pub memory_type: MemoryType,
+    /// Origin URL for ingested documents (optional).
+    #[serde(default)]
+    pub source_url: Option<String>,
+    /// SHA-256 content hash for dedup / staleness detection (optional).
+    #[serde(default)]
+    pub source_hash: Option<String>,
+    /// TTL timestamp — memory auto-expires after this Unix-ms time (optional).
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
+
+fn default_importance() -> i64 { 3 }
 
 /// Fields that may be updated on an existing memory.
 #[derive(Debug, Clone, Deserialize)]
@@ -194,9 +214,9 @@ impl MemoryStore {
         let now = now_ms();
         let token_count = estimate_tokens(&m.content);
         self.conn.execute(
-            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, token_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7)",
-            params![m.content, m.tags, importance, m.memory_type.as_str(), now, MemoryTier::Long.as_str(), token_count],
+            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, token_count, source_url, source_hash, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7, ?8, ?9, ?10)",
+            params![m.content, m.tags, importance, m.memory_type.as_str(), now, MemoryTier::Long.as_str(), token_count, m.source_url, m.source_hash, m.expires_at],
         )?;
         let id = self.conn.last_insert_rowid();
         self.get_by_id(id)
@@ -208,9 +228,9 @@ impl MemoryStore {
         let now = now_ms();
         let token_count = estimate_tokens(&m.content);
         self.conn.execute(
-            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, session_id, token_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7, ?8)",
-            params![m.content, m.tags, importance, m.memory_type.as_str(), now, tier.as_str(), session_id, token_count],
+            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, session_id, token_count, source_url, source_hash, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7, ?8, ?9, ?10, ?11)",
+            params![m.content, m.tags, importance, m.memory_type.as_str(), now, tier.as_str(), session_id, token_count, m.source_url, m.source_hash, m.expires_at],
         )?;
         let id = self.conn.last_insert_rowid();
         self.get_by_id(id)
@@ -220,7 +240,7 @@ impl MemoryStore {
     pub fn get_by_id(&self, id: i64) -> SqlResult<MemoryEntry> {
         self.conn.query_row(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
              FROM memories WHERE id = ?1",
             params![id],
             row_to_entry,
@@ -231,7 +251,7 @@ impl MemoryStore {
     pub fn get_all(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
              FROM memories ORDER BY importance DESC, created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
@@ -242,7 +262,7 @@ impl MemoryStore {
     pub fn get_by_tier(&self, tier: &MemoryTier) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
              FROM memories WHERE tier = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![tier.as_str()], row_to_entry)?;
@@ -253,7 +273,7 @@ impl MemoryStore {
     pub fn get_persistent(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
              FROM memories WHERE tier IN ('working', 'long')
              ORDER BY importance DESC, decay_score DESC, created_at DESC",
         )?;
@@ -270,7 +290,7 @@ impl MemoryStore {
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
              FROM memories
              WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
              ORDER BY importance DESC, access_count DESC, created_at DESC",
@@ -388,7 +408,7 @@ impl MemoryStore {
     pub fn get_with_embeddings(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, embedding
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, embedding
              FROM memories WHERE embedding IS NOT NULL",
         )?;
         let rows = stmt.query_map([], row_to_entry_with_embedding)?;
@@ -608,7 +628,7 @@ impl MemoryStore {
     pub fn evict_short_term(&self, session_id: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
              FROM memories WHERE tier = 'short' AND session_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_entry)?;
@@ -621,6 +641,51 @@ impl MemoryStore {
             params![session_id],
         )?;
         Ok(entries)
+    }
+
+    /// Find a memory by its source_hash.  Returns the first match (if any).
+    pub fn find_by_source_hash(&self, hash: &str) -> SqlResult<Option<MemoryEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+             FROM memories WHERE source_hash = ?1 LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![hash], row_to_entry)?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }
+    }
+
+    /// Find all memories from a given source URL.
+    pub fn find_by_source_url(&self, url: &str) -> SqlResult<Vec<MemoryEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+             FROM memories WHERE source_url = ?1 ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![url], row_to_entry)?;
+        rows.collect()
+    }
+
+    /// Delete all memories from a given source URL.  Returns the count deleted.
+    pub fn delete_by_source_url(&self, url: &str) -> SqlResult<usize> {
+        let deleted = self.conn.execute(
+            "DELETE FROM memories WHERE source_url = ?1",
+            params![url],
+        )?;
+        Ok(deleted)
+    }
+
+    /// Delete expired memories (expires_at < now).  Returns the count deleted.
+    pub fn delete_expired(&self) -> SqlResult<usize> {
+        let now = now_ms();
+        let deleted = self.conn.execute(
+            "DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?1",
+            params![now],
+        )?;
+        Ok(deleted)
     }
 
     /// Delete memories below a decay threshold (garbage collection).
@@ -663,11 +728,14 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
         session_id: row.get(10).unwrap_or(None),
         parent_id: row.get(11).unwrap_or(None),
         token_count: row.get::<_, i64>(12).unwrap_or(0),
+        source_url: row.get(13).unwrap_or(None),
+        source_hash: row.get(14).unwrap_or(None),
+        expires_at: row.get(15).unwrap_or(None),
     })
 }
 
 fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
-    let blob: Option<Vec<u8>> = row.get(13)?;
+    let blob: Option<Vec<u8>> = row.get(16)?;
     Ok(MemoryEntry {
         id: row.get(0)?,
         content: row.get(1)?,
@@ -683,6 +751,9 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
         session_id: row.get(10).unwrap_or(None),
         parent_id: row.get(11).unwrap_or(None),
         token_count: row.get::<_, i64>(12).unwrap_or(0),
+        source_url: row.get(13).unwrap_or(None),
+        source_hash: row.get(14).unwrap_or(None),
+        expires_at: row.get(15).unwrap_or(None),
     })
 }
 
@@ -730,6 +801,7 @@ mod tests {
             tags: "test".to_string(),
             importance: 3,
             memory_type: MemoryType::Fact,
+            ..Default::default()
         }
     }
 
@@ -800,6 +872,7 @@ mod tests {
                 tags: "ui,preferences".to_string(),
                 importance: 2,
                 memory_type: MemoryType::Preference,
+                ..Default::default()
             })
             .unwrap();
         let results = store.search("preferences").unwrap();
@@ -1129,5 +1202,134 @@ mod tests {
         let store = MemoryStore::in_memory();
         let entry = store.add(new_memory("Hello world this is a test")).unwrap();
         assert!(entry.token_count > 0);
+    }
+
+    #[test]
+    fn add_with_source_fields() {
+        let store = MemoryStore::in_memory();
+        let entry = store.add(NewMemory {
+            content: "Rule 14.3: 30-day deadline".to_string(),
+            tags: "law".to_string(),
+            importance: 5,
+            memory_type: MemoryType::Fact,
+            source_url: Some("https://example.com/rules".to_string()),
+            source_hash: Some("abc123".to_string()),
+            expires_at: None,
+        }).unwrap();
+        assert_eq!(entry.source_url.as_deref(), Some("https://example.com/rules"));
+        assert_eq!(entry.source_hash.as_deref(), Some("abc123"));
+        assert!(entry.expires_at.is_none());
+    }
+
+    #[test]
+    fn find_by_source_hash_returns_match() {
+        let store = MemoryStore::in_memory();
+        store.add(NewMemory {
+            source_hash: Some("hash-001".to_string()),
+            ..new_memory("sourced fact")
+        }).unwrap();
+        store.add(new_memory("no source")).unwrap();
+
+        let found = store.find_by_source_hash("hash-001").unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().content, "sourced fact");
+
+        assert!(store.find_by_source_hash("nonexistent").unwrap().is_none());
+    }
+
+    #[test]
+    fn find_by_source_url_returns_all() {
+        let store = MemoryStore::in_memory();
+        let url = "https://example.com/doc";
+        store.add(NewMemory {
+            source_url: Some(url.to_string()),
+            source_hash: Some("h1".to_string()),
+            ..new_memory("chunk 1")
+        }).unwrap();
+        store.add(NewMemory {
+            source_url: Some(url.to_string()),
+            source_hash: Some("h2".to_string()),
+            ..new_memory("chunk 2")
+        }).unwrap();
+        store.add(new_memory("unrelated")).unwrap();
+
+        let results = store.find_by_source_url(url).unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn delete_by_source_url_removes_all() {
+        let store = MemoryStore::in_memory();
+        let url = "https://example.com/stale";
+        store.add(NewMemory {
+            source_url: Some(url.to_string()),
+            ..new_memory("old chunk 1")
+        }).unwrap();
+        store.add(NewMemory {
+            source_url: Some(url.to_string()),
+            ..new_memory("old chunk 2")
+        }).unwrap();
+        store.add(new_memory("keep me")).unwrap();
+
+        let removed = store.delete_by_source_url(url).unwrap();
+        assert_eq!(removed, 2);
+        assert_eq!(store.count(), 1);
+    }
+
+    #[test]
+    fn reingest_skip_when_hash_unchanged() {
+        let store = MemoryStore::in_memory();
+        let hash = "sha256-unchanged";
+        store.add(NewMemory {
+            source_hash: Some(hash.to_string()),
+            source_url: Some("https://example.com/doc".to_string()),
+            ..new_memory("existing content")
+        }).unwrap();
+
+        // Simulate re-ingest: find_by_source_hash returns Some → skip
+        let existing = store.find_by_source_hash(hash).unwrap();
+        assert!(existing.is_some());
+    }
+
+    #[test]
+    fn reingest_replaces_when_hash_changed() {
+        let store = MemoryStore::in_memory();
+        let url = "https://example.com/rule";
+        store.add(NewMemory {
+            source_url: Some(url.to_string()),
+            source_hash: Some("old-hash".to_string()),
+            ..new_memory("old version of rule")
+        }).unwrap();
+        assert_eq!(store.count(), 1);
+
+        // Hash changed → delete old entries by URL, then insert new
+        let _ = store.delete_by_source_url(url).unwrap();
+        assert_eq!(store.count(), 0);
+
+        store.add(NewMemory {
+            source_url: Some(url.to_string()),
+            source_hash: Some("new-hash".to_string()),
+            ..new_memory("updated version of rule")
+        }).unwrap();
+        assert_eq!(store.count(), 1);
+
+        let found = store.find_by_source_hash("new-hash").unwrap();
+        assert!(found.is_some());
+        assert!(found.unwrap().content.contains("updated"));
+    }
+
+    #[test]
+    fn delete_expired_removes_past_entries() {
+        let store = MemoryStore::in_memory();
+        // Insert with an already-expired timestamp
+        store.add(NewMemory {
+            expires_at: Some(1000), // epoch ms, way in the past
+            ..new_memory("ephemeral")
+        }).unwrap();
+        store.add(new_memory("permanent")).unwrap();
+
+        let removed = store.delete_expired().unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(store.count(), 1);
     }
 }

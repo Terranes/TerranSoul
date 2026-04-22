@@ -24,6 +24,7 @@ pub async fn add_memory(
                 tags,
                 importance,
                 memory_type: mt,
+                ..Default::default()
             })
             .map_err(|e| e.to_string())?
     }; // lock released before await
