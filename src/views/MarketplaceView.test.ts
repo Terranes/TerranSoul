@@ -70,6 +70,8 @@ function setupMocks(opts: {
         return undefined;
       case 'clear_agent_capabilities':
         return undefined;
+      case 'set_brain_mode':
+        return undefined;
       default:
         throw new Error(`Unmocked command: ${cmd}`);
     }
@@ -225,5 +227,41 @@ describe('MarketplaceView', () => {
     expect(wrapper.text()).toContain('Paid API');
     expect(wrapper.text()).toContain('Pollinations AI');
     expect(wrapper.text()).toContain('ask TerranSoul in chat');
+  });
+
+  it('shows LM Studio in desktop LLM config and applies it as a local brain mode', async () => {
+    setupMocks();
+    const wrapper = mount(MarketplaceView);
+    await flushPromises();
+
+    const configHeader = wrapper.find('.llm-config-header');
+    expect(configHeader.exists()).toBe(true);
+    await configHeader.trigger('click');
+    await flushPromises();
+
+    const lmStudioTab = wrapper.findAll('.llm-tier-tab').find((tab) => tab.text().includes('LM Studio'));
+    expect(lmStudioTab).toBeTruthy();
+
+    await lmStudioTab!.trigger('click');
+    await flushPromises();
+
+    const inputs = wrapper.findAll('.llm-input');
+    expect(inputs).toHaveLength(2);
+    await inputs[0].setValue('gemma4:e4b');
+    await inputs[1].setValue('http://127.0.0.1:1234/v1');
+
+    const applyButton = wrapper.findAll('button').find((button) => button.text().includes('Apply LM Studio'));
+    expect(applyButton).toBeTruthy();
+    await applyButton!.trigger('click');
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', {
+      mode: {
+        mode: 'local_lm_studio',
+        model: 'gemma4:e4b',
+        base_url: 'http://127.0.0.1:1234/v1',
+      },
+    });
+    expect(wrapper.text()).toContain('LM Studio / gemma4:e4b');
   });
 });

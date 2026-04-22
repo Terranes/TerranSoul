@@ -226,6 +226,7 @@
               <button :class="['llm-tier-tab', { active: llmTier === 'free' }]" @click="llmTier = 'free'">☁️ Free Cloud</button>
               <button :class="['llm-tier-tab', { active: llmTier === 'paid' }]" @click="llmTier = 'paid'">💳 Paid API</button>
               <button :class="['llm-tier-tab', { active: llmTier === 'local' }]" @click="llmTier = 'local'">🖥 Local Ollama</button>
+              <button :class="['llm-tier-tab', { active: llmTier === 'lmstudio' }]" @click="llmTier = 'lmstudio'">🧪 LM Studio</button>
             </div>
 
             <!-- Free provider selection -->
@@ -313,6 +314,25 @@
                 @click="applyLocalModel"
               >
                 Install & Activate {{ llmLocalModel || '…' }}
+              </button>
+            </div>
+
+            <!-- LM Studio configuration -->
+            <div v-if="llmTier === 'lmstudio'" class="llm-paid-form">
+              <div class="llm-field">
+                <label>Model:</label>
+                <input v-model="llmLmStudioModel" type="text" placeholder="gemma4:e4b" class="llm-input" />
+              </div>
+              <div class="llm-field">
+                <label>Base URL:</label>
+                <input v-model="llmLmStudioBaseUrl" type="url" placeholder="http://127.0.0.1:1234" class="llm-input" />
+              </div>
+              <button
+                class="btn-primary btn-sm llm-apply-btn"
+                :disabled="!llmLmStudioModel.trim() || !llmLmStudioBaseUrl.trim()"
+                @click="applyLmStudio"
+              >
+                Apply LM Studio
               </button>
             </div>
 
@@ -525,14 +545,24 @@ const activeBrainBadge = computed(() => {
   if (!mode) return '';
   if (mode.mode === 'free_api') return '☁️ ' + activeProviderName.value;
   if (mode.mode === 'paid_api') return '💳 ' + (mode as { model?: string }).model;
+  if (mode.mode === 'local_lm_studio') return '🧪 LM Studio';
   return '🖥 Local';
 });
 
 const showDetails = ref(false);
 
 // ── LLM configuration state ──────────────────────────────────────────────────
+function initialLlmTier(): 'free' | 'paid' | 'local' | 'lmstudio' {
+  const mode = brainStore.brainMode;
+  if (!mode) return 'free';
+  if (mode.mode === 'paid_api') return 'paid';
+  if (mode.mode === 'local_ollama') return 'local';
+  if (mode.mode === 'local_lm_studio') return 'lmstudio';
+  return 'free';
+}
+
 const showLlmConfig = ref(false);
-const llmTier = ref<'free' | 'paid' | 'local'>('free');
+const llmTier = ref<'free' | 'paid' | 'local' | 'lmstudio'>(initialLlmTier());
 const llmSelectedProvider = ref(
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
 );
@@ -547,6 +577,12 @@ const llmPaidBaseUrl = ref('');
 
 // Local Ollama fields
 const llmLocalModel = ref(brainStore.topRecommendation?.model_tag ?? '');
+const llmLmStudioModel = ref(
+  brainStore.brainMode?.mode === 'local_lm_studio' ? brainStore.brainMode.model : 'gemma4:e4b',
+);
+const llmLmStudioBaseUrl = ref(
+  brainStore.brainMode?.mode === 'local_lm_studio' ? brainStore.brainMode.base_url : 'http://127.0.0.1:1234',
+);
 
 const currentFreeProviderId = computed(() =>
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : null,
@@ -602,6 +638,21 @@ function applyPaidProvider() {
   llmConfirmation.value = {
     name: `${llmPaidProvider.value} / ${llmPaidModel.value}`,
     url: baseUrl,
+  };
+}
+
+function applyLmStudio() {
+  const mode = {
+    mode: 'local_lm_studio' as const,
+    model: llmLmStudioModel.value.trim(),
+    base_url: llmLmStudioBaseUrl.value.trim(),
+  };
+  brainStore.brainMode = mode;
+  brainStore.setBrainMode(mode).catch(() => { /* expected in browser */ });
+
+  llmConfirmation.value = {
+    name: `LM Studio / ${mode.model}`,
+    url: mode.base_url,
   };
 }
 
