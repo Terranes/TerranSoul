@@ -549,6 +549,7 @@ async fn crawl_website_with_progress(
     Ok(all_text.join("\n\n"))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn save_crawl_checkpoint(
     state: &State<'_, AppState>, task_id: &str,
     visited: &HashSet<String>, queue: &std::collections::VecDeque<(String, usize)>,

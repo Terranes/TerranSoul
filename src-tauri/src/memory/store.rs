@@ -83,6 +83,7 @@ impl MemoryTier {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "short" => MemoryTier::Short,
@@ -976,7 +977,7 @@ mod tests {
 
     #[test]
     fn embedding_bytes_roundtrip() {
-        let original = vec![0.1, -0.5, 3.14159, 0.0, f32::MAX, f32::MIN];
+        let original = vec![0.1, -0.5, 3.125, 0.0, f32::MAX, f32::MIN];
         let bytes = embedding_to_bytes(&original);
         assert_eq!(bytes.len(), original.len() * 4);
         let restored = bytes_to_embedding(&bytes);
