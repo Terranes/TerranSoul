@@ -10,8 +10,8 @@
 
 ## What this AI is
 
-- **For technical users:** A full 3D AI companion focused on full-context engineering and harness engineering (building, testing, and orchestrating AI workflows end-to-end).
-- **For non-technical users:** A 3D AI companion that helps with daily work on desktop and mobile.
+- **For technical users:** A full 3D AI companion focused on complete-context engineering (using your project, memory, and device context together) and harness engineering (building, testing, and orchestrating AI workflows end-to-end).
+- **For non-technical users:** A 3D AI companion that helps with daily work on desktop and mobile, like drafting messages, organizing tasks, and managing reminders.
 
 Try to teach your AI with our software by configuring it, giving it tasks, and experimenting with its capabilities yourself.  
 If you need tailored support for personal, commercial, small business, or enterprise use, please contact: **Darren.bui@terransoul.com**
