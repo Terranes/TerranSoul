@@ -10,10 +10,10 @@
 
 ## What this AI is
 
-- **For technical users:** A full 3D AI companion focused on full-context engineering and harness engineering.
+- **For technical users:** A full 3D AI companion focused on full-context engineering and harness engineering (building, testing, and orchestrating AI workflows end-to-end).
 - **For non-technical users:** A 3D AI companion that helps with daily work on desktop and mobile.
 
-Try teaching your AI with our software and experiment with its capabilities yourself.  
+Try to teach your AI with our software by configuring it, giving it tasks, and experimenting with its capabilities yourself.  
 If you need tailored support for personal, commercial, small business, or enterprise use, please contact: **Darren.bui@terransoul.com**
 
 [![TerranSoul CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
