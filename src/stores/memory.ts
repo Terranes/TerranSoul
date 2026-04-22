@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { MemoryEntry, NewMemory, Message } from '../types';
+import type { MemoryEntry, MemoryStats, MemoryTier, NewMemory, Message } from '../types';
 
 export const useMemoryStore = defineStore('memory', () => {
   const memories = ref<MemoryEntry[]>([]);
+  const stats = ref<MemoryStats | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
@@ -117,18 +118,87 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /** Hybrid search: vector + keyword + recency + importance + decay scoring. */
+  async function hybridSearch(query: string, limit = 5): Promise<MemoryEntry[]> {
+    try {
+      return await invoke<MemoryEntry[]>('hybrid_search_memories', { query, limit });
+    } catch {
+      return [];
+    }
+  }
+
+  /** Get memory statistics per tier. */
+  async function getStats(): Promise<MemoryStats | null> {
+    try {
+      const s = await invoke<MemoryStats>('get_memory_stats');
+      stats.value = s;
+      return s;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Apply time-based decay to all memory scores. */
+  async function applyDecay(): Promise<number> {
+    try {
+      return await invoke<number>('apply_memory_decay');
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Garbage-collect fully-decayed memories (decay_score ≤ threshold). */
+  async function gcMemories(threshold = 0.01): Promise<number> {
+    try {
+      const count = await invoke<number>('gc_memories', { threshold });
+      if (count > 0) await fetchAll();
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Promote a memory to a higher tier. */
+  async function promoteMemory(id: number, tier: MemoryTier): Promise<boolean> {
+    try {
+      await invoke('promote_memory', { id, tier });
+      const idx = memories.value.findIndex((m) => m.id === id);
+      if (idx !== -1) memories.value[idx].tier = tier;
+      return true;
+    } catch (e) {
+      error.value = String(e);
+      return false;
+    }
+  }
+
+  /** Get memories filtered by tier. */
+  async function getByTier(tier: MemoryTier): Promise<MemoryEntry[]> {
+    try {
+      return await invoke<MemoryEntry[]>('get_memories_by_tier', { tier });
+    } catch {
+      return [];
+    }
+  }
+
   return {
     memories,
+    stats,
     isLoading,
     error,
     fetchAll,
     search,
     semanticSearch,
+    hybridSearch,
     addMemory,
     updateMemory,
     deleteMemory,
     extractFromSession,
     summarizeSession,
     getShortTermMemory,
+    getStats,
+    applyDecay,
+    gcMemories,
+    promoteMemory,
+    getByTier,
   };
 });

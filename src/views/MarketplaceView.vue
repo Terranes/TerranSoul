@@ -896,7 +896,7 @@ onMounted(async () => {
   user-select: none;
 }
 .llm-config-header strong { color: var(--ts-text-primary); font-size: 0.84rem; }
-.llm-config-hint { margin-left: auto; font-size: 0.72rem; color: var(--ts-text-muted)s-text-muted); }
+.llm-config-hint { margin-left: auto; font-size: 0.72rem; color: var(--ts-text-muted); }
 
 .llm-config-body {
   padding: 0.5rem 1rem 1rem;
@@ -921,13 +921,12 @@ onMounted(async () => {
   transition: background var(--ts-transition-fast), color var(--ts-transition-fast);
 }
 .llm-tier-tab:hover { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
-.llm-tier-tab.active { background: var(--ts-bg-surface); color: var(--ts-text-primary); border-color: var(--ts-accent-blue-hover)
-.llm-tier-tab:hover { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
 .llm-tier-tab.active { background: var(--ts-bg-surface); color: var(--ts-text-primary); border-color: var(--ts-accent-blue-hover); }
 
 /* Provider cards */
 .llm-providers { display: flex; flex-direction: column; gap: 0.4rem; }
-.llm-provider-var(--ts-bg-base);
+.llm-provider-card {
+  background: var(--ts-bg-base);
   border: 1px solid var(--ts-border);
   border-radius: 6px;
   cursor: pointer;
@@ -944,12 +943,7 @@ onMounted(async () => {
 .llm-current-badge { font-size: 0.65rem; background: var(--ts-success-dim); color: var(--ts-text-on-accent); padding: 1px 6px; border-radius: 999px; }
 .llm-rec-badge { font-size: 0.65rem; color: var(--ts-warning); }
 .llm-provider-card small { color: var(--ts-text-muted); font-size: 0.72rem; }
-.llm-provider-model code { background: var(--ts-bg-surface) color: var(--ts-text-primary); }
-.llm-current-badge { font-size: 0.65rem; background: var(--ts-success-dim); color: var(--ts-text-on-accent); padding: 1px 6px; border-radius: 999px; }
-.llm-rec-badge { font-size: 0.65rem; color: var(--ts-warning); }
-.llm-provider-card small { color: var(--ts-text-muted); font-size: 0.72rem; }
-.llm-provider-model code { background: var(--ts-bg-surface); padding: 0 3px; border-radius: 2px; font-size: 0.70rem; }
-var(--ts-text-secondary); }
+.llm-provider-model code { background: var(--ts-bg-surface); padding: 0 3px; border-radius: 2px; font-size: 0.70rem; color: var(--ts-text-primary); }
 .llm-input {
   padding: 0.35rem 0.6rem;
   background: var(--ts-bg-base);
@@ -961,11 +955,6 @@ var(--ts-text-secondary); }
 }
 .llm-input:focus { border-color: var(--ts-accent-blue-hover); }
 .llm-select {
-  padding: 0.35rem 0.6rem;
-  background: var(--ts-bg-base);
-  border: 1px solid var(--ts-border-medium);
-  border-radius: 5px;
-  color: var(--ts-text-primary)
   padding: 0.35rem 0.6rem;
   background: var(--ts-bg-base);
   border: 1px solid var(--ts-border-medium);
@@ -984,30 +973,22 @@ var(--ts-text-secondary); }
   padding: 0.5rem 0.75rem;
   background: rgba(34, 197, 94, 0.08);
   border: 1px solid rgba(34, 197, 94, 0.2);
-  border-radius: 6px;var(--ts-success); }
-.llm-confirm-url { display: block; margin-top: 2px; font-size: 0.72rem; color: var(--ts-text-secondary); }
-.llm-confirm-url a { color: var(--ts-accent-blue)
+  border-radius: 6px;
 }
 .llm-confirm-icon { flex-shrink: 0; }
 .llm-confirmation strong { color: var(--ts-success); }
 .llm-confirm-url { display: block; margin-top: 2px; font-size: 0.72rem; color: var(--ts-text-secondary); }
 .llm-confirm-url a { color: var(--ts-accent-blue); text-decoration: none; }
 .llm-confirm-url a:hover { text-decoration: underline; }
-var(--ts-text-muted);
+.llm-chat-hint {
+  font-size: 0.78rem;
+  color: var(--ts-text-muted);
   line-height: 1.4;
   padding-top: 0.25rem;
   border-top: 1px solid var(--ts-border-subtle);
 }
 .llm-chat-hint strong { color: var(--ts-text-secondary); }
-.llm-chat-hint em { color: var(--ts-accent-blue)
-  padding-top: 0.25rem;
-  border-top: 1px solid var(--ts-border-subtle);
-}
-.llm-chat-hint strong { color: var(--ts-text-secondavar(--ts-success-bg); color: var(--ts-success); padding: 0.1rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; }
-.mp-section-title { font-size: 1rem; color: var(--ts-text-secondary); margin: 0.5rem 0; }
-.bs-status-indicator { padding: 0.75rem 1rem; border-radius: 8px; font-weight: 500; font-size: 0.85rem; }
-.bs-status-indicator.ok { background: var(--ts-success-bg); color: var(--ts-success); }
-.bs-status-indicator.error { background: var(--ts-error-bg); color: var(--ts-error)
+.llm-chat-hint em { color: var(--ts-accent-blue); }
 .llm-active-badge { font-size: 0.75rem; background: var(--ts-success-bg); color: var(--ts-success); padding: 0.1rem 0.5rem; border-radius: 999px; margin-left: 0.5rem; }
 .mp-section-title { font-size: 1rem; color: var(--ts-text-secondary); margin: 0.5rem 0; }
 .bs-status-indicator { padding: 0.75rem 1rem; border-radius: 8px; font-weight: 500; font-size: 0.85rem; }

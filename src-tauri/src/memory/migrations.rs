@@ -86,6 +86,36 @@ CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_created    ON memories(created_at DESC);
 "#,
     },
+    // ── V4: Tiered memory system (short-term / working / long-term) ────
+    Migration {
+        version: 4,
+        description: "add memory tier, decay score, and session tracking",
+        up: r#"
+ALTER TABLE memories ADD COLUMN tier TEXT NOT NULL DEFAULT 'long';
+ALTER TABLE memories ADD COLUMN decay_score REAL NOT NULL DEFAULT 1.0;
+ALTER TABLE memories ADD COLUMN session_id  TEXT;
+ALTER TABLE memories ADD COLUMN parent_id   INTEGER REFERENCES memories(id);
+ALTER TABLE memories ADD COLUMN token_count INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories(tier);
+CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
+CREATE INDEX IF NOT EXISTS idx_memories_decay ON memories(decay_score DESC);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_memories_decay;
+DROP INDEX IF EXISTS idx_memories_session;
+DROP INDEX IF EXISTS idx_memories_tier;
+CREATE TABLE memories_backup AS
+    SELECT id, content, tags, importance, memory_type,
+           created_at, last_accessed, access_count, embedding,
+           source_url, source_hash, expires_at
+    FROM memories;
+DROP TABLE memories;
+ALTER TABLE memories_backup RENAME TO memories;
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_created    ON memories(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memories_source_hash ON memories(source_hash);
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.

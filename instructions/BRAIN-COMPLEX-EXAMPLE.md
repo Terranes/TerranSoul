@@ -1,3 +1,1520 @@
+# Brain + RAG Complex Setup Guide — Fresh User Walkthrough
+
+> **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
+> Last updated: 2026-04-22  
+> **See also**: [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) for architecture, schema, RAG pipeline, debugging, and scaling details.
+
+---
+
+## Table of Contents
+
+1. [Quest-Guided Setup: Fresh User Journey](#quest-guided-setup-fresh-user-journey)
+   - [Step 1: Fresh Launch — No Brain Yet](#step-1-fresh-launch--no-brain-yet)
+   - [Step 2: Alex Asks About Law PDFs](#step-2-alex-asks-about-law-pdfs)
+   - [Step 3: Quest System Activates](#step-3-quest-system-activates)
+   - [Step 4: Brain Auto-Setup via Quest](#step-4-brain-auto-setup-via-quest)
+   - [Step 5: First Chat — Works But Vague](#step-5-first-chat--works-but-vague)
+   - [Step 6: Long-Term Memory Quest Unlocks](#step-6-long-term-memory-quest-unlocks)
+   - [Step 7: Alex Adds PDF Knowledge](#step-7-alex-adds-pdf-knowledge)
+   - [Step 8: Sage's Library Quest Auto-Activates RAG](#step-8-sages-library-quest-auto-activates-rag)
+   - [Step 9: Same Question — Now with Precise Answers](#step-9-same-question--now-with-precise-answers)
+   - [Step 10: Multi-Source Updates with LLM Conflict Detection](#step-10-multi-source-updates-with-llm-conflict-detection)
+   - [Complete Quest Progression](#complete-quest-progression)
+2. [Setup Walkthrough (Screenshots)](#setup-walkthrough-screenshots)
+3. [Real-World Example: Law Firm Knowledge Base](#real-world-example-law-firm-knowledge-base)
+   - [The Scenario](#the-scenario)
+   - [Step-by-Step: First Day Setup](#step-by-step-first-day-setup)
+   - [Daily Sync: Credential-Based Source Ingestion](#daily-sync-credential-based-source-ingestion)
+   - [Handling Duplicates Across Sources](#handling-duplicates-across-sources)
+   - [Detecting and Removing Stale/Out-of-Date Knowledge](#detecting-and-removing-staleout-of-date-knowledge)
+   - [Day-in-the-Life: Attorney Sarah Uses TerranSoul](#day-in-the-life-attorney-sarah-uses-terransoul)
+
+---
+
+## Quest-Guided Setup: Fresh User Journey
+
+> **Meet Alex** — a 2nd-year law student who just downloaded TerranSoul.
+> Alex has hundreds of pages of family law PDFs and wants an AI companion
+> that can answer questions from those documents. Alex has never configured
+> an LLM or heard of "RAG."
+>
+> TerranSoul's quest system will guide Alex step-by-step — no manual
+> configuration needed.
+
+### Step 1: Fresh Launch — No Brain Yet
+
+Alex opens TerranSoul for the first time. The 3D character appears with
+an idle animation, but no brain is configured. The chat input is disabled.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Idle Animation ]            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  🤖  Hello! I'm your AI companion.                 │  │
+│  │      I need a brain before I can chat!             │  │
+│  │                                                    │  │
+│  │      Check out the ✨ Quest panel to get started.  │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Type a message…  (disabled — no brain)   [Send ➤]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌──────────────────────────┐                            │
+│  │ ✨ Quest Available!       │ ← pulsing badge           │
+│  │ "Awaken the Mind"        │                            │
+│  └──────────────────────────┘                            │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **What Alex sees**: A friendly character that can't chat yet, and a
+> glowing quest badge that says "Awaken the Mind." No confusing settings,
+> no API key forms — just a quest to follow.
+
+### Step 2: Alex Asks About Law PDFs
+
+Alex tries to type a message but the input is disabled. A tooltip says
+"Complete the 'Awaken the Mind' quest to enable chat." Alex clicks the
+quest badge instead.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Pointing Animation ]        │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  🤖  I see you want to chat! Let me help you       │  │
+│  │      set up my brain first.                        │  │
+│  │                                                    │  │
+│  │      I can learn from PDFs, websites, and your     │  │
+│  │      conversations — but first I need an AI        │  │
+│  │      engine to think with.                         │  │
+│  │                                                    │  │
+│  │      Let's complete the "Awaken the Mind" quest!   │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ ✨ QUEST: Awaken the Mind                          │  │
+│  │                                                    │  │
+│  │ Your companion needs a brain to think.             │  │
+│  │ Choose how to power it:                            │  │
+│  │                                                    │  │
+│  │ ☁️  Free Cloud API (instant, no setup)             │  │
+│  │ 💳 Paid Cloud API (OpenAI, Anthropic)              │  │
+│  │ 🖥  Local Ollama (private, offline)                │  │
+│  │                                                    │  │
+│  │           [ Start Quest → ]                        │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **Design insight**: Alex never sees "API endpoint", "model tag", or
+> "provider configuration." The quest system translates technical choices
+> into a simple 3-option menu. The character guides them with personality.
+
+### Step 3: Quest System Activates
+
+Alex clicks "Start Quest" and chooses "Free Cloud API" (the easiest path).
+The quest system auto-detects that no brain is configured and presents the
+"Awaken the Mind" quest from the skill tree.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ ✨ QUEST: Awaken the Mind                          │  │
+│  │                                                    │  │
+│  │ Step 1 of 2: Choose your brain type                │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ ☁️  Free Cloud API              ← SELECTED   │  │  │
+│  │  │ Use Pollinations AI — no API key needed      │  │  │
+│  │  │ Instant setup · Rate-limited · Good quality  │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ 💳 Paid Cloud API                            │  │  │
+│  │  │ OpenAI / Anthropic / Groq with your API key  │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ 🖥  Local Ollama                              │  │  │
+│  │  │ Fully private, runs on your hardware         │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │ Progress: [████░░░░░░] 50%                         │  │
+│  │                                      [ Next → ]    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **Behind the scenes**: The quest system calls `useBrainStore().setProvider('free')`
+> and auto-configures the Pollinations endpoint. Alex never sees a URL or config file.
+
+### Step 4: Brain Auto-Setup via Quest
+
+Alex clicks "Next" and the quest auto-configures the free cloud API.
+The quest completes with a celebration animation.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Celebration Animation ]     │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │                    🎉                               │  │
+│  │          Quest Complete!                            │  │
+│  │          "Awaken the Mind"                          │  │
+│  │                                                    │  │
+│  │  Your companion now has a brain!                   │  │
+│  │  Using: Free Cloud API (Pollinations)              │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ 🏆 Reward: +50 XP                           │  │  │
+│  │  │ 🔓 Unlocked: Chat capability                 │  │  │
+│  │  │ 🔓 Unlocked: "Long-Term Memory" quest        │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │              [ Start chatting → ]                   │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌──────────────────────────┐                            │
+│  │ ✨ New Quest Available!   │ ← pulsing badge           │
+│  │ "Long-Term Memory"       │                            │
+│  └──────────────────────────┘                            │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **Skill tree auto-detection**: The `brain-online` skill in `skill-tree.ts`
+> checks `brainStore.isConfigured` — once the quest sets the provider, the
+> skill activates automatically and unlocks the next quest chain.
+
+### Step 5: First Chat — Works But Vague
+
+Alex can now chat! They ask about family law filing deadlines from their
+PDF materials. The brain responds, but the answer is generic — it has
+no knowledge of Alex's specific documents.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Thinking Animation ]        │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  You:  What's the deadline for responding to a     │  │
+│  │        family law motion in Cook County?            │  │
+│  │                                                    │  │
+│  │  ────────────────────────────────────────────────  │  │
+│  │                                                    │  │
+│  │  🤖:  Generally, in most jurisdictions, you have   │  │
+│  │       about 30 days to respond to a motion, but    │  │
+│  │       specific deadlines vary by local rules.      │  │
+│  │       I'd recommend checking your local court      │  │
+│  │       rules for exact deadlines.                   │  │
+│  │                                                    │  │
+│  │       💡 Tip: I can give much better answers if    │  │
+│  │       you teach me your specific knowledge!        │  │
+│  │       Check the "Long-Term Memory" quest.          │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Type a message…                          [Send ➤]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **The problem**: The LLM gives a generic answer because it has no
+> memories. It doesn't know about Cook County's specific Rule 14.3
+> or Alex's PDF materials. This is the "no RAG" experience.
+
+### Step 6: Long-Term Memory Quest Unlocks
+
+Alex notices the new quest badge and clicks it. The "Long-Term Memory"
+quest teaches Alex how to add knowledge that persists between sessions.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ ✨ QUEST: Long-Term Memory                         │  │
+│  │                                                    │  │
+│  │ Your companion can remember facts permanently!     │  │
+│  │                                                    │  │
+│  │ Right now, everything is forgotten when you close  │  │
+│  │ the app. Let's fix that.                           │  │
+│  │                                                    │  │
+│  │ Step 1: Go to the Memory tab (🧠 icon)            │  │
+│  │ Step 2: Click "＋ Add memory"                       │  │
+│  │ Step 3: Type a fact you want remembered            │  │
+│  │                                                    │  │
+│  │ Try adding something from your study materials!    │  │
+│  │                                                    │  │
+│  │ Progress: [░░░░░░░░░░] 0%                          │  │
+│  │                                                    │  │
+│  │                              [ Go to Memory → ]    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Step 7: Alex Adds PDF Knowledge
+
+Alex navigates to the Memory tab and starts adding facts from their
+family law PDFs. Each memory is stored in SQLite and auto-embedded.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract] [📄 Sum] [＋ Add]     │
+│                                                          │
+│  [Graph]  [List] ← active  [Session]                     │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ ＋ Add New Memory                                    │  │
+│  │                                                    │  │
+│  │ Content:                                           │  │
+│  │ ┌──────────────────────────────────────────────┐   │  │
+│  │ │ Cook County Family Law Rule 14.3: Responses  │   │  │
+│  │ │ to motions must be filed within 30 days of   │   │  │
+│  │ │ service. Filing must include proof of service │   │  │
+│  │ │ and use the e-filing system.                  │   │  │
+│  │ └──────────────────────────────────────────────┘   │  │
+│  │                                                    │  │
+│  │ Tags: [ court-rules ] [ cook-county ] [ family ]   │  │
+│  │ Importance: ★★★★★ (5)                              │  │
+│  │ Type: [fact ▾]                                     │  │
+│  │                                                    │  │
+│  │                             [ Save Memory ✓ ]      │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ fact          ★★★★★                 (just added!)  │  │
+│  │ Cook County Family Law Rule 14.3: Responses to     │  │
+│  │ motions must be filed within 30 days of service    │  │
+│  │ [ court-rules ] [ cook-county ] [ family ]         │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★☆                                │  │
+│  │ Section 7.2: All motions require a certificate     │  │
+│  │ of service filed simultaneously                    │  │
+│  │ [ procedure ] [ motions ] [ service ]              │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★☆                                │  │
+│  │ Parenting time modifications: must show material   │  │
+│  │ change in circumstances (In re Marriage of...)     │  │
+│  │ [ family-law ] [ parenting ] [ modification ]      │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ✨ Quest progress: 3 memories added [████████░░] 80%    │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **Behind the scenes**: Each memory is auto-embedded via the active LLM
+> provider (or Ollama if available). The 768-dim vector is stored as a BLOB
+> in SQLite alongside the text. See [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md#embedding-model) for details.
+
+### Step 8: Sage's Library Quest Auto-Activates RAG
+
+After Alex adds 5+ memories, the "Long-Term Memory" quest completes
+and the "Sage's Library" skill auto-activates. This means RAG (memory
+retrieval) is now active for every chat message.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Enlightened Animation ]     │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │                    🎉                               │  │
+│  │          Quest Complete!                            │  │
+│  │          "Long-Term Memory"                         │  │
+│  │                                                    │  │
+│  │  Your companion now remembers between sessions!    │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ 🏆 Reward: +75 XP                           │  │  │
+│  │  │ 🔓 Unlocked: RAG memory retrieval            │  │  │
+│  │  │ 🧠 Auto-activated: "Sage's Library" skill    │  │  │
+│  │  │                                              │  │  │
+│  │  │ Your companion now searches memories before  │  │  │
+│  │  │ every response. Ask your law questions again! │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │              [ Try it out → ]                       │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌──────────────────────────────────────────────────────┐│
+│  │ SKILL TREE                                           ││
+│  │                                                      ││
+│  │  [Awaken Mind ✓]──>[Long-Term Memory ✓]              ││
+│  │                          │                           ││
+│  │                    [Sage's Library ✓] ← AUTO         ││
+│  │                                                      ││
+│  │  "Sage's Library" activates when brain is online     ││
+│  │  AND memories exist. RAG now runs on every message.  ││
+│  └──────────────────────────────────────────────────────┘│
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **Skill auto-detection**: The `rag-knowledge` skill in `skill-tree.ts`
+> checks `brainStore.isConfigured && memoryStore.entries.length > 0`.
+> Once both conditions are true, the skill activates automatically —
+> Alex never has to toggle a "RAG" switch or understand what it means.
+
+### Step 9: Same Question — Now with Precise Answers
+
+Alex asks the same question as Step 5. This time, TerranSoul searches
+memories before responding and gives a precise, sourced answer.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Confident Animation ]       │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  You:  What's the deadline for responding to a     │  │
+│  │        family law motion in Cook County?            │  │
+│  │                                                    │  │
+│  │  ────────────────────────────────────────────────  │  │
+│  │                                                    │  │
+│  │  🤖:  Per Cook County Family Law Rule 14.3, you    │  │
+│  │       have **30 days from service** to file your   │  │
+│  │       response.                                    │  │
+│  │                                                    │  │
+│  │       Requirements:                                │  │
+│  │       • Filing must include proof of service       │  │
+│  │       • Must use the court's e-filing system       │  │
+│  │       • Section 7.2: All motions require a         │  │
+│  │         certificate of service filed simultaneously│  │
+│  │                                                    │  │
+│  │       📚 Sources: 3 memories used                  │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Type a message…                          [Send ➤]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**What happened behind the scenes:**
+
+```
+1. User's message embedded: embed_text("What's the deadline...") → 768-dim vector
+2. vector_search() scanned all memory embeddings in <5ms (pure cosine similarity)
+3. Top 3 most relevant memories injected into system prompt:
+
+   [LONG-TERM MEMORY]
+   - Cook County Family Law Rule 14.3: Responses to motions
+     must be filed within 30 days of service...
+   - Section 7.2: All motions require a certificate of service...
+   - Parenting time modifications: must show material change...
+   [/LONG-TERM MEMORY]
+
+4. LLM generated the response with full context — specific and accurate
+```
+
+> **The transformation**: Compare Step 5 ("check your local court rules")
+> vs Step 9 ("Per Cook County Rule 14.3, 30 days from service"). Same
+> question, completely different quality — all because of the memories
+> Alex added during the quest.
+
+### Step 10: Multi-Source Updates with LLM Conflict Detection
+
+Weeks later, Alex learns that Rule 14.3 has been amended — the deadline
+changed from 30 to 21 days. Alex adds the new information:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  You:  Remember this: Cook County amended Rule     │  │
+│  │        14.3 effective April 2026 — the deadline    │  │
+│  │        for responding to family law motions is     │  │
+│  │        now 21 days (reduced from 30).              │  │
+│  │                                                    │  │
+│  │  ────────────────────────────────────────────────  │  │
+│  │                                                    │  │
+│  │  🤖:  Got it! I noticed this conflicts with an    │  │
+│  │       existing memory:                             │  │
+│  │                                                    │  │
+│  │       ⚠️ CONFLICT DETECTED:                        │  │
+│  │       OLD: "...filed within 30 days of service"   │  │
+│  │       NEW: "...deadline is now 21 days"            │  │
+│  │                                                    │  │
+│  │       The new information supersedes the old rule. │  │
+│  │       I've updated my knowledge:                   │  │
+│  │       ✓ Marked old Rule 14.3 (30 days) as expired │  │
+│  │       ✓ Stored new Rule 14.3 (21 days) as active  │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **How conflict detection works**: When the new memory's embedding has
+> high cosine similarity (0.90–0.97) with an existing memory but the
+> content differs, TerranSoul uses the LLM to analyze which version is
+> current. See [Multi-Source Knowledge Management](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md#multi-source-knowledge-management)
+> in the technical reference.
+
+### Complete Quest Progression
+
+```
+Alex's Journey Through the Quest System:
+─────────────────────────────────────────
+
+Day 1, Minute 0:
+  [Awaken the Mind]          Status: AVAILABLE
+  [Long-Term Memory]         Status: LOCKED
+  [Sage's Library]           Status: LOCKED
+
+Day 1, Minute 2:  (chose Free Cloud API)
+  [Awaken the Mind]     ✅   Status: COMPLETED (+50 XP)
+  [Long-Term Memory]         Status: AVAILABLE ← unlocked!
+  [Sage's Library]           Status: LOCKED
+
+Day 1, Minute 10:  (added 5 memories from PDFs)
+  [Awaken the Mind]     ✅   Status: COMPLETED
+  [Long-Term Memory]    ✅   Status: COMPLETED (+75 XP)
+  [Sage's Library]      ✅   Status: AUTO-ACTIVATED ← RAG enabled!
+
+Day 1, Minute 11:  (asks same question — gets precise answer)
+  Alex: "Wow, that's exactly the rule from my PDF!"
+
+Week 3:  (rule amendment detected)
+  Conflict detected → LLM resolves → knowledge updated automatically
+
+SKILL TREE VISUALIZATION:
+
+  ┌─────────────┐     ┌───────────────────┐     ┌──────────────┐
+  │ Awaken the  │────>│ Long-Term Memory  │────>│ Sage's       │
+  │ Mind     ✅ │     │               ✅  │     │ Library   ✅ │
+  │             │     │                   │     │              │
+  │ Brain setup │     │ Add 5+ memories   │     │ AUTO: brain  │
+  │ via quest   │     │ from PDFs/notes   │     │ + memories   │
+  └─────────────┘     └───────────────────┘     └──────────────┘
+        │                                              │
+        │         ┌───────────────────┐                │
+        └────────>│ Combo: Scholar 📚 │<───────────────┘
+                  │ Brain + Memory +  │
+                  │ RAG all active    │
+                  │ Bonus: +100 XP    │
+                  └───────────────────┘
+```
+
+> **Total time from download to RAG-powered answers: ~10 minutes.**
+> Zero configuration files edited. Zero API keys entered. Zero
+> understanding of embeddings, vectors, or cosine similarity required.
+
+---
+
+## Setup Walkthrough (Screenshots)
+
+> For users who prefer the manual setup path instead of quests,
+> or want to use Local Ollama for full privacy.
+
+### Screenshot 1: First Launch — Brain Setup Overlay (ChatView)
+
+When you first open TerranSoul, the 3D character is visible but a Brain Setup
+card floats on top. This is the quick-start path from `ChatView.vue`:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Idle Animation ]            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  🧠  Set up your Brain                             │  │
+│  │                                                    │  │
+│  │  Start chatting instantly with a free cloud LLM:   │  │
+│  │                                                    │  │
+│  │        [ ☁️ Use Free Cloud API (no setup) ]        │  │
+│  │                                                    │  │
+│  │  Intel i7 · 65 GB RAM                              │  │
+│  │  Or run locally: gemma3:12b-it-qat                 │  │
+│  │    Fast, private, runs on your hardware            │  │
+│  │                                                    │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌───────────┐  │  │
+│  │  │gemma3:12b ⭐ │ │ phi4:14b     │ │llama3.3   │  │  │
+│  │  └──────────────┘ └──────────────┘ └───────────┘  │  │
+│  │                                                    │  │
+│  │  ❌ Ollama not running — start it first            │  │
+│  │     (ollama serve)               [ 🔄 Retry ]     │  │
+│  │                                                    │  │
+│  │       [ ⬇ Install & activate gemma3:12b ]          │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> **For privacy-sensitive use cases (law firms, medical, finance)**: Choose the
+> local Ollama path. Zero data ever leaves the machine.
+
+### Screenshot 2: Brain Setup Wizard (BrainSetupView — Full Setup)
+
+For more control, navigate to Settings → Brain Setup. This is a multi-step wizard:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (●)─────(○)─────(○)─────(○)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │         🧠 Choose how to power your Brain          │  │
+│  │                                                    │  │
+│  │  TerranSoul needs an AI brain for conversations.   │  │
+│  │  Choose how you'd like to connect it.              │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ ☁️  Free Cloud API                           │  │  │
+│  │  │ Use free LLM providers (Groq, Cerebras)      │  │  │
+│  │  │ No API key needed · Rate-limited              │  │  │
+│  │  │                           [ Instant — no setup]│  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ 💳 Paid Cloud API                            │  │  │
+│  │  │ OpenAI, Anthropic, or custom endpoint        │  │  │
+│  │  │ Best quality · Requires API key               │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ 🖥  Local LLM (Ollama)           ← SELECTED  │  │  │
+│  │  │ Run locally, fully private, no internet       │  │  │
+│  │  │ Requires Ollama installed · Best for privacy  │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │                                      [ Next → ]    │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 3: Hardware Analysis (Step 2)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(●)─────(○)─────(○)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │              🖥 Local LLM Setup                     │  │
+│  │                                                    │  │
+│  │  We'll analyse your hardware and recommend the     │  │
+│  │  best model for your machine.                      │  │
+│  │                                                    │  │
+│  │  💾 RAM    65 GB (High-End)                        │  │
+│  │  🖥 CPU    Intel i7-12700K · 12 cores              │  │
+│  │  🗂 OS     Windows 11 (x86_64)                     │  │
+│  │                                                    │  │
+│  │               [ ← Back ]  [ Next → ]               │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 4: Choose Model (Step 3)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(●)─────(○)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │          Choose your Brain                          │  │
+│  │  Based on your 65 GB of RAM, we recommend:         │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │ ⭐ gemma3:12b-it-qat            ← SELECTED  │  │  │
+│  │  │    Fast and accurate for conversations       │  │  │
+│  │  │    Requires 8 GB RAM · tag: gemma3:12b-it-qat│  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │   phi4:14b                                   │  │  │
+│  │  │   Strong reasoning, good for analysis        │  │  │
+│  │  │   Requires 10 GB RAM · tag: phi4:14b         │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │   ☁️ kimi-k2.6  (Cloud)                      │  │  │
+│  │  │   Cloud-routed · no local RAM needed         │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  │                                                    │  │
+│  │               [ ← Back ]  [ Next → ]               │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 5: Ollama Status Check (Step 4)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(✓)─────(●)─────(○)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │              Check Ollama                           │  │
+│  │                                                    │  │
+│  │  TerranSoul uses Ollama to run models locally.     │  │
+│  │  It must be running before we can download.        │  │
+│  │                                                    │  │
+│  │           ✅ Ollama is running                      │  │
+│  │                                                    │  │
+│  │          [ ← Back ] [ 🔄 Retry ] [ Next → ]        │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 6: Download & Activate (Step 5)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(✓)─────(✓)─────(●)              │
+│        Tier   Hardware  Model  Ollama  Download          │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │        Download gemma3:12b-it-qat                   │  │
+│  │                                                    │  │
+│  │  This will download the model via Ollama.          │  │
+│  │  It may take several minutes.                      │  │
+│  │                                                    │  │
+│  │           🔄 Downloading… this may take             │  │
+│  │              a few minutes.                         │  │
+│  │                                                    │  │
+│  │                          [ ← Back ]                 │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 7: Brain Connected! (Done)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Brain Setup                                             │
+│                                                          │
+│  Step: (✓)─────(✓)─────(✓)─────(✓)─────(✓)              │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                    🎉                               │  │
+│  │             Brain connected!                        │  │
+│  │                                                    │  │
+│  │  Using gemma3:12b-it-qat via local Ollama.         │  │
+│  │  Fully private — no data leaves your machine.      │  │
+│  │                                                    │  │
+│  │              [ Start chatting → ]                   │  │
+│  └────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 8: Memory View — Managing Knowledge
+
+Navigate to the Memory tab (🧠 icon in nav) to see all stored memories:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract from session]          │
+│                        [📄 Summarize session]            │
+│                        [＋ Add memory]                    │
+│                                                          │
+│  [Graph]  [List]  [Session]                              │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ 🔍 Search memories…          [🔍 Search] [🤖 Sem] │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  Filter: [fact] [preference] [context] [summary]         │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ fact          ★★★★★                                │  │
+│  │ Family law filings: 30-day deadline from service   │  │
+│  │ [ law ] [ family ] [ deadline ]                    │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ preference    ★★★★☆                                │  │
+│  │ Client Smith prefers email communication           │  │
+│  │ [ client ] [ preference ]                          │  │
+│  │ 2026-04-21                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★★                                │  │
+│  │ Section 14.3: Motion response window is 30 days   │  │
+│  │ [ law ] [ procedure ] [ motions ]                  │  │
+│  │ 2026-04-20                              [✏] [🗑]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 9: Session Tab — Short-Term Memory
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract] [📄 Sum] [＋ Add]     │
+│                                                          │
+│  [Graph]  [List]  [Session] ← active                     │
+│                                                          │
+│  Short-term memory — the last 20 messages of the         │
+│  current session that the brain reads before every reply. │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ You:  What are the rules for filing in family court│  │
+│  │ 🤖:   Based on Section 14.3, family law filings   │  │
+│  │       require a 30-day notice period from service. │  │
+│  │ You:  What about the Smith case specifically?      │  │
+│  │ 🤖:   Client Smith prefers email communication.    │  │
+│  │       I'll format the response accordingly.        │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Screenshot 10: Chat with RAG Context
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                          │
+│         [ 3D VRM Character — Thinking Animation ]        │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  You:  What's the deadline for filing a response   │  │
+│  │        to a family law motion?                     │  │
+│  │                                                    │  │
+│  │  ────────────────────────────────────────────────  │  │
+│  │                                                    │  │
+│  │  🤖:  Based on the firm's procedures, Section      │  │
+│  │       14.3 requires responses to family law        │  │
+│  │       motions within 30 days of service. The       │  │
+│  │       filing must include a proof of service and   │  │
+│  │       be submitted through the court's electronic  │  │
+│  │       filing system.                               │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Type a message…                          [Send ➤]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**What happened behind the scenes:**
+
+1. User's message was embedded: `embed_text("What's the deadline...")` → 768-dim vector (50ms)
+2. `vector_search()` scanned all memory embeddings in **<5ms** (pure cosine similarity)
+3. Top 5 most relevant memories injected into system prompt as `[LONG-TERM MEMORY]`
+4. LLM generated the response with full context — accurate and fast
+
+---
+
+## Real-World Example: Law Firm Knowledge Base
+
+### The Scenario
+
+**Morrison & Clark LLP** — a 50-attorney law firm in Chicago.
+
+Their knowledge lives in multiple disconnected systems, all behind credentials:
+
+| Source | URL | Auth | Update Frequency |
+|---|---|---|---|
+| Firm Intranet Wiki | `https://wiki.morrisonclark.com` | LDAP (Active Directory) | Daily edits |
+| Document Management | `https://dms.morrisonclark.com` | OAuth2 (Azure AD) | Hourly uploads |
+| Court Rules PDF Library | `https://ilcourts.gov/rules/` | Public (no auth) | Quarterly revisions |
+| Client Portal | `https://portal.morrisonclark.com` | Client-specific API keys | Real-time |
+| Training Materials | `\\fileserver\training\` | Windows network share | Monthly |
+| Slack/Teams | Microsoft Graph API | OAuth2 | Real-time |
+
+**The problem**: Attorney Sarah needs to ask "What's the deadline for filing a response to a family law motion in Cook County?" — and the answer is spread across 3 different systems, some with outdated versions.
+
+**The goal**: TerranSoul learns all of this daily, deduplicates overlapping info, detects when rules change, and gives instant answers with zero internet calls.
+
+---
+
+### Step-by-Step: First Day Setup
+
+#### Step 1: Install TerranSoul + Choose Local Brain
+
+Sarah installs TerranSoul on her work laptop (Windows 11, 32 GB RAM, no GPU).
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    TerranSoul                            │
+│                                                          │
+│         [ 3D VRM Character — Idle Animation ]            │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │  🧠  Set up your Brain                             │  │
+│  │                                                    │  │
+│  │  Start chatting instantly with a free cloud LLM:   │  │
+│  │                                                    │  │
+│  │        [ ☁️ Use Free Cloud API (no setup) ]        │  │
+│  │                                                    │  │
+│  │  Intel i7-12700 · 32 GB RAM                        │  │
+│  │  Or run locally: phi4:14b                          │  │
+│  │    Strong reasoning, good for analysis             │  │
+│  │                                                    │  │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌───────────┐  │  │
+│  │  │ phi4:14b  ⭐ │ │ gemma3:4b    │ │ ☁️ kimi   │  │  │
+│  │  └──────────────┘ └──────────────┘ └───────────┘  │  │
+│  │                                                    │  │
+│  │       [ ⬇ Install & activate phi4:14b ]            │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+> Sarah clicks **"🖥 Local LLM"** because firm policy requires all data to
+> stay on-premise. No document content ever leaves her machine.
+
+#### Step 2: Bulk Load Firm Knowledge
+
+Sarah's IT admin provides a one-time ingestion script that reads from the firm's
+sources with proper credentials. Here's what happens for each source type:
+
+**Source Type A: Wiki Pages (LDAP Auth)**
+
+```
+Ingestion Script (runs on Sarah's machine)
+──────────────────────────────────────────
+1. Authenticate to wiki.morrisonclark.com
+   → POST /api/login { user: "sarah", pass: "***" }
+   → Receives session cookie
+
+2. Fetch page list
+   → GET /api/pages?space=legal-rules
+   → Returns 847 wiki pages
+
+3. For each page:
+   a. Download content → GET /api/pages/{id}/content
+   b. Chunk into ~500-word segments (overlap 50 words)
+   c. For each chunk:
+      → invoke('add_memory', {
+          content: chunk_text,
+          tags: "wiki,legal-rules,family-law",
+          importance: 4,
+          memoryType: "fact"
+        })
+      → TerranSoul auto-embeds via Ollama (768-dim vector)
+      → Stored in SQLite with source_url + source_hash
+```
+
+**Source Type B: PDF Documents (Public / File Share)**
+
+```
+Ingestion Script
+──────────────────
+1. Scan \\fileserver\training\*.pdf
+   → Found 120 PDF files
+
+2. For each PDF:
+   a. Extract text (via pdf-extract or similar)
+   b. Split into chunks by section headings
+   c. SHA-256 hash the content
+   d. Check for existing hash:
+      → SELECT id FROM memories WHERE source_hash = ?
+      → If exists: SKIP (already ingested)
+      → If new: invoke('add_memory', { ... })
+
+3. Track source metadata:
+   → source_url = "file:///fileserver/training/handbook-v12.pdf"
+   → source_hash = "a1b2c3d4e5f6..."
+   → expires_at = NULL (permanent)
+```
+
+**Source Type C: Court Rules Website (Public)**
+
+```
+Ingestion Script
+──────────────────
+1. Scrape https://ilcourts.gov/rules/family/
+   → Download all rule pages
+
+2. Each rule becomes a memory:
+   → content: "Cook County Family Law Rule 14.3: ..."
+   → tags: "court-rules,cook-county,family-law"
+   → importance: 5  (critical — these are binding rules)
+   → source_url: "https://ilcourts.gov/rules/family/14.3"
+   → source_hash: SHA-256 of page content
+   → expires_at: 1735689600000  (next quarterly review date)
+```
+
+#### Step 3: Verify Ingestion in Memory View
+
+After bulk load completes, Sarah opens the Memory tab:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract from session]          │
+│                        [📄 Summarize session]            │
+│                        [＋ Add memory]                    │
+│                                                          │
+│  [Graph]  [List] ← active  [Session]                     │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ 🔍 Search memories…          [🔍 Search] [🤖 Sem] │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  Filter: [fact ●] [preference] [context] [summary]       │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ fact          ★★★★★                                │  │
+│  │ Cook County Family Law Rule 14.3: Responses to     │  │
+│  │ motions must be filed within 30 days of service    │  │
+│  │ [ court-rules ] [ cook-county ] [ family-law ]     │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★☆                                │  │
+│  │ Firm Policy 7.2: All filings must be reviewed by   │  │
+│  │ a senior partner before submission                 │  │
+│  │ [ wiki ] [ firm-policy ] [ filing ]                │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  ├────────────────────────────────────────────────────┤  │
+│  │ fact          ★★★★☆                                │  │
+│  │ Client Smith preferences: email only, no calls     │  │
+│  │ after 6pm, billing contact: jane@smith.com         │  │
+│  │ [ client ] [ smith ] [ preference ]                │  │
+│  │ 2026-04-22                              [✏] [🗑]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  Showing 3 of 12,453 memories                            │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Step 4: Verify Schema Info
+
+Sarah can check database health via the Tauri console or by asking TerranSoul:
+
+```typescript
+// From browser dev tools or a custom admin panel:
+const info = await invoke('get_schema_info');
+console.log(info);
+```
+
+```json
+{
+  "schema_version": 3,
+  "target_version": 3,
+  "total_memories": 12453,
+  "unembedded_count": 0,
+  "embedded_count": 12453,
+  "db_engine": "SQLite (WAL mode)",
+  "columns": {
+    "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+    "content": "TEXT NOT NULL — the memory text",
+    "tags": "TEXT — comma-separated tags",
+    "importance": "INTEGER 1-5 — priority ranking",
+    "memory_type": "TEXT — fact|preference|context|summary",
+    "created_at": "INTEGER — Unix timestamp (ms)",
+    "last_accessed": "INTEGER — last RAG hit timestamp",
+    "access_count": "INTEGER — times retrieved by RAG",
+    "embedding": "BLOB — 768-dim f32 vector (little-endian)",
+    "source_url": "TEXT — origin URL for ingested documents",
+    "source_hash": "TEXT — content hash for dedup/staleness",
+    "expires_at": "INTEGER — TTL for auto-expiry"
+  }
+}
+```
+
+---
+
+### Daily Sync: Credential-Based Source Ingestion
+
+Every morning at 6:00 AM, a scheduled task runs the sync script on Sarah's machine.
+The script authenticates to each source, downloads changes, and feeds them to TerranSoul.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DAILY SYNC WORKFLOW                          │
+│                     (runs at 06:00 AM)                           │
+│                                                                  │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐       │
+│  │ Wiki (LDAP) │     │ DMS (OAuth) │     │ Court Rules │       │
+│  │ 847 pages   │     │ 3,200 docs  │     │ 500 rules   │       │
+│  └──────┬──────┘     └──────┬──────┘     └──────┬──────┘       │
+│         │                   │                   │               │
+│         ▼                   ▼                   ▼               │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Credential Manager                       │       │
+│  │                                                       │       │
+│  │  Wiki: LDAP bind → session cookie                     │       │
+│  │  DMS:  OAuth2 client_credentials → bearer token       │       │
+│  │  Court: No auth (public)                              │       │
+│  │  Portal: API key from environment variable            │       │
+│  │  FileShare: Windows integrated auth (Kerberos)        │       │
+│  └──────────────────────┬────────────────────────────────┘       │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Change Detection                         │       │
+│  │                                                       │       │
+│  │  For each source document:                            │       │
+│  │  1. Download content with auth token                  │       │
+│  │  2. SHA-256 hash the content                          │       │
+│  │  3. Compare with stored source_hash in SQLite         │       │
+│  │                                                       │       │
+│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │       │
+│  │  │ UNCHANGED   │  │ MODIFIED     │  │ NEW        │  │       │
+│  │  │ hash match  │  │ hash differs │  │ no record  │  │       │
+│  │  │ → SKIP      │  │ → UPDATE +   │  │ → INSERT + │  │       │
+│  │  │             │  │   re-embed   │  │   embed    │  │       │
+│  │  └─────────────┘  └──────────────┘  └────────────┘  │       │
+│  └──────────────────────┬────────────────────────────────┘       │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Dedup Check                              │       │
+│  │                                                       │       │
+│  │  Before inserting new content:                        │       │
+│  │  1. Embed the new text                                │       │
+│  │  2. find_duplicate(embedding, threshold=0.97)         │       │
+│  │  3. Cosine > 0.97? → SKIP (near-duplicate)           │       │
+│  │     Cosine < 0.97? → INSERT as new memory             │       │
+│  └──────────────────────┬────────────────────────────────┘       │
+│                         │                                        │
+│                         ▼                                        │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │              Expiry Cleanup                           │       │
+│  │                                                       │       │
+│  │  DELETE FROM memories                                 │       │
+│  │  WHERE expires_at IS NOT NULL                         │       │
+│  │    AND expires_at < current_timestamp                  │       │
+│  │                                                       │       │
+│  │  → Removes: old court calendars, temp announcements   │       │
+│  └──────────────────────────────────────────────────────┘       │
+│                                                                  │
+│  SYNC REPORT (emailed to admin):                                │
+│  ─────────────────────────────────────                          │
+│  Sources checked:     5                                          │
+│  Documents scanned:   4,547                                      │
+│  Unchanged (skipped): 4,489                                      │
+│  Modified (updated):  23                                         │
+│  New (inserted):      35                                         │
+│  Duplicates (skipped):7                                          │
+│  Expired (deleted):   12                                         │
+│  Embeddings created:  58                                         │
+│  Total sync time:     4m 32s                                     │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Example Sync Script (TypeScript — runs as a scheduled Tauri sidecar)
+
+```typescript
+// sync-firm-knowledge.ts — Daily knowledge sync for Morrison & Clark LLP
+import { invoke } from '@tauri-apps/api/core';
+import { createHash } from 'crypto';
+
+interface SyncSource {
+  name: string;
+  type: 'wiki' | 'dms' | 'web' | 'fileshare';
+  baseUrl: string;
+  auth: AuthConfig;
+  tags: string;
+  importance: number;
+  expiresInDays?: number;
+}
+
+interface AuthConfig {
+  method: 'ldap' | 'oauth2' | 'apikey' | 'kerberos' | 'none';
+  credentials?: string;  // env var name, NEVER hardcoded
+}
+
+const SOURCES: SyncSource[] = [
+  {
+    name: 'Firm Wiki',
+    type: 'wiki',
+    baseUrl: 'https://wiki.morrisonclark.com/api',
+    auth: { method: 'ldap', credentials: 'WIKI_SESSION_TOKEN' },
+    tags: 'wiki,firm-rules',
+    importance: 4,
+  },
+  {
+    name: 'Court Rules',
+    type: 'web',
+    baseUrl: 'https://ilcourts.gov/rules',
+    auth: { method: 'none' },
+    tags: 'court-rules,illinois',
+    importance: 5,
+    expiresInDays: 90,  // re-check quarterly
+  },
+  {
+    name: 'Client Portal',
+    type: 'dms',
+    baseUrl: 'https://portal.morrisonclark.com/api/v2',
+    auth: { method: 'oauth2', credentials: 'PORTAL_OAUTH_TOKEN' },
+    tags: 'client,portal',
+    importance: 3,
+  },
+];
+
+async function syncSource(source: SyncSource): Promise<SyncStats> {
+  const stats = { scanned: 0, unchanged: 0, modified: 0, inserted: 0, duplicates: 0 };
+
+  // 1. Authenticate (credentials from environment, NEVER hardcoded)
+  const token = await authenticate(source.auth);
+
+  // 2. Fetch document list from source
+  const documents = await fetchDocumentList(source.baseUrl, token);
+
+  for (const doc of documents) {
+    stats.scanned++;
+
+    // 3. Download content
+    const content = await fetchDocument(doc.url, token);
+    const hash = createHash('sha256').update(content).digest('hex');
+
+    // 4. Check if this URL already exists with same hash
+    const existing = await invoke<any[]>('search_memories', {
+      query: doc.url,
+    });
+
+    const match = existing.find(m => m.source_url === doc.url);
+
+    if (match && match.source_hash === hash) {
+      // Content unchanged — skip
+      stats.unchanged++;
+      continue;
+    }
+
+    // 5. Chunk the content (for long documents)
+    const chunks = chunkText(content, 500, 50);  // 500 words, 50 overlap
+
+    for (const chunk of chunks) {
+      // 6. Check for semantic duplicates
+      const isDuplicate = await invoke<number | null>('check_duplicate', {
+        content: chunk,
+      });
+
+      if (isDuplicate) {
+        stats.duplicates++;
+        continue;
+      }
+
+      // 7. Insert new memory (auto-embedded by TerranSoul)
+      const expiresAt = source.expiresInDays
+        ? Date.now() + source.expiresInDays * 86400000
+        : undefined;
+
+      await invoke('add_memory', {
+        content: chunk,
+        tags: source.tags,
+        importance: source.importance,
+        memoryType: 'fact',
+        // V3 columns:
+        sourceUrl: doc.url,
+        sourceHash: hash,
+        expiresAt,
+      });
+
+      if (match) {
+        stats.modified++;
+      } else {
+        stats.inserted++;
+      }
+    }
+  }
+
+  return stats;
+}
+
+function chunkText(text: string, maxWords: number, overlap: number): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += maxWords - overlap) {
+    chunks.push(words.slice(i, i + maxWords).join(' '));
+    if (i + maxWords >= words.length) break;
+  }
+  return chunks;
+}
+```
+
+---
+
+### Handling Duplicates Across Sources
+
+The same fact often appears in multiple places:
+
+```
+EXAMPLE: "Family law responses must be filed within 30 days"
+
+Source 1: Firm Wiki → /rules/family-law/deadlines
+  "A response to a family law motion must be filed
+   within thirty (30) days of service."
+
+Source 2: Court Rules → ilcourts.gov/rules/family/14.3
+  "Responses to motions in family law matters shall
+   be filed within 30 days after service."
+
+Source 3: Training Manual → handbook-v12.pdf, page 47
+  "Filing deadline: 30 days from service date for
+   all family law motion responses."
+```
+
+Without dedup, TerranSoul would store **3 separate memories** saying the same thing,
+wasting space and potentially confusing RAG ranking.
+
+#### How TerranSoul Handles This
+
+```
+Step 1: Source 1 arrives first
+  → embed_text("A response to a family law motion...")
+  → embedding = [0.82, -0.31, 0.56, ...]
+  → No existing duplicate found (empty DB)
+  → INSERT → id=1
+
+Step 2: Source 2 arrives
+  → embed_text("Responses to motions in family law...")
+  → embedding = [0.83, -0.30, 0.55, ...]
+  → find_duplicate(embedding, threshold=0.97)
+  → cosine_similarity with id=1 = 0.98  ← ABOVE THRESHOLD
+  → SKIP — this is a near-duplicate of id=1
+
+Step 3: Source 3 arrives
+  → embed_text("Filing deadline: 30 days from service...")
+  → embedding = [0.81, -0.32, 0.57, ...]
+  → find_duplicate(embedding, threshold=0.97)
+  → cosine_similarity with id=1 = 0.97  ← AT THRESHOLD
+  → SKIP — still a near-duplicate
+
+Result: Only 1 memory stored instead of 3
+  → id=1 "A response to a family law motion must be filed
+           within thirty (30) days of service."
+  → source_url = wiki (first source wins)
+```
+
+#### Dedup in the SQLite Database
+
+```sql
+-- Find all memories from the same source that might be redundant
+SELECT a.id, b.id AS similar_to, a.content, a.source_url
+FROM memories a
+JOIN memories b ON a.id > b.id
+WHERE a.source_url != b.source_url
+  AND a.embedding IS NOT NULL
+  AND b.embedding IS NOT NULL;
+-- Note: Actual cosine comparison happens in Rust, not SQL
+
+-- Admin query: find exact text duplicates (not just semantic)
+SELECT content, COUNT(*) AS copies, GROUP_CONCAT(id) AS ids
+FROM memories
+GROUP BY content
+HAVING copies > 1;
+```
+
+---
+
+### Detecting and Removing Stale/Out-of-Date Knowledge
+
+Legal rules change. Court deadlines shift. Firm policies get revised.
+TerranSoul uses three mechanisms to keep knowledge current.
+See [Multi-Source Knowledge Management](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md#multi-source-knowledge-management)
+in the technical reference for full details.
+
+**Quick summary:**
+
+1. **Source hash change detection**: Daily sync re-downloads each source, SHA-256 hashes the content, and compares with the stored `source_hash`. Different hash → delete old, insert new, re-embed.
+
+2. **TTL expiry**: Time-sensitive content gets an `expires_at` timestamp. Daily cleanup removes expired memories automatically.
+
+3. **Access count decay**: Memories that RAG never retrieves (0 accesses after 90 days) are candidates for pruning.
+
+4. **LLM conflict resolution**: When new information overlaps semantically but differs in content, the LLM analyzes which version is current and resolves the conflict.
+
+---
+
+### Day-in-the-Life: Attorney Sarah Uses TerranSoul
+
+#### 8:30 AM — Sarah Opens TerranSoul
+
+The daily sync already ran at 6:00 AM. TerranSoul has 12,500+ memories
+from all firm sources, fully embedded and searchable.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                          │
+│         [ 3D VRM Character — Good morning wave ]         │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │                                                    │  │
+│  │  You:  Good morning! I need to prepare a response  │  │
+│  │        to the Smith family law motion. What are     │  │
+│  │        the deadlines and filing requirements?       │  │
+│  │                                                    │  │
+│  │  ────────────────────────────────────────────────  │  │
+│  │                                                    │  │
+│  │  🤖:  Good morning! For the Smith case, here's     │  │
+│  │       what I found:                                │  │
+│  │                                                    │  │
+│  │       **Deadline**: Per Cook County Family Law      │  │
+│  │       Rule 14.3, you have 30 days from service     │  │
+│  │       to file your response.                       │  │
+│  │                                                    │  │
+│  │       **Firm Policy**: Policy 7.2 requires         │  │
+│  │       senior partner review before submission.     │  │
+│  │                                                    │  │
+│  │       **Client Preference**: Mr. Smith prefers     │  │
+│  │       email communication only, no calls after     │  │
+│  │       6pm. Billing contact: jane@smith.com         │  │
+│  │                                                    │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ Type a message…                          [Send ➤]  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Behind the scenes** — the RAG pipeline found 3 relevant memories in **<5ms**:
+
+```
+[LONG-TERM MEMORY]
+- Cook County Family Law Rule 14.3: Responses to motions must be
+  filed within 30 days of service.
+- Firm Policy 7.2: All filings must be reviewed by a senior partner
+  before submission.
+- Client Smith preferences: email only, no calls after 6pm, billing
+  contact: jane@smith.com
+[/LONG-TERM MEMORY]
+```
+
+#### 10:00 AM — Sarah Learns Something New in a Meeting
+
+Sarah: "I just learned that Judge Martinez's courtroom has a new
+local rule — all motions must include a certificate of compliance
+starting May 1st."
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                         │
+│  You:  Remember this: Judge Martinez's courtroom now    │
+│        requires a certificate of compliance for all     │
+│        motions starting May 1st, 2026.                  │
+│                                                         │
+│  🤖:   Got it! I've stored that as a high-importance    │
+│        fact. I'll remember this for future filings      │
+│        in Judge Martinez's courtroom.                   │
+│                                                         │
+└────────────────────────────────────────────────────────┘
+```
+
+TerranSoul auto-extracts this as a memory:
+
+```sql
+INSERT INTO memories
+  (content, tags, importance, memory_type, created_at, access_count)
+VALUES
+  ('Judge Martinez courtroom: certificate of compliance
+   required for all motions starting May 1st, 2026',
+   'judge-martinez,compliance,motions,new-rule',
+   5,
+   'fact',
+   1713780000000,
+   0);
+-- Auto-embedded via Ollama → 768-dim vector stored as BLOB
+```
+
+#### 2:00 PM — Sarah Asks About a Rule That Changed Overnight
+
+The daily sync detected that Court Rule 22.1 was amended:
+
+```
+┌────────────────────────────────────────────────────────┐
+│                                                         │
+│  You:  What's the current procedure for filing a        │
+│        civil motion in Cook County?                     │
+│                                                         │
+│  🤖:   Based on the updated Cook County Civil Rule      │
+│        22.1 (amended April 21, 2026):                   │
+│                                                         │
+│        1. Electronic filing is now MANDATORY (was        │
+│           optional before the amendment)                 │
+│        2. Paper copies are no longer accepted            │
+│        3. Filing fee increased to $350                   │
+│                                                         │
+│        Note: This rule was updated yesterday. The        │
+│        previous version required only e-filing for       │
+│        cases over $50,000.                               │
+│                                                         │
+└────────────────────────────────────────────────────────┘
+```
+
+**This works because** the daily sync at 6:00 AM:
+1. Downloaded the new version of Rule 22.1
+2. Detected the hash mismatch (`old_hash ≠ new_hash`)
+3. Deleted the old memory
+4. Inserted the new text
+5. Auto-embedded the new version
+6. Sarah gets the updated rule — automatically, no manual intervention
+
+#### 5:00 PM — End of Day: Extract Session Memories
+
+Sarah clicks "⬇ Extract from session" in the Memory tab:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🧠 Memory            [⬇ Extract from session]          │
+│                        Working… extracting facts         │
+│                                                          │
+│  Extracted 4 new memories from today's session:          │
+│                                                          │
+│  ✓ "Judge Martinez requires certificate of compliance"   │
+│  ✓ "Smith case response deadline is April 30th"          │
+│  ✓ "New e-filing mandate for civil motions"              │
+│  ✓ "Sarah prefers to prepare filings in the morning"     │
+│                                                          │
+│  Total memories: 12,457 (was 12,453 this morning)        │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+These session facts are now part of the permanent long-term memory,
+available for RAG in all future conversations.
+
+---
+
+> **For architecture diagrams, SQLite schema details, RAG pipeline internals,
+> debugging queries, hardware scaling tables, and FAQ** — see
+> [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md).
 # Brain + RAG Complex Setup Guide
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory  

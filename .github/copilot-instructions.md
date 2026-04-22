@@ -80,6 +80,72 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - `#[derive(Debug, Serialize, Deserialize, Clone)]` on all public Rust types
 - Vue components use `<script setup lang="ts">` with scoped styles
 - Tests required for all new functionality
+- **Use existing libraries — don't reinvent the wheel** (see below)
+
+## Use Existing Libraries First
+
+Before writing any non-trivial functionality from scratch, **search for a well-maintained open-source crate or npm package** that already solves the problem. Only write custom code when no suitable library exists, or when the library would introduce unacceptable bloat or licensing issues.
+
+### Decision checklist
+
+1. **Search first** — check crates.io / npm / GitHub for existing solutions before coding.
+2. **Prefer battle-tested** — choose libraries with active maintenance, >100 stars, and recent releases over writing your own.
+3. **Prefer permissive licenses** — MIT, Apache-2.0, BSD, ISC, MPL-2.0 are fine. Avoid GPL/AGPL in library dependencies (Tauri app is not GPL).
+4. **Prefer zero/low-dependency** — between two equal libraries, pick the one with fewer transitive dependencies.
+5. **Wrap, don't fork** — if a library needs slight customization, write a thin wrapper. Don't copy-paste its source.
+
+### Rust crate preferences
+
+| Need | Use | Don't reinvent |
+|---|---|---|
+| HTTP client | `reqwest` | Custom TCP/TLS |
+| JSON | `serde_json` | Manual parsing |
+| Async runtime | `tokio` | Custom thread pools |
+| CLI argument parsing | `clap` | Manual arg matching |
+| Error handling | `thiserror` / `anyhow` | String-based errors |
+| Logging | `tracing` | `println!` debugging |
+| UUID generation | `uuid` | Custom ID schemes |
+| Date/time | `chrono` or `time` | Manual epoch math |
+| HTML parsing | `scraper` | Regex on HTML |
+| URL parsing | `url` | Manual string splits |
+| Embeddings / vectors | `usearch` or HNSW crate | Custom brute-force ANN |
+| SQLite | `rusqlite` (bundled) | Raw FFI |
+| Regex | `regex` | Hand-rolled matchers |
+| Base64 / hex | `base64` / `hex` | Manual encode/decode |
+| Crypto | `ring` / `ed25519-dalek` | Custom crypto primitives |
+
+### Frontend (npm) preferences
+
+| Need | Use | Don't reinvent |
+|---|---|---|
+| State management | `pinia` | Custom reactive stores |
+| 3D rendering | `three` + `@pixiv/three-vrm` | WebGL from scratch |
+| Markdown rendering | `marked` or `markdown-it` | Regex-based markdown |
+| Date formatting | `Intl.DateTimeFormat` (built-in) | Custom date formatters |
+| Drag & drop | `@vueuse/core` `useDraggable` | Manual pointer events |
+| Keyboard shortcuts | `@vueuse/core` `useMagicKeys` | Manual keydown listeners |
+| Clipboard | `@vueuse/core` `useClipboard` | Manual `navigator.clipboard` |
+| Debounce/throttle | `@vueuse/core` | Hand-rolled timers |
+| Chart/graph viz | `cytoscape` / `d3` | Canvas drawing from scratch |
+| E2E testing | `@playwright/test` | Custom browser automation |
+| Unit testing | `vitest` + `@vue/test-utils` | Custom test harness |
+
+### When to write custom code
+
+- The feature is truly domain-specific (e.g., TerranSoul's quest skill tree logic, VRM emotion pipeline, stream tag parser).
+- No library exists for the exact need after a genuine search.
+- The library adds >5 MB to bundle size for a trivial feature.
+- The library is unmaintained (no commits in 2+ years, unpatched CVEs).
+- Licensing conflict (GPL in a non-GPL project).
+
+### Anti-patterns (don't do this)
+
+- Writing a custom HTTP client when `reqwest` exists.
+- Writing a custom JSON parser when `serde_json` exists.
+- Writing a custom vector similarity search when `usearch` or cosine-distance crates exist.
+- Writing a custom markdown renderer when `marked` exists.
+- Copy-pasting Stack Overflow implementations of well-known algorithms instead of using a crate.
+- Building a custom task queue when `tokio::spawn` + channels solve it.
 
 ## File References
 

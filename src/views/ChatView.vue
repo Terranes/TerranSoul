@@ -113,6 +113,7 @@
             <span class="chat-history-title">Chat History</span>
             <button class="chat-history-close" @click="toggleChatDrawer()" aria-label="Close chat history">&times;</button>
           </div>
+          <TaskProgressBar />
           <ChatMessageList
             :messages="conversationStore.messages"
             :is-thinking="conversationStore.isThinking"
@@ -185,10 +186,12 @@ import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
 import type { UpgradeOption } from '../components/UpgradeDialog.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
+import { useTaskStore } from '../stores/tasks';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
+import TaskProgressBar from '../components/TaskProgressBar.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 
@@ -940,6 +943,10 @@ watch(
 onMounted(async () => {
   await setupTauriEventListener();
 
+  // Initialise background task listener
+  const taskStore = useTaskStore();
+  await taskStore.init();
+
   try {
     await brain.initialise();
     if (brain.topRecommendation) {
@@ -984,6 +991,7 @@ onUnmounted(() => {
     unlistenProvidersExhausted();
     unlistenProvidersExhausted = null;
   }
+  useTaskStore().cleanup();
   if (subtitleHideTimer) clearTimeout(subtitleHideTimer);
   tts.stop();
   lipSyncBridge.dispose();

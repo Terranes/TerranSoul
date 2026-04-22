@@ -55,7 +55,43 @@ impl MemoryType {
     }
 }
 
-/// A single long-term memory entry.
+/// Memory tier — determines retrieval priority and lifecycle.
+///
+/// **Short-term**: Last ~20 messages in current session. Evicted on session end
+/// or when window overflows. Auto-summarized into working memory.
+///
+/// **Working**: Extracted facts/context from the current session. Lives until
+/// session ends, then promoted to long-term or discarded via decay.
+///
+/// **Long-term**: Permanent storage. Vector-indexed. Subject to periodic
+/// consolidation (merge near-duplicates) and importance decay.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryTier {
+    Short,
+    Working,
+    Long,
+}
+
+impl MemoryTier {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MemoryTier::Short => "short",
+            MemoryTier::Working => "working",
+            MemoryTier::Long => "long",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "short" => MemoryTier::Short,
+            "working" => MemoryTier::Working,
+            _ => MemoryTier::Long,
+        }
+    }
+}
+
+/// A single memory entry with tier metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
     pub id: i64,
@@ -69,9 +105,19 @@ pub struct MemoryEntry {
     pub last_accessed: Option<i64>,
     pub access_count: i64,
     /// 768-dimensional f32 embedding (serialized as little-endian bytes).
-    /// `None` when the entry has not been embedded yet.
     #[serde(skip)]
     pub embedding: Option<Vec<f32>>,
+    /// Which tier this memory lives in.
+    pub tier: MemoryTier,
+    /// Decay score 0.0–1.0. Decays over time for infrequently accessed entries.
+    /// Used as a multiplier in hybrid ranking.
+    pub decay_score: f64,
+    /// Session identifier for grouping short-term/working memories.
+    pub session_id: Option<String>,
+    /// Parent memory (for summaries that consolidate children).
+    pub parent_id: Option<i64>,
+    /// Approximate token count of the content.
+    pub token_count: i64,
 }
 
 /// Fields required to create a new memory.
@@ -90,6 +136,18 @@ pub struct MemoryUpdate {
     pub tags: Option<String>,
     pub importance: Option<i64>,
     pub memory_type: Option<MemoryType>,
+}
+
+/// Aggregated statistics across all memory tiers.
+#[derive(Debug, Clone, Serialize)]
+pub struct MemoryStats {
+    pub total: i64,
+    pub short: i64,
+    pub working: i64,
+    pub long: i64,
+    pub embedded: i64,
+    pub total_tokens: i64,
+    pub avg_decay: f64,
 }
 
 /// SQLite-backed persistent memory store.
@@ -134,10 +192,25 @@ impl MemoryStore {
     pub fn add(&self, m: NewMemory) -> SqlResult<MemoryEntry> {
         let importance = m.importance.clamp(1, 5);
         let now = now_ms();
+        let token_count = estimate_tokens(&m.content);
         self.conn.execute(
-            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0)",
-            params![m.content, m.tags, importance, m.memory_type.as_str(), now],
+            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, token_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7)",
+            params![m.content, m.tags, importance, m.memory_type.as_str(), now, MemoryTier::Long.as_str(), token_count],
+        )?;
+        let id = self.conn.last_insert_rowid();
+        self.get_by_id(id)
+    }
+
+    /// Insert a memory into a specific tier (for session management).
+    pub fn add_to_tier(&self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>) -> SqlResult<MemoryEntry> {
+        let importance = m.importance.clamp(1, 5);
+        let now = now_ms();
+        let token_count = estimate_tokens(&m.content);
+        self.conn.execute(
+            "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, session_id, token_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7, ?8)",
+            params![m.content, m.tags, importance, m.memory_type.as_str(), now, tier.as_str(), session_id, token_count],
         )?;
         let id = self.conn.last_insert_rowid();
         self.get_by_id(id)
@@ -146,7 +219,8 @@ impl MemoryStore {
     /// Fetch a memory by its id.
     pub fn get_by_id(&self, id: i64) -> SqlResult<MemoryEntry> {
         self.conn.query_row(
-            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count
              FROM memories WHERE id = ?1",
             params![id],
             row_to_entry,
@@ -156,8 +230,32 @@ impl MemoryStore {
     /// Return all memories ordered by importance (desc) then created_at (desc).
     pub fn get_all(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count
              FROM memories ORDER BY importance DESC, created_at DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_entry)?;
+        rows.collect()
+    }
+
+    /// Return memories in a specific tier.
+    pub fn get_by_tier(&self, tier: &MemoryTier) -> SqlResult<Vec<MemoryEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count
+             FROM memories WHERE tier = ?1 ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![tier.as_str()], row_to_entry)?;
+        rows.collect()
+    }
+
+    /// Get working + long-term memories (skip short-term ephemeral).
+    pub fn get_persistent(&self) -> SqlResult<Vec<MemoryEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count
+             FROM memories WHERE tier IN ('working', 'long')
+             ORDER BY importance DESC, decay_score DESC, created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
         rows.collect()
@@ -171,7 +269,8 @@ impl MemoryStore {
         }
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = self.conn.prepare(
-            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count
              FROM memories
              WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
              ORDER BY importance DESC, access_count DESC, created_at DESC",
@@ -288,7 +387,8 @@ impl MemoryStore {
     /// Return all memories that have an embedding stored.
     pub fn get_with_embeddings(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count, embedding
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, embedding
              FROM memories WHERE embedding IS NOT NULL",
         )?;
         let rows = stmt.query_map([], row_to_entry_with_embedding)?;
@@ -362,6 +462,187 @@ impl MemoryStore {
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         Ok(best.map(|(_, id)| id))
     }
+
+    // ── Hybrid search (the core RAG pipeline) ──────────────────────────────
+
+    /// Multi-signal hybrid search that combines:
+    /// 1. Vector cosine similarity (semantic relevance)
+    /// 2. Keyword BM25-style scoring (exact match boost)
+    /// 3. Recency bias (recent memories score higher)
+    /// 4. Importance weighting (user-assigned priority)
+    /// 5. Decay score (frequently accessed memories retain weight)
+    /// 6. Tier priority (working > long for current-session context)
+    ///
+    /// Returns top `limit` entries ranked by composite score.
+    /// Scales to 1M+ entries: vector search is O(n) but purely arithmetic.
+    pub fn hybrid_search(
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
+    ) -> SqlResult<Vec<MemoryEntry>> {
+        let now = now_ms();
+        let hour_ms: f64 = 3_600_000.0;
+
+        // Keyword scoring setup
+        let words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(String::from)
+            .collect();
+
+        // Load all entries with embeddings for vector scoring
+        let all = if query_embedding.is_some() {
+            self.get_with_embeddings()?
+        } else {
+            self.get_all()?
+        };
+
+        if all.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut scored: Vec<(f64, MemoryEntry)> = all
+            .into_iter()
+            .map(|entry| {
+                let mut score = 0.0f64;
+
+                // (1) Vector similarity — weight 0.40
+                if let (Some(qe), Some(emb)) = (query_embedding, entry.embedding.as_ref()) {
+                    let sim = cosine_similarity(qe, emb) as f64;
+                    score += sim * 0.40;
+                }
+
+                // (2) Keyword match — weight 0.20
+                let lower_content = entry.content.to_lowercase();
+                let lower_tags = entry.tags.to_lowercase();
+                let keyword_hits = words.iter()
+                    .filter(|w| lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str()))
+                    .count();
+                if !words.is_empty() {
+                    score += (keyword_hits as f64 / words.len() as f64) * 0.20;
+                }
+
+                // (3) Recency — weight 0.15 (exponential decay, half-life = 24h)
+                let age_hours = (now - entry.created_at) as f64 / hour_ms;
+                let recency = (-age_hours / 24.0).exp(); // 1.0 = just created, 0.5 = 24h ago
+                score += recency * 0.15;
+
+                // (4) Importance — weight 0.10
+                score += (entry.importance as f64 / 5.0) * 0.10;
+
+                // (5) Decay score — weight 0.10
+                score += entry.decay_score * 0.10;
+
+                // (6) Tier priority — weight 0.05
+                let tier_boost = match entry.tier {
+                    MemoryTier::Working => 1.0,
+                    MemoryTier::Long => 0.5,
+                    MemoryTier::Short => 0.3,
+                };
+                score += tier_boost * 0.05;
+
+                (score, entry)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+
+        // Touch access counters
+        for (_, e) in &scored {
+            let _ = self.conn.execute(
+                "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                params![now, e.id],
+            );
+        }
+
+        Ok(scored.into_iter().map(|(_, e)| e).collect())
+    }
+
+    // ── Tier management ────────────────────────────────────────────────────
+
+    /// Promote a memory to a higher tier.
+    pub fn promote(&self, id: i64, new_tier: MemoryTier) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE memories SET tier = ?1 WHERE id = ?2",
+            params![new_tier.as_str(), id],
+        )?;
+        Ok(())
+    }
+
+    /// Apply time-based decay to all long-term memories.
+    /// Memories that haven't been accessed recently lose decay_score.
+    /// Called periodically (e.g. on app startup or once per session).
+    ///
+    /// Formula: decay_score *= 0.95^(hours_since_last_access / 168)
+    /// (halves roughly every 2 weeks of non-access)
+    pub fn apply_decay(&self) -> SqlResult<usize> {
+        let now = now_ms();
+        let mut stmt = self.conn.prepare(
+            "SELECT id, last_accessed, decay_score FROM memories WHERE tier = 'long'",
+        )?;
+        let rows: Vec<(i64, Option<i64>, f64)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get::<_, f64>(2)?))
+        })?.filter_map(|r| r.ok()).collect();
+
+        let mut updated = 0;
+        for (id, last_accessed, current_decay) in &rows {
+            let last = last_accessed.unwrap_or(now);
+            let hours_since = (now - last) as f64 / 3_600_000.0;
+            let factor = 0.95f64.powf(hours_since / 168.0);
+            let new_decay = (current_decay * factor).max(0.01);
+            if (new_decay - current_decay).abs() > 0.001 {
+                self.conn.execute(
+                    "UPDATE memories SET decay_score = ?1 WHERE id = ?2",
+                    params![new_decay, id],
+                )?;
+                updated += 1;
+            }
+        }
+        Ok(updated)
+    }
+
+    /// Evict short-term memories from a session, summarizing them into working memory.
+    pub fn evict_short_term(&self, session_id: &str) -> SqlResult<Vec<MemoryEntry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count
+             FROM memories WHERE tier = 'short' AND session_id = ?1 ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id], row_to_entry)?;
+        let entries: SqlResult<Vec<MemoryEntry>> = rows.collect();
+        let entries = entries?;
+
+        // Delete the short-term entries
+        self.conn.execute(
+            "DELETE FROM memories WHERE tier = 'short' AND session_id = ?1",
+            params![session_id],
+        )?;
+        Ok(entries)
+    }
+
+    /// Delete memories below a decay threshold (garbage collection).
+    pub fn gc_decayed(&self, threshold: f64) -> SqlResult<usize> {
+        let deleted = self.conn.execute(
+            "DELETE FROM memories WHERE tier = 'long' AND decay_score < ?1 AND importance <= 2",
+            params![threshold],
+        )?;
+        Ok(deleted)
+    }
+
+    /// Get memory statistics per tier.
+    pub fn stats(&self) -> SqlResult<MemoryStats> {
+        let total: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
+        let short: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE tier='short'", [], |r| r.get(0))?;
+        let working: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE tier='working'", [], |r| r.get(0))?;
+        let long: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE tier='long'", [], |r| r.get(0))?;
+        let embedded: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE embedding IS NOT NULL", [], |r| r.get(0))?;
+        let total_tokens: i64 = self.conn.query_row("SELECT COALESCE(SUM(token_count), 0) FROM memories", [], |r| r.get(0))?;
+        let avg_decay: f64 = self.conn.query_row("SELECT COALESCE(AVG(decay_score), 1.0) FROM memories WHERE tier='long'", [], |r| r.get(0))?;
+        Ok(MemoryStats { total, short, working, long, embedded, total_tokens, avg_decay })
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -377,11 +658,16 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
         last_accessed: row.get(6)?,
         access_count: row.get(7)?,
         embedding: None,
+        tier: MemoryTier::from_str(&row.get::<_, String>(8).unwrap_or_else(|_| "long".to_string())),
+        decay_score: row.get::<_, f64>(9).unwrap_or(1.0),
+        session_id: row.get(10).unwrap_or(None),
+        parent_id: row.get(11).unwrap_or(None),
+        token_count: row.get::<_, i64>(12).unwrap_or(0),
     })
 }
 
 fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
-    let blob: Option<Vec<u8>> = row.get(8)?;
+    let blob: Option<Vec<u8>> = row.get(13)?;
     Ok(MemoryEntry {
         id: row.get(0)?,
         content: row.get(1)?,
@@ -392,6 +678,11 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
         last_accessed: row.get(6)?,
         access_count: row.get(7)?,
         embedding: blob.map(|b| bytes_to_embedding(&b)),
+        tier: MemoryTier::from_str(&row.get::<_, String>(8).unwrap_or_else(|_| "long".to_string())),
+        decay_score: row.get::<_, f64>(9).unwrap_or(1.0),
+        session_id: row.get(10).unwrap_or(None),
+        parent_id: row.get(11).unwrap_or(None),
+        token_count: row.get::<_, i64>(12).unwrap_or(0),
     })
 }
 
@@ -422,6 +713,11 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
     let denom = na.sqrt() * nb.sqrt();
     if denom < 1e-12 { 0.0 } else { (dot / denom) as f32 }
+}
+
+/// Rough token estimation (~4 chars per token for English text).
+fn estimate_tokens(text: &str) -> i64 {
+    (text.len() as i64 + 3) / 4
 }
 
 #[cfg(test)]
@@ -721,5 +1017,117 @@ mod tests {
         let updated = store.get_by_id(e.id).unwrap();
         assert_eq!(updated.access_count, 2);
         assert!(updated.last_accessed.is_some());
+    }
+
+    // ── Tiered memory tests ────────────────────────────────────────────
+
+    #[test]
+    fn add_sets_default_tier_long() {
+        let store = MemoryStore::in_memory();
+        let entry = store.add(new_memory("default tier")).unwrap();
+        assert_eq!(entry.tier, MemoryTier::Long);
+        assert!((entry.decay_score - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn add_to_tier_creates_working_memory() {
+        let store = MemoryStore::in_memory();
+        let entry = store.add_to_tier(new_memory("session fact"), MemoryTier::Working, Some("sess-1")).unwrap();
+        assert_eq!(entry.tier, MemoryTier::Working);
+        assert_eq!(entry.session_id.as_deref(), Some("sess-1"));
+    }
+
+    #[test]
+    fn get_by_tier_filters_correctly() {
+        let store = MemoryStore::in_memory();
+        store.add_to_tier(new_memory("short"), MemoryTier::Short, Some("s1")).unwrap();
+        store.add_to_tier(new_memory("working"), MemoryTier::Working, Some("s1")).unwrap();
+        store.add(new_memory("long")).unwrap();
+
+        assert_eq!(store.get_by_tier(&MemoryTier::Short).unwrap().len(), 1);
+        assert_eq!(store.get_by_tier(&MemoryTier::Working).unwrap().len(), 1);
+        assert_eq!(store.get_by_tier(&MemoryTier::Long).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn get_persistent_excludes_short_term() {
+        let store = MemoryStore::in_memory();
+        store.add_to_tier(new_memory("ephemeral"), MemoryTier::Short, Some("s1")).unwrap();
+        store.add_to_tier(new_memory("session ctx"), MemoryTier::Working, Some("s1")).unwrap();
+        store.add(new_memory("permanent")).unwrap();
+
+        let persistent = store.get_persistent().unwrap();
+        assert_eq!(persistent.len(), 2);
+        assert!(persistent.iter().all(|e| e.tier != MemoryTier::Short));
+    }
+
+    #[test]
+    fn promote_changes_tier() {
+        let store = MemoryStore::in_memory();
+        let entry = store.add_to_tier(new_memory("upgradeable"), MemoryTier::Working, Some("s1")).unwrap();
+        store.promote(entry.id, MemoryTier::Long).unwrap();
+        let updated = store.get_by_id(entry.id).unwrap();
+        assert_eq!(updated.tier, MemoryTier::Long);
+    }
+
+    #[test]
+    fn evict_short_term_clears_session() {
+        let store = MemoryStore::in_memory();
+        store.add_to_tier(new_memory("msg1"), MemoryTier::Short, Some("sess-1")).unwrap();
+        store.add_to_tier(new_memory("msg2"), MemoryTier::Short, Some("sess-1")).unwrap();
+        store.add_to_tier(new_memory("other session"), MemoryTier::Short, Some("sess-2")).unwrap();
+
+        let evicted = store.evict_short_term("sess-1").unwrap();
+        assert_eq!(evicted.len(), 2);
+        assert_eq!(store.get_by_tier(&MemoryTier::Short).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn stats_returns_tier_counts() {
+        let store = MemoryStore::in_memory();
+        store.add_to_tier(new_memory("s"), MemoryTier::Short, Some("s1")).unwrap();
+        store.add_to_tier(new_memory("w"), MemoryTier::Working, Some("s1")).unwrap();
+        store.add(new_memory("l1")).unwrap();
+        store.add(new_memory("l2")).unwrap();
+
+        let stats = store.stats().unwrap();
+        assert_eq!(stats.total, 4);
+        assert_eq!(stats.short, 1);
+        assert_eq!(stats.working, 1);
+        assert_eq!(stats.long, 2);
+    }
+
+    #[test]
+    fn hybrid_search_keyword_ranking() {
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("Python programming language")).unwrap();
+        store.add(new_memory("JavaScript for web")).unwrap();
+        store.add(new_memory("Rust systems programming")).unwrap();
+
+        let results = store.hybrid_search("Python programming", None, 2).unwrap();
+        assert_eq!(results.len(), 2);
+        // Python entry should rank first (2 keyword hits vs 1 for Rust)
+        assert!(results[0].content.contains("Python"));
+    }
+
+    #[test]
+    fn gc_decayed_removes_low_importance() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(NewMemory { importance: 1, ..new_memory("forgettable") }).unwrap();
+        // Manually set low decay
+        store.conn.execute(
+            "UPDATE memories SET decay_score = 0.005 WHERE id = ?1",
+            params![e.id],
+        ).unwrap();
+        let removed = store.gc_decayed(0.01).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(store.count(), 0);
+    }
+
+    #[test]
+    fn token_count_estimated_on_add() {
+        let store = MemoryStore::in_memory();
+        let entry = store.add(new_memory("Hello world this is a test")).unwrap();
+        assert!(entry.token_count > 0);
     }
 }

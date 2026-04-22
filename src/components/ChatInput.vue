@@ -1,6 +1,23 @@
 <template>
-  <form class="chat-input-bar" @submit.prevent="handleSubmit">
-    <div class="input-wrapper">
+  <form
+    class="chat-input-bar"
+    @submit.prevent="handleSubmit"
+    @dragover.prevent="dragOver = true"
+    @dragleave="dragOver = false"
+    @drop.prevent="handleDrop"
+  >
+    <div class="input-wrapper" :class="{ 'drag-over': dragOver }">
+      <button
+        type="button"
+        class="attach-btn"
+        :disabled="disabled"
+        aria-label="Attach file"
+        @click="openFilePicker"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6h-1v9.5a2 2 0 0 0 4 0V5a3.5 3.5 0 0 0-7 0v12.5a5 5 0 0 0 10 0V6h-1z"/>
+        </svg>
+      </button>
       <input
         ref="inputRef"
         v-model="inputText"
@@ -23,6 +40,13 @@
         </svg>
       </button>
     </div>
+    <input
+      ref="fileInputRef"
+      type="file"
+      class="hidden-file-input"
+      accept=".md,.txt,.csv,.json,.xml,.html,.htm,.log,.rst,.adoc,.pdf"
+      @change="handleFileSelected"
+    />
   </form>
 </template>
 
@@ -35,6 +59,8 @@ const emit = defineEmits<{ submit: [message: string]; focus: []; blur: [] }>();
 
 const inputText = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const dragOver = ref(false);
 
 function handleSubmit() {
   const text = inputText.value.trim();
@@ -43,12 +69,6 @@ function handleSubmit() {
   inputText.value = '';
 }
 
-/**
- * When the input gains focus on mobile, iOS Safari tries to scroll the page
- * to keep the focused element visible.  We counteract this with a burst of
- * scroll resets across multiple frames and timers to cover the various points
- * where iOS may apply its auto-scroll.
- */
 function handleFocus() {
   burstResetScroll();
   emit('focus');
@@ -57,7 +77,50 @@ function handleFocus() {
 function handleBlur() {
   emit('blur');
 }
-</script>
+
+function openFilePicker() {
+  fileInputRef.value?.click();
+}
+
+async function handleFileSelected() {
+  const file = fileInputRef.value?.files?.[0];
+  if (!file) return;
+  try {
+    const { useTaskStore } = await import('../stores/tasks');
+    const taskStore = useTaskStore();
+    const { invoke } = await import('@tauri-apps/api/core');
+    const name = file.name;
+    await taskStore.ingestDocument(name);
+  } catch {
+    emit('submit', `[Attach: ${file.name}] — Please type the full file path to import.`);
+  }
+  if (fileInputRef.value) fileInputRef.value.value = '';
+}
+
+async function handleDrop(e: DragEvent) {
+  dragOver.value = false;
+  const files = e.dataTransfer?.files;
+  if (!files?.length) return;
+  const items = e.dataTransfer?.items;
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          try {
+            const { useTaskStore } = await import('../stores/tasks');
+            const taskStore = useTaskStore();
+            const path = (file as unknown as { path?: string }).path ?? file.name;
+            await taskStore.ingestDocument(path);
+          } catch {
+            emit('submit', `[Attach: ${file.name}]`);
+          }
+        }
+      }
+    }
+  }
+}</script>
 
 <style scoped>
 .chat-input-bar {
@@ -73,7 +136,7 @@ function handleBlur() {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--ts-radius-pill);
-  padding: 4px 4px 4px 16px;
+  padding: 4px 4px 4px 8px;
   transition: border-color var(--ts-transition-normal), box-shadow var(--ts-transition-normal), background var(--ts-transition-normal);
 }
 
@@ -81,6 +144,41 @@ function handleBlur() {
   border-color: var(--ts-accent);
   box-shadow: 0 0 0 3px var(--ts-accent-glow);
   background: rgba(255, 255, 255, 0.10);
+}
+
+.input-wrapper.drag-over {
+  border-color: var(--ts-accent);
+  background: rgba(124, 111, 255, 0.12);
+  box-shadow: 0 0 0 3px var(--ts-accent-glow);
+}
+
+.attach-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--ts-text-dim, #888);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color var(--ts-transition-normal), background var(--ts-transition-normal);
+}
+
+.attach-btn:hover:not(:disabled) {
+  color: var(--ts-accent);
+  background: rgba(124, 111, 255, 0.1);
+}
+
+.attach-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .chat-input {

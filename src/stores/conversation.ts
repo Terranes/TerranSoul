@@ -6,6 +6,7 @@ import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
+import { useTaskStore } from './tasks';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -321,6 +322,30 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
+    // Check if agent is busy with a background task
+    try {
+      const taskStore = useTaskStore();
+      if (taskStore.isAgentBusy) {
+        const running = taskStore.runningTask;
+        const busyMsg: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `I'm currently working on: **${running?.description ?? 'a task'}** (${running?.progress ?? 0}%). You can cancel it or wait for it to finish.`,
+          timestamp: Date.now(),
+        };
+        messages.value.push({
+          id: crypto.randomUUID(),
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+        });
+        messages.value.push(busyMsg);
+        return;
+      }
+    } catch {
+      // Task store not available
+    }
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -458,6 +483,20 @@ export const useConversationStore = defineStore('conversation', () => {
           messages.value.map((m) => ({ role: m.role, content: m.content })),
         );
 
+        // RAG: fetch relevant memories from Tauri backend if available
+        let memoryBlock = '';
+        try {
+          const results = await invoke<{ id: number; content: string }[]>('search_memories', { query: content });
+          if (results && results.length > 0) {
+            const topMemories = results.slice(0, 5);
+            memoryBlock = '\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n'
+              + topMemories.map((m) => `- ${m.content}`).join('\n')
+              + '\n[/LONG-TERM MEMORY]';
+          }
+        } catch {
+          // Tauri unavailable (browser-only) or no memories — continue without RAG
+        }
+
         // Try the primary provider, then rotate to next healthy on rate-limit
         const providersToTry = [provider];
         // Add fallback providers from the brain store
@@ -502,7 +541,7 @@ export const useConversationStore = defineStore('conversation', () => {
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },
-                getSystemPrompt(useEnhanced),
+                getSystemPrompt(useEnhanced) + memoryBlock,
               );
               timeout = setTimeout(() => {
                 if (!settled) { settled = true; abortController.abort(); reject(new Error('Stream timeout: no response within 60s')); }

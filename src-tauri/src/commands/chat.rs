@@ -113,9 +113,23 @@ pub async fn process_message(
             let provider = crate::brain::get_free_provider(&effective_provider_id)
                 .ok_or_else(|| format!("Unknown free provider: {effective_provider_id}"))?;
             let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+
+            // RAG: hybrid search (keyword + recency + importance + decay)
+            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
+            let relevant: Vec<crate::memory::MemoryEntry> = {
+                match app_state.memory_store.lock() {
+                    Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
+                    Err(_) => vec![],
+                }
+            };
+            if !relevant.is_empty() {
+                let mem_block: String = relevant.iter().map(|e| format!("- [{}] {}", e.tier.as_str(), e.content)).collect::<Vec<_>>().join("\n");
+                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
+            }
+
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
-                content: SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+                content: system,
             }];
             for (role, c) in &history {
                 msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
@@ -125,9 +139,23 @@ pub async fn process_message(
         }
         Some(BrainMode::PaidApi { api_key, model, base_url, .. }) => {
             let client = OpenAiClient::new(&base_url, &model, Some(&api_key));
+
+            // RAG: hybrid search (keyword + recency + importance + decay)
+            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
+            let relevant: Vec<crate::memory::MemoryEntry> = {
+                match app_state.memory_store.lock() {
+                    Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
+                    Err(_) => vec![],
+                }
+            };
+            if !relevant.is_empty() {
+                let mem_block: String = relevant.iter().map(|e| format!("- [{}] {}", e.tier.as_str(), e.content)).collect::<Vec<_>>().join("\n");
+                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
+            }
+
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
-                content: SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+                content: system,
             }];
             for (role, c) in &history {
                 msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });

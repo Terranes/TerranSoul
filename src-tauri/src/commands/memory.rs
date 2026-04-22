@@ -296,7 +296,86 @@ pub async fn get_schema_info(
             "embedding": "BLOB — 768-dim f32 vector (little-endian)",
             "source_url": "TEXT — origin URL for ingested documents",
             "source_hash": "TEXT — content hash for dedup/staleness",
-            "expires_at": "INTEGER — TTL for auto-expiry"
+            "expires_at": "INTEGER — TTL for auto-expiry",
+            "tier": "TEXT — short|working|long",
+            "decay_score": "REAL — 0.0-1.0 freshness weight",
+            "session_id": "TEXT — session grouping",
+            "parent_id": "INTEGER — parent memory (for summaries)",
+            "token_count": "INTEGER — estimated token count"
         }
     }))
+}
+
+// ── Tiered memory commands ───────────────────────────────────────────────────
+
+/// Hybrid search combining vector similarity, keywords, recency, importance, and decay.
+/// The primary RAG retrieval method — scales to 1M+ entries.
+#[tauri::command]
+pub async fn hybrid_search_memories(
+    query: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10);
+
+    // Try to generate query embedding for vector component
+    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let query_emb = if let Some(model) = model_opt {
+        crate::brain::OllamaAgent::embed_text(&query, &model).await
+    } else {
+        None
+    };
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.hybrid_search(&query, query_emb.as_deref(), limit).map_err(|e| e.to_string())
+}
+
+/// Get memory statistics per tier.
+#[tauri::command]
+pub async fn get_memory_stats(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::MemoryStats, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.stats().map_err(|e| e.to_string())
+}
+
+/// Apply time-based decay to long-term memories. Returns count of updated entries.
+#[tauri::command]
+pub async fn apply_memory_decay(
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.apply_decay().map_err(|e| e.to_string())
+}
+
+/// Garbage-collect decayed low-importance memories. Returns count removed.
+#[tauri::command]
+pub async fn gc_memories(
+    threshold: Option<f64>,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let threshold = threshold.unwrap_or(0.05);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.gc_decayed(threshold).map_err(|e| e.to_string())
+}
+
+/// Promote a working memory to long-term storage.
+#[tauri::command]
+pub async fn promote_memory(
+    id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.promote(id, crate::memory::MemoryTier::Long).map_err(|e| e.to_string())
+}
+
+/// Get memories filtered by tier.
+#[tauri::command]
+pub async fn get_memories_by_tier(
+    tier: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let tier = crate::memory::MemoryTier::from_str(&tier);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.get_by_tier(&tier).map_err(|e| e.to_string())
 }

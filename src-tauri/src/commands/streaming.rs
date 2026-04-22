@@ -270,10 +270,41 @@ async fn stream_openai_api(
 
     let client = OpenAiClient::new(&base_url, &model, api_key);
 
+    // ── RAG: retrieve relevant memories via hybrid search ─────────────
+    let mut system_prompt = super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
+
+    let user_query = history
+        .iter()
+        .rev()
+        .find(|(role, _)| role == "user")
+        .map(|(_, content)| content.as_str())
+        .unwrap_or(_message);
+
+    // Hybrid search: combines keyword + recency + importance + decay scoring
+    let relevant: Vec<crate::memory::MemoryEntry> = {
+        match state.memory_store.lock() {
+            Ok(store) => {
+                store.hybrid_search(user_query, None, 5).unwrap_or_default()
+            }
+            Err(_) => vec![],
+        }
+    };
+
+    if !relevant.is_empty() {
+        let memory_block: String = relevant
+            .iter()
+            .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        system_prompt.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
     // Build OpenAI message array
     let mut messages = vec![OpenAiMessage {
         role: "system".to_string(),
-        content: super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string(),
+        content: system_prompt,
     }];
     for (role, content) in history {
         messages.push(OpenAiMessage {
@@ -347,10 +378,9 @@ async fn stream_ollama(
     history: &[(String, String)],
     model: &str,
 ) -> Result<(), String> {
-    // ── Local semantic-search RAG: retrieve relevant memories ───────────
+    // ── Local RAG: hybrid search with vector + keyword + decay ────────
     let mut system_prompt = super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
 
-    // Extract the user's latest message for RAG query
     let user_query = history
         .iter()
         .rev()
@@ -358,45 +388,22 @@ async fn stream_ollama(
         .map(|(_, content)| content.as_str())
         .unwrap_or(_message);
 
-    // Fast vector path: embed query → cosine search → <10ms.
-    // Falls back to LLM ranking only when no embeddings exist yet.
-    //
-    // Step 1: Try vector search (lock held briefly, no await).
-    let vector_results: Vec<crate::memory::MemoryEntry> = {
-        let query_emb = crate::brain::OllamaAgent::embed_text(user_query, model).await;
-        match (query_emb, state.memory_store.lock()) {
-            (Some(emb), Ok(store)) => store.vector_search(&emb, 5).unwrap_or_default(),
-            _ => vec![],
-        }
-    };
+    // Hybrid search: vector similarity + keywords + recency + importance + decay.
+    // When embeddings exist, vector component dominates (weight 0.40).
+    // Falls back gracefully to keyword-only when no embeddings available.
+    let query_emb = crate::brain::OllamaAgent::embed_text(user_query, model).await;
 
-    // Step 2: If vector search returned nothing, try legacy LLM-rank fallback.
-    let relevant = if !vector_results.is_empty() {
-        vector_results
-    } else {
-        let entries: Vec<crate::memory::MemoryEntry> = {
-            match state.memory_store.lock() {
-                Ok(mem_store) => mem_store.get_all().unwrap_or_default(),
-                Err(_) => vec![],
-            }
-        };
-        if entries.is_empty() {
-            vec![]
-        } else {
-            crate::memory::brain_memory::semantic_search_entries(
-                model,
-                user_query,
-                &entries,
-                5,
-            )
-            .await
+    let relevant: Vec<crate::memory::MemoryEntry> = {
+        match state.memory_store.lock() {
+            Ok(store) => store.hybrid_search(user_query, query_emb.as_deref(), 5).unwrap_or_default(),
+            Err(_) => vec![],
         }
     };
 
     if !relevant.is_empty() {
         let memory_block: String = relevant
             .iter()
-            .map(|e| format!("- {}", e.content))
+            .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
             .collect::<Vec<_>>()
             .join("\n");
         system_prompt.push_str(&format!(
