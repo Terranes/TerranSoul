@@ -39,6 +39,20 @@ hex = "0.4"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 msedge-tts = "0.3.0"
+thiserror = "2"
+rand = { version = "0.8", optional = true }
+
+# Distributed database backends (optional)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"], optional = true }
+tiberius = { version = "0.12", features = ["tds73"], optional = true }
+tokio-util = { version = "0.7", features = ["compat"], optional = true }
+scylla = { version = "0.14", optional = true }
+
+[features]
+default = []
+postgres = ["dep:sqlx"]
+mssql = ["dep:tiberius", "dep:tokio-util"]
+cassandra = ["dep:scylla", "dep:rand"]
 
 [dev-dependencies]
 tempfile = "3"

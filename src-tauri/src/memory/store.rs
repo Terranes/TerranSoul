@@ -37,7 +37,7 @@ pub enum MemoryType {
 }
 
 impl MemoryType {
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             MemoryType::Fact => "fact",
             MemoryType::Preference => "preference",
@@ -46,7 +46,8 @@ impl MemoryType {
         }
     }
 
-    fn from_str(s: &str) -> Self {
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Self {
         match s {
             "preference" => MemoryType::Preference,
             "context" => MemoryType::Context,
@@ -758,13 +759,13 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
     })
 }
 
-/// Convert an f32 slice to little-endian bytes for SQLite BLOB storage.
-fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
+/// Convert an f32 slice to little-endian bytes for BLOB storage.
+pub fn embedding_to_bytes(embedding: &[f32]) -> Vec<u8> {
     embedding.iter().flat_map(|f| f.to_le_bytes()).collect()
 }
 
 /// Convert little-endian bytes back to an f32 vec.
-fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
+pub fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
@@ -790,6 +791,135 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// Rough token estimation (~4 chars per token for English text).
 fn estimate_tokens(text: &str) -> i64 {
     (text.len() as i64 + 3) / 4
+}
+
+// ── StorageBackend impl for MemoryStore (SQLite) ─────────────────────────────
+
+use super::backend::{StorageBackend, StorageResult};
+
+impl StorageBackend for MemoryStore {
+    fn migrate(&self) -> StorageResult<()> {
+        // Migrations run automatically in MemoryStore::new / in_memory
+        Ok(())
+    }
+
+    fn schema_version(&self) -> StorageResult<i64> {
+        Ok(self.schema_version())
+    }
+
+    fn add(&self, m: NewMemory) -> StorageResult<MemoryEntry> {
+        Ok(self.add(m)?)
+    }
+
+    fn add_to_tier(
+        &self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>,
+    ) -> StorageResult<MemoryEntry> {
+        Ok(self.add_to_tier(m, tier, session_id)?)
+    }
+
+    fn get_by_id(&self, id: i64) -> StorageResult<MemoryEntry> {
+        Ok(self.get_by_id(id)?)
+    }
+
+    fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.get_all()?)
+    }
+
+    fn get_by_tier(&self, tier: &MemoryTier) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.get_by_tier(tier)?)
+    }
+
+    fn get_persistent(&self) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.get_persistent()?)
+    }
+
+    fn count(&self) -> StorageResult<i64> {
+        Ok(self.count())
+    }
+
+    fn stats(&self) -> StorageResult<MemoryStats> {
+        Ok(self.stats()?)
+    }
+
+    fn search(&self, query: &str) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.search(query)?)
+    }
+
+    fn relevant_for(&self, message: &str, limit: usize) -> StorageResult<Vec<String>> {
+        Ok(self.relevant_for(message, limit))
+    }
+
+    fn find_by_source_url(&self, url: &str) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.find_by_source_url(url)?)
+    }
+
+    fn find_by_source_hash(&self, hash: &str) -> StorageResult<Option<MemoryEntry>> {
+        Ok(self.find_by_source_hash(hash)?)
+    }
+
+    fn get_with_embeddings(&self) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.get_with_embeddings()?)
+    }
+
+    fn unembedded_ids(&self) -> StorageResult<Vec<(i64, String)>> {
+        Ok(self.unembedded_ids()?)
+    }
+
+    fn set_embedding(&self, id: i64, embedding: &[f32]) -> StorageResult<()> {
+        Ok(self.set_embedding(id, embedding)?)
+    }
+
+    fn vector_search(
+        &self, query_embedding: &[f32], limit: usize,
+    ) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.vector_search(query_embedding, limit)?)
+    }
+
+    fn find_duplicate(
+        &self, query_embedding: &[f32], threshold: f32,
+    ) -> StorageResult<Option<i64>> {
+        Ok(self.find_duplicate(query_embedding, threshold)?)
+    }
+
+    fn hybrid_search(
+        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+    ) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.hybrid_search(query, query_embedding, limit)?)
+    }
+
+    fn update(&self, id: i64, upd: MemoryUpdate) -> StorageResult<MemoryEntry> {
+        Ok(self.update(id, upd)?)
+    }
+
+    fn promote(&self, id: i64, new_tier: MemoryTier) -> StorageResult<()> {
+        Ok(self.promote(id, new_tier)?)
+    }
+
+    fn delete(&self, id: i64) -> StorageResult<()> {
+        Ok(self.delete(id)?)
+    }
+
+    fn delete_by_source_url(&self, url: &str) -> StorageResult<usize> {
+        Ok(self.delete_by_source_url(url)?)
+    }
+
+    fn delete_expired(&self) -> StorageResult<usize> {
+        Ok(self.delete_expired()?)
+    }
+
+    fn apply_decay(&self) -> StorageResult<usize> {
+        Ok(self.apply_decay()?)
+    }
+
+    fn evict_short_term(&self, session_id: &str) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.evict_short_term(session_id)?)
+    }
+
+    fn gc_decayed(&self, threshold: f64) -> StorageResult<usize> {
+        Ok(self.gc_decayed(threshold)?)
+    }
+
+    fn backend_name(&self) -> &'static str { "SQLite" }
 }
 
 #[cfg(test)]
@@ -1332,5 +1462,49 @@ mod tests {
         let removed = store.delete_expired().unwrap();
         assert_eq!(removed, 1);
         assert_eq!(store.count(), 1);
+    }
+
+    // ── StorageBackend trait tests ───────────────────────────────────────
+
+    #[test]
+    fn storage_backend_sqlite_round_trip() {
+        let store = MemoryStore::in_memory();
+        let backend: &dyn StorageBackend = &store;
+
+        assert_eq!(backend.backend_name(), "SQLite");
+        assert!(!backend.supports_native_vector_search());
+
+        // Add via trait
+        let entry = backend.add(new_memory("trait test")).unwrap();
+        assert_eq!(entry.content, "trait test");
+
+        // Read via trait
+        let fetched = backend.get_by_id(entry.id).unwrap();
+        assert_eq!(fetched.content, "trait test");
+
+        // Count via trait
+        assert_eq!(backend.count().unwrap(), 1);
+
+        // Search via trait
+        let results = backend.search("trait").unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Delete via trait
+        backend.delete(entry.id).unwrap();
+        assert_eq!(backend.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn storage_backend_stats_via_trait() {
+        let store = MemoryStore::in_memory();
+        let backend: &dyn StorageBackend = &store;
+
+        backend.add(new_memory("one")).unwrap();
+        backend.add_to_tier(new_memory("two"), MemoryTier::Short, Some("sess")).unwrap();
+
+        let stats = backend.stats().unwrap();
+        assert_eq!(stats.total, 2);
+        assert_eq!(stats.short, 1);
+        assert_eq!(stats.long, 1);
     }
 }

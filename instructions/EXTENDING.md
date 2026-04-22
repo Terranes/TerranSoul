@@ -144,6 +144,32 @@ cd src-tauri && cargo test --all-targets
 npm run build  # Runs vue-tsc first, then vite build
 ```
 
+## Storage Backends
+
+TerranSoul uses a `StorageBackend` trait for all memory persistence. By default,
+SQLite is used for local/offline operation. Three distributed backends are
+available via Cargo feature flags:
+
+```bash
+# PostgreSQL
+cargo build --features postgres
+
+# SQL Server
+cargo build --features mssql
+
+# CassandraDB
+cargo build --features cassandra
+```
+
+All backends implement the same `StorageBackend` trait defined in
+`src-tauri/src/memory/backend.rs`. To add a new backend:
+
+1. Create `src-tauri/src/memory/your_backend.rs`
+2. Implement the `StorageBackend` trait
+3. Add a variant to `StorageConfig` enum in `backend.rs`
+4. Register the module (feature-gated) in `memory/mod.rs`
+5. Add the dependency to `Cargo.toml` with `optional = true`
+
 ## File Structure for Custom Models
 
 Default models shipped with TerranSoul are stored in the `public/models/default/` directory so Vite serves them as static assets. The current bundled models are:

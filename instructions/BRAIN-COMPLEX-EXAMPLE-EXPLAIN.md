@@ -26,6 +26,7 @@
 11. [Design validation — comparison with open-source systems](#design-validation--comparison-with-open-source-systems)
 12. [Code paths — end-to-end flow](#code-paths--end-to-end-flow)
 13. [FAQ](#faq)
+14. [Distributed Storage Backends](#distributed-storage-backends)
 
 ---
 
@@ -362,6 +363,71 @@ through Free or Paid provider via `ProviderRotator`.
 | 1 M      | 3 GB     | ~4 GB   | ~50 ms (linear scan) |
 
 Beyond ~1 M, swap linear cosine for HNSW (`usearch` crate) — design §16 Phase 4.
+
+---
+
+## Distributed Storage Backends
+
+TerranSoul supports four storage backends behind a unified `StorageBackend` trait
+(`src-tauri/src/memory/backend.rs`). Backend selection is compile-time via Cargo
+feature flags.
+
+| Backend | Feature flag | Crate | Use case |
+|---|---|---|---|
+| **SQLite** | *(default)* | `rusqlite` | Local/offline, single device, zero-config |
+| **PostgreSQL** | `postgres` | `sqlx` | Multi-device sync, server deployment |
+| **SQL Server** | `mssql` | `tiberius` | Enterprise, Azure integration |
+| **CassandraDB** | `cassandra` | `scylla` | High-write throughput, eventual consistency |
+
+### Build with a distributed backend
+
+```bash
+# PostgreSQL
+cargo build --features postgres
+
+# SQL Server
+cargo build --features mssql
+
+# CassandraDB
+cargo build --features cassandra
+
+# Multiple backends
+cargo build --features "postgres,cassandra"
+```
+
+### Configuration (`StorageConfig`)
+
+```json
+// SQLite (default — no config needed)
+{ "backend": "sqlite", "data_dir": null }
+
+// PostgreSQL
+{ "backend": "postgres",
+  "connection_string": "postgresql://user:pass@host:5432/terransoul",
+  "max_connections": 10, "ssl": true }
+
+// SQL Server
+{ "backend": "sql_server",
+  "connection_string": "Server=tcp:host,1433;Database=terransoul;...",
+  "max_connections": 10 }
+
+// CassandraDB
+{ "backend": "cassandra",
+  "contact_points": ["host1:9042", "host2:9042"],
+  "keyspace": "terransoul", "replication_factor": 3 }
+```
+
+### Architecture notes
+
+- The `StorageBackend` trait requires `Send` only (not `Sync`), because the backend
+  is always held behind `Mutex<Box<dyn StorageBackend>>` in `AppState`.
+- Distributed backends use `tokio::task::block_in_place` to bridge async drivers
+  into the synchronous trait interface.
+- All backends share the same V4 schema (17 columns, same indexes).
+- Vector search is in-process (cosine similarity) for all backends. PostgreSQL
+  has a future upgrade path to pgvector for server-side ANN.
+- Cassandra limitations: no `LIKE` queries, no aggregation — falls back to
+  application-side filtering. Best suited for write-heavy ingestion workloads.
 
 ### Why SQLite over Postgres / Qdrant?
 

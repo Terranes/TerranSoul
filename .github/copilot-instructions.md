@@ -16,7 +16,7 @@ A **Vue 3 + Tauri 2** desktop AI companion app with a Rust backend. It features 
 | Frontend | Vue 3.5 + TypeScript 5.x, Pinia state management |
 | 3D | Three.js 0.175+ with @pixiv/three-vrm 3.x |
 | Bundler | Vite 6.x |
-| DB | SQLite via rusqlite (bundled) |
+| DB | SQLite (default), PostgreSQL, SQL Server, CassandraDB — via `StorageBackend` trait |
 | LLM | Ollama (local), OpenAI-compatible APIs (cloud), Pollinations (free) |
 
 ## Architecture
@@ -38,7 +38,13 @@ Rust Core Engine (src-tauri/src/)
   ├── brain/ — LLM providers: OllamaAgent, OpenAiClient, FreeProvider, ProviderRotator
   │   ├── model_recommender.rs — RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6 cloud)
   │   └── ollama_agent.rs — semantic_relevant_ids() for RAG ranking
-  ├── memory/ — SQLite store + brain_memory.rs (LLM-powered extract/summarize/search)
+  ├── memory/ — StorageBackend trait + SQLite/Postgres/MSSQL/Cassandra backends
+  │   ├── backend.rs — StorageBackend trait, StorageConfig, StorageError
+  │   ├── store.rs — SQLite MemoryStore (default, implements StorageBackend)
+  │   ├── postgres.rs — PostgreSQL backend (feature: postgres, uses sqlx)
+  │   ├── mssql.rs — SQL Server backend (feature: mssql, uses tiberius)
+  │   ├── cassandra.rs — CassandraDB backend (feature: cassandra, uses scylla)
+  │   └── brain_memory.rs — LLM-powered extract/summarize/search
   ├── identity/ — Ed25519 device identity for P2P linking
   ├── link/ — CRDT sync engine (QUIC/WebSocket)
   └── orchestrator/ — Agent routing with capability gates
