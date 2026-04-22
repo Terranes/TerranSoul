@@ -79,9 +79,13 @@ test('animation: LLM responds with clap, angry, and happy emotions', { timeout: 
   expect(clapResponse.length).toBeGreaterThan(0);
 
   // Stream 1 verified: incremental text was observed mid-stream.
-  // (Some providers reply in a single batched chunk; treat 0 as soft-skip.)
+  // We log the max length for diagnostics. We do NOT hard-fail when it's
+  // zero because some providers reply with a single batched chunk where
+  // the entire body lands after `done:true` — the test still has teeth via
+  // the explicit Stream 2 / Stream 3 / per-emotion assertions below.
   const observedStreamLen = await sawStreamingText;
-  expect(observedStreamLen).toBeGreaterThanOrEqual(0);
+  // eslint-disable-next-line no-console
+  console.log(`[3-streams] stream-1 max streamingText length: ${observedStreamLen}`);
 
   // Stream 3 verified: streaming flag cleared once `done:true` arrived.
   const convAfter = (await getPiniaState(page, 'conversation')) as any;

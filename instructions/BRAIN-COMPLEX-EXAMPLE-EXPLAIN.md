@@ -373,7 +373,7 @@ Frontend consumers:
 |---|---|---|---|
 | Rust streams (no front-end) | `commands::streaming::tests::headless_linux::*` | **Linux** | Drives `run_chat_stream` against an in-process axum SSE mock LLM via Tauri's `MockRuntime`. Asserts on all 3 streams plus persistence. Gated `#[cfg(target_os = "linux")]` per project policy (Linux verifies streams; Windows verifies UI). |
 | Pinia streaming store | `src/stores/streaming.test.ts` | cross-OS | Vitest covers `handleChunk` accumulation, `done:true` clearing, and `handleAnimation` emotion/motion routing. |
-| End-to-end UI | `e2e/animation-flow.spec.ts` | **Windows** (and Linux CI) | Playwright drives the real browser against the live free LLM API; explicitly samples `conversation.streamingText` mid-stream (stream 1), asserts the final `Message` carries sentiment/motion (stream 2) and that `isStreaming` clears (stream 3). |
+| End-to-end UI | `e2e/animation-flow.spec.ts` | **Windows** (primary); also runs on Linux CI as a cross-platform smoke | Playwright is platform-agnostic so both OSes can execute the spec, but only Linux additionally runs the headless Rust tests above. The split is asymmetric: Linux = streams + UI smoke, Windows = UI primary. The spec drives the real browser against the live free LLM API; explicitly samples `conversation.streamingText` mid-stream (stream 1), asserts the final `Message` carries sentiment/motion (stream 2) and that `isStreaming` clears (stream 3). |
 
 ---
 

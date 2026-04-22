@@ -819,9 +819,11 @@ mod tests {
         use tauri::{Listener, Manager};
         use tokio::net::TcpListener;
 
-    /// SSE handler that streams a deterministic OpenAI-compatible response
-    /// containing an `<anim>` block, two text deltas, and an end-of-stream
-    /// `[DONE]` sentinel — exactly the shape Groq/OpenAI/Pollinations emit.
+    /// SSE handler that streams a representative OpenAI-compatible response
+    /// (simplified shape — not byte-for-byte production output) containing
+    /// an `<anim>` block, two text deltas, and an end-of-stream `[DONE]`
+    /// sentinel. This is the same envelope shape Groq/OpenAI/Pollinations
+    /// use for `/v1/chat/completions` streaming.
     async fn mock_openai_sse_handler(
     ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
         let chunks: Vec<&'static str> = vec![
