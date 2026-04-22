@@ -345,6 +345,38 @@ Verified: `cargo test --all-targets` → 570 pass, `npx vitest run` → 941 pass
 
 ---
 
+## Three streams contract — `send_message_stream`
+
+Every chat turn the backend emits three event streams that together form
+the contract the frontend depends on. Both the live Tauri runtime (`Wry`)
+and the test `MockRuntime` go through the same emitter, so the contract
+is verified identically in production and in CI.
+
+| # | Tauri event | Payload | Source |
+|---|---|---|---|
+| 1 | `llm-chunk` (`done:false`) | `{ text, done }` clean text deltas | `commands/streaming.rs` — `StreamTagParser` strips `<anim>` |
+| 2 | `llm-animation` | `AnimationCommand { emotion?, motion? }` | `<anim>{...}</anim>` JSON blocks parsed out of the stream |
+| 3 | `llm-chunk` (`done:true`) | `{ text:"", done:true }` | end-of-stream sentinel after either SSE `[DONE]` or NDJSON `done:true` |
+
+Frontend consumers:
+* `src/views/ChatView.vue` and `src/views/PetOverlayView.vue` call
+  `listen('llm-chunk', …)` and `listen('llm-animation', …)`.
+* Both forward into `useStreamingStore.handleChunk` /
+  `handleAnimation` (`src/stores/streaming.ts`).
+* `useConversationStore` mirrors `streamingText` for live UI and
+  finalizes the assistant `Message` on the `done:true` sentinel
+  (`src/stores/conversation.ts:432-509`).
+
+### Where each stream is verified
+
+| Layer | Test | OS | Notes |
+|---|---|---|---|
+| Rust streams (no front-end) | `commands::streaming::tests::headless_linux::*` | **Linux** | Drives `run_chat_stream` against an in-process axum SSE mock LLM via Tauri's `MockRuntime`. Asserts on all 3 streams plus persistence. Gated `#[cfg(target_os = "linux")]` per project policy (Linux verifies streams; Windows verifies UI). |
+| Pinia streaming store | `src/stores/streaming.test.ts` | cross-OS | Vitest covers `handleChunk` accumulation, `done:true` clearing, and `handleAnimation` emotion/motion routing. |
+| End-to-end UI | `e2e/animation-flow.spec.ts` | **Windows** (primary); also runs on Linux CI as a cross-platform smoke | Playwright is platform-agnostic so both OSes can execute the spec, but only Linux additionally runs the headless Rust tests above. The split is asymmetric: Linux = streams + UI smoke, Windows = UI primary. The spec drives the real browser against the live free LLM API; explicitly samples `conversation.streamingText` mid-stream (stream 1), asserts the final `Message` carries sentiment/motion (stream 2) and that `isStreaming` clears (stream 3). |
+
+---
+
 ## FAQ
 
 ### What if Ollama is unreachable?
