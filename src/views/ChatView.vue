@@ -653,7 +653,7 @@ async function handleSend(message: string) {
     // watcher will handle the idle transition when playback finishes.
     if (!tts.isSpeaking.value) {
       setAvatarState('idle');
-      viewportRef.value?.stopMotion();
+      viewportRef.value?.stopMotion?.();
     }
   }, 6000);
 }
@@ -680,7 +680,7 @@ function skipCurrentDialog() {
   conversationStore.isStreaming = false;
   conversationStore.streamingText = '';
   setAvatarState('idle');
-  viewportRef.value?.stopMotion();
+  viewportRef.value?.stopMotion?.();
 }
 
 async function copyChatHistoryToClipboard() {

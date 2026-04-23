@@ -30,7 +30,7 @@ const MIN_SENTENCE_CHARS = 4;
  * - Regional indicator flag pairs
  * - Keycap sequences (0-9, #, *)
  */
-const EMOJI_RE = /(?:\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*)|(?:[\u{1F1E6}-\u{1F1FF}]{2})|(?:[0-9#*]\uFE0F?\u20E3)/gu;
+const EMOJI_REGEX = /(?:\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*)|(?:[\u{1F1E6}-\u{1F1FF}]{2})|(?:[0-9#*]\uFE0F?\u20E3)/gu;
 
 export interface TtsPlaybackHandle {
   /** Whether TTS audio is currently playing or pending. */
@@ -100,7 +100,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
   }
 
   /** Strip markdown formatting and non-spoken tokens before TTS synthesis. */
-  function sanitiseTtsText(text: string): string {
+  function sanitizeTtsText(text: string): string {
     return text
       .replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove **bold**
       .replace(/\*([^*]+)\*/g, '$1')     // Remove *italic*
@@ -110,7 +110,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       .replace(/^[-*+] /gm, '')          // Remove list bullets
       .replace(/\n{2,}/g, '. ')          // Replace multiple newlines with periods
       .replace(/\n/g, ' ')               // Replace single newlines with spaces
-      .replace(EMOJI_RE, ' ')
+      .replace(EMOJI_REGEX, ' ')
       // Defensive cleanup for stray selectors/joiners left from partial sequences.
       .replace(/[\u200D\uFE0E\uFE0F]/g, '')
       .replace(/\s+([,.;:!?…])/g, '$1')
@@ -120,7 +120,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
 
   /** Enqueue a sentence for synthesis and sequential playback. */
   function enqueueSentence(sentence: string): void {
-    const trimmed = sanitiseTtsText(sentence.trim());
+    const trimmed = sanitizeTtsText(sentence.trim());
     if (trimmed.length < MIN_SENTENCE_CHARS) return;
 
     // Capture generation at enqueue time so this sentence aborts if stop() is called.

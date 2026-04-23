@@ -47,11 +47,21 @@ vi.mock('../renderer/character-animator', () => ({
 }));
 
 import { useChatExpansion } from '../composables/useChatExpansion';
+import { useConversationStore } from '../stores/conversation';
+
+const mockClipboard = {
+  readText: vi.fn().mockResolvedValue(''),
+  writeText: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.stubGlobal('navigator', { clipboard: mockClipboard });
 
 describe('PetOverlayView', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset().mockResolvedValue(undefined);
+    mockClipboard.readText.mockReset().mockResolvedValue('');
+    mockClipboard.writeText.mockReset().mockResolvedValue(undefined);
     // Reset shared module-level chat expansion state to default
     const { setPetChatExpanded, setChatDrawerExpanded } = useChatExpansion();
     setPetChatExpanded(false);
@@ -138,5 +148,51 @@ describe('PetOverlayView', () => {
       global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
     expect(wrapper.find('.pet-bubble').exists()).toBe(false);
+  });
+
+  it('paste fills input with trimmed clipboard text', async () => {
+    mockClipboard.readText.mockResolvedValue('  hello from clipboard  ');
+    const wrapper = mount(PetOverlayView, {
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
+    });
+    const character = wrapper.find('.pet-character');
+    await character.trigger('mousedown', { button: 0, clientX: 100, clientY: 100 });
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100 }));
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll('.pet-chat-action-btn')[1].trigger('click');
+    await new Promise((r) => setTimeout(r, 0));
+    expect((wrapper.find('.pet-chat-input input').element as HTMLInputElement).value).toBe('hello from clipboard');
+  });
+
+  it('paste keeps input unchanged when clipboard is empty', async () => {
+    mockClipboard.readText.mockResolvedValue('   ');
+    const wrapper = mount(PetOverlayView, {
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
+    });
+    const character = wrapper.find('.pet-character');
+    await character.trigger('mousedown', { button: 0, clientX: 100, clientY: 100 });
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100 }));
+    await wrapper.vm.$nextTick();
+    const input = wrapper.find('.pet-chat-input input');
+    await input.setValue('existing');
+    await wrapper.findAll('.pet-chat-action-btn')[1].trigger('click');
+    expect((input.element as HTMLInputElement).value).toBe('existing');
+  });
+
+  it('skip button clears streaming state', async () => {
+    const store = useConversationStore();
+    store.isThinking = true;
+    store.isStreaming = true;
+    store.streamingText = 'stream';
+    const wrapper = mount(PetOverlayView, {
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
+    });
+    const character = wrapper.find('.pet-character');
+    await character.trigger('mousedown', { button: 0, clientX: 100, clientY: 100 });
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100 }));
+    await wrapper.vm.$nextTick();
+    await wrapper.find('.pet-chat-action-btn.skip').trigger('click');
+    expect(store.isStreaming).toBe(false);
+    expect(store.streamingText).toBe('');
   });
 });
