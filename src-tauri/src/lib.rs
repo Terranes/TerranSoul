@@ -18,8 +18,6 @@ pub mod link;
 pub mod memory;
 pub mod messaging;
 pub mod orchestrator;
-pub mod package_manager;
-pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
 pub mod settings;
@@ -69,13 +67,6 @@ use commands::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message,
         subscribe_agent_topic, unsubscribe_agent_topic,
     },
-    package::{
-        get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
-        remove_agent, update_agent, validate_agent_manifest,
-    },
-    registry::{
-        get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
-    },
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions,
         list_pending_commands, set_device_permission,
@@ -117,8 +108,6 @@ pub struct AppState {
     pub link_manager: TokioMutex<link::manager::LinkManager>,
     pub link_server_port: TokioMutex<Option<u16>>,
     pub command_router: TokioMutex<routing::CommandRouter>,
-    pub package_installer: TokioMutex<package_manager::PackageInstaller>,
-    pub package_registry: TokioMutex<Box<dyn package_manager::RegistrySource + Send + Sync>>,
     /// Name of the active Ollama brain model (e.g. "gemma3:4b"), or None for stub agent.
     pub active_brain: Mutex<Option<String>>,
     /// Three-tier brain mode configuration (free API / paid API / local Ollama).
@@ -129,8 +118,6 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// Persistent long-term memory store (SQLite).
     pub memory_store: Mutex<memory::MemoryStore>,
-    /// Running registry server handle and bound port, if started.
-    pub registry_server_handle: TokioMutex<Option<(u16, tokio::task::JoinHandle<()>)>>,
     /// Per-agent sandbox capability consents.
     pub capability_store: TokioMutex<sandbox::CapabilityStore>,
     /// Agent-to-agent message bus for topic-based pub/sub.
@@ -172,8 +159,6 @@ impl AppState {
             link_manager: TokioMutex::new(link::manager::LinkManager::new()),
             link_server_port: TokioMutex::new(None),
             command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
-            package_installer: TokioMutex::new(package_manager::PackageInstaller::new(data_dir)),
-            package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(active_brain),
             brain_mode: Mutex::new(brain_mode),
             ollama_client: reqwest::Client::builder()
@@ -183,7 +168,6 @@ impl AppState {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: data_dir.to_path_buf(),
             memory_store: Mutex::new(memory::MemoryStore::new(data_dir)),
-            registry_server_handle: TokioMutex::new(None),
             capability_store: TokioMutex::new(sandbox::CapabilityStore::new(data_dir)),
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
@@ -215,10 +199,6 @@ impl AppState {
             link_manager: TokioMutex::new(link::manager::LinkManager::new()),
             link_server_port: TokioMutex::new(None),
             command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
-            package_installer: TokioMutex::new(package_manager::PackageInstaller::new(
-                std::path::Path::new("."),
-            )),
-            package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
             active_brain: Mutex::new(None),
             brain_mode: Mutex::new(None),
             ollama_client: reqwest::Client::builder()
@@ -228,7 +208,6 @@ impl AppState {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: std::path::PathBuf::from("."),
             memory_store: Mutex::new(memory::MemoryStore::in_memory()),
-            registry_server_handle: TokioMutex::new(None),
             capability_store: TokioMutex::new(sandbox::CapabilityStore::in_memory()),
             message_bus: TokioMutex::new(messaging::MessageBus::new()),
             window_mode: Mutex::new(commands::window::WindowMode::default()),
@@ -270,13 +249,6 @@ pub fn run() {
             deny_remote_command,
             set_device_permission,
             get_device_permissions,
-            parse_agent_manifest,
-            validate_agent_manifest,
-            get_ipc_protocol_range,
-            install_agent,
-            update_agent,
-            remove_agent,
-            list_installed_agents,
             get_system_info,
             recommend_brain_models,
             check_ollama_status,
@@ -312,10 +284,6 @@ pub fn run() {
             list_relation_types,
             extract_edges_via_brain,
             multi_hop_search_memories,
-            start_registry_server,
-            stop_registry_server,
-            get_registry_server_port,
-            search_agents,
             grant_agent_capability,
             revoke_agent_capability,
             list_agent_capabilities,

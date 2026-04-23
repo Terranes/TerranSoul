@@ -95,28 +95,6 @@ export interface CommandResultResponse {
   payload: unknown;
 }
 
-export type InstallType = 'binary' | 'wasm' | 'sidecar';
-
-export interface ManifestInfo {
-  name: string;
-  version: string;
-  description: string;
-  capabilities: string[];
-  sensitive_capabilities: string[];
-  install_type: InstallType;
-  ipc_protocol_version: number;
-  author: string | null;
-  license: string | null;
-  homepage: string | null;
-}
-
-export interface InstalledAgentInfo {
-  name: string;
-  version: string;
-  description: string;
-  install_path: string;
-}
-
 // ── Brain / Ollama ────────────────────────────────────────────────────────────
 
 export interface SystemInfo {
@@ -209,16 +187,6 @@ export interface EdgeStats {
   by_source: Array<[string, number]>;
   /** Number of memories with at least one incident edge. */
   connected_memories: number;
-}
-
-// ── Registry ──────────────────────────────────────────────────────────────────
-
-export interface AgentSearchResult {
-  name: string;
-  version: string;
-  description: string;
-  capabilities: string[];
-  homepage: string | null;
 }
 
 // ── Sandbox ───────────────────────────────────────────────────────────────────
@@ -359,4 +327,3 @@ export interface TranslationResult {
   target_lang: string;
   confidence: number | null;
 }
-

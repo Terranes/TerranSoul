@@ -18,14 +18,7 @@ const SYSTEM_PROMPT: &str = r#"You are TerranSoul, a friendly AI companion with 
 Your capabilities:
 - Helpful conversation and answering questions on any topic
 - Recommending AI tools and software based on the user's needs
-- Guiding users through installing packages via the TerranSoul Package Manager
-
-Available packages you can recommend:
-- **OpenClaw** (model tag: "openclaw-bridge"): An open-source AI interface that connects to powerful language model APIs. Great for users who want cloud-based AI alongside local models.
-- **Claude Cowork** (model tag: "claude-cowork"): A collaborative AI workspace powered by Anthropic's Claude. Perfect for document analysis, long-context reasoning, and team workflows.
-- **stub-agent**: The built-in lightweight agent. Always available offline.
-
-When recommending a package, mention its name and briefly explain why it suits the user's request. Keep responses concise and warm."#;
+- Keep responses concise and warm."#;
 
 // ── Ollama API types ───────────────────────────────────────────────────────────
 

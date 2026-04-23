@@ -124,7 +124,7 @@ Each path is a quest chain. The free brain auto-configures on first launch (zero
 
 ## Vision
 
-TerranSoul is an open-source **3D virtual assistant + AI package manager** that runs across:
+TerranSoul is an open-source **3D virtual assistant** that runs across:
 
 | Platform | Target |
 |----------|--------|
@@ -196,11 +196,6 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - Device identity + pairing with QR codes
 - Cross-device conversation sync
 - Settings synchronization
-
-### 📦 AI Package Manager
-- Install / update / remove / start / stop agents
-- Package registry with marketplace UI
-- WASM sandbox for agent isolation
 
 ### 🖥️ Window Modes
 - Standard desktop window
@@ -298,11 +293,10 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 │  ├── character, identity, memory                    │
 │  ├── skill-tree, voice, settings                    │
 │  ├── link, sync, messaging, routing                 │
-│  └── package, sandbox, provider-health, window      │
+│  └── sandbox, provider-health, window               │
 ├─────────────────────────────────────────────────────┤
 │  Rust Core Engine                                   │
 │  ├── Brain (Ollama/OpenAI/Anthropic/Free API)       │
-│  ├── AI Package Manager                             │
 │  ├── Agent Orchestrator + Routing                   │
 │  ├── Memory (long-term + short-term)                │
 │  ├── TTS (Edge TTS)                                 │
@@ -376,23 +370,6 @@ interface Message {
 - Chat export (copy to clipboard / download)
 - Streaming timeouts (60s streaming, 30s fallback) to prevent stuck states
 - Persona-based fallback when no LLM brain is configured
-
----
-
-## AI Package Manager
-
-**Goal:** Install/manage AI agents as packages across devices.
-
-**Core commands:**
-
-```bash
-terransoul install <agent-name>
-terransoul update <agent-name>
-terransoul remove <agent-name>
-terransoul list
-terransoul start <agent-name>
-terransoul stop <agent-name>
-```
 
 ---
 
