@@ -354,10 +354,13 @@
           <div
             v-for="agent in displayedAgents"
             :key="agent.name"
-            class="mp-card"
+            :class="['mp-card', { 'mp-card-local-llm': agent.kind === 'local_llm' }]"
           >
             <div class="mp-card-header">
-              <h3 class="mp-agent-name">{{ agent.name }}</h3>
+              <h3 class="mp-agent-name">
+                <span v-if="agent.kind === 'local_llm'" class="mp-kind-icon" title="Local LLM model">🖥</span>
+                {{ agentDisplayName(agent) }}
+              </h3>
               <span class="mp-version">v{{ agent.version }}</span>
             </div>
             <p class="mp-description">{{ agent.description }}</p>
@@ -367,12 +370,31 @@
                 :key="cap"
                 class="mp-cap-badge"
               >{{ cap }}</span>
+              <span v-if="agent.is_top_pick" class="mp-cap-badge mp-cap-rec">⭐ Recommended</span>
+              <span v-if="agent.is_cloud" class="mp-cap-badge mp-cap-cloud">☁️ Cloud</span>
+              <span v-if="agent.required_ram_mb" class="mp-cap-badge mp-cap-ram">
+                {{ formatRam(agent.required_ram_mb) }} RAM
+              </span>
             </div>
             <div v-if="agent.homepage" class="mp-homepage">
               <span class="mp-link-label">🔗 {{ agent.homepage }}</span>
             </div>
             <div class="mp-card-actions">
-              <template v-if="isInstalled(agent.name)">
+              <template v-if="agent.kind === 'local_llm'">
+                <span v-if="isLocalLlmActive(agent)" class="mp-installed-badge">✅ Active brain</span>
+                <span v-else-if="isLocalLlmInstalled(agent)" class="mp-installed-badge">✅ Installed</span>
+                <button
+                  class="btn-primary btn-sm"
+                  :disabled="brainStore.isPulling || !brainStore.ollamaStatus.running || isLocalLlmActive(agent)"
+                  @click="handleLocalLlmAction(agent)"
+                >
+                  {{ localLlmActionLabel(agent) }}
+                </button>
+                <p v-if="!brainStore.ollamaStatus.running" class="mp-card-hint">
+                  ⚠️ Ollama is not running — start it with <code>ollama serve</code>.
+                </p>
+              </template>
+              <template v-else-if="isInstalled(agent.name)">
                 <span class="mp-installed-badge">✅ Installed</span>
                 <button
                   class="btn-secondary btn-sm"
@@ -638,6 +660,59 @@ const displayedAgents = computed(() => {
   return packageStore.searchResults;
 });
 
+// ── Local-LLM marketplace agent helpers ──────────────────────────────────────
+
+/** Pretty display name for an agent card (strips `ollama:` prefix on local-LLM agents). */
+function agentDisplayName(agent: AgentSearchResult): string {
+  if (agent.kind === 'local_llm' && agent.name.startsWith('ollama:')) {
+    return agent.name.slice('ollama:'.length);
+  }
+  return agent.name;
+}
+
+/** Format a RAM size in MB as `"6.0 GB"` / `"512 MB"`. */
+function formatRam(mb: number): string {
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb} MB`;
+}
+
+/** True iff the local-LLM agent's underlying model has been pulled into Ollama. */
+function isLocalLlmInstalled(agent: AgentSearchResult): boolean {
+  if (agent.kind !== 'local_llm' || !agent.model_tag) return false;
+  return brainStore.installedModels.some((m) => m.name === agent.model_tag);
+}
+
+/** True iff the local-LLM agent is the currently active brain. */
+function isLocalLlmActive(agent: AgentSearchResult): boolean {
+  if (agent.kind !== 'local_llm' || !agent.model_tag) return false;
+  const mode = brainStore.brainMode;
+  if (mode?.mode === 'local_ollama' && mode.model === agent.model_tag) return true;
+  return brainStore.activeBrain === agent.model_tag;
+}
+
+function localLlmActionLabel(agent: AgentSearchResult): string {
+  if (brainStore.isPulling) return 'Pulling…';
+  if (isLocalLlmActive(agent)) return '✅ Active';
+  if (isLocalLlmInstalled(agent)) return '🧠 Activate';
+  return '⬇ Install & Activate';
+}
+
+/** Pull (if needed) and activate a local Ollama model. */
+async function handleLocalLlmAction(agent: AgentSearchResult): Promise<void> {
+  if (agent.kind !== 'local_llm' || !agent.model_tag) return;
+  const tag = agent.model_tag;
+  if (!isLocalLlmInstalled(agent)) {
+    const ok = await brainStore.pullModel(tag);
+    if (!ok) return;
+  }
+  await brainStore.setActiveBrain(tag);
+  await brainStore.setBrainMode({ mode: 'local_ollama', model: tag });
+  llmConfirmation.value = {
+    name: agentDisplayName(agent),
+    url: agent.homepage ?? '',
+  };
+}
+
 // Consent dialog state
 const consentAgent = ref<{
   name: string;
@@ -672,6 +747,15 @@ async function refreshAll() {
   await packageStore.searchAgents('');
   await packageStore.fetchInstalledAgents();
   await refreshSandboxStatus();
+  // Refresh local-LLM-related brain state so the marketplace can correctly
+  // mark which Ollama models are already pulled and which is active.
+  await Promise.allSettled([
+    brainStore.checkOllamaStatus(),
+    brainStore.fetchInstalledModels(),
+    brainStore.loadActiveBrain(),
+    brainStore.loadBrainMode(),
+    brainStore.fetchRecommendations(),
+  ]);
 }
 
 async function refreshSandboxStatus() {
@@ -771,6 +855,12 @@ onMounted(async () => {
 .mp-card { padding: 1rem; background: var(--ts-bg-surface); border-radius: 8px; border-left: 4px solid var(--ts-accent-blue); display: flex; flex-direction: column; gap: 0.5rem; transition: background var(--ts-transition-fast); }
 .mp-card:hover { background: var(--ts-bg-elevated); }
 .mp-card-installed { border-left-color: var(--ts-success); }
+.mp-card-local-llm { border-left-color: var(--ts-accent-purple, var(--ts-accent-blue)); }
+.mp-card-hint { font-size: 0.75rem; color: var(--ts-text-muted); margin: 0; }
+.mp-kind-icon { margin-right: 0.25rem; }
+.mp-cap-rec { background: var(--ts-warning-bg, var(--ts-bg-base)); color: var(--ts-warning, var(--ts-text-secondary)); }
+.mp-cap-cloud { background: var(--ts-info-bg, var(--ts-bg-base)); color: var(--ts-info, var(--ts-text-secondary)); }
+.mp-cap-ram { background: var(--ts-bg-base); color: var(--ts-text-muted); }
 .mp-card-header { display: flex; align-items: baseline; gap: 0.5rem; }
 .mp-agent-name { margin: 0; font-size: 1rem; color: var(--ts-text-primary); }
 .mp-version { font-size: 0.75rem; color: var(--ts-text-muted); }

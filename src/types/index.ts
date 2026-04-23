@@ -219,6 +219,23 @@ export interface AgentSearchResult {
   description: string;
   capabilities: string[];
   homepage: string | null;
+  /**
+   * Kind of agent:
+   * - `"package"` — installable via `install_agent` Tauri command
+   * - `"local_llm"` — a local Ollama model installed via `pull_ollama_model`
+   *                  + activated via `set_active_brain`
+   *
+   * Defaults to `"package"` for backwards-compatibility with older backends.
+   */
+  kind?: 'package' | 'local_llm';
+  /** Ollama model tag (e.g. `"gemma3:4b"`) — only set when `kind === "local_llm"`. */
+  model_tag?: string | null;
+  /** Approximate minimum RAM required (MB) — only set for local-LLM agents. */
+  required_ram_mb?: number | null;
+  /** True for the top-recommended local model on this hardware tier. */
+  is_top_pick?: boolean;
+  /** True for cloud-routed Ollama models (no local RAM needed). */
+  is_cloud?: boolean;
 }
 
 // ── Sandbox ───────────────────────────────────────────────────────────────────

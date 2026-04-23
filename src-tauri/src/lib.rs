@@ -173,7 +173,7 @@ impl AppState {
             link_server_port: TokioMutex::new(None),
             command_router: TokioMutex::new(routing::CommandRouter::new("uninitialized")),
             package_installer: TokioMutex::new(package_manager::PackageInstaller::new(data_dir)),
-            package_registry: TokioMutex::new(Box::new(package_manager::MockRegistry::new())),
+            package_registry: TokioMutex::new(Box::new(registry_server::CatalogRegistry::new())),
             active_brain: Mutex::new(active_brain),
             brain_mode: Mutex::new(brain_mode),
             ollama_client: reqwest::Client::builder()
