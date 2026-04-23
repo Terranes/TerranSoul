@@ -404,7 +404,7 @@ pub async fn add_memory_edge(
         dst_id,
         rel_type,
         confidence: confidence.unwrap_or(1.0),
-        source: source.as_deref().map(EdgeSource::from_str).unwrap_or_default(),
+        source: source.as_deref().map(EdgeSource::parse).unwrap_or_default(),
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.add_edge(edge).map_err(|e| e.to_string())
@@ -478,16 +478,11 @@ pub async fn extract_edges_via_brain(
         .clone()
         .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
 
-    // Phase 1 — async LLM extraction (mutex released first).
-    // Phase 2 — bulk insert under the store lock.
-    // We can't hold the MutexGuard across `.await`, so the entire
-    // extract_edges_via_brain helper opens/closes the lock internally.
-    //
-    // Safety: the helper takes `&MemoryStore` synchronously; we therefore run
-    // it on a blocking task to avoid blocking the Tauri runtime.
+    // The store mutex must not be held across `.await`, so we snapshot the
+    // memories under a short-lived lock, do all LLM calls without the lock,
+    // and re-acquire it briefly to insert each batch of edges.
     let chunk = chunk_size.unwrap_or(25);
 
-    // Snapshot memories without holding the lock across .await.
     let entries: Vec<MemoryEntry> = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         store.get_all().map_err(|e| e.to_string())?

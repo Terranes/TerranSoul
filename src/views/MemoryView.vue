@@ -302,10 +302,15 @@ function onNodeSelect(id: number) {
 async function handleExtractEdges() {
   isActing.value = true;
   feedback.value = '';
+  store.error = null;
   const count = await store.extractEdgesViaBrain();
-  feedback.value = count > 0
-    ? `🔗 ${count} new edge${count === 1 ? '' : 's'} extracted by the brain.`
-    : '🤔 No new edges proposed (or brain unreachable).';
+  if (count > 0) {
+    feedback.value = `🔗 ${count} new edge${count === 1 ? '' : 's'} extracted by the brain.`;
+  } else if (store.error) {
+    feedback.value = `❌ Edge extraction failed: ${store.error}`;
+  } else {
+    feedback.value = '🤔 The brain found no new edges to propose.';
+  }
   await store.getEdgeStats();
   isActing.value = false;
   setTimeout(() => (feedback.value = ''), 4000);

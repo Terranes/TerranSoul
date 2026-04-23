@@ -221,7 +221,7 @@ export const useMemoryStore = defineStore('memory', () => {
         confidence,
         source,
       });
-      // Replace if this (src,dst,rel_type) already in cache, else prepend.
+      // Replace if this (src,dst,rel_type) already in cache, else append.
       const i = edges.value.findIndex(
         (e) => e.src_id === edge.src_id && e.dst_id === edge.dst_id && e.rel_type === edge.rel_type,
       );

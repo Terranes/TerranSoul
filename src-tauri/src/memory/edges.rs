@@ -72,8 +72,9 @@ impl EdgeSource {
         }
     }
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Self {
+    /// Parse a string label back into an `EdgeSource`. Unknown strings fall
+    /// back to `User` (the most conservative provenance).
+    pub fn parse(s: &str) -> Self {
         match s {
             "llm" => EdgeSource::Llm,
             "auto" => EdgeSource::Auto,
@@ -170,12 +171,11 @@ impl MemoryStore {
         let now = now_ms();
 
         // Upsert-style insert: if the unique constraint fires, fetch the row.
-        let res = self.conn().execute(
+        self.conn().execute(
             "INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![e.src_id, e.dst_id, rel, confidence, source, now],
         )?;
-        let _ = res;
         // Fetch (whether newly inserted or already-present).
         self.get_edge_unique(e.src_id, e.dst_id, &rel)
     }
@@ -479,19 +479,10 @@ fn row_to_edge(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEdge> {
         dst_id: row.get(2)?,
         rel_type: row.get(3)?,
         confidence: row.get(4)?,
-        source: EdgeSource::from_str(&row.get::<_, String>(5).unwrap_or_default()),
+        source: EdgeSource::parse(&row.get::<_, String>(5).unwrap_or_default()),
         created_at: row.get(6)?,
     })
 }
-
-// `MemoryStore` doesn't expose its connection, so we add a tiny accessor
-// inside this module via an `inherent impl` extension. The connection field
-// is private so we go through `with_conn` if available — but since this file
-// lives in the same crate as `store.rs`, we add a lightweight pub(crate)
-// accessor on MemoryStore in `store.rs`. To avoid touching the public surface
-// we re-export it here.
-//
-// (The `conn()` method below is provided in `store.rs` as `pub(crate) fn conn`.)
 
 // ── LLM-extraction helpers (pure functions, no DB) ────────────────────────────
 

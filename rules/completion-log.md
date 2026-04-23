@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)](#chunk-16--entity-relationship-graph-v5-schema-typeddirectional-edges-multi-hop-rag) | 2026-04-23 |
 | [Chunk 1.5 — Multi-Agent Roster + External CLI Workers + Temporal-style Durable Workflows](#chunk-15--multi-agent-roster--external-cli-workers--temporal-style-durable-workflows) | 2026-04-23 |
 | [Chunk 1.4 — Podman + Docker Desktop Dual Container Runtime](#chunk-14--podman--docker-desktop-dual-container-runtime) | 2026-04-23 |
 | [Chunk 1.2 — Mac & Linux CI Matrix + Platform Docs](#chunk-12--mac--linux-ci-matrix--platform-docs) | 2026-04-23 |
@@ -86,6 +87,124 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)
+
+**Date:** 2026-04-23
+
+**Goal.** Promote the memory layer from a tag-based co-occurrence graph to a
+proper knowledge graph with typed, directional edges between memories, plus a
+multi-hop RAG path that walks the graph from each direct hit. This was
+documented as "Future: Entity-Relationship Graph" in
+`docs/brain-advanced-design.md` §6 and is now shipped end-to-end (DB → Rust
+core → Tauri commands → Pinia store → Cytoscape UI).
+
+### What shipped
+
+**Schema (V5 migration — `src-tauri/src/memory/migrations.rs`).**
+`memory_edges (id, src_id, dst_id, rel_type, confidence, source, created_at)`
+with `ON DELETE CASCADE` to both endpoints, `UNIQUE(src_id, dst_id, rel_type)`
+for idempotent inserts, and `idx_edges_src` / `idx_edges_dst` /
+`idx_edges_type` for traversal speed. `PRAGMA foreign_keys=ON` is now
+enforced at every SQLite connection so cascade actually fires (V4 didn't need
+it; V5 does).
+
+**Rust core (`src-tauri/src/memory/edges.rs`, ~620 LOC).**
+- `MemoryEdge`, `NewMemoryEdge`, `EdgeSource` (`user`/`llm`/`auto`),
+  `EdgeDirection` (`in`/`out`/`both`), `EdgeStats` types with serde + clamping
+  helpers.
+- `MemoryStore::add_edge` / `add_edges_batch` / `list_edges` /
+  `get_edges_for(id, direction)` / `delete_edge` / `delete_edges_for_memory` /
+  `edge_stats` — all implemented as inherent methods using a new
+  `pub(crate) fn conn(&self) -> &Connection` accessor on `MemoryStore`.
+- Cycle-safe BFS `traverse_from(start_id, max_hops, rel_filter)` walks edges
+  in **both** directions (a knowledge-graph hop is undirected for retrieval),
+  excludes the start node from the result, and supports an optional relation
+  whitelist.
+- `hybrid_search_with_graph(query, query_emb, limit, hops)` runs the existing
+  `hybrid_search` for seed pool, then walks `hops` deep from each seed and
+  re-ranks with `seed_score / (hop + 1)`, deduping by id (keeping the highest
+  score). Falls back to plain hybrid when `hops == 0` or no direct hits.
+- `parse_llm_edges(text, known_ids)` is a forgiving JSON-line parser that
+  drops self-loops, unknown ids, and clamps confidence to `[0, 1]`.
+- 17 curated relation types (`COMMON_RELATION_TYPES`) + `normalise_rel_type`
+  (lowercase, spaces → `_`, ASCII alnum + `_` only).
+
+**LLM extraction (`src-tauri/src/brain/ollama_agent.rs` +
+`src-tauri/src/memory/brain_memory.rs`).**
+- `OllamaAgent::propose_edges(memories_block) -> String` — prompt-engineered
+  to reply with one JSON object per line or the literal `NONE`. Reuses the
+  existing private `call` so we don't expose `ChatMessage` outside the brain
+  module.
+- `extract_edges_via_brain(model, store, chunk_size)` — chunks memories
+  (default 25, clamped 2..=50), calls `propose_edges`, parses, and inserts via
+  `add_edges_batch`. Returns count of new edges actually inserted.
+
+**Tauri commands (`src-tauri/src/commands/memory.rs` +
+`src-tauri/src/lib.rs`).**
+- `add_memory_edge(srcId, dstId, relType, confidence?, source?)`
+- `delete_memory_edge(edgeId)`
+- `list_memory_edges()`
+- `get_edges_for_memory(memoryId, direction?)`
+- `get_edge_stats()`
+- `list_relation_types()` — returns the curated vocabulary
+- `extract_edges_via_brain(chunkSize?)` — async; releases store lock across
+  every LLM call so the UI never freezes
+- `multi_hop_search_memories(query, limit?, hops?)` — `hops` hard-capped at 3
+
+**Frontend (`src/types/index.ts`, `src/stores/memory.ts`,
+`src/components/MemoryGraph.vue`, `src/views/MemoryView.vue`).**
+- New TS types: `MemoryEdge`, `EdgeStats`, `EdgeSource`, `EdgeDirection`.
+- `useMemoryStore` extended with `edges`, `edgeStats`, `fetchEdges`, `addEdge`
+  (upsert-style), `deleteEdge`, `getEdgesForMemory`, `getEdgeStats`,
+  `listRelationTypes`, `extractEdgesViaBrain`, `multiHopSearch`.
+- `MemoryGraph.vue` — three rendering modes (`typed` | `tag` | `both`),
+  directional target arrows, per-relation-type stable color hashing, edge
+  labels with `text-rotation: autorotate`, and edge selection (`select-edge`
+  emit). Tag overlays render faded so typed edges remain visually dominant.
+- `MemoryView.vue` — toolbar with edge-mode dropdown, "🔗 Extract edges"
+  brain action, edge counter, and per-node edge list with delete buttons in
+  the node detail panel.
+
+### Tests added
+
+- **Rust (14 new tests in `memory::edges::tests`):** add_edge round-trip,
+  self-loop rejection, idempotent insert, rel_type normalisation, batch with
+  duplicate + self-loop skip, **cascade delete on memory removal**, directional
+  `get_edges_for`, BFS hop limits + cycle handling, rel-type filter, edge
+  stats aggregation, LLM JSON parser invalid-line handling, **multi-hop graph
+  re-ranking pulling in keyword-disjoint neighbours**, V5 migration
+  up/down/up round-trip, format truncation.
+- **Frontend (6 new tests in `src/stores/memory.test.ts`):** `fetchEdges`,
+  `addEdge` upsert behavior, `deleteEdge` cache update, `extractEdgesViaBrain`
+  refresh, `multiHopSearch` parameter forwarding, `getEdgeStats` cache.
+
+### Validation
+
+- `cargo clippy --all-targets -- -D warnings` ✅ (0 warnings)
+- `cargo test --all-targets` ✅ **654 passed** (640 baseline + 14 new)
+- `npm run build` ✅
+- `npm run test` ✅ **982 passed** (976 baseline + 6 new)
+
+### Why this matters
+
+The "Future: Entity-Relationship Graph" section of the brain design doc is
+now retired — the V5 schema, multi-hop search, and LLM-powered edge
+extraction are all live. This unblocks the queries Cognee was praised for in
+§13.4 ("Who are all the clients connected to the Smith case, and what are
+their communication preferences?") and gives the UI a true knowledge-graph
+visualisation instead of tag overlap.
+
+Documents updated alongside the code:
+- `docs/brain-advanced-design.md` — §6 promoted from "Future" to
+  "Implemented (V5)"; §8 schema split into Shipped V5 / Proposed V6/V7;
+  §11 ops table gained Extract Edges + Multi-Hop sections; §13 Mem0 row +
+  cross-framework knowledge-graph row updated; §16 Phase 3 marked shipped;
+  §13.4 Cognee paragraph rewritten in present tense.
+- `rules/milestones.md` — added Chunk 1.6 row (status `done`).
+- `rules/completion-log.md` — this entry.
 
 ---
 

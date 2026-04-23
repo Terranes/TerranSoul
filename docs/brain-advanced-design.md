@@ -25,7 +25,7 @@
 5. [Decay & Garbage Collection](#decay--garbage-collection)
 6. [Knowledge Graph Vision](#knowledge-graph-vision)
    - [Current: Tag-Based Graph](#current-tag-based-graph)
-   - [Future: Entity-Relationship Graph](#future-entity-relationship-graph)
+   - [Implemented (V5): Entity-Relationship Graph](#implemented-v5-entity-relationship-graph)
    - [Graph Traversal for Multi-Hop RAG](#graph-traversal-for-multi-hop-rag)
 7. [Visualization Layers](#visualization-layers)
    - [Layer 1: In-App (Cytoscape.js)](#layer-1-in-app-cytoscapejs)
@@ -628,13 +628,14 @@ The in-app MemoryGraph (Cytoscape.js) connects memories that share tags:
 - Tags must be manually assigned or extracted — no automatic linking
 - Clusters form around common tags, not around meaning
 
-### Future: Entity-Relationship Graph
+### Implemented (V5): Entity-Relationship Graph
 
-A proper knowledge graph with typed, directional edges:
+A proper knowledge graph with typed, directional edges — shipped in the V5
+schema (April 2026).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│              PROPOSED ENTITY-RELATIONSHIP GRAPH                      │
+│                    ENTITY-RELATIONSHIP GRAPH (V5)                    │
 │                                                                     │
 │              ┌──────────┐                                            │
 │              │  Alex    │                                            │
@@ -658,55 +659,76 @@ A proper knowledge graph with typed, directional edges:
 │     └───────────┘ └────────┘ └───────────┘                          │
 │                                                                     │
 │  SCHEMA:                                                             │
-│  • Nodes: memories + extracted entities                              │
-│  • Edges: typed relationships with direction                         │
+│  • Nodes: existing `memories` rows                                   │
+│  • Edges: typed relationships with direction (`memory_edges`)        │
 │  • Edge types: contains, cites, governs, related_to, mother_of,    │
-│                studies, prefers, contradicts, supersedes, etc.       │
-│  • Storage: edges table (src_id, dst_id, rel_type, confidence)      │
-│  • Traversal: multi-hop queries via graph walk                       │
+│                studies, prefers, contradicts, supersedes, …          │
+│  • Provenance: `source` ∈ {user, llm, auto}                         │
+│  • Idempotency: UNIQUE(src_id, dst_id, rel_type)                    │
+│  • Cascade: ON DELETE CASCADE keeps the graph consistent             │
+│  • Traversal: cycle-safe BFS, optional rel_type filter               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Proposed `memory_edges` table (V6 migration):**
+**Shipped `memory_edges` table (V5 migration):**
 
 ```sql
 CREATE TABLE memory_edges (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    src_id    INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    dst_id    INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    rel_type  TEXT NOT NULL,          -- 'contains', 'cites', 'related_to', etc.
-    confidence REAL NOT NULL DEFAULT 1.0,  -- LLM extraction confidence
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    dst_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    rel_type   TEXT    NOT NULL,         -- 'contains', 'cites', 'related_to', …
+    confidence REAL    NOT NULL DEFAULT 1.0,  -- LLM extraction confidence
+    source     TEXT    NOT NULL DEFAULT 'user',  -- user | llm | auto
     created_at INTEGER NOT NULL,
     UNIQUE(src_id, dst_id, rel_type)
 );
 
-CREATE INDEX idx_edges_src ON memory_edges(src_id);
-CREATE INDEX idx_edges_dst ON memory_edges(dst_id);
+CREATE INDEX idx_edges_src  ON memory_edges(src_id);
+CREATE INDEX idx_edges_dst  ON memory_edges(dst_id);
 CREATE INDEX idx_edges_type ON memory_edges(rel_type);
+-- PRAGMA foreign_keys=ON enforced at connection open.
 ```
+
+**Code surface (Rust):**
+
+| Symbol | Location |
+|---|---|
+| `MemoryEdge` / `NewMemoryEdge` / `EdgeSource` / `EdgeDirection` | `src-tauri/src/memory/edges.rs` |
+| `MemoryStore::add_edge` / `add_edges_batch` / `list_edges` | `edges.rs` |
+| `MemoryStore::get_edges_for(id, EdgeDirection)` | `edges.rs` |
+| `MemoryStore::delete_edge` / `delete_edges_for_memory` | `edges.rs` |
+| `MemoryStore::edge_stats() -> EdgeStats` | `edges.rs` |
+| `MemoryStore::traverse_from(id, max_hops, rel_filter)` | `edges.rs` |
+| `MemoryStore::hybrid_search_with_graph(query, emb, limit, hops)` | `edges.rs` |
+| `OllamaAgent::propose_edges(memories_block) -> String` | `brain/ollama_agent.rs` |
+| `parse_llm_edges(text, known_ids)` | `edges.rs` |
 
 ### Graph Traversal for Multi-Hop RAG
 
 ```
 Query: "What rules apply to Alex's area of study?"
 
-Step 1 — Vector search:
-  → "Alex studies Family Law"  (direct hit)
+Step 1 — Hybrid search (vector + keyword + recency + importance):
+  → "Alex studies Family Law"  (direct hit, score 1.0)
 
-Step 2 — Graph traversal (1 hop from "Family Law"):
+Step 2 — Graph traversal (1 hop from each direct hit):
   → "Rule 14.3: 30-day notice"      (Family Law --contains--> Rule 14.3)
   → "Filing deadline: 30 days"       (Family Law --governs--> Filing Deadline)
   → "Illinois Statute 750-5/602"     (Family Law --cites--> Statute)
 
 Step 3 — Merge & re-rank:
-  → Combine vector results + graph results
-  → De-duplicate by memory id
-  → Re-score with hybrid formula
-  → Return top 5
+  → Each graph hit scored as `seed_score / (hop + 1)`
+  → De-duplicate by memory id, keeping the highest score
+  → Sort by composite score, truncate to `limit`
 
-This finds memories that are TOPICALLY connected even if they
-don't share exact keywords or high vector similarity with the query.
+This finds memories that are TOPICALLY connected even if they don't share
+exact keywords or high vector similarity with the query.
 ```
+
+Implemented as `MemoryStore::hybrid_search_with_graph` and exposed via the
+`multi_hop_search_memories` Tauri command. `hops` is hard-capped at 3 by the
+command layer to prevent runaway expansion.
 
 ---
 
@@ -922,13 +944,14 @@ CREATE TABLE schema_version (
 
 ### Proposed Schema Changes
 
-**V5 — Category column:**
+**V6 — Category column (proposed):**
 ```sql
 ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general';
 CREATE INDEX idx_memories_category ON memories(category);
 ```
 
-**V6 — Entity-relationship edges:**
+### Shipped V5 — Entity-relationship edges
+
 ```sql
 CREATE TABLE memory_edges (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -936,6 +959,7 @@ CREATE TABLE memory_edges (
     dst_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
     rel_type   TEXT    NOT NULL,
     confidence REAL    NOT NULL DEFAULT 1.0,
+    source     TEXT    NOT NULL DEFAULT 'user',  -- user | llm | auto
     created_at INTEGER NOT NULL,
     UNIQUE(src_id, dst_id, rel_type)
 );
@@ -943,9 +967,10 @@ CREATE TABLE memory_edges (
 CREATE INDEX idx_edges_src  ON memory_edges(src_id);
 CREATE INDEX idx_edges_dst  ON memory_edges(dst_id);
 CREATE INDEX idx_edges_type ON memory_edges(rel_type);
+-- PRAGMA foreign_keys=ON enforced at connection open.
 ```
 
-**V7 — Obsidian sync metadata:**
+**V7 — Obsidian sync metadata (proposed):**
 ```sql
 ALTER TABLE memories ADD COLUMN obsidian_path TEXT;      -- vault-relative .md path
 ALTER TABLE memories ADD COLUMN last_exported INTEGER;   -- Unix timestamp
@@ -1137,12 +1162,32 @@ durable-workflow replay semantics.
 │  │ Trigger: Manual button or auto when Ollama first detected   │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 7. EXTRACT EDGES (V5 / Entity-Relationship Graph)           │   │
+│  │                                                              │   │
+│  │ Input:  All memories (chunked, default 25 per call)         │   │
+│  │ Method: LLM proposes JSON-line edges with rel_type +        │   │
+│  │         confidence; parser drops self-loops, unknown ids,   │   │
+│  │         and clamps confidence to [0, 1].                     │   │
+│  │ Output: Count of new edges inserted                         │   │
+│  │ Trigger: 🔗 Extract edges button or `extract_edges_via_brain` │  │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 8. MULTI-HOP HYBRID SEARCH (V5)                             │   │
+│  │                                                              │   │
+│  │ Input:  Query text + optional embedding + hops (≤ 3)        │   │
+│  │ Method: hybrid_search → BFS each hit `hops` deep →          │   │
+│  │         re-rank with `seed_score / (hop + 1)`                │   │
+│  │ Output: Top-N memories (vector hits + graph neighbours)     │   │
+│  │ Trigger: `multi_hop_search_memories` Tauri command          │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
 │  Future operations:                                                 │
 │  • auto_categorize() — LLM assigns category from taxonomy         │
 │  • extract_entities() — LLM identifies people, places, concepts   │
 │  • detect_conflicts() — LLM finds contradicting memories          │
 │  • merge_duplicates() — LLM combines near-duplicate content       │
-│  • generate_edges() — LLM proposes entity-relationship links      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1300,7 +1345,7 @@ view rather than per-project deep-dives.
 | Storage backend | Embedded SQLite + BLOB embeddings | Bring-your-own (FAISS, Chroma, pgvector, …) | Bring-your-own vector DB | Elasticsearch + MinIO + MySQL + Redis | Local filesystem (Markdown/JSON blocks) + optional vector index | Repo-scoped index (cloud-hosted) |
 | Embedding model | Ollama `nomic-embed-text` (local, default) | Any provider (OpenAI/HF/Ollama/…) | Any provider | Built-in + pluggable | Pluggable (BGE / OpenAI / local) | Provider-managed |
 | Retrieval strategy | Hybrid: cosine ANN + keyword + tag/recency boost | Composable (vector / BM25 / hybrid / multi-query / reranker) | Memory hierarchy + agent-tool retrieval | Layout-aware chunking + reranking + citation | Tag/link graph + vector search inside notebooks | Code-symbol-aware retrieval over repo graph |
-| Knowledge graph | Tag graph today; entity graph on roadmap | LangGraph (separate package) | First-class graph memory | Document → chunk → citation graph | Bidirectional block links + tag graph (native) | AST + import/call graph over repo |
+| Knowledge graph | Typed entity-relationship graph (V5: directional `memory_edges`, multi-hop traversal) | LangGraph (separate package) | First-class graph memory | Document → chunk → citation graph | Bidirectional block links + tag graph (native) | AST + import/call graph over repo |
 | Memory model | Three tiers: short-term, working, long-term + decay/GC | Conversation/buffer/summary memories (opt-in) | Hierarchical episodic + semantic memory across agents | None — stateless retrieval per query | Notebook history (no LLM-managed memory) | Session-scoped repo cache |
 | Multi-modal ingest | Text via external scripts; images via vision tool | Connectors for 100+ sources (community) | Tool-driven ingestion | Native PDF/DOCX/PPTX/image w/ layout parsing | Markdown / PDF / images attached to blocks | Source code (most languages) |
 | Conflict / decay handling | Hash-based staleness + LLM conflict resolver + decay scoring | None (manual) | LLM-mediated reconciliation between agents | Document versioning | Manual edits; Git-style history per block | Re-index on commit |
@@ -1322,11 +1367,11 @@ view rather than per-project deep-dives.
 | Memory storage | External vector DB (Qdrant/Chroma) | Embedded SQLite — zero infra |
 | Entity extraction | Automatic via LLM | Manual tags + LLM-assisted extract |
 | Memory levels | User / Session / Agent | Short / Working / Long |
-| Graph relationships | Built-in | Tag-based (entity graph planned) |
+| Graph relationships | Built-in | Typed entity-relationship graph (V5: directional edges, multi-hop search) |
 | Conflict resolution | LLM-powered automatic | Hash-based staleness + LLM conflict |
 | Deployment | Requires server + vector DB | Fully embedded, works offline |
 
-**What TerranSoul borrows**: LLM-powered memory extraction and conflict detection. Mem0's graph memory layer is a future upgrade candidate.
+**What TerranSoul borrows**: LLM-powered memory extraction and conflict detection. Mem0's graph memory layer is now mirrored in TerranSoul's V5 entity-relationship graph (`memory_edges` table + `multi_hop_search_memories` command).
 
 ### LlamaIndex (48.8k stars)
 
@@ -1375,7 +1420,7 @@ view rather than per-project deep-dives.
 | Entity extraction | Automatic | LLM-assisted ("Extract from session") |
 | Deployment | Python library | Rust native binary |
 
-**Future direction**: Cognee's graph-based approach would benefit TerranSoul for complex queries like "Who are all the clients connected to the Smith case, and what are their communication preferences?"
+**Status (V5, April 2026)**: Cognee's graph-based approach now lives in TerranSoul's V5 schema. The shipped `memory_edges` table + `multi_hop_search_memories` command answer exactly that class of multi-hop query: a vector hit on "Smith case" expands one hop along `mentions` / `cites` / `governs` edges to surface every connected client and their communication-preference memory.
 
 ### Why TerranSoul Doesn't Use an External RAG Framework
 
@@ -1565,9 +1610,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 | Search latency | <5ms (hybrid) | <10ms at 1M entries (ANN) |
 | Embedding model | nomic-embed-text (768-dim) | Same (good quality/size ratio) |
 | RAG quality | 60% (no embed) to 100% (Ollama) | 100% via cloud embed API |
-| Visualization | Cytoscape.js (in-app only) | + Obsidian vault export |
+| Visualization | Cytoscape.js with typed graph edges (V5) | + Obsidian vault export |
 | Categories | 4 types (flat) | 8 categories (hierarchical) |
-| Relationships | Tag-based edges | Entity-relationship graph |
+| Relationships | Typed entity-relationship graph (V5) | Conflict detection + temporal links |
 
 ### Phase Plan
 
@@ -1591,13 +1636,13 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ○ Tag prefix convention (personal:*, domain:*, etc.)          │
 │  └── ○ Obsidian vault export (one-way)                             │
 │                                                                     │
-│  PHASE 3 — Entity Graph                                             │
-│  ├── ○ memory_edges table (V6 migration)                           │
-│  ├── ○ LLM-powered entity extraction                               │
-│  ├── ○ Relationship type taxonomy                                  │
-│  ├── ○ Multi-hop RAG via graph traversal                           │
-│  ├── ○ Conflict detection between connected memories               │
-│  └── ○ Graph-enhanced Cytoscape visualization                      │
+│  PHASE 3 — Entity Graph (✅ Shipped — V5 schema)                    │
+│  ├── ✓ memory_edges table (V5 migration, FK cascade)               │
+│  ├── ✓ LLM-powered edge extraction (extract_edges_via_brain)       │
+│  ├── ✓ Relationship type taxonomy (17 curated types + free-form)   │
+│  ├── ✓ Multi-hop RAG via graph traversal (hybrid_search_with_graph)│
+│  ├── ✓ Graph-enhanced Cytoscape visualization (typed/directional)  │
+│  └── ○ Conflict detection between connected memories               │
 │                                                                     │
 │  PHASE 4 — Scale                                                    │
 │  ├── ○ ANN index (usearch crate) for >1M memories                 │
@@ -1702,7 +1747,7 @@ Quick reference for all diagrams in this document:
 | §5 | Decay curve | Exponential forgetting over 5 weeks |
 | §5 | Category decay table | Proposed per-category decay rates |
 | §6 | Tag-based graph | Current Cytoscape model |
-| §6 | Entity-relationship graph | Future graph with typed edges |
+| §6 | Entity-relationship graph | Shipped V5 graph with typed edges |
 | §6 | Multi-hop RAG | Graph traversal for related memories |
 | §7 | In-app graph | Cytoscape.js with filters |
 | §7 | Obsidian vault structure | Folder tree + Markdown format |
