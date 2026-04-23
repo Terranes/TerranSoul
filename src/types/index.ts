@@ -186,6 +186,31 @@ export interface NewMemory {
   memory_type: MemoryType;
 }
 
+// ── Entity-Relationship Graph (V5) ───────────────────────────────────────────
+
+export type EdgeSource = 'user' | 'llm' | 'auto';
+export type EdgeDirection = 'in' | 'out' | 'both';
+
+/** Typed, directional edge between two memories. See `memory_edges` (V5). */
+export interface MemoryEdge {
+  id: number;
+  src_id: number;
+  dst_id: number;
+  rel_type: string;
+  /** LLM-reported confidence in [0, 1]. User edges are 1.0. */
+  confidence: number;
+  source: EdgeSource;
+  created_at: number;
+}
+
+export interface EdgeStats {
+  total_edges: number;
+  by_rel_type: Array<[string, number]>;
+  by_source: Array<[string, number]>;
+  /** Number of memories with at least one incident edge. */
+  connected_memories: number;
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 
 export interface AgentSearchResult {

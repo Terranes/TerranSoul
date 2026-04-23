@@ -61,7 +61,34 @@
 
     <!-- ── Graph tab ── -->
     <div v-if="activeTab === 'Graph'" class="mv-graph-panel">
-      <MemoryGraph :memories="store.memories" @select="onNodeSelect" />
+      <div class="mv-graph-main">
+        <div class="mv-graph-toolbar">
+          <label class="mv-graph-toggle">
+            <span>Edges:</span>
+            <select v-model="edgeMode" class="mv-edge-mode">
+              <option value="typed">Typed (knowledge graph)</option>
+              <option value="tag">Tag co-occurrence</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
+          <button
+            class="btn-secondary"
+            @click="handleExtractEdges"
+            :disabled="isActing || store.memories.length < 2"
+            :title="store.memories.length < 2 ? 'Add at least 2 memories first' : 'Use the brain to propose edges'"
+          >🔗 Extract edges</button>
+          <span v-if="store.edgeStats" class="mv-edge-counter">
+            {{ store.edgeStats.total_edges }} edge{{ store.edgeStats.total_edges === 1 ? '' : 's' }}
+            · {{ store.edgeStats.connected_memories }} connected
+          </span>
+        </div>
+        <MemoryGraph
+          :memories="store.memories"
+          :edges="store.edges"
+          :edge-mode="edgeMode"
+          @select="onNodeSelect"
+        />
+      </div>
       <aside v-if="selectedEntry" class="mv-node-detail">
         <h3>{{ selectedEntry.content }}</h3>
         <p><strong>Type:</strong> {{ selectedEntry.memory_type }}</p>
@@ -70,6 +97,19 @@
         <p><strong>Importance:</strong> {{ '★'.repeat(selectedEntry.importance) }}</p>
         <p><strong>Decay:</strong> {{ (selectedEntry.decay_score * 100).toFixed(0) }}%</p>
         <p><strong>Accessed:</strong> {{ selectedEntry.access_count }}×</p>
+        <div v-if="selectedEdges.length" class="mv-node-edges">
+          <strong>Edges ({{ selectedEdges.length }}):</strong>
+          <ul>
+            <li v-for="e in selectedEdges" :key="e.id" class="mv-node-edge">
+              <span class="mv-rel-pill">{{ e.rel_type }}</span>
+              <span class="mv-edge-direction">
+                {{ e.src_id === selectedEntry.id ? '→' : '←' }}
+                #{{ e.src_id === selectedEntry.id ? e.dst_id : e.src_id }}
+              </span>
+              <button class="mv-edge-del" title="Delete edge" @click="handleDeleteEdge(e.id)">×</button>
+            </li>
+          </ul>
+        </div>
         <div class="mv-node-btns">
           <button class="btn-secondary" @click="startEdit(selectedEntry)">✏ Edit</button>
           <button class="btn-danger" @click="confirmDelete(selectedEntry.id)">🗑 Delete</button>
@@ -247,8 +287,38 @@ async function loadShortTerm() {
 
 // Graph node selection
 const selectedEntry = ref<MemoryEntry | null>(null);
+const edgeMode = ref<'typed' | 'tag' | 'both'>('typed');
+
+const selectedEdges = computed(() => {
+  if (!selectedEntry.value) return [];
+  const id = selectedEntry.value.id;
+  return store.edges.filter((e) => e.src_id === id || e.dst_id === id);
+});
+
 function onNodeSelect(id: number) {
   selectedEntry.value = store.memories.find((m) => m.id === id) ?? null;
+}
+
+async function handleExtractEdges() {
+  isActing.value = true;
+  feedback.value = '';
+  store.error = null;
+  const count = await store.extractEdgesViaBrain();
+  if (count > 0) {
+    feedback.value = `🔗 ${count} new edge${count === 1 ? '' : 's'} extracted by the brain.`;
+  } else if (store.error) {
+    feedback.value = `❌ Edge extraction failed: ${store.error}`;
+  } else {
+    feedback.value = '🤔 The brain found no new edges to propose.';
+  }
+  await store.getEdgeStats();
+  isActing.value = false;
+  setTimeout(() => (feedback.value = ''), 4000);
+}
+
+async function handleDeleteEdge(edgeId: number) {
+  await store.deleteEdge(edgeId);
+  await store.getEdgeStats();
 }
 
 // Add / Edit modal
@@ -345,7 +415,7 @@ function formatTokens(n: number) {
 
 onMounted(async () => {
   await store.fetchAll();
-  await Promise.all([loadShortTerm(), store.getStats()]);
+  await Promise.all([loadShortTerm(), store.getStats(), store.fetchEdges(), store.getEdgeStats()]);
 });
 </script>
 
@@ -374,6 +444,19 @@ onMounted(async () => {
 .mv-tab.active { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); }
 .mv-graph-panel { display: flex; flex: 1; gap: 0.75rem; overflow: hidden; min-height: 0; }
 .mv-graph-panel > :first-child { flex: 1; min-width: 0; }
+.mv-graph-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.mv-graph-toolbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.4rem 0; }
+.mv-graph-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
+.mv-edge-mode { background: var(--ts-bg-surface); color: var(--ts-text-primary); border: 1px solid var(--ts-border); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: var(--ts-text-sm); }
+.mv-edge-counter { font-size: var(--ts-text-sm); color: var(--ts-text-muted); }
+.mv-graph-main > .memory-graph { flex: 1; }
+.mv-node-edges { display: flex; flex-direction: column; gap: 0.3rem; padding-top: 0.4rem; border-top: 1px solid var(--ts-border); }
+.mv-node-edges ul { list-style: none; padding: 0; margin: 0.3rem 0 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.mv-node-edge { display: flex; align-items: center; gap: 0.4rem; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
+.mv-rel-pill { background: var(--ts-bg-hover); color: var(--ts-text-primary); padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.7rem; }
+.mv-edge-direction { color: var(--ts-text-muted); font-family: monospace; }
+.mv-edge-del { background: none; border: none; color: var(--ts-text-muted); cursor: pointer; padding: 0 0.25rem; line-height: 1; font-size: 1rem; margin-left: auto; }
+.mv-edge-del:hover { color: var(--ts-danger); }
 .mv-node-detail { width: 240px; padding: 1rem; background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 8px; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; }
 .mv-node-btns { display: flex; gap: 0.5rem; margin-top: auto; }
 .mv-list-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; overflow: hidden; min-height: 0; }

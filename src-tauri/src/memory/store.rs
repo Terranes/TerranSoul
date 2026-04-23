@@ -190,7 +190,10 @@ impl MemoryStore {
                     .expect("Failed to create in-memory SQLite fallback database")
             });
         // WAL mode: crash-safe, concurrent reads, no data loss.
-        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+        // foreign_keys=ON is required for ON DELETE CASCADE on memory_edges (V5).
+        let _ = conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+        );
         migrations::migrate_to_latest(&conn)
             .expect("memory schema migration failed");
         MemoryStore { conn }
@@ -200,6 +203,9 @@ impl MemoryStore {
     pub fn in_memory() -> Self {
         let conn = Connection::open_in_memory()
             .expect("Failed to create in-memory SQLite database");
+        // foreign_keys=ON keeps test parity with the on-disk store and
+        // exercises the V5 memory_edges cascade behaviour.
+        let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
         migrations::migrate_to_latest(&conn)
             .expect("memory schema migration failed");
         MemoryStore { conn }
@@ -208,6 +214,13 @@ impl MemoryStore {
     /// Return the current schema version.
     pub fn schema_version(&self) -> i64 {
         migrations::get_version(&self.conn).unwrap_or(0)
+    }
+
+    /// Internal accessor to the underlying SQLite connection. `pub(crate)`
+    /// so sibling modules in `crate::memory` (e.g. `edges`) can issue their
+    /// own SQL without exposing `rusqlite::Connection` to the rest of the app.
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
     }
 
     /// Insert a new memory entry and return it with its assigned id.

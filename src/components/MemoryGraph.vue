@@ -5,10 +5,24 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import cytoscape, { type Core, type ElementDefinition, type NodeSingular } from 'cytoscape';
-import type { MemoryEntry } from '../types';
+import type { MemoryEdge, MemoryEntry } from '../types';
 
-const props = defineProps<{ memories: MemoryEntry[] }>();
-const emit = defineEmits<{ (e: 'select', id: number): void }>();
+const props = withDefaults(
+  defineProps<{
+    memories: MemoryEntry[];
+    /** Typed edges from the V5 entity-relationship graph. When non-empty
+     *  these replace the implicit tag-overlap edges. */
+    edges?: MemoryEdge[];
+    /** Edge mode: 'typed' uses props.edges, 'tag' computes shared-tag edges,
+     *  'both' overlays them (tag edges shown faded). */
+    edgeMode?: 'typed' | 'tag' | 'both';
+  }>(),
+  { edges: () => [], edgeMode: 'typed' },
+);
+const emit = defineEmits<{
+  (e: 'select', id: number): void;
+  (e: 'select-edge', id: number): void;
+}>();
 
 const container = ref<HTMLDivElement | null>(null);
 let cy: Core | null = null;
@@ -20,7 +34,20 @@ const TYPE_COLOURS: Record<string, string> = {
   summary: '#c084fc',
 };
 
-function buildElements(memories: MemoryEntry[]): ElementDefinition[] {
+/** Stable colour per relation type using a small hash. Keeps the same edge
+ *  type the same colour across renders for visual continuity. */
+function relTypeColour(rel: string): string {
+  const palette = [
+    '#f97316', '#22d3ee', '#a3e635', '#f472b6',
+    '#fb7185', '#facc15', '#38bdf8', '#a78bfa',
+  ];
+  let h = 0;
+  for (let i = 0; i < rel.length; i++) h = (h * 31 + rel.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
+}
+
+function buildElements(memories: MemoryEntry[], edges: MemoryEdge[]): ElementDefinition[] {
+  const knownIds = new Set(memories.map((m) => m.id));
   const nodes: ElementDefinition[] = memories.map((m) => ({
     data: {
       id: String(m.id),
@@ -32,27 +59,55 @@ function buildElements(memories: MemoryEntry[]): ElementDefinition[] {
     },
   }));
 
-  // Edges between memories sharing at least one tag.
-  const edges: ElementDefinition[] = [];
-  for (let i = 0; i < memories.length; i++) {
-    for (let j = i + 1; j < memories.length; j++) {
-      const tagsA = memories[i].tags.split(',').map((t) => t.trim()).filter(Boolean);
-      const tagsB = memories[j].tags.split(',').map((t) => t.trim()).filter(Boolean);
-      const shared = tagsA.filter((t) => tagsB.includes(t));
-      if (shared.length > 0) {
-        edges.push({
-          data: {
-            id: `e-${memories[i].id}-${memories[j].id}`,
-            source: String(memories[i].id),
-            target: String(memories[j].id),
-            label: shared.join(', '),
-          },
-        });
+  const useTyped = (props.edgeMode === 'typed' || props.edgeMode === 'both') && edges.length > 0;
+  const useTag = props.edgeMode === 'tag' || props.edgeMode === 'both' || (!useTyped && edges.length === 0);
+
+  const edgeEls: ElementDefinition[] = [];
+
+  if (useTyped) {
+    for (const e of edges) {
+      // Drop edges whose endpoints aren't in the visible memories slice.
+      if (!knownIds.has(e.src_id) || !knownIds.has(e.dst_id)) continue;
+      edgeEls.push({
+        data: {
+          id: `te-${e.id}`,
+          source: String(e.src_id),
+          target: String(e.dst_id),
+          label: e.rel_type,
+          relType: e.rel_type,
+          confidence: e.confidence,
+          edgeSource: e.source,
+          colour: relTypeColour(e.rel_type),
+          edgeKind: 'typed',
+        },
+      });
+    }
+  }
+
+  if (useTag) {
+    // Implicit edges between memories sharing at least one tag.
+    for (let i = 0; i < memories.length; i++) {
+      for (let j = i + 1; j < memories.length; j++) {
+        const tagsA = memories[i].tags.split(',').map((t) => t.trim()).filter(Boolean);
+        const tagsB = memories[j].tags.split(',').map((t) => t.trim()).filter(Boolean);
+        const shared = tagsA.filter((t) => tagsB.includes(t));
+        if (shared.length > 0) {
+          edgeEls.push({
+            data: {
+              id: `e-${memories[i].id}-${memories[j].id}`,
+              source: String(memories[i].id),
+              target: String(memories[j].id),
+              label: shared.join(', '),
+              colour: '#475569',
+              edgeKind: 'tag',
+            },
+          });
+        }
       }
     }
   }
 
-  return [...nodes, ...edges];
+  return [...nodes, ...edgeEls];
 }
 
 function init() {
@@ -61,7 +116,7 @@ function init() {
 
   cy = cytoscape({
     container: container.value,
-    elements: buildElements(props.memories),
+    elements: buildElements(props.memories, props.edges ?? []),
     style: [
       {
         selector: 'node',
@@ -87,13 +142,40 @@ function init() {
           'border-width': 3,
         },
       },
+      // Tag-overlap edges — undirected, faint.
       {
-        selector: 'edge',
+        selector: 'edge[edgeKind = "tag"]',
         style: {
-          width: 1.5,
-          'line-color': '#475569',
+          width: 1,
+          'line-color': 'data(colour)',
           'curve-style': 'bezier',
-          opacity: 0.6,
+          opacity: 0.35,
+        },
+      },
+      // Typed entity-relationship edges — directed, coloured, labelled.
+      {
+        selector: 'edge[edgeKind = "typed"]',
+        style: {
+          width: 2,
+          'line-color': 'data(colour)',
+          'target-arrow-color': 'data(colour)',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          opacity: 0.85,
+          label: 'data(label)',
+          color: '#cbd5f5',
+          'font-size': '9px',
+          'text-background-color': '#0f172a',
+          'text-background-opacity': 0.7,
+          'text-background-padding': '2px',
+          'text-rotation': 'autorotate',
+        },
+      },
+      {
+        selector: 'edge:selected',
+        style: {
+          width: 4,
+          opacity: 1,
         },
       },
     ],
@@ -103,11 +185,17 @@ function init() {
   cy.on('tap', 'node', (evt) => {
     emit('select', Number(evt.target.id()));
   });
+  cy.on('tap', 'edge[edgeKind = "typed"]', (evt) => {
+    const raw = String(evt.target.id());
+    if (raw.startsWith('te-')) emit('select-edge', Number(raw.slice(3)));
+  });
 }
 
 onMounted(() => init());
 onUnmounted(() => cy?.destroy());
 watch(() => props.memories, () => init(), { deep: true });
+watch(() => props.edges, () => init(), { deep: true });
+watch(() => props.edgeMode, () => init());
 </script>
 
 <style scoped>

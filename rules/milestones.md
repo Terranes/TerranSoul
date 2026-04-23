@@ -154,6 +154,7 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 |---|---|---|---|---|
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
 | 1.5 | Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows | done | agent | Implemented in PR series — see `rules/completion-log.md` |
+| 1.6 | Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG) | done | agent | Schema V5 + LLM extractor + Tauri commands + MemoryGraph UI — see `rules/completion-log.md` |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 

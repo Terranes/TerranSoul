@@ -116,6 +116,48 @@ CREATE INDEX IF NOT EXISTS idx_memories_created    ON memories(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_source_hash ON memories(source_hash);
 "#,
     },
+    // ── V5: Entity-Relationship Graph (typed, directional edges) ────────
+    //
+    // Promotes the memory store from a tag-based co-occurrence graph to a
+    // proper knowledge graph with typed, directional edges between memories.
+    //
+    // - `src_id` --rel_type--> `dst_id` is a directed edge.
+    // - `rel_type` is a free-form string but the application validates against
+    //   a curated vocabulary (`contains`, `cites`, `governs`, `related_to`,
+    //   `mother_of`, `studies`, `prefers`, `contradicts`, `supersedes`, etc.).
+    // - `confidence` ∈ [0.0, 1.0] — usually 1.0 for user-asserted edges and
+    //   the LLM's self-reported score for automatically extracted edges.
+    // - `source` records who proposed the edge so the UI can show provenance
+    //   (`user`, `llm`, `auto`).
+    // - `(src_id, dst_id, rel_type)` is unique so re-running edge extraction
+    //   is idempotent.
+    // - `ON DELETE CASCADE` keeps the graph consistent when a memory is
+    //   removed: all incident edges disappear automatically.
+    Migration {
+        version: 5,
+        description: "entity-relationship graph: typed, directional memory edges",
+        up: r#"
+CREATE TABLE IF NOT EXISTS memory_edges (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    dst_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    rel_type   TEXT    NOT NULL,
+    confidence REAL    NOT NULL DEFAULT 1.0,
+    source     TEXT    NOT NULL DEFAULT 'user',
+    created_at INTEGER NOT NULL,
+    UNIQUE(src_id, dst_id, rel_type)
+);
+CREATE INDEX IF NOT EXISTS idx_edges_src  ON memory_edges(src_id);
+CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_id);
+CREATE INDEX IF NOT EXISTS idx_edges_type ON memory_edges(rel_type);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_edges_type;
+DROP INDEX IF EXISTS idx_edges_dst;
+DROP INDEX IF EXISTS idx_edges_src;
+DROP TABLE IF EXISTS memory_edges;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.

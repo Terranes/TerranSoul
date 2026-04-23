@@ -121,4 +121,90 @@ describe('memory store', () => {
     const results = await store.search('anything');
     expect(results).toEqual([]);
   });
+
+  // ── Entity-Relationship Graph (V5) ─────────────────────────────────────────
+
+  it('fetchEdges populates edges array', async () => {
+    const edge = {
+      id: 1,
+      src_id: 1,
+      dst_id: 2,
+      rel_type: 'cites',
+      confidence: 0.9,
+      source: 'user' as const,
+      created_at: Date.now(),
+    };
+    mockInvoke.mockResolvedValue([edge]);
+    const store = useMemoryStore();
+    const result = await store.fetchEdges();
+    expect(result).toHaveLength(1);
+    expect(store.edges[0].rel_type).toBe('cites');
+    expect(mockInvoke).toHaveBeenCalledWith('list_memory_edges');
+  });
+
+  it('addEdge appends new edge and replaces existing on duplicate', async () => {
+    const edge = {
+      id: 7,
+      src_id: 1,
+      dst_id: 2,
+      rel_type: 'related_to',
+      confidence: 1.0,
+      source: 'user' as const,
+      created_at: Date.now(),
+    };
+    mockInvoke.mockResolvedValue(edge);
+    const store = useMemoryStore();
+    const created = await store.addEdge(1, 2, 'related_to');
+    expect(created?.id).toBe(7);
+    expect(store.edges).toHaveLength(1);
+    // Re-adding the same (src, dst, rel_type) triggers in-place replace.
+    mockInvoke.mockResolvedValue({ ...edge, confidence: 0.5 });
+    await store.addEdge(1, 2, 'related_to');
+    expect(store.edges).toHaveLength(1);
+    expect(store.edges[0].confidence).toBe(0.5);
+  });
+
+  it('deleteEdge removes edge from cache', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useMemoryStore();
+    store.edges = [
+      { id: 1, src_id: 1, dst_id: 2, rel_type: 'r', confidence: 1, source: 'user', created_at: 0 },
+      { id: 2, src_id: 2, dst_id: 3, rel_type: 'r', confidence: 1, source: 'user', created_at: 0 },
+    ];
+    await store.deleteEdge(1);
+    expect(store.edges).toHaveLength(1);
+    expect(store.edges[0].id).toBe(2);
+  });
+
+  it('extractEdgesViaBrain calls backend and refreshes when count > 0', async () => {
+    mockInvoke
+      .mockResolvedValueOnce(4) // extract_edges_via_brain
+      .mockResolvedValueOnce([]); // list_memory_edges (refresh)
+    const store = useMemoryStore();
+    const count = await store.extractEdgesViaBrain();
+    expect(count).toBe(4);
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'extract_edges_via_brain', { chunkSize: 25 });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'list_memory_edges');
+  });
+
+  it('multiHopSearch forwards hops parameter', async () => {
+    mockInvoke.mockResolvedValue([entry(1, 'graph hit')]);
+    const store = useMemoryStore();
+    const results = await store.multiHopSearch('query', 5, 2);
+    expect(results).toHaveLength(1);
+    expect(mockInvoke).toHaveBeenCalledWith('multi_hop_search_memories', {
+      query: 'query',
+      limit: 5,
+      hops: 2,
+    });
+  });
+
+  it('getEdgeStats caches stats', async () => {
+    const stats = { total_edges: 3, by_rel_type: [['cites', 2]], by_source: [['user', 3]], connected_memories: 4 };
+    mockInvoke.mockResolvedValue(stats);
+    const store = useMemoryStore();
+    const result = await store.getEdgeStats();
+    expect(result?.total_edges).toBe(3);
+    expect(store.edgeStats?.connected_memories).toBe(4);
+  });
 });
