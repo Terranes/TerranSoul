@@ -24,6 +24,13 @@ const SENTENCE_END_RE = /[.!?…]\s+|\n/;
 
 /** Minimum sentence length to bother synthesizing (filters out stray punctuation). */
 const MIN_SENTENCE_CHARS = 4;
+/**
+ * Emoji sequences that should never be spoken by TTS:
+ * - Extended pictographic emoji (including ZWJ sequences and FE0E/FE0F variants)
+ * - Regional indicator flag pairs
+ * - Keycap sequences (0-9, #, *)
+ */
+const TTS_UNWANTED_UNICODE_REGEX = /(?:\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*)|(?:[\u{1F1E6}-\u{1F1FF}]{2})|(?:[0-9#*]\uFE0F?\u20E3)/gu;
 
 export interface TtsPlaybackHandle {
   /** Whether TTS audio is currently playing or pending. */
@@ -92,8 +99,8 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
     }
   }
 
-  /** Strip markdown formatting before TTS synthesis. */
-  function stripMarkdown(text: string): string {
+  /** Strip markdown formatting and non-spoken tokens before TTS synthesis. */
+  function sanitizeTtsText(text: string): string {
     return text
       .replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove **bold**
       .replace(/\*([^*]+)\*/g, '$1')     // Remove *italic*
@@ -103,12 +110,17 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       .replace(/^[-*+] /gm, '')          // Remove list bullets
       .replace(/\n{2,}/g, '. ')          // Replace multiple newlines with periods
       .replace(/\n/g, ' ')               // Replace single newlines with spaces
+      .replace(TTS_UNWANTED_UNICODE_REGEX, ' ')
+      // Clean up orphaned joiners/selectors that can remain from multi-codepoint sequences.
+      .replace(/[\u200D\uFE0E\uFE0F]/g, '')
+      .replace(/\s+([,.;:!?…])/g, '$1')
+      .replace(/\s{2,}/g, ' ')
       .trim();
   }
 
   /** Enqueue a sentence for synthesis and sequential playback. */
   function enqueueSentence(sentence: string): void {
-    const trimmed = stripMarkdown(sentence.trim());
+    const trimmed = sanitizeTtsText(sentence.trim());
     if (trimmed.length < MIN_SENTENCE_CHARS) return;
 
     // Capture generation at enqueue time so this sentence aborts if stop() is called.

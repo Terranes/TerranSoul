@@ -119,7 +119,12 @@
         <div v-if="chatDrawerExpanded" class="chat-history" @click.stop>
           <div class="chat-history-header">
             <span class="chat-history-title">Chat History</span>
-            <button class="chat-history-close" @click="toggleChatDrawer()" aria-label="Close chat history">&times;</button>
+            <div class="chat-history-actions">
+              <button class="chat-history-action-btn" @click="copyChatHistoryToClipboard" aria-label="Copy chat history">Copy</button>
+              <button class="chat-history-action-btn" @click="pasteClipboardAsMessage" aria-label="Paste clipboard as message">Paste</button>
+              <button v-if="canSkipDialog" class="chat-history-action-btn skip" @click="skipCurrentDialog" aria-label="Skip dialog and TTS">Skip</button>
+              <button class="chat-history-close" @click="toggleChatDrawer()" aria-label="Close chat history">&times;</button>
+            </div>
           </div>
           <TaskProgressBar />
           <ChatMessageList
@@ -192,6 +197,7 @@ import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
+import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
 import type { UpgradeOption } from '../components/UpgradeDialog.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useTaskStore } from '../stores/tasks';
@@ -225,6 +231,7 @@ const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
 let unlistenProvidersExhausted: (() => void) | null = null;
+let streamTtsActive = false;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
@@ -646,9 +653,54 @@ async function handleSend(message: string) {
     // watcher will handle the idle transition when playback finishes.
     if (!tts.isSpeaking.value) {
       setAvatarState('idle');
-      viewportRef.value?.stopMotion();
+      viewportRef.value?.stopMotion?.();
     }
   }, 6000);
+}
+
+const canSkipDialog = computed(
+  // Desktop chat has a subtitle overlay; include it so skip can dismiss subtitle-only dialog state.
+  () => conversationStore.isThinking || conversationStore.isStreaming || tts.isSpeaking.value || subtitleVisible.value,
+);
+
+function skipCurrentDialog() {
+  tts.stop();
+  streamTtsActive = false;
+  if (subtitleHideTimer) {
+    clearTimeout(subtitleHideTimer);
+    subtitleHideTimer = null;
+  }
+  subtitleVisible.value = false;
+  subtitleFullText.value = '';
+  emojiPopupVisible.value = false;
+  if (emojiPopupTimer) {
+    clearTimeout(emojiPopupTimer);
+    emojiPopupTimer = null;
+  }
+  streaming.reset();
+  conversationStore.isStreaming = false;
+  conversationStore.streamingText = '';
+  setAvatarState('idle');
+  viewportRef.value?.stopMotion?.();
+}
+
+async function copyChatHistoryToClipboard() {
+  try {
+    await copyChatHistory(conversationStore.messages);
+  } catch {
+    // Clipboard unavailable
+  }
+}
+
+async function pasteClipboardAsMessage() {
+  if (conversationStore.isThinking) return;
+  try {
+    const text = (await readClipboardText()).trim();
+    if (!text) return;
+    await handleSend(text);
+  } catch {
+    // Clipboard unavailable
+  }
 }
 
 /** Handle user accepting an upgrade option from the game dialog. */
@@ -891,7 +943,13 @@ async function setupTauriEventListener() {
       if (voice.config.tts_provider) {
         if (event.payload.done) {
           tts.flush();
+          streamTtsActive = false;
         } else if (event.payload.text) {
+          if (!streamTtsActive) {
+            // New AI response started: stop previous speech and only speak latest.
+            tts.stop();
+            streamTtsActive = true;
+          }
           tts.feedChunk(event.payload.text);
         }
       }
@@ -1309,6 +1367,28 @@ onUnmounted(() => {
   padding: 10px 14px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+}
+.chat-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-history-action-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ts-text-primary);
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: var(--ts-radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.chat-history-action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.chat-history-action-btn.skip {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
 }
 .chat-history-title {
   font-size: 0.72rem;
