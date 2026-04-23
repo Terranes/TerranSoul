@@ -222,29 +222,12 @@ pub async fn spawn(spec: CliSpawnSpec) -> Result<CliWorker, String> {
         spawn_reader(stdout, CliStream::Stdout, tx.clone());
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_reader(stderr, CliStream::Stderr, tx.clone());
+        spawn_reader(stderr, CliStream::Stderr, tx);
     }
-
-    // Wait-and-reap task: when the child exits, emit Exited and close
-    // the channel. Owns nothing else so it can't leak.
-    // NOTE: We can't move `child` here because the caller needs `kill`;
-    // instead, we forward exit status via a lightweight wait loop that
-    // the CliWorker polls. To keep things simple, we let the caller's
-    // `next_event` loop observe stream closure and then call
-    // `child.wait()` implicitly via Drop.
-    //
-    // For now: spin a task that simply watches for completion via a
-    // shared flag on the sender side.
-    let exit_tx = tx.clone();
-    tokio::spawn(async move {
-        // Wait for both readers to finish by waiting on `tx` capacity
-        // via a simple timer loop is overkill. Instead we rely on the
-        // readers themselves to close their `tx` clones and we simply
-        // emit a best-effort Exited once the stdout reader is done.
-        // We intentionally don't `await child.wait()` here because
-        // `child` is owned by `CliWorker` (so the caller can kill()).
-        drop(exit_tx);
-    });
+    // The reader tasks own the remaining `tx` clones. Once both readers
+    // finish (child closed its stdout/stderr), every sender is dropped
+    // and `CliWorker::next_event` returns `None`. The caller then
+    // observes the exit status via `drain`, which awaits `child.wait()`.
 
     Ok(CliWorker { child, events: rx })
 }

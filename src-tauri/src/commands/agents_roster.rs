@@ -20,6 +20,11 @@ use crate::brain::ram_budget::{
 use crate::workflows::{WorkflowEngine, WorkflowEventKind, WorkflowStatus, WorkflowSummary};
 use crate::AppState;
 
+/// Maximum length of a `Heartbeat` message written per CLI output line.
+/// SQLite stores the full line via later `ActivityCompleted` payloads;
+/// the heartbeat just needs to fit comfortably in a UI preview.
+const MAX_HEARTBEAT_MESSAGE_LEN: usize = 512;
+
 /// Payload the frontend posts when creating a new agent. `id` is
 /// optional — if omitted we generate a fresh UUID-ish id.
 #[derive(Debug, Clone, Deserialize)]
@@ -310,7 +315,7 @@ async fn drive_cli_workflow<R: Runtime>(
                         Some(format!(
                             "{}: {}",
                             if *stream == CliStream::Stderr { "stderr" } else { "stdout" },
-                            truncate(text, 512)
+                            truncate(text, MAX_HEARTBEAT_MESSAGE_LEN)
                         )),
                     )
                     .await;
