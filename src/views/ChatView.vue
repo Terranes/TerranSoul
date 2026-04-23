@@ -838,6 +838,15 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     return;
   }
 
+  // Handle "type this command" shortcuts — the button submits the literal
+  // command text through sendMessage so the conversation store's command
+  // detector fires exactly as if the user had typed it.
+  if (choiceValue.startsWith('command:')) {
+    const cmdText = choiceValue.slice('command:'.length);
+    await conversationStore.sendMessage(cmdText);
+    return;
+  }
+
   // Auto-enable BGM when user picks "Autoplay BGM"
   if (questId === 'bgm' && choiceValue === 'bgm-autoplay') {
     viewportRef.value?.enableBgm();

@@ -15,22 +15,23 @@
  *   node scripts/verify-brain-flow.mjs
  *
  * This script verifies the "Alice learns Vietnamese law" narrative:
- *   Step 0: Pre-flight (Docker, Ollama, model, Tauri)
- *   Step 1: Fresh launch
- *   Step 2: Brain auto-configured → local Ollama
- *   Step 3: Verify all brain components
- *   Step 4: Alice asks to learn Vietnamese law
- *   Step 5: TerranSoul suggests Scholar's Quest
- *   Step 6: Quest choice overlay — yes/no
- *   Step 7: Knowledge Quest dialog opens (FF-style)
- *   Step 8: Brain verification step ✅
- *   Step 9: Gather sources — URL + file
- *   Step 10: Learning in progress
- *   Step 11: Knowledge acquired!
- *   Step 12: Alice asks law questions
- *   Step 13: TerranSoul answers with RAG
- *   Step 14: Skill tree stats
- *   Step 15: Pet mode with chat
+ *   Step 0:  Pre-flight (Docker, Ollama, model, Tauri)
+ *   Step 1:  Fresh launch
+ *   Step 2:  Brain auto-configured → local Ollama
+ *   Step 3:  Verify all brain components
+ *   Step 4:  Alice asks a law question — plain Q&A, no auto-quest
+ *   Step 5:  "I don't know" branch — Gemini / own-context choices
+ *   Step 6:  Alice types "provide your own context" → Scholar's Quest
+ *   Step 7:  Quest choice overlay — yes/no
+ *   Step 8:  Knowledge Quest dialog opens (FF-style)
+ *   Step 9:  Brain verification step ✅
+ *   Step 10: Gather sources — URL + file
+ *   Step 11: Learning in progress
+ *   Step 12: Knowledge acquired!
+ *   Step 13: Alice asks the same law question — answered via RAG
+ *   Step 14: TerranSoul answers more law questions
+ *   Step 15: Skill tree stats
+ *   Step 16: Pet mode with chat
  */
 import { chromium } from 'playwright';
 import { execSync } from 'child_process';
@@ -390,9 +391,9 @@ check(3, 'Tauri IPC available', hasTauri || !isTauriMode, hasTauri ? 'Yes' : 'Br
 await screenshot(page, '03-brain-components');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 4 — Alice asks to learn Vietnamese law
+// STEP 4 — Alice asks a law question (plain Q&A, no auto-quest)
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 4: Alice asks to learn Vietnamese law ═══');
+console.log('\n═══ Step 4: Alice asks a law question ═══');
 
 // Expand chat drawer if not already expanded
 const drawerToggle = page.locator('.chat-drawer-toggle');
@@ -404,9 +405,10 @@ if (await drawerToggle.isVisible()) {
   }
 }
 
-// Type and send the message
+// Ask a factual question — NOT an instruction to ingest sources.
+const step4Question = 'What is the statute of limitations for contract disputes under Vietnamese civil law?';
 const chatInput = page.locator('input.chat-input');
-await chatInput.fill('I want to learn about Vietnamese civil law on contract liability');
+await chatInput.fill(step4Question);
 const inputValue = await chatInput.inputValue();
 check(4, 'Input filled', inputValue.includes('Vietnamese civil law'), inputValue.slice(0, 50));
 
@@ -418,7 +420,7 @@ await page.waitForSelector('.message-row.user', { state: 'visible', timeout: 500
 const userRows = await page.locator('.message-row.user').count();
 check(4, 'User message row visible', userRows >= 1, `count=${userRows}`);
 
-// Wait for assistant response (local Ollama — may take up to 90s)
+// Wait for assistant response (local Ollama — may take up to 120s)
 console.log('  ⏳ Waiting for LLM response (local Ollama)...');
 await page.waitForSelector('.message-row.assistant', { state: 'visible', timeout: 120000 });
 
@@ -433,178 +435,244 @@ const assistantRows = await page.locator('.message-row.assistant').count();
 check(4, 'Assistant response received', assistantRows >= 1, `count=${assistantRows}`);
 
 // Check the response content
-const convState = await pinia(page, 'conversation');
-const lastAssistantMsg = [...(convState?.messages ?? [])].reverse().find(m => m.role === 'assistant');
+const convState4 = await pinia(page, 'conversation');
+const lastAssistantMsg = [...(convState4?.messages ?? [])].reverse().find(m => m.role === 'assistant');
 check(4, 'Response has content', (lastAssistantMsg?.content?.length ?? 0) > 20,
   `length=${lastAssistantMsg?.content?.length}`);
+
+// CRITICAL invariant: asking a question must NOT auto-trigger Scholar's Quest.
+const autoQuestAfterStep4 = (convState4?.messages ?? [])
+  .find(m => m.questId === 'scholar-quest');
+check(4, 'No auto scholar-quest from a question', !autoQuestAfterStep4,
+  autoQuestAfterStep4 ? 'scholar-quest was wrongly auto-triggered' : 'none');
 
 await screenshot(page, '04-alice-asks-law');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 5 — TerranSoul suggests Scholar's Quest
+// STEP 5 — "I don't know" branch (Gemini / own-context prompt)
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 5: Scholar\'s Quest suggestion ═══');
+console.log('\n═══ Step 5: "I don\'t know" branch ═══');
 
-// The maybeShowKnowledgeQuest should have triggered after the response.
-// Wait for the quest suggestion message to appear.
+// A small local model typically triggers the don't-know detector.  If the
+// run produced a confident answer instead, the checks below mark SKIP.
 await page.waitForTimeout(1500);
 
-// Check that a quest suggestion message exists
-const allMessages = (await pinia(page, 'conversation'))?.messages ?? [];
-const questMsg = allMessages.find(m =>
-  m.questId === 'scholar-quest' && m.questChoices?.length > 0
+const allMessages5 = (await pinia(page, 'conversation'))?.messages ?? [];
+const dontKnowMsg = allMessages5.find(m => m.questId === 'dont-know');
+
+if (dontKnowMsg) {
+  check(5, 'System "don\'t-know" message appears',
+    dontKnowMsg.agentName === 'System',
+    `agent=${dontKnowMsg.agentName}`);
+  check(5, 'Content mentions "upgrade to Gemini model"',
+    /upgrade to Gemini model/i.test(dontKnowMsg.content ?? ''));
+  check(5, 'Content mentions "provide your own context"',
+    /provide your own context/i.test(dontKnowMsg.content ?? ''));
+
+  const choiceValues = (dontKnowMsg.questChoices ?? []).map(c => c.value);
+  check(5, 'Choice: command:upgrade to Gemini model',
+    choiceValues.includes('command:upgrade to Gemini model'),
+    JSON.stringify(choiceValues));
+  check(5, 'Choice: command:provide your own context',
+    choiceValues.includes('command:provide your own context'),
+    JSON.stringify(choiceValues));
+  check(5, 'Dismiss choice present', choiceValues.includes('dismiss'));
+} else {
+  // Model returned a confident answer — skip this branch but record it.
+  check(5, 'System "don\'t-know" message appears', 'SKIP',
+    'Model produced a confident answer — don\'t-know prompt not shown');
+  check(5, 'Content mentions "upgrade to Gemini model"', 'SKIP');
+  check(5, 'Content mentions "provide your own context"', 'SKIP');
+  check(5, 'Choice: command:upgrade to Gemini model', 'SKIP');
+  check(5, 'Choice: command:provide your own context', 'SKIP');
+  check(5, 'Dismiss choice present', 'SKIP');
+}
+
+await screenshot(page, '05-dont-know-prompt');
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STEP 6 — Alice explicitly asks to provide her own context
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\n═══ Step 6: Alice types "provide your own context" ═══');
+
+// Dismiss any hotseat strip showing the don't-know choices — the test
+// drives the flow by typing the command text, which exercises the
+// detectGatedSetupCommand path (same code path that the button click uses).
+try {
+  const strip5 = page.locator('.hotseat-strip');
+  if (await strip5.isVisible({ timeout: 1000 }).catch(() => false)) {
+    const dismissBtn = page.locator('.hotseat-tile-label', { hasText: 'Dismiss' });
+    if (await dismissBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+      await dismissBtn.click();
+      await page.waitForTimeout(400);
+    }
+  }
+} catch { /* ok */ }
+
+await page.locator('input.chat-input').fill('provide your own context');
+await page.locator('button.send-btn').click();
+
+// Wait for the scholar-quest suggestion message to land.
+await page.waitForFunction(() => {
+  const app = document.querySelector('#app')?.__vue_app__;
+  const p = app?.config?.globalProperties?.$pinia;
+  const msgs = p?.state?.value?.conversation?.messages ?? [];
+  return msgs.some(m => m.questId === 'scholar-quest');
+}, { timeout: 10000 });
+
+const allMessages6 = (await pinia(page, 'conversation'))?.messages ?? [];
+const questMsg = allMessages6.find(m =>
+  m.questId === 'scholar-quest' && (m.questChoices?.length ?? 0) > 0,
 );
-check(5, 'Scholar\'s Quest suggestion exists', !!questMsg, questMsg?.content?.slice(0, 60));
-check(5, 'Quest ID === "scholar-quest"', questMsg?.questId === 'scholar-quest');
-check(5, 'Has quest choices', questMsg?.questChoices?.length >= 2,
+check(6, 'Scholar\'s Quest suggestion exists', !!questMsg, questMsg?.content?.slice(0, 60));
+check(6, 'Quest ID === "scholar-quest"', questMsg?.questId === 'scholar-quest');
+check(6, 'Has quest choices', (questMsg?.questChoices?.length ?? 0) >= 2,
   `choices=${questMsg?.questChoices?.length}`);
 
 if (questMsg?.questChoices) {
   const labels = questMsg.questChoices.map(c => c.label);
-  check(5, 'Choice 1 === "Start Knowledge Quest"', labels.includes('Start Knowledge Quest'),
+  check(6, 'Choice 1 === "Start Knowledge Quest"', labels.includes('Start Knowledge Quest'),
     JSON.stringify(labels));
-  check(5, 'Choice 2 === "No thanks"', labels.includes('No thanks'), JSON.stringify(labels));
+  check(6, 'Choice 2 === "No thanks"', labels.includes('No thanks'), JSON.stringify(labels));
 }
 
-await screenshot(page, '05-quest-suggestion');
+await screenshot(page, '06-provide-context');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 6 — Quest choice overlay — Alice clicks Yes
+// STEP 7 — Quest choice overlay — Alice starts the quest
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 6: Quest choice overlay ═══');
+console.log('\n═══ Step 7: Quest choice overlay ═══');
 
-// The hotseat strip should be visible
 const hotseatVis = await vis(page, '.hotseat-strip', 5000);
-check(6, 'Hotseat strip visible', hotseatVis);
+check(7, 'Hotseat strip visible', hotseatVis);
 
 if (hotseatVis) {
   const hotseatQuestion = await txt(page, '.hotseat-question-text');
-  check(6, 'Hotseat question text present', hotseatQuestion.length > 5, hotseatQuestion.slice(0, 60));
+  check(7, 'Hotseat question text present', hotseatQuestion.length > 5, hotseatQuestion.slice(0, 60));
 
   const tileLabels = await allTexts(page, '.hotseat-tile-label');
-  check(6, 'Hotseat tiles visible', tileLabels.length >= 2, JSON.stringify(tileLabels));
+  check(7, 'Hotseat tiles visible', tileLabels.length >= 2, JSON.stringify(tileLabels));
 
-  // Click "Start Knowledge Quest" button
   const startBtn = page.locator('.hotseat-tile', { hasText: 'Start Knowledge Quest' });
   const startBtnVis = await startBtn.isVisible().catch(() => false);
-  check(6, '"Start Knowledge Quest" button visible', startBtnVis);
+  check(7, '"Start Knowledge Quest" button visible', startBtnVis);
 
   if (startBtnVis) {
     await startBtn.click();
-    check(6, 'Clicked "Start Knowledge Quest"', true);
+    check(7, 'Clicked "Start Knowledge Quest"', true);
   }
 }
 
-await screenshot(page, '06-quest-choice-overlay');
+await screenshot(page, '07-quest-choice-overlay');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 7 — Knowledge Quest Dialog opens (FF-style)
+// STEP 8 — Knowledge Quest Dialog opens (FF-style)
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 7: Knowledge Quest Dialog ═══');
+console.log('\n═══ Step 8: Knowledge Quest Dialog ═══');
 
 // Wait for the KnowledgeQuestDialog to appear
 const kqDialog = await vis(page, '.kq-dialog', 5000);
-check(7, 'KQ dialog visible', kqDialog);
+check(8, 'KQ dialog visible', kqDialog);
 
 if (kqDialog) {
   // Header
   const kqLabel = await txt(page, '.kq-label');
-  check(7, 'Header label === "SCHOLAR\'S QUEST"', kqLabel === "SCHOLAR'S QUEST", kqLabel);
+  check(8, 'Header label === "SCHOLAR\'S QUEST"', kqLabel === "SCHOLAR'S QUEST", kqLabel);
 
   const kqTitle = await txt(page, '.kq-title');
-  check(7, 'Title contains topic', kqTitle.length > 0, kqTitle);
+  check(8, 'Title contains topic', kqTitle.length > 0, kqTitle);
 
   // Step tracker
   const stepLabels = await allTexts(page, '.kq-step-label');
-  check(7, 'Step 1 === "Verify Brain"', stepLabels[0] === 'Verify Brain', stepLabels[0]);
-  check(7, 'Step 2 === "Gather Sources"', stepLabels[1] === 'Gather Sources', stepLabels[1]);
-  check(7, 'Step 3 === "Learn"', stepLabels[2] === 'Learn', stepLabels[2]);
-  check(7, 'Step 4 === "Ready"', stepLabels[3] === 'Ready', stepLabels[3]);
+  check(8, 'Step 1 === "Verify Brain"', stepLabels[0] === 'Verify Brain', stepLabels[0]);
+  check(8, 'Step 2 === "Gather Sources"', stepLabels[1] === 'Gather Sources', stepLabels[1]);
+  check(8, 'Step 3 === "Learn"', stepLabels[2] === 'Learn', stepLabels[2]);
+  check(8, 'Step 4 === "Ready"', stepLabels[3] === 'Ready', stepLabels[3]);
 
   // Active step indicator
   const activeStep = await page.locator('.kq-step--active').count();
-  check(7, 'One active step', activeStep === 1);
+  check(8, 'One active step', activeStep === 1);
 }
 
-await screenshot(page, '07-knowledge-quest-dialog');
+await screenshot(page, '08-knowledge-quest-dialog');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 8 — Brain verification step
+// STEP 9 — Brain verification step
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 8: Brain verification step ═══');
+console.log('\n═══ Step 9: Brain verification step ═══');
 
 // Check brain verification section
 const sectionTitle = await txt(page, '.kq-section-title');
-check(8, 'Section title === "🧠 Verifying Brain"', sectionTitle === '🧠 Verifying Brain', sectionTitle);
+check(9, 'Section title === "🧠 Verifying Brain"', sectionTitle === '🧠 Verifying Brain', sectionTitle);
 
 // Wait for checks to complete
 await page.waitForTimeout(3000);
 
 const checkItems = await page.locator('.kq-check').count();
-check(8, 'Brain checks visible', checkItems === 4, `count=${checkItems}`);
+check(9, 'Brain checks visible', checkItems === 4, `count=${checkItems}`);
 
 // Verify individual check labels
 const checkLabels = await allTexts(page, '.kq-check-label');
-check(8, 'Check 1 === "Brain configured"', checkLabels[0] === 'Brain configured', checkLabels[0]);
-check(8, 'Check 2 === "LLM model loaded"', checkLabels[1] === 'LLM model loaded', checkLabels[1]);
-check(8, 'Check 3 === "Memory system ready"', checkLabels[2] === 'Memory system ready', checkLabels[2]);
-check(8, 'Check 4 === "Ingestion engine online"', checkLabels[3] === 'Ingestion engine online', checkLabels[3]);
+check(9, 'Check 1 === "Brain configured"', checkLabels[0] === 'Brain configured', checkLabels[0]);
+check(9, 'Check 2 === "LLM model loaded"', checkLabels[1] === 'LLM model loaded', checkLabels[1]);
+check(9, 'Check 3 === "Memory system ready"', checkLabels[2] === 'Memory system ready', checkLabels[2]);
+check(9, 'Check 4 === "Ingestion engine online"', checkLabels[3] === 'Ingestion engine online', checkLabels[3]);
 
 // Check for success icons (✅)
 const checkIcons = await allTexts(page, '.kq-check-icon');
 const passedChecks = checkIcons.filter(i => i === '✅').length;
-check(8, 'All brain checks passed', passedChecks >= 3, `passed=${passedChecks}/4`);
+check(9, 'All brain checks passed', passedChecks >= 3, `passed=${passedChecks}/4`);
 
 // Continue button
 const continueBtn = page.locator('.kq-btn-primary', { hasText: 'Continue' });
 const continueBtnVis = await continueBtn.isVisible().catch(() => false);
-check(8, '"Continue" button visible', continueBtnVis);
+check(9, '"Continue" button visible', continueBtnVis);
 
 if (continueBtnVis) {
   await continueBtn.click();
   await page.waitForTimeout(500);
-  check(8, 'Advanced to step 2', true);
+  check(9, 'Advanced to step 2', true);
 }
 
-await screenshot(page, '08-brain-verification');
+await screenshot(page, '09-brain-verification');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 9 — Gather sources: URL + file
+// STEP 10 — Gather sources: URL + file
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 9: Gather sources ═══');
+console.log('\n═══ Step 10: Gather sources ═══');
 
 // Verify step 2 content
 const step2Title = await txt(page, '.kq-section-title');
-check(9, 'Section title === "📖 Gather Sources"', step2Title === '📖 Gather Sources', step2Title);
+check(10, 'Section title === "📖 Gather Sources"', step2Title === '📖 Gather Sources', step2Title);
 
 // URL input field
 const urlFieldVis = await vis(page, '.kq-url-field');
-check(9, 'URL input field visible', urlFieldVis);
+check(10, 'URL input field visible', urlFieldVis);
 
 const urlPlaceholder = await page.locator('.kq-url-field').first().getAttribute('placeholder');
-check(9, 'URL placeholder', urlPlaceholder === 'https://example.com/document', urlPlaceholder);
+check(10, 'URL placeholder', urlPlaceholder === 'https://example.com/document', urlPlaceholder);
 
 // Add URL
 const demoUrl = `${VITE_URL}/demo/vietnamese-civil-code.html`;
 await page.locator('.kq-url-field').fill(demoUrl);
 const urlAddBtn = page.locator('.kq-url-add');
-check(9, '"＋ Add URL" button visible', await urlAddBtn.isVisible());
+check(10, '"＋ Add URL" button visible', await urlAddBtn.isVisible());
 await urlAddBtn.click();
 await page.waitForTimeout(300);
 
 // Verify source added
 const sourceItems = await page.locator('.kq-source-item').count();
-check(9, 'URL source added', sourceItems >= 1, `count=${sourceItems}`);
+check(10, 'URL source added', sourceItems >= 1, `count=${sourceItems}`);
 
 const firstSourceName = await txt(page, '.kq-source-name');
-check(9, 'Source name matches URL', firstSourceName.includes('vietnamese-civil-code'), firstSourceName);
+check(10, 'Source name matches URL', firstSourceName.includes('vietnamese-civil-code'), firstSourceName);
 
 // File attachment button
 const fileBtnVis = await vis(page, '.kq-file-btn');
-check(9, '"📎 Attach File" button visible', fileBtnVis);
+check(10, '"📎 Attach File" button visible', fileBtnVis);
 
 const fileBtnText = await txt(page, '.kq-file-btn');
-check(9, 'File button text === "📎 Attach File"', fileBtnText === '📎 Attach File', fileBtnText);
+check(10, 'File button text === "📎 Attach File"', fileBtnText === '📎 Attach File', fileBtnText);
 
 // Simulate file input (set file path in the hidden input)
 const demoFile = 'public/demo/article-429-commentary.txt';
@@ -613,39 +681,39 @@ if (existsSync(demoFile)) {
   await fileInput.setInputFiles(demoFile);
   await page.waitForTimeout(300);
   const sourceCount = await page.locator('.kq-source-item').count();
-  check(9, 'File source added', sourceCount >= 2, `count=${sourceCount}`);
+  check(10, 'File source added', sourceCount >= 2, `count=${sourceCount}`);
 } else {
-  check(9, 'File source added', 'SKIP', 'Demo file not found');
+  check(10, 'File source added', 'SKIP', 'Demo file not found');
 }
 
 // "Start Learning" button
 const startLearnBtn = page.locator('.kq-btn-primary', { hasText: 'Start Learning' });
 const startLearnVis = await startLearnBtn.isVisible().catch(() => false);
-check(9, '"⚡ Start Learning" button visible', startLearnVis);
+check(10, '"⚡ Start Learning" button visible', startLearnVis);
 
-await screenshot(page, '09-gather-sources');
+await screenshot(page, '10-gather-sources');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 10 — Learning in progress
+// STEP 11 — Learning in progress
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 10: Learning in progress ═══');
+console.log('\n═══ Step 11: Learning in progress ═══');
 
 if (startLearnVis) {
   await startLearnBtn.click();
-  check(10, 'Clicked "Start Learning"', true);
+  check(11, 'Clicked "Start Learning"', true);
 
   // Wait for the learning step
   await page.waitForTimeout(1000);
   const learnTitle = await txt(page, '.kq-section-title');
-  check(10, 'Section title === "⚡ Learning in Progress"', learnTitle === '⚡ Learning in Progress', learnTitle);
+  check(11, 'Section title === "⚡ Learning in Progress"', learnTitle === '⚡ Learning in Progress', learnTitle);
 
   // Wait for ingestion tasks to appear
   const taskVis = await vis(page, '.kq-task', 10000);
-  check(10, 'Task progress visible', taskVis);
+  check(11, 'Task progress visible', taskVis);
 
   if (taskVis) {
     // Check progress bar
-    check(10, 'Progress bar visible', await vis(page, '.kq-progress-bar'));
+    check(11, 'Progress bar visible', await vis(page, '.kq-progress-bar'));
 
     // Wait for completion (up to 120s for URL fetch + chunking + embedding)
     console.log('  ⏳ Waiting for ingestion to complete...');
@@ -654,15 +722,15 @@ if (startLearnVis) {
         const tasks = document.querySelectorAll('.kq-task-done');
         return tasks.length > 0;
       }, { timeout: 120000 });
-      check(10, 'Ingestion completed', true);
+      check(11, 'Ingestion completed', true);
     } catch {
       // May still be in progress — check current state
       const pctText = await txt(page, '.kq-task-pct');
-      check(10, 'Ingestion in progress', true, `progress: ${pctText}`);
+      check(11, 'Ingestion in progress', true, `progress: ${pctText}`);
     }
   }
 
-  await screenshot(page, '10-learning-progress');
+  await screenshot(page, '11-learning-progress');
 
   // Wait for auto-advance to "Knowledge Acquired" step
   try {
@@ -676,48 +744,48 @@ if (startLearnVis) {
     }
   }
 } else {
-  check(10, 'Learning step', 'SKIP', 'Start Learning button not available');
+  check(11, 'Learning step', 'SKIP', 'Start Learning button not available');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 11 — Knowledge Acquired!
+// STEP 12 — Knowledge Acquired!
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 11: Knowledge Acquired ═══');
+console.log('\n═══ Step 12: Knowledge Acquired ═══');
 
 const completeCard = await vis(page, '.kq-complete-card', 5000);
-check(11, 'Complete card visible', completeCard);
+check(12, 'Complete card visible', completeCard);
 
 if (completeCard) {
   const completeIcon = await txt(page, '.kq-complete-icon');
-  check(11, 'Trophy icon === "🏆"', completeIcon === '🏆', completeIcon);
+  check(12, 'Trophy icon === "🏆"', completeIcon === '🏆', completeIcon);
 
   const completeTitle = await txt(page, '.kq-section-title');
-  check(11, 'Section title === "🎯 Knowledge Acquired!"', completeTitle === '🎯 Knowledge Acquired!', completeTitle);
+  check(12, 'Section title === "🎯 Knowledge Acquired!"', completeTitle === '🎯 Knowledge Acquired!', completeTitle);
 
   // Reward grid
   const rewardCards = await page.locator('.kq-reward-card').count();
-  check(11, 'Reward cards count === 4', rewardCards === 4, `count=${rewardCards}`);
+  check(12, 'Reward cards count === 4', rewardCards === 4, `count=${rewardCards}`);
 
   // "Ask Questions" button
   const askBtn = page.locator('.kq-btn-primary', { hasText: 'Ask Questions' });
   const askBtnVis = await askBtn.isVisible().catch(() => false);
-  check(11, '"🗡️ Ask Questions" button visible', askBtnVis);
+  check(12, '"🗡️ Ask Questions" button visible', askBtnVis);
 
-  await screenshot(page, '11-knowledge-acquired');
+  await screenshot(page, '12-knowledge-acquired');
 
   if (askBtnVis) {
     await askBtn.click();
     await page.waitForTimeout(1000);
-    check(11, 'KQ dialog closed', !(await vis(page, '.kq-dialog', 1000)));
+    check(12, 'KQ dialog closed', !(await vis(page, '.kq-dialog', 1000)));
   }
 } else {
-  check(11, 'Knowledge Acquired step', 'SKIP', 'Complete card not visible');
+  check(12, 'Knowledge Acquired step', 'SKIP', 'Complete card not visible');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 12 — Alice asks law questions
+// STEP 13 — Alice re-asks the same law question (RAG-grounded this time)
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 12: Alice asks law questions ═══');
+console.log('\n═══ Step 13: RAG answer to the original question ═══');
 
 // Ensure chat drawer is open
 const chatHistoryVis = await vis(page, '.chat-history', 2000);
@@ -731,13 +799,13 @@ await page.waitForTimeout(1000);
 const completionMsg = (await pinia(page, 'conversation'))?.messages?.find(
   m => m.content?.includes("Scholar's Quest Complete")
 );
-check(12, 'Completion message in chat', !!completionMsg, completionMsg?.content?.slice(0, 60));
+check(13, 'Completion message in chat', !!completionMsg, completionMsg?.content?.slice(0, 60));
 
-// Ask first law question
+// Re-ask the Step 4 question — now grounded by ingested chunks.
 const lawQuestion1 = 'What is the statute of limitations for contract disputes under Vietnamese law?';
 
 // Count assistant messages before sending
-const msgCount12Before = await page.evaluate(() => {
+const msgCount13Before = await page.evaluate(() => {
   const app = document.querySelector('#app')?.__vue_app__;
   const p = app?.config?.globalProperties?.$pinia;
   return (p?.state?.value?.conversation?.messages ?? []).filter(m => m.role === 'assistant').length;
@@ -753,38 +821,41 @@ await page.waitForFunction((prevCount) => {
   const conv = p?.state?.value?.conversation;
   const assistantMsgs = (conv?.messages ?? []).filter(m => m.role === 'assistant');
   return assistantMsgs.length > prevCount && !conv?.isThinking && !conv?.isStreaming;
-}, msgCount12Before, { timeout: 180000 });
+}, msgCount13Before, { timeout: 180000 });
 
-const conv12 = await pinia(page, 'conversation');
-const lastMsg12 = [...(conv12?.messages ?? [])].reverse().find(m => m.role === 'assistant');
-check(12, 'RAG response received', (lastMsg12?.content?.length ?? 0) > 50,
-  `length=${lastMsg12?.content?.length}`);
+const conv13 = await pinia(page, 'conversation');
+const lastMsg13 = [...(conv13?.messages ?? [])].reverse().find(m => m.role === 'assistant');
+check(13, 'RAG response received', (lastMsg13?.content?.length ?? 0) > 50,
+  `length=${lastMsg13?.content?.length}`);
 
 // Check if the response references Vietnamese law specifics
-const content12 = lastMsg12?.content?.toLowerCase() ?? '';
-const hasLawContent = content12.includes('429') ||
-  content12.includes('three') || content12.includes('12 month') ||
-  content12.includes('statute') || content12.includes('limitation') ||
-  content12.includes('contract') || content12.includes('civil') ||
-  content12.includes('vietnam') || content12.includes('claim');
-check(12, 'Response references law content', hasLawContent, lastMsg12?.content?.slice(0, 100));
+const content13 = lastMsg13?.content?.toLowerCase() ?? '';
+const hasLawContent = content13.includes('429') ||
+  content13.includes('three') || content13.includes('12 month') ||
+  content13.includes('statute') || content13.includes('limitation') ||
+  content13.includes('contract') || content13.includes('civil') ||
+  content13.includes('vietnam') || content13.includes('claim');
+check(13, 'Response references law content', hasLawContent, lastMsg13?.content?.slice(0, 100));
 
-await screenshot(page, '12-alice-asks-law');
+await screenshot(page, '13-rag-law-answer');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 13 — TerranSoul answers more law questions
+// STEP 14 — TerranSoul answers more law questions
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 13: More law questions ═══');
+console.log('\n═══ Step 14: More law questions ═══');
 
-// Dismiss any quest suggestion overlay that appeared after Step 12
+// Dismiss any don't-know / quest overlay that might still be showing.
 try {
   const hotseat = page.locator('.hotseat-strip');
   if (await hotseat.isVisible({ timeout: 2000 }).catch(() => false)) {
-    const noThanks = page.locator('.hotseat-tile-label', { hasText: 'No thanks' });
-    if (await noThanks.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await noThanks.click();
-      await page.waitForTimeout(500);
-      console.log('  ℹ️ Dismissed quest suggestion overlay');
+    const dismissLabels = ['No thanks', 'Dismiss'];
+    for (const label of dismissLabels) {
+      const btn = page.locator('.hotseat-tile-label', { hasText: label });
+      if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+        await btn.click();
+        await page.waitForTimeout(400);
+        break;
+      }
     }
   }
 } catch { /* ok */ }
@@ -813,38 +884,42 @@ await page.waitForFunction((prevCount) => {
   return assistantMsgs.length > prevCount && !conv?.isThinking && !conv?.isStreaming;
 }, msgCountBefore, { timeout: 180000 });
 
-const conv13 = await pinia(page, 'conversation');
-const lastMsg13 = [...(conv13?.messages ?? [])].reverse().find(m => m.role === 'assistant');
-check(13, 'Second RAG response received', (lastMsg13?.content?.length ?? 0) > 50,
-  `length=${lastMsg13?.content?.length}`);
+const conv14 = await pinia(page, 'conversation');
+const lastMsg14 = [...(conv14?.messages ?? [])].reverse().find(m => m.role === 'assistant');
+check(14, 'Second RAG response received', (lastMsg14?.content?.length ?? 0) > 50,
+  `length=${lastMsg14?.content?.length}`);
 
-const content13 = lastMsg13?.content?.toLowerCase() ?? '';
-const hasExemptionContent = content13.includes('force majeure') ||
-  content13.includes('exempt') || content13.includes('421') ||
-  content13.includes('fault') || content13.includes('breach') ||
-  content13.includes('contract') || content13.includes('civil') ||
-  content13.includes('liability') || content13.includes('vietnam');
-check(13, 'Response references exemptions', hasExemptionContent, lastMsg13?.content?.slice(0, 100));
+const content14 = lastMsg14?.content?.toLowerCase() ?? '';
+const hasExemptionContent = content14.includes('force majeure') ||
+  content14.includes('exempt') || content14.includes('421') ||
+  content14.includes('fault') || content14.includes('breach') ||
+  content14.includes('contract') || content14.includes('civil') ||
+  content14.includes('liability') || content14.includes('vietnam');
+check(14, 'Response references exemptions', hasExemptionContent, lastMsg14?.content?.slice(0, 100));
 
-const brain13 = await pinia(page, 'brain');
-check(13, 'Brain still local_ollama', brain13?.brainMode?.mode === 'local_ollama');
-check(13, 'Brain model still gemma3:4b', brain13?.brainMode?.model === (ollamaModelName || 'gemma3:4b'));
+const brain14 = await pinia(page, 'brain');
+check(14, 'Brain still local_ollama', brain14?.brainMode?.mode === 'local_ollama');
+check(14, 'Brain model still gemma3:4b', brain14?.brainMode?.model === (ollamaModelName || 'gemma3:4b'));
 
-await screenshot(page, '13-more-law-answers');
+await screenshot(page, '14-more-law-answers');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 14 — Skill tree stats
+// STEP 15 — Skill tree stats
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 14: Skill tree ═══');
+console.log('\n═══ Step 15: Skill tree ═══');
 
-// Dismiss any quest suggestion that appeared after Step 13
+// Dismiss any overlay that appeared after Step 14
 try {
-  const hotseat14 = page.locator('.hotseat-strip');
-  if (await hotseat14.isVisible({ timeout: 2000 }).catch(() => false)) {
-    const noThanks14 = page.locator('.hotseat-tile-label', { hasText: 'No thanks' });
-    if (await noThanks14.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await noThanks14.click();
-      await page.waitForTimeout(500);
+  const hotseat15 = page.locator('.hotseat-strip');
+  if (await hotseat15.isVisible({ timeout: 2000 }).catch(() => false)) {
+    const dismissLabels = ['No thanks', 'Dismiss'];
+    for (const label of dismissLabels) {
+      const btn = page.locator('.hotseat-tile-label', { hasText: label });
+      if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+        await btn.click();
+        await page.waitForTimeout(400);
+        break;
+      }
     }
   }
 } catch { /* ok */ }
@@ -853,32 +928,32 @@ try {
 await navTo(page, 'Quests');
 await page.waitForTimeout(500);
 
-check(14, '.skill-tree-view visible', await vis(page, '.skill-tree-view'));
+check(15, '.skill-tree-view visible', await vis(page, '.skill-tree-view'));
 
 const stTitle = await txt(page, '.st-title');
-check(14, 'Title === "⚔️ Skill Tree"', stTitle === '⚔️ Skill Tree', stTitle);
+check(15, 'Title === "⚔️ Skill Tree"', stTitle === '⚔️ Skill Tree', stTitle);
 
-check(14, '.brain-stat-sheet visible', await vis(page, '.brain-stat-sheet'));
+check(15, '.brain-stat-sheet visible', await vis(page, '.brain-stat-sheet'));
 
 const bssTitle = await txt(page, '.bss-title');
-check(14, 'Sheet title === "⚔ Brain Stat Sheet"', bssTitle === '⚔ Brain Stat Sheet', bssTitle);
+check(15, 'Sheet title === "⚔ Brain Stat Sheet"', bssTitle === '⚔ Brain Stat Sheet', bssTitle);
 
 const statAbbrs = await allTexts(page, '.bss-stat-abbr');
-check(14, 'Stats === ["INT","WIS","CHA","PER","DEX","END"]',
+check(15, 'Stats === ["INT","WIS","CHA","PER","DEX","END"]',
   JSON.stringify(statAbbrs) === JSON.stringify(['INT', 'WIS', 'CHA', 'PER', 'DEX', 'END']),
   JSON.stringify(statAbbrs));
 
 const levelBadge = await txt(page, '.bss-level');
-check(14, 'Level badge matches /^Lv\\. \\d+$/', /^Lv\. \d+$/.test(levelBadge), levelBadge);
+check(15, 'Level badge matches /^Lv\\. \\d+$/', /^Lv\. \d+$/.test(levelBadge), levelBadge);
 
-check(14, '.st-daily-section visible', await vis(page, '.st-daily-section'));
+check(15, '.st-daily-section visible', await vis(page, '.st-daily-section'));
 
-await screenshot(page, '14-skill-tree');
+await screenshot(page, '15-skill-tree');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STEP 15 — Pet mode with chat
+// STEP 16 — Pet mode with chat
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('\n═══ Step 15: Pet mode ═══');
+console.log('\n═══ Step 16: Pet mode ═══');
 
 // Navigate back to Chat first
 await navTo(page, 'Chat');
@@ -889,11 +964,11 @@ await page.locator('.mode-toggle-pill').click();
 await page.waitForTimeout(2000);
 
 const petOverlay = await vis(page, '.pet-overlay', 5000);
-check(15, 'Pet overlay visible', petOverlay);
+check(16, 'Pet overlay visible', petOverlay);
 
 if (petOverlay) {
   const hasAppShellPetMode = await page.locator('.app-shell.pet-mode').isVisible().catch(() => false);
-  check(15, 'App shell has .pet-mode class', hasAppShellPetMode);
+  check(16, 'App shell has .pet-mode class', hasAppShellPetMode);
 
   // Dismiss onboarding if present
   try {
@@ -911,21 +986,21 @@ if (petOverlay) {
       await petChar.click();
       await page.waitForTimeout(1000);
       const petChatVisible = await vis(page, '.pet-chat', 3000);
-      check(15, 'Pet chat panel visible', petChatVisible);
+      check(16, 'Pet chat panel visible', petChatVisible);
     } catch {
-      check(15, 'Pet chat panel', 'SKIP', 'click did not propagate');
+      check(16, 'Pet chat panel', 'SKIP', 'click did not propagate');
     }
   }
 
-  await screenshot(page, '15-pet-mode');
+  await screenshot(page, '16-pet-mode');
 
   // Exit pet mode via Escape key (mode toggle is hidden in pet mode)
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
-  check(15, 'Exited pet mode', !(await vis(page, '.pet-overlay', 1000)));
+  check(16, 'Exited pet mode', !(await vis(page, '.pet-overlay', 1000)));
 }
 
-await screenshot(page, '15-final');
+await screenshot(page, '16-final');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SUMMARY

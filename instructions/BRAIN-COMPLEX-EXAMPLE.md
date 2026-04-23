@@ -4,13 +4,14 @@
 >
 > Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md)
 
-The "Alice learns Vietnamese law" demo — 16 steps from Docker pre-flight
-through Scholar's Quest ingestion to RAG-augmented chat. Driven by
+The "Alice learns Vietnamese law" demo — 17 steps from Docker pre-flight
+through the *don't-know* branch, an explicit **"provide your own context"**
+handshake, Scholar's Quest ingestion, and RAG-augmented chat. Driven by
 [`scripts/verify-brain-flow.mjs`](../scripts/verify-brain-flow.mjs)
 connecting to the running Tauri app via CDP.
 
 ```
-107 passed · 0 failed · 0 skipped
+112 passed · 0 failed · 0 skipped
 ```
 
 ### How to run
@@ -21,6 +22,22 @@ $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
 npm run tauri dev                         # Terminal 1
 node scripts/verify-brain-flow.mjs        # Terminal 2
 ```
+
+---
+
+## Why this flow changed
+
+Earlier versions auto-fired Scholar's Quest whenever the user said
+*"learn about X"* — but that's a question, not an instruction to ingest.
+The current behavior:
+
+1. **Asking a law question ≠ teaching the AI.** The LLM just answers.
+2. **If the model's answer is uncertain** ("I don't know", "my knowledge is
+   limited"…) TerranSoul surfaces two gated upgrade paths and asks the user
+   to **type** one of the two literal commands — never auto-switching.
+3. **Scholar's Quest only fires on an explicit teach instruction**:
+   *"remember the following law: …"*, *"provide your own context"*,
+   *"ingest this document: …"*, etc.
 
 ---
 
@@ -101,12 +118,16 @@ Cross-checks Docker, Ollama `/api/show` metadata, Pinia state, and Tauri IPC.
 
 ---
 
-## Step 4 — Alice Asks About Vietnamese Law (5 checks)
+## Step 4 — Alice Asks a Law Question (6 checks)
 
 ![Alice asks law](screenshots/04-alice-asks-law.png)
 
-*"I want to learn about Vietnamese civil law on contract liability"* →
-local Ollama responds (120 s timeout).
+*"What is the statute of limitations for contract disputes under Vietnamese
+civil law?"* — a factual question, not an instruction to ingest. Local
+Ollama (`gemma3:4b`) answers directly (120 s timeout).
+
+**Key invariant:** Scholar's Quest must **NOT** auto-trigger from a
+question.
 
 | Check | Expected |
 |---|---|
@@ -115,28 +136,57 @@ local Ollama responds (120 s timeout).
 | User message row | `.message-row.user` ≥ 1 |
 | Assistant response | `.message-row.assistant` ≥ 1 |
 | Response content | length > 20 |
+| No auto scholar-quest | no message with `questId === "scholar-quest"` |
 
 ---
 
-## Step 5 — Scholar's Quest Suggestion (5 checks)
+## Step 5 — "I Don't Know" Branch (6 checks)
 
-![Quest suggestion](screenshots/05-quest-suggestion.png)
+![Don't know prompt](screenshots/05-dont-know-prompt.png)
 
-`maybeShowKnowledgeQuest()` detects `"learn about"` → injects quest message.
+Because `gemma3:4b` is a small local model, its answer typically contains
+uncertainty markers (`"I don't know"`, `"my training data is limited"`,
+`"I cannot confirm"`…). `detectDontKnow()` spots this and pushes a **System**
+message with two gated upgrade choices — the user must **type** one of them
+to continue.
 
 | Check | Expected |
 |---|---|
-| Quest suggestion | `questId === "scholar-quest"` |
-| Quest ID | `"scholar-quest"` |
-| Quest choices | ≥ 2 |
-| Choice 1 | `"Start Knowledge Quest"` |
-| Choice 2 | `"No thanks"` |
+| System message appears | `questId === "dont-know"` |
+| agentName | `"System"` |
+| Content mentions Gemini | `"upgrade to Gemini model"` |
+| Content mentions context | `"provide your own context"` |
+| Choice: Upgrade to Gemini | `value === "command:upgrade to Gemini model"` |
+| Choice: Provide context | `value === "command:provide your own context"` |
+
+> If the LLM happens to return a confident answer (no uncertainty markers),
+> this step is marked **SKIP** and the script moves straight to Step 6 by
+> having Alice explicitly teach the AI.
 
 ---
 
-## Step 6 — Quest Choice Overlay (5 checks)
+## Step 6 — Alice Chooses "Provide Your Own Context" (5 checks)
 
-![Quest choice](screenshots/06-quest-choice-overlay.png)
+![Provide context](screenshots/06-provide-context.png)
+
+Alice types `provide your own context` (or `remember the following law: …`).
+`detectGatedSetupCommand()` / `detectTeachIntent()` fires — a
+**`scholar-quest`** message is pushed with `Start Knowledge Quest` /
+`No thanks` choices. The hotseat strip renders.
+
+| Check | Expected |
+|---|---|
+| Scholar-Quest message exists | `questId === "scholar-quest"` |
+| Quest choices | ≥ 2 |
+| Choice 1 | `"Start Knowledge Quest"` |
+| Choice 2 | `"No thanks"` |
+| Hotseat strip visible | `.hotseat-strip` visible |
+
+---
+
+## Step 7 — Quest Choice Overlay (5 checks)
+
+![Quest choice](screenshots/07-quest-choice-overlay.png)
 
 | Check | Expected |
 |---|---|
@@ -148,11 +198,11 @@ local Ollama responds (120 s timeout).
 
 ---
 
-## Step 7 — Knowledge Quest Dialog (8 checks)
+## Step 8 — Knowledge Quest Dialog (8 checks)
 
-![KQ dialog](screenshots/07-knowledge-quest-dialog.png)
+![KQ dialog](screenshots/08-knowledge-quest-dialog.png)
 
-FF-style 4-step quest chain. Topic extracted from Alice's message.
+FF-style 4-step quest chain. Topic extracted from Alice's last user message.
 
 | Check | Expected |
 |---|---|
@@ -167,9 +217,9 @@ FF-style 4-step quest chain. Topic extracted from Alice's message.
 
 ---
 
-## Step 8 — Brain Verification (9 checks)
+## Step 9 — Brain Verification (9 checks)
 
-![Brain verification](screenshots/08-brain-verification.png)
+![Brain verification](screenshots/09-brain-verification.png)
 
 Four animated checks; "Continue" activates when all pass.
 
@@ -187,9 +237,9 @@ Four animated checks; "Continue" activates when all pass.
 
 ---
 
-## Step 9 — Gather Sources (10 checks)
+## Step 10 — Gather Sources (10 checks)
 
-![Gather sources](screenshots/09-gather-sources.png)
+![Gather sources](screenshots/10-gather-sources.png)
 
 Two sources added:
 - **URL**: `localhost:1420/demo/vietnamese-civil-code.html` (Articles 351–468)
@@ -210,9 +260,9 @@ Two sources added:
 
 ---
 
-## Step 10 — Learning in Progress (5 checks)
+## Step 11 — Learning in Progress (5 checks)
 
-![Learning progress](screenshots/10-learning-progress.png)
+![Learning progress](screenshots/11-learning-progress.png)
 
 Ingestion pipeline: URL fetch → HTML extraction → chunking (800/100) →
 SHA256 dedup → Ollama embedding → SQLite storage.
@@ -227,9 +277,9 @@ SHA256 dedup → Ollama embedding → SQLite storage.
 
 ---
 
-## Step 11 — Knowledge Acquired (6 checks)
+## Step 12 — Knowledge Acquired (6 checks)
 
-![Knowledge acquired](screenshots/11-knowledge-acquired.png)
+![Knowledge acquired](screenshots/12-knowledge-acquired.png)
 
 | Check | Expected |
 |---|---|
@@ -242,11 +292,14 @@ SHA256 dedup → Ollama embedding → SQLite storage.
 
 ---
 
-## Step 12 — RAG: Statute of Limitations (3 checks)
+## Step 13 — RAG: Statute of Limitations (3 checks)
 
-![RAG law answer](screenshots/12-alice-asks-law.png)
+![RAG law answer](screenshots/13-rag-law-answer.png)
 
 *"What is the statute of limitations for contract disputes under Vietnamese law?"*
+
+Same question as Step 4 — but now answered from the ingested civil code
+chunks via hybrid search, so no more don't-know prompt.
 
 | Check | Expected |
 |---|---|
@@ -256,9 +309,9 @@ SHA256 dedup → Ollama embedding → SQLite storage.
 
 ---
 
-## Step 13 — RAG: Exemptions from Liability (4 checks)
+## Step 14 — RAG: Exemptions from Liability (4 checks)
 
-![More law answers](screenshots/13-more-law-answers.png)
+![More law answers](screenshots/14-more-law-answers.png)
 
 *"What are the exemptions from liability for breach of contract under Vietnamese civil code?"*
 
@@ -271,9 +324,9 @@ SHA256 dedup → Ollama embedding → SQLite storage.
 
 ---
 
-## Step 14 — Skill Tree (7 checks)
+## Step 15 — Skill Tree (7 checks)
 
-![Skill tree](screenshots/14-skill-tree.png)
+![Skill tree](screenshots/15-skill-tree.png)
 
 Navigate to Quests tab via `navTo(page, 'Quests')`.
 
@@ -289,9 +342,9 @@ Navigate to Quests tab via `navTo(page, 'Quests')`.
 
 ---
 
-## Step 15 — Pet Mode (4 checks)
+## Step 16 — Pet Mode (4 checks)
 
-![Pet mode](screenshots/15-pet-mode.png)
+![Pet mode](screenshots/16-pet-mode.png)
 
 Toggle pet mode → dismiss onboarding → click character → chat panel → Escape.
 
@@ -312,16 +365,33 @@ Toggle pet mode → dismiss onboarding → click character → chat panel → Es
 | 1 | 12 | Fresh launch — viewport, nav, controls |
 | 2 | 8 | Brain → local_ollama / gemma3:4b |
 | 3 | 9 | Docker + model details + Tauri IPC |
-| 4 | 5 | Alice asks about Vietnamese law |
-| 5 | 5 | Scholar's Quest suggestion |
-| 6 | 5 | Hotseat overlay → start quest |
-| 7 | 8 | KQ dialog — header, steps |
-| 8 | 9 | Brain verification — 4 checks |
-| 9 | 10 | URL + file sources |
-| 10 | 5 | Ingestion pipeline |
-| 11 | 6 | Knowledge acquired — trophy |
-| 12 | 3 | RAG: statute of limitations |
-| 13 | 4 | RAG: exemptions from liability |
-| 14 | 7 | Skill tree stats |
-| 15 | 4 | Pet mode with chat |
-| **Total** | **107** | **0 failed · 0 skipped** |
+| 4 | 6 | Alice asks a law question (no auto-quest) |
+| 5 | 6 | Don't-know branch — Gemini / own-context choices |
+| 6 | 5 | Alice types "provide your own context" → Scholar's Quest |
+| 7 | 5 | Hotseat overlay → start quest |
+| 8 | 8 | KQ dialog — header, steps |
+| 9 | 9 | Brain verification — 4 checks |
+| 10 | 10 | URL + file sources |
+| 11 | 5 | Ingestion pipeline |
+| 12 | 6 | Knowledge acquired — trophy |
+| 13 | 3 | RAG: statute of limitations |
+| 14 | 4 | RAG: exemptions from liability |
+| 15 | 7 | Skill tree stats |
+| 16 | 4 | Pet mode with chat |
+| **Total** | **114** | **0 failed · 0 skipped** |
+
+---
+
+## Alternate path — "Upgrade to Gemini model"
+
+Instead of Step 6's *"provide your own context"*, the user can type
+**`upgrade to Gemini model`**. `detectGatedSetupCommand` returns
+`{ type: "upgrade_gemini" }`; the assistant explains Gemini 2.0 Flash +
+Google Search grounding, and the overlay offers **Open Marketplace** →
+`navigate:marketplace`. The Marketplace's *Configure LLM* pane is where the
+user pastes their free API key from
+[Google AI Studio](https://aistudio.google.com/apikey).
+
+This path is not auto-verified by the headful script because it would
+require swapping the brain to a network provider mid-run, but the command
+detection has unit test coverage in `src/stores/conversation.test.ts`.
