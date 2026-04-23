@@ -183,7 +183,7 @@ const activeBrainBadge = computed(() => {
   return '🖥 Local';
 });
 
-const showLlmConfig = ref(true);
+const showLlmConfig = ref(false);
 const llmTier = ref<'free' | 'paid' | 'local'>('free');
 const llmSelectedProvider = ref(
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
@@ -220,7 +220,15 @@ function resolvedPaidBaseUrl(): string {
   }
 }
 
-function applyFreeProvider() {
+async function persistBrainMode(mode: { mode: 'free_api'; provider_id: string; api_key: string | null } | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string } | { mode: 'local_ollama'; model: string }) {
+  if (tauriAvailable) {
+    await brainStore.setBrainMode(mode);
+    return;
+  }
+  brainStore.brainMode = mode;
+}
+
+async function applyFreeProvider() {
   const providerId = llmSelectedProvider.value;
   const apiKey = llmFreeApiKey.value || null;
   const mode = {
@@ -228,8 +236,7 @@ function applyFreeProvider() {
     provider_id: providerId,
     api_key: apiKey,
   };
-  brainStore.brainMode = mode;
-  brainStore.setBrainMode(mode).catch(() => { /* expected in browser */ });
+  await persistBrainMode(mode);
 
   const provider = brainStore.freeProviders.find((fp) => fp.id === providerId);
   llmConfirmation.value = {
@@ -238,7 +245,7 @@ function applyFreeProvider() {
   };
 }
 
-function applyPaidProvider() {
+async function applyPaidProvider() {
   const baseUrl = resolvedPaidBaseUrl();
   const mode = {
     mode: 'paid_api' as const,
@@ -247,8 +254,7 @@ function applyPaidProvider() {
     model: llmPaidModel.value,
     base_url: baseUrl,
   };
-  brainStore.brainMode = mode;
-  brainStore.setBrainMode(mode).catch(() => { /* expected in browser */ });
+  await persistBrainMode(mode);
 
   llmConfirmation.value = {
     name: `${llmPaidProvider.value} / ${llmPaidModel.value}`,
@@ -266,8 +272,7 @@ async function applyLocalModel() {
   }
   await brainStore.setActiveBrain(model);
   const mode = { mode: 'local_ollama' as const, model };
-  brainStore.brainMode = mode;
-  brainStore.setBrainMode(mode).catch(() => { /* expected in browser */ });
+  await persistBrainMode(mode);
 
   const rec = brainStore.recommendations.find((m) => m.model_tag === model);
   llmConfirmation.value = {

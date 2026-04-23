@@ -27,11 +27,19 @@ function setupDesktopMocks() {
       case 'get_brain_mode':
         return { mode: 'free_api', provider_id: 'pollinations', api_key: null };
       case 'check_ollama_status':
-        return { running: false, model_count: 0 };
+        return { running: true, model_count: 1 };
       case 'recommend_brain_models':
-        return [];
+        return [
+          {
+            model_tag: 'gemma3:4b',
+            display_name: 'Gemma 3 4B',
+            description: 'Balanced local model',
+            required_ram_mb: 4096,
+            is_top_pick: true,
+          },
+        ];
       case 'get_ollama_models':
-        return [];
+        return [{ name: 'gemma3:4b', size: 123456 }];
       default:
         return null;
     }
@@ -71,9 +79,33 @@ describe('MarketplaceView', () => {
   it('shows free and paid config tiers with chat hint', async () => {
     const wrapper = mount(MarketplaceView);
     await flushPromises();
+    const configHeader = wrapper.find('.llm-config-header');
+    await configHeader.trigger('click');
+    await flushPromises();
 
     expect(wrapper.text()).toContain('Free Cloud');
     expect(wrapper.text()).toContain('Paid API');
     expect(wrapper.text()).toContain('ask TerranSoul in chat');
+  });
+
+  it('shows local ollama tier on desktop with recommendations', async () => {
+    setupDesktopMocks();
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = { invoke: mockInvoke };
+
+    const wrapper = mount(MarketplaceView);
+    await flushPromises();
+
+    const configHeader = wrapper.find('.llm-config-header');
+    await configHeader.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Local Ollama');
+    const localTab = wrapper.findAll('.llm-tier-tab').find((b) => b.text().includes('Local Ollama'));
+    expect(localTab).toBeTruthy();
+    await localTab!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Ollama is running');
+    expect(wrapper.text()).toContain('Gemma 3 4B');
   });
 });
