@@ -2,6 +2,8 @@ use serde::Serialize;
 use std::process::Stdio;
 use tokio::process::Command;
 
+use crate::container::{ContainerRuntime, RuntimePreference};
+
 const CONTAINER_NAME: &str = "ollama";
 const OLLAMA_IMAGE: &str = "ollama/ollama:latest";
 
@@ -200,9 +202,15 @@ pub async fn wait_for_docker_ready(timeout_secs: u64) -> bool {
 
 /// Check the status of the Ollama Docker container.
 pub async fn check_ollama_container() -> OllamaContainerStatus {
-    let exists = container_exists(CONTAINER_NAME).await;
+    check_ollama_container_for(ContainerRuntime::Docker).await
+}
+
+/// Variant of [`check_ollama_container`] that targets a specific runtime.
+pub async fn check_ollama_container_for(runtime: ContainerRuntime) -> OllamaContainerStatus {
+    let bin = runtime.binary();
+    let exists = container_exists(bin, CONTAINER_NAME).await;
     let running = if exists {
-        container_running(CONTAINER_NAME).await
+        container_running(bin, CONTAINER_NAME).await
     } else {
         false
     };
@@ -219,18 +227,33 @@ pub async fn check_ollama_container() -> OllamaContainerStatus {
 /// starts it if stopped.  Detects NVIDIA GPU and enables `--gpus all` when
 /// available.
 pub async fn ensure_ollama_container() -> Result<String, String> {
+    ensure_ollama_container_for(ContainerRuntime::Docker).await
+}
+
+/// Variant of [`ensure_ollama_container`] that targets a specific runtime.
+/// Both Docker and Podman accept the same `run / start / -d` arguments.
+pub async fn ensure_ollama_container_for(
+    runtime: ContainerRuntime,
+) -> Result<String, String> {
+    let bin = runtime.binary();
     // If already running and API reachable, nothing to do
-    let status = check_ollama_container().await;
+    let status = check_ollama_container_for(runtime).await;
     if status.running && status.api_reachable {
-        return Ok("Ollama container already running".to_string());
+        return Ok(format!(
+            "Ollama container already running (via {})",
+            runtime.label()
+        ));
     }
 
     // If container exists but stopped, start it
     if status.exists && !status.running {
-        let out = run_command("docker", &["start", CONTAINER_NAME]).await?;
+        let out = run_command(bin, &["start", CONTAINER_NAME]).await?;
         // Wait for API
         wait_for_ollama_api(30).await?;
-        return Ok(format!("Ollama container started: {out}"));
+        return Ok(format!(
+            "Ollama container started via {}: {out}",
+            runtime.label()
+        ));
     }
 
     // Container doesn't exist — create and run
@@ -243,31 +266,43 @@ pub async fn ensure_ollama_container() -> Result<String, String> {
         "--restart", "unless-stopped",
     ];
     if has_gpu {
+        // Both Docker and Podman accept `--gpus all` (Podman ≥ 4.1 with the
+        // nvidia container toolkit installed). On systems without GPU
+        // support this flag is simply omitted.
         args.insert(2, "all");
         args.insert(2, "--gpus");
     }
     args.push(OLLAMA_IMAGE);
 
-    let out = run_command("docker", &args).await?;
+    let out = run_command(bin, &args).await?;
 
     // Wait for the API to become ready
     wait_for_ollama_api(60).await?;
 
     Ok(format!(
-        "Ollama container created{}: {out}",
+        "Ollama container created via {}{}: {out}",
+        runtime.label(),
         if has_gpu { " (GPU enabled)" } else { "" }
     ))
 }
 
 /// Pull a model inside the running Ollama container.
-/// Uses `docker exec` to run `ollama pull <model>`.
+/// Uses `<runtime> exec` to run `ollama pull <model>`.
 pub async fn docker_pull_model(model: &str) -> Result<String, String> {
+    docker_pull_model_for(ContainerRuntime::Docker, model).await
+}
+
+/// Variant of [`docker_pull_model`] that targets a specific runtime.
+pub async fn docker_pull_model_for(
+    runtime: ContainerRuntime,
+    model: &str,
+) -> Result<String, String> {
     // Validate model name: alphanumeric, hyphens, underscores, colons, slashes, dots
     if model.is_empty() || !model.chars().all(|c| c.is_alphanumeric() || "-_:/.".contains(c)) {
         return Err("Invalid model name".to_string());
     }
 
-    let output = Command::new("docker")
+    let output = Command::new(runtime.binary())
         .args(["exec", CONTAINER_NAME, "ollama", "pull", model])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -286,48 +321,52 @@ pub async fn docker_pull_model(model: &str) -> Result<String, String> {
 /// Full auto-setup: Docker check → start Desktop if needed → create Ollama
 /// container → pull the recommended model. Returns a summary string.
 pub async fn auto_setup_local_llm(model: &str) -> Result<String, String> {
+    auto_setup_local_llm_with(model, RuntimePreference::default()).await
+}
+
+/// Variant of [`auto_setup_local_llm`] that respects a runtime preference.
+/// When the preference is `Auto` the helper picks Docker first, then Podman
+/// — matching the order documented in [`crate::container`].
+pub async fn auto_setup_local_llm_with(
+    model: &str,
+    preference: RuntimePreference,
+) -> Result<String, String> {
+    let runtime = crate::container::resolve_runtime(preference).await?;
     let mut steps: Vec<String> = Vec::new();
+    steps.push(format!("Container runtime: {}", runtime.label()));
 
-    // Step 1: Check Docker
-    let docker = check_docker_status().await;
-    if !docker.cli_found {
-        return Err(
-            "Docker CLI not found. Please install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-                .to_string(),
-        );
-    }
+    // Step 1: Check daemon (Docker only — Podman is daemon-less on Linux)
+    if matches!(runtime, ContainerRuntime::Docker) {
+        let docker = check_docker_status().await;
+        if !docker.daemon_running {
+            if docker.desktop_installed {
+                start_docker_desktop().await?;
+                steps.push("Docker Desktop launch initiated".to_string());
 
-    // Step 2: Start Docker Desktop if daemon not running
-    if !docker.daemon_running {
-        if docker.desktop_installed {
-            start_docker_desktop().await?;
-            steps.push("Docker Desktop launch initiated".to_string());
-
-            // Wait up to 90 seconds for the daemon
-            if !wait_for_docker_ready(90).await {
-                return Err("Docker daemon did not become ready within 90 seconds. Please start Docker Desktop manually.".to_string());
+                if !wait_for_docker_ready(90).await {
+                    return Err("Docker daemon did not become ready within 90 seconds. Please start Docker Desktop manually.".to_string());
+                }
+                steps.push("Docker daemon is now ready".to_string());
+            } else {
+                return Err(
+                    "Docker daemon is not running and Docker Desktop was not found. Install Docker Desktop (https://www.docker.com/products/docker-desktop/) or switch to Podman in Settings."
+                        .to_string(),
+                );
             }
-            steps.push("Docker daemon is now ready".to_string());
         } else {
-            return Err(
-                "Docker daemon is not running and Docker Desktop was not found. Please install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-                    .to_string(),
-            );
+            steps.push("Docker daemon already running".to_string());
         }
-    } else {
-        steps.push("Docker daemon already running".to_string());
     }
 
-    // Step 3: Ensure Ollama container
-    let msg = ensure_ollama_container().await?;
+    // Step 2: Ensure Ollama container
+    let msg = ensure_ollama_container_for(runtime).await?;
     steps.push(msg);
 
-    // Step 4: Pull the model
-    // Validate model name
+    // Step 3: Validate + pull the model
     if model.is_empty() || !model.chars().all(|c| c.is_alphanumeric() || "-_:/.".contains(c)) {
         return Err("Invalid model name".to_string());
     }
-    let pull_msg = docker_pull_model(model).await?;
+    let pull_msg = docker_pull_model_for(runtime, model).await?;
     steps.push(format!("Model '{model}' pulled: {pull_msg}"));
 
     Ok(steps.join("\n"))
@@ -370,16 +409,16 @@ async fn run_command(program: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
-/// Check if a Docker container with the given name exists.
-async fn container_exists(name: &str) -> bool {
-    run_command("docker", &["inspect", "--format", "{{.State.Status}}", name])
+/// Check if a container with the given name exists in the runtime.
+async fn container_exists(bin: &str, name: &str) -> bool {
+    run_command(bin, &["inspect", "--format", "{{.State.Status}}", name])
         .await
         .is_ok()
 }
 
-/// Check if a Docker container with the given name is running.
-async fn container_running(name: &str) -> bool {
-    run_command("docker", &["inspect", "--format", "{{.State.Status}}", name])
+/// Check if a container with the given name is running.
+async fn container_running(bin: &str, name: &str) -> bool {
+    run_command(bin, &["inspect", "--format", "{{.State.Status}}", name])
         .await
         .map(|s| s.trim() == "running")
         .unwrap_or(false)
@@ -490,6 +529,30 @@ mod tests {
     async fn auto_setup_rejects_empty_model() {
         let result = auto_setup_local_llm("").await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn auto_setup_with_explicit_runtime_rejects_empty_model() {
+        let result = auto_setup_local_llm_with("", RuntimePreference::Auto).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn docker_pull_model_for_podman_rejects_empty() {
+        // Even when targeting Podman, validation must run before any exec.
+        let result = docker_pull_model_for(ContainerRuntime::Podman, "").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid model name"));
+    }
+
+    #[tokio::test]
+    async fn check_ollama_container_for_podman_returns_struct() {
+        // Podman may or may not be installed; we only assert no panic and
+        // a well-formed struct.
+        let status = check_ollama_container_for(ContainerRuntime::Podman).await;
+        let _ = status.exists;
+        let _ = status.running;
+        let _ = status.api_reachable;
     }
 
     #[tokio::test]

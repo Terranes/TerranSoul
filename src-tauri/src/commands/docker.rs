@@ -1,12 +1,43 @@
 use tauri::State;
 
 use crate::brain::docker_ollama;
+use crate::container::{self, RuntimeDetection, RuntimePreference};
 use crate::AppState;
 
 /// Check Docker CLI and daemon status.
 #[tauri::command]
 pub async fn check_docker_status() -> docker_ollama::DockerStatus {
     docker_ollama::check_docker_status().await
+}
+
+/// Detect both Docker and Podman in one call. The frontend uses this to
+/// show a runtime picker the first time the user starts the local-LLM
+/// quest (or whenever both runtimes are available).
+#[tauri::command]
+pub async fn detect_container_runtimes() -> RuntimeDetection {
+    container::detect_runtimes().await
+}
+
+/// Read the persisted container-runtime preference.
+#[tauri::command]
+pub async fn get_runtime_preference(
+    state: State<'_, AppState>,
+) -> Result<RuntimePreference, String> {
+    let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    Ok(settings.preferred_container_runtime)
+}
+
+/// Persist the user's container-runtime preference (Auto / Docker / Podman).
+/// Used by the local-LLM quest UI when the user explicitly picks a runtime.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_runtime_preference(
+    preference: RuntimePreference,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    settings.preferred_container_runtime = preference;
+    crate::settings::config_store::save(&state.data_dir, &settings)?;
+    Ok(())
 }
 
 /// Attempt to launch Docker Desktop. Returns immediately after dispatching
@@ -54,7 +85,23 @@ pub async fn auto_setup_local_llm(
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let result = docker_ollama::auto_setup_local_llm(&model_name).await?;
+    let preference = {
+        let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.preferred_container_runtime
+    };
+    auto_setup_local_llm_with_runtime(model_name, preference, state).await
+}
+
+/// Variant of [`auto_setup_local_llm`] that runs against an explicit
+/// runtime preference. Lets the frontend bypass the persisted setting (for
+/// example when the quest UI offers a one-off "try with Podman" button).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn auto_setup_local_llm_with_runtime(
+    model_name: String,
+    preference: RuntimePreference,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let result = docker_ollama::auto_setup_local_llm_with(&model_name, preference).await?;
 
     // Auto-configure brain mode to LocalOllama with the pulled model
     let mode = crate::brain::BrainMode::LocalOllama {

@@ -11,6 +11,7 @@ use tokio::sync::Mutex as TokioMutex;
 pub mod agent;
 pub mod brain;
 pub mod commands;
+pub mod container;
 pub mod identity;
 pub mod link;
 pub mod memory;
@@ -36,9 +37,10 @@ use commands::{
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
     docker::{
-        auto_setup_local_llm, check_docker_status, check_ollama_container,
-        docker_pull_model, ensure_ollama_container, start_docker_desktop,
-        stop_docker_desktop, wait_for_docker,
+        auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
+        check_ollama_container, detect_container_runtimes, docker_pull_model,
+        ensure_ollama_container, get_runtime_preference, set_runtime_preference,
+        start_docker_desktop, stop_docker_desktop, wait_for_docker,
     },
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -337,6 +339,9 @@ pub fn run() {
             translate_text,
             detect_language,
             check_docker_status,
+            detect_container_runtimes,
+            get_runtime_preference,
+            set_runtime_preference,
             start_docker_desktop,
             stop_docker_desktop,
             wait_for_docker,
@@ -344,6 +349,7 @@ pub fn run() {
             ensure_ollama_container,
             docker_pull_model,
             auto_setup_local_llm,
+            auto_setup_local_llm_with_runtime,
             ingest_document,
             cancel_ingest_task,
             resume_ingest_task,

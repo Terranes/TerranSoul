@@ -76,6 +76,7 @@ mod tests {
             bgm_track_id: "sanctuary".into(),
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -103,6 +104,7 @@ mod tests {
             bgm_track_id: "prelude".into(),
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

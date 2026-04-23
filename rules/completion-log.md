@@ -12,6 +12,9 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.4 — Podman + Docker Desktop Dual Container Runtime](#chunk-14--podman--docker-desktop-dual-container-runtime) | 2026-04-23 |
+| [Chunk 1.2 — Mac & Linux CI Matrix + Platform Docs](#chunk-12--mac--linux-ci-matrix--platform-docs) | 2026-04-23 |
+| [Chunk 1.3 — Per-User VRM Model Persistence + Remove GENSHIN Default](#chunk-13--per-user-vrm-model-persistence--remove-genshin-default) | 2026-04-23 |
 | [Chunk 1.1 — Brain Advanced Design: Source Tracking Pipeline](#chunk-11--brain-advanced-design-source-tracking-pipeline) | 2026-04-22 |
 | [Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration](#chunks-130134--phase-11-finale-rpg-brain-configuration) | 2026-04-20 |
 | [Chunk 128 — Constellation Skill Tree](#chunk-128--constellation-skill-tree-full-screen-layout) | 2026-04-20 |
@@ -82,6 +85,131 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.4 — Podman + Docker Desktop Dual Container Runtime
+
+**Date:** 2026-04-23
+
+**Goal.** Allow the local-LLM setup quest to work on machines that — for
+company-compliance reasons — cannot install Docker Desktop but do have
+Podman, while preserving today's behaviour for users with Docker.
+
+**Architecture.** New `src-tauri/src/container/` module with:
+- `ContainerRuntime { Docker, Podman }` enum with `binary()` / `label()`.
+- `RuntimePreference { Auto, Docker, Podman }` (default `Auto`),
+  serde-persisted in `AppSettings.preferred_container_runtime`.
+- `detect_runtimes()` returns a `RuntimeDetection` struct with both CLI
+  presence + daemon health flags, an `auto_pick`, and `both_available`
+  for the UI to show a one-time picker.
+- `resolve_runtime(preference)` returns either the explicit choice or
+  the auto-pick, with a clear install hint when neither is found.
+
+`src-tauri/src/brain/docker_ollama.rs` was refactored: every Docker CLI
+invocation now goes through a `bin: &str` parameter via new `_for` /
+`_with` variants (`check_ollama_container_for`, `ensure_ollama_container_for`,
+`docker_pull_model_for`, `auto_setup_local_llm_with`). The legacy
+`auto_setup_local_llm`/`docker_pull_model`/etc. delegate with
+`ContainerRuntime::Docker` so existing callers and tests remain valid.
+
+`commands/docker.rs` exposes new Tauri commands:
+`detect_container_runtimes`, `get_runtime_preference`,
+`set_runtime_preference`, `auto_setup_local_llm_with_runtime`. The
+existing `auto_setup_local_llm` reads the persisted preference first and
+forwards.
+
+**Files created.**
+- `src-tauri/src/container/mod.rs` (235 lines, 7 unit tests)
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — register `container` module + new commands
+- `src-tauri/src/brain/docker_ollama.rs` — refactor to runtime-parameterised, add 4 new tests
+- `src-tauri/src/commands/docker.rs` — 4 new commands, persist preference
+- `src-tauri/src/settings/mod.rs` — `preferred_container_runtime` field, default `Auto`
+- `src-tauri/src/settings/config_store.rs` — struct literals updated
+
+**Validation.**
+- `cargo clippy --all-targets -- -D warnings` ✓ clean
+- `cargo test --all-targets` → **594/594** pass (was 583)
+
+---
+
+## Chunk 1.2 — Mac & Linux CI Matrix + Platform Docs
+
+**Date:** 2026-04-23
+
+**Goal.** Catch macOS and Windows-specific Rust regressions automatically
+and document the build/install story for non-Windows users.
+
+**What shipped.**
+- New `cross-platform-rust` job in `.github/workflows/terransoul-ci.yml`
+  that runs `cargo check --all-targets` and `cargo test --lib --no-fail-fast`
+  on `macos-latest` and `windows-latest` for every push. Uses
+  `actions/cache@v4` keyed on `Cargo.lock`. Matrix uses `fail-fast: false`
+  so a macOS failure doesn't cancel the Windows run (and vice-versa).
+- New `instructions/PLATFORM-SUPPORT.md` documenting:
+  - Per-OS install paths (`.msi`/`.dmg`/`.deb`/`.rpm`/`.AppImage`).
+  - Source-build prerequisites with the exact `apt` command.
+  - The platform-specific code map (`docker_ollama.rs`,
+    `commands/window.rs`, `commands/user_models.rs`).
+  - Known gaps tracked under future work (notarisation, repo publishing).
+
+**Out of scope (intentionally deferred).**
+- Full Tauri bundle smoke tests on macOS / Windows runners (need signing
+  certs, would 4× the CI minutes).
+- macOS notarisation pipeline.
+- iOS / Android targets.
+
+**Validation.**
+- Workflow YAML linted by GitHub on push.
+- Existing Linux build-and-test job is unchanged (no regression risk).
+
+---
+
+## Chunk 1.3 — Per-User VRM Model Persistence + Remove GENSHIN Default
+
+**Date:** 2026-04-23
+
+**Goal.** (1) Stop bundling the GENSHIN VRM (and its thumbnail) so the
+repository ships only the two truly-original characters. (2) Persist
+imported VRMs in the OS-specific user data folder so they survive
+re-installs and fresh builds.
+
+**What shipped.**
+- Removed `genshin` from `src/config/default-models.ts`; deleted
+  `public/models/default/2250278607152806301.vrm` and
+  `public/models/default/GENSHIN.png`; updated all touching tests.
+- `AppSettings.user_models: Vec<UserModel>` (forward-compatible via
+  `#[serde(default)]` — no schema bump required, existing v2 settings
+  files load unchanged).
+- New `src-tauri/src/commands/user_models.rs` with five Tauri commands:
+  `import_user_model`, `list_user_models`, `delete_user_model`,
+  `read_user_model_bytes`, `update_user_model`. Files stored under
+  `<app_data_dir>/user_models/<uuid>.vrm`. 256 MiB cap; ID restricted
+  to `[A-Za-z0-9-]` to prevent path traversal.
+- Frontend `useCharacterStore` extended (`userModels`, `allModels`,
+  `loadUserModels`, `importUserModel`, `deleteUserModel`). User models
+  are loaded as bytes and wrapped in a `Blob` URL — no asset-protocol
+  scope change needed.
+- `ModelPanel.vue` rewritten with bundled vs imported `<optgroup>`,
+  per-card delete (`×`) button, and a persistence hint.
+- `ChatView.vue` startup loads user models before restoring
+  `selected_model_id`, so a previously selected imported VRM resurrects
+  on launch.
+
+**Per-user storage paths.**
+
+| OS | Path |
+|---|---|
+| Windows | `%APPDATA%\com.terranes.terransoul\user_models\` |
+| macOS | `~/Library/Application Support/com.terranes.terransoul/user_models/` |
+| Linux | `~/.local/share/com.terranes.terransoul/user_models/` |
+
+**Validation.**
+- 8 new Rust tests + 7 new TS tests for the user-model flow.
+- `cargo clippy` ✓; `cargo test --all-targets` → 583/583; `npm run test`
+  → 948/948; `npm run build` ✓.
 
 ---
 

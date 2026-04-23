@@ -106,6 +106,13 @@ pub struct AppSettings {
     /// User-imported VRM models persisted under `<app_data_dir>/user_models/`.
     #[serde(default)]
     pub user_models: Vec<UserModel>,
+
+    /// Preferred container runtime for the local-LLM quest. `Auto` picks
+    /// Docker first, then Podman; explicit values force a runtime even if
+    /// the other is also installed (used in environments where Docker
+    /// Desktop is forbidden by company policy).
+    #[serde(default)]
+    pub preferred_container_runtime: crate::container::RuntimePreference,
 }
 
 fn default_version() -> u32 {
@@ -140,6 +147,7 @@ impl Default for AppSettings {
             bgm_track_id: DEFAULT_BGM_TRACK_ID.to_string(),
             model_camera_positions: HashMap::new(),
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         }
     }
 }
@@ -237,6 +245,7 @@ mod tests {
             bgm_track_id: "moonflow".into(),
             model_camera_positions: positions,
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Docker,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

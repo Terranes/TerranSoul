@@ -77,6 +77,7 @@ mod tests {
             bgm_track_id: "moonflow".into(),
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -115,6 +116,7 @@ mod tests {
             bgm_track_id: "prelude".into(),
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -138,6 +140,7 @@ mod tests {
             bgm_track_id: "prelude".into(),
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         };
         save(dir.path(), &s).unwrap();
 
@@ -173,6 +176,7 @@ mod tests {
         let s = AppSettings {
             model_camera_positions: positions,
             user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
             ..AppSettings::default()
         };
         save(dir.path(), &s).unwrap();
