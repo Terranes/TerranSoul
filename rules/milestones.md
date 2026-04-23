@@ -113,7 +113,6 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 - ✅ Chunk 110 — Background Music — see `completion-log.md`
 
 ### Phase 9 — Learned Features (Lower Priority)
-- 🚫 Chunk 115 — Live2D Support — **won't-do** (Live2D Cubism SDK requires a paid commercial licence from Live2D Inc.; incompatible with TerranSoul's permissive licensing. VRM is the sole renderer.)
 - ✅ Chunk 116 — Screen Recording / Vision — see `completion-log.md`
 - 📦 Chunk 117 — Docker Containerization — demoted to `rules/backlog.md` (Tauri desktop apps don't use Docker)
 - ✅ Chunk 118 — Chat Log Export — see `completion-log.md`
@@ -155,7 +154,6 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
 | 1.5 | Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows | done | agent | Implemented in PR series — see `rules/completion-log.md` |
 | 1.6 | Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG) | done | agent | Schema V5 + LLM extractor + Tauri commands + MemoryGraph UI — see `rules/completion-log.md` |
-| 1.8 | ~~Real Live2D rendering via Cubism SDK~~ | **won't-do** | — | Cubism Web SDK is proprietary and requires a paid commercial licence from Live2D Inc.; no permissively-licensed open-source alternative ships the parametric rigs Live2D models depend on. VRM (via `@pixiv/three-vrm`, MIT-licensed) is TerranSoul's sole avatar format. |
 
 #### Chunk 1.7 — Real Downloadable Agent Distribution
 
@@ -166,28 +164,6 @@ signing module with curated publisher allow-list, HTTP-registry
 `307`-redirect download contract, and an end-to-end integration test
 that downloads, verifies, and persists a real binary via an axum
 upstream-host fixture.
-
-#### Chunk 1.8 — Real Live2D Rendering via Cubism SDK — **won't-do**
-
-**Decision (2026-04-23).** Removed from the roadmap. The Live2D Cubism Web
-SDK is distributed under a proprietary licence that requires a paid
-commercial agreement with Live2D Inc. for any product that ships it,
-which is incompatible with TerranSoul's permissive (MIT) distribution
-model. There is no permissively-licensed open-source renderer that can
-parse `.model3.json` rigs end-to-end (community wrappers such as
-`pixi-live2d-display` still depend on the proprietary Cubism Core
-runtime).
-
-**Outcome.** VRM (via `@pixiv/three-vrm` 3.x, MIT-licensed) is
-TerranSoul's sole avatar format. The previously-removed
-`Live2DStubRenderer` and `renderer-abstraction` factory stay removed.
-The user-facing model picker exposes VRM only; the `'live2d'`
-`RendererType` is **not** reintroduced.
-
-**If this changes in the future** (e.g. Live2D releases under a permissive
-licence, or a clean-room open-source `.model3.json` runtime appears),
-re-open this chunk in `rules/backlog.md` rather than restoring the old
-scope here.
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 

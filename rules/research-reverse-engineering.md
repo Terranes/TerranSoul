@@ -30,7 +30,6 @@
 |-------|------------|
 | Framework | Next.js 15.5, React 18, TypeScript |
 | 3D Rendering | Three.js 0.167 + @pixiv/three-vrm 3.4 |
-| 2D Rendering | Pixi.js 7.4 (Live2D support) |
 | State | Zustand 4.5 (with localStorage persistence) |
 | Desktop | Electron 39 (transparent window) |
 | Deploy | Cloudflare Workers (web mode) |
@@ -115,14 +114,13 @@ BrowserWindow({
 
 **Backend:** Python (FastAPI + WebSocket + uvicorn)
 **Frontend:** Electron + React 18 + TypeScript (separate repo: Open-LLM-VTuber-Web)
-**Character:** Live2D (via pixi-live2d-display in the WebSDK)
 **Communication:** WebSocket between Python server and Electron frontend
 
 ```
 ┌──────────────────────────────────────────────┐
 │  Electron Desktop App (Open-LLM-VTuber-Web)  │
 │  ┌────────────────────────────────────────┐   │
-│  │  React UI + Live2D Canvas              │   │
+│  │  React UI + character canvas           │   │
 │  │  (chatbox, character, settings)        │   │
 │  └────────────────────────────────────────┘   │
 │            ↕ WebSocket                        │
@@ -241,7 +239,6 @@ Uses opacity fade for smooth transition:
 | `tts/` | Speech synthesis (sherpa-onnx, MeloTTS, GPTSoVITS, Edge TTS, etc.) |
 | `vad/` | Voice Activity Detection |
 | `conversations/` | Chat history persistence |
-| `live2d_model.py` | Live2D model management |
 | `websocket_handler.py` | Main WebSocket handler |
 | `service_context.py` | Engine initialization & management |
 
@@ -895,7 +892,6 @@ See `rules/milestones.md` Phase 5.5 for chunks 055–057.
 | Speaker diarization | VibeVoice | Medium | Medium | **Medium** |
 | Hotword-boosted ASR | VibeVoice | Low | Low | **Medium** |
 | Presence / greeting system | aituber-kit | Medium | Medium | **Medium** |
-| Live2D support | aituber-kit | Medium | Medium | **Won't-do** (Cubism SDK requires paid commercial licence; VRM is sole avatar format) |
 | Screen recording / vision | Open-LLM-VTuber | High | Low | **Low** |
 | Docker containerization | Open-LLM-VTuber | High | Medium (CI) | **Low** |
 | Chat log export | Open-LLM-VTuber | Low | Low | **Low** |

@@ -12,7 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
-| [Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution + Live2D Removal](#chunk-17-distribution--real-downloadable-agent-distribution--live2d-removal) | 2026-04-23 |
+| [Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution](#chunk-17-distribution--real-downloadable-agent-distribution) | 2026-04-23 |
 | [Chunk 1.7 — Cognitive Memory Axes + Marketplace Catalog Default + Local Models as Agents + OpenClaw Bridge](#chunk-17--cognitive-memory-axes--marketplace-catalog-default--local-models-as-agents--openclaw-bridge) | 2026-04-23 |
 | [Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)](#chunk-16--entity-relationship-graph-v5-schema-typeddirectional-edges-multi-hop-rag) | 2026-04-23 |
 | [Chunk 1.5 — Multi-Agent Roster + External CLI Workers + Temporal-style Durable Workflows](#chunk-15--multi-agent-roster--external-cli-workers--temporal-style-durable-workflows) | 2026-04-23 |
@@ -92,16 +92,14 @@ Entries are in **reverse chronological order** (newest first).
 
 ---
 
-## Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution + Live2D Removal
+## Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution
 
 **Date:** 2026-04-23
 
 ### Summary
 
 Closed the last "no path to ship a third-party downloadable agent" gap
-in the agent marketplace, and removed the Live2D rendering chunk from
-the roadmap because the Cubism Web SDK requires a paid commercial
-licence from Live2D Inc.
+in the agent marketplace.
 
 ### What changed
 
@@ -153,16 +151,6 @@ licence from Live2D Inc.
    `publisher: Option<String>` and `signature: Option<String>` fields.
    Validator rejects malformed signatures (must be 128 hex chars / 64
    bytes); new `ManifestError::InvalidSignature` variant.
-6. **Live2D chunk removed (Chunk 1.8 → won't-do).** The Cubism Web SDK
-   is proprietary and requires a paid commercial agreement with Live2D
-   Inc. for any product that ships it; community wrappers like
-   `pixi-live2d-display` still depend on the proprietary Cubism Core
-   runtime. VRM (via `@pixiv/three-vrm` 3.x, MIT-licensed) is
-   TerranSoul's sole avatar format. The `Live2DStubRenderer` and
-   `renderer-abstraction` factory stay removed; the user-facing model
-   picker exposes VRM only. The roadmap entry in `rules/milestones.md`
-   plus the priority row in `rules/research-reverse-engineering.md`
-   are updated to **won't-do** with the licensing rationale.
 
 ### Files touched
 
@@ -182,11 +170,7 @@ licence from Live2D Inc.
 - `src-tauri/src/registry_server/distribution_e2e_tests.rs` — **new**,
   three end-to-end integration tests against real `axum` fixtures.
 - `src-tauri/src/registry_server/mod.rs` — wires the new test module.
-- `rules/milestones.md` — Chunk 1.7 row removed (now done); Chunk 1.8
-  marked **won't-do** with full licensing rationale; Chunk 115 (Phase 9
-  Live2D learned-feature) marked **won't-do**.
-- `rules/research-reverse-engineering.md` — Live2D priority row updated
-  to **won't-do** with rationale.
+- `rules/milestones.md` — Chunk 1.7 row removed (now done).
 - `rules/completion-log.md` — this entry.
 
 ### Verification
