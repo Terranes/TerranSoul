@@ -185,6 +185,54 @@ pub fn save_summary(summary: &str, store: &crate::memory::MemoryStore) -> bool {
         .is_ok()
 }
 
+// ── Edge extraction (LLM-powered Entity-Relationship Graph builder) ──────────
+
+/// Use the brain to propose typed, directional edges connecting a batch of
+/// memories. Returns the count of new edges actually inserted (duplicates and
+/// invalid edges are silently skipped).
+///
+/// **Cost.** One LLM call per `chunk_size` memories. The default 25-memory
+/// chunk keeps the prompt under most context windows. For 1000 memories this
+/// is 40 calls — typically a few minutes on a local Ollama, seconds on a
+/// hosted API.
+pub async fn extract_edges_via_brain(
+    model: &str,
+    store: &crate::memory::MemoryStore,
+    chunk_size: usize,
+) -> usize {
+    use crate::memory::edges::{format_memories_for_extraction, parse_llm_edges};
+
+    let entries = match store.get_all() {
+        Ok(es) => es,
+        Err(_) => return 0,
+    };
+    if entries.len() < 2 {
+        return 0;
+    }
+    let known_ids: std::collections::HashSet<i64> =
+        entries.iter().map(|e| e.id).collect();
+
+    let agent = OllamaAgent::new(model);
+    let mut total_inserted = 0usize;
+    let chunk = chunk_size.clamp(2, 50);
+
+    for window in entries.chunks(chunk) {
+        let block = format_memories_for_extraction(window);
+        let reply = agent.propose_edges(&block).await;
+        if reply.trim().eq_ignore_ascii_case("NONE") {
+            continue;
+        }
+        let new_edges = parse_llm_edges(&reply, &known_ids);
+        if new_edges.is_empty() {
+            continue;
+        }
+        if let Ok(n) = store.add_edges_batch(&new_edges) {
+            total_inserted += n;
+        }
+    }
+    total_inserted
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

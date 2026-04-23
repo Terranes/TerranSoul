@@ -1,11 +1,22 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { MemoryEntry, MemoryStats, MemoryTier, NewMemory, Message } from '../types';
+import type {
+  EdgeDirection,
+  EdgeStats,
+  MemoryEdge,
+  MemoryEntry,
+  MemoryStats,
+  MemoryTier,
+  Message,
+  NewMemory,
+} from '../types';
 
 export const useMemoryStore = defineStore('memory', () => {
   const memories = ref<MemoryEntry[]>([]);
   const stats = ref<MemoryStats | null>(null);
+  const edges = ref<MemoryEdge[]>([]);
+  const edgeStats = ref<EdgeStats | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 
@@ -180,9 +191,115 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  // ── Entity-Relationship Graph (V5 schema) ─────────────────────────────────
+
+  /** Load all typed edges in the knowledge graph. */
+  async function fetchEdges(): Promise<MemoryEdge[]> {
+    try {
+      const list = await invoke<MemoryEdge[]>('list_memory_edges');
+      edges.value = list;
+      return list;
+    } catch (e) {
+      error.value = String(e);
+      return [];
+    }
+  }
+
+  /** Insert (or fetch existing) typed edge. */
+  async function addEdge(
+    srcId: number,
+    dstId: number,
+    relType: string,
+    confidence = 1.0,
+    source: 'user' | 'llm' | 'auto' = 'user',
+  ): Promise<MemoryEdge | null> {
+    try {
+      const edge = await invoke<MemoryEdge>('add_memory_edge', {
+        srcId,
+        dstId,
+        relType,
+        confidence,
+        source,
+      });
+      // Replace if this (src,dst,rel_type) already in cache, else prepend.
+      const i = edges.value.findIndex(
+        (e) => e.src_id === edge.src_id && e.dst_id === edge.dst_id && e.rel_type === edge.rel_type,
+      );
+      if (i === -1) edges.value.push(edge);
+      else edges.value[i] = edge;
+      return edge;
+    } catch (e) {
+      error.value = String(e);
+      return null;
+    }
+  }
+
+  async function deleteEdge(edgeId: number): Promise<boolean> {
+    try {
+      await invoke('delete_memory_edge', { edgeId });
+      edges.value = edges.value.filter((e) => e.id !== edgeId);
+      return true;
+    } catch (e) {
+      error.value = String(e);
+      return false;
+    }
+  }
+
+  async function getEdgesForMemory(
+    memoryId: number,
+    direction: EdgeDirection = 'both',
+  ): Promise<MemoryEdge[]> {
+    try {
+      return await invoke<MemoryEdge[]>('get_edges_for_memory', { memoryId, direction });
+    } catch {
+      return [];
+    }
+  }
+
+  async function getEdgeStats(): Promise<EdgeStats | null> {
+    try {
+      const s = await invoke<EdgeStats>('get_edge_stats');
+      edgeStats.value = s;
+      return s;
+    } catch {
+      return null;
+    }
+  }
+
+  async function listRelationTypes(): Promise<string[]> {
+    try {
+      return await invoke<string[]>('list_relation_types');
+    } catch {
+      return [];
+    }
+  }
+
+  /** Ask the brain to scan all memories and propose typed edges. */
+  async function extractEdgesViaBrain(chunkSize = 25): Promise<number> {
+    try {
+      const count = await invoke<number>('extract_edges_via_brain', { chunkSize });
+      if (count > 0) await fetchEdges();
+      return count;
+    } catch (e) {
+      error.value = String(e);
+      return 0;
+    }
+  }
+
+  /** Multi-hop hybrid search (vector + keyword + graph traversal). */
+  async function multiHopSearch(query: string, limit = 10, hops = 1): Promise<MemoryEntry[]> {
+    try {
+      return await invoke<MemoryEntry[]>('multi_hop_search_memories', { query, limit, hops });
+    } catch {
+      return [];
+    }
+  }
+
   return {
     memories,
     stats,
+    edges,
+    edgeStats,
     isLoading,
     error,
     fetchAll,
@@ -200,5 +317,13 @@ export const useMemoryStore = defineStore('memory', () => {
     gcMemories,
     promoteMemory,
     getByTier,
+    fetchEdges,
+    addEdge,
+    deleteEdge,
+    getEdgesForMemory,
+    getEdgeStats,
+    listRelationTypes,
+    extractEdgesViaBrain,
+    multiHopSearch,
   };
 });

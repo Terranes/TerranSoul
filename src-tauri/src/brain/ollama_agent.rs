@@ -218,6 +218,39 @@ impl OllamaAgent {
         self.call(msgs).await
     }
 
+    /// Ask the brain to propose typed, directional edges for a batch of memories.
+    ///
+    /// Returns the raw LLM reply (one JSON-line edge per row, or `NONE`). The
+    /// caller is responsible for parsing via `crate::memory::parse_llm_edges`,
+    /// which validates ids, de-duplicates self-loops, and clamps confidence.
+    pub async fn propose_edges(&self, memories_block: &str) -> String {
+        let prompt = format!(
+            "You are building a knowledge graph. Read the following memories \
+            (each tagged with its id) and propose typed, directional relationships \
+            between them. Use one of these relation types where possible: \
+            related_to, contains, cites, governs, part_of, depends_on, supersedes, \
+            contradicts, derived_from, mentions, located_in, studies, prefers, \
+            knows, owns, mother_of, child_of. \
+            Only propose edges you are reasonably confident about. \
+            Reply with ONE JSON object per line, no surrounding prose, in this exact form: \
+            {{\"src_id\": <id>, \"dst_id\": <id>, \"rel_type\": \"<type>\", \"confidence\": <0.0-1.0>}} \
+            If there are no good edges in this batch, reply with exactly: NONE\n\n\
+            MEMORIES:\n{memories_block}"
+        );
+        let msgs = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You extract typed relationships between memories. Reply with JSON lines only.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        reply
+    }
+
     /// Ask the brain to extract memorable facts from a conversation.
     ///
     /// Returns a list of short fact strings (one per line) or an empty vec on failure.

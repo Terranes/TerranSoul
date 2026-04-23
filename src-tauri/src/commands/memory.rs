@@ -380,3 +380,165 @@ pub async fn get_memories_by_tier(
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.get_by_tier(&tier).map_err(|e| e.to_string())
 }
+
+// ── Entity-Relationship Graph commands (Phase 12 / V5 schema) ────────────────
+
+use crate::memory::{
+    EdgeDirection, EdgeSource, EdgeStats, MemoryEdge, NewMemoryEdge,
+    COMMON_RELATION_TYPES,
+};
+
+/// Insert (or fetch existing) typed edge between two memories.
+/// `confidence` is clamped to [0.0, 1.0]; `source` defaults to `"user"`.
+#[tauri::command]
+pub async fn add_memory_edge(
+    src_id: i64,
+    dst_id: i64,
+    rel_type: String,
+    confidence: Option<f64>,
+    source: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<MemoryEdge, String> {
+    let edge = NewMemoryEdge {
+        src_id,
+        dst_id,
+        rel_type,
+        confidence: confidence.unwrap_or(1.0),
+        source: source.as_deref().map(EdgeSource::from_str).unwrap_or_default(),
+    };
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.add_edge(edge).map_err(|e| e.to_string())
+}
+
+/// Delete an edge by primary key.
+#[tauri::command]
+pub async fn delete_memory_edge(
+    edge_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.delete_edge(edge_id).map_err(|e| e.to_string())
+}
+
+/// List all edges in the graph.
+#[tauri::command]
+pub async fn list_memory_edges(
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEdge>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.list_edges().map_err(|e| e.to_string())
+}
+
+/// Get edges incident to a specific memory.
+/// `direction` accepts `"in"`, `"out"`, or `"both"` (default).
+#[tauri::command]
+pub async fn get_edges_for_memory(
+    memory_id: i64,
+    direction: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEdge>, String> {
+    let dir = match direction.as_deref().unwrap_or("both") {
+        "in" => EdgeDirection::In,
+        "out" => EdgeDirection::Out,
+        _ => EdgeDirection::Both,
+    };
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.get_edges_for(memory_id, dir).map_err(|e| e.to_string())
+}
+
+/// Aggregate graph statistics (total edges, by relation type, by source,
+/// connected memories).
+#[tauri::command]
+pub async fn get_edge_stats(
+    state: State<'_, AppState>,
+) -> Result<EdgeStats, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.edge_stats().map_err(|e| e.to_string())
+}
+
+/// Curated relation-type vocabulary the UI shows in the edge picker.
+/// Backend accepts any string; this list is just a UX hint.
+#[tauri::command]
+pub async fn list_relation_types() -> Result<Vec<String>, String> {
+    Ok(COMMON_RELATION_TYPES.iter().map(|s| s.to_string()).collect())
+}
+
+/// Use the active brain to scan memories in batches and propose typed edges
+/// between them. Returns the count of new edges inserted (duplicates skipped).
+/// Requires a configured brain — returns an error otherwise.
+#[tauri::command]
+pub async fn extract_edges_via_brain(
+    chunk_size: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    // Phase 1 — async LLM extraction (mutex released first).
+    // Phase 2 — bulk insert under the store lock.
+    // We can't hold the MutexGuard across `.await`, so the entire
+    // extract_edges_via_brain helper opens/closes the lock internally.
+    //
+    // Safety: the helper takes `&MemoryStore` synchronously; we therefore run
+    // it on a blocking task to avoid blocking the Tauri runtime.
+    let chunk = chunk_size.unwrap_or(25);
+
+    // Snapshot memories without holding the lock across .await.
+    let entries: Vec<MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    if entries.len() < 2 {
+        return Ok(0);
+    }
+    let known_ids: std::collections::HashSet<i64> =
+        entries.iter().map(|e| e.id).collect();
+
+    let agent = crate::brain::OllamaAgent::new(&model);
+    let chunk = chunk.clamp(2, 50);
+    let mut total_inserted = 0usize;
+
+    for window in entries.chunks(chunk) {
+        let block = crate::memory::format_memories_for_extraction(window);
+        let reply = agent.propose_edges(&block).await;
+        if reply.trim().eq_ignore_ascii_case("NONE") {
+            continue;
+        }
+        let new_edges = crate::memory::parse_llm_edges(&reply, &known_ids);
+        if new_edges.is_empty() {
+            continue;
+        }
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        if let Ok(n) = store.add_edges_batch(&new_edges) {
+            total_inserted += n;
+        }
+    }
+    Ok(total_inserted)
+}
+
+/// Multi-hop hybrid search: vector + keyword + graph traversal.
+/// `hops` (default 1) controls how far to walk from each direct hit.
+#[tauri::command]
+pub async fn multi_hop_search_memories(
+    query: String,
+    limit: Option<usize>,
+    hops: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10);
+    let hops = hops.unwrap_or(1).min(3); // hard cap to avoid runaway expansion
+    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let query_emb = if let Some(model) = model_opt {
+        crate::brain::OllamaAgent::embed_text(&query, &model).await
+    } else {
+        None
+    };
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .hybrid_search_with_graph(&query, query_emb.as_deref(), limit, hops)
+        .map_err(|e| e.to_string())
+}
