@@ -659,6 +659,7 @@ async function handleSend(message: string) {
 }
 
 const canSkipDialog = computed(
+  // Desktop chat has a subtitle overlay; include it so skip can dismiss subtitle-only dialog state.
   () => conversationStore.isThinking || conversationStore.isStreaming || tts.isSpeaking.value || subtitleVisible.value,
 );
 

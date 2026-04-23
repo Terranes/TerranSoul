@@ -30,7 +30,7 @@ const MIN_SENTENCE_CHARS = 4;
  * - Regional indicator flag pairs
  * - Keycap sequences (0-9, #, *)
  */
-const EMOJI_REGEX = /(?:\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*)|(?:[\u{1F1E6}-\u{1F1FF}]{2})|(?:[0-9#*]\uFE0F?\u20E3)/gu;
+const TTS_UNWANTED_UNICODE_REGEX = /(?:\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*)|(?:[\u{1F1E6}-\u{1F1FF}]{2})|(?:[0-9#*]\uFE0F?\u20E3)/gu;
 
 export interface TtsPlaybackHandle {
   /** Whether TTS audio is currently playing or pending. */
@@ -110,8 +110,8 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       .replace(/^[-*+] /gm, '')          // Remove list bullets
       .replace(/\n{2,}/g, '. ')          // Replace multiple newlines with periods
       .replace(/\n/g, ' ')               // Replace single newlines with spaces
-      .replace(EMOJI_REGEX, ' ')
-      // Defensive cleanup for stray selectors/joiners left from partial sequences.
+      .replace(TTS_UNWANTED_UNICODE_REGEX, ' ')
+      // Clean up orphaned joiners/selectors that can remain from multi-codepoint sequences.
       .replace(/[\u200D\uFE0E\uFE0F]/g, '')
       .replace(/\s+([,.;:!?…])/g, '$1')
       .replace(/\s{2,}/g, ' ')

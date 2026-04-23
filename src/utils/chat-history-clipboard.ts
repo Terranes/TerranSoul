@@ -13,6 +13,10 @@ export function formatChatHistory(messages: Message[]): string {
     .join('\n');
 }
 
+/**
+ * Copy chat history to clipboard.
+ * Returns true on success; false if clipboard is unavailable or write fails.
+ */
 export async function copyChatHistory(messages: Message[]): Promise<boolean> {
   if (typeof navigator === 'undefined' || !navigator.clipboard) return false;
   const payload = formatChatHistory(messages);
