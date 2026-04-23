@@ -7,3 +7,4 @@ src-tauri/gen/
 test-results/
 playwright-report/
 /.claude/worktrees
+.worktrees/
