@@ -97,11 +97,10 @@ pub fn compute_max_concurrent_agents(free_mb: u64, agents: &[AgentFootprint]) ->
         (total / agents.len() as u64).max(100)
     };
     let usable = free_mb.saturating_sub(RESERVE_MB);
-    let raw_cap = if mean_per_agent_mb == 0 {
-        MAX_CAP
-    } else {
-        (usable / mean_per_agent_mb) as usize
-    };
+    let raw_cap = usable
+        .checked_div(mean_per_agent_mb)
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(MAX_CAP);
     let cap = raw_cap.clamp(MIN_CAP, MAX_CAP);
 
     let reasoning = if free_mb <= RESERVE_MB {
