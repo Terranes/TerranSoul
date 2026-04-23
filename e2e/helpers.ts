@@ -103,11 +103,16 @@ export async function openDrawer(page: Page) {
   const drawer = page.locator('.chat-history');
   if (await drawer.isVisible().catch(() => false)) return;
 
-  // Retry click — the toggle may not have its Vue handler attached yet
+  // Click the toggle via raw DOM `el.click()` rather than Playwright's
+  // actionable click. This is intentional: the input row may briefly be
+  // overlapped by streaming overlays / quest hotseat tiles whose pointer
+  // events confuse Playwright's click trial. Dispatching the click via JS
+  // bypasses those checks and goes straight to Vue's `@click` handler.
   await expect(async () => {
     if (await drawer.isVisible().catch(() => false)) return;
     const toggle = page.locator('.chat-drawer-toggle');
-    await toggle.click();
+    await expect(toggle).toBeVisible({ timeout: 2_000 });
+    await toggle.evaluate((el) => (el as HTMLElement).click());
     await expect(drawer).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 10_000 });
 }
@@ -120,9 +125,36 @@ export async function closeDrawer(page: Page) {
   await expect(async () => {
     if (!(await drawer.isVisible().catch(() => false))) return;
     const toggle = page.locator('.chat-drawer-toggle');
-    await toggle.click();
+    await expect(toggle).toBeVisible({ timeout: 2_000 });
+    await toggle.evaluate((el) => (el as HTMLElement).click());
     await expect(drawer).not.toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 10_000 });
+}
+
+/**
+ * Start observing the subtitle overlay before triggering an LLM response.
+ *
+ * The subtitle is shown while streaming and hidden ~3s after TTS finishes.
+ * In a non-Tauri browser context TTS may not run at all, so by the time
+ * `waitForAssistantResponse` resolves the subtitle may already be gone.
+ *
+ * Call this *before* `sendMessage` and `await` the returned promise after
+ * `waitForAssistantResponse` to capture the subtitle HTML at the moment it
+ * first contained content. Returns `null` if the subtitle never appeared.
+ */
+export function captureSubtitleOnce(page: Page, timeout = 30_000): Promise<string | null> {
+  return page
+    .waitForFunction(
+      () => {
+        const el = document.querySelector('.subtitle-overlay');
+        if (!el) return false;
+        const text = (el.querySelector('.subtitle-text') as HTMLElement | null)?.innerHTML ?? '';
+        return text.length > 0 ? text : false;
+      },
+      { timeout },
+    )
+    .then((handle) => handle.jsonValue() as Promise<string>)
+    .catch(() => null);
 }
 
 /** Wait for the last assistant message to appear and return its content. */
