@@ -3,6 +3,9 @@ pub mod catalog_registry;
 pub mod http_registry;
 pub mod server;
 
+#[cfg(test)]
+mod distribution_e2e_tests;
+
 pub use catalog_registry::CatalogRegistry;
 pub use http_registry::HttpRegistry;
 pub use server::start as start_server;

@@ -895,7 +895,7 @@ See `rules/milestones.md` Phase 5.5 for chunks 055–057.
 | Speaker diarization | VibeVoice | Medium | Medium | **Medium** |
 | Hotword-boosted ASR | VibeVoice | Low | Low | **Medium** |
 | Presence / greeting system | aituber-kit | Medium | Medium | **Medium** |
-| Live2D support | aituber-kit | Medium | Medium | **Low** |
+| Live2D support | aituber-kit | Medium | Medium | **Won't-do** (Cubism SDK requires paid commercial licence; VRM is sole avatar format) |
 | Screen recording / vision | Open-LLM-VTuber | High | Low | **Low** |
 | Docker containerization | Open-LLM-VTuber | High | Medium (CI) | **Low** |
 | Chat log export | Open-LLM-VTuber | Low | Low | **Low** |

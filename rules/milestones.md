@@ -113,7 +113,7 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 - ✅ Chunk 110 — Background Music — see `completion-log.md`
 
 ### Phase 9 — Learned Features (Lower Priority)
-- ✅ Chunk 115 — Live2D Support — see `completion-log.md`
+- 🚫 Chunk 115 — Live2D Support — **won't-do** (Live2D Cubism SDK requires a paid commercial licence from Live2D Inc.; incompatible with TerranSoul's permissive licensing. VRM is the sole renderer.)
 - ✅ Chunk 116 — Screen Recording / Vision — see `completion-log.md`
 - 📦 Chunk 117 — Docker Containerization — demoted to `rules/backlog.md` (Tauri desktop apps don't use Docker)
 - ✅ Chunk 118 — Chat Log Export — see `completion-log.md`
@@ -155,69 +155,39 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
 | 1.5 | Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows | done | agent | Implemented in PR series — see `rules/completion-log.md` |
 | 1.6 | Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG) | done | agent | Schema V5 + LLM extractor + Tauri commands + MemoryGraph UI — see `rules/completion-log.md` |
-| 1.7 | Real downloadable agent distribution (HTTP registry binaries with SHA-256 + signing) | not-started | unassigned | Built-in agents now use `InstallMethod::BuiltIn` (no fake binaries). To re-introduce truly downloadable third-party agents, design a real binary host (GitHub Releases / S3) and signing flow. |
-| 1.8 | Real Live2D rendering via Cubism SDK (replaces removed `Live2DStubRenderer`) | not-started | unassigned | The empty `Live2DStubRenderer` + `renderer-abstraction` factory were removed because they violated the no-mocks-in-production rule. A real implementation needs Cubism SDK integration, model loader, lip-sync hookup, and parity with the VRM `CharacterAnimator`. |
+| 1.8 | ~~Real Live2D rendering via Cubism SDK~~ | **won't-do** | — | Cubism Web SDK is proprietary and requires a paid commercial licence from Live2D Inc.; no permissively-licensed open-source alternative ships the parametric rigs Live2D models depend on. VRM (via `@pixiv/three-vrm`, MIT-licensed) is TerranSoul's sole avatar format. |
 
 #### Chunk 1.7 — Real Downloadable Agent Distribution
 
-**Goal.** Today the in-process `CatalogRegistry` only ships **built-in** agents
-(`stub-agent`, `openclaw-bridge`, `claude-cowork` — all compiled into
-TerranSoul). When the marketplace was first wired in Chunk 031, the
-`download_binary` paths returned `b"PLACEHOLDER_BINARY"` for these entries
-because the project did not yet host real agent binaries. That was a mock
-in production. The cleanup PR introduced `InstallMethod::BuiltIn` so the
-installer now correctly skips the binary-write step for built-ins, but
-this means there is currently **no path** for a third-party developer to
-publish a truly downloadable agent.
+**Status.** ✅ **Done** (2026-04-23). Recorded in
+[`rules/completion-log.md`](completion-log.md). Summary: mandatory
+`sha256` on every `Binary` / `Wasm` install method, Ed25519 manifest
+signing module with curated publisher allow-list, HTTP-registry
+`307`-redirect download contract, and an end-to-end integration test
+that downloads, verifies, and persists a real binary via an axum
+upstream-host fixture.
 
-**Scope.**
-- Pick a hosting model (GitHub Releases attached to tagged versions is
-  the simplest, but S3/Cloudflare R2 is acceptable). Store the binary
-  URL in `InstallMethod::Binary { url }` exactly as the manifest already
-  declares.
-- Mandatory `sha256` field on all `Binary`/`Wasm` manifests in the public
-  registry — the installer already verifies this when present.
-- Optional Ed25519 signature on the manifest itself, with the publisher's
-  public key recorded in a curated allow-list.
-- Update the HTTP registry (`registry_server::server::start`) so the
-  `/agents/{name}/download` route can either redirect to the upstream URL
-  or stream-proxy the bytes (decision: redirect for now to avoid
-  bandwidth, with `Location:` header).
-- Add an end-to-end integration test that publishes a fake binary to a
-  local HTTP fixture, points the registry at it, and asserts `install`
-  writes a non-empty `agent.bin` whose SHA-256 matches the manifest.
+#### Chunk 1.8 — Real Live2D Rendering via Cubism SDK — **won't-do**
 
-**Status.** `not-started`. Do not begin implementation until the user
-explicitly says so.
+**Decision (2026-04-23).** Removed from the roadmap. The Live2D Cubism Web
+SDK is distributed under a proprietary licence that requires a paid
+commercial agreement with Live2D Inc. for any product that ships it,
+which is incompatible with TerranSoul's permissive (MIT) distribution
+model. There is no permissively-licensed open-source renderer that can
+parse `.model3.json` rigs end-to-end (community wrappers such as
+`pixi-live2d-display` still depend on the proprietary Cubism Core
+runtime).
 
-#### Chunk 1.8 — Real Live2D Rendering via Cubism SDK
+**Outcome.** VRM (via `@pixiv/three-vrm` 3.x, MIT-licensed) is
+TerranSoul's sole avatar format. The previously-removed
+`Live2DStubRenderer` and `renderer-abstraction` factory stay removed.
+The user-facing model picker exposes VRM only; the `'live2d'`
+`RendererType` is **not** reintroduced.
 
-**Goal.** The previous `Live2DStubRenderer` + `renderer-abstraction`
-factory were no-op scaffolding (the renderer's `loadModel` set a flag,
-`update()` did nothing, `setMouthValues()` was empty). They were removed
-in the no-mocks-in-production cleanup. Implement Live2D rendering for
-real so the `'live2d'` `RendererType` (re-introduced as part of this
-chunk) is usable end-to-end.
-
-**Scope.**
-- Add the Cubism Web SDK as an npm dependency (or a permissively-licensed
-  open-source alternative — verify GPL / commercial-licence constraints
-  before committing).
-- Implement a real `Live2DRenderer` that:
-  - Loads `.model3.json` via the SDK.
-  - Maps `CharacterState` → motion / expression presets.
-  - Implements `setMouthValues(aa, oh)` against the model's `ParamMouthOpenY`
-    / `ParamMouthForm` parameters so the existing lip-sync bridge works.
-  - Has unit tests with at least one bundled tiny test model under MIT/CC0.
-- Reintroduce the `CharacterRenderer` interface + `createRenderer` factory
-  (only when there is a real second backend to choose).
-- Wire `CharacterViewport.vue` so the user can pick "Live2D" alongside
-  "VRM" in the model-selection UI.
-- Parity test: the same `CharacterState` transitions visually update both
-  backends without console errors.
-
-**Status.** `not-started`. Do not begin implementation until the user
-explicitly says so.
+**If this changes in the future** (e.g. Live2D releases under a permissive
+licence, or a clean-room open-source `.model3.json` runtime appears),
+re-open this chunk in `rules/backlog.md` rather than restoring the old
+scope here.
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 

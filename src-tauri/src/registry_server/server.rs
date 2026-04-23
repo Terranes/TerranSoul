@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
+    response::{IntoResponse, Redirect, Response},
     routing::get,
     Json, Router,
 };
@@ -41,25 +42,34 @@ async fn get_agent(
 async fn download_agent(
     State(state): State<ServerState>,
     Path(name): Path<String>,
-) -> Result<([(header::HeaderName, &'static str); 1], Vec<u8>), StatusCode> {
+) -> Result<Response, StatusCode> {
     let Some(manifest) = state.agents.get(&name) else {
         return Err(StatusCode::NOT_FOUND);
     };
-    // Built-in agents are compiled into TerranSoul — no binary to download.
-    // Return an empty body with `application/octet-stream` so HTTP clients
-    // that ignore the manifest still get a valid (zero-length) response
-    // instead of opaque placeholder bytes.
-    let body: Vec<u8> = match &manifest.install_method {
-        crate::package_manager::InstallMethod::BuiltIn => Vec::new(),
-        // Other install methods would normally fetch from disk/cache.
-        // The in-process catalog only ships built-ins today; downloadable
-        // packages flow through the external HTTP registry instead.
-        _ => Vec::new(),
-    };
-    Ok((
-        [(header::CONTENT_TYPE, "application/octet-stream")],
-        body,
-    ))
+    // Chunk 1.7 hosting model: the registry **does not** stream-proxy
+    // third-party binaries — it would consume bandwidth and turn the
+    // registry into a single point of failure. Instead, downloadable
+    // install methods (`Binary { url }` / `Wasm { url }`) get a
+    // `307 Temporary Redirect` to the upstream host (GitHub Releases /
+    // S3 / R2). HTTP clients (`reqwest` included) follow this redirect
+    // automatically, so the installer's download path is unchanged.
+    //
+    // Built-in agents (`InstallMethod::BuiltIn`) and bundled `Sidecar`
+    // entries have no remote URL — return an empty
+    // `application/octet-stream` body so the contract "GET /download
+    // never 404s for known agents" holds.
+    match &manifest.install_method {
+        crate::package_manager::InstallMethod::Binary { url }
+        | crate::package_manager::InstallMethod::Wasm { url } => {
+            Ok(Redirect::temporary(url).into_response())
+        }
+        crate::package_manager::InstallMethod::Sidecar { .. }
+        | crate::package_manager::InstallMethod::BuiltIn => Ok((
+            [(header::CONTENT_TYPE, "application/octet-stream")],
+            Vec::<u8>::new(),
+        )
+            .into_response()),
+    }
 }
 
 async fn search_agents(

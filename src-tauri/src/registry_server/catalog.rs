@@ -30,6 +30,8 @@ pub fn all_entries() -> Vec<AgentManifest> {
             license: None,
             author: Some("TerranSoul Team".to_string()),
             sha256: None,
+            publisher: None,
+            signature: None,
         },
         AgentManifest {
             name: "openclaw-bridge".to_string(),
@@ -49,6 +51,8 @@ pub fn all_entries() -> Vec<AgentManifest> {
             license: None,
             author: Some("OpenClaw Community".to_string()),
             sha256: None,
+            publisher: None,
+            signature: None,
         },
         AgentManifest {
             name: "claude-cowork".to_string(),
@@ -68,6 +72,8 @@ pub fn all_entries() -> Vec<AgentManifest> {
             license: None,
             author: Some("Anthropic".to_string()),
             sha256: None,
+            publisher: None,
+            signature: None,
         },
     ]
 }
