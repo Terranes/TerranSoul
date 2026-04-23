@@ -16,8 +16,12 @@ export function formatChatHistory(messages: Message[]): string {
 export async function copyChatHistory(messages: Message[]): Promise<boolean> {
   if (typeof navigator === 'undefined' || !navigator.clipboard) return false;
   const payload = formatChatHistory(messages);
-  await navigator.clipboard.writeText(payload);
-  return true;
+  try {
+    await navigator.clipboard.writeText(payload);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function readClipboardText(): Promise<string> {

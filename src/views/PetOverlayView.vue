@@ -807,7 +807,7 @@ async function copyChatHistoryToClipboard() {
 
 async function pasteClipboardToInput() {
   try {
-    const text = await readClipboardText();
+    const text = (await readClipboardText()).trim();
     if (!text) return;
     inputText.value = text;
   } catch {

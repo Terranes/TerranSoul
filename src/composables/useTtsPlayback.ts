@@ -24,7 +24,12 @@ const SENTENCE_END_RE = /[.!?…]\s+|\n/;
 
 /** Minimum sentence length to bother synthesizing (filters out stray punctuation). */
 const MIN_SENTENCE_CHARS = 4;
-/** Emoji sequences and keycaps that should never be spoken by TTS. */
+/**
+ * Emoji sequences that should never be spoken by TTS:
+ * - Extended pictographic emoji (including ZWJ sequences and FE0E/FE0F variants)
+ * - Regional indicator flag pairs
+ * - Keycap sequences (0-9, #, *)
+ */
 const EMOJI_RE = /(?:\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0E|\uFE0F)?)*)|(?:[\u{1F1E6}-\u{1F1FF}]{2})|(?:[0-9#*]\uFE0F?\u20E3)/gu;
 
 export interface TtsPlaybackHandle {
@@ -106,6 +111,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       .replace(/\n{2,}/g, '. ')          // Replace multiple newlines with periods
       .replace(/\n/g, ' ')               // Replace single newlines with spaces
       .replace(EMOJI_RE, ' ')
+      // Defensive cleanup for stray selectors/joiners left from partial sequences.
       .replace(/[\u200D\uFE0E\uFE0F]/g, '')
       .replace(/\s+([,.;:!?…])/g, '$1')
       .replace(/\s{2,}/g, ' ')
