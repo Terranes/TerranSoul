@@ -6,7 +6,15 @@
 > **💡 Why TerranSoul?**
 > Tools like OpenClaw, Claude Cowork, and other AI agents can already perform like J.A.R.V.I.S. — but J.A.R.V.I.S. was never just an AI agent. It connected multiple devices, divided tasks across machines, hosted its own infrastructure, maintained the right RAG pipelines, and had persistent memory. Today's AI is powerful but fragmented: agents don't host infrastructure, don't manage retrieval or memory end-to-end, and can't split work across your PCs. So why not bring everything together under one roof? I'm just kicking this off — if you're interested, come drive it even further with your imagination.
 
-**J.A.R.V.I.S. in Real Life — chat-first · cross-device · open-source**
+**Your 3D AI companion for everyday life — cross-device, open-source, and built for context and harness engineering, with seamless integration with AI systems like OpenClaw, N8N, Gemma 4**
+
+## What this AI is
+
+- **For technical users:** A full 3D AI companion focused on complete-context engineering (using your project, memory, and device context together) and harness engineering (building, testing, and orchestrating AI workflows end-to-end).
+- **For non-technical users:** A 3D AI companion that helps with daily work on desktop and mobile, like drafting messages, organizing tasks, and managing reminders.
+
+Try to teach your AI with our software by configuring it, giving it tasks, and experimenting with its capabilities yourself.  
+If you need tailored support for personal, commercial, small business, or enterprise use, please contact: **Darren.bui@terransoul.com**
 
 [![TerranSoul CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
 
