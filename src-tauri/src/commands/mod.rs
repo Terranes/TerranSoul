@@ -2,6 +2,7 @@ pub mod agent;
 pub mod brain;
 pub mod character;
 pub mod chat;
+pub mod ingest;
 pub mod docker;
 pub mod emotion;
 pub mod identity;

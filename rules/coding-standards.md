@@ -135,6 +135,60 @@ src-tauri/src/
 
 ---
 
+## Use Existing Libraries — Don't Reinvent the Wheel
+
+Before writing any non-trivial functionality from scratch, **search for a well-maintained open-source crate (Rust) or npm package (frontend)** that already solves the problem. Only write custom code when no suitable library exists, or when the library would introduce unacceptable bloat or licensing issues.
+
+### Decision checklist
+
+1. **Search first** — check crates.io / npm / GitHub for existing solutions before coding.
+2. **Prefer battle-tested** — choose libraries with active maintenance, >100 GitHub stars, and recent releases.
+3. **Prefer permissive licenses** — MIT, Apache-2.0, BSD, ISC, MPL-2.0 are acceptable. Avoid GPL/AGPL in library dependencies.
+4. **Prefer zero/low-dependency** — between two equal libraries, pick the one with fewer transitive dependencies.
+5. **Wrap, don't fork** — if a library needs slight customization, write a thin wrapper. Don't copy-paste its source.
+
+### Rust crate preferences
+
+| Need | Use | Don't reinvent |
+|---|---|---|
+| HTTP client | `reqwest` | Custom TCP/TLS |
+| JSON | `serde_json` | Manual parsing |
+| Async runtime | `tokio` | Custom thread pools |
+| Error handling | `thiserror` / `anyhow` | String-based errors |
+| Logging | `tracing` | `println!` debugging |
+| UUID | `uuid` | Custom ID schemes |
+| Date/time | `chrono` or `time` | Manual epoch math |
+| HTML parsing | `scraper` | Regex on HTML |
+| URL parsing | `url` | Manual string splits |
+| Embeddings / ANN | `usearch` or HNSW crate | Custom brute-force search |
+| SQLite | `rusqlite` (bundled) | Raw FFI |
+| Regex | `regex` | Hand-rolled matchers |
+| Base64 / hex | `base64` / `hex` | Manual encode/decode |
+| Crypto | `ring` / `ed25519-dalek` | Custom crypto primitives |
+
+### Frontend (npm) preferences
+
+| Need | Use | Don't reinvent |
+|---|---|---|
+| State management | `pinia` | Custom reactive stores |
+| 3D rendering | `three` + `@pixiv/three-vrm` | WebGL from scratch |
+| Markdown | `marked` or `markdown-it` | Regex-based markdown |
+| Date formatting | `Intl.DateTimeFormat` (built-in) | Custom formatters |
+| Utilities | `@vueuse/core` | Manual browser API wrappers |
+| Chart/graph viz | `cytoscape` / `d3` | Canvas drawing from scratch |
+| E2E testing | `@playwright/test` | Custom browser automation |
+| Unit testing | `vitest` + `@vue/test-utils` | Custom test harness |
+
+### When custom code is acceptable
+
+- The feature is truly domain-specific (quest skill tree, VRM emotion pipeline, stream tag parser).
+- No library exists after a genuine search.
+- The library adds >5 MB to bundle size for a trivial feature.
+- The library is unmaintained (no commits in 2+ years, unpatched CVEs).
+- Licensing conflict with the project.
+
+---
+
 ## Version Control
 
 - Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`

@@ -84,9 +84,9 @@
       <span class="ai-state-label">{{ stateLabel }}</span>
     </div>
 
-    <!-- Brain status (when free API active) -->
+    <!-- Brain status (shows active provider/model) -->
     <Transition name="fade">
-      <div v-if="brain.hasBrain && brain.isFreeApiMode" class="brain-status-pill">
+      <div v-if="brain.hasBrain" class="brain-status-pill">
         <span class="brain-pill-dot" />
         <span>{{ activeProviderName }}</span>
       </div>
@@ -104,6 +104,14 @@
       @dismiss="showUpgradeDialog = false"
     />
 
+    <!-- FF-style Knowledge Quest chain dialog -->
+    <KnowledgeQuestDialog
+      :visible="showKnowledgeQuest"
+      :topic="knowledgeQuestTopic"
+      @close="showKnowledgeQuest = false"
+      @finish="handleKnowledgeQuestFinish"
+    />
+
     <!-- Bottom chat panel — input always visible, history toggles via button -->
     <div class="bottom-panel" :class="{ expanded: chatDrawerExpanded }">
       <!-- Chat history (shown when expanded) -->
@@ -113,6 +121,7 @@
             <span class="chat-history-title">Chat History</span>
             <button class="chat-history-close" @click="toggleChatDrawer()" aria-label="Close chat history">&times;</button>
           </div>
+          <TaskProgressBar />
           <ChatMessageList
             :messages="conversationStore.messages"
             :is-thinking="conversationStore.isThinking"
@@ -185,12 +194,15 @@ import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
 import type { UpgradeOption } from '../components/UpgradeDialog.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
+import { useTaskStore } from '../stores/tasks';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
+import TaskProgressBar from '../components/TaskProgressBar.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
+import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -304,6 +316,10 @@ const upgradeOptions = computed<UpgradeOption[]>(() => {
 
 // ── Keyboard detection ────────────────────────────────────────────
 const { keyboardHeight, onInputFocused, onInputBlurred } = useKeyboardDetector();
+
+// ── Knowledge Quest dialog ────────────────────────────────────────
+const showKnowledgeQuest = ref(false);
+const knowledgeQuestTopic = ref('');
 
 // ── Millionaire Hot-Seat overlay — quest choices on-screen ────────
 /** Whether the user explicitly dismissed the current set of choices. */
@@ -502,9 +518,18 @@ const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characte
 
 const activeProviderName = computed(() => {
   const mode = brain.brainMode;
-  if (!mode || mode.mode !== 'free_api') return '';
-  const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
-  return p?.display_name ?? mode.provider_id ?? '';
+  if (!mode) return '';
+  if (mode.mode === 'free_api') {
+    const p = brain.freeProviders.find((fp) => fp.id === mode.provider_id);
+    return p?.display_name ?? mode.provider_id ?? '';
+  }
+  if (mode.mode === 'local_ollama') {
+    return `Ollama · ${mode.model}`;
+  }
+  if (mode.mode === 'paid_api') {
+    return `${mode.provider} · ${mode.model}`;
+  }
+  return '';
 });
 
 function formatRam(mb: number): string {
@@ -739,6 +764,24 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
   lastPickedMessageId.value = activeQuestMessage.value?.id ?? null;
   hotseatDismissed.value = true;
 
+  // Handle Knowledge Quest start
+  if (choiceValue === 'knowledge-quest-start') {
+    // Extract topic from the most recent user message
+    const msgs = conversationStore.messages;
+    let topic = 'this topic';
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user') {
+        const lower = msgs[i].content.toLowerCase();
+        const match = lower.match(/(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/);
+        if (match) topic = match[1].trim();
+        break;
+      }
+    }
+    knowledgeQuestTopic.value = topic;
+    showKnowledgeQuest.value = true;
+    return;
+  }
+
   // Handle auto-configuration choices
   if (choiceValue.startsWith('auto-config:')) {
     const questIdToConfig = choiceValue.slice('auto-config:'.length);
@@ -808,6 +851,22 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     showSubtitle(lastMsg.content);
     speakQuestText(lastMsg.content);
   }
+}
+
+/** Called when the Knowledge Quest chain completes — close dialog and notify. */
+function handleKnowledgeQuestFinish() {
+  showKnowledgeQuest.value = false;
+  setChatDrawerExpanded(true);
+  conversationStore.addMessage({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `📚 **Scholar's Quest Complete!** I've finished learning about **${knowledgeQuestTopic.value}**.\n\n` +
+      `Go ahead and ask me questions — my answers will now draw from the source materials you provided!`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+  });
 }
 
 /** Set up Tauri event listeners for dual-stream LLM events. */
@@ -940,6 +999,10 @@ watch(
 onMounted(async () => {
   await setupTauriEventListener();
 
+  // Initialise background task listener
+  const taskStore = useTaskStore();
+  await taskStore.init();
+
   try {
     await brain.initialise();
     if (brain.topRecommendation) {
@@ -984,6 +1047,7 @@ onUnmounted(() => {
     unlistenProvidersExhausted();
     unlistenProvidersExhausted = null;
   }
+  useTaskStore().cleanup();
   if (subtitleHideTimer) clearTimeout(subtitleHideTimer);
   tts.stop();
   lipSyncBridge.dispose();

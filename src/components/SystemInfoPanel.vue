@@ -203,12 +203,12 @@ onMounted(async () => {
 .system-info-panel {
   width: min(480px, 90vw);
   max-height: 80vh;
-  background: rgba(15, 20, 35, 0.95);
+  background: var(--ts-bg-panel);
   border: 1px solid rgba(124, 111, 255, 0.3);
   border-radius: 12px;
   overflow: hidden;
   backdrop-filter: blur(20px);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+  box-shadow: var(--ts-shadow-lg);
 }
 
 .panel-header {
@@ -223,13 +223,13 @@ onMounted(async () => {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--ts-text-primary);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   cursor: pointer;
   font-size: 1.5rem;
   padding: 4px;
@@ -238,7 +238,7 @@ onMounted(async () => {
 }
 
 .close-btn:hover {
-  color: #e2e8f0;
+  color: var(--ts-text-primary);
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -261,7 +261,7 @@ onMounted(async () => {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #a78bfa;
+  color: var(--ts-accent-violet);
   border-bottom: 1px solid rgba(124, 111, 255, 0.2);
   padding-bottom: 4px;
 }
@@ -281,14 +281,14 @@ onMounted(async () => {
 
 .info-label {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ts-text-secondary);
   font-weight: 500;
   min-width: 100px;
 }
 
 .info-value {
   font-size: 0.8rem;
-  color: #e2e8f0;
+  color: var(--ts-text-primary);
   font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   text-align: right;
   flex: 1;
@@ -296,12 +296,12 @@ onMounted(async () => {
 }
 
 .status-active {
-  color: #10b981 !important;
+  color: var(--ts-success) !important;
   font-weight: 600;
 }
 
 .status-inactive {
-  color: #f59e0b !important;
+  color: var(--ts-warning) !important;
   font-weight: 600;
 }
 

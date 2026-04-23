@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.1 — Brain Advanced Design: Source Tracking Pipeline](#chunk-11--brain-advanced-design-source-tracking-pipeline) | 2026-04-22 |
 | [Chunks 130–134 — Phase 11 Finale: RPG Brain Configuration](#chunks-130134--phase-11-finale-rpg-brain-configuration) | 2026-04-20 |
 | [Chunk 128 — Constellation Skill Tree](#chunk-128--constellation-skill-tree-full-screen-layout) | 2026-04-20 |
 | [Chunk 129 — Constellation Cluster Interaction & Detail Panel](#chunk-129--constellation-cluster-interaction--detail-panel) | 2026-04-20 |
@@ -81,6 +82,43 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.1 — Brain Advanced Design: Source Tracking Pipeline
+
+**Date:** 2026-04-22
+**Phase:** Phase 12 — Brain Advanced Design (Documentation & QA)
+
+### Goal
+
+Wire `source_url` and `source_hash` through the full ingest pipeline so the V3 schema columns (added by migration but previously unused) are actually populated. This enables the staleness detection and re-ingest skip/replace flows described in `docs/brain-advanced-design.md` §12.
+
+### Architecture
+
+- **NewMemory** struct extended with `source_url: Option<String>`, `source_hash: Option<String>`, `expires_at: Option<i64>`.
+- **MemoryEntry** struct extended with the same 3 fields, read from DB.
+- **`add()` / `add_to_tier()`** SQL now writes all 3 source columns.
+- **All 7 SELECT queries** + both row mappers updated to read the 3 new columns.
+- **New store methods**: `find_by_source_hash()`, `find_by_source_url()`, `delete_by_source_url()`, `delete_expired()`.
+- **Ingest pipeline** (`commands/ingest.rs::run_ingest_task`): computes SHA-256 of fetched content, checks for existing hash (skip if unchanged), deletes stale entries by URL on content change, passes `source_url` + `source_hash` to each chunk's `NewMemory`.
+- **Dependencies added**: `sha2 0.10`, `hex 0.4` (per coding standards: use existing crates).
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src-tauri/Cargo.toml` | Added `sha2`, `hex` dependencies |
+| `src-tauri/src/memory/store.rs` | Extended `NewMemory` (+ `Default`), `MemoryEntry`, `MemoryType` (+ `Default`); updated `add()`, `add_to_tier()`, all SELECTs, both row mappers; added 4 new methods + 9 new tests |
+| `src-tauri/src/memory/brain_memory.rs` | Added `..Default::default()` to 4 `NewMemory` constructions |
+| `src-tauri/src/commands/ingest.rs` | SHA-256 hashing, source dedup check, stale deletion, source fields in `NewMemory`; added 2 hash tests |
+| `src-tauri/src/commands/memory.rs` | Added `..Default::default()` to `NewMemory` construction |
+
+### Tests
+
+- **Rust**: 570 passed (+9 new), 0 failed.
+- **Frontend (Vitest)**: 941 passed, 0 failed.
+- **New tests**: `add_with_source_fields`, `find_by_source_hash_returns_match`, `find_by_source_url_returns_all`, `delete_by_source_url_removes_all`, `reingest_skip_when_hash_unchanged`, `reingest_replaces_when_hash_changed`, `delete_expired_removes_past_entries`, `sha256_hash_deterministic`, `sha256_hash_changes_with_content`.
 
 ---
 

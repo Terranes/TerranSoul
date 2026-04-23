@@ -15,6 +15,9 @@ pub struct ModelRecommendation {
     pub required_ram_mb: u64,
     /// True for the top pick for this hardware tier.
     pub is_top_pick: bool,
+    /// True for cloud-routed models (run via Ollama but inference is remote).
+    #[serde(default)]
+    pub is_cloud: bool,
 }
 
 /// Build a ranked list of model recommendations for the given RAM amount.
@@ -36,6 +39,11 @@ pub struct ModelRecommendation {
 ///   HF:       https://huggingface.co/zai-org/GLM-5.1
 ///   Unsloth:  https://unsloth.ai/docs/models/glm-5.1
 ///   GGUF:     https://huggingface.co/unsloth/GLM-5.1-GGUF
+///
+/// Kimi K2.6 (1T total, 32B active MoE) — cloud-only on Ollama
+/// (`kimi-k2.6:cloud`). Native multimodal agentic model with vision,
+/// tool use, and thinking. Cannot run locally on consumer hardware.
+///   Ollama:   https://ollama.com/library/kimi-k2.6
 pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
     let tier = RamTier::from_mb(total_ram_mb);
 
@@ -50,6 +58,18 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
     //   gemma3:1b   — 815 MB download → ~2 GB RAM
     //   gemma2:2b   — 1.6 GB download → ~4 GB RAM
     //   tinyllama   — 638 MB download → ~2 GB RAM
+    // Cloud-routed models (always available, no local RAM required).
+    let mut cloud_models: Vec<ModelRecommendation> = vec![
+        ModelRecommendation {
+            model_tag: "kimi-k2.6:cloud".to_string(),
+            display_name: "Kimi K2.6 (Cloud)".to_string(),
+            description: "Moonshot AI's 1T MoE (32B active). Vision, tool use, thinking. 256K context. Runs via Ollama Cloud — no local GPU needed.".to_string(),
+            required_ram_mb: 0,
+            is_top_pick: false,
+            is_cloud: true,
+        },
+    ];
+
     let all: Vec<ModelRecommendation> = vec![
         ModelRecommendation {
             model_tag: "gemma4:31b".to_string(),
@@ -57,6 +77,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Google's dense 30.7B flagship. State-of-the-art reasoning, coding, and 256K context. 20 GB download.".to_string(),
             required_ram_mb: 24_576,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma4:26b".to_string(),
@@ -64,6 +85,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "MoE with 25.2B total / 3.8B active params. Fast inference with 256K context. 18 GB download.".to_string(),
             required_ram_mb: 22_528,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma3:27b".to_string(),
@@ -71,6 +93,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Previous-gen flagship. Excellent reasoning, vision, and 128K context. 17 GB download.".to_string(),
             required_ram_mb: 20_480,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma4:e4b".to_string(),
@@ -78,6 +101,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "4.5B effective params optimised for edge. 128K context, vision + audio. 9.6 GB download.".to_string(),
             required_ram_mb: 12_288,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma4:e2b".to_string(),
@@ -85,6 +109,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "2.3B effective params for edge devices. 128K context, vision + audio. 7.2 GB download.".to_string(),
             required_ram_mb: 8_192,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma3:4b".to_string(),
@@ -92,6 +117,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Compact multimodal model. 128K context, great for everyday chat. 3.3 GB download.".to_string(),
             required_ram_mb: 6_144,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "phi4-mini".to_string(),
@@ -99,6 +125,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Microsoft's compact reasoner. 128K context, strong math/logic. 2.5 GB download.".to_string(),
             required_ram_mb: 4_096,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma3:1b".to_string(),
@@ -106,6 +133,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Ultra-lightweight. 32K context, text-only. 815 MB download.".to_string(),
             required_ram_mb: 2_048,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "gemma2:2b".to_string(),
@@ -113,6 +141,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Compact Gemma 2. 8K context, solid for simple tasks. 1.6 GB download.".to_string(),
             required_ram_mb: 4_096,
             is_top_pick: false,
+            is_cloud: false,
         },
         ModelRecommendation {
             model_tag: "tinyllama".to_string(),
@@ -120,6 +149,7 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Minimal 1.1B model. 2K context. Works on very limited hardware. 638 MB download.".to_string(),
             required_ram_mb: 2_048,
             is_top_pick: false,
+            is_cloud: false,
         },
     ];
 
@@ -138,7 +168,10 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             description: "Minimal 1.1B model. The only option for very limited hardware.".to_string(),
             required_ram_mb: 2_048,
             is_top_pick: true,
+            is_cloud: false,
         });
+        // Still include cloud models even for very low RAM.
+        candidates.append(&mut cloud_models);
         return candidates;
     }
 
@@ -163,6 +196,9 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
             .cmp(&a.is_top_pick)
             .then(b.required_ram_mb.cmp(&a.required_ram_mb))
     });
+
+    // Append cloud models at the end (always available regardless of RAM).
+    candidates.append(&mut cloud_models);
 
     candidates
 }

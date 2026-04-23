@@ -93,8 +93,8 @@ async function removeDevice(deviceId: string) {
 }
 
 .error-banner {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: var(--ts-error-bg);
+  color: var(--ts-error);
   border-radius: 6px;
   padding: 0.75rem 1rem;
   display: flex;
@@ -119,7 +119,8 @@ section h3 {
 }
 
 .identity-card {
-  background: rgba(255 255 255 / 0.05);
+  background: var(--ts-bg-surface);
+  border: 1px solid var(--ts-border);
   border-radius: 8px;
   padding: 0.75rem 1rem;
   display: flex;
@@ -166,17 +167,18 @@ section h3 {
 }
 
 .btn-primary {
-  background: #6366f1;
-  color: #fff;
+  background: var(--ts-accent-blue-hover);
+  color: var(--ts-text-on-accent);
   border: none;
   border-radius: 6px;
   padding: 0.5rem 1.25rem;
   cursor: pointer;
   font-size: 0.875rem;
+  transition: background var(--ts-transition-fast);
 }
 
 .btn-primary:hover {
-  background: #4f46e5;
+  background: var(--ts-accent-blue);
 }
 
 .device-list {
@@ -192,7 +194,7 @@ section h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(255 255 255 / 0.05);
+  background: var(--ts-bg-surface);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
 }
@@ -215,16 +217,17 @@ section h3 {
 
 .btn-remove {
   background: none;
-  border: 1px solid rgba(239 68 68 / 0.4);
-  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--ts-error);
   border-radius: 4px;
   padding: 0.25rem 0.5rem;
   cursor: pointer;
   font-size: 0.75rem;
+  transition: background var(--ts-transition-fast);
 }
 
 .btn-remove:hover {
-  background: rgba(239 68 68 / 0.1);
+  background: var(--ts-error-bg);
 }
 
 .empty-state {

@@ -17,6 +17,11 @@ const entry = (id: number, content: string): MemoryEntry => ({
   created_at: Date.now(),
   last_accessed: null,
   access_count: 0,
+  tier: 'long',
+  decay_score: 1.0,
+  session_id: null,
+  parent_id: null,
+  token_count: 0,
 });
 
 describe('memory store', () => {

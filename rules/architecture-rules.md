@@ -67,6 +67,8 @@
 - Rust `orchestrator/` — depends on `agent/` trait abstraction; never on concrete agent implementations directly
 - Rust `agent/` — each provider (stub, OpenClaw, etc.) implements the `AgentProvider` trait; no cross-provider dependencies
 - Rust `link/` — depends on `commands/` state types; never on `agent/` internals
+- Rust `memory/backend.rs` — defines `StorageBackend` trait; depends only on `memory/store.rs` types
+- Rust `memory/postgres.rs`, `memory/mssql.rs`, `memory/cassandra.rs` — feature-gated backends; implement `StorageBackend`
 
 ---
 

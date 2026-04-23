@@ -6,6 +6,7 @@ import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
+import { useTaskStore } from './tasks';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -150,6 +151,47 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
   }
 }
 
+/**
+ * Detect if the user wants to deeply learn a topic and suggest a Knowledge Quest.
+ * Keywords: "learn", "teach me", "study", "deep dive", "ingest", "import".
+ * When detected, append a quest suggestion with scholar-quest choices.
+ */
+function maybeShowKnowledgeQuest(userInput: string, _responseText: string): void {
+  const inputLower = userInput.toLowerCase();
+  const learningWords = [
+    'learn about', 'teach me', 'study', 'deep dive', 'train you',
+    'ingest', 'import document', 'import file', 'read this url',
+    'learn vietnamese', 'learn law', 'learn from',
+  ];
+  const hasLearningIntent = learningWords.some(w => inputLower.includes(w));
+  if (!hasLearningIntent) return;
+
+  // Extract topic from user message
+  const topicMatch = inputLower.match(
+    /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/
+  );
+  const topic = topicMatch ? topicMatch[1].trim() : 'this topic';
+
+  const conversation = useConversationStore();
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `I gave you my best general knowledge, but for expert-level answers about **${topic}**, ` +
+      `I'd need to study the actual source materials.\n\n` +
+      `Would you like to start a **📚 Scholar's Quest**? I'll guide you through adding URLs and files ` +
+      `so I can learn deeply and give you source-grounded answers.`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+    questId: 'scholar-quest',
+    questChoices: [
+      { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
+      { label: 'No thanks', value: 'dismiss', icon: '💤' },
+    ],
+  });
+}
+
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
 
 /** Known free-provider keywords mapped to provider IDs. */
@@ -271,26 +313,45 @@ async function executeLlmCommand(
 }
 
 /**
- * Resolve the free provider details (base_url, model, api_key) from the brain store
- * for browser-side streaming.
+ * Resolve the provider details (base_url, model, api_key) from the brain store
+ * for browser-side streaming.  Supports free_api, paid_api, and local_ollama modes.
  */
-function resolveFreeProvider(brain: ReturnType<typeof useBrainStore>): {
+function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
   baseUrl: string;
   model: string;
   apiKey: string | null;
 } | null {
-  if (!brain.brainMode || brain.brainMode.mode !== 'free_api') return null;
+  if (!brain.brainMode) return null;
 
-  const providerId = brain.brainMode.provider_id;
-  const apiKey = brain.brainMode.api_key ?? null;
-  const provider = brain.freeProviders.find((p) => p.id === providerId);
-  if (!provider) return null;
+  const mode = brain.brainMode;
 
-  return {
-    baseUrl: provider.base_url,
-    model: provider.model,
-    apiKey,
-  };
+  if (mode.mode === 'free_api') {
+    const provider = brain.freeProviders.find((p) => p.id === mode.provider_id);
+    if (!provider) return null;
+    return {
+      baseUrl: provider.base_url,
+      model: provider.model,
+      apiKey: mode.api_key ?? null,
+    };
+  }
+
+  if (mode.mode === 'paid_api') {
+    return {
+      baseUrl: mode.base_url,
+      model: mode.model,
+      apiKey: mode.api_key,
+    };
+  }
+
+  if (mode.mode === 'local_ollama') {
+    return {
+      baseUrl: 'http://localhost:11434',
+      model: mode.model,
+      apiKey: null,
+    };
+  }
+
+  return null;
 }
 
 // Re-export detectLlmCommand for tests
@@ -321,6 +382,30 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
+    // Check if agent is busy with a background task
+    try {
+      const taskStore = useTaskStore();
+      if (taskStore.isAgentBusy) {
+        const running = taskStore.runningTask;
+        const busyMsg: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `I'm currently working on: **${running?.description ?? 'a task'}** (${running?.progress ?? 0}%). You can cancel it or wait for it to finish.`,
+          timestamp: Date.now(),
+        };
+        messages.value.push({
+          id: crypto.randomUUID(),
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+        });
+        messages.value.push(busyMsg);
+        return;
+      }
+    } catch {
+      // Task store not available
+    }
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -414,6 +499,7 @@ export const useConversationStore = defineStore('conversation', () => {
           if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
           maybeShowQuestFromResponse(clean || cleanText, content);
+          maybeShowKnowledgeQuest(content, clean || cleanText);
         } else {
           // Streaming completed but no text accumulated (events not received or
           // API returned empty) — fall back to non-streaming invoke which also
@@ -436,6 +522,7 @@ export const useConversationStore = defineStore('conversation', () => {
           ]);
           messages.value.push(response);
           maybeShowQuestFromResponse(response.content, content);
+          maybeShowKnowledgeQuest(content, response.content);
         } catch {
           messages.value.push(createPersonaResponse(content));
           pushNetworkOrProviderWarning();
@@ -448,15 +535,29 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
-    // Path 2: No Tauri, but brain is configured with free API → browser-side streaming
+    // Path 2: No Tauri, but brain is configured → browser-side streaming
     if (brain.hasBrain) {
-      const provider = resolveFreeProvider(brain);
+      const provider = resolveBrowserProvider(brain);
       if (provider) {
         try {
         const healthStore = useProviderHealthStore();
         const history = buildHistory(
           messages.value.map((m) => ({ role: m.role, content: m.content })),
         );
+
+        // RAG: fetch relevant memories from Tauri backend if available
+        let memoryBlock = '';
+        try {
+          const results = await invoke<{ id: number; content: string }[]>('search_memories', { query: content });
+          if (results && results.length > 0) {
+            const topMemories = results.slice(0, 5);
+            memoryBlock = '\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n'
+              + topMemories.map((m) => `- ${m.content}`).join('\n')
+              + '\n[/LONG-TERM MEMORY]';
+          }
+        } catch {
+          // Tauri unavailable (browser-only) or no memories — continue without RAG
+        }
 
         // Try the primary provider, then rotate to next healthy on rate-limit
         const providersToTry = [provider];
@@ -502,7 +603,7 @@ export const useConversationStore = defineStore('conversation', () => {
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },
-                getSystemPrompt(useEnhanced),
+                getSystemPrompt(useEnhanced) + memoryBlock,
               );
               timeout = setTimeout(() => {
                 if (!settled) { settled = true; abortController.abort(); reject(new Error('Stream timeout: no response within 60s')); }
@@ -529,6 +630,7 @@ export const useConversationStore = defineStore('conversation', () => {
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
             maybeShowQuestFromResponse(clean || parsed.text, content);
+            maybeShowKnowledgeQuest(content, clean || parsed.text);
             succeeded = true;
             break;
           } catch (err) {

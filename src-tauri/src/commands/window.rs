@@ -279,6 +279,7 @@ pub async fn set_pet_mode_bounds(
 #[cfg(target_os = "windows")]
 mod win_cursor {
     #[repr(C)]
+    #[allow(clippy::upper_case_acronyms)]
     pub struct POINT {
         pub x: i32,
         pub y: i32,

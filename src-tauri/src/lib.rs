@@ -22,6 +22,7 @@ pub mod routing;
 pub mod sandbox;
 pub mod settings;
 pub mod sync;
+pub mod tasks;
 pub mod voice;
 
 use commands::{
@@ -44,10 +45,13 @@ use commands::{
         remove_trusted_device_cmd,
     },
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
+    ingest::{ingest_document, cancel_ingest_task, resume_ingest_task, get_all_tasks},
     memory::{
-        add_memory, delete_memory, extract_memories_from_session, get_memories,
-        get_relevant_memories, get_short_term_memory, search_memories,
-        semantic_search_memories, summarize_session, update_memory,
+        add_memory, apply_memory_decay, backfill_embeddings, delete_memory,
+        extract_memories_from_session, gc_memories, get_memories, get_memories_by_tier,
+        get_memory_stats, get_relevant_memories, get_schema_info, get_short_term_memory,
+        hybrid_search_memories, promote_memory, search_memories, semantic_search_memories,
+        summarize_session, update_memory,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message,
@@ -126,6 +130,8 @@ pub struct AppState {
     pub voice_config: Mutex<voice::VoiceConfig>,
     /// Provider rotation and rate-limit tracking for free API providers.
     pub provider_rotator: Mutex<brain::ProviderRotator>,
+    /// Background task manager with persistence for resume.
+    pub task_manager: TokioMutex<tasks::manager::TaskManager>,
     /// Persistent application settings (model selection, camera state).
     pub app_settings: Mutex<settings::AppSettings>,
     /// Whether the pet-mode cursor-tracking poll loop is active.
@@ -166,6 +172,7 @@ impl AppState {
             saved_window_size: Mutex::new(None),
             voice_config: Mutex::new(voice::config_store::load(data_dir)),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
+            task_manager: TokioMutex::new(tasks::manager::TaskManager::new(data_dir)),
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
         }
@@ -202,6 +209,7 @@ impl AppState {
             saved_window_size: Mutex::new(None),
             voice_config: Mutex::new(voice::VoiceConfig::default()),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
+            task_manager: TokioMutex::new(tasks::manager::TaskManager::in_memory()),
             app_settings: Mutex::new(settings::AppSettings::default()),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
         }
@@ -257,6 +265,14 @@ pub fn run() {
             extract_memories_from_session,
             summarize_session,
             semantic_search_memories,
+            hybrid_search_memories,
+            backfill_embeddings,
+            get_schema_info,
+            get_memory_stats,
+            apply_memory_decay,
+            gc_memories,
+            promote_memory,
+            get_memories_by_tier,
             start_registry_server,
             stop_registry_server,
             get_registry_server_port,
@@ -324,6 +340,10 @@ pub fn run() {
             ensure_ollama_container,
             docker_pull_model,
             auto_setup_local_llm,
+            ingest_document,
+            cancel_ingest_task,
+            resume_ingest_task,
+            get_all_tasks,
         ])
         .setup(|app| {
             let data_dir = app

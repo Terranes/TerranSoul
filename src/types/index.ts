@@ -135,6 +135,7 @@ export interface ModelRecommendation {
   description: string;
   required_ram_mb: number;
   is_top_pick: boolean;
+  is_cloud?: boolean;
 }
 
 export interface OllamaStatus {
@@ -151,6 +152,8 @@ export interface OllamaModelEntry {
 
 export type MemoryType = 'fact' | 'preference' | 'context' | 'summary';
 
+export type MemoryTier = 'short' | 'working' | 'long';
+
 export interface MemoryEntry {
   id: number;
   content: string;
@@ -160,6 +163,20 @@ export interface MemoryEntry {
   created_at: number;
   last_accessed: number | null;
   access_count: number;
+  tier: MemoryTier;
+  decay_score: number;
+  session_id: string | null;
+  parent_id: number | null;
+  token_count: number;
+}
+
+export interface MemoryStats {
+  total: number;
+  short_count: number;
+  working_count: number;
+  long_count: number;
+  total_tokens: number;
+  avg_decay: number;
 }
 
 export interface NewMemory {

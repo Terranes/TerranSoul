@@ -1,0 +1,1667 @@
+# Brain & Memory — Advanced Architecture Design
+
+> **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
+> Last updated: 2026-04-22  
+> **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
+
+---
+
+## Table of Contents
+
+1. [System Overview](#system-overview)
+2. [Three-Tier Memory Model](#three-tier-memory-model)
+   - [Short-Term Memory](#short-term-memory)
+   - [Working Memory](#working-memory)
+   - [Long-Term Memory](#long-term-memory)
+   - [Tier Lifecycle & Promotion Chain](#tier-lifecycle--promotion-chain)
+3. [Memory Categories (Ontology)](#memory-categories-ontology)
+   - [Core Types](#core-types)
+   - [Proposed Category Taxonomy](#proposed-category-taxonomy)
+   - [Category × Tier Matrix](#category--tier-matrix)
+4. [Hybrid RAG Pipeline](#hybrid-rag-pipeline)
+   - [6-Signal Scoring Formula](#6-signal-scoring-formula)
+   - [RAG Injection Flow](#rag-injection-flow)
+   - [Embedding & Vector Search](#embedding--vector-search)
+5. [Decay & Garbage Collection](#decay--garbage-collection)
+6. [Knowledge Graph Vision](#knowledge-graph-vision)
+   - [Current: Tag-Based Graph](#current-tag-based-graph)
+   - [Future: Entity-Relationship Graph](#future-entity-relationship-graph)
+   - [Graph Traversal for Multi-Hop RAG](#graph-traversal-for-multi-hop-rag)
+7. [Visualization Layers](#visualization-layers)
+   - [Layer 1: In-App (Cytoscape.js)](#layer-1-in-app-cytoscapejs)
+   - [Layer 2: Obsidian Vault Export](#layer-2-obsidian-vault-export)
+   - [Layer 3: Debug SQL Console](#layer-3-debug-sql-console)
+8. [SQLite Schema](#sqlite-schema)
+9. [Why SQLite?](#why-sqlite)
+10. [Brain Modes & Provider Architecture](#brain-modes--provider-architecture)
+11. [LLM-Powered Memory Operations](#llm-powered-memory-operations)
+12. [Multi-Source Knowledge Management](#multi-source-knowledge-management)
+    - [Source Hash Change Detection](#1-source-hash-change-detection)
+    - [TTL Expiry](#2-ttl-expiry)
+    - [Access Count Decay](#3-access-count-decay)
+    - [LLM-Powered Conflict Resolution](#4-llm-powered-conflict-resolution)
+13. [Open-Source RAG Ecosystem Comparison](#open-source-rag-ecosystem-comparison)
+14. [Debugging with SQLite](#debugging-with-sqlite)
+15. [Hardware Scaling](#hardware-scaling)
+16. [Scaling Roadmap](#scaling-roadmap)
+17. [FAQ](#faq)
+18. [Diagrams Index](#diagrams-index)
+
+---
+
+## 1. System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          TerranSoul Desktop App                            │
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                     FRONTEND (Vue 3 + TypeScript)                    │   │
+│  │                                                                      │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐ │   │
+│  │  │  ChatView    │  │ MemoryView   │  │ SkillTreeView              │ │   │
+│  │  │              │  │              │  │                            │ │   │
+│  │  │ • Send msg   │  │ • List/Grid  │  │ • Quest-guided discovery  │ │   │
+│  │  │ • Stream res │  │ • Graph viz  │  │ • "Sage's Library" quest  │ │   │
+│  │  │ • Subtitles  │  │ • Tier chips │  │   unlocks RAG features    │ │   │
+│  │  └──────┬───────┘  │ • Filters    │  └────────────────────────────┘ │   │
+│  │         │          │ • Search     │                                  │   │
+│  │         │          │ • Add/Edit   │                                  │   │
+│  │         │          │ • Decay viz  │                                  │   │
+│  │         │          └──────┬───────┘                                  │   │
+│  │         │                 │                                          │   │
+│  │  ┌──────▼─────────────────▼──────────────────────────────────────┐  │   │
+│  │  │                    Pinia Stores                                │  │   │
+│  │  │                                                                │  │   │
+│  │  │  brain.ts ──── conversation.ts ──── memory.ts ──── voice.ts   │  │   │
+│  │  │  (provider)    (chat + stream)      (CRUD + search) (TTS/ASR) │  │   │
+│  │  └──────────────────────┬────────────────────────────────────────┘  │   │
+│  └─────────────────────────┼────────────────────────────────────────────┘   │
+│                            │ Tauri IPC (invoke / emit)                      │
+│  ┌─────────────────────────▼────────────────────────────────────────────┐   │
+│  │                     BACKEND (Rust + Tokio)                           │   │
+│  │                                                                      │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │                   Commands Layer (60+)                         │  │   │
+│  │  │  chat.rs • streaming.rs • memory.rs • brain.rs • voice.rs     │  │   │
+│  │  └────────┬──────────────────────────────┬────────────────────────┘  │   │
+│  │           │                              │                           │   │
+│  │  ┌────────▼────────┐           ┌─────────▼─────────┐               │   │
+│  │  │  Brain Module   │           │  Memory Module     │               │   │
+│  │  │                 │           │                    │               │   │
+│  │  │ • OllamaAgent  │◄─────────►│ • MemoryStore      │               │   │
+│  │  │ • OpenAiClient │  RAG loop │ • brain_memory.rs   │               │   │
+│  │  │ • FreeProvider  │           │ • hybrid_search()  │               │   │
+│  │  │ • embed_text() │           │ • vector_search()  │               │   │
+│  │  │ • ProviderRotat│           │ • decay / gc       │               │   │
+│  │  └────────┬────────┘           └─────────┬──────────┘               │   │
+│  │           │                              │                           │   │
+│  │           │      ┌───────────────────────▼──────┐                   │   │
+│  │           │      │  SQLite (WAL mode)           │                   │   │
+│  │           │      │  memory.db                   │                   │   │
+│  │           │      │                              │                   │   │
+│  │           │      │  memories ─┬─ content        │                   │   │
+│  │           │      │            ├─ embedding BLOB  │                   │   │
+│  │           │      │            ├─ tier            │                   │   │
+│  │           │      │            ├─ memory_type     │                   │   │
+│  │           │      │            ├─ tags            │                   │   │
+│  │           │      │            ├─ importance      │                   │   │
+│  │           │      │            ├─ decay_score     │                   │   │
+│  │           │      │            └─ source_*        │                   │   │
+│  │           │      └──────────────────────────────┘                   │   │
+│  │           │                                                          │   │
+│  │  ┌────────▼──────────────────────────┐                              │   │
+│  │  │  External LLM Providers          │                              │   │
+│  │  │                                   │                              │   │
+│  │  │  • Ollama (localhost:11434)       │                              │   │
+│  │  │  • Pollinations (free API)       │                              │   │
+│  │  │  • OpenAI / Anthropic / Groq     │                              │   │
+│  │  └───────────────────────────────────┘                              │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Three-Tier Memory Model
+
+TerranSoul's memory mirrors human cognition: **short-term** (seconds–minutes), **working** (session-scoped), and **long-term** (permanent knowledge base).
+
+### Short-Term Memory
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SHORT-TERM MEMORY                             │
+│                                                                  │
+│  Storage:   Rust Vec<Message> in AppState (in-memory)           │
+│  Capacity:  Last ~20 messages                                    │
+│  Lifetime:  Current session only — lost on app close            │
+│  Purpose:   Conversation continuity ("what did I just say?")    │
+│  Injected:  Always — appended to LLM prompt as chat history    │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ [user]      "What are the filing rules?"                  │   │
+│  │ [assistant] "Family law filings require 30-day notice..." │   │
+│  │ [user]      "What about emergency motions?"               │   │
+│  │ [assistant] "Emergency motions can be filed same-day..."  │   │
+│  │ ... (last 20 messages, FIFO eviction)                     │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Eviction:  When buffer exceeds 20, oldest messages are         │
+│             candidates for extraction → working memory           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Working Memory
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    WORKING MEMORY                                │
+│                                                                  │
+│  Storage:   SQLite, tier='working'                              │
+│  Capacity:  Unbounded (session-scoped)                          │
+│  Lifetime:  Persists across restarts but scoped to session_id   │
+│  Purpose:   Facts extracted from current conversation           │
+│  Injected:  Via hybrid_search() when relevant to query          │
+│                                                                  │
+│  Created by:                                                     │
+│  • extract_facts() — LLM extracts 5 key facts from chat        │
+│  • summarize() — LLM creates 1-3 sentence recap                │
+│  • User clicks "Extract from session" button                    │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ id=101  "User prefers dark mode"         tier=working    │   │
+│  │ id=102  "User is studying family law"    tier=working    │   │
+│  │ id=103  "Session about filing deadlines" tier=working    │   │
+│  │         session_id="sess_2026-04-22_001"                 │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Promotion:  Working → Long when importance ≥ 4 or user confirms│
+│  Eviction:   Decays faster than long-term (tier_priority=lower) │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Long-Term Memory
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    LONG-TERM MEMORY                              │
+│                                                                  │
+│  Storage:   SQLite, tier='long', vector-indexed                 │
+│  Capacity:  100,000+ entries (tested to <50ms search)           │
+│  Lifetime:  Permanent — subject to decay + GC                   │
+│  Purpose:   Knowledge base for RAG injection                    │
+│  Injected:  Top 5 via hybrid_search() into [LONG-TERM MEMORY]  │
+│                                                                  │
+│  Sources:                                                        │
+│  • Manual entry (user types in Memory View)                     │
+│  • Promoted from working memory                                 │
+│  • Document ingestion (PDF/URL → chunked → embedded)            │
+│  • LLM extraction ("Extract from session")                      │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ id=1  "Cook County Rule 14.3: 30 days to respond"        │   │
+│  │       tier=long  type=fact  importance=5  decay=0.92     │   │
+│  │       tags="law,family,deadline,cook-county"             │   │
+│  │       embedding=[0.12, -0.34, 0.56, ...] (768-dim)      │   │
+│  │       access_count=47  last_accessed=2026-04-22          │   │
+│  │                                                           │   │
+│  │ id=2  "User's name is Alex"                              │   │
+│  │       tier=long  type=fact  importance=5  decay=0.99     │   │
+│  │       tags="personal,identity"                           │   │
+│  │       access_count=312                                   │   │
+│  │                                                           │   │
+│  │ id=3  "Alex prefers concise answers"                     │   │
+│  │       tier=long  type=preference  importance=4  decay=0.87│   │
+│  │       tags="personal,preference,style"                   │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  Decay:  decay_score = 1.0 × 0.95^(hours_since_access / 168)  │
+│  GC:     Remove when decay < 0.05 AND importance ≤ 2           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Tier Lifecycle & Promotion Chain
+
+```
+ ┌───────────────────────────────────────────────────────────────────────┐
+ │                      MEMORY TIER LIFECYCLE                            │
+ │                                                                       │
+ │                                                                       │
+ │   CONVERSATION                                                        │
+ │   ┌─────────┐     evict (FIFO, >20)     ┌───────────┐               │
+ │   │  SHORT  │ ──────────────────────────>│  WORKING  │               │
+ │   │  TERM   │     extract_facts()        │  MEMORY   │               │
+ │   │         │     summarize()            │           │               │
+ │   └─────────┘                            └─────┬─────┘               │
+ │        │                                       │                      │
+ │   lost on close                          promote()                    │
+ │                                          (importance ≥ 4              │
+ │                                           or user action)             │
+ │                                                │                      │
+ │                                          ┌─────▼─────┐               │
+ │   MANUAL ENTRY ─────────────────────────>│   LONG    │               │
+ │   DOCUMENT INGESTION ───────────────────>│   TERM    │               │
+ │   LLM EXTRACTION ──────────────────────>│  MEMORY   │               │
+ │                                          └─────┬─────┘               │
+ │                                                │                      │
+ │                                          decay < 0.05                │
+ │                                          AND importance ≤ 2          │
+ │                                                │                      │
+ │                                          ┌─────▼─────┐               │
+ │                                          │  GARBAGE   │               │
+ │                                          │ COLLECTED  │               │
+ │                                          └───────────┘               │
+ └───────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Memory Categories (Ontology)
+
+### Core Types
+
+The current `memory_type` column supports four values:
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `fact` | Objective knowledge, rules, data | "Cook County requires 30-day notice for filings" |
+| `preference` | Subjective user preferences | "User prefers dark mode and concise answers" |
+| `context` | Situational/environmental info | "User is on mobile during commute" |
+| `summary` | LLM-generated session recaps | "Session covered family law deadlines and billing" |
+
+### Proposed Category Taxonomy
+
+The four core types are **structural** (how the memory was created). Categories are **semantic** (what the memory is about). Both axes are needed:
+
+```
+                          STRUCTURAL TYPE
+                  fact    preference    context    summary
+              ┌─────────┬────────────┬──────────┬─────────┐
+  personal    │ name,   │ dark mode, │ "on      │ "User   │
+  info        │ age,    │ language,  │ mobile"  │ intro    │
+              │ location│ timezone   │          │ session" │
+              ├─────────┼────────────┼──────────┼─────────┤
+  friends &   │ "Mom is │ "Dad likes│ "Sister  │ "Talked  │
+  relations   │ Sarah"  │ golf"     │ visiting"│ about    │
+              │         │           │          │ family"  │
+              ├─────────┼────────────┼──────────┼─────────┤
+  habits &    │ "Runs   │ "Prefers  │ "Morning │ "Health  │
+  routines    │ 5km/day"│ 6am alarm"│ workout" │ recap"   │
+              ├─────────┼────────────┼──────────┼─────────┤
+  domain      │ "Rule   │ "Cite     │ "Case    │ "Law     │
+  knowledge   │ 14.3..."│ Bluebook" │ research"│ session" │
+              ├─────────┼────────────┼──────────┼─────────┤
+  skills &    │ "Knows  │ "Learning │ "Coding  │ "Skill   │
+  projects    │ Python" │ Rust"     │ session" │ progress"│
+              ├─────────┼────────────┼──────────┼─────────┤
+  emotional   │ "Anxious│ "Likes    │ "Stressed│ "Mood    │
+  state       │ about   │ encourage-│ about    │ trend    │
+              │ exams"  │ ment"     │ deadline"│ recap"   │
+              ├─────────┼────────────┼──────────┼─────────┤
+  world       │ "Earth  │ —         │ "Election│ "News    │
+  knowledge   │ is 93M  │           │ season"  │ digest"  │
+              │ mi from │           │          │          │
+              │ sun"    │           │          │          │
+              └─────────┴────────────┴──────────┴─────────┘
+```
+
+**Proposed `category` values** (stored as a new column or as structured tags):
+
+| Category | Tag Prefix | Description | Decay Behavior |
+|----------|-----------|-------------|----------------|
+| `personal` | `personal:*` | Identity, demographics, self-description | Very slow decay (core identity) |
+| `relations` | `rel:*` | People the user knows, relationships | Slow decay |
+| `habits` | `habit:*` | Routines, schedules, repeated behaviors | Medium decay (habits change) |
+| `domain` | `domain:*` | Professional/academic knowledge | Configurable per domain |
+| `skills` | `skill:*` | Abilities, learning progress, projects | Medium decay |
+| `emotional` | `emotional:*` | Mood, feelings, mental state snapshots | Fast decay (emotions are ephemeral) |
+| `world` | `world:*` | General knowledge, news, events | Slow decay (facts are stable) |
+| `meta` | `meta:*` | Preferences about TerranSoul itself | Very slow decay |
+
+### Category × Tier Matrix
+
+Not all categories belong in all tiers:
+
+```
+                    SHORT        WORKING         LONG
+  personal          rare         extracted       ✓ permanent
+  relations         mentioned    extracted       ✓ permanent
+  habits            —            observed        ✓ after confirmation
+  domain            referenced   chunked/cited   ✓ ingested docs
+  skills            mentioned    session notes   ✓ tracked progress
+  emotional         ✓ current    session mood    ✓ only patterns
+  world             referenced   —               ✓ verified facts
+  meta              —            —               ✓ always
+```
+
+**Key insight**: Emotional memories should decay fast in long-term (you don't want "user was stressed on April 3rd" cluttering RAG forever), but personal identity ("user's name is Alex") should essentially never decay.
+
+**Implementation path**: Add a `category` column in a V5 migration, or use structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) to avoid schema changes. Tag prefixes are recommended first — they work with the existing search infrastructure and don't require a migration.
+
+---
+
+## 4. Hybrid RAG Pipeline
+
+### 6-Signal Scoring Formula
+
+Every query triggers a hybrid search that combines six signals into a single relevance score:
+
+```
+final_score =
+    0.40 × vector_similarity    // Semantic meaning (cosine distance)
+  + 0.20 × keyword_match        // Exact word overlap (BM25-like)
+  + 0.15 × recency_bias         // How recently accessed
+  + 0.10 × importance_score     // User-assigned priority (1–5)
+  + 0.10 × decay_score          // Freshness multiplier (0.0–1.0)
+  + 0.05 × tier_priority        // working(1.0) > long(0.7) > short(0.3)
+```
+
+**Signal breakdown:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    HYBRID SEARCH — 6 SIGNALS                        │
+│                                                                     │
+│  ┌─────────────────────────┐                                        │
+│  │ 1. VECTOR SIMILARITY    │  Weight: 40%                           │
+│  │    cosine(query_emb,    │  Range: 0.0 – 1.0                     │
+│  │           memory_emb)   │  Source: nomic-embed-text (768-dim)    │
+│  │                         │  Fallback: skip if no embeddings       │
+│  └─────────────────────────┘                                        │
+│                                                                     │
+│  ┌─────────────────────────┐                                        │
+│  │ 2. KEYWORD MATCH        │  Weight: 20%                           │
+│  │    words_in_common /    │  Range: 0.0 – 1.0                     │
+│  │    total_query_words    │  Case-insensitive, whitespace-split    │
+│  │                         │  Searches: content + tags              │
+│  └─────────────────────────┘                                        │
+│                                                                     │
+│  ┌─────────────────────────┐                                        │
+│  │ 3. RECENCY BIAS         │  Weight: 15%                           │
+│  │    e^(-hours / 24)      │  Half-life: 24 hours                  │
+│  │                         │  Based on last_accessed timestamp      │
+│  │                         │  Decays exponentially from 1.0 → 0.0  │
+│  └─────────────────────────┘                                        │
+│                                                                     │
+│  ┌─────────────────────────┐                                        │
+│  │ 4. IMPORTANCE           │  Weight: 10%                           │
+│  │    importance / 5.0     │  Range: 0.2 – 1.0                     │
+│  │                         │  User-assigned: 1=low, 5=critical     │
+│  └─────────────────────────┘                                        │
+│                                                                     │
+│  ┌─────────────────────────┐                                        │
+│  │ 5. DECAY SCORE          │  Weight: 10%                           │
+│  │    stored decay_score   │  Range: 0.01 – 1.0                    │
+│  │    (exponential forget) │  Updated by apply_memory_decay()       │
+│  └─────────────────────────┘                                        │
+│                                                                     │
+│  ┌─────────────────────────┐                                        │
+│  │ 6. TIER PRIORITY        │  Weight: 5%                            │
+│  │    working=1.0          │  Working memory is most relevant       │
+│  │    long=0.7             │  Long-term is base knowledge           │
+│  │    short=0.3            │  Short-term rarely searched            │
+│  └─────────────────────────┘                                        │
+│                                                                     │
+│  PERFORMANCE: O(n) linear scan, pure arithmetic                     │
+│  • 100 entries:    <1ms                                             │
+│  • 10,000 entries:  2ms                                             │
+│  • 100,000 entries: 5ms                                             │
+│  • 1,000,000 entries: ~50ms                                         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### RAG Injection Flow
+
+```
+User types: "What are the filing deadlines?"
+                │
+                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Step 1: EMBED QUERY                                                  │
+│                                                                      │
+│ POST http://127.0.0.1:11434/api/embed                               │
+│ { "model": "nomic-embed-text", "input": "filing deadlines" }       │
+│ → query_embedding = [0.12, -0.34, ...] (768 floats, ~50ms)         │
+│                                                                      │
+│ Fallback (no Ollama): skip vector signal, keyword+temporal only     │
+└──────────────────────────┬───────────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Step 2: HYBRID SEARCH                                                │
+│                                                                      │
+│ hybrid_search(query="filing deadlines",                             │
+│               embedding=Some([0.12, -0.34, ...]),                   │
+│               limit=5)                                              │
+│                                                                      │
+│ Scans ALL memories in SQLite, scores each with 6 signals,          │
+│ returns top 5 by final_score.                                       │
+│                                                                      │
+│ Results:                                                             │
+│   #1  score=0.89  "Cook County Rule 14.3: 30-day notice"           │
+│   #2  score=0.74  "Emergency motions: same-day filing allowed"     │
+│   #3  score=0.61  "Standard civil filing: 21-day response"         │
+│   #4  score=0.55  "Court hours: 8:30am–4:30pm for filings"        │
+│   #5  score=0.41  "E-filing portal: odysseyfileandserve.com"       │
+└──────────────────────────┬───────────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Step 3: FORMAT MEMORY BLOCK                                          │
+│                                                                      │
+│ [LONG-TERM MEMORY]                                                  │
+│ - [long] Cook County Rule 14.3: 30-day notice required              │
+│ - [long] Emergency motions: same-day filing allowed                 │
+│ - [long] Standard civil filing: 21-day response                    │
+│ - [long] Court hours: 8:30am–4:30pm for filings                   │
+│ - [long] E-filing portal: odysseyfileandserve.com                  │
+│ [/LONG-TERM MEMORY]                                                 │
+└──────────────────────────┬───────────────────────────────────────────┘
+                           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Step 4: INJECT INTO SYSTEM PROMPT                                    │
+│                                                                      │
+│ system: "You are a helpful AI companion. {personality}               │
+│                                                                      │
+│          [LONG-TERM MEMORY]                                          │
+│          - [long] Cook County Rule 14.3: 30-day notice...           │
+│          ... (top 5 memories)                                       │
+│          [/LONG-TERM MEMORY]                                         │
+│                                                                      │
+│          Use these memories to inform your response."                │
+│                                                                      │
+│ user: "What are the filing deadlines?"                               │
+│                                                                      │
+│ → LLM generates response grounded in retrieved memories             │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Embedding & Vector Search
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    EMBEDDING ARCHITECTURE                         │
+│                                                                   │
+│  Model:     nomic-embed-text (768-dimensional)                   │
+│  Provider:  Ollama (localhost:11434/api/embed)                   │
+│  Fallback:  Active chat model (lower quality but works)          │
+│  Storage:   BLOB column in SQLite (768 × 4 bytes = 3 KB each)   │
+│                                                                   │
+│  Memory budget:                                                   │
+│    1,000 memories   ×  3 KB  =    3 MB                           │
+│   10,000 memories   ×  3 KB  =   30 MB                           │
+│  100,000 memories   ×  3 KB  =  300 MB                           │
+│  1,000,000 memories ×  3 KB  = 3,000 MB (needs ANN index)       │
+│                                                                   │
+│  Cosine Similarity:                                               │
+│  sim(A, B) = (A · B) / (||A|| × ||B||)                          │
+│  Range: -1.0 (opposite) to 1.0 (identical)                      │
+│  Threshold: > 0.97 = duplicate detection                         │
+│                                                                   │
+│  Deduplication:                                                   │
+│  Before insert → embed new text → cosine vs all existing         │
+│  If max_similarity > 0.97 → skip insert, return existing id     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 5. Decay & Garbage Collection
+
+### Exponential Forgetting Curve
+
+Memories naturally fade over time unless actively accessed:
+
+```
+decay_score(t) = 1.0 × 0.95 ^ (hours_since_last_access / 168)
+
+Where:
+  • 168 hours = 1 week
+  • Half-life ≈ 2 weeks of non-access
+  • Minimum floor: 0.01 (never fully zero)
+```
+
+```
+Decay Score
+  1.0 ┤ ●
+      │  ●
+  0.9 ┤   ●
+      │     ●
+  0.8 ┤       ●
+      │         ●
+  0.7 ┤           ●
+      │              ●
+  0.6 ┤                ●
+      │                   ●
+  0.5 ┤                      ●                    ← ~2 weeks
+      │                         ●
+  0.4 ┤                            ●
+      │                               ●
+  0.3 ┤                                  ●
+      │                                     ●
+  0.2 ┤                                       ●
+      │                                         ●
+  0.1 ┤                                          ●●
+      │                                             ●●●
+  0.05┤─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ●●●●●── GC threshold
+  0.01┤                                                     ●●●●●●●●●
+      └──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬
+        0d  2d  4d  6d  1w      2w      3w      4w      5w
+                    Days since last access
+
+  • Accessing a memory resets its decay to 1.0
+  • Important memories (≥3) survive GC even at low decay
+  • GC removes: decay < 0.05 AND importance ≤ 2
+```
+
+### Category-Aware Decay (Proposed)
+
+Different categories should decay at different rates:
+
+```
+┌──────────────┬──────────────┬──────────────┬───────────────────────┐
+│ Category     │ Base Rate    │ Half-Life    │ Rationale             │
+├──────────────┼──────────────┼──────────────┼───────────────────────┤
+│ personal     │ 0.99         │ ~6 months    │ Identity is stable    │
+│ relations    │ 0.98         │ ~3 months    │ People change slowly  │
+│ habits       │ 0.96         │ ~1 month     │ Routines evolve       │
+│ domain       │ 0.97         │ ~2 months    │ Knowledge is durable  │
+│ skills       │ 0.96         │ ~1 month     │ Skills need practice  │
+│ emotional    │ 0.90         │ ~1 week      │ Moods are transient   │
+│ world        │ 0.97         │ ~2 months    │ Facts are stable      │
+│ meta         │ 0.99         │ ~6 months    │ App prefs are sticky  │
+└──────────────┴──────────────┴──────────────┴───────────────────────┘
+
+Future formula:
+  decay_score(t) = 1.0 × category_rate ^ (hours / 168)
+```
+
+---
+
+## 6. Knowledge Graph Vision
+
+### Current: Tag-Based Graph
+
+The in-app MemoryGraph (Cytoscape.js) connects memories that share tags:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  CURRENT GRAPH MODEL (TAG EDGES)                    │
+│                                                                     │
+│   "Rule 14.3"                     "User prefers email"              │
+│   tags: law, family, deadline     tags: preference, communication   │
+│        ●───────────────────────────────●                            │
+│       /│\         shared tag:          │                            │
+│      / │ \        (none — no edge)     │                            │
+│     /  │  \                            │                            │
+│    /   │   \                           │                            │
+│   ●    │    ●                          ●                            │
+│  "Emergency    "Court hours"     "Email template"                   │
+│   motions"     tags: law,        tags: communication,               │
+│   tags: law,    schedule          template                          │
+│    family,                                                          │
+│    emergency                                                        │
+│                                                                     │
+│  Nodes: Each memory entry                                           │
+│  Edges: Shared tag between two memories                             │
+│  Size:  Proportional to importance (20 + importance × 8 px)        │
+│  Color: By memory_type (fact=blue, preference=green, etc.)         │
+│  Layout: CoSE (force-directed)                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Limitations of tag-based edges:**
+- No semantic relationships ("Rule 14.3 is an exception to Rule 14.1")
+- No directional links ("Sarah is Alex's mother" ≠ "Alex is Sarah's child")
+- Tags must be manually assigned or extracted — no automatic linking
+- Clusters form around common tags, not around meaning
+
+### Future: Entity-Relationship Graph
+
+A proper knowledge graph with typed, directional edges:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              PROPOSED ENTITY-RELATIONSHIP GRAPH                      │
+│                                                                     │
+│              ┌──────────┐                                            │
+│              │  Alex    │                                            │
+│              │ (person) │                                            │
+│              └────┬─────┘                                            │
+│           ┌───────┼──────────────┐                                   │
+│     mother_of  studies      prefers                                  │
+│           │       │              │                                    │
+│     ┌─────▼──┐ ┌──▼───────┐ ┌───▼────────┐                         │
+│     │ Sarah  │ │ Family   │ │ Dark mode  │                          │
+│     │(person)│ │ Law      │ │(preference)│                          │
+│     └────────┘ │(domain)  │ └────────────┘                          │
+│                └────┬─────┘                                          │
+│              ┌──────┼──────────┐                                     │
+│          contains  governs   cites                                   │
+│              │       │         │                                      │
+│     ┌────────▼──┐ ┌──▼─────┐ ┌▼──────────┐                         │
+│     │ Rule 14.3 │ │ Filing │ │ Illinois  │                          │
+│     │ (rule)    │ │Deadline│ │ Statute   │                          │
+│     │           │ │ (fact) │ │ 750-5/602 │                          │
+│     └───────────┘ └────────┘ └───────────┘                          │
+│                                                                     │
+│  SCHEMA:                                                             │
+│  • Nodes: memories + extracted entities                              │
+│  • Edges: typed relationships with direction                         │
+│  • Edge types: contains, cites, governs, related_to, mother_of,    │
+│                studies, prefers, contradicts, supersedes, etc.       │
+│  • Storage: edges table (src_id, dst_id, rel_type, confidence)      │
+│  • Traversal: multi-hop queries via graph walk                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Proposed `memory_edges` table (V6 migration):**
+
+```sql
+CREATE TABLE memory_edges (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_id    INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    dst_id    INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    rel_type  TEXT NOT NULL,          -- 'contains', 'cites', 'related_to', etc.
+    confidence REAL NOT NULL DEFAULT 1.0,  -- LLM extraction confidence
+    created_at INTEGER NOT NULL,
+    UNIQUE(src_id, dst_id, rel_type)
+);
+
+CREATE INDEX idx_edges_src ON memory_edges(src_id);
+CREATE INDEX idx_edges_dst ON memory_edges(dst_id);
+CREATE INDEX idx_edges_type ON memory_edges(rel_type);
+```
+
+### Graph Traversal for Multi-Hop RAG
+
+```
+Query: "What rules apply to Alex's area of study?"
+
+Step 1 — Vector search:
+  → "Alex studies Family Law"  (direct hit)
+
+Step 2 — Graph traversal (1 hop from "Family Law"):
+  → "Rule 14.3: 30-day notice"      (Family Law --contains--> Rule 14.3)
+  → "Filing deadline: 30 days"       (Family Law --governs--> Filing Deadline)
+  → "Illinois Statute 750-5/602"     (Family Law --cites--> Statute)
+
+Step 3 — Merge & re-rank:
+  → Combine vector results + graph results
+  → De-duplicate by memory id
+  → Re-score with hybrid formula
+  → Return top 5
+
+This finds memories that are TOPICALLY connected even if they
+don't share exact keywords or high vector similarity with the query.
+```
+
+---
+
+## 7. Visualization Layers
+
+The memory graph is hard to visualize in a single UI because it spans three tiers, multiple categories, thousands of entries, and complex relationships. The solution: **three complementary visualization layers**.
+
+### Layer 1: In-App (Cytoscape.js)
+
+The primary visualization, rendered inside TerranSoul's Memory tab:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  IN-APP MEMORY GRAPH                                 │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Filters: [Tier ▼] [Type ▼] [Category ▼] [Search...]      │   │
+│  ├─────────────────────────────────────────────────────────────┤   │
+│  │                                                             │   │
+│  │        ● Rule 14.3                                         │   │
+│  │       / \          ● Alex's name                           │   │
+│  │      /   \        /                                        │   │
+│  │     ●     ●      ●                                         │   │
+│  │   Emergency  Court   Prefers                               │   │
+│  │   motions    hours   email     ● Dark mode                 │   │
+│  │                      \        /                             │   │
+│  │                       ●──────●                              │   │
+│  │                    Communication                            │   │
+│  │                    preferences                              │   │
+│  │                                                             │   │
+│  ├─────────────────────────────────────────────────────────────┤   │
+│  │  Legend:  ● fact  ● preference  ● context  ● summary       │   │
+│  │  Size = importance │ Opacity = decay_score                 │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  Interactions:                                                      │
+│  • Click node → detail panel (content, tags, decay, access_count)  │
+│  • Hover → highlight connected nodes                                │
+│  • Pinch/scroll → zoom                                              │
+│  • Drag → pan                                                       │
+│  • Filter toolbar → show/hide by tier, type, category              │
+│                                                                     │
+│  Pros: Integrated, always available, real-time                      │
+│  Cons: Limited screen real estate, no advanced layout controls      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Layer 2: Obsidian Vault Export
+
+For power users who want to explore their memory graph in a full-featured knowledge management tool:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                 OBSIDIAN VAULT EXPORT                                │
+│                                                                     │
+│  TerranSoul exports memories as an Obsidian-compatible vault:      │
+│                                                                     │
+│  📁 TerranSoul-Vault/                                               │
+│  ├── 📁 personal/                                                   │
+│  │   ├── Alex.md                                                    │
+│  │   ├── preferences.md                                             │
+│  │   └── identity.md                                                │
+│  ├── 📁 relations/                                                  │
+│  │   ├── Sarah (mother).md                                          │
+│  │   ├── David (study partner).md                                   │
+│  │   └── Professor Kim.md                                           │
+│  ├── 📁 habits/                                                     │
+│  │   ├── morning-routine.md                                         │
+│  │   └── study-schedule.md                                          │
+│  ├── 📁 domain/                                                     │
+│  │   ├── 📁 family-law/                                             │
+│  │   │   ├── Rule 14.3 — Filing Deadline.md                        │
+│  │   │   ├── Emergency Motions.md                                   │
+│  │   │   └── Illinois Statute 750-5-602.md                          │
+│  │   └── 📁 civil-procedure/                                       │
+│  │       └── Standard Filing — 21 Day Response.md                   │
+│  ├── 📁 emotional/                                                  │
+│  │   └── 2026-04-22 — exam stress.md                                │
+│  ├── 📁 meta/                                                       │
+│  │   ├── brain-mode.md                                              │
+│  │   └── voice-settings.md                                          │
+│  └── 📁 _session-summaries/                                        │
+│      ├── 2026-04-20 — family law study.md                           │
+│      ├── 2026-04-21 — filing deadlines.md                           │
+│      └── 2026-04-22 — exam prep.md                                  │
+│                                                                     │
+│  Each .md file contains:                                            │
+│  ┌──────────────────────────────────────────────────────────┐      │
+│  │ ---                                                       │      │
+│  │ id: 42                                                    │      │
+│  │ tier: long                                                │      │
+│  │ type: fact                                                │      │
+│  │ category: domain                                          │      │
+│  │ importance: 5                                             │      │
+│  │ decay: 0.92                                               │      │
+│  │ access_count: 47                                          │      │
+│  │ created: 2026-03-15                                       │      │
+│  │ last_accessed: 2026-04-22                                 │      │
+│  │ tags: [law, family, deadline, cook-county]                │      │
+│  │ ---                                                       │      │
+│  │                                                           │      │
+│  │ # Cook County Rule 14.3                                   │      │
+│  │                                                           │      │
+│  │ 30 days to respond to a family law motion in Cook County. │      │
+│  │                                                           │      │
+│  │ ## Related                                                │      │
+│  │ - [[Emergency Motions]] — exception for same-day filing  │      │
+│  │ - [[Illinois Statute 750-5-602]] — governing statute     │      │
+│  │ - [[Standard Filing — 21 Day Response]] — civil default  │      │
+│  │                                                           │      │
+│  │ ## Source                                                 │      │
+│  │ Ingested from: court-rules-2026.pdf (page 14)            │      │
+│  └──────────────────────────────────────────────────────────┘      │
+│                                                                     │
+│  Obsidian features this enables:                                    │
+│  • Graph View — full knowledge graph with category coloring        │
+│  • Backlinks — see which memories reference each other             │
+│  • Dataview — query memories by metadata (importance ≥ 4)          │
+│  • Canvas — drag memories into spatial layouts                      │
+│  • Daily Notes — session summaries linked by date                  │
+│  • Search — full-text across all memories                          │
+│  • Community plugins — timeline, kanban, excalidraw                │
+│                                                                     │
+│  Sync strategy:                                                     │
+│  • Export: TerranSoul → Obsidian (one-way, on demand or scheduled) │
+│  • Import: Obsidian → TerranSoul (future — parse [[wikilinks]])    │
+│  • Bidirectional sync is a non-goal (too complex, conflict-prone)  │
+│                                                                     │
+│  Implementation:                                                     │
+│  • Tauri command: export_obsidian_vault(path: String)              │
+│  • Iterates all memories, groups by category, writes .md files     │
+│  • Generates [[wikilinks]] from shared tags + memory_edges         │
+│  • YAML frontmatter from memory metadata                           │
+│  • Runs in background (async), shows progress bar                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Why Obsidian?**
+- Free, local-first, Markdown-based — aligns with TerranSoul's privacy philosophy
+- Graph View is the best knowledge graph visualizer for personal data
+- Massive plugin ecosystem (Dataview, Timeline, etc.) we don't need to build
+- Users already familiar with it (50M+ downloads)
+- No vendor lock-in — it's just Markdown files in folders
+
+### Layer 3: Debug SQL Console
+
+For developers and advanced users:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│               DEBUG SQL CONSOLE (Ctrl+Shift+D)                      │
+│                                                                     │
+│  Direct SQLite queries against memory.db for debugging:            │
+│                                                                     │
+│  > SELECT tier, memory_type, COUNT(*), AVG(importance),            │
+│    AVG(decay_score) FROM memories GROUP BY tier, memory_type;       │
+│                                                                     │
+│  tier     │ type       │ count │ avg_importance │ avg_decay         │
+│  ─────────┼────────────┼───────┼────────────────┼──────────         │
+│  long     │ fact       │  1247 │ 3.8            │ 0.72              │
+│  long     │ preference │   89  │ 4.1            │ 0.85              │
+│  long     │ summary    │   203 │ 3.0            │ 0.55              │
+│  working  │ context    │   34  │ 2.5            │ 0.91              │
+│  working  │ fact       │   12  │ 3.2            │ 0.95              │
+│                                                                     │
+│  Accessible via:                                                    │
+│  • Tauri command: get_schema_info()                                │
+│  • External: sqlite3 memory.db (direct access)                     │
+│  • Dev overlay: Ctrl+D shows memory stats in-app                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 8. SQLite Schema
+
+### Current Schema (V4)
+
+```sql
+CREATE TABLE memories (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    content       TEXT    NOT NULL,
+    tags          TEXT    NOT NULL DEFAULT '',
+    importance    INTEGER NOT NULL DEFAULT 3,    -- 1=low, 5=critical
+    memory_type   TEXT    NOT NULL DEFAULT 'fact', -- fact|preference|context|summary
+    created_at    INTEGER NOT NULL,              -- Unix timestamp (ms)
+    last_accessed INTEGER,                       -- Last RAG retrieval
+    access_count  INTEGER NOT NULL DEFAULT 0,    -- Times retrieved
+    embedding     BLOB,                          -- 768-dim f32 (3 KB)
+    source_url    TEXT,                          -- Origin URL for ingested docs
+    source_hash   TEXT,                          -- SHA-256 for dedup/staleness
+    expires_at    INTEGER,                       -- TTL for auto-expiry
+    tier          TEXT    NOT NULL DEFAULT 'long',  -- short|working|long
+    session_id    TEXT,                          -- Links working memories to session
+    parent_id     INTEGER,                       -- Summary → source memory link
+    token_count   INTEGER,                       -- Content size in tokens
+    decay_score   REAL    NOT NULL DEFAULT 1.0   -- 0.01–1.0 freshness
+);
+
+CREATE INDEX idx_memories_importance ON memories(importance DESC);
+CREATE INDEX idx_memories_created    ON memories(created_at DESC);
+CREATE INDEX idx_memories_tier       ON memories(tier);
+CREATE INDEX idx_memories_session    ON memories(session_id);
+CREATE INDEX idx_memories_decay      ON memories(decay_score);
+CREATE INDEX idx_memories_source     ON memories(source_hash);
+
+CREATE TABLE schema_version (
+    version     INTEGER PRIMARY KEY,
+    applied_at  INTEGER NOT NULL,
+    description TEXT    NOT NULL DEFAULT ''
+);
+```
+
+### Proposed Schema Changes
+
+**V5 — Category column:**
+```sql
+ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general';
+CREATE INDEX idx_memories_category ON memories(category);
+```
+
+**V6 — Entity-relationship edges:**
+```sql
+CREATE TABLE memory_edges (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    dst_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    rel_type   TEXT    NOT NULL,
+    confidence REAL    NOT NULL DEFAULT 1.0,
+    created_at INTEGER NOT NULL,
+    UNIQUE(src_id, dst_id, rel_type)
+);
+
+CREATE INDEX idx_edges_src  ON memory_edges(src_id);
+CREATE INDEX idx_edges_dst  ON memory_edges(dst_id);
+CREATE INDEX idx_edges_type ON memory_edges(rel_type);
+```
+
+**V7 — Obsidian sync metadata:**
+```sql
+ALTER TABLE memories ADD COLUMN obsidian_path TEXT;      -- vault-relative .md path
+ALTER TABLE memories ADD COLUMN last_exported INTEGER;   -- Unix timestamp
+```
+
+---
+
+## 9. Why SQLite?
+
+TerranSoul is a **desktop app** (Tauri 2.x), not a web service. The database must satisfy very different constraints than a server-side application:
+
+| Requirement | SQLite ✓ | PostgreSQL ✗ | Why SQLite wins |
+|---|---|---|---|
+| **Zero config** | Embedded, no server | Needs install + config | Users just open the app |
+| **Single file** | `memory.db` | Data directory cluster | Easy backup, easy sync |
+| **Crash-safe** | WAL mode = ACID | Needs `pg_dump` setup | Auto-backup on startup |
+| **Portable** | Works everywhere | OS-specific packages | Windows/Mac/Linux/mobile |
+| **Performance** | <5ms for 100k rows | Overkill for single-user | Desktop app, not a cluster |
+| **Offline** | Always works | Needs running service | Companion works without internet |
+
+### WAL Mode (Write-Ahead Logging)
+
+TerranSoul enables WAL mode on every startup:
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+```
+
+**What this means for your data:**
+- Writes go to a WAL file first, then get checkpointed to the main DB
+- If the app crashes mid-write, the WAL replays on next open — **zero data loss**
+- Concurrent reads while writing (important for RAG search during chat)
+
+### Auto-Backup
+
+Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
+
+```
+%APPDATA%/com.terransoul.app/
+├── memory.db         ← Live database
+├── memory.db.bak     ← Auto-backup from last startup
+├── memory.db-wal     ← Write-ahead log (may exist during use)
+└── memory.db-shm     ← Shared memory (may exist during use)
+```
+
+### Database Location by OS
+
+| OS | Path |
+|---|---|
+| **Windows** | `%APPDATA%\com.terransoul.app\memory.db` |
+| **macOS** | `~/Library/Application Support/com.terransoul.app/memory.db` |
+| **Linux** | `~/.local/share/com.terransoul.app/memory.db` |
+
+---
+
+## 10. Brain Modes & Provider Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    BRAIN MODE ARCHITECTURE                           │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              Provider Selection (BrainMode)                  │   │
+│  │                                                              │   │
+│  │  ┌───────────┐  ┌───────────┐  ┌────────────────────────┐  │   │
+│  │  │ free_api  │  │ paid_api  │  │ local_ollama           │  │   │
+│  │  │           │  │           │  │                        │  │   │
+│  │  │ Pollina-  │  │ OpenAI    │  │ Ollama server          │  │   │
+│  │  │ tions AI  │  │ Anthropic │  │ localhost:11434         │  │   │
+│  │  │           │  │ Groq      │  │                        │  │   │
+│  │  │ No key    │  │ User key  │  │ Full privacy           │  │   │
+│  │  │ No embed  │  │ No embed  │  │ Local embed            │  │   │
+│  │  │           │  │           │  │ nomic-embed-text       │  │   │
+│  │  └─────┬─────┘  └─────┬─────┘  └───────────┬────────────┘  │   │
+│  │        │              │                     │               │   │
+│  │        ▼              ▼                     ▼               │   │
+│  │  ┌──────────────────────────────────────────────────────┐  │   │
+│  │  │              Unified LLM Interface                    │  │   │
+│  │  │                                                       │  │   │
+│  │  │  call(prompt, system) → String                       │  │   │
+│  │  │  call_streaming(prompt, system) → SSE events         │  │   │
+│  │  │  embed(text) → Option<Vec<f32>>                      │  │   │
+│  │  └──────────────────────────────────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  RAG capability by mode:                                            │
+│                                                                     │
+│  ┌──────────────┬──────────┬──────────┬──────────────────────┐     │
+│  │ Signal       │ Free API │ Paid API │ Local Ollama         │     │
+│  ├──────────────┼──────────┼──────────┼──────────────────────┤     │
+│  │ Vector (40%) │    ✗     │    ✗     │ ✓ (nomic-embed-text)│     │
+│  │ Keyword(20%) │    ✓     │    ✓     │ ✓                    │     │
+│  │ Recency(15%) │    ✓     │    ✓     │ ✓                    │     │
+│  │ Import.(10%) │    ✓     │    ✓     │ ✓                    │     │
+│  │ Decay  (10%) │    ✓     │    ✓     │ ✓                    │     │
+│  │ Tier    (5%) │    ✓     │    ✓     │ ✓                    │     │
+│  ├──────────────┼──────────┼──────────┼──────────────────────┤     │
+│  │ Effective    │ 60%      │ 60%      │ 100%                 │     │
+│  │ RAG quality  │ (no vec) │ (no vec) │ (full hybrid)        │     │
+│  └──────────────┴──────────┴──────────┴──────────────────────┘     │
+│                                                                     │
+│  Model selection:                                                   │
+│  • model_recommender.rs — RAM-based catalogue                      │
+│  • Auto-selects best model for available hardware                   │
+│  • Catalogue includes: Gemma 4, Phi-4, Qwen 3, Kimi K2.6 (cloud) │
+│  • ProviderRotator — cycles through free providers on failure      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 11. LLM-Powered Memory Operations
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              LLM-POWERED MEMORY OPERATIONS                          │
+│                                                                     │
+│  These operations use the active LLM to enhance memory quality:    │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 1. EXTRACT FACTS                                            │   │
+│  │                                                              │   │
+│  │ Input:  Last N conversation messages                        │   │
+│  │ Prompt: "Extract the 5 most important facts from this       │   │
+│  │          conversation. Return as a JSON array of strings."  │   │
+│  │ Output: ["User's name is Alex", "Studying family law", ...] │   │
+│  │ Stored: tier=working, type=fact                             │   │
+│  │ Trigger: User clicks "Extract from session" or auto at 20+ │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 2. SUMMARIZE SESSION                                        │   │
+│  │                                                              │   │
+│  │ Input:  Full conversation history                           │   │
+│  │ Prompt: "Summarize this conversation in 1-3 sentences."     │   │
+│  │ Output: "Discussed family law filing deadlines and..."      │   │
+│  │ Stored: tier=working, type=summary, parent_id=session_id    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 3. SEMANTIC SEARCH (legacy)                                 │   │
+│  │                                                              │   │
+│  │ Input:  Query + all memory entries (sent in one prompt!)    │   │
+│  │ Prompt: "Rank these memories by relevance to the query."    │   │
+│  │ Output: Ordered list of memory IDs                          │   │
+│  │ Status: DEPRECATED — replaced by hybrid_search()            │   │
+│  │ Limit:  ~500 entries before context overflow                │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 4. EMBED TEXT                                               │   │
+│  │                                                              │   │
+│  │ Input:  Any text string                                     │   │
+│  │ Model:  nomic-embed-text (768-dim) via Ollama               │   │
+│  │ Output: Option<Vec<f32>> (None if Ollama unavailable)       │   │
+│  │ Used:   On memory insert, on query for hybrid search        │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 5. DUPLICATE CHECK                                          │   │
+│  │                                                              │   │
+│  │ Input:  New memory content                                  │   │
+│  │ Method: Embed → cosine similarity vs all existing           │   │
+│  │ Threshold: > 0.97 = duplicate                               │   │
+│  │ Action: Skip insert, return existing memory ID              │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ 6. BACKFILL EMBEDDINGS                                      │   │
+│  │                                                              │   │
+│  │ Input:  All memories with NULL embedding column             │   │
+│  │ Method: Batch embed via Ollama, update BLOB column          │   │
+│  │ Output: Count of newly embedded memories                    │   │
+│  │ Trigger: Manual button or auto when Ollama first detected   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  Future operations:                                                 │
+│  • auto_categorize() — LLM assigns category from taxonomy         │
+│  • extract_entities() — LLM identifies people, places, concepts   │
+│  • detect_conflicts() — LLM finds contradicting memories          │
+│  • merge_duplicates() — LLM combines near-duplicate content       │
+│  • generate_edges() — LLM proposes entity-relationship links      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 12. Multi-Source Knowledge Management
+
+Real-world knowledge comes from many sources that overlap, conflict, and go stale. TerranSoul handles this with four mechanisms:
+
+### 1. Source Hash Change Detection
+
+Every ingested document is tracked by URL and SHA-256 content hash:
+
+```
+Monday (initial sync):
+  Court Rule 14.3 → hash = "a1b2c3d4"
+  → Stored: id=42, source_hash="a1b2c3d4"
+
+Tuesday (daily sync):
+  Court Rule 14.3 → hash = "a1b2c3d4"  (same)
+  → SKIP — content unchanged
+
+Wednesday (rule amended):
+  Court Rule 14.3 → hash = "e5f6g7h8"  (DIFFERENT!)
+  → Detected: source_hash mismatch for source_url
+  → Action:
+    1. DELETE old memory (id=42)
+    2. INSERT new content with new hash
+    3. Auto-embed the new content
+    4. Log: "Updated: Court Rule 14.3 — content changed"
+```
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  STALENESS DETECTION                      │
+│                                                           │
+│   Source URL             Stored Hash    Current Hash      │
+│   ──────────────────     ───────────    ────────────      │
+│   /rules/family/14.3    a1b2c3d4       e5f6g7h8   ← STALE│
+│   /rules/family/14.4    f9g0h1i2       f9g0h1i2   ✓ OK   │
+│   /rules/civil/22.1     j3k4l5m6       j3k4l5m6   ✓ OK   │
+│   /policies/billing     n7o8p9q0       r1s2t3u4   ← STALE│
+│                                                           │
+│   Action: 2 memories updated, 2 re-embedded               │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 2. TTL Expiry
+
+Some knowledge has a natural shelf life. The `expires_at` column allows auto-expiry:
+
+```sql
+-- Set expiry when ingesting time-sensitive content
+INSERT INTO memories (content, tags, importance, memory_type,
+                      created_at, source_url, expires_at)
+VALUES (
+  'Court closed Dec 25, 2026 – Jan 2, 2027 for holiday recess',
+  'court-calendar,holiday',
+  3,
+  'fact',
+  1713744000000,
+  'https://ilcourts.gov/calendar/2026',
+  1735776000000   -- expires Jan 2, 2027
+);
+
+-- Daily cleanup: remove expired memories
+DELETE FROM memories
+WHERE expires_at IS NOT NULL AND expires_at < strftime('%s','now') * 1000;
+```
+
+| Content Type | Typical TTL | Example |
+|---|---|---|
+| Court calendar events | Until event date + 1 day | "Hearing on May 15" |
+| Holiday schedules | Until end of holiday | "Closed Dec 25-Jan 2" |
+| Temporary policies | Duration of policy | "COVID masking required" |
+| Client case deadlines | Until deadline + 7 days | "Smith motion due Apr 30" |
+| Permanent rules | No expiry (`NULL`) | "30-day filing deadline" |
+
+### 3. Access Count Decay
+
+Memories that RAG never retrieves are probably not useful:
+
+```sql
+-- Find memories older than 90 days that were never accessed by RAG
+SELECT id, content, created_at, access_count
+FROM memories
+WHERE access_count = 0
+  AND created_at < strftime('%s','now') * 1000 - 7776000000  -- 90 days
+ORDER BY created_at ASC;
+```
+
+These zero-access memories are prime candidates for GC — they were stored but never contributed to any RAG response.
+
+### 4. LLM-Powered Conflict Resolution
+
+When new information semantically overlaps with existing knowledge but says something different, the LLM analyzes the conflict:
+
+```
+Existing memory (id=42):
+  "Family law motion responses must be filed within 30 days"
+  source: ilcourts.gov/rules/family/14.3
+  stored: 2026-03-15
+
+New incoming content:
+  "Effective April 1, 2026: Family law motion responses now have a
+   21-day filing deadline (reduced from 30 days)"
+  source: ilcourts.gov/rules/family/14.3-amended
+
+Conflict detection:
+  1. Embed new content → cosine similarity with id=42 = 0.94
+     (high similarity, but below 0.97 dedup threshold)
+  2. Both reference "family law motion response deadline"
+  3. But values differ: 30 days vs 21 days
+
+LLM conflict analysis prompt:
+  "Compare these two pieces of information and determine if the
+   new one supersedes the old one:
+   OLD: [30-day filing deadline]
+   NEW: [21-day filing deadline, effective April 1]
+   Which is current?"
+
+LLM response:
+  "The new information supersedes the old. The deadline was reduced
+   from 30 to 21 days effective April 1, 2026."
+
+Action:
+  → Mark id=42 as expired (or delete)
+  → Insert new memory with updated content
+  → Log: "Conflict resolved: Rule 14.3 deadline updated 30d → 21d"
+```
+
+This is inspired by **Mem0's conflict resolution** approach — using the LLM itself to arbitrate when two memories say different things about the same topic.
+
+---
+
+## 13. Open-Source RAG Ecosystem Comparison
+
+TerranSoul's RAG pipeline is purpose-built for a single-user desktop companion. Here's how it compares to the leading open-source RAG and memory frameworks:
+
+### Mem0 (53.7k stars)
+
+| Capability | Mem0 | TerranSoul |
+|---|---|---|
+| Memory storage | External vector DB (Qdrant/Chroma) | Embedded SQLite — zero infra |
+| Entity extraction | Automatic via LLM | Manual tags + LLM-assisted extract |
+| Memory levels | User / Session / Agent | Short / Working / Long |
+| Graph relationships | Built-in | Tag-based (entity graph planned) |
+| Conflict resolution | LLM-powered automatic | Hash-based staleness + LLM conflict |
+| Deployment | Requires server + vector DB | Fully embedded, works offline |
+
+**What TerranSoul borrows**: LLM-powered memory extraction and conflict detection. Mem0's graph memory layer is a future upgrade candidate.
+
+### LlamaIndex (48.8k stars)
+
+| Capability | LlamaIndex | TerranSoul |
+|---|---|---|
+| PDF ingestion | LlamaParse (cloud API) | External script + text extraction |
+| Data connectors | 160+ built-in | Manual ingestion scripts per source |
+| Query pipeline | Composable (tree/compact/refine) | Single-pass vector search + inject |
+| Embedding | Any provider | Ollama nomic-embed-text (local) |
+| Chunking | Sentence/token/semantic splitters | 500-word overlap chunking |
+| Deployment | Python library | Rust native binary |
+
+**What TerranSoul borrows**: The chunking strategy (500-word segments with 50-word overlap) is inspired by LlamaIndex's sentence window approach.
+
+### ChromaDB (27.6k stars)
+
+| Capability | ChromaDB | TerranSoul |
+|---|---|---|
+| Storage | Custom Rust engine | SQLite BLOB column |
+| Distance function | Cosine / L2 / IP | Cosine only |
+| Metadata filtering | Built-in | SQL WHERE clauses on tags/importance |
+| Indexing | HNSW (approximate) | Brute-force linear scan |
+| Scalability | Millions (ANN) | Millions (acceptable at <50ms) |
+| Deployment | Separate server or embedded | Fully embedded in app binary |
+
+**What TerranSoul borrows**: The philosophy of "embeddings in a single binary." ChromaDB proves that a Rust core + simple API can handle production workloads.
+
+### RAGFlow (78.7k stars)
+
+| Capability | RAGFlow | TerranSoul |
+|---|---|---|
+| Document parsing | Deep layout understanding | Plain text extraction |
+| File formats | 30+ (PDF, DOCX, PPTX, images) | Text-based (via external scripts) |
+| Chunk visualization | Built-in UI | Memory View + access_count tracking |
+| Deployment | Docker (server-based) | Desktop app (no server) |
+| Target user | Enterprise teams | Individual power users |
+
+**What TerranSoul borrows**: The chunk visualization concept — tracking which memories are actually used by RAG via `access_count`.
+
+### Cognee (16.6k stars)
+
+| Capability | Cognee | TerranSoul |
+|---|---|---|
+| Knowledge representation | Graph + Vector | Vector only (tags for structure) |
+| Multi-hop reasoning | Graph traversal | Not yet (single-hop vector search) |
+| Entity extraction | Automatic | LLM-assisted ("Extract from session") |
+| Deployment | Python library | Rust native binary |
+
+**Future direction**: Cognee's graph-based approach would benefit TerranSoul for complex queries like "Who are all the clients connected to the Smith case, and what are their communication preferences?"
+
+### Why TerranSoul Doesn't Use an External RAG Framework
+
+| Decision Factor | External Framework | TerranSoul Built-in |
+|---|---|---|
+| **Zero dependencies** | Requires Python/Docker/server | Just install the app |
+| **Offline-first** | Most need network for vector DB | SQLite works offline always |
+| **Privacy** | Data may leave the machine | Everything stays local |
+| **Single binary** | Multiple processes to manage | One Tauri binary |
+| **Desktop UX** | Built for servers/APIs | Built for desktop companion |
+| **Performance** | Network overhead | In-process, <5ms search |
+| **Maintenance** | Version compatibility issues | Self-contained, auto-migrating |
+
+TerranSoul's approach: **take the best ideas** from these frameworks (Mem0's conflict detection, LlamaIndex's chunking, Chroma's Rust-native search, RAGFlow's access tracking, Cognee's entity extraction vision) and **implement them natively in Rust** as part of the Tauri binary.
+
+---
+
+## 14. Debugging with SQLite
+
+### Recommended Tools
+
+#### DB Browser for SQLite (GUI)
+
+Download from https://sqlitebrowser.org/dl/ — open `memory.db` directly:
+
+```
+┌─ DB Browser for SQLite ────────────────────────────────┐
+│ File  Edit  View  Tools  Help                           │
+│                                                          │
+│ Database: memory.db                                      │
+│                                                          │
+│ Tables:                                                  │
+│  ├── memories (15,247 rows)                              │
+│  └── schema_version (4 rows)                             │
+│                                                          │
+│ ┌──────────────────────────────────────────────────────┐ │
+│ │ Browse Data │ Execute SQL │ DB Structure │ Edit Prag │ │
+│ ├──────────────────────────────────────────────────────┤ │
+│ │ Table: memories ▾                                    │ │
+│ ├────┬──────────────────────┬──────┬─────┬─────┬──────┤ │
+│ │ id │ content              │ tags │ imp │ type│ tier │ │
+│ ├────┼──────────────────────┼──────┼─────┼─────┼──────┤ │
+│ │  1 │ Filing deadline: 30d │ law  │  5  │ fact│ long │ │
+│ │  2 │ Client prefers email │ pref │  4  │ pref│ long │ │
+│ │  3 │ Office hours M-F 9-5 │ info │  2  │ fact│ long │ │
+│ └────┴──────────────────────┴──────┴─────┴─────┴──────┘ │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### sqlite3 CLI (Terminal)
+
+```bash
+sqlite3 "%APPDATA%/com.terransoul.app/memory.db"
+
+.tables        -- → memories  schema_version
+.schema memories
+```
+
+#### VS Code Extension
+
+Install "SQLite Viewer" (`qwtel.sqlite-viewer`) — open `memory.db` directly in VS Code.
+
+### Useful Debug Queries
+
+```sql
+-- Embedding coverage
+SELECT
+    COUNT(*) AS total,
+    COUNT(embedding) AS embedded,
+    COUNT(*) - COUNT(embedding) AS unembedded
+FROM memories;
+
+-- Most-accessed memories (RAG hits)
+SELECT id, content, access_count, last_accessed
+FROM memories
+ORDER BY access_count DESC
+LIMIT 10;
+
+-- Never-retrieved memories (candidates for GC)
+SELECT id, content, created_at
+FROM memories
+WHERE access_count = 0
+ORDER BY created_at DESC
+LIMIT 20;
+
+-- Embedding size validation (expect 3072 bytes = 768 dims × 4 bytes)
+SELECT id, content, LENGTH(embedding) AS embed_bytes,
+       LENGTH(embedding) / 4 AS dimensions
+FROM memories
+WHERE embedding IS NOT NULL
+LIMIT 5;
+
+-- Migration history
+SELECT version, description,
+       datetime(applied_at / 1000, 'unixepoch', 'localtime') AS applied
+FROM schema_version
+ORDER BY version;
+
+-- Memory distribution by tier and type
+SELECT tier, memory_type, COUNT(*), AVG(importance), AVG(decay_score)
+FROM memories GROUP BY tier, memory_type;
+
+-- Find exact duplicates
+SELECT a.id, b.id AS dup_id, a.content
+FROM memories a
+JOIN memories b ON a.id < b.id AND a.content = b.content;
+
+-- Database health check
+PRAGMA integrity_check;   -- → ok
+PRAGMA journal_mode;      -- → wal
+PRAGMA page_count;
+PRAGMA page_size;
+```
+
+### Common Debugging Scenarios
+
+**"My memories aren't being found by RAG"**
+```sql
+-- Check if the memory has an embedding
+SELECT id, content, embedding IS NOT NULL AS has_embedding
+FROM memories WHERE content LIKE '%your search term%';
+-- If has_embedding = 0, run backfill: invoke('backfill_embeddings')
+```
+
+**"RAG is returning irrelevant results"**
+```sql
+-- Check low-importance entries polluting results
+SELECT id, content, importance
+FROM memories WHERE importance <= 2 AND access_count > 10;
+-- Consider increasing importance or deleting irrelevant entries
+```
+
+**"Database seems corrupted"**
+```sql
+PRAGMA integrity_check;
+-- If not "ok": close app → copy memory.db.bak → memory.db → reopen
+```
+
+---
+
+## 15. Hardware Scaling
+
+### Memory Count → Hardware Requirements
+
+| Memory Count | Embedding Storage | RAM Usage | Search Time | Recommended Hardware |
+|---|---|---|---|---|
+| 1,000 | 3 MB | ~50 MB | <1 ms | Any modern PC |
+| 10,000 | 30 MB | ~100 MB | ~2 ms | 8 GB RAM |
+| 100,000 | 300 MB | ~500 MB | ~5 ms | 16 GB RAM |
+| 1,000,000 | 3 GB | ~4 GB | ~50 ms | 32 GB RAM |
+| 10,000,000 | 30 GB | ~35 GB | ~500 ms | 64 GB RAM |
+
+### Example: High-End Desktop (65 GB RAM, RTX 3080 Ti)
+
+```
+Capacity breakdown:
+├── Chat model (e.g., gemma3:12b):  ~8 GB VRAM
+├── Embedding model (nomic-embed):  ~300 MB VRAM
+├── OS + Apps:                      ~8 GB RAM
+├── Available for memory index:     ~49 GB RAM
+│
+├── At 3 KB per embedding:
+│   49 GB / 3 KB = ~16 million entries
+│
+└── Practical limit: ~10 million entries
+    (leaves headroom for SQLite, OS cache, etc.)
+```
+
+### Scaling Beyond Linear Scan
+
+For datasets exceeding 1M entries where <50ms search is needed:
+- **HNSW index** (via `usearch` crate): Approximate Nearest Neighbor — O(log n) instead of O(n)
+- **Sharding**: Split memories across multiple SQLite files by date/topic
+- **External vector DB**: Connect to Qdrant/Milvus as a Tauri sidecar
+
+The current pure-cosine approach is intentionally simple and works for the vast majority of use cases.
+
+---
+
+## 16. Scaling Roadmap
+
+### Current Limits
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| Total memories | ~500 (brute-force LLM search) | 100,000+ (hybrid search) |
+| Search latency | <5ms (hybrid) | <10ms at 1M entries (ANN) |
+| Embedding model | nomic-embed-text (768-dim) | Same (good quality/size ratio) |
+| RAG quality | 60% (no embed) to 100% (Ollama) | 100% via cloud embed API |
+| Visualization | Cytoscape.js (in-app only) | + Obsidian vault export |
+| Categories | 4 types (flat) | 8 categories (hierarchical) |
+| Relationships | Tag-based edges | Entity-relationship graph |
+
+### Phase Plan
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SCALING ROADMAP                                │
+│                                                                     │
+│  PHASE 1 — Foundation (Current)                                     │
+│  ├── ✓ Three-tier memory model (short/working/long)                │
+│  ├── ✓ Hybrid 6-signal search                                      │
+│  ├── ✓ Exponential decay + GC                                      │
+│  ├── ✓ Cytoscape.js graph visualization                            │
+│  ├── ✓ LLM extract/summarize/embed                                 │
+│  └── ✓ Deduplication via cosine threshold                          │
+│                                                                     │
+│  PHASE 2 — Categories & Graph                                       │
+│  ├── ○ Add category column (V5 migration)                          │
+│  ├── ○ Auto-categorize via LLM on insert                           │
+│  ├── ○ Category-aware decay rates                                  │
+│  ├── ○ Category filters in Memory View                             │
+│  ├── ○ Tag prefix convention (personal:*, domain:*, etc.)          │
+│  └── ○ Obsidian vault export (one-way)                             │
+│                                                                     │
+│  PHASE 3 — Entity Graph                                             │
+│  ├── ○ memory_edges table (V6 migration)                           │
+│  ├── ○ LLM-powered entity extraction                               │
+│  ├── ○ Relationship type taxonomy                                  │
+│  ├── ○ Multi-hop RAG via graph traversal                           │
+│  ├── ○ Conflict detection between connected memories               │
+│  └── ○ Graph-enhanced Cytoscape visualization                      │
+│                                                                     │
+│  PHASE 4 — Scale                                                    │
+│  ├── ○ ANN index (usearch crate) for >1M memories                 │
+│  ├── ○ Cloud embedding API for free/paid modes                     │
+│  ├── ○ Chunking pipeline for large documents                       │
+│  ├── ○ Relevance threshold (skip injection if score < 0.3)        │
+│  ├── ○ Bidirectional Obsidian sync                                 │
+│  └── ○ Memory versioning (track edits, not just overwrites)        │
+│                                                                     │
+│  PHASE 5 — Intelligence                                             │
+│  ├── ○ Auto-promotion based on access patterns                     │
+│  ├── ○ Contradiction resolution (LLM picks winner)                 │
+│  ├── ○ Temporal reasoning ("last month you said...")               │
+│  ├── ○ Memory importance auto-adjustment from access_count         │
+│  └── ○ Cross-device memory merge via CRDT sync                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 17. FAQ
+
+### "What if Ollama is not running?"
+
+TerranSoul gracefully degrades:
+- **Vector search**: Skipped (no embedding available for query)
+- **Fallback**: Keyword + temporal signals only (60% RAG quality)
+- **Chat**: Uses Free Cloud API or Paid API if configured as backup
+
+### "Can I export/import memories?"
+
+```sql
+-- Export to CSV
+.mode csv
+.headers on
+.output memories_backup.csv
+SELECT id, content, tags, importance, memory_type, tier, created_at FROM memories;
+.output stdout
+
+-- Import from CSV
+.mode csv
+.import memories_backup.csv memories
+```
+
+For richer export, use the Obsidian vault export (§7 Layer 2) which preserves metadata, relationships, and category structure.
+
+### "How do I add memories programmatically?"
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+// Add a single memory (auto-embedded if brain is configured)
+await invoke('add_memory', {
+  content: 'Court filing deadline is 30 days from service',
+  tags: 'law,deadline,filing',
+  importance: 5,
+  memoryType: 'fact',
+});
+
+// Backfill embeddings for all un-embedded entries
+const count = await invoke<number>('backfill_embeddings');
+console.log(`Embedded ${count} new entries`);
+
+// Check database schema info
+const info = await invoke('get_schema_info');
+// { schema_version: 4, total_memories: 15247, embedded_count: 15200, ... }
+```
+
+### "What's the difference between search and semantic search?"
+
+| Feature | `search_memories` | `semantic_search_memories` | `hybrid_search_memories` |
+|---|---|---|---|
+| Method | SQL `LIKE '%keyword%'` | Cosine similarity | 6-signal scoring |
+| Speed | <1ms (any size) | ~50ms embed + <5ms search | ~50ms embed + <5ms search |
+| Accuracy | Exact match only | Understands meaning | Best of both worlds |
+| Requires Brain | No | Yes (Ollama for embedding) | Partial (degrades gracefully) |
+| Example | "deadline" finds "deadline" | "when to file" finds "30-day deadline" | "when to file" finds "30-day deadline" + recency/importance boost |
+
+### "How does the memory graph connect to categories?"
+
+Currently, the Cytoscape.js graph connects nodes (memories) via shared tags. With the proposed category taxonomy (§3), the graph gains a second axis:
+
+- **Tags** create horizontal connections (memories about the same topic)
+- **Categories** create vertical grouping (all personal info, all domain knowledge, etc.)
+- **Obsidian export** (§7) provides the best visualization — category folders become Obsidian folders, `[[wikilinks]]` become graph edges, and Obsidian's Graph View renders the full knowledge topology
+
+---
+
+## 18. Diagrams Index
+
+Quick reference for all diagrams in this document:
+
+| Section | Diagram | Description |
+|---------|---------|-------------|
+| §1 | System Overview | Full stack: Vue → Tauri IPC → Rust → SQLite → LLM |
+| §2 | Short/Working/Long boxes | Three-tier memory details |
+| §2 | Tier Lifecycle | Promotion chain: short → working → long → GC |
+| §3 | Category × Type matrix | 8 categories × 4 types grid |
+| §4 | 6-Signal breakdown | Hybrid search weights and ranges |
+| §4 | RAG Injection Flow | 4-step: embed → search → format → inject |
+| §4 | Embedding Architecture | Model, storage, budget, dedup |
+| §5 | Decay curve | Exponential forgetting over 5 weeks |
+| §5 | Category decay table | Proposed per-category decay rates |
+| §6 | Tag-based graph | Current Cytoscape model |
+| §6 | Entity-relationship graph | Future graph with typed edges |
+| §6 | Multi-hop RAG | Graph traversal for related memories |
+| §7 | In-app graph | Cytoscape.js with filters |
+| §7 | Obsidian vault structure | Folder tree + Markdown format |
+| §9 | Why SQLite | WAL mode, auto-backup, DB location |
+| §10 | Brain modes | Provider architecture + RAG capability matrix |
+| §11 | LLM operations | 6 current + future operations |
+| §12 | Staleness detection | Source hash change flow |
+| §12 | Conflict resolution | LLM-powered contradiction handling |
+| §13 | RAG ecosystem | 5 framework comparison tables |
+| §14 | DB Browser | SQLite debug tool UI |
+| §15 | Hardware scaling | Memory count → RAM/speed table |
+| §16 | Scaling roadmap | 5-phase plan from foundation to intelligence |
+
+---
+
+## Related Documents
+
+- [BRAIN-COMPLEX-EXAMPLE.md](../instructions/BRAIN-COMPLEX-EXAMPLE.md) — Quest-guided setup walkthrough
+- [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) — Technical reference (schema, RAG pipeline, comparisons)
+- [architecture-rules.md](../rules/architecture-rules.md) — Project architecture constraints
+- [coding-standards.md](../rules/coding-standards.md) — Code style and library policy
+- [backlog.md](../rules/backlog.md) — Feature backlog with memory items

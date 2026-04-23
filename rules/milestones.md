@@ -146,6 +146,78 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 
 ---
 
-> **Milestones backlog drained.** All planned chunks are complete.
+## Active Chunks
+
+### Phase 12 — Brain Advanced Design (Documentation & QA)
+
+| # | Chunk | Status | Owner | Notes |
+|---|---|---|---|---|
+| 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking pipeline complete; screenshots remain |
+
+#### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
+
+**Goal.** Validate `docs/brain-advanced-design.md` against best-in-class
+open-source references (Obsidian, SiYuan, RAGFlow), confirm the Phase-1
+implementation in `src-tauri/src/memory/` + `src-tauri/src/commands/ingest.rs`
+matches the design, and rewrite the user-facing docs around a single
+end-to-end scenario (Vietnamese law portal `http://thuvienphapluat.vn/` +
+internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
+
+**Done in this PR (agent).**
+- [x] Read `docs/brain-advanced-design.md` end-to-end and audited current code.
+- [x] Wrote design-validation summary (Obsidian / SiYuan / RAGFlow comparison
+      table) inside the rewritten walkthrough.
+- [x] Confirmed baseline: `cargo test --all-targets` → 561/561 pass on
+      `copilot/validate-advanced-design-and-implement`.
+- [x] **Replaced** `instructions/BRAIN-COMPLEX-EXAMPLE.md` with a focused
+      walkthrough of the thuvienphapluat.vn + PDF scenario (brain setup quest
+      → URL crawl → PDF ingest → hybrid RAG → cross-source dedup → amendment
+      conflict resolution → Obsidian export). Includes QA validation log,
+      reproduction recipe, and code-path map.
+- [x] **Replaced** `instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md` with a
+      concise quick-reference (system map, code map, Tauri command table,
+      schema cheat-sheet, hybrid-search formula, decay/GC formula, ingest
+      pipeline, multi-source mechanics, sqlite3 debug recipes) that points
+      to `docs/brain-advanced-design.md` as the canonical deep dive.
+- [x] Embedded the existing real screenshots from
+      `instructions/screenshots/01-fresh-launch.png` … `11-skill-tree.png`
+      throughout the walkthrough.
+- [x] **Source tracking pipeline** — Extended `NewMemory` + `MemoryEntry`
+      with `source_url`, `source_hash`, `expires_at`; updated `add()`,
+      `add_to_tier()`, all SELECTs, row mappers; added `find_by_source_hash()`,
+      `find_by_source_url()`, `delete_by_source_url()`, `delete_expired()`;
+      wired SHA-256 hashing + dedup/staleness into `run_ingest_task`;
+      added `sha2` + `hex` crates; 9 new tests. **570 Rust / 941 Vitest pass.**
+
+**Remaining (user environment / follow-up).**
+- [ ] Capture **scenario-specific** screenshots on a real Tauri build with
+      Vietnamese content loaded (statute crawl progress, PDF ingest task,
+      Memory list with `vn-law` tag, sourced RAG answer, conflict toast,
+      Obsidian export folder). Replace the generic placeholders embedded
+      from `instructions/screenshots/` once real ones exist.
+- [ ] Optional: short MP4 walkthrough via
+      `playwright codegen --record-video` wrapping
+      `scripts/brain-flow-screenshots.mjs`; convert with
+      `ffmpeg -i in.webm out.mp4`; commit under `recording/`.
+
+**Files touched.**
+- `instructions/BRAIN-COMPLEX-EXAMPLE.md` (rewritten)
+- `instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md` (rewritten)
+- `src-tauri/Cargo.toml` (added sha2, hex)
+- `src-tauri/src/memory/store.rs` (NewMemory, MemoryEntry, add, queries, 4 new methods, 9 tests)
+- `src-tauri/src/memory/brain_memory.rs` (Default spreads)
+- `src-tauri/src/commands/ingest.rs` (SHA-256 hashing, dedup, staleness, 2 tests)
+- `src-tauri/src/commands/memory.rs` (Default spread)
+- `rules/milestones.md` (this entry)
+- `rules/completion-log.md` (logged source tracking pipeline)
+
+**Validation.**
+- `cd src-tauri && cargo test --all-targets` → 570/570 pass.
+- `npx vitest run` → 941/941 pass.
+
+---
+
+> **Milestones backlog drained.** All planned chunks are complete except
+> the in-progress entry above.
 > See `rules/backlog.md` for deferred / speculative future work.
 > To add new chunks, describe the feature and a new numbered entry will be created here.

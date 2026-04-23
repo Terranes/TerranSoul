@@ -31,10 +31,32 @@ tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 sysinfo = "0.32"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
+scraper = "0.22"
+url = "2"
 futures-util = "0.3"
+sha2 = "0.10"
+hex = "0.4"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 msedge-tts = "0.3.0"
+thiserror = "2"
+rand = { version = "0.8", optional = true }
+
+# Distributed database backends (optional)
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"], optional = true }
+tiberius = { version = "0.12", features = ["tds73"], optional = true }
+tokio-util = { version = "0.7", features = ["compat"], optional = true }
+scylla = { version = "0.14", optional = true }
+
+[features]
+default = []
+postgres = ["dep:sqlx"]
+mssql = ["dep:tiberius", "dep:tokio-util"]
+cassandra = ["dep:scylla", "dep:rand"]
 
 [dev-dependencies]
 tempfile = "3"
+# Enables tauri::test::{mock_app, MockRuntime} for headless integration tests.
+# Resolver=2 (default for edition=2021) keeps this dev-only feature out of the
+# production binary.
+tauri = { version = "2", features = ["tray-icon", "test"] }

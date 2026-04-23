@@ -5,6 +5,7 @@ import { useBrainStore } from './brain';
 import { useVoiceStore } from './voice';
 import { useSettingsStore } from './settings';
 import { useConversationStore } from './conversation';
+import { useMemoryStore } from './memory';
 import { streamChatCompletion, type ChatMessage } from '../utils/free-api-client';
 import type { QuestChoice } from '../types';
 
@@ -62,6 +63,8 @@ export interface SkillNode {
   videoRef?: string;
   /** Platform compatibility - if specified, only shows on these platforms */
   platforms?: Platform[];
+  /** Whether this skill is recommended for easy setup */
+  recommended?: boolean;
 }
 
 export interface QuestStep {
@@ -436,19 +439,21 @@ const SKILL_NODES: SkillNode[] = [
   {
     id: 'local-brain',
     name: 'Inner Sanctum',
-    tagline: 'Run AI locally with llmfit',
-    description: 'Full privacy — no data leaves your machine. Use llmfit to automatically select and run the best local model for your hardware. Requires decent hardware (8GB+ RAM).',
+    tagline: 'Run AI locally with Ollama',
+    description: 'Full privacy — no data leaves your machine. Install Ollama, then let TerranSoul recommend the best local model for your hardware. Works offline with 8GB+ RAM.',
     icon: '🏰',
     tier: 'advanced',
     requires: ['free-brain'],
     rewards: ['100% private AI', 'No API costs', 'Offline capability', 'Unlimited usage'],
     rewardIcons: ['🔒', '💰', '✈️', '♾️'],
     questSteps: [
-      { label: 'Install llmfit from GitHub', action: 'external', target: 'https://github.com/AlexsJones/llmfit' },
-      { label: 'Open Brain Setup', action: 'navigate', target: 'brain-setup' },
-      { label: 'Choose "Local" tier and let llmfit pick the best model', action: 'configure', target: 'brain_mode' },
+      { label: 'Install Ollama from ollama.com', action: 'external', target: 'https://ollama.com/download' },
+      { label: 'Open Brain Setup and choose "Local LLM (Ollama)"', action: 'navigate', target: 'brain-setup' },
+      { label: 'Pick a recommended model and click Download', action: 'configure', target: 'brain_mode' },
+      { label: 'Send a test message in Chat to verify it works', action: 'navigate', target: 'chat' },
     ],
     category: 'brain',
+    recommended: true,
     combos: [
       {
         withSkills: ['memory'],
@@ -782,19 +787,20 @@ const SKILL_NODES: SkillNode[] = [
   {
     id: 'rag-knowledge',
     name: 'Sage\'s Library',
-    tagline: 'Retrieval-augmented knowledge base',
-    description: 'Index documents, notes, and bookmarks so your companion can pull facts straight from your personal library during conversation.',
+    tagline: 'Local semantic-search RAG',
+    description: 'Your companion uses the brain\'s LLM to semantically search your memories and inject relevant context into every conversation. No external services needed — works entirely with your local Ollama model or cloud-routed model like Kimi K2.6.',
     icon: '📚',
     tier: 'advanced',
     requires: ['memory'],
-    rewards: ['Document indexing', 'Citation-backed answers', 'Searchable knowledge base'],
-    rewardIcons: ['📑', '🔖', '🔍'],
+    rewards: ['Semantic memory retrieval', 'Context-aware answers', 'Automatic RAG in every chat'],
+    rewardIcons: ['🔍', '🧠', '💬'],
     questSteps: [
       { label: 'Open the Memory tab', action: 'navigate', target: 'memory' },
-      { label: 'Drop a document or paste a URL into the knowledge base', action: 'configure', target: 'memory_add' },
-      { label: 'Ask your companion something only the document knows', action: 'navigate', target: 'chat' },
+      { label: 'Add at least one memory (fact, preference, or context)', action: 'configure', target: 'memory_add' },
+      { label: 'Ask your companion something related to your stored memory', action: 'navigate', target: 'chat' },
     ],
     category: 'brain',
+    recommended: true,
     combos: [
       {
         withSkills: ['paid-brain'],
@@ -807,6 +813,33 @@ const SKILL_NODES: SkillNode[] = [
         name: 'Visual Encyclopedia',
         description: 'RAG + vision = your companion can read what\'s on screen and cross-reference your library.',
         icon: '🔎',
+      },
+    ],
+  },
+  {
+    id: 'scholar-quest',
+    name: 'Scholar\'s Quest',
+    tagline: 'Deep-dive into any topic with guided knowledge ingestion',
+    description: 'Start a chain quest to teach your companion about a specific topic. Provide URLs and files — TerranSoul will ingest, chunk, embed, and learn them for RAG-augmented answers.',
+    icon: '📚',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: ['Topic-specific RAG answers', 'Source-grounded knowledge', 'Persistent expert memory', 'Chain quest experience'],
+    rewardIcons: ['🎯', '📖', '🧠', '⚔️'],
+    questSteps: [
+      { label: 'Verify brain and memory systems are ready', action: 'info' },
+      { label: 'Add URLs or files about the topic', action: 'configure', target: 'knowledge_sources' },
+      { label: 'Wait for ingestion and embedding', action: 'info' },
+      { label: 'Ask questions to test your new knowledge', action: 'navigate', target: 'chat' },
+    ],
+    category: 'brain',
+    recommended: true,
+    combos: [
+      {
+        withSkills: ['paid-brain'],
+        name: 'Master Scholar',
+        description: 'Scholar\'s Quest + premium brain = research-grade deep dives with citations.',
+        icon: '🎓',
       },
     ],
   },
@@ -1293,6 +1326,13 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         return voice.config.asr_provider !== null;
       case 'memory':
         return brain.brainMode !== null;
+      case 'rag-knowledge': {
+        // RAG is auto-active when: brain is configured + at least one memory exists
+        const memStore = useMemoryStore();
+        return brain.brainMode !== null && memStore.memories.length > 0;
+      }
+      case 'scholar-quest':
+        return false; // Chain quest — manually completed via KnowledgeQuestDialog
       case 'presence':
         return brain.hasBrain && voice.config.tts_provider !== null;
       case 'device-link':
