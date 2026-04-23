@@ -248,8 +248,10 @@ until the user explicitly says so.
       `query_status(id)` returns the live step + heartbeat.
   - **No new heavy dependency.** Use `rusqlite` (already a dep), plus
     `tokio::sync::mpsc` for fan-out — keeps the binary single-process.
-  - Reference inspiration only — Temporal SDK design:
-    [github.com/temporalio/temporal](https://github.com/temporalio/temporal).
+  - Reference inspiration only — Temporal workflow patterns:
+    [docs.temporal.io/workflows](https://docs.temporal.io/workflows). We
+    borrow the *append-only history + replay* pattern, **not** the server
+    or SDK stack.
 - **Tauri commands** (proposed):
   - `list_agents` / `create_agent` / `delete_agent` / `switch_agent`
   - `set_agent_working_folder(id, path)`

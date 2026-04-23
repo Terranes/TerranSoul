@@ -126,8 +126,36 @@ pub async fn set_brain_mode(
         }
     }
 
-    let mut brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
-    *brain_mode = Some(mode);
+    {
+        let mut brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+        *brain_mode = Some(mode);
+    }
+
+    // The chosen embedding model and any "model X doesn't support
+    // embeddings" memo from `brain::ollama_agent` are tied to whichever
+    // brain we were just using. Reset them so the next /api/embed call
+    // probes /api/tags again instead of carrying a stale "unsupported"
+    // verdict across a brain switch.
+    crate::brain::ollama_agent::clear_embed_caches().await;
+
+    Ok(())
+}
+
+/// Diagnostic command — return the current state of the embedding cache
+/// (chosen model, age, list of models that returned 501/400 from
+/// `/api/embed`). Useful for the brain debugging panel.
+#[tauri::command]
+pub async fn get_embed_cache_status() -> brain::ollama_agent::EmbedCacheSnapshot {
+    brain::ollama_agent::embed_cache_snapshot().await
+}
+
+/// Diagnostic command — clear the embedding caches, forcing the next
+/// `/api/embed` call to re-probe `/api/tags`. The frontend should call
+/// this after the user installs `nomic-embed-text` so vector RAG comes
+/// back online without a restart.
+#[tauri::command]
+pub async fn reset_embed_cache() -> Result<(), String> {
+    brain::ollama_agent::clear_embed_caches().await;
     Ok(())
 }
 

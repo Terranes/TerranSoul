@@ -500,6 +500,19 @@ User types: "What are the filing deadlines?"
 │  Deduplication:                                                   │
 │  Before insert → embed new text → cosine vs all existing         │
 │  If max_similarity > 0.97 → skip insert, return existing id     │
+│                                                                   │
+│  Resilience (durable workflow contract):                         │
+│  • If `nomic-embed-text` is missing AND the active chat model    │
+│    returns 501/400 from /api/embed (Llama, Phi, Gemma, …), the   │
+│    model is added to a process-lifetime "unsupported" cache and  │
+│    no further embed calls are made for it. Vector RAG silently   │
+│    degrades to keyword + LLM-ranking. No log spam, no chat       │
+│    pipeline stalls.                                              │
+│  • The `/api/tags` probe that picks the embedding model is       │
+│    cached for 60 s.                                              │
+│  • `reset_embed_cache` Tauri command flushes both caches; called │
+│    automatically on `set_brain_mode` so a brain switch can       │
+│    re-discover a working embedding backend.                      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
