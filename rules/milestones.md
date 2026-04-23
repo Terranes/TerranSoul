@@ -153,7 +153,7 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
-| 1.5 | Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows | not-started | unassigned | Planning only — do not start without explicit kickoff |
+| 1.5 | Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows | done | agent | Implemented in PR series — see `rules/completion-log.md` |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 

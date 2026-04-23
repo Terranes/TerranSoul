@@ -1056,6 +1056,20 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### 10.1. External CLI backend (Chunk 1.5)
+
+In addition to the three **native** brain modes above, TerranSoul
+agents may be backed by an **external CLI worker** (`codex`, `claude`,
+`gemini`, or a user-validated custom binary) bound to a working folder.
+External CLI agents route chat turns through
+[`cli_worker.rs`](../src-tauri/src/agents/cli_worker.rs) instead of the
+unified LLM interface — stdout and stderr stream back as chat lines,
+and progress is persisted to an append-only workflow history so a
+killed app can resume the job. See
+[`instructions/AGENT-ROSTER.md`](../instructions/AGENT-ROSTER.md) for
+the full sandbox model, the RAM-aware concurrency cap, and the
+durable-workflow replay semantics.
+
 ---
 
 ## 11. LLM-Powered Memory Operations

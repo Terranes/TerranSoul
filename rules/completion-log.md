@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.5 — Multi-Agent Roster + External CLI Workers + Temporal-style Durable Workflows](#chunk-15--multi-agent-roster--external-cli-workers--temporal-style-durable-workflows) | 2026-04-23 |
 | [Chunk 1.4 — Podman + Docker Desktop Dual Container Runtime](#chunk-14--podman--docker-desktop-dual-container-runtime) | 2026-04-23 |
 | [Chunk 1.2 — Mac & Linux CI Matrix + Platform Docs](#chunk-12--mac--linux-ci-matrix--platform-docs) | 2026-04-23 |
 | [Chunk 1.3 — Per-User VRM Model Persistence + Remove GENSHIN Default](#chunk-13--per-user-vrm-model-persistence--remove-genshin-default) | 2026-04-23 |
@@ -85,6 +86,127 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.5 — Multi-Agent Roster + External CLI Workers + Temporal-style Durable Workflows
+
+**Date:** 2026-04-23
+
+**Goal.** Turn TerranSoul's single in-process companion into a full
+**agent roster** where the user can create, name, switch between, and
+delete multiple agents that may share or have distinct VRMs and may be
+backed by either the native brain or an external CLI worker (Codex /
+Claude / Gemini / custom). Long-running CLI work is tracked via a
+**Temporal.io-style durable workflow engine** (append-only SQLite log,
+replay-after-crash) and limited by a **RAM-aware concurrency cap** so
+a laptop doesn't deadlock.
+
+**Scope delivered.**
+
+- **Backend — agent roster**
+  - `src-tauri/src/agents/roster.rs` — `AgentProfile` + `BrainBackend`
+    (`Native(BrainMode)` / `ExternalCli { kind, binary, extra_args }`).
+    Atomic JSON persistence under `<data_dir>/agents/<id>.json` with
+    `fs::rename` tmp-file swap; `current_agent.json` sibling that
+    **self-heals** when the referenced agent is deleted.
+  - `MAX_AGENTS = 32` roster cap; IDs restricted to
+    `[A-Za-z0-9_-]{1,64}`; display names ≤ 120 chars; custom binary
+    names validated alphanumerics + `-`/`_`/`.` only (no path
+    separators, no shell metacharacters).
+- **Backend — external CLI sandbox** (`src-tauri/src/agents/cli_worker.rs`)
+  - Allow-list of kinds (`Codex`, `Claude`, `Gemini`, `Custom`).
+  - `Command::new(binary)` with pre-split `Vec<String>` args — no
+    `sh -c`. Sets `Stdio::null()` on stdin, clears env and keeps only
+    `PATH` / `HOME` / `USER` / `LANG` / `LC_ALL` / `TERM` so API keys
+    in the main process are **not** leaked.
+  - Validates working folder exists + is a directory, prompt is
+    non-empty and ≤ 32 KB, args contain no NUL bytes.
+  - Emits `CliEvent::{Started, Line, Exited, SpawnError}` via
+    `tokio::sync::mpsc::UnboundedReceiver` so the workflow engine
+    persists each line before ACK.
+- **Backend — durable workflow engine** (`src-tauri/src/workflows/engine.rs`)
+  - Append-only `workflow_events` table in `<data_dir>/workflows.sqlite`
+    (`UNIQUE(workflow_id, seq)`, covering indices on `workflow_id` and
+    `kind`). Every append runs in a transaction so a crash mid-write
+    never produces a gap in `seq`.
+  - 8 event kinds: `Started`, `ActivityScheduled`,
+    `ActivityCompleted`, `ActivityFailed`, `Heartbeat`, `Completed`,
+    `Failed`, `Cancelled`. Appends after a terminal event are rejected.
+  - On startup the engine loads every non-terminal workflow and reports
+    it as `Resuming` until a live handle re-attaches — inspired by
+    Temporal.io's history pattern but **without** the server stack
+    (no JVM, no Postgres, no Cassandra; just `rusqlite` + `tokio`).
+- **Backend — RAM cap** (`src-tauri/src/brain/ram_budget.rs`)
+  - Pure `compute_max_concurrent_agents(free_mb, agents)`:
+    `clamp( floor((free_mb - 1500) / mean_per_agent_mb), 1, 8 )`.
+  - Footprint estimates: Native API 200 MB, Local Ollama 200 MB +
+    model size, External CLI 600 MB.
+  - `free_ram_mb()` reads `sysinfo::System::available_memory()` so the
+    number reflects reclaimable cache, not just the raw free figure.
+- **Tauri commands** (12 new, all `roster_*`-prefixed)
+  - `roster_list`, `roster_create`, `roster_delete`, `roster_switch`,
+    `roster_get_current`, `roster_set_working_folder`,
+    `roster_get_ram_cap`, `roster_start_cli_workflow`,
+    `roster_query_workflow`, `roster_cancel_workflow`,
+    `roster_list_workflows`, `roster_list_pending_workflows`.
+  - `roster_start_cli_workflow` enforces the RAM cap at activation time
+    and rejects with a clear error message when saturated.
+  - CLI output is fanned out to the frontend on the `agent-cli-output`
+    event channel so the chat UI can stream stdout/stderr live.
+- **Frontend.** `src/stores/agent-roster.ts` Pinia store:
+  `agents`, `currentAgent`, `ramCap`, `workflows`, `atRamCap`,
+  `activeWorkflowCount`, plus `createAgent`, `deleteAgent`,
+  `switchAgent`, `setWorkingFolder`, `startCliWorkflow`,
+  `cancelWorkflow`. Browser fallback yields a single in-memory default
+  agent so the web preview never crashes.
+- **Tests.**
+  - **Rust — 41 new tests** covering roster serde round-trip,
+    shell-metachar refuse-list, max-agents overflow, atomic save
+    resilience, self-healing current-agent pointer, echo spawn +
+    drain, unknown-binary failure path, workflow replay after
+    simulated app restart, terminal-event lock, activity round-trip,
+    RAM-cap exhaustive table.
+  - **Frontend — 9 new Vitest tests** covering the store's
+    browser fallback, Tauri refresh fan-out, `atRamCap` derivation,
+    `createAgent` payload shape, error surfacing.
+- **Docs.**
+  - `instructions/AGENT-ROSTER.md` — user walkthrough, sandbox model
+    table, RAM cap formula, workflow replay semantics, FAQ.
+  - `docs/brain-advanced-design.md` §10.1 — external CLI backend
+    cross-links to the agent-roster guide.
+
+**Validation (final).**
+
+- `cargo clippy --all-targets -- -D warnings` — **clean**.
+- `cargo test --all-targets` — **640 / 640 pass** (+41 new).
+- `npm run build` — ok (5.8 s).
+- `npm run test` — **957 / 957 pass** (+9 new).
+
+**Files added.**
+
+```
+src-tauri/src/agents/mod.rs
+src-tauri/src/agents/roster.rs
+src-tauri/src/agents/cli_worker.rs
+src-tauri/src/workflows/mod.rs
+src-tauri/src/workflows/engine.rs
+src-tauri/src/brain/ram_budget.rs
+src-tauri/src/commands/agents_roster.rs
+src/stores/agent-roster.ts
+src/stores/agent-roster.test.ts
+instructions/AGENT-ROSTER.md
+```
+
+**Files modified.**
+
+```
+src-tauri/src/lib.rs                       (modules + AppState + handler registration)
+src-tauri/src/brain/mod.rs                  (added ram_budget submodule)
+src-tauri/src/commands/mod.rs               (added agents_roster submodule)
+docs/brain-advanced-design.md               (§10.1 ExternalCli cross-link)
+rules/milestones.md                         (archived Chunk 1.5)
+```
 
 ---
 
