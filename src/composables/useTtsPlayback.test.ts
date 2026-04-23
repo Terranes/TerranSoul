@@ -179,6 +179,13 @@ describe('useTtsPlayback — sentence detection', () => {
     tts.flush();
     expect(mockInvoke).not.toHaveBeenCalled();
   });
+
+  it('strips emoji before sending text to synthesize_tts', () => {
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const tts = useTtsPlayback();
+    tts.feedChunk('Hello 👋 world 🌍! ');
+    expect(mockInvoke).toHaveBeenCalledWith('synthesize_tts', { text: 'Hello world!' });
+  });
 });
 
 describe('useTtsPlayback — stop', () => {
@@ -236,6 +243,14 @@ describe('useTtsPlayback — synthesis error handling', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(mockSpeechSynthesis.speak).toHaveBeenCalled();
     expect(spokenUtterances).toContain('Hello world.');
+  });
+
+  it('strips emoji before browser speech fallback', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback();
+    tts.feedChunk('Great job 🎉! ');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(spokenUtterances).toContain('Great job!');
   });
 
   it('isSpeaking is true during browser speech fallback', async () => {
