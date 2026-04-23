@@ -41,7 +41,7 @@
       <template v-else>
         <!-- Desktop side navigation -->
         <nav class="app-nav desktop-nav">
-          <div class="nav-logo"><img src="/icon.png" alt="TerranSoul" class="nav-logo-img" /></div>
+          <div class="nav-logo"><img :src="appIconUrl" alt="TerranSoul" class="nav-logo-img" /></div>
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -136,6 +136,7 @@ const questConstellationOpen = ref(false);
 
 const hasBrain = computed(() => brain.hasBrain);
 const isPetMode = computed(() => windowStore.mode === 'pet');
+const appIconUrl = '/icon.png';
 
 const tabs = [
   { id: 'chat' as const, label: 'Chat', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
@@ -177,17 +178,18 @@ function handleQuestBubble() {
   activeTab.value = 'chat';
 }
 
+function applyBodyBackground(mode: 'window' | 'pet') {
+  if (typeof document === 'undefined') return;
+  document.body.style.background = mode === 'pet' ? 'transparent' : '#0b1120';
+}
+
 // Watch for window mode changes (e.g. from tray icon toggle)
 watch(
   () => windowStore.mode,
   (mode) => {
-    if (mode === 'pet') {
-      // Ensure transparent body background for pet mode
-      document.body.style.background = 'transparent';
-    } else {
-      document.body.style.background = '#0b1120';
-    }
+    applyBodyBackground(mode);
   },
+  { immediate: true },
 );
 
 // Safety escape hatch: pressing Escape while in pet mode returns to desktop
