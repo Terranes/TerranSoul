@@ -29,7 +29,12 @@
         <div v-if="petChatExpanded" class="pet-chat" :class="petChatClasses" :style="petChatStyle" @click.stop @mousedown.stop>
           <div class="pet-chat-header">
             <span class="pet-chat-title">Chat</span>
-            <button class="pet-chat-close" @click.stop="closeChat" title="Close chat">×</button>
+            <div class="pet-chat-actions">
+              <button class="pet-chat-action-btn" @click.stop="copyChatHistoryToClipboard" title="Copy chat history">Copy</button>
+              <button class="pet-chat-action-btn" @click.stop="pasteClipboardToInput" title="Paste clipboard into input">Paste</button>
+              <button v-if="canSkipDialog" class="pet-chat-action-btn skip" @click.stop="skipCurrentDialog" title="Skip dialog and TTS">Skip</button>
+              <button class="pet-chat-close" @click.stop="closeChat" title="Close chat">×</button>
+            </div>
           </div>
           <div class="pet-chat-messages" ref="messagesRef">
             <template v-for="(msg, idx) in recentMessages" :key="msg.id">
@@ -131,6 +136,7 @@ import { useLipSyncBridge } from '../composables/useLipSyncBridge';
 import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
+import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
 import * as THREE from 'three';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import PetContextMenu from '../components/PetContextMenu.vue';
@@ -777,6 +783,38 @@ async function handleSend() {
   }, 6000);
 }
 
+const canSkipDialog = computed(
+  () => conversationStore.isThinking || conversationStore.isStreaming || tts.isSpeaking.value,
+);
+
+function skipCurrentDialog() {
+  tts.stop();
+  streamTtsActive = false;
+  streaming.reset();
+  conversationStore.isStreaming = false;
+  conversationStore.streamingText = '';
+  setAvatarState('idle');
+  viewportRef.value?.stopMotion();
+}
+
+async function copyChatHistoryToClipboard() {
+  try {
+    await copyChatHistory(conversationStore.messages);
+  } catch {
+    // Clipboard unavailable
+  }
+}
+
+async function pasteClipboardToInput() {
+  try {
+    const text = await readClipboardText();
+    if (!text) return;
+    inputText.value = text;
+  } catch {
+    // Clipboard unavailable
+  }
+}
+
 function dismissOnboarding() {
   showOnboarding.value = false;
   try {
@@ -851,6 +889,7 @@ watch(tts.isSpeaking, (speaking) => {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
+let streamTtsActive = false;
 
 onMounted(async () => {
   // Onboarding tooltip: show only if never dismissed before
@@ -893,7 +932,13 @@ onMounted(async () => {
       if (voice.config.tts_provider) {
         if (event.payload.done) {
           tts.flush();
+          streamTtsActive = false;
         } else if (event.payload.text) {
+          if (!streamTtsActive) {
+            // New AI response started: stop previous speech and only speak latest.
+            tts.stop();
+            streamTtsActive = true;
+          }
           tts.feedChunk(event.payload.text);
         }
       }
@@ -1065,6 +1110,28 @@ onUnmounted(() => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px 16px 0 0;
   background: rgba(15, 23, 42, 0.95);
+}
+.pet-chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pet-chat-action-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.pet-chat-action-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.pet-chat-action-btn.skip {
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
 }
 .pet-chat-title {
   font-size: 0.8rem;
