@@ -167,13 +167,10 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { BGM_TRACKS } from '../composables/useBgmPlayer';
 
-// TODO: Implement props usage
-// const _props = defineProps<{
-//   systemVolume: number;
-//   bgmVolume: number;
-//   bgmTrackId: string;
-// }>();
-
+// Self-contained dialog: holds its own audio-state refs and emits updates
+// to the parent (CharacterViewport). Initial values are reasonable defaults;
+// the parent's reactive store is the single source of truth and applies the
+// emitted updates. No props are needed.
 const emit = defineEmits<{
   close: [];
   'update:systemVolume': [volume: number];

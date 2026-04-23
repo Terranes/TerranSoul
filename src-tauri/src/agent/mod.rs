@@ -1,3 +1,4 @@
+pub mod openclaw_agent;
 pub mod stub_agent;
 
 use async_trait::async_trait;

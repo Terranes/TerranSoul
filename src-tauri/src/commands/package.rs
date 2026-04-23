@@ -40,6 +40,7 @@ impl From<&package_manager::AgentManifest> for ManifestInfo {
             package_manager::InstallMethod::Binary { .. } => "binary",
             package_manager::InstallMethod::Wasm { .. } => "wasm",
             package_manager::InstallMethod::Sidecar { .. } => "sidecar",
+            package_manager::InstallMethod::BuiltIn => "builtin",
         };
 
         ManifestInfo {

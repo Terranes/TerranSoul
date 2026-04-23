@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.7 — Cognitive Memory Axes + Marketplace Catalog Default + Local Models as Agents + OpenClaw Bridge](#chunk-17--cognitive-memory-axes--marketplace-catalog-default--local-models-as-agents--openclaw-bridge) | 2026-04-23 |
 | [Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)](#chunk-16--entity-relationship-graph-v5-schema-typeddirectional-edges-multi-hop-rag) | 2026-04-23 |
 | [Chunk 1.5 — Multi-Agent Roster + External CLI Workers + Temporal-style Durable Workflows](#chunk-15--multi-agent-roster--external-cli-workers--temporal-style-durable-workflows) | 2026-04-23 |
 | [Chunk 1.4 — Podman + Docker Desktop Dual Container Runtime](#chunk-14--podman--docker-desktop-dual-container-runtime) | 2026-04-23 |
@@ -90,7 +91,80 @@ Entries are in **reverse chronological order** (newest first).
 
 ---
 
-## Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)
+## Chunk 1.7 — Cognitive Memory Axes + Marketplace Catalog Default + Local Models as Agents + OpenClaw Bridge
+
+**Date:** 2026-04-23
+
+### Summary
+Four entwined improvements landed in one PR:
+
+1. **Episodic vs Semantic Memory analysis & implementation.** Added a deep
+   analysis section (`docs/brain-advanced-design.md` § 3.5) arguing that we
+   need a third *cognitive* axis (episodic / semantic / procedural) on top
+   of the existing `MemoryType` and `MemoryTier` axes, but **derived not
+   stored** to avoid a schema migration. Shipped a pure-function classifier
+   in `src-tauri/src/memory/cognitive_kind.rs` that resolves the kind from
+   `(memory_type, tags, content)` with explicit `episodic:*` / `semantic:*`
+   / `procedural:*` tag override. 16 unit tests cover the resolution rules.
+2. **Marketplace browse fix.** The default `package_registry` was an empty
+   `MockRegistry`, so the Marketplace browse tab showed nothing until the
+   user manually started the registry HTTP server. Added
+   `registry_server::CatalogRegistry` — an in-process `RegistrySource` that
+   pre-populates from `catalog::all_entries()` — and wired it as the default.
+   `start_registry_server` still swaps in `HttpRegistry` for cross-device
+   discovery; `stop_registry_server` restores the catalog registry.
+3. **Local LLM models as marketplace agents.** Extended `search_agents` to
+   merge local Ollama recommendations as virtual agents (`kind: "local_llm"`,
+   capability `local_llm` + `chat`). `MarketplaceView` now renders local-LLM
+   cards with **Install & Activate** that calls `pull_ollama_model` +
+   `set_active_brain` + `set_brain_mode`. Card surfaces top-pick / cloud /
+   RAM badges and warns if Ollama isn't running.
+4. **OpenClaw example provider.** New `src-tauri/src/agent/openclaw_agent.rs`
+   implementing `AgentProvider` with capability gating, tool-call dispatch
+   (`/openclaw read | fetch | chat`), and sentiment passthrough. The match
+   arms in `handle_command` are the single integration point for swapping in
+   a real JSON-RPC client. Documented end-to-end in
+   `instructions/OPENCLAW-EXAMPLE.md`, referenced from the README.
+
+### Files Added
+- `src-tauri/src/memory/cognitive_kind.rs` (classifier + 16 tests)
+- `src-tauri/src/registry_server/catalog_registry.rs` (default registry + 7 tests)
+- `src-tauri/src/agent/openclaw_agent.rs` (provider + 12 tests)
+- `instructions/OPENCLAW-EXAMPLE.md` (end-to-end walkthrough)
+
+### Files Modified
+- `docs/brain-advanced-design.md` — new § 3.5
+- `rules/architecture-rules.md` — module-dependency rules updated
+- `instructions/EXTENDING.md` — references to OpenClaw example + cognitive kinds
+- `README.md` — Marketplace bullet links to OpenClaw walkthrough
+- `src-tauri/src/lib.rs` — default `package_registry` → `CatalogRegistry`
+- `src-tauri/src/memory/mod.rs` — re-export `cognitive_kind`
+- `src-tauri/src/agent/mod.rs` — register `openclaw_agent`
+- `src-tauri/src/registry_server/mod.rs` — re-export `CatalogRegistry`
+- `src-tauri/src/commands/registry.rs` — `AgentSearchResult` gains
+  `kind`/`model_tag`/`required_ram_mb`/`is_top_pick`/`is_cloud`;
+  `search_agents` merges local-LLM recommendations;
+  `stop_registry_server` restores catalog registry
+- `src/types/index.ts` — `AgentSearchResult` extended (all new fields optional)
+- `src/views/MarketplaceView.vue` — local-LLM cards + Install & Activate flow
+
+### Test Counts
+- **Rust:** +41 tests → 695 total (was 654). All passing under
+  `cargo clippy --all-targets -- -D warnings` and `cargo test --all-targets`.
+- **Frontend:** 988 vitest tests, 60 files — all passing.
+
+### Architectural notes
+- **No schema migration.** The cognitive axis is computed; the V4 schema is
+  unchanged. Migration path to a V6 column documented in § 3.5.7 if profiling
+  later requires it.
+- **No new Tauri commands.** All UX uses existing commands
+  (`search_agents`, `pull_ollama_model`, `set_active_brain`, `set_brain_mode`).
+- **OpenClaw bridge is reference-grade.** Capability set is held inside the
+  agent so misconfigured orchestrators cannot bypass consent.
+
+---
+
+
 
 **Date:** 2026-04-23
 

@@ -1,0 +1,192 @@
+/**
+ * Integration tests for BrainView.vue — the unified Brain hub.
+ *
+ * Mocks @tauri-apps/api/core invoke() and lets the real brain & memory Pinia
+ * stores wire themselves up so we exercise the full data path.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mount, flushPromises } from '@vue/test-utils';
+import { setActivePinia, createPinia } from 'pinia';
+import BrainView from './BrainView.vue';
+import type { MemoryEntry } from '../types';
+
+const mockInvoke = vi.fn();
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+
+// Cytoscape needs some DOM APIs that JSDOM only partially provides — and it's
+// orthogonal to what BrainView is testing — so stub MemoryGraph out.
+vi.mock('../components/MemoryGraph.vue', () => ({
+  default: { name: 'MemoryGraph', template: '<div data-testid="memory-graph-stub" />' },
+}));
+
+const sampleMemories: MemoryEntry[] = [
+  {
+    id: 1, content: 'User prefers dark mode', tags: '', memory_type: 'preference',
+    tier: 'long', importance: 5, decay_score: 1.0, access_count: 3,
+    created_at: Date.now(), last_accessed: Date.now(), token_count: 5,
+    session_id: null, parent_id: null,
+  },
+  {
+    id: 2, content: 'Yesterday we shipped the v1.0 release', tags: '', memory_type: 'fact',
+    tier: 'working', importance: 3, decay_score: 0.8, access_count: 1,
+    created_at: Date.now(), last_accessed: Date.now(), token_count: 7,
+    session_id: null, parent_id: null,
+  },
+  {
+    id: 3, content: 'How to deploy: 1. build 2. tag 3. push', tags: '', memory_type: 'fact',
+    tier: 'long', importance: 4, decay_score: 0.9, access_count: 5,
+    created_at: Date.now(), last_accessed: Date.now(), token_count: 10,
+    session_id: null, parent_id: null,
+  },
+];
+
+function makeInvokeMock(opts: {
+  brainMode?: unknown;
+  memories?: MemoryEntry[];
+} = {}) {
+  const memories = opts.memories ?? sampleMemories;
+  return (cmd: string) => {
+    switch (cmd) {
+      case 'get_brain_mode': return Promise.resolve(opts.brainMode ?? null);
+      case 'list_free_providers': return Promise.resolve([
+        { id: 'pollinations', display_name: 'Pollinations AI', base_url: 'https://text.pollinations.ai/openai',
+          model: 'openai', rpm_limit: 30, rpd_limit: 0, requires_api_key: false, notes: '' },
+      ]);
+      case 'get_system_info': return Promise.resolve({
+        os_name: 'Linux', arch: 'x86_64', cpu_name: 'Test CPU', cpu_cores: 8,
+        total_ram_mb: 16384, ram_tier_label: 'High', gpu_name: '',
+      });
+      case 'check_ollama_status': return Promise.resolve({ running: false, model_count: 0 });
+      case 'get_ollama_models': return Promise.resolve([]);
+      case 'get_active_brain': return Promise.resolve(null);
+      case 'recommend_brain_models': return Promise.resolve([]);
+      case 'get_memories': return Promise.resolve(memories);
+      case 'list_memories': return Promise.resolve(memories);
+      case 'get_memory_stats': return Promise.resolve({
+        total: memories.length,
+        short_count: memories.filter((m) => m.tier === 'short').length,
+        working_count: memories.filter((m) => m.tier === 'working').length,
+        long_count: memories.filter((m) => m.tier === 'long').length,
+        total_tokens: memories.reduce((s, m) => s + m.token_count, 0),
+        avg_decay: memories.reduce((s, m) => s + m.decay_score, 0) / Math.max(1, memories.length),
+      });
+      case 'list_memory_edges': return Promise.resolve([]);
+      case 'get_edge_stats': return Promise.resolve({
+        total_edges: 0, by_rel_type: [], by_source: [], connected_memories: 0,
+      });
+      case 'get_short_term_memory': return Promise.resolve([]);
+      default:
+        // Other unrelated commands — return a reasonable default.
+        return Promise.resolve(null);
+    }
+  };
+}
+
+beforeEach(() => {
+  setActivePinia(createPinia());
+  mockInvoke.mockReset();
+});
+
+describe('BrainView', () => {
+  it('renders the hero, mode switcher, all data cards, stat sheet, and graph section', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock());
+    const w = mount(BrainView);
+    await flushPromises();
+
+    expect(w.find('[data-testid="brain-view"]').exists()).toBe(true);
+    expect(w.find('[data-testid="brain-avatar"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-mode-switcher"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-card-config"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-card-hardware"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-card-memory"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-cognitive-breakdown"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-rag-capability"]').exists()).toBe(true);
+    expect(w.find('[data-testid="brain-stat-sheet"]').exists()).toBe(true);
+    expect(w.find('[data-testid="memory-graph-stub"]').exists()).toBe(true);
+  });
+
+  it('shows "No brain configured" when brainMode is null', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock({ brainMode: null }));
+    const w = mount(BrainView);
+    await flushPromises();
+
+    expect(w.text()).toContain('No brain configured');
+    // Avatar should be in no-brain state.
+    expect(w.find('[data-testid="brain-avatar"]').classes()).toContain('mood-none');
+  });
+
+  it('shows "Free cloud" pill when brainMode is free_api', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock({
+      brainMode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+    }));
+    const w = mount(BrainView);
+    await flushPromises();
+
+    expect(w.text()).toContain('Free cloud');
+    expect(w.find('[data-testid="brain-avatar"]').classes()).toContain('mood-free');
+  });
+
+  it('classifies memories into the three cognitive kinds', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock({
+      brainMode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+    }));
+    const w = mount(BrainView);
+    await flushPromises();
+
+    // Sample contains 1 preference (semantic), 1 episodic ("Yesterday…"),
+    // and 1 procedural (numbered "How to deploy").
+    expect(w.find('[data-testid="bv-cog-episodic"]').text()).toContain('1');
+    expect(w.find('[data-testid="bv-cog-semantic"]').text()).toContain('1');
+    expect(w.find('[data-testid="bv-cog-procedural"]').text()).toContain('1');
+  });
+
+  it('marks vector RAG signal off in cloud modes and on in local mode', async () => {
+    // Free cloud → vector OFF, others ON.
+    mockInvoke.mockImplementation(makeInvokeMock({
+      brainMode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+    }));
+    const wFree = mount(BrainView);
+    await flushPromises();
+    const ragGrid = wFree.find('[data-testid="bv-rag-capability"]');
+    const cells = ragGrid.findAll('.bv-rag-cell');
+    const vector = cells.find((c) => c.text().includes('Vector'));
+    expect(vector?.classes()).toContain('is-off');
+    const keyword = cells.find((c) => c.text().includes('Keyword'));
+    expect(keyword?.classes()).toContain('is-on');
+
+    // Local Ollama → all ON.
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockInvoke.mockImplementation(makeInvokeMock({
+      brainMode: { mode: 'local_ollama', model: 'gemma3:1b' },
+    }));
+    const wLocal = mount(BrainView);
+    await flushPromises();
+    const localCells = wLocal.find('[data-testid="bv-rag-capability"]').findAll('.bv-rag-cell');
+    const localVector = localCells.find((c) => c.text().includes('Vector'));
+    expect(localVector?.classes()).toContain('is-on');
+  });
+
+  it('emits navigate("memory") when the memory-card link is clicked', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock({
+      brainMode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+    }));
+    const w = mount(BrainView);
+    await flushPromises();
+    const link = w.find('[data-testid="bv-card-memory"] .bv-card-link');
+    await link.trigger('click');
+    expect(w.emitted('navigate')?.[0]).toEqual(['memory']);
+  });
+
+  it('emits navigate("brain-setup") from the hero "Brain setup" button', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock());
+    const w = mount(BrainView);
+    await flushPromises();
+    const buttons = w.findAll('button');
+    const setupBtn = buttons.find((b) => b.text().includes('Brain setup'));
+    await setupBtn?.trigger('click');
+    expect(w.emitted('navigate')?.[0]).toEqual(['brain-setup']);
+  });
+});

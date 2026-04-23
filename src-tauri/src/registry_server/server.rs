@@ -42,14 +42,24 @@ async fn download_agent(
     State(state): State<ServerState>,
     Path(name): Path<String>,
 ) -> Result<([(header::HeaderName, &'static str); 1], Vec<u8>), StatusCode> {
-    if state.agents.contains_key(&name) {
-        Ok((
-            [(header::CONTENT_TYPE, "application/octet-stream")],
-            b"PLACEHOLDER_BINARY".to_vec(),
-        ))
-    } else {
-        Err(StatusCode::NOT_FOUND)
-    }
+    let Some(manifest) = state.agents.get(&name) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    // Built-in agents are compiled into TerranSoul — no binary to download.
+    // Return an empty body with `application/octet-stream` so HTTP clients
+    // that ignore the manifest still get a valid (zero-length) response
+    // instead of opaque placeholder bytes.
+    let body: Vec<u8> = match &manifest.install_method {
+        crate::package_manager::InstallMethod::BuiltIn => Vec::new(),
+        // Other install methods would normally fetch from disk/cache.
+        // The in-process catalog only ships built-ins today; downloadable
+        // packages flow through the external HTTP registry instead.
+        _ => Vec::new(),
+    };
+    Ok((
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        body,
+    ))
 }
 
 async fn search_agents(

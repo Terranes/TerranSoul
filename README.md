@@ -199,8 +199,10 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 
 ### 📦 AI Package Manager
 - Install / update / remove / start / stop agents
-- Package registry with marketplace UI
+- Package registry with marketplace UI (browse works out-of-the-box via the in-process catalog registry)
+- Local Ollama models surface as marketplace agents — install & activate from the same UI
 - WASM sandbox for agent isolation
+- See [`instructions/OPENCLAW-EXAMPLE.md`](./instructions/OPENCLAW-EXAMPLE.md) for an end-to-end walkthrough using the OpenClaw bridge agent
 
 ### 🖥️ Window Modes
 - Standard desktop window

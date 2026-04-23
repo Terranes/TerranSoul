@@ -96,6 +96,12 @@ pub enum InstallMethod {
         /// Relative path to the sidecar binary within the app bundle.
         path: String,
     },
+    /// An agent that is **compiled into TerranSoul itself** (e.g. the
+    /// reference [`crate::agent::stub_agent::StubAgent`] or
+    /// [`crate::agent::openclaw_agent::OpenClawAgent`]). Built-in agents have
+    /// no binary to download — installation only writes the manifest so the
+    /// orchestrator can list/enable/disable them like any other agent.
+    BuiltIn,
 }
 
 /// Agent capabilities that determine what the agent can access.

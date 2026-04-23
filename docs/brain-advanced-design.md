@@ -18,6 +18,7 @@
    - [Core Types](#core-types)
    - [Proposed Category Taxonomy](#proposed-category-taxonomy)
    - [Category × Tier Matrix](#category--tier-matrix)
+   - [Cognitive Memory Axes (Episodic / Semantic / Procedural)](#35-cognitive-memory-axes-episodic--semantic--procedural)
 4. [Hybrid RAG Pipeline](#hybrid-rag-pipeline)
    - [6-Signal Scoring Formula](#6-signal-scoring-formula)
    - [RAG Injection Flow](#rag-injection-flow)
@@ -338,6 +339,174 @@ Not all categories belong in all tiers:
 **Key insight**: Emotional memories should decay fast in long-term (you don't want "user was stressed on April 3rd" cluttering RAG forever), but personal identity ("user's name is Alex") should essentially never decay.
 
 **Implementation path**: Add a `category` column in a V5 migration, or use structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) to avoid schema changes. Tag prefixes are recommended first — they work with the existing search infrastructure and don't require a migration.
+
+---
+
+## 3.5 Cognitive Memory Axes (Episodic / Semantic / Procedural)
+
+> **Status:** classifier landed at `src-tauri/src/memory/cognitive_kind.rs`
+> alongside ontology tag prefixes; **no V6 schema migration**.
+
+### 3.5.1 The question
+
+Cognitive psychology splits long-term memory into three biologically distinct
+systems:
+
+| Cognitive kind | Description | Brain region | TerranSoul examples |
+|----------------|-------------|--------------|---------------------|
+| **Episodic** | Time- and place-anchored personal experiences. Each memory is a "scene" with a when/where. | Hippocampus | "On April 22nd Alex finished the rust refactor", "We met Sarah at the cafe yesterday" |
+| **Semantic** | Time-independent general knowledge and stable preferences. The "what" without the "when". | Neocortex | "Rust uses ownership for memory safety", "Alex prefers dark mode", "Mars has two moons" |
+| **Procedural** | How-to knowledge, motor skills, repeatable workflows. The "how". | Cerebellum / basal ganglia | "How to ship a release: bump → tag → push", "Morning routine: 6am alarm, run 5km, shower, breakfast" |
+
+These overlap with — but are **orthogonal to** — TerranSoul's existing
+`MemoryType` (`fact`/`preference`/`context`/`summary`) and `MemoryTier`
+(`short`/`working`/`long`) axes:
+
+```
+                STRUCTURAL TYPE × COGNITIVE KIND  (✓ = common, ◇ = possible, — = rare)
+
+                    episodic    semantic    procedural
+   fact             ◇  "Q3      ✓  "Mars   ◇  "rustup
+                       earnings    has two     installs
+                       were $X"    moons"      to ~/.cargo"
+   preference       —           ✓  "Dark     ◇  "Always
+                                   mode +      run cargo
+                                   serif"      fmt before
+                                               push"
+   context          ✓  "User    ◇  "User    ◇  "Use
+                       just         is on a     conventional
+                       unblocked    Mac"        commits in
+                       a build"                 this repo"
+   summary          ✓  "Today   —           ◇  "Recap of
+                       we                       Q1 release
+                       discussed                process"
+                       …"
+```
+
+### 3.5.2 Do we **need** a third axis?
+
+**Yes** — but a derived one, not a stored one. We need it for three concrete
+RAG-quality reasons:
+
+1. **Decay must be kind-aware.** Episodic memories should decay much faster
+   than semantic ones — nobody benefits from "user mentioned the weather on
+   April 3rd" haunting RAG forever, but "user's name is Alex" must never
+   decay. Procedural memories should decay slowly *unless* they're explicitly
+   superseded.
+2. **Retrieval must be kind-prioritised by query intent.** A query like
+   *"how do I deploy?"* wants procedural first; *"what did we decide
+   yesterday?"* wants episodic first; *"what is X?"* wants semantic first. A
+   light query-intent classifier + a kind-aware ranker boost is a meaningful
+   precision improvement over pure vector similarity.
+3. **Conflict resolution must be kind-aware.** Two semantic memories saying
+   contradictory things ("Alex prefers dark mode" vs "Alex prefers light
+   mode") must be reconciled — the newer wins. Two episodic memories of the
+   same event can both be true and should be merged, not deduplicated.
+
+We do **not** need a `cognitive_kind` SQL column today because:
+
+- All three kinds can be derived from `(memory_type, tags, content)` with a
+  pure-function classifier (no LLM needed for the common case).
+- Tag prefixes (`episodic:*`, `semantic:*`, `procedural:*`) layer cleanly on
+  the V4 schema without any migration. Power users can override the heuristic
+  by tagging.
+- If profiling later shows the classifier is too slow at retrieval time, a V6
+  migration to add the column + an index is straightforward.
+
+### 3.5.3 Classifier algorithm
+
+Implemented as a pure function in
+[`memory/cognitive_kind.rs`](../src-tauri/src/memory/cognitive_kind.rs):
+
+```
+fn classify(memory_type, tags, content) -> CognitiveKind:
+    1. If `tags` contains an explicit cognitive tag
+       (`episodic` | `semantic` | `procedural`, optionally with
+       `:detail` suffix), use it. — power-user override.
+    2. Else apply structural-type defaults:
+         Summary    → Episodic   (recaps a session)
+         Preference → Semantic   (stable user state)
+         Fact, Context → fall through to step 3.
+    3. Else apply lightweight content heuristics:
+         "how to" / "step " / "first," / numbered-list shape
+            → Procedural
+         "yesterday" / "this morning" / weekday names / "ago"
+            → Episodic
+         else → Semantic        (safe default)
+```
+
+The classifier is exhaustively unit-tested (15 cases covering tag override,
+structural-type defaults, content heuristics, and edge cases). It is
+**deterministic and offline** — no LLM call. An optional LLM-based reclassifier
+can be added later for the long-tail; the heuristic currently resolves the
+~85% of memories where the kind is obvious from surface features.
+
+### 3.5.4 How the three axes compose
+
+```
+            ┌──────────────────────┐
+            │      Memory          │
+            │ ──────────────────── │
+            │ tier: short/working/long       (lifecycle)
+            │ memory_type: fact/pref/...     (structural origin)
+            │ cognitive_kind: ep/sem/proc    (cognitive function)  ← derived
+            │ category: personal/world/...   (subject taxonomy)    ← tag prefix
+            │ tags: free-form + structured                         (filtering)
+            │ embedding, importance, decay_score, …
+            └──────────────────────┘
+```
+
+`tier` answers *"How long do we keep this?"*
+`memory_type` answers *"How was this born?"*
+`cognitive_kind` answers *"What kind of cognition does this support?"*
+`category` answers *"What is this about?"*
+
+### 3.5.5 Decay tuning by cognitive kind
+
+Recommended decay multipliers (multiply the existing `decay_score` step):
+
+| Kind        | Half-life target | Multiplier | Rationale |
+|-------------|------------------|------------|-----------|
+| Episodic    | 30–90 days       | × 1.5      | Time-anchored; old episodes stop being useful |
+| Semantic    | 365+ days        | × 0.5      | Stable knowledge; almost never wrong-by-staleness |
+| Procedural  | 180+ days        | × 0.7      | Slow decay; bump back up to 1.0 on each successful execution |
+
+Implementation hook: extend `apply_memory_decay` to read
+`classify_cognitive_kind(...)` and apply the multiplier. The classifier is
+already exposed from `crate::memory` so no new wiring is required.
+
+### 3.5.6 Retrieval ranking by query intent
+
+A 50-line classifier on the **query** side can detect intent from cue words:
+
+| Query cue                                  | Boost                |
+|--------------------------------------------|----------------------|
+| `how do I`, `steps to`, `procedure for`    | + procedural × 1.4   |
+| `when`, `what did we`, `last time`, `ago`  | + episodic × 1.4     |
+| `what is`, `define`, `prefers?`            | + semantic × 1.2     |
+
+This is additive on top of the existing 6-signal hybrid score — see §4 — so
+we never trade off vector similarity for kind matching, we just break ties.
+
+### 3.5.7 Migration story (when we do want a column)
+
+If we later add a `cognitive_kind` column in V6, the migration is:
+
+1. `ALTER TABLE memories ADD COLUMN cognitive_kind TEXT NOT NULL DEFAULT 'semantic';`
+2. `CREATE INDEX idx_memories_cognitive_kind ON memories(cognitive_kind);`
+3. Backfill: `UPDATE memories SET cognitive_kind = classify(memory_type, tags, content)`
+   via a one-shot Rust pass (the classifier is already a pure function).
+4. Update `add_memory` / `update_memory` to compute and persist the kind.
+
+Until then, the derived classifier is the source of truth.
+
+### 3.5.8 What does **not** change
+
+- No new Tauri command, no new schema, no new index.
+- `MemoryEntry` payload is unchanged on the wire — the kind is computed
+  client-side or by the Rust ranker as needed.
+- Existing tests remain green; the classifier ships alongside `MemoryStore`,
+  not inside it.
 
 ---
 

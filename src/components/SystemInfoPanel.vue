@@ -125,14 +125,8 @@ import { onMounted, computed, ref } from 'vue';
 import { useBrainStore } from '../stores/brain';
 import { useVoiceStore } from '../stores/voice';
 
-// TODO: Implement props usage 
-// const _props = defineProps<{
-//   systemInfo: SystemInfo | null;
-//   rendererInfo: { type?: string; triangles: number; calls: number; programs: number } | null;  
-//   systemVolume: number;
-//   bgmVolume: number;
-// }>();
-
+// Self-contained dialog: pulls live system/brain info from the brain store
+// rather than props, so the parent doesn't need to keep sync state in sync.
 defineEmits<{
   close: [];
 }>();

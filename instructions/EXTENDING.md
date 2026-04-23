@@ -94,6 +94,31 @@ pub trait AgentProvider: Send + Sync {
    ```
 4. The `Sentiment` enum (`Happy`, `Sad`, `Neutral`) drives character animations — return the appropriate sentiment from your agent
 
+> **Reference implementation:** see
+> [`src-tauri/src/agent/openclaw_agent.rs`](../src-tauri/src/agent/openclaw_agent.rs)
+> for a fully-tested example bridging an external platform (OpenClaw) with
+> capability gating, tool-call parsing, and sentiment passthrough. Walkthrough
+> in [`OPENCLAW-EXAMPLE.md`](./OPENCLAW-EXAMPLE.md).
+
+> **Local LLMs are agents too.** The Marketplace surfaces local Ollama models
+> as virtual agents (capability `local_llm`) — installing one runs the same
+> `pull_ollama_model` + `set_active_brain` flow. See `MarketplaceView.vue`
+> `handleLocalLlmAction()`.
+
+### 3.5 Memory cognitive kinds (Episodic / Semantic / Procedural)
+
+When an agent extracts memories, it can tag them with a cognitive kind to
+control their decay and retrieval ranking:
+
+- `episodic:*` — time-anchored experiences (default for `Summary` type)
+- `semantic:*` — stable knowledge / preferences (default for `Preference` type)
+- `procedural:*` — how-to knowledge / workflows
+
+The classifier in
+[`src-tauri/src/memory/cognitive_kind.rs`](../src-tauri/src/memory/cognitive_kind.rs)
+auto-derives a kind from `(memory_type, tags, content)` if no explicit tag is
+present. Full design rationale: `docs/brain-advanced-design.md` § 3.5.
+
 ### 4. Custom UI Components
 
 The UI follows Vue 3 Composition API patterns with Pinia stores:
