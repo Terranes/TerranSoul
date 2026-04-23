@@ -58,6 +58,15 @@ impl OpenClawTool {
             Self::Chat => "chat",
         }
     }
+
+    /// Stable string name for use in error messages and parsing.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Fetch => "fetch",
+            Self::Chat => "chat",
+        }
+    }
 }
 
 /// Result of parsing a user message that may carry an OpenClaw directive.
@@ -132,11 +141,7 @@ impl OpenClawAgent {
         if argument.is_empty() {
             return Err(format!(
                 "openclaw: tool `{}` requires an argument",
-                match tool {
-                    OpenClawTool::Read => "read",
-                    OpenClawTool::Fetch => "fetch",
-                    OpenClawTool::Chat => "chat",
-                }
+                tool.as_str()
             ));
         }
         // Demo-grade implementations. Real bridges would JSON-RPC out to the

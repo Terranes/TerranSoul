@@ -69,6 +69,16 @@
 - Rust `link/` — depends on `commands/` state types; never on `agent/` internals
 - Rust `memory/backend.rs` — defines `StorageBackend` trait; depends only on `memory/store.rs` types
 - Rust `memory/postgres.rs`, `memory/mssql.rs`, `memory/cassandra.rs` — feature-gated backends; implement `StorageBackend`
+- Rust `memory/cognitive_kind.rs` — pure-function classifier for the
+  episodic/semantic/procedural axis; depends only on `MemoryType`. See
+  `docs/brain-advanced-design.md` § 3.5 for the design rationale.
+- Rust `agent/openclaw_agent.rs` — reference `AgentProvider` implementation
+  bridging an external platform (OpenClaw) with capability-gated tool
+  dispatch. See `instructions/OPENCLAW-EXAMPLE.md`.
+- Rust `registry_server/catalog_registry.rs` — in-process default
+  `RegistrySource` so the Marketplace browse tab is populated without
+  starting the registry HTTP server. The HTTP server remains optional and is
+  swapped in via `start_registry_server`.
 
 ---
 

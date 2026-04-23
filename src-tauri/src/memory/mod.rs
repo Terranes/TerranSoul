@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod brain_memory;
+pub mod cognitive_kind;
 pub mod edges;
 pub mod migrations;
 pub mod store;
@@ -12,6 +13,7 @@ pub mod mssql;
 pub mod cassandra;
 
 pub use backend::{StorageBackend, StorageConfig, StorageError, StorageResult};
+pub use cognitive_kind::{classify as classify_cognitive_kind, CognitiveKind};
 pub use edges::{
     EdgeDirection, EdgeSource, EdgeStats, MemoryEdge, NewMemoryEdge,
     COMMON_RELATION_TYPES, normalise_rel_type, parse_llm_edges,

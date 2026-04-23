@@ -386,11 +386,17 @@
                 <button
                   class="btn-primary btn-sm"
                   :disabled="brainStore.isPulling || !brainStore.ollamaStatus.running || isLocalLlmActive(agent)"
+                  :aria-label="localLlmActionAriaLabel(agent)"
                   @click="handleLocalLlmAction(agent)"
                 >
                   {{ localLlmActionLabel(agent) }}
                 </button>
-                <p v-if="!brainStore.ollamaStatus.running" class="mp-card-hint">
+                <p
+                  v-if="!brainStore.ollamaStatus.running"
+                  class="mp-card-hint"
+                  role="alert"
+                  aria-live="polite"
+                >
                   ⚠️ Ollama is not running — start it with <code>ollama serve</code>.
                 </p>
               </template>
@@ -695,6 +701,15 @@ function localLlmActionLabel(agent: AgentSearchResult): string {
   if (isLocalLlmActive(agent)) return '✅ Active';
   if (isLocalLlmInstalled(agent)) return '🧠 Activate';
   return '⬇ Install & Activate';
+}
+
+/** Verbose action description for assistive tech, including the disabled reason. */
+function localLlmActionAriaLabel(agent: AgentSearchResult): string {
+  const base = localLlmActionLabel(agent);
+  if (isLocalLlmActive(agent)) return `${base} — this model is already the active brain`;
+  if (!brainStore.ollamaStatus.running) return `${base} — disabled because Ollama is not running`;
+  if (brainStore.isPulling) return `${base} — disabled while another model is being pulled`;
+  return base;
 }
 
 /** Pull (if needed) and activate a local Ollama model. */
