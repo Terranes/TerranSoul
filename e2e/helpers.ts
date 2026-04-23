@@ -122,18 +122,17 @@ export async function closeDrawer(page: Page) {
   const drawer = page.locator('.chat-history');
   if (!(await drawer.isVisible().catch(() => false))) return;
 
+  // Only click the toggle when the drawer is still open so retries never
+  // accidentally re-open it. The 500 ms inner timeout comfortably covers the
+  // Vue leave-transition (~300 ms); the 15 s outer budget allows several
+  // attempts if the first click doesn't register.
   await expect(async () => {
-    if (!(await drawer.isVisible().catch(() => false))) return;
-    const toggle = page.locator('.chat-drawer-toggle');
-    await expect(toggle).toBeVisible({ timeout: 2_000 });
-    await toggle.evaluate((el) => (el as HTMLElement).click());
-    // Wait for Vue's v-if to react and the leave-transition (max 300 ms) to
-    // start before asserting. Without this pause the `toPass` retry fires
-    // while the animation is still running and clicks the toggle again,
-    // re-opening the drawer and making every subsequent iteration also fail.
-    await page.waitForTimeout(400);
-    await expect(drawer).not.toBeVisible({ timeout: 5_000 });
-  }).toPass({ timeout: 10_000 });
+    if (await drawer.isVisible().catch(() => false)) {
+      const toggle = page.locator('.chat-drawer-toggle');
+      await toggle.evaluate((el) => (el as HTMLElement).click());
+    }
+    await expect(drawer).not.toBeVisible({ timeout: 500 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /**

@@ -10,7 +10,7 @@ export default defineConfig({
   // server. 2 workers keeps the total wall-time low without overloading the
   // free LLM API with too many concurrent requests.
   workers: process.env.CI ? 2 : 1,
-  reporter: process.env.CI ? 'github' : 'list',
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   // Global per-test timeout. LLM-driven specs can issue several real
   // free-API calls (~30s each) plus VRM model load, so we give them headroom.
   timeout: 180_000,
