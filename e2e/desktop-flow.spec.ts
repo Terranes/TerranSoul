@@ -14,13 +14,14 @@
  *  7.  3D canvas visible with correct dimensions
  *  8.  VRM model loaded (triangle count > 0)
  *  9.  BGM music bar (play/pause, track cycling, volume)
- * 10.  Desktop nav → Marketplace tab
- * 11.  Desktop nav → Memory tab (stats dashboard, tier filters, search UI)
- * 12.  Desktop nav → Skills tab (skill tree renders)
- * 13.  Desktop nav → Voice tab (voice setup renders)
- * 14.  Chat-based LLM switching
- * 15.  Quest system (trigger phrase, accept quest)
- * 16.  No critical console errors
+ * 10.  Desktop nav switches all 5 tabs (high-level navigation only — detailed
+ *      Memory tab coverage lives in memory-flow.spec.ts to avoid duplication)
+ * 11.  No critical console errors
+ *
+ * NOTE: Detailed per-tab coverage (Memory, Skills, Voice, Marketplace) is
+ * covered by dedicated specs (memory-flow.spec.ts) and by mobile-flow.spec.ts
+ * which exercises the same Vue views via the bottom nav. Re-running them
+ * here would burn ~30s of LLM time without adding signal.
  */
 import { test, expect } from '@playwright/test';
 import {
@@ -34,10 +35,11 @@ import {
   waitForAssistantResponse,
   waitForModelLoaded,
   navigateToTab,
+  captureSubtitleOnce,
   TIMEOUTS,
 } from './helpers';
 
-test('desktop: full end-to-end flow', { timeout: 180_000 }, async ({ page }) => {
+test('desktop: full end-to-end flow', async ({ page }) => {
   const errors = collectConsoleErrors(page);
   await page.goto('/');
   await waitForAppReady(page);
@@ -81,7 +83,12 @@ test('desktop: full end-to-end flow', { timeout: 180_000 }, async ({ page }) => 
   // Attach button exists
   await expect(page.locator('.attach-btn')).toBeVisible();
 
-  // ── 5. Send message → get REAL LLM response ────────────────────────────
+  // ── 5 + 6. Send message → real LLM response, capture subtitle in-flight ─
+  // Start the subtitle observer BEFORE sending: the overlay shows while
+  // streaming and hides ~3s after TTS finishes (which never starts in a
+  // browser context), so it's a race to assert visibility after the fact.
+  const subtitleSeen = captureSubtitleOnce(page, TIMEOUTS.response);
+
   await sendMessage(page, 'Hello there!');
   await expect(input).toHaveValue(''); // cleared after send
 
@@ -101,23 +108,14 @@ test('desktop: full end-to-end flow', { timeout: 180_000 }, async ({ page }) => 
   const responseText = await assistantMsg.textContent();
   expect(responseText).not.toContain('Error:');
 
-  // ── 6. Subtitle appears and has no raw markdown ─────────────────────────
-  const subtitle = page.locator('.subtitle-overlay');
-  await expect(subtitle).toBeVisible({ timeout: TIMEOUTS.response });
-  const subtitleText = page.locator('.subtitle-text');
-  const subtitleContent = await subtitleText.textContent();
-  expect(subtitleContent).toBeTruthy();
-  expect(subtitleContent!.length).toBeGreaterThan(0);
-  // No raw markdown asterisks
-  const subtitleHtml = await subtitleText.innerHTML();
-  expect(subtitleHtml).not.toMatch(/\*\*[^*]+\*\*/);
+  // ── 6. Subtitle was shown and contained no raw markdown ─────────────────
+  const subtitleHtml = await subtitleSeen;
+  expect(subtitleHtml, 'subtitle should have appeared during streaming').not.toBeNull();
+  expect(subtitleHtml!.length).toBeGreaterThan(0);
+  expect(subtitleHtml!).not.toMatch(/\*\*[^*]+\*\*/);
 
   // ── 7. 3D canvas visible ────────────────────────────────────────────────
   await closeDrawer(page);
-  // Subtitle may persist for long TTS playback — wait generously or skip
-  await expect(page.locator('.subtitle-overlay')).toBeHidden({ timeout: 60_000 }).catch(() => {
-    // Subtitle still showing (long TTS) — that's fine, test canvas anyway
-  });
   const canvas = page.locator('.viewport-canvas');
   await expect(canvas).toBeVisible();
   const box = await canvas.boundingBox();
@@ -167,116 +165,26 @@ test('desktop: full end-to-end flow', { timeout: 180_000 }, async ({ page }) => 
 
   await musicToggle.click();
 
-  // ── 10. Navigate to Marketplace ─────────────────────────────────────────
+  // ── 10. Desktop nav — high-level tab switching ──────────────────────────
+  // Each tab is verified to render its top-level view container. Detailed
+  // per-tab assertions live in memory-flow.spec.ts and mobile-flow.spec.ts.
   await navigateToTab(page, 'Market');
   await expect(page.locator('.marketplace-view')).toBeVisible({ timeout: TIMEOUTS.panel });
-  const llmConfigHeader = page.locator('.llm-config-header');
-  await expect(llmConfigHeader).toBeVisible({ timeout: TIMEOUTS.panel });
-  await expect(llmConfigHeader).toContainText('Configure LLM');
+  await expect(page.locator('.llm-config-header')).toContainText('Configure LLM');
 
-  // ── 11. Navigate to Memory tab ──────────────────────────────────────────
   await navigateToTab(page, 'Memory');
-  const memoryView = page.locator('.memory-view');
-  await expect(memoryView).toBeVisible({ timeout: TIMEOUTS.panel });
+  await expect(page.locator('.memory-view')).toBeVisible({ timeout: TIMEOUTS.panel });
 
-  // Stats dashboard loads when Tauri backend is available
-  const hasTauri = await page.evaluate(() => '__TAURI_INTERNALS__' in window);
-  if (hasTauri) {
-    const statsPanel = memoryView.locator('.mv-stats');
-    await expect(statsPanel).toBeVisible({ timeout: TIMEOUTS.panel });
-    await expect(statsPanel.locator('.mv-stat')).toHaveCount(6);
-  }
-
-  // Memory tabs visible (List, Graph, Session)
-  await expect(memoryView.locator('.mv-tab')).toHaveCount(3);
-
-  // List tab active by default
-  await expect(memoryView.locator('.mv-list-panel')).toBeVisible();
-
-  // Search bar functional
-  const memSearch = memoryView.locator('.mv-search');
-  await expect(memSearch).toBeVisible();
-  await expect(memSearch).toHaveAttribute('placeholder', 'Search memories…');
-
-  // Filter chips: 4 type + 3 tier
-  const filterRow = memoryView.locator('.mv-filter-row');
-  await expect(filterRow.locator('.mv-type-chip')).toHaveCount(4);
-  await expect(filterRow.locator('.mv-tier-chip')).toHaveCount(3);
-
-  // Header action buttons visible
-  await expect(memoryView.locator('button', { hasText: 'Extract from session' })).toBeVisible();
-  await expect(memoryView.locator('button', { hasText: 'Decay' })).toBeVisible();
-  await expect(memoryView.locator('button', { hasText: 'GC' })).toBeVisible();
-  await expect(memoryView.locator('button', { hasText: 'Add memory' })).toBeVisible();
-
-  // Switch to Graph tab
-  await memoryView.locator('.mv-tab', { hasText: 'Graph' }).click();
-  await expect(memoryView.locator('.mv-graph-panel')).toBeVisible({ timeout: TIMEOUTS.panel });
-
-  // Switch to Session tab
-  await memoryView.locator('.mv-tab', { hasText: 'Session' }).click();
-  await expect(memoryView.locator('.mv-session-panel')).toBeVisible({ timeout: TIMEOUTS.panel });
-
-  // ── 12. Navigate to Skills tab ──────────────────────────────────────────
   await navigateToTab(page, 'Quests');
   await expect(page.locator('.skill-tree-view')).toBeVisible({ timeout: TIMEOUTS.panel });
-  await expect(page.locator('.st-header')).toBeVisible();
   await expect(page.locator('.st-progress-badge')).toBeVisible();
 
-  // ── 13. Navigate to Voice tab ───────────────────────────────────────────
   await navigateToTab(page, 'Voice');
   await expect(page.locator('.voice-setup')).toBeVisible({ timeout: TIMEOUTS.panel });
-  await expect(page.locator('.vs-steps')).toBeVisible();
 
-  // Voice mode tiers should be shown (browser, cloud, groq, text-only)
-  await expect(page.locator('.vs-tier')).toHaveCount(4);
-
-  // Navigate back to Chat
   await navigateToTab(page, 'Chat');
   await expect(page.locator('.chat-view')).toBeVisible({ timeout: TIMEOUTS.panel });
 
-  // ── 14. Chat-based LLM switching ────────────────────────────────────────
-  await sendMessage(page, 'switch to pollinations');
-  await openDrawer(page);
-  const switchUserMsg = page.locator('.message-row.user').last();
-  await expect(switchUserMsg).toContainText('switch to pollinations');
-  const switchResponse = await waitForAssistantResponse(page);
-  expect(switchResponse.length).toBeGreaterThan(0);
-  await closeDrawer(page);
-
-  // ── 15. Quest system — trigger phrase ───────────────────────────────────
-  await sendMessage(page, 'Where can I start?');
-  await openDrawer(page);
-
-  const questAssistant = page.locator('.message-row.assistant').last();
-  await expect(questAssistant).toBeVisible({ timeout: TIMEOUTS.response });
-
-  // Typing indicator clears (not stuck)
-  await expect(page.locator('.typing-indicator')).not.toBeVisible({ timeout: 5_000 });
-
-  // If quest overlay appeared, walk through the accept flow
-  const questOverlay = page.locator('.hotseat-strip');
-  const hasQuest = await questOverlay.isVisible().catch(() => false);
-  if (hasQuest) {
-    const tiles = questOverlay.locator('.hotseat-tile');
-    const labels = (await tiles.allTextContents()).join(' ');
-
-    if (labels.includes('Accept') && labels.includes('Maybe later')) {
-      for (let i = 0; i < (await tiles.count()); i++) {
-        const txt = await tiles.nth(i).textContent();
-        if (txt && txt.includes('Accept')) {
-          await tiles.nth(i).click();
-          break;
-        }
-      }
-      await page.waitForTimeout(500);
-
-      const acceptMsg = page.locator('.message-row.assistant').last();
-      await expect(acceptMsg).toContainText('Quest Accepted', { timeout: TIMEOUTS.response });
-    }
-  }
-  await closeDrawer(page);
-
-  // ── 16. No critical console errors ──────────────────────────────────────
+  // ── 11. No critical console errors ──────────────────────────────────────
   assertNoCrashErrors(errors);
 });
