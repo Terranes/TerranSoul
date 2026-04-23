@@ -9,6 +9,7 @@ use tauri::tray::TrayIconBuilder;
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
+pub mod agents;
 pub mod brain;
 pub mod commands;
 pub mod container;
@@ -25,9 +26,16 @@ pub mod settings;
 pub mod sync;
 pub mod tasks;
 pub mod voice;
+pub mod workflows;
 
 use commands::{
     agent::list_agents,
+    agents_roster::{
+        roster_cancel_workflow, roster_create, roster_delete, roster_get_current,
+        roster_get_ram_cap, roster_list, roster_list_pending_workflows, roster_list_workflows,
+        roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow,
+        roster_switch,
+    },
     brain::{
         check_ollama_status, clear_active_brain, get_active_brain, get_brain_mode,
         get_embed_cache_status, get_next_provider, get_ollama_models, get_system_info,
@@ -142,6 +150,8 @@ pub struct AppState {
     pub app_settings: Mutex<settings::AppSettings>,
     /// Whether the pet-mode cursor-tracking poll loop is active.
     pub pet_cursor_active: Arc<AtomicBool>,
+    /// Durable workflow engine for long-running agent tasks (Chunk 1.5).
+    pub workflow_engine: TokioMutex<workflows::WorkflowEngine>,
 }
 
 impl AppState {
@@ -181,6 +191,14 @@ impl AppState {
             task_manager: TokioMutex::new(tasks::manager::TaskManager::new(data_dir)),
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
+            workflow_engine: TokioMutex::new(
+                workflows::WorkflowEngine::open(&data_dir.join("workflows.sqlite"))
+                    .unwrap_or_else(|e| {
+                        eprintln!("[workflows] failed to open durable log: {e}; using in-memory");
+                        workflows::WorkflowEngine::open(std::path::Path::new(":memory:"))
+                            .expect("in-memory workflow engine must open")
+                    }),
+            ),
         }
     }
 
@@ -218,6 +236,10 @@ impl AppState {
             task_manager: TokioMutex::new(tasks::manager::TaskManager::in_memory()),
             app_settings: Mutex::new(settings::AppSettings::default()),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
+            workflow_engine: TokioMutex::new(
+                workflows::WorkflowEngine::open(std::path::Path::new(":memory:"))
+                    .expect("in-memory workflow engine must open"),
+            ),
         }
     }
 }
@@ -310,6 +332,19 @@ pub fn run() {
             set_brain_mode,
             get_embed_cache_status,
             reset_embed_cache,
+            // Agent roster + durable workflows (Chunk 1.5)
+            roster_list,
+            roster_create,
+            roster_delete,
+            roster_switch,
+            roster_get_current,
+            roster_set_working_folder,
+            roster_get_ram_cap,
+            roster_start_cli_workflow,
+            roster_query_workflow,
+            roster_cancel_workflow,
+            roster_list_workflows,
+            roster_list_pending_workflows,
             health_check_providers,
             get_next_provider,
             list_asr_providers,

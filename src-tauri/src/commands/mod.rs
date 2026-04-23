@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agents_roster;
 pub mod brain;
 pub mod character;
 pub mod chat;

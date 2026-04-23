@@ -6,6 +6,7 @@ pub mod model_recommender;
 pub mod ollama_agent;
 pub mod openai_client;
 pub mod provider_rotator;
+pub mod ram_budget;
 pub mod system_info;
 
 pub use brain_config::BrainMode;
