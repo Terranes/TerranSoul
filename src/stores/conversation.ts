@@ -152,35 +152,67 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
 }
 
 /**
- * Detect if the user wants to deeply learn a topic and suggest a Knowledge Quest.
- * Keywords: "learn", "teach me", "study", "deep dive", "ingest", "import".
- * When detected, append a quest suggestion with scholar-quest choices.
+ * Detect an explicit "teach the AI" instruction from the user.
+ *
+ * We only fire Scholar's Quest on phrases that clearly request ingestion of
+ * new source material.  A plain question like *"I want to learn about X"* is
+ * NOT an instruction to ingest — it's a question the LLM should answer
+ * directly, so it must NOT match here.
+ *
+ * Matching phrases (case-insensitive):
+ *   "remember the following law: …"
+ *   "remember this law …"
+ *   "learn the following …"
+ *   "memori(s|z)e this …"
+ *   "ingest this …" / "import this document/file/url …"
+ *   "provide your own context" / "provide my own context"
+ *   "here is the context/source/document …"
  */
-function maybeShowKnowledgeQuest(userInput: string, _responseText: string): void {
-  const inputLower = userInput.toLowerCase();
-  const learningWords = [
-    'learn about', 'teach me', 'study', 'deep dive', 'train you',
-    'ingest', 'import document', 'import file', 'read this url',
-    'learn vietnamese', 'learn law', 'learn from',
-  ];
-  const hasLearningIntent = learningWords.some(w => inputLower.includes(w));
-  if (!hasLearningIntent) return;
+export function detectTeachIntent(userInput: string): { topic: string } | null {
+  const trimmed = userInput.trim();
 
-  // Extract topic from user message
-  const topicMatch = inputLower.match(
-    /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/
-  );
-  const topic = topicMatch ? topicMatch[1].trim() : 'this topic';
+  const patterns: Array<{ re: RegExp; capture: number }> = [
+    // "remember/learn (the|this) following [law|article|rule|text|content|…]: …"
+    { re: /^(?:please\s+)?(?:remember|learn|memori[sz]e)\s+(?:the|this)\s+following(?:\s+\w+)?\s*[:\-–]\s*(.+)$/i, capture: 1 },
+    { re: /^(?:please\s+)?(?:remember|learn|memori[sz]e)\s+(?:the|this)\s+following\b(.*)$/i, capture: 1 },
+    // "remember/memorize this law/article/rule/fact: …"
+    { re: /^(?:please\s+)?(?:remember|memori[sz]e)\s+this\s+(?:law|article|rule|fact|statute|regulation|text|document)\b[:\s\-–]*(.*)$/i, capture: 1 },
+    // "ingest/import this/the following document/file/url: …"
+    { re: /^(?:please\s+)?(?:ingest|import)\s+(?:this|the\s+following)\s*(?:document|file|url|page)?\b[:\s\-–]*(.*)$/i, capture: 1 },
+    // "provide (my|your) own context"  (typo-tolerant: prov(i)?de)
+    { re: /^(?:i(?:'ll|\s+will)?\s+)?prov[i]?de\s+(?:my|your)\s+own\s+context\b[:\s\-–]*(.*)$/i, capture: 1 },
+    // "here is / here's (the|my) context/source/document/article"
+    { re: /^here\s*(?:'s|is)\s+(?:the|my)\s+(?:context|source|document|article|law|text)\b[:\s\-–]*(.*)$/i, capture: 1 },
+  ];
+
+  for (const { re, capture } of patterns) {
+    const m = trimmed.match(re);
+    if (m) {
+      const topic = (m[capture] ?? '').trim() || 'the provided content';
+      return { topic };
+    }
+  }
+  return null;
+}
+
+/**
+ * When the user explicitly asks the AI to remember / ingest new content,
+ * push a Scholar's Quest suggestion message (with overlay choices).  This is
+ * the ONLY path that auto-triggers Scholar's Quest from chat — we never fire
+ * it on plain questions about a topic.
+ */
+function maybeShowScholarQuestFromTeachIntent(userInput: string): void {
+  const teach = detectTeachIntent(userInput);
+  if (!teach) return;
 
   const conversation = useConversationStore();
   conversation.messages.push({
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      `I gave you my best general knowledge, but for expert-level answers about **${topic}**, ` +
-      `I'd need to study the actual source materials.\n\n` +
-      `Would you like to start a **📚 Scholar's Quest**? I'll guide you through adding URLs and files ` +
-      `so I can learn deeply and give you source-grounded answers.`,
+      `Got it — let's ingest **${teach.topic}** into my long-term memory. ` +
+      `I'll walk you through a **📚 Scholar's Quest** so we can add URLs and files ` +
+      `and I can give you source-grounded answers afterwards.`,
     agentName: 'TerranSoul',
     sentiment: 'happy',
     timestamp: Date.now(),
@@ -190,6 +222,131 @@ function maybeShowKnowledgeQuest(userInput: string, _responseText: string): void
       { label: 'No thanks', value: 'dismiss', icon: '💤' },
     ],
   });
+}
+
+/**
+ * Phrases that indicate the assistant does not have a reliable answer.
+ * When any of these appear in the LLM response, we offer the user two
+ * gated upgrade paths (Gemini search, or provide-your-own-context).
+ */
+const DONT_KNOW_PATTERNS: RegExp[] = [
+  /\bi\s+(?:do\s+not|don'?t)\s+(?:know|have\s+(?:access|information|enough|specific|detailed|data))\b/i,
+  /\b(?:i\s+am\s+not|i'?m\s+not)\s+(?:sure|certain)\b/i,
+  /\bi\s+(?:cannot|can'?t)\s+(?:answer|tell|say|confirm|verify)\b/i,
+  /\bno\s+(?:specific\s+|reliable\s+|detailed\s+)?(?:information|data|record|details?)\b/i,
+  /\bmy\s+(?:knowledge|training\s+data)\s+(?:is\s+limited|doesn'?t|does\s+not|may\s+be\s+out\s+of\s+date)\b/i,
+  /\b(?:beyond|outside)\s+my\s+(?:knowledge|training)\b/i,
+  /\bnot\s+(?:up-?to-?date|current)\s+(?:on|with|about)\b/i,
+];
+
+export function detectDontKnow(responseText: string): boolean {
+  return DONT_KNOW_PATTERNS.some((p) => p.test(responseText));
+}
+
+/**
+ * After an LLM response, if the model signalled uncertainty, push a System
+ * message offering the two gated upgrade paths.  The user must TYPE one of
+ * the commands (or click the corresponding button) to actually kick off the
+ * setup — we never mutate brain mode or open a quest silently.
+ */
+function maybeShowDontKnowPrompt(responseText: string): void {
+  if (!detectDontKnow(responseText)) return;
+
+  const conversation = useConversationStore();
+  // Avoid duplicate prompts if the last System message is already one.
+  const recent = conversation.messages.slice(-3);
+  if (recent.some((m) => m.questId === 'dont-know')) return;
+
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `I don't have reliable information on that — my current model's knowledge is limited here.\n\n` +
+      `Two ways forward:\n` +
+      `• Type **"upgrade to Gemini model"** — I'll switch to Google Gemini with Search grounding (API key needed).\n` +
+      `• Type **"provide your own context"** — I'll start a **📚 Scholar's Quest** so you can feed me URLs / files.`,
+    agentName: 'System',
+    sentiment: 'neutral',
+    timestamp: Date.now(),
+    questId: 'dont-know',
+    questChoices: [
+      { label: 'Upgrade to Gemini model', value: 'command:upgrade to Gemini model', icon: '🔮' },
+      { label: 'Provide your own context', value: 'command:provide your own context', icon: '📚' },
+      { label: 'Dismiss', value: 'dismiss', icon: '💤' },
+    ],
+  });
+}
+
+/**
+ * Detect the two gated setup commands the user can type after a
+ * "don't-know" prompt.  These are literal confirmations — we only fire the
+ * matching setup flow when the user explicitly types one.
+ */
+export function detectGatedSetupCommand(userInput: string):
+  | { type: 'upgrade_gemini' }
+  | { type: 'provide_context' }
+  | null {
+  const lower = userInput.toLowerCase().trim();
+
+  // "upgrade to gemini [model]"  (typo-tolerant: gem(i)?ni)
+  if (/^(?:please\s+)?upgrade\s+to\s+gem[i]?ni(?:\s+model)?\s*[.!]?$/i.test(lower)
+    || /^switch\s+to\s+gem[i]?ni(?:\s+model)?\s+(?:for\s+)?(?:google\s+)?search\b/i.test(lower)
+    || /^use\s+gem[i]?ni\s+(?:for|with)\s+(?:google\s+)?search\b/i.test(lower)) {
+    return { type: 'upgrade_gemini' };
+  }
+
+  // "provide (my|your) own context"  (typo-tolerant: prov(i)?de)
+  if (/^(?:please\s+|i(?:'ll|\s+will)?\s+)?prov[i]?de\s+(?:my|your)\s+own\s+context\s*[.!]?$/i.test(lower)) {
+    return { type: 'provide_context' };
+  }
+
+  return null;
+}
+
+/**
+ * Execute a gated setup command.  Returns the assistant message to push into
+ * the conversation; the message carries quest choices that wire up into the
+ * existing overlay so the user can proceed with a single click.
+ */
+function executeGatedSetupCommand(cmd: NonNullable<ReturnType<typeof detectGatedSetupCommand>>): Message {
+  if (cmd.type === 'upgrade_gemini') {
+    return {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content:
+        `🔮 **Upgrading to Google Gemini.**\n\n` +
+        `Gemini 2.0 Flash supports Google Search grounding, so it can answer questions ` +
+        `that need fresh, web-sourced information.  It needs a free API key from ` +
+        `[Google AI Studio](https://aistudio.google.com/apikey).\n\n` +
+        `I'll take you to the Marketplace → **Configure LLM** so you can paste the key.`,
+      agentName: 'TerranSoul',
+      sentiment: 'happy',
+      timestamp: Date.now(),
+      questId: 'upgrade-gemini',
+      questChoices: [
+        { label: 'Open Marketplace', value: 'navigate:marketplace', icon: '🏪' },
+        { label: 'Not now', value: 'dismiss', icon: '💤' },
+      ],
+    };
+  }
+
+  // provide_context
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `📚 Let's set up your own context.  I'll run a **Scholar's Quest** that walks you ` +
+      `through adding URLs and files — I'll chunk, embed and store them in long-term memory ` +
+      `so my next answers are grounded in your sources.`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+    questId: 'scholar-quest',
+    questChoices: [
+      { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
+      { label: 'No thanks', value: 'dismiss', icon: '💤' },
+    ],
+  };
 }
 
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
@@ -428,6 +585,23 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
+    // Gated setup commands — user explicitly typed "upgrade to Gemini model"
+    // or "provide your own context" (usually after a don't-know prompt).
+    const gatedCmd = detectGatedSetupCommand(content);
+    if (gatedCmd) {
+      messages.value.push(executeGatedSetupCommand(gatedCmd));
+      isThinking.value = false;
+      return;
+    }
+
+    // Explicit "teach the AI" intent — triggers Scholar's Quest directly,
+    // without calling the LLM (the user wants to ingest, not ask).
+    if (detectTeachIntent(content)) {
+      maybeShowScholarQuestFromTeachIntent(content);
+      isThinking.value = false;
+      return;
+    }
+
     // Path 1: Tauri backend available → use streaming IPC command
     if (isTauriAvailable()) {
       try {
@@ -499,7 +673,7 @@ export const useConversationStore = defineStore('conversation', () => {
           if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
           maybeShowQuestFromResponse(clean || cleanText, content);
-          maybeShowKnowledgeQuest(content, clean || cleanText);
+          maybeShowDontKnowPrompt(clean || cleanText);
         } else {
           // Streaming completed but no text accumulated (events not received or
           // API returned empty) — fall back to non-streaming invoke which also
@@ -522,7 +696,7 @@ export const useConversationStore = defineStore('conversation', () => {
           ]);
           messages.value.push(response);
           maybeShowQuestFromResponse(response.content, content);
-          maybeShowKnowledgeQuest(content, response.content);
+          maybeShowDontKnowPrompt(response.content);
         } catch {
           messages.value.push(createPersonaResponse(content));
           pushNetworkOrProviderWarning();
@@ -630,7 +804,7 @@ export const useConversationStore = defineStore('conversation', () => {
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
             maybeShowQuestFromResponse(clean || parsed.text, content);
-            maybeShowKnowledgeQuest(content, clean || parsed.text);
+            maybeShowDontKnowPrompt(clean || parsed.text);
             succeeded = true;
             break;
           } catch (err) {

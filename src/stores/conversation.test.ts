@@ -415,6 +415,228 @@ describe('detectLlmCommand — chat-based LLM switching', () => {
   });
 });
 
+describe('detectTeachIntent — explicit teach-the-AI detection', () => {
+  it('triggers on "remember the following law: …"', async () => {
+    const { detectTeachIntent } = await import('./conversation');
+    const res = detectTeachIntent('Remember the following law: Article 429 says claims expire after 3 years.');
+    expect(res).not.toBeNull();
+    expect(res!.topic).toMatch(/article 429/i);
+  });
+
+  it('triggers on "please learn the following rule:"', async () => {
+    const { detectTeachIntent } = await import('./conversation');
+    const res = detectTeachIntent('please learn the following rule: no liability in force majeure');
+    expect(res).not.toBeNull();
+  });
+
+  it('triggers on "memorize this law: …"', async () => {
+    const { detectTeachIntent } = await import('./conversation');
+    const res = detectTeachIntent('memorize this law: Article 351 on civil liability');
+    expect(res).not.toBeNull();
+    expect(res!.topic).toMatch(/article 351/i);
+  });
+
+  it('triggers on "ingest this document: URL"', async () => {
+    const { detectTeachIntent } = await import('./conversation');
+    const res = detectTeachIntent('ingest this document: https://example.com/law.pdf');
+    expect(res).not.toBeNull();
+  });
+
+  it('triggers on "provide my own context"', async () => {
+    const { detectTeachIntent } = await import('./conversation');
+    const res = detectTeachIntent('provide my own context');
+    expect(res).not.toBeNull();
+  });
+
+  it('does NOT trigger on a plain "I want to learn about X" question', async () => {
+    const { detectTeachIntent } = await import('./conversation');
+    // This is the critical regression: a question about a topic should
+    // never be read as an instruction to ingest training material.
+    expect(detectTeachIntent('I want to learn about Vietnamese civil law')).toBeNull();
+    expect(detectTeachIntent('Teach me about contract liability')).toBeNull();
+    expect(detectTeachIntent('Can you study Vietnamese law with me?')).toBeNull();
+    expect(detectTeachIntent('What is the statute of limitations?')).toBeNull();
+    expect(detectTeachIntent('Tell me about Article 429')).toBeNull();
+  });
+});
+
+describe('detectDontKnow — uncertainty detection', () => {
+  it('detects "I don\'t know"', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow("I don't know the answer to that.")).toBe(true);
+    expect(detectDontKnow('I do not know.')).toBe(true);
+  });
+
+  it('detects "I\'m not sure"', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow("I'm not sure about this specific statute.")).toBe(true);
+    expect(detectDontKnow('I am not certain of the answer.')).toBe(true);
+  });
+
+  it('detects "I cannot confirm"', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow('I cannot confirm the current Vietnamese law.')).toBe(true);
+    expect(detectDontKnow("I can't say for certain.")).toBe(true);
+  });
+
+  it('detects "no specific information"', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow('I have no specific information about that article.')).toBe(true);
+    expect(detectDontKnow('There is no reliable information available.')).toBe(true);
+  });
+
+  it('detects "my training data is limited"', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow('My training data is limited and may not include this.')).toBe(true);
+    expect(detectDontKnow("My knowledge doesn't cover this specifically.")).toBe(true);
+  });
+
+  it('detects "beyond my knowledge"', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow('That is beyond my training cutoff.')).toBe(true);
+  });
+
+  it('does NOT trigger on a confident answer', async () => {
+    const { detectDontKnow } = await import('./conversation');
+    expect(detectDontKnow('The statute of limitations is 3 years under Article 429.')).toBe(false);
+    expect(detectDontKnow('Article 351 governs civil liability for breach of contract.')).toBe(false);
+  });
+});
+
+describe('detectGatedSetupCommand — user confirmation commands', () => {
+  it('detects "upgrade to Gemini model"', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    const res = detectGatedSetupCommand('upgrade to Gemini model');
+    expect(res).not.toBeNull();
+    expect(res!.type).toBe('upgrade_gemini');
+  });
+
+  it('detects "upgrade to Gemini" without "model"', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    const res = detectGatedSetupCommand('upgrade to Gemini');
+    expect(res).not.toBeNull();
+    expect(res!.type).toBe('upgrade_gemini');
+  });
+
+  it('tolerates the "Gemni" typo', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    const res = detectGatedSetupCommand('upgrade to Gemni model');
+    expect(res).not.toBeNull();
+    expect(res!.type).toBe('upgrade_gemini');
+  });
+
+  it('detects "provide your own context"', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    const res = detectGatedSetupCommand('provide your own context');
+    expect(res).not.toBeNull();
+    expect(res!.type).toBe('provide_context');
+  });
+
+  it('detects "provide my own context"', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    const res = detectGatedSetupCommand('provide my own context');
+    expect(res).not.toBeNull();
+    expect(res!.type).toBe('provide_context');
+  });
+
+  it('tolerates the "provde" typo', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    const res = detectGatedSetupCommand('provde your own context');
+    expect(res).not.toBeNull();
+    expect(res!.type).toBe('provide_context');
+  });
+
+  it('returns null on unrelated text', async () => {
+    const { detectGatedSetupCommand } = await import('./conversation');
+    expect(detectGatedSetupCommand('What is the weather?')).toBeNull();
+    expect(detectGatedSetupCommand('I want to learn about X')).toBeNull();
+    expect(detectGatedSetupCommand('upgrade my computer')).toBeNull();
+  });
+});
+
+describe('conversation store — new quest trigger behavior', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('does NOT auto-trigger Scholar\'s Quest when user asks a law question', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockStreamChat.mockImplementation(
+      (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
+        cb.onDone('The statute of limitations is 3 years under Article 429.');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('I want to learn about Vietnamese civil law on contract liability');
+
+    // Only: user + assistant answer.  No auto Scholar's Quest message.
+    expect(store.messages).toHaveLength(2);
+    const hasScholarQuest = store.messages.some((m) => m.questId === 'scholar-quest');
+    expect(hasScholarQuest).toBe(false);
+  });
+
+  it('shows the don\'t-know prompt when the LLM answer signals uncertainty', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockStreamChat.mockImplementation(
+      (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
+        cb.onDone("I don't know the specific statute of limitations — my training data is limited on Vietnamese law.");
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('What is the statute of limitations under Vietnamese law?');
+
+    // user + assistant-answer + system-dont-know
+    expect(store.messages).toHaveLength(3);
+    const dontKnow = store.messages.find((m) => m.questId === 'dont-know');
+    expect(dontKnow).toBeDefined();
+    expect(dontKnow!.agentName).toBe('System');
+    expect(dontKnow!.content).toMatch(/upgrade to Gemini model/i);
+    expect(dontKnow!.content).toMatch(/provide your own context/i);
+    const values = dontKnow!.questChoices!.map((c) => c.value);
+    expect(values).toContain('command:upgrade to Gemini model');
+    expect(values).toContain('command:provide your own context');
+  });
+
+  it('pushes Scholar\'s Quest when the user types "provide your own context"', async () => {
+    // No brain configured — but the gated command short-circuits before any LLM call.
+    const store = useConversationStore();
+    await store.sendMessage('provide your own context');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0].content).toBe('provide your own context');
+    expect(store.messages[1].questId).toBe('scholar-quest');
+    const labels = store.messages[1].questChoices!.map((c) => c.label);
+    expect(labels).toContain('Start Knowledge Quest');
+  });
+
+  it('offers the Gemini marketplace path when the user types "upgrade to Gemini model"', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('upgrade to Gemini model');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].questId).toBe('upgrade-gemini');
+    const values = store.messages[1].questChoices!.map((c) => c.value);
+    expect(values).toContain('navigate:marketplace');
+  });
+
+  it('pushes Scholar\'s Quest when the user explicitly says "remember the following law:"', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('Remember the following law: Article 429 — claims expire after 3 years.');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].questId).toBe('scholar-quest');
+    expect(store.messages[1].content).toMatch(/article 429/i);
+  });
+});
+
 describe('conversation store — chat-based LLM switching integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
