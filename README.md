@@ -142,7 +142,7 @@ TerranSoul includes a **TerranSoul Link** layer that securely connects all your 
 
 ## What's Implemented
 
-TerranSoul has completed **10 phases of development** (126 chunks). Here's what's working today:
+TerranSoul has completed **12 phases of development**. Here's what's working today:
 
 ### � Skill Tree / Quest System (RPG Brain Configuration)
 - **Constellation map** — full-screen radial cluster layout with pan/zoom and minimap
@@ -160,7 +160,7 @@ TerranSoul has completed **10 phases of development** (126 chunks). Here's what'
 
 ### 🎭 3D Character System
 - **VRM 1.0 & 0.x** model support via Three.js + `@pixiv/three-vrm`
-- 3 bundled default models (Annabelle, M58, GENSHIN) + custom VRM import
+- 2 bundled default models (Annabelle, M58) + persistent custom VRM import
 - Natural relaxed pose (not T-pose), spring bone warmup, frustum culling disabled
 - **AvatarStateMachine** — 5 body states (idle, thinking, talking, happy, sad) with expression-driven animation
 - **Exponential damping** for smooth bone/expression transitions
@@ -321,10 +321,10 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 ## Development Status
 
-**Completed phases:** 10 (126 implementation chunks)
-**Test suite:** 893 unit tests + 53 E2E tests — all passing
-**Current focus:** Phase 11 — RPG Brain Configuration (stat sheets, combo animations, quest rewards)
-**Next planned:** Chunk 130 — Brain config UI as RPG stat sheet
+**Completed phases:** 12
+**Test suite:** 948 frontend (Vitest) + 583 backend (cargo) + 4 E2E (Playwright) — all passing
+**Current focus:** Phase 12 — Brain Advanced Design + per-user model persistence
+**See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 
 See [rules/milestones.md](rules/milestones.md) for upcoming work and [rules/completion-log.md](rules/completion-log.md) for the detailed record of all completed work.
 

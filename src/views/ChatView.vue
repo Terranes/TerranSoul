@@ -1018,9 +1018,12 @@ onMounted(async () => {
     // No Tauri backend — voice stays in text-only mode
   }
 
-  // Load persisted settings (model selection, camera state).
+  // Load persisted settings (model selection, camera state) and user-imported
+  // VRMs. User models must be loaded before selectModel() so a previously
+  // selected user model can be restored.
   try {
     await settingsStore.loadSettings();
+    await characterStore.loadUserModels();
     const savedModelId = settingsStore.settings.selected_model_id;
     const defaultId = characterStore.selectedModelId;
     if (savedModelId && savedModelId !== defaultId) {

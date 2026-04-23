@@ -80,6 +80,10 @@ use commands::{
     streaming::send_message_stream,
     translation::{list_languages, translate_text, detect_language},
     settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
+    user_models::{
+        delete_user_model, import_user_model, list_user_models, read_user_model_bytes,
+        update_user_model,
+    },
     vision::{capture_screen, analyze_screen},
     voice::{
         add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
@@ -344,6 +348,11 @@ pub fn run() {
             cancel_ingest_task,
             resume_ingest_task,
             get_all_tasks,
+            import_user_model,
+            list_user_models,
+            delete_user_model,
+            read_user_model_bytes,
+            update_user_model,
         ])
         .setup(|app| {
             let data_dir = app

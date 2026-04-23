@@ -75,6 +75,7 @@ mod tests {
             bgm_volume: 0.25,
             bgm_track_id: "sanctuary".into(),
             model_camera_positions: std::collections::HashMap::new(),
+            user_models: Vec::new(),
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -94,17 +95,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let settings = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "genshin".into(),
+            selected_model_id: "m58".into(),
             camera_azimuth: 0.5,
             camera_distance: 4.0,
             bgm_enabled: false,
             bgm_volume: 0.15,
             bgm_track_id: "prelude".into(),
             model_camera_positions: std::collections::HashMap::new(),
+            user_models: Vec::new(),
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());
-        assert_eq!(loaded.selected_model_id, "genshin");
+        assert_eq!(loaded.selected_model_id, "m58");
     }
 
     #[test]

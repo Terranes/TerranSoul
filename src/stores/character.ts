@@ -1,9 +1,19 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { CharacterState, VrmMetadata } from '../types';
 import { DEFAULT_MODELS, DEFAULT_MODEL_ID, GENDER_VOICES, type DefaultModel, type ModelGender } from '../config/default-models';
 import { useSettingsStore } from './settings';
+
+/** A VRM model the user imported. Stored under `<app_data_dir>/user_models/`
+ *  by the Rust backend so it survives a fresh build / app upgrade. */
+export interface UserModel {
+  id: string;
+  name: string;
+  original_filename: string;
+  gender: ModelGender;
+  imported_at: number;
+}
 
 export const useCharacterStore = defineStore('character', () => {
   const state = ref<CharacterState>('idle');
@@ -13,6 +23,27 @@ export const useCharacterStore = defineStore('character', () => {
   const isLoading = ref(true);
   const selectedModelId = ref<string>(DEFAULT_MODEL_ID);
   const defaultModels = ref<DefaultModel[]>(DEFAULT_MODELS);
+  const userModels = ref<UserModel[]>([]);
+
+  /** Currently active blob URL — revoked before a new one is created
+   *  to avoid leaking object URLs across model switches. */
+  let activeBlobUrl: string | undefined;
+
+  /** All models the picker should show: bundled defaults followed by
+   *  user-imported VRMs (newest first). */
+  const allModels = computed<Array<DefaultModel | UserModel>>(() => [
+    ...defaultModels.value,
+    ...userModels.value,
+  ]);
+
+  function isUserModel(model: DefaultModel | UserModel): model is UserModel {
+    return (model as UserModel).original_filename !== undefined;
+  }
+
+  function findModel(id: string): DefaultModel | UserModel | undefined {
+    return defaultModels.value.find(m => m.id === id)
+      ?? userModels.value.find(m => m.id === id);
+  }
 
   function setState(newState: CharacterState) {
     state.value = newState;
@@ -26,10 +57,18 @@ export const useCharacterStore = defineStore('character', () => {
     loadError.value = error;
   }
 
+  function revokeActiveBlobUrl() {
+    if (activeBlobUrl) {
+      try { URL.revokeObjectURL(activeBlobUrl); } catch { /* noop */ }
+      activeBlobUrl = undefined;
+    }
+  }
+
   async function loadVrm(path: string) {
     loadError.value = undefined;
     vrmMetadata.value = undefined;
     isLoading.value = true;
+    revokeActiveBlobUrl();
     // Set the path immediately so the viewport watcher can start loading via Three.js
     vrmPath.value = path;
     // Notify the backend (fire-and-forget; the real 3D load happens in the viewport)
@@ -40,19 +79,45 @@ export const useCharacterStore = defineStore('character', () => {
     }
   }
 
-  /** Get the gender of the currently selected model. */
+  /** Load a user-imported VRM. Pulls bytes from the Rust backend and wraps
+   *  them in a Blob URL so `GLTFLoader` can fetch them like any other URL. */
+  async function loadUserVrm(model: UserModel) {
+    loadError.value = undefined;
+    vrmMetadata.value = undefined;
+    isLoading.value = true;
+    try {
+      const bytes = await invoke<number[] | Uint8Array>('read_user_model_bytes', { id: model.id });
+      const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      const blob = new Blob([u8 as BlobPart], { type: 'model/gltf-binary' });
+      revokeActiveBlobUrl();
+      const url = URL.createObjectURL(blob);
+      activeBlobUrl = url;
+      vrmPath.value = url;
+    } catch (err) {
+      loadError.value = `Failed to load imported model: ${err}`;
+      isLoading.value = false;
+      throw err;
+    }
+  }
+
+  /** Get the gender of the currently selected model (default or user). */
   function currentGender(): ModelGender {
-    const model = DEFAULT_MODELS.find(m => m.id === selectedModelId.value);
+    const model = findModel(selectedModelId.value);
     return model?.gender ?? 'female';
   }
 
   async function selectModel(modelId: string) {
-    const model = DEFAULT_MODELS.find(m => m.id === modelId);
+    const model = findModel(modelId);
     if (!model) return;
     selectedModelId.value = modelId;
-    await loadVrm(model.path);
+    if (isUserModel(model)) {
+      await loadUserVrm(model);
+    } else {
+      await loadVrm(model.path);
+    }
     // Set TTS voice and prosody to match the character's gender
-    const voiceInfo = GENDER_VOICES[model.gender ?? 'female'];
+    const gender: ModelGender = model.gender ?? 'female';
+    const voiceInfo = GENDER_VOICES[gender];
     try {
       await invoke('set_tts_voice', { voiceName: voiceInfo.edgeVoice });
       await invoke('set_tts_prosody', { pitch: voiceInfo.edgePitch, rate: voiceInfo.edgeRate });
@@ -72,11 +137,40 @@ export const useCharacterStore = defineStore('character', () => {
     await selectModel(DEFAULT_MODEL_ID);
   }
 
+  /** Refresh the user-model list from the Rust backend (called on startup). */
+  async function loadUserModels(): Promise<void> {
+    try {
+      userModels.value = await invoke<UserModel[]>('list_user_models');
+    } catch {
+      // Tauri unavailable (e.g. browser dev) — keep empty list
+    }
+  }
+
+  /** Import a VRM from an absolute filesystem path. The backend copies the
+   *  bytes into `<app_data_dir>/user_models/` so the model persists across
+   *  fresh builds. Returns the new entry. */
+  async function importUserModel(sourcePath: string): Promise<UserModel> {
+    const entry = await invoke<UserModel>('import_user_model', { sourcePath });
+    userModels.value = [...userModels.value, entry];
+    return entry;
+  }
+
+  /** Delete a user-imported model (file + metadata). If it was the active
+   *  model, fall back to the bundled default. */
+  async function deleteUserModel(id: string): Promise<void> {
+    await invoke('delete_user_model', { id });
+    userModels.value = userModels.value.filter(m => m.id !== id);
+    if (selectedModelId.value === id) {
+      await selectModel(DEFAULT_MODEL_ID);
+    }
+  }
+
   function setLoaded() {
     isLoading.value = false;
   }
 
   function resetCharacter() {
+    revokeActiveBlobUrl();
     vrmPath.value = undefined;
     vrmMetadata.value = undefined;
     loadError.value = undefined;
@@ -84,5 +178,11 @@ export const useCharacterStore = defineStore('character', () => {
     selectedModelId.value = DEFAULT_MODEL_ID;
   }
 
-  return { state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId, defaultModels, setState, setMetadata, setLoadError, setLoaded, loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender };
+  return {
+    state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId,
+    defaultModels, userModels, allModels,
+    setState, setMetadata, setLoadError, setLoaded,
+    loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender,
+    loadUserModels, importUserModel, deleteUserModel,
+  };
 });

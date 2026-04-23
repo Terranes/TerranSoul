@@ -27,31 +27,6 @@ TerranSoul ships with two bundled VRM models that are available out of the box:
 
 You can switch between default models using the **dropdown** in the Model Panel, or by clicking the corresponding model card.
 
-### How Default Models Are Protected
-
-Default VRM models are encrypted at build time to protect the original creators' work.
-You don't need to do anything — encryption and decryption are handled automatically.
-
-```
-Build time (CI):
-  Raw .vrm files (stored in a private source, never in the Git repo)
-      ↓ AES-256-GCM encryption
-  .vrm.enc files bundled into the installer
-
-Runtime (your machine):
-  App requests a default model
-      ↓ Rust backend decrypts in memory
-  Decrypted bytes passed directly to the 3D renderer
-      ↓ Model appears in the viewport
-  Plaintext .vrm files are NEVER written to disk
-```
-
-- **Default models** are encrypted (`.vrm.enc`) and decrypted in memory by the
-  Rust backend. The decryption key is compiled into the app binary at build time —
-  you never need to configure or manage keys.
-- **Your imported models** (see below) are loaded directly from the path you choose.
-  They are your files, so they are **not** encrypted or modified by TerranSoul.
-
 ### Managing Default Models
 
 Default models are managed by the TerranSoul team and updated automatically via
@@ -80,11 +55,23 @@ Click the **Import VRM Model** button in the panel. A file dialog will open.
 
 ### 3. Select Your VRM File
 
-Navigate to your `.vrm` file and select it. TerranSoul will:
-1. Send the file path to the Rust backend for persistence
-2. Load the VRM using Three.js + @pixiv/three-vrm
-3. Extract metadata (name, author, license)
-4. Display the model in the viewport
+Enter the absolute path to your `.vrm` file. TerranSoul will:
+1. Send the file path to the Rust backend.
+2. The backend **copies the file** into your per-user data folder
+   (`<app_data_dir>/user_models/<id>.vrm`) so the model survives a fresh
+   build, app reinstall, or upgrade. The original file is left untouched.
+3. The model's metadata is appended to `app_settings.json` and the model
+   immediately becomes selectable in the picker.
+4. Three.js + @pixiv/three-vrm loads the bytes via a `Blob` URL and the
+   model appears in the viewport.
+
+Where the per-user data folder lives:
+
+| OS | Path |
+|---|---|
+| Windows | `%APPDATA%\com.terranes.terransoul\user_models\` |
+| macOS | `~/Library/Application Support/com.terranes.terransoul/user_models/` |
+| Linux | `~/.local/share/com.terranes.terransoul/user_models/` |
 
 ### 4. Verify the Import
 
@@ -99,34 +86,47 @@ After loading:
 
 ### 5. Switch Back to a Default Model
 
-To switch back to a bundled default model, open the Model Panel and select a model from the **Default Model** dropdown or click the corresponding model card.
+To switch back to a bundled default model, open the Model Panel and select a
+model from the dropdown or click the corresponding model card.
+
+### 6. Delete an Imported Model
+
+In the Model Panel, click the **×** button on the right side of an imported
+model card. This removes the file from your user data folder and the entry
+from `app_settings.json`. If the deleted model was active, TerranSoul falls
+back to the default character.
 
 ## How the Model is Used
 
-### Default models (encrypted)
+### Default models (bundled)
 
 ```
 App Startup / Model Switch
         ↓
-invoke('load_vrm_secure', { modelId })
+invoke('load_vrm', { path: '/models/default/<name>.vrm' })
         ↓
-Rust backend reads .vrm.enc from resource dir
-        ↓ AES-256-GCM decryption (in memory)
-Raw VRM bytes returned via Tauri IPC
+Frontend asks Vite to fetch the VRM from the bundled `public/models/default/`
         ↓
-Frontend creates Blob URL → GLTFLoader → VRM scene
+GLTFLoader → VRM scene
         ↓
 CharacterAnimator → Three.js Render
 ```
 
-### User-imported models (direct file load)
+### User-imported models (persisted in user data folder)
 
 ```
-User selects .vrm file via "Import VRM Model"
+User clicks "Import VRM Model" and provides an absolute path
         ↓
-File path sent to Rust backend for persistence
+invoke('import_user_model', { sourcePath })
         ↓
-Frontend loads VRM directly via GLTFLoader
+Rust backend copies the file into `<app_data_dir>/user_models/<id>.vrm`
+        ↓
+Metadata appended to app_settings.json (id, name, original_filename, gender)
+        ↓
+Frontend selects the new model:
+  invoke('read_user_model_bytes', { id }) → Vec<u8>
+        ↓
+Bytes wrapped in a Blob URL → GLTFLoader → VRM scene
         ↓
 CharacterAnimator → Three.js Render
 ```

@@ -18,9 +18,9 @@ describe('default-models — gender configuration', () => {
     expect(model?.gender).toBe('male');
   });
 
-  it('genshin is female', () => {
-    const model = DEFAULT_MODELS.find(m => m.id === 'genshin');
-    expect(model?.gender).toBe('female');
+  it('only annabelle and m58 are bundled defaults', () => {
+    const ids = DEFAULT_MODELS.map(m => m.id).sort();
+    expect(ids).toEqual(['annabelle', 'm58']);
   });
 
   it('GENDER_VOICES has entries for both genders', () => {

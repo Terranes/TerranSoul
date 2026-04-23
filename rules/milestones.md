@@ -153,6 +153,9 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking pipeline complete; screenshots remain |
+| 1.2 | Mac & Linux Support — Build, Distribution & Platform Polish | not-started | unassigned | Planning only — do not start without explicit kickoff |
+| 1.3 | Per-User VRM Model Persistence + Remove GENSHIN Default | in-progress | agent | Imported VRMs copied into per-user OS folder; GENSHIN bundled model removed |
+| 1.4 | Podman + Docker Desktop Dual Container Runtime | not-started | unassigned | Planning only — do not start without explicit kickoff |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 
@@ -217,7 +220,170 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 ---
 
-> **Milestones backlog drained.** All planned chunks are complete except
-> the in-progress entry above.
+#### Chunk 1.2 — Mac & Linux Support — Build, Distribution & Platform Polish
+
+**Goal.** Bring macOS and Linux support to first-class parity with Windows for
+TerranSoul. Today the codebase compiles on all three platforms via Tauri 2.x,
+but many tested code paths, packaging artifacts, dependency installation
+documentation, and CI coverage are Windows-biased. This chunk closes that gap.
+
+**Status.** `not-started` — planning only. Do not begin implementation until
+the user explicitly says so.
+
+**Scope (proposed).**
+- **Build & toolchain audit.** Verify `cargo build` and `npm run tauri build`
+  succeed on macOS (Intel + Apple Silicon) and Linux (Ubuntu/Fedora/Arch).
+  Document required system packages (e.g. `libwebkit2gtk-4.1-dev`,
+  `libsoup-3.0-dev`, `libjavascriptcoregtk-4.1-dev` on Debian/Ubuntu;
+  matching `webkit2gtk4.1` etc. on Fedora/Arch).
+- **CI matrix.** Extend `.github/workflows/terransoul-ci.yml` (currently
+  Linux-only for `cargo`/`npm` jobs) to also exercise macOS and Windows
+  runners for build + tests on each push to `main`.
+- **Bundle targets.** Configure `tauri.conf.json` `bundle.targets` per OS:
+  `dmg`/`app` on macOS, `deb`/`appimage`/`rpm` on Linux. Validate icons
+  (`.icns` on macOS, `.png` on Linux) render correctly.
+- **Window mode platform parity.** `src-tauri/src/commands/window.rs` —
+  audit `set_cursor_passthrough`, transparent-overlay, always-on-top, and
+  pet-mode multi-monitor logic on macOS and Linux. Several transparency /
+  click-through code paths only have Windows fallbacks today.
+- **Tray icon parity.** Verify `TrayIconBuilder` behaviour on GNOME
+  (StatusNotifier), KDE, and macOS menubar.
+- **File dialogs / paths.** Replace any Windows-only path assumptions with
+  `tauri-plugin-dialog` and `app_data_dir()` (cross-platform).
+- **Voice / TTS / ASR.** Confirm `msedge-tts` works on macOS/Linux (it should,
+  as it speaks to Microsoft Edge cloud TTS, but smoke-test). Web Speech API
+  ASR availability per browser engine.
+- **Local LLM bootstrap.** macOS and Linux users may prefer Ollama directly
+  over Docker — coordinate with Chunk 1.4 (Podman/Docker dual support).
+- **Docs.** New `instructions/PLATFORM-MAC.md` and `instructions/PLATFORM-LINUX.md`
+  with prerequisites, install commands, known issues, and screenshots from
+  each OS.
+
+**Acceptance criteria.**
+- CI green for `ubuntu-latest`, `macos-latest`, `windows-latest`.
+- Bundles produced for `.dmg`, `.deb`, `.appimage`, `.msi` in CI release
+  workflow.
+- Manual smoke test on at least one macOS + one Linux machine: launch,
+  chat, switch model, pet mode, BGM toggle.
+- All cross-platform path APIs (`app_data_dir`, file pickers) used
+  uniformly — no `if cfg!(target_os = "windows")` branches without a
+  matching `else` branch for mac/linux.
+
+---
+
+#### Chunk 1.3 — Per-User VRM Model Persistence + Remove GENSHIN Default
+
+**Goal.** (1) Remove the bundled GENSHIN VRM (and its companion thumbnail
+file `2250278607152806301.vrm` + `GENSHIN.png`) from the default model set
+so the repository ships only the two truly-original characters. (2) Ensure
+every VRM model the user imports is copied into a per-user OS-specific
+data folder (Tauri's `app_data_dir`) so models survive a fresh install,
+re-build, or app upgrade — instead of being remembered only by an absolute
+path that breaks the moment the source file moves.
+
+**Status.** `in-progress` — implementation in this PR.
+
+**Scope.**
+- Drop `genshin` entry from `src/config/default-models.ts`; delete the
+  underlying `public/models/default/2250278607152806301.vrm` and
+  `public/models/default/GENSHIN.png` assets; update tests.
+- Extend `AppSettings` (Rust) with `user_models: Vec<UserModel>`; bump
+  `CURRENT_SCHEMA_VERSION` to 3 with `serde(default)` so existing on-disk
+  v2 settings hydrate cleanly.
+- New backend commands:
+  - `import_user_model(source_path) -> UserModel` — reads bytes from the
+    source path, generates a UUID id, writes to
+    `<app_data_dir>/user_models/<id>.vrm`, appends to settings, persists.
+  - `list_user_models() -> Vec<UserModel>`
+  - `delete_user_model(id) -> ()` — removes file + settings entry.
+  - `read_user_model_bytes(id) -> Vec<u8>` — for the frontend to wrap in
+    a `Blob` URL (no asset-protocol scope to widen, works identically on
+    every OS).
+- Frontend `useCharacterStore`:
+  - Loads user models on init via `list_user_models`.
+  - Exposes a unified `models` view (defaults + user) so `selectModel(id)`
+    works for either kind.
+  - For user models, fetches bytes via `read_user_model_bytes`, wraps in
+    `URL.createObjectURL(new Blob([...]))`, sets `vrmPath` to that URL.
+  - Persists `selected_model_id` for user models the same way as defaults.
+- `ModelPanel.vue`:
+  - Calls the import command (with `window.prompt` fallback for browser dev).
+  - Renders the user-model list with a delete (×) button per row.
+
+**Acceptance criteria.**
+- GENSHIN no longer appears in the model list, anywhere in code or assets.
+- After uninstalling and re-installing the app to the same user account
+  (or a fresh `npm run build` cycle), previously imported models still
+  appear in the picker and load successfully.
+- All existing settings on disk (schema v2) still load (forward-compat).
+- `cargo test --all-targets` and `npm run test` remain green.
+
+---
+
+#### Chunk 1.4 — Podman + Docker Desktop Dual Container Runtime
+
+**Goal.** Allow TerranSoul's local-LLM setup quest ("Inner Sanctum") to
+work on machines that — for company compliance reasons — cannot install
+Docker Desktop but do have **Podman** installed. The runtime detection
+must be transparent for users who already have Docker Desktop, and only
+prompt for a choice when both (or neither) are present, or when no
+container runtime is found at all.
+
+**Status.** `not-started` — planning only. Do not begin implementation
+until the user explicitly says so.
+
+**Scope (proposed).**
+- **Detection.** Extend `src-tauri/src/commands/docker.rs` (or refactor
+  into `src-tauri/src/container/`) with a new abstraction
+  `ContainerRuntime { Docker, Podman, None }` and a
+  `detect_container_runtime()` Tauri command. Detection order:
+  1. `docker --version` succeeds **and** `docker info` reports a running
+     daemon → `Docker`.
+  2. Else `podman --version` succeeds → `Podman`.
+  3. Else → `None`.
+- **User override.** New setting `preferred_container_runtime` in
+  `AppSettings` (default `Auto`). When set to `Docker` or `Podman`
+  explicitly, detection skips probing and uses the chosen one (failing
+  with a clear error if missing). UI added to the local-LLM quest.
+- **Quest UX — "Inner Sanctum".**
+  - If a runtime is detected → continue silently as today.
+  - If both are available → show a one-time picker ("We found Docker
+    Desktop and Podman. Which do you want TerranSoul to use?") and
+    persist the choice.
+  - If neither is available → show install instructions for both
+    (with platform-specific links: Docker Desktop, Podman Desktop,
+    `brew install podman`, `apt install podman`, `dnf install podman`).
+- **Command translation.** Almost every Docker CLI invocation we use
+  (`docker pull`, `docker run -d`, `docker ps`, `docker exec`,
+  `docker stop`) has a Podman-compatible equivalent. Wrap the CLI
+  binary name in a `runtime_binary()` helper. For commands that differ
+  (e.g. `docker desktop start` has no Podman analogue — Podman uses
+  `podman machine start` on macOS/Windows), branch in a single place.
+- **Compose files.** If we ever add `docker-compose.yml`, also generate
+  a Podman-compatible variant or use `podman-compose` /
+  `podman play kube`.
+- **Tests.** Backend unit tests with the binary path injected (no real
+  Docker/Podman needed): assert the right CLI string is produced for
+  each runtime + each operation.
+- **Docs.** Update `instructions/DOCKER-CLEANUP.md` (or rename to
+  `CONTAINER-RUNTIME.md`) explaining both runtimes and the picker.
+
+**Acceptance criteria.**
+- A clean Linux/macOS box with only Podman installed completes the
+  Ollama setup quest without ever invoking `docker`.
+- A box with Docker Desktop installed continues to behave exactly as
+  today (no regression).
+- A box with both installed shows the one-time picker; the choice
+  persists across sessions.
+- A box with neither shows install instructions for both options.
+- No hard-coded `"docker"` strings remain outside the
+  `runtime_binary()` helper / detection module.
+
+---
+
+> **Milestones backlog drained for completed phases.** All planned phase
+> chunks are complete except the in-progress / planning entries above.
+> Chunks 1.2 and 1.4 are explicitly marked `not-started` and must not be
+> implemented without explicit user kickoff.
 > See `rules/backlog.md` for deferred / speculative future work.
 > To add new chunks, describe the feature and a new numbered entry will be created here.
