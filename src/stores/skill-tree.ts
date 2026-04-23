@@ -1355,8 +1355,9 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       case 'windows-taskbar':
         return currentPlatform.value === 'windows';
       case 'windows-startup':
+        // Active on any Windows install. A future "auto-start at login"
+        // toggle in settings can refine this to only count when enabled.
         return currentPlatform.value === 'windows';
-        // TODO: Add startup_enabled to settings when implemented
       default:
         return false;
     }

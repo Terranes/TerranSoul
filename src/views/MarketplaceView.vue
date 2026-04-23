@@ -519,6 +519,7 @@ import { useSandboxStore } from '../stores/sandbox';
 import { useBrainStore } from '../stores/brain';
 import CapabilityConsentDialog from '../components/CapabilityConsentDialog.vue';
 import type { AgentSearchResult } from '../types';
+import { formatRam } from '../utils/format';
 
 const packageStore = usePackageStore();
 const sandboxStore = useSandboxStore();
@@ -677,11 +678,6 @@ function agentDisplayName(agent: AgentSearchResult): string {
 }
 
 /** Format a RAM size in MB as `"6.0 GB"` / `"512 MB"`. */
-function formatRam(mb: number): string {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  return `${mb} MB`;
-}
-
 /** True iff the local-LLM agent's underlying model has been pulled into Ollama. */
 function isLocalLlmInstalled(agent: AgentSearchResult): boolean {
   if (agent.kind !== 'local_llm' || !agent.model_tag) return false;

@@ -254,6 +254,7 @@ import BrainStatSheet from '../components/BrainStatSheet.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import type { MemoryEntry } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
+import { formatRam } from '../utils/format';
 
 const emit = defineEmits<{
   /** Navigate to another tab; values match the App.vue tab ids. */
@@ -496,11 +497,6 @@ const ramTier = computed(() => {
   else color = '#f87171';
   return { percent, color, label: sys.ram_tier_label || '' };
 });
-
-function formatRam(mb: number): string {
-  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
-  return mb + ' MB';
-}
 
 // ── Quick mode switcher ────────────────────────────────────────────────────
 

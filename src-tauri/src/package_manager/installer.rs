@@ -242,24 +242,37 @@ impl PackageInstaller {
         }
 
         let manifest = registry.fetch_manifest(agent_name).await?;
-        let binary = registry
-            .download_binary(agent_name, &manifest.version)
-            .await?;
+        let is_builtin =
+            matches!(manifest.install_method, crate::package_manager::InstallMethod::BuiltIn);
 
-        // Verify SHA-256 hash if declared.
-        if let Some(ref expected_hash) = manifest.sha256 {
-            let actual_hash = sha256_hex(&binary);
-            if actual_hash != *expected_hash {
-                return Err(InstallerError::HashMismatch {
-                    expected: expected_hash.clone(),
-                    actual: actual_hash,
-                });
+        // Built-in agents are compiled into TerranSoul — skip the download
+        // step entirely. Other install methods fetch the binary normally.
+        let binary = if is_builtin {
+            Vec::new()
+        } else {
+            registry
+                .download_binary(agent_name, &manifest.version)
+                .await?
+        };
+
+        // Verify SHA-256 hash if declared (skipped for built-ins, which
+        // have no binary to hash).
+        if !is_builtin {
+            if let Some(ref expected_hash) = manifest.sha256 {
+                let actual_hash = sha256_hex(&binary);
+                if actual_hash != *expected_hash {
+                    return Err(InstallerError::HashMismatch {
+                        expected: expected_hash.clone(),
+                        actual: actual_hash,
+                    });
+                }
             }
         }
 
-        // Write to disk.
+        // Write to disk. Built-ins write only the manifest; downloadable
+        // agents also write their binary.
         let agent_dir = self.agents_dir.join(agent_name);
-        write_agent_files(&agent_dir, &manifest, &binary)?;
+        write_agent_files(&agent_dir, &manifest, &binary, is_builtin)?;
 
         let info = InstalledAgent {
             name: manifest.name.clone(),
@@ -286,6 +299,8 @@ impl PackageInstaller {
         }
 
         let manifest = registry.fetch_manifest(agent_name).await?;
+        let is_builtin =
+            matches!(manifest.install_method, crate::package_manager::InstallMethod::BuiltIn);
 
         // Check if already at latest version.
         if let Some(current) = self.installed.get(agent_name) {
@@ -303,23 +318,30 @@ impl PackageInstaller {
             }
         }
 
-        let binary = registry
-            .download_binary(agent_name, &manifest.version)
-            .await?;
+        // Built-ins skip the download step (they are compiled into TerranSoul).
+        let binary = if is_builtin {
+            Vec::new()
+        } else {
+            registry
+                .download_binary(agent_name, &manifest.version)
+                .await?
+        };
 
-        // Verify SHA-256 hash if declared.
-        if let Some(ref expected_hash) = manifest.sha256 {
-            let actual_hash = sha256_hex(&binary);
-            if actual_hash != *expected_hash {
-                return Err(InstallerError::HashMismatch {
-                    expected: expected_hash.clone(),
-                    actual: actual_hash,
-                });
+        // Verify SHA-256 hash if declared (skipped for built-ins).
+        if !is_builtin {
+            if let Some(ref expected_hash) = manifest.sha256 {
+                let actual_hash = sha256_hex(&binary);
+                if actual_hash != *expected_hash {
+                    return Err(InstallerError::HashMismatch {
+                        expected: expected_hash.clone(),
+                        actual: actual_hash,
+                    });
+                }
             }
         }
 
         let agent_dir = self.agents_dir.join(agent_name);
-        write_agent_files(&agent_dir, &manifest, &binary)?;
+        write_agent_files(&agent_dir, &manifest, &binary, is_builtin)?;
 
         let info = InstalledAgent {
             name: manifest.name.clone(),
@@ -347,11 +369,16 @@ impl PackageInstaller {
     }
 }
 
-/// Write agent manifest and binary files to disk.
+/// Write agent manifest and (optionally) binary files to disk.
+///
+/// `is_builtin` agents have no binary to write — only the manifest is
+/// persisted so the installed-agents listing can show them. Downloadable
+/// agents always write `agent.bin` alongside `manifest.json`.
 fn write_agent_files(
     agent_dir: &Path,
     manifest: &AgentManifest,
     binary: &[u8],
+    is_builtin: bool,
 ) -> Result<(), InstallerError> {
     std::fs::create_dir_all(agent_dir).map_err(|e| InstallerError::IoError(e.to_string()))?;
 
@@ -360,8 +387,10 @@ fn write_agent_files(
     std::fs::write(agent_dir.join(MANIFEST_FILE), manifest_json)
         .map_err(|e| InstallerError::IoError(e.to_string()))?;
 
-    std::fs::write(agent_dir.join(BINARY_FILE), binary)
-        .map_err(|e| InstallerError::IoError(e.to_string()))?;
+    if !is_builtin {
+        std::fs::write(agent_dir.join(BINARY_FILE), binary)
+            .map_err(|e| InstallerError::IoError(e.to_string()))?;
+    }
 
     Ok(())
 }
@@ -485,6 +514,43 @@ mod tests {
             result,
             Err(InstallerError::Registry(RegistryError::NotFound(_)))
         ));
+    }
+
+    #[tokio::test]
+    async fn test_install_builtin_agent_writes_manifest_only() {
+        // Built-in agents are compiled into TerranSoul. The installer must
+        // record their manifest (so they appear in the installed-agents list)
+        // but must NOT write a binary file — there is no binary to write.
+        // This guards against the previous "PLACEHOLDER_BINARY" mock.
+        let tmp = TempDir::new().unwrap();
+        let mut installer = PackageInstaller::new_in(tmp.path().join(AGENTS_DIR));
+        let mut registry = MockRegistry::new();
+        let manifest_json = r#"{
+            "name": "builtin-agent",
+            "version": "1.0.0",
+            "description": "Compiled-in agent",
+            "system_requirements": {},
+            "install_method": { "type": "built_in" },
+            "capabilities": ["chat"],
+            "ipc_protocol_version": 1
+        }"#;
+        // The mock supplies bytes but the installer should ignore them for
+        // built-in install methods.
+        registry.add_agent("builtin-agent", manifest_json, b"ignored".to_vec());
+
+        let result = installer
+            .install("builtin-agent", &registry)
+            .await
+            .expect("built-in install should succeed");
+        assert_eq!(result.name, "builtin-agent");
+        assert!(installer.is_installed("builtin-agent"));
+
+        let agent_dir = tmp.path().join(AGENTS_DIR).join("builtin-agent");
+        assert!(agent_dir.join(MANIFEST_FILE).exists(), "manifest must be written");
+        assert!(
+            !agent_dir.join(BINARY_FILE).exists(),
+            "no binary file should be written for built-in agents"
+        );
     }
 
     #[tokio::test]

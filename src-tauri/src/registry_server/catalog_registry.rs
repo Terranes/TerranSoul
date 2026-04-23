@@ -55,15 +55,17 @@ impl RegistrySource for CatalogRegistry {
         agent_name: &str,
         _version: &str,
     ) -> Result<Vec<u8>, RegistryError> {
-        // The catalog only ships manifests, not real binaries. Returning a
-        // placeholder keeps the install flow honest (writes a manifest +
-        // sentinel binary file to the agents directory) while the real
-        // download URL is exercised via `HttpRegistry` when the registry
-        // server is running.
+        // Every entry in this in-process catalog is a built-in agent
+        // (see `catalog::all_entries` — all use `InstallMethod::BuiltIn`).
+        // Built-in agents have no binary to download — they are compiled
+        // into TerranSoul. Returning an empty vector signals that the
+        // installer should skip writing a binary file. The installer
+        // already special-cases `InstallMethod::BuiltIn` so this path
+        // is a defensive fallback for callers that ignore the manifest.
         if !self.manifests.contains_key(agent_name) {
             return Err(RegistryError::NotFound(agent_name.to_string()));
         }
-        Ok(b"PLACEHOLDER_BINARY".to_vec())
+        Ok(Vec::new())
     }
 
     async fn search(&self, query: &str) -> Result<Vec<AgentManifest>, RegistryError> {
@@ -131,10 +133,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn download_binary_returns_placeholder_for_known_agent() {
+    async fn download_binary_returns_empty_for_builtin_agent() {
+        // Every catalog entry is a built-in agent — installer skips the
+        // binary write. Defensive fallback: return Ok(empty) so any caller
+        // that ignores the manifest still gets a valid (zero-length) blob
+        // instead of opaque placeholder bytes.
         let reg = CatalogRegistry::new();
         let bytes = reg.download_binary("stub-agent", "1.0.0").await.unwrap();
-        assert_eq!(bytes, b"PLACEHOLDER_BINARY".to_vec());
+        assert!(bytes.is_empty(), "built-in agents have no downloadable binary");
     }
 
     #[tokio::test]

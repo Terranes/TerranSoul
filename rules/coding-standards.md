@@ -26,6 +26,53 @@
 - **No empty trait implementations.** Every trait `impl` has working method bodies.
 - **Every committed file must compile and function.** No non-functional scaffolding.
 
+### No Mocks in Production
+
+> **It is either a chunk in `rules/milestones.md` OR a real working version with the highest QA — never a half-done mock shipped to users.**
+
+A "mock in production" is anything that pretends to deliver a feature while
+actually returning canned, sentinel, or placeholder data on a code path a
+real user can hit. Examples:
+
+- HTTP / IPC handlers that return `b"PLACEHOLDER_BINARY"`, hard-coded
+  `"Mock response"`, or empty-but-misleading payloads.
+- UI components with `// TODO: Implement props usage` and commented-out
+  `defineProps<…>()` blocks (the prop contract is fake).
+- Renderers / engines named `*Stub*` that satisfy a trait/interface but
+  do nothing (e.g. a renderer whose `update()` is empty when the type
+  exists in `RendererType`).
+- LLM / agent providers that return canned text when the user expects a
+  real reply.
+
+**Rule.** When you discover or are about to introduce such code:
+
+1. **Either** implement it for real, with full QA (unit + integration
+   tests, error handling, security review, parity with the existing
+   tests); **or**
+2. **Move it out of the production path** by:
+   - Adding a chunk to `rules/milestones.md` (or `rules/backlog.md` if
+     unscheduled) describing the proper implementation, AND
+   - Removing or hiding the half-done code path so users cannot hit it
+     (e.g. delete the catalog entry, remove the variant from the union,
+     gate behind `#[cfg(test)]` if it is a test fixture, etc.).
+
+**Allowed exceptions.** Code is *not* a "mock in production" when:
+
+- It is gated behind `#[cfg(test)]` / lives in `*.test.ts` / is only
+  reachable from test harnesses.
+- It is an explicitly-labeled **fallback** that is never reached in normal
+  user flow because auto-configuration immediately replaces it (e.g.
+  `StubAgent` only fires when no LLM is configured, and desktop auto-
+  config sets up Free API on first launch — it is the "no brain"
+  diagnostic, not a pretend brain).
+- It is a typed `BuiltIn` variant whose contract is "this path skips the
+  download / the binary lives in-process" — i.e. the empty payload is a
+  real signal, not a pretend value, and the consumer special-cases it.
+
+When in doubt: write a chunk in `milestones.md` and remove the half-done
+path. A clearly-tracked "not yet implemented" is always better than a
+hidden mock.
+
 ---
 
 ## Rust Standards
