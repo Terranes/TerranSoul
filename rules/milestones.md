@@ -152,7 +152,8 @@ All chunks listed here are fully implemented. See `rules/completion-log.md` for 
 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
-| 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking pipeline complete; screenshots remain |
+| 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
+| 1.5 | Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows | done | agent | Implemented in PR series — see `rules/completion-log.md` |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 
@@ -170,54 +171,142 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 - [x] Confirmed baseline: `cargo test --all-targets` → 561/561 pass on
       `copilot/validate-advanced-design-and-implement`.
 - [x] **Replaced** `instructions/BRAIN-COMPLEX-EXAMPLE.md` with a focused
-      walkthrough of the thuvienphapluat.vn + PDF scenario (brain setup quest
-      → URL crawl → PDF ingest → hybrid RAG → cross-source dedup → amendment
-      conflict resolution → Obsidian export). Includes QA validation log,
-      reproduction recipe, and code-path map.
+      walkthrough of the thuvienphapluat.vn + PDF scenario.
 - [x] **Replaced** `instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md` with a
-      concise quick-reference (system map, code map, Tauri command table,
-      schema cheat-sheet, hybrid-search formula, decay/GC formula, ingest
-      pipeline, multi-source mechanics, sqlite3 debug recipes) that points
-      to `docs/brain-advanced-design.md` as the canonical deep dive.
-- [x] Embedded the existing real screenshots from
-      `instructions/screenshots/01-fresh-launch.png` … `11-skill-tree.png`
-      throughout the walkthrough.
+      concise quick-reference.
 - [x] **Source tracking pipeline** — Extended `NewMemory` + `MemoryEntry`
-      with `source_url`, `source_hash`, `expires_at`; updated `add()`,
-      `add_to_tier()`, all SELECTs, row mappers; added `find_by_source_hash()`,
-      `find_by_source_url()`, `delete_by_source_url()`, `delete_expired()`;
-      wired SHA-256 hashing + dedup/staleness into `run_ingest_task`;
-      added `sha2` + `hex` crates; 9 new tests. **570 Rust / 941 Vitest pass.**
+      with `source_url`, `source_hash`, `expires_at`; full hash-based
+      dedup + staleness in `run_ingest_task`. **594 Rust / 948 Vitest pass.**
+- [x] **Cross-framework comparison table** — Added a single consolidated
+      table to `docs/brain-advanced-design.md` §13 contrasting TerranSoul
+      against LangChain, Odyssey, RAGFlow, SiYuan and GitNexus across 14
+      dimensions (purpose, distribution, storage, retrieval, graph, etc.).
 
 **Remaining (user environment / follow-up).**
 - [ ] Capture **scenario-specific** screenshots on a real Tauri build with
-      Vietnamese content loaded (statute crawl progress, PDF ingest task,
-      Memory list with `vn-law` tag, sourced RAG answer, conflict toast,
-      Obsidian export folder). Replace the generic placeholders embedded
-      from `instructions/screenshots/` once real ones exist.
-- [ ] Optional: short MP4 walkthrough via
-      `playwright codegen --record-video` wrapping
-      `scripts/brain-flow-screenshots.mjs`; convert with
-      `ffmpeg -i in.webm out.mp4`; commit under `recording/`.
-
-**Files touched.**
-- `instructions/BRAIN-COMPLEX-EXAMPLE.md` (rewritten)
-- `instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md` (rewritten)
-- `src-tauri/Cargo.toml` (added sha2, hex)
-- `src-tauri/src/memory/store.rs` (NewMemory, MemoryEntry, add, queries, 4 new methods, 9 tests)
-- `src-tauri/src/memory/brain_memory.rs` (Default spreads)
-- `src-tauri/src/commands/ingest.rs` (SHA-256 hashing, dedup, staleness, 2 tests)
-- `src-tauri/src/commands/memory.rs` (Default spread)
-- `rules/milestones.md` (this entry)
-- `rules/completion-log.md` (logged source tracking pipeline)
-
-**Validation.**
-- `cd src-tauri && cargo test --all-targets` → 570/570 pass.
-- `npx vitest run` → 941/941 pass.
+      Vietnamese content loaded.
 
 ---
 
-> **Milestones backlog drained.** All planned chunks are complete except
-> the in-progress entry above.
-> See `rules/backlog.md` for deferred / speculative future work.
-> To add new chunks, describe the feature and a new numbered entry will be created here.
+#### Chunk 1.5 — Multi-Agent Roster + External CLI Workers (Codex/Claude) with Temporal-style Durable Workflows
+
+**Goal.** TerranSoul today ships a single in-process companion built on its
+own LLM stack. This chunk turns it into an **agent roster** where the user can
+create, name, switch between, and delete multiple agents that may share or
+have distinct VRM characters, and may be backed by either:
+
+1. **TerranSoul's native brain** (current behaviour — Free / Paid / Local Ollama).
+2. **An external CLI worker** that is given a working folder and runs
+   `codex`, `claude`, `gemini`, or any other CLI agent on it.
+
+Long-running CLI work is tracked through a **Temporal.io-style durable
+workflow runtime** so progress survives app restarts, shows a live status,
+and can be retried / resumed from the last successful step.
+
+**Status.** `not-started` — planning only. Do not begin implementation
+until the user explicitly says so.
+
+**Scope (proposed).**
+
+- **Agent roster model.** New `src-tauri/src/agents/` module:
+  - `AgentProfile { id, display_name, vrm_model_id, brain_backend,
+    created_at, last_active_at, working_folder?, cli_kind?,
+    permissions, ram_budget_mb }`.
+  - `BrainBackend = Native(BrainMode) | ExternalCli { kind: "codex" | "claude"
+    | "gemini" | "custom", binary, extra_args }`.
+  - Persisted as JSON under `<app_data_dir>/agents/<id>.json` so the roster
+    survives reinstalls (consistent with the per-user pattern from Chunk 1.3).
+- **Frontend.** New Pinia `useAgentRosterStore`; new `AgentRosterPanel.vue`
+  in MarketplaceView; "switch agent" dropdown in the chat header. The
+  active agent's `vrm_model_id` drives `useCharacterStore.selectModel(...)`,
+  so switching agents also swaps the VRM (different agents can pick the
+  same VRM — they are independent records).
+- **External CLI worker — sandbox.**
+  - `src-tauri/src/agents/cli_worker.rs` spawns the CLI as a child process,
+    bound to the agent's `working_folder` (Tauri file dialog + persisted
+    on the profile), captures stdout/stderr line-by-line, and emits
+    `agent-cli-output` events.
+  - Allow-list of binaries (`codex`, `claude`, `gemini`, plus user-added
+    "custom" entries that resolve via PATH). Refuse arbitrary shell
+    interpolation; arguments are passed as a `Vec<String>`.
+  - The folder picked is the **only** filesystem capability granted —
+    we don't widen the asset-protocol scope app-wide (matches the user-
+    models design where bytes flow through commands rather than direct FS).
+- **Durable workflow runtime ("inner Temporal").**
+  - New `src-tauri/src/workflows/` module with a tiny embeddable workflow
+    engine. We **do not** add a real Temporal server (heavy infra, JVM,
+    Postgres, Cassandra). Instead we re-use `tokio` + `rusqlite` for an
+    append-only event log identical in spirit to Temporal's history:
+    - Event types: `WorkflowStarted`, `ActivityScheduled`,
+      `ActivityCompleted`, `ActivityFailed`, `Heartbeat`,
+      `WorkflowCompleted`, `WorkflowFailed`, `WorkflowResumed`.
+    - On startup, every workflow whose latest event is not terminal is
+      replayed so its in-memory `WorkflowHandle` reattaches to the
+      already-running CLI process (or relaunches it via signal-based
+      resume if the process died).
+    - `WorkflowEngine::start(name, input)` returns a `WorkflowId`;
+      `query_status(id)` returns the live step + heartbeat.
+  - **No new heavy dependency.** Use `rusqlite` (already a dep), plus
+    `tokio::sync::mpsc` for fan-out — keeps the binary single-process.
+  - Reference inspiration only — Temporal workflow patterns:
+    [docs.temporal.io/workflows](https://docs.temporal.io/workflows). We
+    borrow the *append-only history + replay* pattern, **not** the server
+    or SDK stack.
+- **Tauri commands** (proposed):
+  - `list_agents` / `create_agent` / `delete_agent` / `switch_agent`
+  - `set_agent_working_folder(id, path)`
+  - `start_cli_workflow(agent_id, prompt) -> workflow_id`
+  - `query_workflow_status(workflow_id) -> WorkflowStatus`
+  - `cancel_workflow(workflow_id)`
+  - `list_recent_workflows(agent_id, limit)`
+- **RAM-aware concurrency cap.** Re-use
+  `src-tauri/src/brain/system_info.rs` (already exposes total/free RAM)
+  to compute a max simultaneously-active agent count:
+  - **Estimate per-agent footprint** by backend:
+    - Native Free / Paid API → 200 MB (chat + RAG)
+    - Native Local Ollama → 200 MB + the loaded model size from
+      `model_recommender.rs`
+    - External CLI worker → 600 MB headroom (codex/claude CLI typical)
+  - **Cap = floor( (free_ram_mb − 1500 reserve) / per_agent_mb )** but
+    never less than 1 and never more than 8.
+  - When the user tries to activate an agent that would exceed the cap,
+    the UI shows a dialog: "You have N MB free RAM; activating this agent
+    would exceed safe limits. Suspend an active agent first." Active
+    counts only agents currently streaming or with a running workflow.
+  - Cap is recomputed each time the agent picker opens so adding more
+    RAM (or closing other apps) is reflected without restart.
+- **VRM behaviour.**
+  - The active agent's `vrm_model_id` selects the avatar; the other agents
+    keep their VRMs as metadata only (no GL load, no GPU cost).
+  - Two agents may legitimately reference the same VRM — the model file
+    is loaded once and shared via the existing GLTF loader cache.
+- **Tests.**
+  - Workflow engine: unit tests for replay-after-crash (kill + restart
+    in-process, expect event log to recover state).
+  - RAM cap: `compute_max_concurrent_agents(free_mb, agents)` is a pure
+    function with table-driven tests.
+  - Agent roster: serde round-trip, default agent backfill on first run.
+- **Docs.**
+  - `instructions/AGENT-ROSTER.md` — how to add an agent, point it at a
+    folder, choose between native brain vs Codex / Claude CLI.
+  - Update `docs/brain-advanced-design.md` §10 to mention the
+    `ExternalCli` backend alongside the existing three brain modes.
+
+**Acceptance criteria.**
+- Multiple agents can be created, switched, and deleted; each has its own
+  VRM (or shares one); switching the agent switches the on-screen avatar.
+- An agent of kind `ExternalCli` can be pointed at a folder; running
+  "explain this codebase" shells out to `codex` / `claude` and streams
+  output into chat; killing the app mid-run and reopening shows the
+  workflow as `Resuming` and continues without losing event history.
+- The agent picker disables (with a clear hint) any agent whose
+  activation would push the active set above the RAM-derived cap.
+- Existing single-agent chat experience is preserved as the default
+  agent — no UX regression for users who never open the roster.
+
+---
+
+> **Milestones backlog drained for completed phases.** All planned phase
+> chunks are complete except the in-progress / planning entries above.
+> Chunks 1.2, 1.3 and 1.4 were completed in this PR series — see
+> `rules/completion-log.md`.

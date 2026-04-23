@@ -76,10 +76,10 @@ describe('useSettingsStore', () => {
   it('saveSettings patches and calls invoke', async () => {
     mockInvoke.mockResolvedValue({});
     const store = useSettingsStore();
-    await store.saveSettings({ selected_model_id: 'genshin' });
-    expect(store.settings.selected_model_id).toBe('genshin');
+    await store.saveSettings({ selected_model_id: 'm58' });
+    expect(store.settings.selected_model_id).toBe('m58');
     expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
-      settings: expect.objectContaining({ selected_model_id: 'genshin' }),
+      settings: expect.objectContaining({ selected_model_id: 'm58' }),
     });
   });
 
@@ -93,10 +93,10 @@ describe('useSettingsStore', () => {
   it('saveModelId persists model selection', async () => {
     mockInvoke.mockResolvedValue({});
     const store = useSettingsStore();
-    await store.saveModelId('genshin');
-    expect(store.settings.selected_model_id).toBe('genshin');
+    await store.saveModelId('m58');
+    expect(store.settings.selected_model_id).toBe('m58');
     expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
-      settings: expect.objectContaining({ selected_model_id: 'genshin' }),
+      settings: expect.objectContaining({ selected_model_id: 'm58' }),
     });
   });
 

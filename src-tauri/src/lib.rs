@@ -9,8 +9,10 @@ use tauri::tray::TrayIconBuilder;
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
+pub mod agents;
 pub mod brain;
 pub mod commands;
+pub mod container;
 pub mod identity;
 pub mod link;
 pub mod memory;
@@ -24,21 +26,29 @@ pub mod settings;
 pub mod sync;
 pub mod tasks;
 pub mod voice;
+pub mod workflows;
 
 use commands::{
     agent::list_agents,
+    agents_roster::{
+        roster_cancel_workflow, roster_create, roster_delete, roster_get_current,
+        roster_get_ram_cap, roster_list, roster_list_pending_workflows, roster_list_workflows,
+        roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow,
+        roster_switch,
+    },
     brain::{
         check_ollama_status, clear_active_brain, get_active_brain, get_brain_mode,
-        get_next_provider, get_ollama_models, get_system_info, health_check_providers,
-        list_free_providers, pull_ollama_model, recommend_brain_models, set_active_brain,
-        set_brain_mode,
+        get_embed_cache_status, get_next_provider, get_ollama_models, get_system_info,
+        health_check_providers, list_free_providers, pull_ollama_model,
+        recommend_brain_models, reset_embed_cache, set_active_brain, set_brain_mode,
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
     docker::{
-        auto_setup_local_llm, check_docker_status, check_ollama_container,
-        docker_pull_model, ensure_ollama_container, start_docker_desktop,
-        stop_docker_desktop, wait_for_docker,
+        auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
+        check_ollama_container, detect_container_runtimes, docker_pull_model,
+        ensure_ollama_container, get_runtime_preference, set_runtime_preference,
+        start_docker_desktop, stop_docker_desktop, wait_for_docker,
     },
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -80,6 +90,10 @@ use commands::{
     streaming::send_message_stream,
     translation::{list_languages, translate_text, detect_language},
     settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
+    user_models::{
+        delete_user_model, import_user_model, list_user_models, read_user_model_bytes,
+        update_user_model,
+    },
     vision::{capture_screen, analyze_screen},
     voice::{
         add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
@@ -136,6 +150,8 @@ pub struct AppState {
     pub app_settings: Mutex<settings::AppSettings>,
     /// Whether the pet-mode cursor-tracking poll loop is active.
     pub pet_cursor_active: Arc<AtomicBool>,
+    /// Durable workflow engine for long-running agent tasks (Chunk 1.5).
+    pub workflow_engine: TokioMutex<workflows::WorkflowEngine>,
 }
 
 impl AppState {
@@ -175,6 +191,14 @@ impl AppState {
             task_manager: TokioMutex::new(tasks::manager::TaskManager::new(data_dir)),
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
+            workflow_engine: TokioMutex::new(
+                workflows::WorkflowEngine::open(&data_dir.join("workflows.sqlite"))
+                    .unwrap_or_else(|e| {
+                        eprintln!("[workflows] failed to open durable log: {e}; using in-memory");
+                        workflows::WorkflowEngine::open(std::path::Path::new(":memory:"))
+                            .expect("in-memory workflow engine must open")
+                    }),
+            ),
         }
     }
 
@@ -212,6 +236,10 @@ impl AppState {
             task_manager: TokioMutex::new(tasks::manager::TaskManager::in_memory()),
             app_settings: Mutex::new(settings::AppSettings::default()),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
+            workflow_engine: TokioMutex::new(
+                workflows::WorkflowEngine::open(std::path::Path::new(":memory:"))
+                    .expect("in-memory workflow engine must open"),
+            ),
         }
     }
 }
@@ -302,6 +330,21 @@ pub fn run() {
             list_free_providers,
             get_brain_mode,
             set_brain_mode,
+            get_embed_cache_status,
+            reset_embed_cache,
+            // Agent roster + durable workflows (Chunk 1.5)
+            roster_list,
+            roster_create,
+            roster_delete,
+            roster_switch,
+            roster_get_current,
+            roster_set_working_folder,
+            roster_get_ram_cap,
+            roster_start_cli_workflow,
+            roster_query_workflow,
+            roster_cancel_workflow,
+            roster_list_workflows,
+            roster_list_pending_workflows,
             health_check_providers,
             get_next_provider,
             list_asr_providers,
@@ -333,6 +376,9 @@ pub fn run() {
             translate_text,
             detect_language,
             check_docker_status,
+            detect_container_runtimes,
+            get_runtime_preference,
+            set_runtime_preference,
             start_docker_desktop,
             stop_docker_desktop,
             wait_for_docker,
@@ -340,10 +386,16 @@ pub fn run() {
             ensure_ollama_container,
             docker_pull_model,
             auto_setup_local_llm,
+            auto_setup_local_llm_with_runtime,
             ingest_document,
             cancel_ingest_task,
             resume_ingest_task,
             get_all_tasks,
+            import_user_model,
+            list_user_models,
+            delete_user_model,
+            read_user_model_bytes,
+            update_user_model,
         ])
         .setup(|app| {
             let data_dir = app

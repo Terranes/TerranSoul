@@ -111,3 +111,44 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # ── Cross-platform Rust check (Chunk 1.2: Mac & Linux Support) ──────────────
+  # Runs cargo check + tests on macOS and Windows so we catch platform-specific
+  # regressions (e.g. cfg(target_os) blocks in src-tauri/src/brain/docker_ollama.rs
+  # and src-tauri/src/commands/window.rs) without paying the cost of a full
+  # WebView-bundled build on every push.
+  cross-platform-rust:
+    name: Rust check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: cargo test (lib only)
+        working-directory: src-tauri
+        # `--lib` skips integration binaries that would need WebKit on macOS.
+        run: cargo test --lib --no-fail-fast

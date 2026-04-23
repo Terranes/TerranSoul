@@ -44,13 +44,6 @@ export const DEFAULT_MODELS: DefaultModel[] = [
     thumbnail: '/models/default/M58.png',
     gender: 'male',
   },
-  {
-    id: 'genshin',
-    name: 'GENSHIN',
-    path: '/models/default/2250278607152806301.vrm',
-    thumbnail: '/models/default/GENSHIN.png',
-    gender: 'female',
-  },
 ];
 
 export const DEFAULT_MODEL_ID = 'annabelle';

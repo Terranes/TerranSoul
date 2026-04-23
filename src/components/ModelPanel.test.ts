@@ -60,9 +60,9 @@ describe('ModelPanel', () => {
     expect(wrapper.emitted('close')).toBeTruthy();
   });
 
-  it('shows VRM format hint text', () => {
+  it('shows VRM persistence hint text', () => {
     const wrapper = mount(ModelPanel);
-    expect(wrapper.text()).toContain('Supports .vrm files');
+    expect(wrapper.text()).toContain('persist');
   });
 
   it('shows instructions folder reference', () => {

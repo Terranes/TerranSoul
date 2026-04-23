@@ -7,6 +7,9 @@
 //!   - `bgm_enabled`       — whether background music is playing
 //!   - `bgm_volume`        — background music volume (0.0–1.0)
 //!   - `bgm_track_id`      — which ambient track is selected
+//!   - `model_camera_positions` — per-model camera positions (HashMap)
+//!   - `user_models`       — user-imported VRM models stored under
+//!     `<app_data_dir>/user_models/<id>.vrm` so they survive fresh builds.
 //!
 //! Environment variable overrides (for dev/CI):
 //!   - `TERRANSOUL_MODEL_ID`  — override `selected_model_id`
@@ -14,6 +17,8 @@
 //! Schema versioning: if the persisted `version` field does not match
 //! `CURRENT_SCHEMA_VERSION`, the file is treated as corrupt/stale and the
 //! default settings are returned. This prevents panics from outdated fields.
+//! New fields use `#[serde(default)]` for forward-compat without bumping
+//! the schema (which would wipe existing settings).
 
 pub mod config_store;
 
@@ -28,6 +33,29 @@ pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 pub struct ModelCameraPosition {
     pub azimuth: f32,
     pub distance: f32,
+}
+
+/// A VRM model the user imported. The bytes are stored under
+/// `<app_data_dir>/user_models/<id>.vrm` so they survive app upgrades and
+/// fresh builds; only this metadata lives inside `app_settings.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UserModel {
+    /// Stable id (UUID v4). Also used as the on-disk file stem.
+    pub id: String,
+    /// Display name (defaults to the source filename without extension).
+    pub name: String,
+    /// Original filename, kept for display only.
+    pub original_filename: String,
+    /// 'female' or 'male' — drives TTS voice selection. Defaults to 'female'.
+    #[serde(default = "default_user_model_gender")]
+    pub gender: String,
+    /// Unix milliseconds when the model was imported.
+    #[serde(default)]
+    pub imported_at: u64,
+}
+
+fn default_user_model_gender() -> String {
+    "female".to_string()
 }
 
 /// Default character model ID (must match `DEFAULT_MODEL_ID` in frontend).
@@ -74,6 +102,17 @@ pub struct AppSettings {
     /// Per-model camera positions (keyed by model ID).
     #[serde(default)]
     pub model_camera_positions: HashMap<String, ModelCameraPosition>,
+
+    /// User-imported VRM models persisted under `<app_data_dir>/user_models/`.
+    #[serde(default)]
+    pub user_models: Vec<UserModel>,
+
+    /// Preferred container runtime for the local-LLM quest. `Auto` picks
+    /// Docker first, then Podman; explicit values force a runtime even if
+    /// the other is also installed (used in environments where Docker
+    /// Desktop is forbidden by company policy).
+    #[serde(default)]
+    pub preferred_container_runtime: crate::container::RuntimePreference,
 }
 
 fn default_version() -> u32 {
@@ -107,6 +146,8 @@ impl Default for AppSettings {
             bgm_volume: DEFAULT_BGM_VOLUME,
             bgm_track_id: DEFAULT_BGM_TRACK_ID.to_string(),
             model_camera_positions: HashMap::new(),
+            user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Auto,
         }
     }
 }
@@ -196,13 +237,15 @@ mod tests {
         positions.insert("annabelle".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "genshin".into(),
+            selected_model_id: "m58".into(),
             camera_azimuth: 1.57,
             camera_distance: 3.2,
             bgm_enabled: true,
             bgm_volume: 0.3,
             bgm_track_id: "moonflow".into(),
             model_camera_positions: positions,
+            user_models: Vec::new(),
+            preferred_container_runtime: crate::container::RuntimePreference::Docker,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

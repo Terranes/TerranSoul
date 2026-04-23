@@ -137,10 +137,10 @@ describe('character store — IPC integration', () => {
     expect(store.currentGender()).toBe('male');
   });
 
-  it('currentGender returns female for genshin', async () => {
-    mockInvoke.mockResolvedValue(undefined);
+  it('currentGender returns female for unknown / removed model', () => {
     const store = useCharacterStore();
-    await store.selectModel('genshin');
+    // Force an unknown model id (e.g. one that was removed from defaults)
+    store.selectedModelId = 'genshin';
     expect(store.currentGender()).toBe('female');
   });
 
@@ -197,5 +197,109 @@ describe('character store — IPC integration', () => {
     // Error should still be visible after loading overlay dismisses
     expect(store.loadError).toBe('Failed to load VRM model');
     expect(store.isLoading).toBe(false);
+  });
+});
+
+describe('character store — user-imported models', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    // Provide minimal Blob URL stubs for jsdom — vitest's environment
+    // exposes URL.createObjectURL but blob:url -> data fetching isn't needed
+    // here since we only assert the path is set to a blob: URL.
+    if (!('createObjectURL' in URL)) {
+      // @ts-expect-error — jsdom polyfill
+      URL.createObjectURL = () => 'blob:mock';
+    }
+    if (!('revokeObjectURL' in URL)) {
+      // @ts-expect-error — jsdom polyfill
+      URL.revokeObjectURL = () => {};
+    }
+  });
+
+  it('loadUserModels populates userModels from backend', async () => {
+    const fixtures = [
+      { id: 'u-1', name: 'Aria', original_filename: 'aria.vrm', gender: 'female', imported_at: 1 },
+      { id: 'u-2', name: 'Kai',  original_filename: 'kai.vrm',  gender: 'male',   imported_at: 2 },
+    ];
+    mockInvoke.mockResolvedValueOnce(fixtures);
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    expect(mockInvoke).toHaveBeenCalledWith('list_user_models');
+    expect(store.userModels).toHaveLength(2);
+    expect(store.userModels[0].name).toBe('Aria');
+  });
+
+  it('loadUserModels swallows backend error and keeps empty list', async () => {
+    mockInvoke.mockRejectedValueOnce(new Error('no Tauri'));
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    expect(store.userModels).toEqual([]);
+  });
+
+  it('importUserModel calls backend and appends to userModels', async () => {
+    const entry = { id: 'u-9', name: 'New', original_filename: 'new.vrm', gender: 'female', imported_at: 99 };
+    mockInvoke.mockResolvedValueOnce(entry);
+    const store = useCharacterStore();
+    const result = await store.importUserModel('/abs/path/new.vrm');
+    expect(mockInvoke).toHaveBeenCalledWith('import_user_model', { sourcePath: '/abs/path/new.vrm' });
+    expect(result).toEqual(entry);
+    expect(store.userModels).toHaveLength(1);
+    expect(store.userModels[0].id).toBe('u-9');
+  });
+
+  it('selectModel loads a user model via blob URL', async () => {
+    const entry = { id: 'u-3', name: 'Imp', original_filename: 'imp.vrm', gender: 'female', imported_at: 1 };
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'list_user_models') return Promise.resolve([entry]);
+      if (cmd === 'read_user_model_bytes') return Promise.resolve(new Uint8Array([1, 2, 3]));
+      return Promise.resolve(undefined);
+    });
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    await store.selectModel('u-3');
+    expect(mockInvoke).toHaveBeenCalledWith('read_user_model_bytes', { id: 'u-3' });
+    expect(store.selectedModelId).toBe('u-3');
+    expect(store.vrmPath).toMatch(/^blob:/);
+  });
+
+  it('deleteUserModel removes entry and falls back to default if active', async () => {
+    const entry = { id: 'u-4', name: 'Gone', original_filename: 'gone.vrm', gender: 'female', imported_at: 1 };
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'list_user_models') return Promise.resolve([entry]);
+      if (cmd === 'read_user_model_bytes') return Promise.resolve(new Uint8Array([0]));
+      // delete_user_model + load_vrm + tts setters + save_app_settings
+      return Promise.resolve(undefined);
+    });
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    await store.selectModel('u-4');
+    expect(store.selectedModelId).toBe('u-4');
+    await store.deleteUserModel('u-4');
+    expect(mockInvoke).toHaveBeenCalledWith('delete_user_model', { id: 'u-4' });
+    expect(store.userModels).toEqual([]);
+    expect(store.selectedModelId).toBe('annabelle');
+  });
+
+  it('allModels concatenates defaults and user models', async () => {
+    const entry = { id: 'u-5', name: 'Extra', original_filename: 'extra.vrm', gender: 'female', imported_at: 1 };
+    mockInvoke.mockResolvedValueOnce([entry]);
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    expect(store.allModels.length).toBe(store.defaultModels.length + 1);
+    expect(store.allModels[store.allModels.length - 1].id).toBe('u-5');
+  });
+
+  it('currentGender works for user models', async () => {
+    const entry = { id: 'u-6', name: 'Bo', original_filename: 'bo.vrm', gender: 'male', imported_at: 1 };
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'list_user_models') return Promise.resolve([entry]);
+      if (cmd === 'read_user_model_bytes') return Promise.resolve(new Uint8Array([0]));
+      return Promise.resolve(undefined);
+    });
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    await store.selectModel('u-6');
+    expect(store.currentGender()).toBe('male');
   });
 });

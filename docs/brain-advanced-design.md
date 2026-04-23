@@ -500,6 +500,19 @@ User types: "What are the filing deadlines?"
 │  Deduplication:                                                   │
 │  Before insert → embed new text → cosine vs all existing         │
 │  If max_similarity > 0.97 → skip insert, return existing id     │
+│                                                                   │
+│  Resilience (durable workflow contract):                         │
+│  • If `nomic-embed-text` is missing AND the active chat model    │
+│    returns 501/400 from /api/embed (Llama, Phi, Gemma, …), the   │
+│    model is added to a process-lifetime "unsupported" cache and  │
+│    no further embed calls are made for it. Vector RAG silently   │
+│    degrades to keyword + LLM-ranking. No log spam, no chat       │
+│    pipeline stalls.                                              │
+│  • The `/api/tags` probe that picks the embedding model is       │
+│    cached for 60 s.                                              │
+│  • `reset_embed_cache` Tauri command flushes both caches; called │
+│    automatically on `set_brain_mode` so a brain switch can       │
+│    re-discover a working embedding backend.                      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1043,6 +1056,20 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### 10.1. External CLI backend (Chunk 1.5)
+
+In addition to the three **native** brain modes above, TerranSoul
+agents may be backed by an **external CLI worker** (`codex`, `claude`,
+`gemini`, or a user-validated custom binary) bound to a working folder.
+External CLI agents route chat turns through
+[`cli_worker.rs`](../src-tauri/src/agents/cli_worker.rs) instead of the
+unified LLM interface — stdout and stderr stream back as chat lines,
+and progress is persisted to an append-only workflow history so a
+killed app can resume the job. See
+[`instructions/AGENT-ROSTER.md`](../instructions/AGENT-ROSTER.md) for
+the full sandbox model, the RAM-aware concurrency cap, and the
+durable-workflow replay semantics.
+
 ---
 
 ## 11. LLM-Powered Memory Operations
@@ -1254,6 +1281,39 @@ This is inspired by **Mem0's conflict resolution** approach — using the LLM it
 ## 13. Open-Source RAG Ecosystem Comparison
 
 TerranSoul's RAG pipeline is purpose-built for a single-user desktop companion. Here's how it compares to the leading open-source RAG and memory frameworks:
+
+### Cross-framework comparison at a glance
+
+The table below contrasts TerranSoul against five widely-used RAG / knowledge
+systems with very different design centres: **LangChain** (programmable RAG
+framework), **Odyssey** ([odyssey-llm/odyssey](https://github.com/odyssey-llm/odyssey),
+multi-agent orchestration with long-term memory), **RAGFlow** (enterprise
+deep-document RAG), **SiYuan** ([siyuan-note/siyuan](https://github.com/siyuan-note/siyuan),
+local-first block-based knowledge notebook with RAG plugins), and **GitNexus**
+(repo-aware code-RAG for GitHub navigation). The goal is a single side-by-side
+view rather than per-project deep-dives.
+
+| Dimension | TerranSoul | LangChain | Odyssey | RAGFlow | SiYuan | GitNexus |
+|---|---|---|---|---|---|---|
+| Primary purpose | Personal AI companion w/ 3D avatar + RAG memory | General-purpose LLM/RAG framework (lib + LCEL) | Multi-agent task orchestration with persistent memory | Enterprise deep-document RAG | Local-first block-based note-taking + RAG plugin | Repo-aware code-RAG for GitHub exploration |
+| Distribution | Single Tauri binary (Win/macOS/Linux/iOS/Android) | Python / JS package | Python framework | Docker Compose stack (server) | Electron desktop + optional self-host server | Hosted service / CLI |
+| Storage backend | Embedded SQLite + BLOB embeddings | Bring-your-own (FAISS, Chroma, pgvector, …) | Bring-your-own vector DB | Elasticsearch + MinIO + MySQL + Redis | Local filesystem (Markdown/JSON blocks) + optional vector index | Repo-scoped index (cloud-hosted) |
+| Embedding model | Ollama `nomic-embed-text` (local, default) | Any provider (OpenAI/HF/Ollama/…) | Any provider | Built-in + pluggable | Pluggable (BGE / OpenAI / local) | Provider-managed |
+| Retrieval strategy | Hybrid: cosine ANN + keyword + tag/recency boost | Composable (vector / BM25 / hybrid / multi-query / reranker) | Memory hierarchy + agent-tool retrieval | Layout-aware chunking + reranking + citation | Tag/link graph + vector search inside notebooks | Code-symbol-aware retrieval over repo graph |
+| Knowledge graph | Tag graph today; entity graph on roadmap | LangGraph (separate package) | First-class graph memory | Document → chunk → citation graph | Bidirectional block links + tag graph (native) | AST + import/call graph over repo |
+| Memory model | Three tiers: short-term, working, long-term + decay/GC | Conversation/buffer/summary memories (opt-in) | Hierarchical episodic + semantic memory across agents | None — stateless retrieval per query | Notebook history (no LLM-managed memory) | Session-scoped repo cache |
+| Multi-modal ingest | Text via external scripts; images via vision tool | Connectors for 100+ sources (community) | Tool-driven ingestion | Native PDF/DOCX/PPTX/image w/ layout parsing | Markdown / PDF / images attached to blocks | Source code (most languages) |
+| Conflict / decay handling | Hash-based staleness + LLM conflict resolver + decay scoring | None (manual) | LLM-mediated reconciliation between agents | Document versioning | Manual edits; Git-style history per block | Re-index on commit |
+| Offline / privacy | 100 % offline-capable; data never leaves device | Depends on chosen providers | Depends on chosen providers | Server-bound; data stays on infra you run | Fully local-first by default | Cloud-hosted (telemetry-bearing) |
+| Multi-user / collab | Single user + CRDT sync across that user's own devices | N/A (library) | Multi-agent, single user | Multi-tenant with RBAC | Single user; optional sync | Multi-user (org/repo scoped) |
+| Programming surface | Tauri commands consumed by Vue 3 | Python + JS APIs (LCEL, Runnable) | Python agent SDK | REST API + UI | JS plugin API + Lua-ish kernel | REST / CLI |
+| Best fit | Always-on personal companion that knows your life | Building bespoke RAG/agent apps | Multi-agent assistants needing persistent memory | Teams indexing large heterogeneous corpora | Researchers / writers managing personal knowledge | Developers exploring large repos |
+| License | MIT | MIT | Apache-2.0 (per repo) | Apache-2.0 | AGPL-3.0 | Mixed (server proprietary, clients OSS) |
+
+> Note: the GitHub URLs vary per project; the sources above were chosen as the
+> canonical "headline" repository for each. Project metadata (license, exact
+> feature set) drifts over time — update this table together with section 13.x
+> when you upgrade or replace a comparator.
 
 ### Mem0 (53.7k stars)
 

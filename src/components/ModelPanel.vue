@@ -8,7 +8,7 @@
 
       <div class="panel-body">
         <div class="model-select-section">
-          <label class="select-label" for="model-select">Default Model</label>
+          <label class="select-label" for="model-select">Active Model</label>
           <select
             id="model-select"
             class="model-select"
@@ -16,13 +16,24 @@
             :disabled="isLoading"
             @change="handleModelChange"
           >
-            <option
-              v-for="model in characterStore.defaultModels"
-              :key="model.id"
-              :value="model.id"
-            >
-              {{ model.name }}
-            </option>
+            <optgroup label="Bundled">
+              <option
+                v-for="model in characterStore.defaultModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }}
+              </option>
+            </optgroup>
+            <optgroup v-if="characterStore.userModels.length > 0" label="Imported">
+              <option
+                v-for="model in characterStore.userModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.name }}
+              </option>
+            </optgroup>
           </select>
         </div>
 
@@ -33,7 +44,10 @@
             </svg>
             {{ isLoading ? 'Loading…' : 'Import VRM Model' }}
           </button>
-          <p class="import-hint">Supports .vrm files (VRM 0.0 and 1.0)</p>
+          <p class="import-hint">
+            Imported models are copied into your user data folder and persist
+            across app updates.
+          </p>
         </div>
 
         <div v-if="characterStore.loadError" class="error-banner">
@@ -45,26 +59,37 @@
             v-for="model in characterStore.defaultModels"
             :key="model.id"
             class="model-card"
-            :class="{ active: characterStore.selectedModelId === model.id && !customVrmActive }"
+            :class="{ active: characterStore.selectedModelId === model.id }"
             @click="handleSelectModel(model.id)"
           >
             <img v-if="model.thumbnail" :src="model.thumbnail" :alt="model.name" class="model-thumb" />
             <div v-else class="model-icon">👤</div>
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
-              <span class="model-author">{{ model.path }}</span>
+              <span class="model-author">Bundled</span>
             </div>
           </div>
 
           <div
-            v-if="customVrmActive"
-            class="model-card active"
+            v-for="model in characterStore.userModels"
+            :key="model.id"
+            class="model-card"
+            :class="{ active: characterStore.selectedModelId === model.id }"
+            @click="handleSelectModel(model.id)"
           >
             <div class="model-icon">📁</div>
             <div class="model-info">
-              <span class="model-name">{{ characterStore.vrmMetadata?.title ?? 'Custom VRM' }}</span>
-              <span class="model-author">{{ characterStore.vrmMetadata?.author ?? 'Unknown author' }}</span>
+              <span class="model-name">{{ model.name }}</span>
+              <span class="model-author">Imported · {{ model.original_filename }}</span>
             </div>
+            <button
+              class="delete-btn"
+              :disabled="isLoading"
+              :aria-label="`Delete ${model.name}`"
+              @click.stop="handleDelete(model.id)"
+            >
+              &times;
+            </button>
           </div>
         </div>
 
@@ -80,19 +105,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { useCharacterStore } from '../stores/character';
-import { DEFAULT_MODELS } from '../config/default-models';
 
 defineEmits<{ close: [] }>();
 
 const characterStore = useCharacterStore();
 const isLoading = ref(false);
-
-const customVrmActive = computed(() => {
-  if (!characterStore.vrmPath) return false;
-  return !DEFAULT_MODELS.some(m => m.path === characterStore.vrmPath);
-});
 
 async function handleModelChange(event: Event) {
   const target = event.target as HTMLSelectElement;
@@ -115,15 +134,43 @@ async function handleSelectModel(modelId: string) {
   }
 }
 
+/**
+ * Prompt the user for a VRM file path and ask the Rust backend to copy it
+ * into the per-user data directory. Once imported, immediately select it.
+ *
+ * Note: a future Tauri-dialog integration would replace `window.prompt`
+ * with a native file picker, but the current backend command only needs
+ * an absolute filesystem path so the prompt fallback keeps the panel
+ * usable in browser-only dev mode too.
+ */
 async function handleImport() {
+  const path = window.prompt('Enter the absolute path to a .vrm file:');
+  if (!path) return;
   isLoading.value = true;
   characterStore.setLoadError(undefined);
   try {
-    // Uses window.prompt() as a portable fallback for VRM path input.
-    const path = window.prompt('Enter the path to a .vrm file:');
-    if (path) {
-      await characterStore.loadVrm(path);
-    }
+    const entry = await characterStore.importUserModel(path.trim());
+    await characterStore.selectModel(entry.id);
+  } catch (err) {
+    characterStore.setLoadError(`Import failed: ${err}`);
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+async function handleDelete(id: string) {
+  const target = characterStore.userModels.find(m => m.id === id);
+  if (!target) return;
+  const confirmed = window.confirm(
+    `Delete "${target.name}"? The VRM file will be removed from your user data folder.`
+  );
+  if (!confirmed) return;
+  isLoading.value = true;
+  characterStore.setLoadError(undefined);
+  try {
+    await characterStore.deleteUserModel(id);
+  } catch (err) {
+    characterStore.setLoadError(`Delete failed: ${err}`);
   } finally {
     isLoading.value = false;
   }
@@ -348,6 +395,34 @@ async function handleImport() {
 .model-author {
   font-size: 0.7rem;
   color: var(--ts-text-dim);
+}
+
+.delete-btn {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.delete-btn:hover:not(:disabled) {
+  background: rgba(255, 80, 80, 0.3);
+  color: #ff6b6b;
+}
+
+.delete-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .panel-footer {

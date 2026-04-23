@@ -2,6 +2,10 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 use crate::agent::stub_agent::Sentiment;
 use crate::agent::AgentProvider;
@@ -276,30 +280,71 @@ impl OllamaAgent {
     // ── Embedding ──────────────────────────────────────────────────────────
 
     /// Generate a vector embedding for `text` via Ollama `/api/embed`.
-    /// Uses `nomic-embed-text` (768-dim) if available, otherwise falls
-    /// back to the active chat model.  Returns `None` on any error.
+    ///
+    /// **Resilience contract** — this function is called on every chat
+    /// message (RAG injection), every memory add, and every ingest chunk.
+    /// It MUST never panic and MUST short-circuit cheaply when the local
+    /// Ollama daemon does not support embeddings for the active model
+    /// (the common cause of repeated `501 Not Implemented` /
+    /// `400 model does not support embeddings` errors). Two caches make
+    /// that possible:
+    ///
+    /// 1. `embed_model_cache` — chosen embedding model + 60 s TTL so we
+    ///    don't hammer `/api/tags` on every call.
+    /// 2. `unsupported_models` — process-lifetime allow-list of models
+    ///    that previously returned a non-success status; subsequent
+    ///    embed calls for those models return `None` immediately.
+    ///
+    /// Returns `None` (never an `Err`) so callers can fall back to the
+    /// keyword / LLM-ranking path without breaking the chat flow.
     pub async fn embed_text(text: &str, model_hint: &str) -> Option<Vec<f32>> {
-        // Prefer a dedicated embedding model; fall back to chat model.
-        let embed_model = if Self::model_exists("nomic-embed-text").await {
-            "nomic-embed-text".to_string()
-        } else {
-            model_hint.to_string()
+        // Refuse work on empty input rather than wasting an HTTP round-trip.
+        if text.trim().is_empty() {
+            return None;
+        }
+
+        // 1. Resolve which embedding model to use (cached for 60 s).
+        let embed_model = resolve_embed_model(model_hint).await;
+
+        // 2. Fast path: this model is already known to be unsupported.
+        if is_known_unsupported(&embed_model).await {
+            return None;
+        }
+
+        // 3. Bound every embed call so a hung daemon can't stall the chat
+        //    pipeline forever.
+        let client = match Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return None,
         };
 
-        let client = Client::new();
         let body = serde_json::json!({
             "model": embed_model,
             "input": text,
         });
 
-        let resp = client
+        let resp = match client
             .post(format!("{OLLAMA_BASE_URL}/api/embed"))
             .json(&body)
             .send()
             .await
-            .ok()?;
+        {
+            Ok(r) => r,
+            Err(_) => return None, // network error — let caller fall back
+        };
 
         if !resp.status().is_success() {
+            // A non-success status from /api/embed for this exact model
+            // means the model genuinely cannot embed (most chat models
+            // return 501 / 400). Cache that fact so we never retry it
+            // for the lifetime of the process — the cache is cleared
+            // when the user switches to a working embedding model via
+            // `clear_embed_caches`.
+            let status = resp.status().as_u16();
+            mark_unsupported(&embed_model, status).await;
             return None;
         }
 
@@ -311,8 +356,15 @@ impl OllamaAgent {
     }
 
     /// Check if a model name is available locally in Ollama.
+    /// Result is cached for 60 s by [`resolve_embed_model`].
     async fn model_exists(name: &str) -> bool {
-        let client = Client::new();
+        let client = match Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
         let resp = client
             .get(format!("{OLLAMA_BASE_URL}/api/tags"))
             .send()
@@ -390,6 +442,123 @@ impl OllamaAgent {
             .take(limit)
             .map(|n| candidates[n - 1].0)
             .collect()
+    }
+}
+
+// ── Embedding capability cache (resilience for /api/embed) ────────────────────
+//
+// Two caches let `OllamaAgent::embed_text` short-circuit cheaply when the
+// local Ollama daemon would otherwise return repeated 501/400 errors:
+//
+// * `EMBED_MODEL_CACHE` remembers which model name we settled on, with a
+//   60-second TTL so we don't re-probe `/api/tags` on every chat message.
+// * `UNSUPPORTED_MODELS` lists models that previously returned a non-success
+//   status from `/api/embed`. Most chat models (Llama, Phi, Gemma, …) do not
+//   implement embeddings and return `501 Not Implemented`; once we've seen
+//   that once we MUST stop retrying for the lifetime of the process.
+//
+// Both caches are cleared by `clear_embed_caches()` whenever the user
+// switches brain mode or installs a new embedding model.
+
+#[derive(Clone)]
+struct EmbedModelChoice {
+    model: String,
+    chosen_at: Instant,
+}
+
+const EMBED_MODEL_TTL: Duration = Duration::from_secs(60);
+const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
+
+fn embed_model_cache() -> &'static Mutex<Option<EmbedModelChoice>> {
+    static CACHE: OnceLock<Mutex<Option<EmbedModelChoice>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn unsupported_models() -> &'static Mutex<HashSet<String>> {
+    static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Resolve which model to pass to `/api/embed`, caching the choice for
+/// 60 seconds. Prefers `nomic-embed-text` when it's installed locally;
+/// otherwise falls back to the chat-model hint (which may itself be
+/// unsupported — in which case `embed_text` will mark it as such on the
+/// next call and refuse to retry).
+async fn resolve_embed_model(model_hint: &str) -> String {
+    let cache = embed_model_cache();
+    {
+        let guard = cache.lock().await;
+        if let Some(choice) = guard.as_ref() {
+            if choice.chosen_at.elapsed() < EMBED_MODEL_TTL {
+                return choice.model.clone();
+            }
+        }
+    }
+
+    // Cache miss / expired → probe once.
+    let chosen = if OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await {
+        PREFERRED_EMBED_MODEL.to_string()
+    } else {
+        model_hint.to_string()
+    };
+
+    let mut guard = cache.lock().await;
+    *guard = Some(EmbedModelChoice {
+        model: chosen.clone(),
+        chosen_at: Instant::now(),
+    });
+    chosen
+}
+
+async fn is_known_unsupported(model: &str) -> bool {
+    unsupported_models().lock().await.contains(model)
+}
+
+async fn mark_unsupported(model: &str, status: u16) {
+    let inserted = unsupported_models().lock().await.insert(model.to_string());
+    if inserted {
+        // Log once per model so the user can see why embeddings are off
+        // without their chat scrolling filling with retry warnings.
+        eprintln!(
+            "[brain] Ollama model '{model}' returned HTTP {status} from /api/embed; \
+             disabling vector embeddings for this model. Install \
+             `nomic-embed-text` (`ollama pull nomic-embed-text`) to re-enable \
+             fast vector RAG."
+        );
+        // Force the model-choice cache to expire so the next call has a
+        // chance to upgrade to nomic-embed-text if the user installs it.
+        *embed_model_cache().lock().await = None;
+    }
+}
+
+/// Reset both embedding caches. Call this whenever the brain mode or
+/// active model changes so the next `embed_text` call re-probes
+/// `/api/tags` and forgets about previously-unsupported models.
+pub async fn clear_embed_caches() {
+    *embed_model_cache().lock().await = None;
+    unsupported_models().lock().await.clear();
+}
+
+/// Snapshot of the embedding cache state — for diagnostics and tests.
+#[derive(Debug, Clone, Serialize)]
+pub struct EmbedCacheSnapshot {
+    pub chosen_model: Option<String>,
+    pub chosen_age_secs: Option<u64>,
+    pub unsupported: Vec<String>,
+}
+
+pub async fn embed_cache_snapshot() -> EmbedCacheSnapshot {
+    let chosen = embed_model_cache().lock().await.clone();
+    let unsupported: Vec<String> = unsupported_models()
+        .lock()
+        .await
+        .iter()
+        .cloned()
+        .collect();
+    EmbedCacheSnapshot {
+        chosen_model: chosen.as_ref().map(|c| c.model.clone()),
+        chosen_age_secs: chosen.as_ref().map(|c| c.chosen_at.elapsed().as_secs()),
+        unsupported,
     }
 }
 
@@ -593,5 +762,73 @@ mod tests {
         let status = check_status(&client, "http://127.0.0.1:19999").await;
         assert!(!status.running);
         assert_eq!(status.model_count, 0);
+    }
+
+    // ── Embedding cache resilience tests ─────────────────────────────
+
+    #[tokio::test]
+    async fn embed_text_short_circuits_on_empty_input() {
+        // No HTTP request should be made for empty input — proves that
+        // empty messages can't accidentally hammer /api/embed.
+        clear_embed_caches().await;
+        assert!(OllamaAgent::embed_text("", "gemma3:4b").await.is_none());
+        assert!(OllamaAgent::embed_text("   \n\t  ", "gemma3:4b").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn unsupported_model_is_remembered_and_short_circuits() {
+        clear_embed_caches().await;
+        // Mark a fake model as unsupported.
+        mark_unsupported("fake-model:1b", 501).await;
+        assert!(is_known_unsupported("fake-model:1b").await);
+
+        // A second mark for the same model is a no-op (no log spam).
+        mark_unsupported("fake-model:1b", 501).await;
+
+        // embed_text must short-circuit and never hit the network.
+        assert!(
+            OllamaAgent::embed_text("hello world", "fake-model:1b")
+                .await
+                .is_none()
+        );
+
+        // Snapshot exposes the unsupported model.
+        let snap = embed_cache_snapshot().await;
+        assert!(snap.unsupported.iter().any(|m| m == "fake-model:1b"));
+    }
+
+    #[tokio::test]
+    async fn clear_embed_caches_forgets_unsupported_models() {
+        mark_unsupported("forget-me:7b", 400).await;
+        assert!(is_known_unsupported("forget-me:7b").await);
+
+        clear_embed_caches().await;
+
+        assert!(!is_known_unsupported("forget-me:7b").await);
+        let snap = embed_cache_snapshot().await;
+        assert!(snap.chosen_model.is_none());
+        assert!(!snap.unsupported.iter().any(|m| m == "forget-me:7b"));
+    }
+
+    #[tokio::test]
+    async fn embed_text_returns_none_when_daemon_unreachable() {
+        // No Ollama running on this port — must return None gracefully
+        // rather than panic or hang. The 15-s client timeout protects us.
+        clear_embed_caches().await;
+        // Use a chat-model name so resolve_embed_model picks it as the
+        // fallback (model_exists("nomic-embed-text") will fail too).
+        let result = OllamaAgent::embed_text("hello", "definitely-not-installed:1b").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn embed_cache_snapshot_serializable() {
+        clear_embed_caches().await;
+        mark_unsupported("snap-test:3b", 501).await;
+        let snap = embed_cache_snapshot().await;
+        // Must round-trip through serde for the Tauri command surface.
+        let json = serde_json::to_string(&snap).expect("snapshot serializes");
+        assert!(json.contains("snap-test:3b"));
+        clear_embed_caches().await;
     }
 }
