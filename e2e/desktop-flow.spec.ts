@@ -14,7 +14,7 @@
  *  7.  3D canvas visible with correct dimensions
  *  8.  VRM model loaded (triangle count > 0)
  *  9.  BGM music bar (play/pause, track cycling, volume)
- * 10.  Desktop nav switches all 5 tabs (high-level navigation only — detailed
+ * 10.  Desktop nav switches all 6 tabs (high-level navigation only — detailed
  *      Memory tab coverage lives in memory-flow.spec.ts to avoid duplication)
  * 11.  No critical console errors
  *
@@ -174,6 +174,12 @@ test('desktop: full end-to-end flow', async ({ page }) => {
 
   await navigateToTab(page, 'Memory');
   await expect(page.locator('.memory-view')).toBeVisible({ timeout: TIMEOUTS.panel });
+
+  await navigateToTab(page, 'Brain');
+  await expect(page.locator('[data-testid="brain-view"]')).toBeVisible({ timeout: TIMEOUTS.panel });
+  await expect(page.locator('[data-testid="brain-avatar"]')).toBeVisible();
+  await expect(page.locator('[data-testid="bv-mode-switcher"]')).toBeVisible();
+  await expect(page.locator('[data-testid="bv-rag-capability"]')).toBeVisible();
 
   await navigateToTab(page, 'Quests');
   await expect(page.locator('.skill-tree-view')).toBeVisible({ timeout: TIMEOUTS.panel });

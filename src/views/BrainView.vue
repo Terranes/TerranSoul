@@ -121,7 +121,7 @@
       <article class="bv-card" data-testid="bv-card-memory">
         <header class="bv-card-header">
           <h3>🧠 Memory health</h3>
-          <button class="bv-card-link" @click="$emit('navigate', 'memory')">Open explorer →</button>
+          <button class="bv-card-link" @click="emitNavigate('memory')">Open explorer →</button>
         </header>
         <div class="bv-memory-tiers">
           <div class="bv-mem-tier tier-short" :title="`Short-term: ${memoryStats.short_count}`">
@@ -158,6 +158,62 @@
         </dl>
       </article>
     </section>
+
+    <!-- ── Cognitive-kind breakdown (docs §3.5) ───────────────────────────── -->
+    <section class="bv-card bv-cognitive" data-testid="bv-cognitive-breakdown">
+      <header class="bv-card-header">
+        <h3>🧩 Cognitive kinds</h3>
+        <span class="bv-card-subtle">Episodic / Semantic / Procedural — derived from tags + content</span>
+      </header>
+      <div v-if="cognitiveKinds.total === 0" class="bv-cognitive-empty">
+        No memories yet — once you add some, they'll be classified here.
+      </div>
+      <div v-else class="bv-cognitive-bars">
+        <div
+          v-for="row in cognitiveRows"
+          :key="row.key"
+          class="bv-cog-row"
+          :class="`bv-cog-${row.key}`"
+          :data-testid="`bv-cog-${row.key}`"
+        >
+          <div class="bv-cog-head">
+            <span class="bv-cog-emoji">{{ row.emoji }}</span>
+            <span class="bv-cog-name">{{ row.label }}</span>
+            <span class="bv-cog-count">{{ row.count }} <small>({{ row.percent }}%)</small></span>
+          </div>
+          <div class="bv-cog-bar">
+            <div class="bv-cog-bar-fill" :style="{ width: row.percent + '%' }" />
+          </div>
+          <div class="bv-cog-desc">{{ row.description }}</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── RAG capability strip (docs §4 / §10) ────────────────────────────── -->
+    <section class="bv-card bv-rag" data-testid="bv-rag-capability">
+      <header class="bv-card-header">
+        <h3>📡 RAG capability</h3>
+        <span class="bv-card-subtle">6-signal hybrid scoring — vector search needs a local embedding model</span>
+      </header>
+      <div class="bv-rag-grid">
+        <div
+          v-for="sig in ragSignals"
+          :key="sig.key"
+          class="bv-rag-cell"
+          :class="{ 'is-on': sig.available, 'is-off': !sig.available }"
+          :title="sig.available ? `${sig.label} active` : sig.unavailableReason"
+        >
+          <span class="bv-rag-icon">{{ sig.available ? '✓' : '✗' }}</span>
+          <span class="bv-rag-label">{{ sig.label }}</span>
+          <span class="bv-rag-weight">{{ sig.weight }}</span>
+        </div>
+      </div>
+      <p class="bv-rag-summary">
+        <strong>Effective quality:</strong> {{ ragQuality.effective }}% —
+        {{ ragQuality.note }}
+      </p>
+    </section>
+
 
     <!-- ── RPG stat sheet ──────────────────────────────────────────────────── -->
     <section class="bv-stats-section">
@@ -197,17 +253,14 @@ import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import type { MemoryEntry } from '../types';
+import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 
-defineEmits<{
+const emit = defineEmits<{
   /** Navigate to another tab; values match the App.vue tab ids. */
   (e: 'navigate', target: 'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain-setup'): void;
 }>();
 const emitNavigate = (target: 'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain-setup') => {
-  // Re-trigger the same event using the parent emit by dispatching a custom
-  // event on the host element — simpler than re-binding `defineEmits` inside
-  // helpers. Parent listens via `@navigate` which Vue maps from `emit('navigate')`.
-  // We fall back to the standard emit pattern below by exposing a wrapper.
-  void target;
+  emit('navigate', target);
 };
 
 const brain = useBrainStore();
@@ -257,14 +310,109 @@ const heroExpression = computed<'idle' | 'thinking' | 'happy' | 'sad' | 'sleepy'
   return 'idle';
 });
 
-// ── Memory stats ───────────────────────────────────────────────────────────
+// ── Cognitive kind breakdown (docs §3.5) ───────────────────────────────────
+
+const cognitiveKinds = computed(() => summariseCognitiveKinds(memory.memories ?? []));
+
+const cognitiveRows = computed(() => {
+  const total = cognitiveKinds.value.total || 1; // avoid div-by-zero
+  const pct = (n: number) => Math.round((n / total) * 100);
+  return [
+    {
+      key: 'episodic' as const,
+      label: 'Episodic',
+      emoji: '📅',
+      count: cognitiveKinds.value.episodic,
+      percent: pct(cognitiveKinds.value.episodic),
+      description: 'Time- and place-anchored experiences (decays fastest)',
+    },
+    {
+      key: 'semantic' as const,
+      label: 'Semantic',
+      emoji: '📚',
+      count: cognitiveKinds.value.semantic,
+      percent: pct(cognitiveKinds.value.semantic),
+      description: 'Stable knowledge & preferences (decays slowest)',
+    },
+    {
+      key: 'procedural' as const,
+      label: 'Procedural',
+      emoji: '🛠',
+      count: cognitiveKinds.value.procedural,
+      percent: pct(cognitiveKinds.value.procedural),
+      description: 'How-to knowledge & repeatable workflows',
+    },
+  ];
+});
+
+// ── RAG capability strip (docs §4 / §10) ───────────────────────────────────
+//
+// Mirrors the per-mode capability table in `docs/brain-advanced-design.md`
+// § "Brain Modes & Provider Architecture". Only Local Ollama can compute
+// embeddings (via `nomic-embed-text`), so vector search (40% of the hybrid
+// score) is unavailable in the cloud modes.
+
+interface RagSignal {
+  key: string;
+  label: string;
+  weight: string;
+  available: boolean;
+  unavailableReason: string;
+}
+
+const ragSignals = computed<RagSignal[]>(() => {
+  const isLocal = moodKey.value === 'local';
+  const isOnline = moodKey.value !== 'none';
+  return [
+    {
+      key: 'vector', label: 'Vector', weight: '40%',
+      available: isLocal,
+      unavailableReason: 'Switch to Local Ollama to enable embeddings',
+    },
+    {
+      key: 'keyword', label: 'Keyword', weight: '20%',
+      available: isOnline, unavailableReason: 'Configure a brain first',
+    },
+    {
+      key: 'recency', label: 'Recency', weight: '15%',
+      available: isOnline, unavailableReason: 'Configure a brain first',
+    },
+    {
+      key: 'importance', label: 'Importance', weight: '10%',
+      available: isOnline, unavailableReason: 'Configure a brain first',
+    },
+    {
+      key: 'decay', label: 'Decay', weight: '10%',
+      available: isOnline, unavailableReason: 'Configure a brain first',
+    },
+    {
+      key: 'tier', label: 'Tier', weight: '5%',
+      available: isOnline, unavailableReason: 'Configure a brain first',
+    },
+  ];
+});
+
+const ragQuality = computed(() => {
+  if (moodKey.value === 'none') {
+    return { effective: 0, note: 'No brain configured.' };
+  }
+  if (moodKey.value === 'local') {
+    return { effective: 100, note: 'Full hybrid search with vector embeddings.' };
+  }
+  return {
+    effective: 60,
+    note: 'Cloud APIs cannot compute embeddings — vector signal is offline.',
+  };
+});
+
+
 
 const memoryStats = computed(() => memory.stats ?? {
   total: 0, short_count: 0, working_count: 0, long_count: 0,
   total_tokens: 0, avg_decay: 1.0,
 });
 const memoryCount = computed(() => memoryStats.value.total);
-const edgeCount = computed(() => memory.edgeStats?.total_edges ?? memory.edges.length);
+const edgeCount = computed(() => memory.edgeStats?.total_edges ?? memory.edges?.length ?? 0);
 
 // ── Configuration card ────────────────────────────────────────────────────
 
@@ -402,21 +550,8 @@ const modeOptions = computed<ModeOption[]>(() => [
   },
 ]);
 
-// Re-export emit so module functions can call it.
-let emitFn: (name: 'navigate', target: string) => void = () => {};
-function emitNavigate(target: string) {
-  emitFn('navigate', target);
-}
+// Re-export emit so module functions can call it. (kept simple — emitNavigate above wraps it.)
 defineExpose({});
-// Capture the runtime emit at setup-time.
-const _emit = (() => {
-  // Vue's defineEmits returns a function in <script setup>. We re-bind it
-  // here so it's reachable from helpers above without prop drilling.
-  const e = defineEmits<{ (n: 'navigate', t: string): void }>();
-  emitFn = e as unknown as typeof emitFn;
-  return e;
-})();
-void _emit;
 
 async function switchToFree() {
   await brain.autoConfigureForDesktop();
@@ -425,12 +560,12 @@ async function switchToFree() {
 // ── Top-N memory subgraph ──────────────────────────────────────────────────
 
 const topMemories = computed<MemoryEntry[]>(() => {
-  const memories = memory.memories;
+  const memories = memory.memories ?? [];
   if (memories.length === 0) return [];
   // Score = edge degree + importance + decay so the mini-graph shows what
   // matters most. Cap at 12 nodes so the viewport stays readable.
   const degree = new Map<number, number>();
-  for (const e of memory.edges) {
+  for (const e of memory.edges ?? []) {
     degree.set(e.src_id, (degree.get(e.src_id) ?? 0) + 1);
     degree.set(e.dst_id, (degree.get(e.dst_id) ?? 0) + 1);
   }
@@ -444,7 +579,7 @@ const topMemories = computed<MemoryEntry[]>(() => {
 
 const topEdges = computed(() => {
   const ids = new Set(topMemories.value.map(m => m.id));
-  return memory.edges.filter(e => ids.has(e.src_id) && ids.has(e.dst_id));
+  return (memory.edges ?? []).filter(e => ids.has(e.src_id) && ids.has(e.dst_id));
 });
 
 // ── Refresh ────────────────────────────────────────────────────────────────
@@ -706,6 +841,93 @@ onMounted(async () => {
   font: inherit;
 }
 .bv-link:hover { text-decoration: underline; }
+
+/* ── Cognitive-kind breakdown ──────────────────────────────────────────── */
+.bv-cognitive { padding: 0.85rem 1rem; }
+.bv-card-subtle {
+  font-size: 0.75rem;
+  color: var(--ts-text-muted);
+}
+.bv-cognitive-empty {
+  padding: 1rem;
+  color: var(--ts-text-muted);
+  text-align: center;
+  font-size: 0.85rem;
+}
+.bv-cognitive-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+.bv-cog-row {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.06));
+}
+.bv-cog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+.bv-cog-emoji { font-size: 1.1rem; }
+.bv-cog-name { flex: 1; font-weight: 600; color: var(--ts-text-primary); font-size: 0.85rem; }
+.bv-cog-count { font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--ts-text-secondary); }
+.bv-cog-count small { color: var(--ts-text-muted); margin-left: 0.2rem; font-size: 0.75rem; }
+.bv-cog-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.3rem;
+}
+.bv-cog-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.bv-cog-episodic .bv-cog-bar-fill { background: linear-gradient(90deg, #f97316, #fb923c); }
+.bv-cog-semantic .bv-cog-bar-fill { background: linear-gradient(90deg, #60a5fa, #93c5fd); }
+.bv-cog-procedural .bv-cog-bar-fill { background: linear-gradient(90deg, #34d399, #86efac); }
+.bv-cog-desc { font-size: 0.7rem; color: var(--ts-text-muted); }
+
+/* ── RAG capability strip ──────────────────────────────────────────────── */
+.bv-rag { padding: 0.85rem 1rem; }
+.bv-rag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.6rem;
+}
+.bv-rag-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.06));
+  font-size: 0.8rem;
+}
+.bv-rag-cell.is-on {
+  background: rgba(52, 211, 153, 0.10);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #34d399;
+}
+.bv-rag-cell.is-off {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ts-text-muted);
+}
+.bv-rag-icon { font-size: 1rem; font-weight: 700; }
+.bv-rag-label { font-weight: 600; }
+.bv-rag-weight { font-size: 0.7rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.bv-rag-summary {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ts-text-secondary);
+}
+.bv-rag-summary strong { color: var(--ts-text-primary); }
 
 .btn-primary {
   padding: 0.5rem 1rem;
