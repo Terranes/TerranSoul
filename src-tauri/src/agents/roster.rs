@@ -248,7 +248,7 @@ impl AgentRoster {
                 Err(e) => eprintln!("[agents] skipping corrupt profile {path:?}: {e}"),
             }
         }
-        out.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+        out.sort_by_key(|b| std::cmp::Reverse(b.last_active_at));
         out
     }
 
