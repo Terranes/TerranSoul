@@ -905,9 +905,10 @@ impl MemoryStore {
             let last = last_accessed.unwrap_or(now);
             let hours_since = (now - last) as f64 / 3_600_000.0;
             // Chunk 18.2 — category-aware decay: per-prefix multiplier
-            // pulled from the curated vocabulary. `personal:*` decays 2×
-            // slower; `tool:*` 1.5× faster; default 1.0 for legacy /
-            // non-conforming tags.
+            // pulled from the curated vocabulary. Lower multiplier = slower
+            // decay (more durable). `personal:*` uses 0.5 → decays slower
+            // than the 1.0 baseline; `tool:*` uses 1.5 → decays faster.
+            // Default 1.0 for legacy / non-conforming tags.
             let multiplier = crate::memory::tag_vocabulary::category_decay_multiplier(tags);
             let factor = 0.95f64.powf((hours_since / 168.0) * multiplier);
             let new_decay = (current_decay * factor).max(0.01);
