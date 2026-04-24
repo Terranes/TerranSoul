@@ -78,6 +78,7 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -107,6 +108,7 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

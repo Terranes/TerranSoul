@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection (Phase 16 first chunk)](#chunk-161--relevance-threshold-for-long-term-memory-injection) | 2026-04-24 |
 | [Chunk 15.3 — `BrainGateway` trait + shared op surface (Phase 15 foundation)](#chunk-153--braingateway-trait--shared-op-surface) | 2026-04-24 |
 | [Milestones audit — Phase 14.8–14.15 + Phase 16 + Phase 17 + Phase 18 added](#milestones-audit) | 2026-04-24 |
 | [Commercial-Licence Audit & Cleanup (msedge-tts + @vercel/* removed)](#commercial-licence-audit--cleanup) | 2026-04-24 |
@@ -116,10 +117,46 @@ Entries are in **reverse chronological order** (newest first).
 
 ---
 
+## Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection
+
+**Date.** 2026-04-24
+**Phase.** 16 (Modern RAG) — first chunk; cheapest impact-rich win.
+**Goal.** Stop diluting the brain's context window with weakly-matching memories. Until now `commands::streaming` always injected the top-5 hybrid-search results regardless of how poorly they matched the user's query.
+
+**Architecture.**
+- New `MemoryStore::hybrid_search_with_threshold(query, query_embedding, limit, min_score)` returns the same shape as `hybrid_search` but filters out entries whose final hybrid score is below `min_score` *before* truncating to `limit`.
+- Internal helper `MemoryStore::hybrid_search_scored` factors out the scoring loop so the legacy `hybrid_search` and the new threshold variant share a single source of truth.
+- Crucial side-effect tweak: filtered (below-threshold) rows are **not** counted as accesses. The legacy method touched every returned row's `access_count` + `last_accessed`; the new method only touches *survivors*. This keeps the decay signal honest — irrelevant rows continue ageing out of relevance instead of being kept artificially fresh by retrieval misses.
+- New `AppSettings.relevance_threshold: f64` field with `#[serde(default = "default_relevance_threshold")]` (default `0.30`) for back-compat with persisted settings files. Constant `crate::settings::DEFAULT_RELEVANCE_THRESHOLD = 0.30` is the single source of truth.
+- Both `commands::streaming` call sites (cloud OpenAI-compatible path + local Ollama path) now read the threshold from `AppSettings` and pass it into the new method. `lock` errors degrade to the documented default — no panics.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — added `hybrid_search_with_threshold` + `hybrid_search_scored` helper + 5 new unit tests.
+- `src-tauri/src/settings/mod.rs` — added `relevance_threshold` field, `DEFAULT_RELEVANCE_THRESHOLD` constant, `default_relevance_threshold` serde fallback.
+- `src-tauri/src/settings/config_store.rs` — propagated the new field through every `AppSettings { … }` literal in tests.
+- `src-tauri/src/commands/settings.rs` — propagated the new field through every `AppSettings { … }` literal in tests.
+- `src-tauri/src/commands/streaming.rs` — both RAG retrieval blocks (cloud + local) call `hybrid_search_with_threshold` with the user-tunable threshold.
+- `docs/brain-advanced-design.md` § 16 Phase 4 — flipped the row from `○` to `✓` with module + setting pointers.
+- `rules/milestones.md` — Phase 16 row 16.1 removed (per the "completed chunks belong in completion-log only" rule).
+
+**Tests.** 5 new unit tests in `memory::store::tests`, plus 909 existing tests still passing — total **914 passing**:
+1. `hybrid_search_with_threshold_zero_matches_legacy_top_k` — back-compat invariant: `min_score = 0.0` reproduces the legacy `hybrid_search` top-k exactly (same ids, same order). Critical because every existing call site that hasn't been migrated yet must keep working.
+2. `hybrid_search_with_threshold_filters_below_score` — high threshold drops weakly-matching rows.
+3. `hybrid_search_with_threshold_keeps_strong_matches` — low threshold + strong keyword + freshness combo retains the matching row.
+4. `hybrid_search_with_threshold_does_not_increment_access_for_filtered` — decay-signal-honesty invariant: filtered rows' `access_count` is **not** bumped.
+5. `hybrid_search_with_threshold_respects_limit` — `limit` cap still applies even when many rows survive the threshold.
+
+**Validation.** `cargo test --lib` (914 pass, 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
+- 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
 ## Chunk 15.3 — `BrainGateway` trait + shared op surface
 
 **Date.** 2026-04-24
-**Phase.** 15 (AI Coding Integrations) — foundation chunk; lands first so 15.1 (MCP) and 15.2 (gRPC) just wire transports onto a finished surface.
 **Goal.** Define a single typed op surface (`BrainGateway`) that every transport (MCP, gRPC) routes through, so the eight ops in `docs/AI-coding-integrations.md § Surface` (`brain.search`, `get_entry`, `list_recent`, `kg_neighbors`, `summarize`, `suggest_context`, `ingest_url`, `health`) cannot drift between transports.
 
 **Architecture.**

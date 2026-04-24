@@ -79,6 +79,7 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -119,6 +120,7 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -144,6 +146,7 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
         };
         save(dir.path(), &s).unwrap();
 

@@ -510,6 +510,119 @@ impl MemoryStore {
     ///
     /// Returns top `limit` entries ranked by composite score.
     /// Scales to 1M+ entries: vector search is O(n) but purely arithmetic.
+    /// Like [`Self::hybrid_search`], but also filters out entries whose
+    /// final hybrid score is below `min_score` (a value in `[0.0, 1.0]`,
+    /// since the per-component weights sum to ≤ 1.0 by construction —
+    /// see the inline weights above).
+    ///
+    /// Implements the "relevance threshold" item from
+    /// `docs/brain-advanced-design.md` § 16 Phase 4 (Chunk 16.1). Pass
+    /// `min_score = 0.0` to get the legacy behaviour (no filtering).
+    ///
+    /// Returns the surviving entries in descending score order, capped
+    /// at `limit`. Touches `last_accessed` / `access_count` for survivors
+    /// only — entries below the threshold do **not** count as accesses,
+    /// which preserves the decay signal for genuinely irrelevant rows.
+    pub fn hybrid_search_with_threshold(
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
+        min_score: f64,
+    ) -> SqlResult<Vec<MemoryEntry>> {
+        let scored = self.hybrid_search_scored(query, query_embedding)?;
+        let now = now_ms();
+
+        let kept: Vec<MemoryEntry> = scored
+            .into_iter()
+            .filter(|(s, _)| *s >= min_score)
+            .take(limit)
+            .map(|(_, e)| e)
+            .collect();
+
+        // Touch access counters for survivors only. Below-threshold rows
+        // are intentionally NOT counted as accesses — the decay signal
+        // should keep them ageing out of relevance.
+        for e in &kept {
+            let _ = self.conn.execute(
+                "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                params![now, e.id],
+            );
+        }
+
+        Ok(kept)
+    }
+
+    /// Internal helper that returns every entry with its hybrid score,
+    /// already sorted descending. Pure read — does not touch
+    /// `access_count`. Shared between [`Self::hybrid_search`] and
+    /// [`Self::hybrid_search_with_threshold`] so the two stay in lockstep.
+    fn hybrid_search_scored(
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+    ) -> SqlResult<Vec<(f64, MemoryEntry)>> {
+        let now = now_ms();
+        let hour_ms: f64 = 3_600_000.0;
+
+        let words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(String::from)
+            .collect();
+
+        let all = if query_embedding.is_some() {
+            self.get_with_embeddings()?
+        } else {
+            self.get_all()?
+        };
+
+        if all.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut scored: Vec<(f64, MemoryEntry)> = all
+            .into_iter()
+            .map(|entry| {
+                let mut score = 0.0f64;
+
+                if let (Some(qe), Some(emb)) = (query_embedding, entry.embedding.as_ref()) {
+                    let sim = cosine_similarity(qe, emb) as f64;
+                    score += sim * 0.40;
+                }
+
+                let lower_content = entry.content.to_lowercase();
+                let lower_tags = entry.tags.to_lowercase();
+                let keyword_hits = words.iter()
+                    .filter(|w| lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str()))
+                    .count();
+                if !words.is_empty() {
+                    score += (keyword_hits as f64 / words.len() as f64) * 0.20;
+                }
+
+                let age_hours = (now - entry.created_at) as f64 / hour_ms;
+                let recency = (-age_hours / 24.0).exp();
+                score += recency * 0.15;
+
+                score += (entry.importance as f64 / 5.0) * 0.10;
+                score += entry.decay_score * 0.10;
+
+                let tier_boost = match entry.tier {
+                    MemoryTier::Working => 1.0,
+                    MemoryTier::Long => 0.5,
+                    MemoryTier::Short => 0.3,
+                };
+                score += tier_boost * 0.05;
+
+                (score, entry)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(scored)
+    }
+
     pub fn hybrid_search(
         &self,
         query: &str,
@@ -1769,5 +1882,82 @@ mod tests {
         assert_eq!(stats.total, 2);
         assert_eq!(stats.short, 1);
         assert_eq!(stats.long, 1);
+    }
+
+    // ─── Chunk 16.1 — relevance threshold ─────────────────────────────
+
+    #[test]
+    fn hybrid_search_with_threshold_zero_matches_legacy_top_k() {
+        // Threshold = 0.0 must reproduce the legacy hybrid_search top-k
+        // (same ids, same order). Critical back-compat invariant — every
+        // existing call site must keep working when the user hasn't
+        // tuned the threshold.
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("Python programming language")).unwrap();
+        store.add(new_memory("JavaScript for web")).unwrap();
+        store.add(new_memory("Rust systems programming")).unwrap();
+
+        let legacy = store.hybrid_search("Python programming", None, 2).unwrap();
+        let with_t = store.hybrid_search_with_threshold("Python programming", None, 2, 0.0).unwrap();
+        assert_eq!(legacy.len(), with_t.len());
+        for (a, b) in legacy.iter().zip(with_t.iter()) {
+            assert_eq!(a.id, b.id);
+        }
+    }
+
+    #[test]
+    fn hybrid_search_with_threshold_filters_below_score() {
+        // High threshold should drop weakly-matching rows. Both seeded
+        // memories match nothing in the query "totally unrelated topic",
+        // so all keyword scores collapse to 0 and only the freshness +
+        // tier + importance + decay components remain — a small number.
+        // 0.95 is well above any realistic combined score, so the result
+        // must be empty.
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("alpha")).unwrap();
+        store.add(new_memory("beta")).unwrap();
+        let r = store.hybrid_search_with_threshold("totally unrelated topic", None, 5, 0.95).unwrap();
+        assert!(r.is_empty(), "got {} hits", r.len());
+    }
+
+    #[test]
+    fn hybrid_search_with_threshold_keeps_strong_matches() {
+        // Strong keyword + freshness combo on a low threshold must keep
+        // the matching row.
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("Python programming language")).unwrap();
+        let r = store.hybrid_search_with_threshold("Python programming", None, 5, 0.10).unwrap();
+        assert!(!r.is_empty());
+        assert!(r.iter().any(|m| m.id == e.id));
+    }
+
+    #[test]
+    fn hybrid_search_with_threshold_does_not_increment_access_for_filtered() {
+        // Below-threshold rows must NOT count as accesses — keeps the
+        // decay signal honest. We use a threshold above any realistic
+        // score (the legacy hybrid score caps near 1.0; a query with no
+        // keyword overlap hits ~0.3 on freshness alone) so every row is
+        // filtered out, and assert no row's access_count was bumped.
+        let store = MemoryStore::in_memory();
+        let a = store.add(new_memory("alpha")).unwrap();
+        let b = store.add(new_memory("beta")).unwrap();
+        let r = store.hybrid_search_with_threshold("totally unrelated topic", None, 5, 0.95).unwrap();
+        assert!(r.is_empty(), "high threshold should filter all rows");
+
+        let a_after = store.get_by_id(a.id).unwrap();
+        let b_after = store.get_by_id(b.id).unwrap();
+        assert_eq!(a_after.access_count, 0, "filtered row a must NOT be touched");
+        assert_eq!(b_after.access_count, 0, "filtered row b must NOT be touched");
+    }
+
+    #[test]
+    fn hybrid_search_with_threshold_respects_limit() {
+        // Many strong matches + threshold = 0.0 — the `limit` cap still applies.
+        let store = MemoryStore::in_memory();
+        for i in 0..10 {
+            store.add(new_memory(&format!("Python programming language {i}"))).unwrap();
+        }
+        let r = store.hybrid_search_with_threshold("Python programming", None, 3, 0.0).unwrap();
+        assert_eq!(r.len(), 3);
     }
 }

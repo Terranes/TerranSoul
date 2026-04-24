@@ -120,6 +120,28 @@ pub struct AppSettings {
     /// users can tune cadence (or disable entirely) from the Brain hub.
     #[serde(default)]
     pub auto_learn_policy: crate::memory::AutoLearnPolicy,
+
+    /// Minimum hybrid-search score (0.0 – 1.0) required for a memory to
+    /// be injected into the `[LONG-TERM MEMORY]` block of a chat turn.
+    /// Memories scoring below this threshold are skipped *before*
+    /// formatting, so the brain never sees weakly-matching context that
+    /// would dilute the signal.
+    ///
+    /// Default `DEFAULT_RELEVANCE_THRESHOLD = 0.30` matches the
+    /// `docs/brain-advanced-design.md` § 16 Phase 4 (Chunk 16.1) spec.
+    /// Set to `0.0` to recover the legacy "always inject top-5"
+    /// behaviour. Set higher (e.g. `0.45`) to be stricter.
+    #[serde(default = "default_relevance_threshold")]
+    pub relevance_threshold: f64,
+}
+
+/// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
+/// [`AppSettings::relevance_threshold`] and `docs/brain-advanced-design.md`
+/// § 16 Phase 4 (Chunk 16.1).
+pub const DEFAULT_RELEVANCE_THRESHOLD: f64 = 0.30;
+
+fn default_relevance_threshold() -> f64 {
+    DEFAULT_RELEVANCE_THRESHOLD
 }
 
 fn default_version() -> u32 {
@@ -156,6 +178,7 @@ impl Default for AppSettings {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
         }
     }
 }
@@ -255,6 +278,7 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Docker,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

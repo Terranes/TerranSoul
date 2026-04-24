@@ -1833,7 +1833,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ○ ANN index (usearch crate) for >1M memories                 │
 │  ├── ○ Cloud embedding API for free/paid modes                     │
 │  ├── ○ Chunking pipeline for large documents                       │
-│  ├── ○ Relevance threshold (skip injection if score < 0.3)        │
+│  │  ├── ✓ Relevance threshold (skip injection if score < 0.3,         │
+│  │  │     user-tunable via `AppSettings.relevance_threshold`,         │
+│  │  │     `MemoryStore::hybrid_search_with_threshold`) — Chunk 16.1   │
 │  ├── ○ Bidirectional Obsidian sync                                 │
 │  └── ○ Memory versioning (track edits, not just overwrites)        │
 │                                                                     │
