@@ -164,7 +164,7 @@ impl OllamaAgent {
     }
 
     /// Send `messages` to Ollama and decode the assistant reply.
-    async fn call(&self, messages: Vec<ChatMessage>) -> (String, Sentiment) {
+    pub(crate) async fn call(&self, messages: Vec<ChatMessage>) -> (String, Sentiment) {
         let body = ChatRequest {
             model: self.model.clone(),
             messages,
@@ -893,8 +893,14 @@ mod tests {
 
     // ── Embedding cache resilience tests ─────────────────────────────
 
+    /// Serialization guard for tests that mutate the shared embed caches.
+    /// All cache-related tests must hold this lock to avoid cross-test
+    /// races (the caches are process-global statics).
+    static EMBED_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn embed_text_short_circuits_on_empty_input() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         // No HTTP request should be made for empty input — proves that
         // empty messages can't accidentally hammer /api/embed.
         clear_embed_caches().await;
@@ -904,6 +910,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_model_is_remembered_and_short_circuits() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         clear_embed_caches().await;
         // Mark a fake model as unsupported.
         mark_unsupported("fake-model:1b", 501).await;
@@ -926,6 +933,8 @@ mod tests {
 
     #[tokio::test]
     async fn clear_embed_caches_forgets_unsupported_models() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
         mark_unsupported("forget-me:7b", 400).await;
         assert!(is_known_unsupported("forget-me:7b").await);
 
@@ -939,6 +948,7 @@ mod tests {
 
     #[tokio::test]
     async fn embed_text_returns_none_when_daemon_unreachable() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         // No Ollama running on this port — must return None gracefully
         // rather than panic or hang. The 15-s client timeout protects us.
         clear_embed_caches().await;
@@ -950,6 +960,7 @@ mod tests {
 
     #[tokio::test]
     async fn embed_cache_snapshot_serializable() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         clear_embed_caches().await;
         mark_unsupported("snap-test:3b", 501).await;
         let snap = embed_cache_snapshot().await;

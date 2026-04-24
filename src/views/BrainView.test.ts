@@ -77,6 +77,11 @@ function makeInvokeMock(opts: {
         total_edges: 0, by_rel_type: [], by_source: [], connected_memories: 0,
       });
       case 'get_short_term_memory': return Promise.resolve([]);
+      case 'get_app_settings': return Promise.resolve({
+        version: 2, selected_model_id: 'annabelle', camera_azimuth: 0,
+        camera_distance: 2.8, bgm_enabled: false, bgm_volume: 0.15,
+        bgm_track_id: 'prelude', bgm_custom_tracks: [], auto_tag: false,
+      });
       default:
         // Other unrelated commands — return a reasonable default.
         return Promise.resolve(null);

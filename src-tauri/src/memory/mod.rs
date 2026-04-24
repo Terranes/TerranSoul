@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod brain_memory;
 pub mod auto_learn;
+pub mod auto_tag;
 pub mod code_rag;
 pub mod cognitive_kind;
 pub mod edges;

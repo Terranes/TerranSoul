@@ -133,6 +133,16 @@ pub struct AppSettings {
     /// behaviour. Set higher (e.g. `0.45`) to be stricter.
     #[serde(default = "default_relevance_threshold")]
     pub relevance_threshold: f64,
+
+    /// When `true`, every `add_memory` call runs a fast LLM pass that
+    /// classifies the content into ≤ 4 tags drawn from the curated prefix
+    /// vocabulary (`personal:*`, `domain:*`, `code:*`, …). Default off —
+    /// adds one LLM call per insert.
+    ///
+    /// Maps to `docs/brain-advanced-design.md` §16 Phase 2 row
+    /// "Auto-categorise via LLM on insert" (chunk 18.1).
+    #[serde(default)]
+    pub auto_tag: bool,
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -179,6 +189,7 @@ impl Default for AppSettings {
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
+            auto_tag: false,
         }
     }
 }
@@ -279,6 +290,7 @@ mod tests {
             preferred_container_runtime: crate::container::RuntimePreference::Docker,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
+            auto_tag: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

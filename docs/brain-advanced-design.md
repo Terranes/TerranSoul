@@ -343,6 +343,13 @@ Not all categories belong in all tiers:
 
 **Implementation path**: Add a `category` column in a V5 migration, or use structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) to avoid schema changes. Tag prefixes are recommended first — they work with the existing search infrastructure and don't require a migration.
 
+> **As-built (2026-04-24).** Tag-prefix approach implemented:
+> - **Chunk 18.4** — `memory::tag_vocabulary` with `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`.
+> - **Chunk 18.2** — `category_decay_multiplier()` per-prefix decay rates (personal 0.5×, session/quest 2×).
+> - **Chunk 18.1** — `memory::auto_tag` LLM auto-tagger: opt-in via `AppSettings.auto_tag`; dispatches to Ollama/FreeApi/PaidApi; merges ≤ 4 curated tags with user tags on `add_memory`.
+> - **Chunk 18.3** — `MemoryView.vue` tag-prefix filter chip row with per-prefix counts.
+> - **Chunk 18.5** (planned) — Obsidian vault export with tag metadata.
+
 ---
 
 ## 3.5 Cognitive Memory Axes (Episodic / Semantic / Procedural)

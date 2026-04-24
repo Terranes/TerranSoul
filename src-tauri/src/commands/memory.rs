@@ -5,6 +5,9 @@ use crate::AppState;
 
 /// Add a new long-term memory.
 /// Automatically generates a vector embedding when a brain is configured.
+/// When `AppSettings.auto_tag` is enabled and a brain is active, runs an
+/// LLM pass to classify the content into curated-prefix tags and merges
+/// them with the user-supplied tags (chunk 18.1).
 #[tauri::command]
 pub async fn add_memory(
     content: String,
@@ -16,12 +19,12 @@ pub async fn add_memory(
     let mt = serde_json::from_value(serde_json::Value::String(memory_type))
         .unwrap_or(crate::memory::MemoryType::Fact);
 
-    let entry = {
+    let mut entry = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         store
             .add(NewMemory {
                 content: content.clone(),
-                tags,
+                tags: tags.clone(),
                 importance,
                 memory_type: mt,
                 ..Default::default()
@@ -39,6 +42,35 @@ pub async fn add_memory(
         if let Some(emb) = crate::brain::OllamaAgent::embed_text(&content, &model).await {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             let _ = store.set_embedding(entry.id, &emb);
+        }
+    }
+
+    // Auto-tag via LLM when the setting is enabled and a brain is configured.
+    let auto_tag_enabled = state
+        .app_settings
+        .lock()
+        .map(|s| s.auto_tag)
+        .unwrap_or(false);
+    if auto_tag_enabled {
+        let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+        if let Some(mode) = brain_mode {
+            let auto_tags =
+                crate::memory::auto_tag::auto_tag_content(&content, &mode).await;
+            if !auto_tags.is_empty() {
+                let merged = crate::memory::auto_tag::merge_tags(&tags, &auto_tags);
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                if let Ok(updated) = store.update(
+                    entry.id,
+                    MemoryUpdate {
+                        tags: Some(merged),
+                        content: None,
+                        importance: None,
+                        memory_type: None,
+                    },
+                ) {
+                    entry = updated;
+                }
+            }
         }
     }
 

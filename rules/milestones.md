@@ -40,8 +40,10 @@ research chunks (14.12 → 14.15). **Phase 15** (AI Coding Integrations
 — MCP + gRPC) is in progress (15.3 landed; 15.1 / 15.2 / 15.4–15.8
 pending). **Phases 16 / 17 / 18** were added 2026-04-24 to land the
 remaining items from `docs/brain-advanced-design.md` § 16 (Modern RAG,
-Phase-5 Intelligence, Phase-2 Categorisation leftovers). Pick the next
-item from the active tables below or from `rules/backlog.md`.
+Phase-5 Intelligence, Phase-2 Categorisation leftovers). **Phase 18**
+is nearly complete (18.1 auto-tag + 18.2 decay + 18.3 filters + 18.4
+vocabulary all shipped; only 18.5 Obsidian export remains). Pick the
+next item from the active tables below or from `rules/backlog.md`.
 
 ---
 
@@ -196,8 +198,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 18.1 | **Auto-categorise via LLM on insert** — `add_memory` runs a fast LLM "tag this in ≤ 4 keywords from the curated vocabulary" pass when `BrainConfig.auto_tag = true` (default off). Curated vocabulary lives in `memory::tag_vocabulary::CURATED_PREFIXES` (matches the `personal:* / domain:* / project:* / tool:*` prefix convention). Maps to §16 Phase 2. | not-started | Adds 1 LLM call per insert; opt-in. ~200 LOC + 10 tests. |
-| 18.3 | **Category filters in Memory View** — frontend chunk: `MemoryView.vue` gains a tag-prefix multi-select chip row (`personal` / `domain` / `project` / `tool` / `code` / `external`) with counts. Filter composes with the existing search bar. Maps to §16 Phase 2. | not-started | Vitest coverage for the filter composable. ~300 LOC frontend + tests. |
 | 18.5 | **Obsidian vault export (one-way)** — new Tauri command `export_to_obsidian(vault_dir)` that writes one markdown file per long-tier memory under `${vault_dir}/TerranSoul/<id>-<slug>.md` with YAML frontmatter (id, tags, importance, source_url, created_at). Idempotent; file mtime drives "should I rewrite?" decision. Maps to §16 Phase 2 + Phase 4. | not-started | Pre-req for 17.7's bidirectional sync. |
 
 ---

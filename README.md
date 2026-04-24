@@ -248,6 +248,8 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - `hyde.rs` — pure HyDE prompt builder + reply cleaner (Gao et al., 2022); consumed by `OllamaAgent::hyde_complete` and the `hyde_search_memories` Tauri command
 - `reranker.rs` — pure cross-encoder rerank prompt builder + score parser + reorder logic; consumed by `OllamaAgent::rerank_score` and the two-stage `rerank_search_memories` Tauri command (recall via `hybrid_search_rrf`, precision via LLM-as-judge)
 - `auto_learn.rs` — `AutoLearnPolicy` + pure `evaluate(policy, total_turns, last_autolearn_turn) → AutoLearnDecision`; the cadence policy that turns daily conversation into long-term memory (default: every 10 turns, 3-turn cooldown). See **[docs/brain-advanced-design.md § 21](docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop)**.
+- `tag_vocabulary.rs` — curated `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`, `category_decay_multiplier()` per-prefix decay rates
+- `auto_tag.rs` — LLM auto-tagger: `auto_tag_content()` dispatches to Ollama/FreeApi/PaidApi; `parse_tag_response()` validates + caps at 4 curated-prefix tags; `merge_tags()` deduplicates with user tags. Opt-in via `AppSettings.auto_tag`
 - Pluggable backends behind cargo features: `postgres.rs` (`sqlx`), `mssql.rs` (`tiberius`), `cassandra.rs` (`scylla`)
 
 **Tauri command surface** (`src-tauri/src/commands/memory.rs`)
@@ -262,7 +264,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - **Multi-source knowledge management:** source-hash change detection, TTL expiry, access-count decay, **LLM-powered conflict resolution**
 
 **Frontend**
-- `src/views/MemoryView.vue` — list / grid / graph view, tier chips, filters, decay viz
+- `src/views/MemoryView.vue` — list / grid / graph view, tier chips, tag-prefix category filter chips with counts, search + semantic + hybrid search
 - `src/components/MemoryGraph.vue` — Cytoscape.js semantic graph visualization with typed edges
 - `src/stores/memory.ts` — Pinia store (CRUD + search + streaming results)
 

@@ -21,6 +21,9 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 18.3 — Category filters in Memory View](#chunk-183--category-filters-in-memory-view) | 2026-04-24 |
+| [Chunk 18.1 — Auto-categorise via LLM on insert](#chunk-181--auto-categorise-via-llm-on-insert) | 2026-04-24 |
+| [CI Fix — Embed cache test race condition](#ci-fix--embed-cache-test-race-condition) | 2026-04-24 |
 | [Chunk 18.2 — Category-aware decay rates](#chunk-182--category-aware-decay-rates) | 2026-04-24 |
 | [Chunk 18.4 — Tag-prefix convention vocabulary + audit (Phase 18 first chunk)](#chunk-184--tag-prefix-convention-vocabulary--audit) | 2026-04-24 |
 | [Chunk 17.1 — Auto-promotion based on access patterns (Phase 17 first chunk)](#chunk-171--auto-promotion-based-on-access-patterns) | 2026-04-24 |
@@ -154,6 +157,99 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 18.3 — Category filters in Memory View
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy). Builds on 18.4 (tag vocabulary) and 18.1 (auto-tag).
+**Goal.** Add a tag-prefix multi-select chip row to Memory View so users
+can filter memories by curated category (`personal`, `domain`, `project`,
+`tool`, `code`, `external`, `session`, `quest`).
+
+**Architecture.**
+- `MemoryView.vue` gains a `tagPrefixCounts` computed that scans all displayed
+  memories and counts occurrences per curated prefix. A `tagPrefixFilter` ref
+  toggles prefix filtering that composes with the existing type/tier/search
+  filters.
+- Chips show count badges; disabled when count = 0; active = purple accent.
+- New `MemoryView.test.ts` (10 tests) exercises the tag-prefix counting and
+  filtering logic as pure functions.
+
+**Files modified.**
+- `src/views/MemoryView.vue` — added tag-prefix filter row + CSS
+- `src/views/MemoryView.test.ts` — **new** (10 tests)
+
+**Test counts.** Frontend: 1083 Vitest tests (67 files); Backend: 943 cargo tests.
+
+---
+
+## Chunk 18.1 — Auto-categorise via LLM on insert
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy). Uses 18.4 tag-prefix vocabulary for validation.
+**Goal.** When `AppSettings.auto_tag = true` (default off), every
+`add_memory` call runs a fast LLM pass that classifies the content into
+≤ 4 tags drawn from the curated prefix vocabulary and merges them with
+user-supplied tags.
+
+**Architecture.**
+- New `src-tauri/src/memory/auto_tag.rs` module (~140 LOC):
+  - `system_prompt()` / `user_prompt()` — prompt builders
+  - `parse_tag_response()` — parses LLM comma-separated tag response,
+    validates each against `validate_csv()`, keeps only `Curated` verdicts,
+    caps at 4 tags
+  - `merge_tags()` — deduplicates auto-tags against user tags (case-insensitive)
+  - `auto_tag_content()` — dispatches to Ollama / FreeApi / PaidApi based on
+    active `BrainMode`
+- `AppSettings.auto_tag: bool` (default `false`) persisted to disk
+- `commands::memory::add_memory` — after insert + embedding, checks
+  `auto_tag` setting and brain_mode; if both present, runs auto-tagger and
+  updates the entry's tags via `store.update()`
+- `OllamaAgent::call()` promoted to `pub(crate)` for internal use
+- Frontend: `AppSettings` interface gains `auto_tag?: boolean`; BrainView
+  gains an "Auto-Tag" toggle section with checkbox + description
+
+**Files created.**
+- `src-tauri/src/memory/auto_tag.rs` (10 unit tests)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod auto_tag`
+- `src-tauri/src/brain/ollama_agent.rs` — `call()` → `pub(crate)`
+- `src-tauri/src/settings/mod.rs` — added `auto_tag` field to `AppSettings`
+- `src-tauri/src/settings/config_store.rs` — updated test initializers
+- `src-tauri/src/commands/memory.rs` — auto-tag logic in `add_memory`
+- `src-tauri/src/commands/settings.rs` — updated test initializers
+- `src/stores/settings.ts` — added `auto_tag` to `AppSettings` interface
+- `src/views/BrainView.vue` — auto-tag toggle UI section
+- `src/views/BrainView.test.ts` — added `get_app_settings` to mock
+
+**Test counts.** Backend: 943 cargo tests (10 new in auto_tag); Frontend: 1083 Vitest.
+
+---
+
+## CI Fix — Embed cache test race condition
+
+**Date.** 2026-04-24
+**Goal.** Fix flaky `clear_embed_caches_forgets_unsupported_models` test
+that failed in CI due to parallel test interference on shared global
+embed cache statics.
+
+**Root cause.** Five `#[tokio::test]` tests in `ollama_agent::tests` share
+process-global `OnceLock<Mutex<…>>` statics for the embed model cache
+and unsupported-models set. Running in parallel, one test's
+`clear_embed_caches()` call could race against another test's
+`mark_unsupported()` + `assert!()` sequence.
+
+**Fix.** Added `EMBED_TEST_LOCK: tokio::sync::Mutex<()>` static — all
+five cache tests acquire the lock before running, serialising access to
+the shared statics. Also added an initial `clear_embed_caches()` to the
+`clear_embed_caches_forgets_unsupported_models` test for a clean baseline.
+
+**Files modified.**
+- `src-tauri/src/brain/ollama_agent.rs` — added `EMBED_TEST_LOCK` + guard
+  acquisition in 5 tests
 
 ---
 

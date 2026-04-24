@@ -22,6 +22,8 @@ export interface AppSettings {
   bgm_track_id: string;
   /** User-added custom BGM tracks (file/URL). */
   bgm_custom_tracks: BgmTrack[];
+  /** When true, LLM auto-tags new memories with curated-prefix tags. */
+  auto_tag?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -33,6 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   bgm_volume: 0.15,
   bgm_track_id: 'prelude',
   bgm_custom_tracks: [],
+  auto_tag: false,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

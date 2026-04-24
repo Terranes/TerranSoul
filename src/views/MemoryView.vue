@@ -243,6 +243,23 @@
         </button>
       </div>
 
+      <div
+        v-if="tagPrefixCounts.size > 0"
+        class="mv-filter-row"
+        data-testid="mv-tag-prefix-filter"
+      >
+        <span class="mv-filter-label">Tag:</span>
+        <button
+          v-for="prefix in TAG_PREFIXES"
+          :key="prefix"
+          :class="['mv-tag-chip', { active: tagPrefixFilter === prefix }]"
+          :disabled="!tagPrefixCounts.has(prefix)"
+          @click="tagPrefixFilter = tagPrefixFilter === prefix ? null : prefix"
+        >
+          {{ prefix }} ({{ tagPrefixCounts.get(prefix) ?? 0 }})
+        </button>
+      </div>
+
       <p
         v-if="store.isLoading"
         class="mv-status"
@@ -431,13 +448,47 @@ const allTiers: MemoryTier[] = ['short', 'working', 'long'];
 const searchQuery = ref('');
 const typeFilter = ref<MemoryType | null>(null);
 const tierFilter = ref<MemoryTier | null>(null);
+const tagPrefixFilter = ref<string | null>(null);
 const searchResults = ref<MemoryEntry[] | null>(null);
+
+/** Curated tag prefixes — must match Rust `CURATED_PREFIXES`. */
+const TAG_PREFIXES = ['personal', 'domain', 'project', 'tool', 'code', 'external', 'session', 'quest'] as const;
+
+/** Count memories per curated tag prefix. */
+const tagPrefixCounts = computed(() => {
+  const source = searchResults.value ?? store.memories;
+  const counts = new Map<string, number>();
+  for (const m of source) {
+    if (!m.tags) continue;
+    const seen = new Set<string>();
+    for (const tag of m.tags.split(',')) {
+      const trimmed = tag.trim();
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx <= 0) continue;
+      const prefix = trimmed.slice(0, colonIdx).toLowerCase();
+      if (!seen.has(prefix) && (TAG_PREFIXES as readonly string[]).includes(prefix)) {
+        seen.add(prefix);
+        counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+      }
+    }
+  }
+  return counts;
+});
 
 const displayedMemories = computed(() => {
   const source = searchResults.value ?? store.memories;
   return source.filter((m) => {
     if (typeFilter.value && m.memory_type !== typeFilter.value) return false;
     if (tierFilter.value && m.tier !== tierFilter.value) return false;
+    if (tagPrefixFilter.value) {
+      if (!m.tags) return false;
+      const prefix = tagPrefixFilter.value;
+      const hasPrefix = m.tags.split(',').some((t) => {
+        const trimmed = t.trim().toLowerCase();
+        return trimmed.startsWith(prefix + ':');
+      });
+      if (!hasPrefix) return false;
+    }
     return true;
   });
 });
@@ -651,6 +702,12 @@ onMounted(async () => {
 .mv-type-chip { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--ts-border-medium); cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: 0.8rem; transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast); }
 .mv-type-chip:hover { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
 .mv-type-chip.active { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); border-color: var(--ts-accent-blue-hover); }
+
+/* ── Tag prefix chips (Chunk 18.3) ── */
+.mv-tag-chip { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--ts-border-medium); cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: 0.8rem; transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast); }
+.mv-tag-chip:hover:not(:disabled) { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
+.mv-tag-chip:disabled { opacity: 0.35; cursor: default; }
+.mv-tag-chip.active { background: var(--ts-accent-purple, #a78bfa); color: var(--ts-text-on-accent); border-color: var(--ts-accent-purple, #a78bfa); }
 
 /* ── Tier chips & badges ── */
 .mv-tier-chip { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--ts-border-medium); cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: 0.8rem; transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast); }
