@@ -37,14 +37,15 @@
 
 ## Next Chunk
 
-**Chunk 2.3 — Knowledge-graph mirror (V7 `edge_source` column).**
-With the GitNexus sidecar (Chunk 2.1) and Code-RAG fusion (Chunk 2.2)
-both shipped, Tier 3 makes GitNexus's structured KG durable: a new V7
-SQLite migration adds an `edge_source` column to `memory_edges`, plus
-`gitnexus_sync` / `gitnexus_unmirror` Tauri commands map the upstream
-`CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` relations
-into the existing 17-relation taxonomy. Strictly opt-in — no auto-sync
-at startup. ~500 LOC + integration test.
+**Chunk 2.4 — BrainView "Code knowledge" panel.** Pure frontend Vue
+work in `src/views/BrainView.vue` that consumes `gitnexus_sync` /
+`gitnexus_unmirror` (Chunk 2.3, shipped 2026-04-24) plus the existing
+`gitnexus_sidecar_status` / `gitnexus_impact` commands: list every
+indexed repo with last-sync time + edge counts (read from
+`get_edge_stats` filtered by `edge_source LIKE 'gitnexus:%'`), and a
+"blast-radius pre-flight" indicator that runs `gitnexus_impact` on the
+symbol the user is about to change. No new Rust surface — wires
+existing commands into the Brain hub.
 
 ---
 
@@ -65,8 +66,7 @@ at startup. ~500 LOC + integration test.
 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
-| 2.3 | Knowledge-graph mirror — V7 schema adds `edge_source` column; `gitnexus_sync` / `gitnexus_unmirror` Tauri commands; map `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` to the existing 17-relation taxonomy | not-started | agent | Tier 3; opt-in only; never auto-syncs at startup; ~500 LOC + integration test |
-| 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator | not-started | agent | Tier 4; pure frontend; depends on 2.1 |
+| 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator | not-started | agent | Tier 4; pure frontend; depends on 2.1 + 2.3 |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 

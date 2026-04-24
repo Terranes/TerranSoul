@@ -195,6 +195,35 @@ ALTER TABLE memory_edges DROP COLUMN valid_to;
 ALTER TABLE memory_edges DROP COLUMN valid_from;
 "#,
     },
+    // ── V7: External knowledge-graph mirror provenance ─────────────────
+    //
+    // Adds a single nullable `edge_source` TEXT column to `memory_edges`.
+    //
+    // Distinct from the existing `source` column (which records who
+    // *asserted* the edge inside TerranSoul: `user` / `llm` / `auto`),
+    // `edge_source` records which **external knowledge graph** the edge
+    // was mirrored from. The convention is `<system>:<scope>` — for
+    // example `gitnexus:repo:owner/name@sha`. `NULL` means the edge is
+    // native to TerranSoul (the default for every existing row).
+    //
+    // The companion index `idx_edges_edge_source` makes
+    // `gitnexus_unmirror` (which deletes every edge for one mirror
+    // scope) a single B-tree range scan instead of a full table scan.
+    //
+    // See `docs/brain-advanced-design.md` § 13 (GitNexus integration,
+    // Tier 3 — Knowledge-graph mirror).
+    Migration {
+        version: 7,
+        description: "external KG mirror provenance: edge_source column on memory_edges",
+        up: r#"
+ALTER TABLE memory_edges ADD COLUMN edge_source TEXT;
+CREATE INDEX IF NOT EXISTS idx_edges_edge_source ON memory_edges(edge_source);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_edges_edge_source;
+ALTER TABLE memory_edges DROP COLUMN edge_source;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -479,11 +508,66 @@ mod tests {
     }
 
     #[test]
-    fn target_version_is_v6() {
+    fn target_version_is_v7() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
-        assert_eq!(TARGET_VERSION, 6, "V6 is the current temporal-KG schema");
+        assert_eq!(TARGET_VERSION, 7, "V7 is the current external-KG-mirror schema");
+    }
+
+    #[test]
+    fn v7_round_trip_preserves_edge_source() {
+        // Insert an edge with a non-NULL `edge_source` at V7, downgrade
+        // to V6 (which must drop the column and the index without
+        // touching the parent row), and re-upgrade — the existing row
+        // must come back with `edge_source = NULL` (ALTER ADD COLUMN
+        // semantics).
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 7);
+
+        conn.execute_batch(
+            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_edges
+                (src_id, dst_id, rel_type, confidence, source, created_at,
+                 valid_from, valid_to, edge_source)
+             VALUES (1, 2, 'rel', 1.0, 'auto', 0, NULL, NULL, 'gitnexus:repo:foo/bar@abc');",
+            [],
+        )
+        .unwrap();
+        let es: Option<String> = conn
+            .query_row(
+                "SELECT edge_source FROM memory_edges WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(es.as_deref(), Some("gitnexus:repo:foo/bar@abc"));
+
+        downgrade_to(&conn, 6).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 6);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "edge row must survive V7→V6 downgrade");
+
+        migrate_to_latest(&conn).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 7);
+        let es2: Option<String> = conn
+            .query_row(
+                "SELECT edge_source FROM memory_edges WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(es2, None, "ALTER ADD COLUMN should default to NULL");
     }
 
     #[test]
@@ -494,6 +578,9 @@ mod tests {
         // affecting the parent edge row.
         let conn = fresh_conn();
         migrate_to_latest(&conn).unwrap();
+        // Schema is at TARGET_VERSION (V7+); the previous V5/V6 round-trip
+        // logic still applies as long as we start the test at V6.
+        downgrade_to(&conn, 6).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 6);
 
         // Need two memories first (FK).
@@ -527,7 +614,7 @@ mod tests {
         // Re-upgrade: V6 columns return as NULL on the existing row
         // (default for ALTER TABLE … ADD COLUMN with no default).
         migrate_to_latest(&conn).unwrap();
-        assert_eq!(get_version(&conn).unwrap(), 6);
+        assert_eq!(get_version(&conn).unwrap(), TARGET_VERSION);
         let (vf2, vt2): (Option<i64>, Option<i64>) = conn.query_row(
             "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
             [],

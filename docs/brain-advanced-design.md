@@ -1142,7 +1142,20 @@ CREATE INDEX idx_edges_type ON memory_edges(rel_type);
 -- PRAGMA foreign_keys=ON enforced at connection open.
 ```
 
-**V7 — Obsidian sync metadata (proposed):**
+**V7 — External KG mirror provenance (shipped 2026-04-24):**
+```sql
+ALTER TABLE memory_edges ADD COLUMN edge_source TEXT;          -- e.g. 'gitnexus:repo:owner/name@sha'
+CREATE INDEX idx_edges_edge_source ON memory_edges(edge_source);
+```
+Distinct from the existing `source` column (which records who *asserted*
+an edge: `user` / `llm` / `auto`), `edge_source` records which **external
+knowledge graph** the edge was mirrored from. `NULL` is the default for
+every native edge. The Phase 13 Tier 3 `gitnexus_sync` Tauri command
+populates this with `gitnexus:<scope>` strings so `gitnexus_unmirror`
+can roll back exactly one sync without touching native or LLM-extracted
+edges. See `src-tauri/src/memory/gitnexus_mirror.rs`.
+
+**V8 — Obsidian sync metadata (proposed):**
 ```sql
 ALTER TABLE memories ADD COLUMN obsidian_path TEXT;      -- vault-relative .md path
 ALTER TABLE memories ADD COLUMN last_exported INTEGER;   -- Unix timestamp
@@ -2368,7 +2381,7 @@ its own subprocess address space.
 |---|---|---|---|
 | 1 | 2.1 | ✅ done (2026-04-24) | Sidecar bridge + four read-only Tauri commands behind `code_intelligence` capability |
 | 2 | 2.2 | ✅ done (2026-04-24) | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
-| 3 | 2.3 | not-started | Mirror GitNexus's KG into TerranSoul's memory graph via a new V7 `edge_source` column; map `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` to the existing 17-relation taxonomy |
+| 3 | 2.3 | ✅ done (2026-04-24) | V7 SQLite migration adds `edge_source` column to `memory_edges` (+ index). New `memory::gitnexus_mirror` module maps `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` into the existing 17-relation taxonomy and writes mirrored edges with `edge_source = 'gitnexus:<scope>'`. Tauri commands `gitnexus_sync` (opt-in; calls the sidecar's `graph` MCP tool) and `gitnexus_unmirror` (single-scope rollback). 11 unit tests + 4 extractor tests. |
 | 4 | 2.4 | not-started | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
 
 ---
@@ -2462,9 +2475,9 @@ component is unreachable.
 ### 23.4 What this does NOT do (scope guard)
 
 - Does **not** mutate the SQLite store. Code-RAG entries are ephemeral.
-- Does **not** persist GitNexus snippets — Tier 3 (Chunk 2.3) is the
-  opt-in path that mirrors the GitNexus knowledge graph into the
-  memory-graph V7 schema with an `edge_source` column.
+- Does **not** persist GitNexus snippets — Tier 3 (Chunk 2.3, shipped
+  2026-04-24) is the opt-in path that mirrors the GitNexus knowledge
+  graph into the memory-graph V7 schema with an `edge_source` column.
 - Does **not** rerank GitNexus snippets via the LLM-as-judge
   *separately* — they enter Stage 2 through the same `rerank_score`
   call as DB entries, so the rerank stage's existing `Option<u8>`

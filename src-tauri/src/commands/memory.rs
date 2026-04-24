@@ -647,6 +647,7 @@ pub async fn add_memory_edge(
         source: source.as_deref().map(EdgeSource::parse).unwrap_or_default(),
         valid_from,
         valid_to,
+        edge_source: None,
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.add_edge(edge).map_err(|e| e.to_string())

@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)](#chunk-23--knowledge-graph-mirror-v7-edge_source-column-phase-13-tier-3) | 2026-04-24 |
 | [Repo Tooling — File-Size Quality Check (Rust 1000 / Vue 800 lines)](#repo-tooling--file-size-quality-check) | 2026-04-24 |
 | [Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#chunk-22--code-rag-fusion-in-rerank_search_memories-phase-13-tier-2) | 2026-04-24 |
 | [Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)](#chunk-21--gitnexus-sidecar-agent-phase-13-tier-1) | 2026-04-24 |
@@ -105,6 +106,88 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)
+
+**Date:** 2026-04-24
+**Reference:** `docs/brain-advanced-design.md` §8 (V7 schema) + Phase 13 Tier 3 row in §22; `rules/milestones.md` Phase 13.
+
+**Goal.** Make GitNexus's structured knowledge graph durable inside
+the TerranSoul brain. Prior chunks made the sidecar (2.1) and ephemeral
+Code-RAG fusion (2.2) work; Tier 3 is the opt-in path that mirrors the
+KG into SQLite so the rest of the brain (multi-hop traversal, the
+BrainView graph panel) can reason over code structure alongside
+free-text memories.
+
+**Implementation.**
+- `src-tauri/src/memory/migrations.rs` — new V7 migration adds a
+  nullable `edge_source TEXT` column to `memory_edges` plus
+  `idx_edges_edge_source`. Distinct from the existing `source` column
+  (which records `user`/`llm`/`auto` provenance inside TerranSoul):
+  `edge_source` records which **external KG** the edge came from.
+  `NULL` is the default for every native edge. Up + down migrations
+  shipped; round-trip test rebuilt for V7.
+- `src-tauri/src/memory/edges.rs` — `MemoryEdge` and `NewMemoryEdge`
+  gain `edge_source: Option<String>`; every SELECT/INSERT touched.
+  New `MemoryStore::delete_edges_by_edge_source` for per-mirror
+  rollback. All 23 existing test literals updated.
+- `src-tauri/src/memory/gitnexus_mirror.rs` (new, ~440 lines incl.
+  tests) — pure mapper:
+  * `KgNode` / `KgEdge` / `KgPayload` deserialize-permissive structs
+    (the `rel_type` field accepts `type` / `rel_type` / `relation`
+    aliases for forward compatibility).
+  * `map_relation(label)` — case-insensitive mapping of GitNexus's
+    `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE`
+    into the existing 17-relation taxonomy (`contains`,
+    `depends_on`, `derived_from`, `governs`); unknown labels flow
+    through `normalise_rel_type` so future GitNexus versions don't
+    break the mirror.
+  * `mirror_kg(store, scope, payload)` — upserts one memory entry per
+    KG node (idempotent via `source_hash` dedup), then batch-inserts
+    every translated edge with `edge_source = "gitnexus:<scope>"`.
+    Self-loops and dangling references are silently skipped and
+    counted in the returned `MirrorReport`.
+  * `unmirror(store, scope)` — single SQL DELETE by `edge_source`;
+    leaves memory nodes intact (they may have accreted user-asserted
+    or LLM-extracted edges).
+- `src-tauri/src/agent/gitnexus_sidecar.rs` — new
+  `GitNexusSidecar::graph(repo_label)` bridge method calling the
+  upstream `graph` MCP tool.
+- `src-tauri/src/commands/gitnexus.rs` — two new Tauri commands
+  `gitnexus_sync(repoLabel, kgPayload?)` and
+  `gitnexus_unmirror(repoLabel)`, plus a shape-tolerant
+  `extract_kg_payload` that handles three known response shapes
+  (top-level, nested under `graph.*`, and the MCP-standard
+  `content[].text` envelope). Caller may bypass the sidecar by passing
+  a payload directly — useful for tests and for clients that fetched
+  the KG out-of-band.
+- `src-tauri/src/lib.rs` — both commands registered in
+  `invoke_handler`.
+- Documentation: `docs/brain-advanced-design.md` §8 V7 schema entry +
+  Phase 13 row marked done; README "Brain System" + "Memory System"
+  sections updated to mention the new module, the V7 schema, the two
+  new Tauri commands, and the `edge_source` column (per the brain-doc
+  sync rule in `rules/architecture-rules.md`).
+
+**Strictly opt-in.** No code in this module runs at startup. The
+frontend explicitly calls `gitnexus_sync` when the user asks (Chunk
+2.4 will add the BrainView panel that surfaces it).
+
+**Tests.** 11 new unit tests in `gitnexus_mirror` (relation mapping,
+case-insensitivity, normalised fall-through, scope formatting, full
+mirror round-trip, idempotency, scoped unmirror, no-op unmirror, empty
+scope rejection, alias parsing) + 4 extractor tests in
+`commands::gitnexus` (top-level / nested / MCP-content / unknown
+shapes) + 1 bridge test that the new `graph` method emits the right
+JSON-RPC tool call. **Full suite: 839 → 853 tests, all passing.**
+`cargo clippy --lib --no-deps -- -D warnings` clean.
+
+**Files changed.** 7 files (`migrations.rs`, `edges.rs`,
+`gitnexus_mirror.rs` [new], `gitnexus_sidecar.rs`, `commands/gitnexus.rs`,
+`commands/memory.rs`, `lib.rs`, `mod.rs`) + `docs/brain-advanced-design.md`
++ `README.md` + `rules/milestones.md` + `rules/completion-log.md`.
 
 ---
 

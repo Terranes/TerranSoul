@@ -5,6 +5,7 @@ pub mod code_rag;
 pub mod cognitive_kind;
 pub mod edges;
 pub mod fusion;
+pub mod gitnexus_mirror;
 pub mod hyde;
 pub mod migrations;
 pub mod reranker;

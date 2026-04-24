@@ -282,6 +282,16 @@ impl GitNexusSidecar {
         .await
     }
 
+    /// `graph` — export the structured knowledge graph (nodes + typed
+    /// edges) for the indexed repo. Used by the Phase 13 Tier 3 mirror
+    /// (Chunk 2.3) to project GitNexus's KG into TerranSoul's memory
+    /// graph. The returned `Value` is the raw GitNexus response — the
+    /// caller (`gitnexus_sync` Tauri command) is responsible for
+    /// extracting the `nodes` / `edges` payload.
+    pub async fn graph(&self, repo_label: &str) -> Result<Value, GitNexusError> {
+        self.call_tool("graph", json!({ "repo": repo_label })).await
+    }
+
     // -- Internals -----------------------------------------------------------
 
     fn alloc_id(&self) -> u64 {
