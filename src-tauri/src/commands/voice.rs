@@ -292,16 +292,14 @@ pub async fn synthesize_tts(text: String, state: State<'_, AppState>) -> Result<
             let engine = voice::stub_tts::StubTts;
             engine.synthesize(&trimmed).await.map(|r| r.audio)
         }
-        Some("edge-tts") => {
-            let (voice_name, pitch, rate) = {
-                let config = state.voice_config.lock().map_err(|e| e.to_string())?;
-                (config.tts_voice.clone(), config.tts_pitch, config.tts_rate)
-            };
-            let engine = match voice_name {
-                Some(v) => voice::edge_tts::EdgeTts::with_prosody(v, pitch, rate),
-                None => voice::edge_tts::EdgeTts::new(),
-            };
-            engine.synthesize(&trimmed).await.map(|r| r.audio)
+        Some("web-speech") => {
+            // Web Speech (browser SpeechSynthesis) is rendered client-
+            // side — there is no audio for the backend to produce. The
+            // frontend's `useTtsPlayback` composable already falls back
+            // to `speechSynthesis.speak()` whenever the WAV payload is
+            // empty (≤44 bytes), so returning `Vec::new()` here is the
+            // explicit "render in the browser" signal.
+            Ok(Vec::new())
         }
         Some(id) => Err(format!("Unsupported TTS provider: {id}")),
         None => Err("No TTS provider configured".to_string()),
@@ -401,7 +399,7 @@ mod tests {
         let provider: Option<&str> = Some("unknown-provider");
         let result: Result<Vec<u8>, String> = match provider {
             Some("stub") => Ok(vec![]),
-            Some("edge-tts") => Ok(vec![]),
+            Some("web-speech") => Ok(vec![]),
             Some(id) => Err(format!("Unsupported TTS provider: {id}")),
             None => Err("No TTS provider configured".to_string()),
         };
@@ -624,12 +622,12 @@ mod tests {
     #[test]
     fn tts_voice_persists_in_config() {
         let cfg = voice::VoiceConfig {
-            tts_voice: Some("en-US-AnaNeural".to_string()),
+            tts_voice: Some("Samantha".to_string()),
             ..Default::default()
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: voice::VoiceConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.tts_voice, Some("en-US-AnaNeural".to_string()));
+        assert_eq!(parsed.tts_voice, Some("Samantha".to_string()));
     }
 
     #[test]
@@ -648,45 +646,11 @@ mod tests {
     #[test]
     fn tts_voice_deserializes_as_none_when_missing() {
         // Simulate old config files that don't have the tts_voice field
-        let json = r#"{"asr_provider":null,"tts_provider":"edge-tts","api_key":null,"endpoint_url":null}"#;
+        let json = r#"{"asr_provider":null,"tts_provider":"web-speech","api_key":null,"endpoint_url":null}"#;
         let cfg: voice::VoiceConfig = serde_json::from_str(json).unwrap();
         assert!(cfg.tts_voice.is_none());
         assert_eq!(cfg.tts_pitch, 0);
         assert_eq!(cfg.tts_rate, 0);
-    }
-
-    #[test]
-    fn synthesize_tts_edge_uses_prosody() {
-        // Verify the routing logic: when tts_voice and prosody are set, with_prosody is used
-        let voice_name = Some("en-US-AnaNeural".to_string());
-        let pitch = 50;
-        let rate = 15;
-        let engine = match &voice_name {
-            Some(v) => voice::edge_tts::EdgeTts::with_prosody(v.clone(), pitch, rate),
-            None => voice::edge_tts::EdgeTts::new(),
-        };
-        assert_eq!(engine.id(), "edge-tts");
-    }
-
-    #[test]
-    fn synthesize_tts_edge_uses_custom_voice_name() {
-        // Verify the routing logic: when tts_voice is set, EdgeTts::with_voice is used
-        let voice_name = Some("en-US-AndrewNeural".to_string());
-        let engine = match &voice_name {
-            Some(v) => voice::edge_tts::EdgeTts::with_voice(v.clone()),
-            None => voice::edge_tts::EdgeTts::new(),
-        };
-        assert_eq!(engine.id(), "edge-tts");
-    }
-
-    #[test]
-    fn synthesize_tts_edge_default_voice_when_none() {
-        let voice_name: Option<String> = None;
-        let engine = match &voice_name {
-            Some(v) => voice::edge_tts::EdgeTts::with_voice(v.clone()),
-            None => voice::edge_tts::EdgeTts::new(),
-        };
-        assert_eq!(engine.id(), "edge-tts");
     }
 }
 

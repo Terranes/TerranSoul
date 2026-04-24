@@ -107,14 +107,14 @@ mod tests {
     fn voice_config_deserializes_with_all_fields() {
         let payload = json!({
             "asr_provider": "groq-whisper",
-            "tts_provider": "edge-tts",
+            "tts_provider": "web-speech",
             "api_key": "sk-test",
             "endpoint_url": "https://custom.api/v1"
         });
         let config: crate::voice::VoiceConfig =
             serde_json::from_value(payload).unwrap();
         assert_eq!(config.asr_provider.as_deref(), Some("groq-whisper"));
-        assert_eq!(config.tts_provider.as_deref(), Some("edge-tts"));
+        assert_eq!(config.tts_provider.as_deref(), Some("web-speech"));
         assert_eq!(config.api_key.as_deref(), Some("sk-test"));
         assert_eq!(config.endpoint_url.as_deref(), Some("https://custom.api/v1"));
     }

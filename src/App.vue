@@ -1,6 +1,4 @@
 <template>
-  <Analytics />
-  <SpeedInsights />
   <!-- Loading splash shown during app initialization -->
   <Transition name="splash-fade">
     <SplashScreen v-if="appLoading" />
@@ -157,8 +155,6 @@ import QuestBubble from './components/QuestBubble.vue';
 import ComboToast from './components/ComboToast.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
-import { Analytics } from '@vercel/analytics/vue';
-import { SpeedInsights } from '@vercel/speed-insights/vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();

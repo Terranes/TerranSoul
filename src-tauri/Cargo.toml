@@ -38,7 +38,6 @@ sha2 = "0.10"
 hex = "0.4"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
-msedge-tts = "0.3.0"
 thiserror = "2"
 rand = { version = "0.8", optional = true }
 

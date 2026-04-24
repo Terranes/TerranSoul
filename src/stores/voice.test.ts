@@ -17,8 +17,8 @@ const sampleAsrProvider: VoiceProviderInfo = {
 };
 
 const sampleTtsProvider: VoiceProviderInfo = {
-  id: 'edge-tts',
-  display_name: 'Edge TTS (free)',
+  id: 'web-speech',
+  display_name: 'Web Speech (browser, free)',
   description: 'Microsoft Edge neural voices.',
   kind: 'cloud',
   requires_api_key: false,
@@ -70,7 +70,7 @@ describe('voice store', () => {
     expect(store.asrProviders.length).toBeGreaterThan(0);
     expect(store.ttsProviders.length).toBeGreaterThan(0);
     expect(store.asrProviders.some((p) => p.id === 'web-speech')).toBe(true);
-    expect(store.ttsProviders.some((p) => p.id === 'edge-tts')).toBe(true);
+    expect(store.ttsProviders.some((p) => p.id === 'web-speech')).toBe(true);
   });
 
   it('setAsrProvider updates config', async () => {
@@ -86,9 +86,9 @@ describe('voice store', () => {
   it('setTtsProvider updates config', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useVoiceStore();
-    await store.setTtsProvider('edge-tts');
+    await store.setTtsProvider('web-speech');
 
-    expect(store.config.tts_provider).toBe('edge-tts');
+    expect(store.config.tts_provider).toBe('web-speech');
     expect(store.hasVoice).toBe(true);
   });
 
@@ -112,7 +112,7 @@ describe('voice store', () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useVoiceStore();
     await store.setAsrProvider('web-speech');
-    await store.setTtsProvider('edge-tts');
+    await store.setTtsProvider('web-speech');
     expect(store.hasVoice).toBe(true);
 
     await store.clearConfig();
@@ -154,19 +154,19 @@ describe('voice store', () => {
     store.ttsProviders = [sampleTtsProvider];
 
     await store.setAsrProvider('whisper-api');
-    await store.setTtsProvider('edge-tts');
+    await store.setTtsProvider('web-speech');
     await store.setApiKey('sk-test-key');
 
     expect(store.config.asr_provider).toBe('whisper-api');
-    expect(store.config.tts_provider).toBe('edge-tts');
+    expect(store.config.tts_provider).toBe('web-speech');
     expect(store.config.api_key).toBe('sk-test-key');
     expect(store.selectedAsrProvider?.id).toBe('whisper-api');
-    expect(store.selectedTtsProvider?.id).toBe('edge-tts');
+    expect(store.selectedTtsProvider?.id).toBe('web-speech');
   });
 
   // ── autoConfigureVoice Tests ────────────────────────────────────────────
 
-  it('autoConfigureVoice enables Web Speech API and Edge TTS', async () => {
+  it('autoConfigureVoice enables Web Speech API for both ASR and TTS', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useVoiceStore();
     expect(store.isTextOnly).toBe(true);
@@ -174,7 +174,7 @@ describe('voice store', () => {
     await store.autoConfigureVoice();
 
     expect(store.config.asr_provider).toBe('web-speech');
-    expect(store.config.tts_provider).toBe('edge-tts');
+    expect(store.config.tts_provider).toBe('web-speech');
     expect(store.hasVoice).toBe(true);
     expect(store.isTextOnly).toBe(false);
   });
@@ -186,7 +186,7 @@ describe('voice store', () => {
     await store.autoConfigureVoice();
 
     expect(store.config.asr_provider).toBe('web-speech');
-    expect(store.config.tts_provider).toBe('edge-tts');
+    expect(store.config.tts_provider).toBe('web-speech');
     expect(store.hasVoice).toBe(true);
   });
 
@@ -197,7 +197,7 @@ describe('voice store', () => {
     await store.autoConfigureVoice();
 
     expect(mockInvoke).toHaveBeenCalledWith('set_asr_provider', { providerId: 'web-speech' });
-    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'edge-tts' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'web-speech' });
   });
 });
 
@@ -219,8 +219,8 @@ describe('voice store — IPC contract', () => {
   it('setTtsProvider sends providerId (camelCase)', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useVoiceStore();
-    await store.setTtsProvider('edge-tts');
-    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'edge-tts' });
+    await store.setTtsProvider('web-speech');
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_provider', { providerId: 'web-speech' });
   });
 
   it('setApiKey sends apiKey (camelCase)', async () => {

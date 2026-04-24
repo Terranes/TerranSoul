@@ -973,13 +973,13 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
       if (questIdToConfig === 'gift-of-speech') {
         // Auto-configure voice/TTS
         try {
-          await voice.setTtsProvider('edge-tts');
+          await voice.setTtsProvider('web-speech');
           
           // Add confirmation message
           await conversationStore.addMessage({
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: `Perfect! I've configured Edge TTS (free Microsoft neural voices) for you. You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
+            content: `Perfect! I've enabled Web Speech (your browser's built-in voice synthesis — free, offline-capable, no third-party API). You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
             agentName: 'TerranSoul',
             sentiment: 'happy',
             timestamp: Date.now(),

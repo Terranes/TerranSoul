@@ -1,5 +1,4 @@
 pub mod config_store;
-pub mod edge_tts;
 pub mod stub_asr;
 pub mod stub_diarization;
 pub mod stub_tts;
@@ -59,7 +58,7 @@ pub struct SynthesisResult {
 /// etc.) implements this trait.
 #[async_trait]
 pub trait TtsEngine: Send + Sync {
-    /// Unique provider identifier (e.g. "edge-tts", "openai-tts").
+    /// Unique provider identifier (e.g. "web-speech", "openai-tts").
     fn id(&self) -> &str;
 
     /// Human-readable display name (e.g. "Edge TTS (free)").
@@ -139,15 +138,18 @@ pub struct Hotword {
 pub struct VoiceConfig {
     /// Selected ASR provider ID, or `None` for text-only input.
     pub asr_provider: Option<String>,
-    /// Selected TTS provider ID. Defaults to `"edge-tts"` (free, no API key).
+    /// Selected TTS provider ID. Defaults to `"web-speech"` (the
+    /// browser's built-in `SpeechSynthesis` API — free, offline-
+    /// capable, no telemetry, no third-party ToS to worry about).
     pub tts_provider: Option<String>,
-    /// Edge TTS voice name (e.g. "en-US-AnaNeural"). When `None`, uses
-    /// the default female voice.
+    /// TTS voice name (provider-specific — e.g. a `SpeechSynthesisVoice`
+    /// name for the Web Speech engine). When `None`, the engine picks
+    /// its default voice.
     pub tts_voice: Option<String>,
-    /// Edge TTS pitch offset in Hz (e.g. 50 = +50Hz higher). Default 0.
+    /// TTS pitch offset (provider-specific scale; `0` = neutral).
     #[serde(default)]
     pub tts_pitch: i32,
-    /// Edge TTS rate offset in percent (e.g. 15 = +15% faster). Default 0.
+    /// TTS rate offset (provider-specific scale; `0` = neutral).
     #[serde(default)]
     pub tts_rate: i32,
     /// Optional API key for cloud providers (stored in app-data, not source).
@@ -163,7 +165,7 @@ impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
             asr_provider: None,
-            tts_provider: Some("edge-tts".into()),
+            tts_provider: Some("web-speech".into()),
             tts_voice: None,
             tts_pitch: 0,
             tts_rate: 0,
@@ -221,10 +223,10 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             requires_api_key: false,
         },
         VoiceProviderInfo {
-            id: "edge-tts".into(),
-            display_name: "Edge TTS (free)".into(),
-            description: "Microsoft Edge neural voices. Free, high quality, many languages.".into(),
-            kind: "cloud".into(),
+            id: "web-speech".into(),
+            display_name: "Web Speech (browser, free)".into(),
+            description: "Browser-native SpeechSynthesis. Free, offline-capable, no telemetry, no third-party API.".into(),
+            kind: "local".into(),
             requires_api_key: false,
         },
         VoiceProviderInfo {
@@ -271,10 +273,10 @@ mod tests {
     }
 
     #[test]
-    fn voice_config_default_uses_edge_tts() {
+    fn voice_config_default_uses_web_speech_tts() {
         let cfg = VoiceConfig::default();
         assert!(cfg.asr_provider.is_none());
-        assert_eq!(cfg.tts_provider.as_deref(), Some("edge-tts"));
+        assert_eq!(cfg.tts_provider.as_deref(), Some("web-speech"));
         assert!(cfg.api_key.is_none());
         assert!(cfg.endpoint_url.is_none());
     }
@@ -283,7 +285,7 @@ mod tests {
     fn voice_config_serde_roundtrip() {
         let cfg = VoiceConfig {
             asr_provider: Some("whisper-api".into()),
-            tts_provider: Some("edge-tts".into()),
+            tts_provider: Some("web-speech".into()),
             tts_voice: None,
             tts_pitch: 0,
             tts_rate: 0,
