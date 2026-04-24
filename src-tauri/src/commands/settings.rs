@@ -81,6 +81,7 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -113,6 +114,7 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

@@ -26,6 +26,8 @@ export interface AppSettings {
   auto_tag?: boolean;
   /** When true, ingest prepends document-level context to each chunk before embedding (Anthropic 2024). */
   contextual_retrieval?: boolean;
+  /** Set to true after the first-launch wizard completes (recommended or manual). */
+  first_launch_complete?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -39,6 +41,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   bgm_custom_tracks: [],
   auto_tag: false,
   contextual_retrieval: false,
+  first_launch_complete: false,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

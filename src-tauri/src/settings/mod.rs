@@ -154,6 +154,12 @@ pub struct AppSettings {
     /// Maps to `docs/brain-advanced-design.md` §19.2 row 3 (chunk 16.2).
     #[serde(default)]
     pub contextual_retrieval: bool,
+
+    /// Set to `true` after the first-launch wizard completes (recommended
+    /// or manual path).  The frontend uses this flag to decide whether to
+    /// show the welcome wizard on startup.
+    #[serde(default)]
+    pub first_launch_complete: bool,
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -202,6 +208,7 @@ impl Default for AppSettings {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         }
     }
 }
@@ -304,6 +311,7 @@ mod tests {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

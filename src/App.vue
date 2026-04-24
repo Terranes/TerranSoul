@@ -4,6 +4,12 @@
     <SplashScreen v-if="appLoading" />
   </Transition>
 
+  <!-- First-launch wizard (shown once, before the main app) -->
+  <FirstLaunchWizard
+    :visible="showFirstLaunchWizard"
+    @done="onFirstLaunchDone"
+  />
+
   <div
     v-show="!appLoading"
     class="app-shell"
@@ -143,6 +149,7 @@ import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
 import { useSkillTreeStore } from './stores/skill-tree';
 import { usePersonaStore } from './stores/persona';
+import { useSettingsStore } from './stores/settings';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
@@ -155,17 +162,20 @@ import QuestBubble from './components/QuestBubble.vue';
 import ComboToast from './components/ComboToast.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
+import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();
 const windowStore = useWindowStore();
 const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
+const settingsStore = useSettingsStore();
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain'>('chat');
 const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
 const questConstellationOpen = ref(false);
+const showFirstLaunchWizard = ref(false);
 
 
 const hasBrain = computed(() => brain.hasBrain);
@@ -183,6 +193,16 @@ const tabs = [
 
 async function onBrainDone() {
   skipSetup.value = true;
+}
+
+function onFirstLaunchDone() {
+  showFirstLaunchWizard.value = false;
+  // The wizard already configured brain + voice + quests.
+  // If the manual path was chosen and brain is still not set,
+  // show the BrainSetupView.
+  if (!brain.hasBrain) {
+    skipSetup.value = false;
+  }
 }
 
 async function togglePetMode() {
@@ -282,18 +302,26 @@ onMounted(async () => {
     // Persona unavailable — keep default in-memory traits.
   }
 
+  // Load settings to check first-launch flag
+  await settingsStore.loadSettings();
+
   // If brain is already set (either legacy or new mode), skip the onboarding.
   if (brain.hasBrain) {
     skipSetup.value = true;
-  } else {
-    // Desktop first launch: auto-configure free API (same as browser) and persist
-    // to the Tauri backend so `send_message_stream` knows the brain mode.
+  } else if (settingsStore.settings.first_launch_complete) {
+    // Settings say we completed first launch before but brain is gone —
+    // re-configure silently (the user already chose their path).
     await brain.autoConfigureForDesktop();
     skipSetup.value = true;
+  } else {
+    // True first launch: show the wizard and let the user choose.
+    showFirstLaunchWizard.value = true;
+    skipSetup.value = true; // hide BrainSetupView while wizard is open
   }
 
   // If voice is not configured, auto-enable Web Speech API + Edge TTS
-  if (!voice.hasVoice) {
+  // (skipped when the wizard is showing — the wizard handles this)
+  if (!voice.hasVoice && !showFirstLaunchWizard.value) {
     await voice.autoConfigureVoice();
   }
 

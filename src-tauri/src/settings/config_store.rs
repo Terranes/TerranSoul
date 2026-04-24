@@ -82,6 +82,7 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -125,6 +126,7 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -153,6 +155,7 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            first_launch_complete: false,
         };
         save(dir.path(), &s).unwrap();
 
