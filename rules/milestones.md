@@ -38,10 +38,11 @@
 _Phase 13 (2.1 → 2.4) shipped 2026-04-24. Phase 14 main-chain
 (14.1 + 14.2) shipped 2026-04-24. Chunk 14.7 (persona pack export /
 import) shipped 2026-04-24._ **Chunk 14.3** (expressions-pack: camera
-capture + face-mirror + PersonaTeacher) shipped 2026-04-25. Remaining
-Phase 14 work is the camera-driven side chain (14.4 / 14.5), the
-persona-storage + self-learning chunks (14.9 → 14.11) and the optional
-offline-polish research chunks (14.12 → 14.15). **Phase 15** (AI Coding
+capture + face-mirror + PersonaTeacher) shipped 2026-04-25. **Chunk 14.4**
+(motion-capture) and **Chunk 14.5** (VRMA baking) shipped 2026-04-25.
+Remaining Phase 14 work is the persona-storage + self-learning chunks
+(14.8 → 14.11) and the optional offline-polish research chunks
+(14.12 → 14.15). **Phase 15** (AI Coding
 Integrations — MCP + gRPC) is in progress (15.3 landed; 15.1 / 15.2 /
 15.4–15.8 pending). **Phases 16 / 17** land the remaining items from
 `docs/brain-advanced-design.md` § 16 (Modern RAG, Phase-5
@@ -101,7 +102,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 14.5 | VRMA baking — convert a recorded learned-motion clip into a VRMA file so the avatar can replay it through the existing `VrmaManager` instead of always streaming landmarks. | not-started | Reduces per-frame cost and unlocks sharing learned motions between devices via the existing Soul Link sync surface. |
 | 14.8 | **Persona drift detection** — `auto_learn` evaluator gains a `persona_drift_check` step: every N (default 25) memorised facts, the existing extractor compares the latest `personal:*` cluster against the active `PersonaTraits`, and surfaces a chat-side suggestion ("Echo noticed you've shifted toward …; update persona?"). Pure additive on top of `memory::auto_learn::evaluate` — no new background loop. Maps to `docs/persona-design.md` § 15.1 row 143. | done | Reuses the auto-learn cadence shipped in chunk 14.2; the only new state is a `last_drift_check_turn: i64` field on `AutoLearnState`. |
 | 14.9 | **Save / load learned expression presets** — promotes the `expressions-pack` activation gate from a stub to real on-disk persistence under `${app_data}/persona/expressions/<id>.json`. New Tauri commands `persona_list_expressions`, `persona_save_expression`, `persona_load_expression`, `persona_delete_expression` + a `LearnedExpressionStore` Rust module mirroring the persona pack envelope (§ 11.3). Maps to `docs/persona-design.md` § 15.2 row 147. | not-started | Storage chunk — depends on 14.3 landing the runtime expression mapper; delete is hard-delete (no soft-delete tier). |
 | 14.10 | **Save / load learned motion clips + `LearnedMotionPlayer`** — same shape as 14.9 for `${app_data}/persona/motions/<id>.json` (33-keypoint × N-frame timeline). New `LearnedMotionPlayer.ts` Three.js helper drives the VRM humanoid bones from a saved clip (consumed by Quest panels and Soul Mirror replay). Maps to `docs/persona-design.md` § 15.2 row 149. | not-started | Promotes `motion-capture` activation gate from stub to real. Depends on 14.4 landing the live retargeter. |

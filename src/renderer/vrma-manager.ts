@@ -232,6 +232,19 @@ export class VrmaManager {
     const clip = await this.loadClip(path);
     if (!clip) return false;
 
+    return this.playClip(clip, loop, fadeIn);
+  }
+
+  /**
+   * Play a pre-built AnimationClip (e.g. from vrma-baker.ts bakeMotionToClip).
+   * Stops any current animation first with crossfade.
+   * @param clip The AnimationClip to play.
+   * @param loop Whether to loop the animation.
+   * @param fadeIn Crossfade duration in seconds (default 0.3s).
+   */
+  playClip(clip: THREE.AnimationClip, loop = false, fadeIn = 0.3): boolean {
+    if (!this.mixer) return false;
+
     // Stop previous action with fadeout
     if (this.currentAction) {
       this.currentAction.fadeOut(fadeIn);

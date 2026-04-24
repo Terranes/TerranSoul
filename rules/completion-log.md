@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 14.5 — VRMA baking](#chunk-145--vrma-baking) | 2026-04-25 |
 | [Chunk 14.4 — Motion-capture camera quest](#chunk-144--motion-capture-camera-quest) | 2026-04-25 |
 | [Chunk 14.3 — Expressions-pack camera quest](#chunk-143--expressions-pack-camera-quest) | 2026-04-25 |
 | [Chunk 16.10 — ANN index (usearch)](#chunk-1610--ann-index-usearch) | 2026-04-25 |
@@ -169,6 +170,27 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 14.5 — VRMA baking
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped `vrma-baker.ts` — bakes recorded `LearnedMotion` JSON frame timelines into `THREE.AnimationClip` objects with quaternion keyframe tracks, so the avatar can replay learned motions through the existing `VrmaManager` instead of streaming landmarks per-frame. Added `playClip()` to `VrmaManager` for playing pre-built clips without loading from file.
+
+**Architecture.**
+- `vrma-baker.ts`: Pure `bakeMotionToClip()` converts per-bone Euler triples to `QuaternionKeyframeTrack[]` → `AnimationClip`. `bakeAllMotions()` batch-bakes to a trigger-keyed Map.
+- `VrmaManager.playClip()`: Accepts a pre-built `AnimationClip`, reuses the same fadeOut/fadeIn/action pipeline as `play()`. Refactored `play()` to delegate to `playClip()` after loading.
+
+**Files created.**
+- `src/renderer/vrma-baker.ts` — pure baker (~100 LOC)
+- `src/renderer/vrma-baker.test.ts` — 12 unit tests (empty frames, quaternion validity, batch bake, etc.)
+
+**Files modified.**
+- `src/renderer/vrma-manager.ts` — added `playClip()`, refactored `play()` to delegate
+
+**Test count after.** 1132 Vitest (12 new); 1053 Rust (unchanged).
 
 ---
 
