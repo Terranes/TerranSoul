@@ -124,9 +124,11 @@ mod tests {
     use crate::package_manager::RegistrySource;
 
     #[tokio::test]
-    async fn test_catalog_has_three_agents() {
+    async fn test_catalog_has_four_agents() {
         let entries = catalog::all_entries();
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 4);
+        // Sanity-check the gitnexus-sidecar (Chunk 2.1) made it in.
+        assert!(entries.iter().any(|m| m.name == "gitnexus-sidecar"));
     }
 
     #[tokio::test]
@@ -136,7 +138,7 @@ mod tests {
         let resp = reqwest::get(&url).await.unwrap();
         assert_eq!(resp.status(), 200);
         let agents: Vec<serde_json::Value> = resp.json().await.unwrap();
-        assert_eq!(agents.len(), 3);
+        assert_eq!(agents.len(), 4);
     }
 
     #[tokio::test]

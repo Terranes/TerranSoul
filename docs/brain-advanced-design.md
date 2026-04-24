@@ -2279,6 +2279,99 @@ This keeps the write-back side as understandable as the read side (§20).
 
 ---
 
+## 22. Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)
+
+> **Implemented in Chunk 2.1 (2026-04-24).** Tier 1 of the four-tier
+> GitNexus integration plan. See `rules/completion-log.md` for the
+> per-file change manifest.
+
+The brain reads structured **code** intelligence (symbol locations, call
+graphs, blast-radius, change diffs) through a strict out-of-process
+bridge to the upstream **GitNexus** project (`abhigyanpatwari/GitNexus`,
+PolyForm-Noncommercial-1.0.0). The licence forbids bundling, so
+TerranSoul **never ships GitNexus binaries**. Users install GitNexus
+themselves under their own licence terms (most commonly
+`npm i -g gitnexus`) and TerranSoul spawns `npx gitnexus mcp` over stdio
+when the user grants the `code_intelligence` capability to the
+`gitnexus-sidecar` agent.
+
+### 22.1 Wire diagram
+
+```
+Frontend (BrainView · Code knowledge panel — Chunk 2.4 will surface this)
+   │
+   │  invoke('gitnexusQuery', { prompt })
+   ▼
+src-tauri/src/commands/gitnexus.rs  ← capability gate (CapabilityStore)
+   │
+   ▼
+src-tauri/src/agent/gitnexus_sidecar.rs
+   │
+   │  JSON-RPC 2.0 over stdio (line-delimited JSON)
+   ▼
+$ npx gitnexus mcp           ← user-installed, out-of-process, kill_on_drop
+   │
+   ▼
+GitNexus MCP server (TypeScript) — analyses the active repo
+```
+
+### 22.2 Tools exposed (Tier 1)
+
+| Tauri command | MCP tool | Arguments | Returns |
+|---|---|---|---|
+| `gitnexus_query` | `query` | `query: string` | Free-form code-intelligence answer |
+| `gitnexus_context` | `context` | `target: string`, `maxResults: u32 = 10` | Ranked code snippets relevant to a symbol/file |
+| `gitnexus_impact` | `impact` | `symbol: string` | Blast-radius (callers / dependents) of changing a symbol |
+| `gitnexus_detect_changes` | `detect_changes` | `from: string`, `to: string` | Diff-aware summary between two git refs |
+
+The bridge returns the JSON-RPC `result` payload as `serde_json::Value`
+verbatim — TerranSoul does not reshape GitNexus's response schema, so
+upstream changes do not require a TerranSoul release.
+
+### 22.3 Capability model
+
+The bridge uses **two layers** of consent:
+
+1. **Process spawn** — handled by the OS / Tauri sidecar config; the user
+   chose to install GitNexus and configure the sidecar command.
+2. **`code_intelligence` capability** — granted per-agent via the
+   existing `CapabilityStore` consent dialog. Every Tauri command in
+   `commands/gitnexus.rs` re-reads the consent on every call, so revoking
+   consent immediately blocks subsequent tool invocations even if the
+   sidecar is still running.
+
+The bridge never has filesystem or network capabilities of its own — all
+filesystem/network actions are GitNexus's responsibility, performed in
+its own subprocess address space.
+
+### 22.4 Reliability guarantees
+
+- **Lazy initialisation.** The MCP `initialize` handshake (and the
+  spec-mandated `notifications/initialized` follow-up) runs only on the
+  first tool call, then is cached for the bridge's lifetime.
+- **ID matching.** Every JSON-RPC request carries a strictly-increasing
+  numeric `id`. The reader loop skips notifications and stale responses
+  with non-matching ids.
+- **Bounded skip.** The reader will skip at most `MAX_SKIPPED_LINES`
+  (256) unrelated lines before returning `NoMatchingResponse`. This
+  defends Tauri commands against runaway / chatty sidecars.
+- **EOF / pipe closed.** Returns `GitNexusError::Io` so the frontend can
+  show a clean error and offer to respawn the sidecar.
+- **Reaping.** `tokio::process::Command::kill_on_drop(true)` ensures the
+  child process is reaped when the bridge handle is dropped — including
+  on `configure_gitnexus_sidecar`, which intentionally drops the cached
+  bridge to force a respawn under the new config.
+
+### 22.5 Roadmap (later tiers)
+
+| Tier | Chunk | Goal |
+|---|---|---|
+| 2 | 2.2 | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
+| 3 | 2.3 | Mirror GitNexus's KG into TerranSoul's memory graph via a new V7 `edge_source` column; map `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` to the existing 17-relation taxonomy |
+| 4 | 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
+
+---
+
 ## Related Documents
 
 - [BRAIN-COMPLEX-EXAMPLE.md](../instructions/BRAIN-COMPLEX-EXAMPLE.md) — Quest-guided setup walkthrough

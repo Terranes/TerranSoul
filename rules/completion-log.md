@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)](#chunk-21--gitnexus-sidecar-agent-phase-13-tier-1) | 2026-04-24 |
 | [Chunk 1.11 — Temporal KG Edges (V6 schema)](#chunk-111--temporal-kg-edges-v6-schema) | 2026-04-24 |
 | [Chunk 1.10 — Cross-encoder Reranker (LLM-as-judge)](#chunk-110--cross-encoder-reranker-llm-as-judge) | 2026-04-24 |
 | [Chunk 1.9 — HyDE (Hypothetical Document Embeddings)](#chunk-19--hyde-hypothetical-document-embeddings) | 2026-04-24 |
@@ -93,6 +94,86 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)
+
+**Date:** 2026-04-24
+**Reference:** `rules/milestones.md` Phase 13 (GitNexus Code-Intelligence Integration), `docs/brain-advanced-design.md` §22 (new)
+
+**Goal.** Ship Tier 1 of the four-tier GitNexus integration: spawn the
+upstream `gitnexus` MCP server (`abhigyanpatwari/GitNexus`,
+PolyForm-Noncommercial-1.0.0) as an out-of-process sidecar over stdio,
+and expose the four core read-only tools (`query`, `context`, `impact`,
+`detect_changes`) as Tauri commands behind a `code_intelligence`
+capability gate. **Strictly out-of-process** — GitNexus's license
+prevents bundling, so the user installs it under their own license terms
+via the marketplace (`npx gitnexus mcp` by default).
+
+**Architecture.**
+- `agent/gitnexus_sidecar.rs` — async JSON-RPC 2.0 / MCP bridge with a
+  pluggable `RpcTransport` trait (production `StdioTransport` wrapping
+  `tokio::process::Command`, in-memory `mock::MockTransport` for tests).
+  Performs the spec-mandated MCP handshake (`initialize` → response →
+  `notifications/initialized`) lazily on first tool call and caches the
+  initialization state. ID-tracked request/response loop skips stray
+  notifications and stale responses; bounded by `MAX_SKIPPED_LINES = 256`
+  to defend against runaway sidecars.
+- `commands/gitnexus.rs` — 7 Tauri commands: `configure_gitnexus_sidecar`,
+  `get_gitnexus_sidecar_config`, `gitnexus_sidecar_status`,
+  `gitnexus_query`, `gitnexus_context`, `gitnexus_impact`,
+  `gitnexus_detect_changes`. Each call refreshes capability state from
+  `CapabilityStore`, lazily spawns the sidecar (cached in `AppState`),
+  and forwards the JSON-RPC `result` to the frontend as `serde_json::Value`.
+- `sandbox::Capability::CodeIntelligence` — new variant gating tool
+  invocation. The user must approve `code_intelligence` for
+  `gitnexus-sidecar` via the existing consent dialog before any tool
+  call is forwarded.
+- `registry_server::catalog` — added `gitnexus-sidecar` manifest with
+  `InstallMethod::Sidecar { path: "npx gitnexus mcp" }`,
+  `Network`+`Filesystem` capabilities, and the upstream's
+  PolyForm-Noncommercial-1.0.0 license declared in the manifest.
+- `package_manager::installer` — extended the "no binary download"
+  branch (formerly `is_builtin`) to `skip_binary` covering both
+  `BuiltIn` and `Sidecar` install methods, matching the existing
+  `verify_manifest_trust` doc comment that already exempted sidecars
+  from `sha256` requirements.
+
+**Files created.**
+- `src-tauri/src/agent/gitnexus_sidecar.rs` (~570 LOC, 11 unit tests)
+- `src-tauri/src/commands/gitnexus.rs` (~230 LOC, 4 unit tests)
+
+**Files modified.**
+- `src-tauri/src/agent/mod.rs` — register new sidecar module
+- `src-tauri/src/commands/mod.rs` — register new commands module
+- `src-tauri/src/commands/sandbox.rs` — accept `"code_intelligence"`
+  capability string in `parse_capability`
+- `src-tauri/src/sandbox/capability.rs` — add `Capability::CodeIntelligence`
+  variant, update `all()` and `display_name()`
+- `src-tauri/src/registry_server/catalog.rs` — add `gitnexus-sidecar` entry
+- `src-tauri/src/registry_server/server.rs` — bump catalog count to 4
+- `src-tauri/src/package_manager/installer.rs` — generalize `is_builtin`
+  → `skip_binary` to include `Sidecar`
+- `src-tauri/src/lib.rs` — `AppState.gitnexus_config` +
+  `AppState.gitnexus_sidecar` fields, register 7 new commands in the
+  invoke handler
+- `docs/brain-advanced-design.md` — new §22 covering the bridge
+- `README.md` — new Code-Intelligence component listing
+
+**Tests.**
+- 11 sidecar unit tests (capability denial, handshake, ID matching,
+  notification skipping, RPC error propagation, EOF handling,
+  malformed-JSON handling, default config sanity)
+- 4 Tauri-command-layer unit tests (capability rejection, full round
+  trip, argument forwarding, RPC error pass-through)
+- Backend total: 809 tests passing (up from 797 pre-chunk)
+- Frontend total: 1052 tests passing (no changes required)
+
+**Out of scope (deferred to later tiers).**
+- Tier 2 (Chunk 2.2) — Code-RAG fusion in `rerank_search_memories`
+- Tier 3 (Chunk 2.3) — Knowledge-graph mirror with `edge_source` column
+- Tier 4 (Chunk 2.4) — BrainView "Code knowledge" panel
 
 ---
 

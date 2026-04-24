@@ -1,3 +1,4 @@
+pub mod gitnexus_sidecar;
 pub mod openclaw_agent;
 pub mod stub_agent;
 

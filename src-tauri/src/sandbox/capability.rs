@@ -10,6 +10,13 @@ pub enum Capability {
     Clipboard,
     Network,
     ProcessSpawn,
+    /// Read-only code-intelligence access via the GitNexus sidecar bridge
+    /// (Chunk 2.1). Spawning the sidecar process is gated separately by
+    /// `ProcessSpawn`; this capability gates the actual JSON-RPC tool calls
+    /// (`gitnexus_query`, `gitnexus_context`, `gitnexus_impact`,
+    /// `gitnexus_detect_changes`) so a user can install the sidecar and
+    /// still keep code-intelligence read access disabled.
+    CodeIntelligence,
 }
 
 impl Capability {
@@ -20,6 +27,7 @@ impl Capability {
             Capability::Clipboard,
             Capability::Network,
             Capability::ProcessSpawn,
+            Capability::CodeIntelligence,
         ]
     }
 
@@ -30,6 +38,7 @@ impl Capability {
             Capability::Clipboard => "Clipboard",
             Capability::Network => "Network",
             Capability::ProcessSpawn => "Process Spawn",
+            Capability::CodeIntelligence => "Code Intelligence",
         }
     }
 
@@ -140,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_capability_all_returns_five() {
-        assert_eq!(Capability::all().len(), 5);
+        assert_eq!(Capability::all().len(), 6);
     }
 
     #[test]

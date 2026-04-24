@@ -6,6 +6,7 @@ pub mod chat;
 pub mod ingest;
 pub mod docker;
 pub mod emotion;
+pub mod gitnexus;
 pub mod identity;
 pub mod link;
 pub mod memory;
