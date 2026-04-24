@@ -52,8 +52,8 @@ use commands::{
     },
     gitnexus::{
         configure_gitnexus_sidecar, get_gitnexus_sidecar_config, gitnexus_context,
-        gitnexus_detect_changes, gitnexus_impact, gitnexus_query, gitnexus_sidecar_status,
-        gitnexus_sync, gitnexus_unmirror,
+        gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
+        gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -469,6 +469,7 @@ pub fn run() {
             // GitNexus KG mirror — Chunk 2.3 (Phase 13 Tier 3)
             gitnexus_sync,
             gitnexus_unmirror,
+            gitnexus_list_mirrors,
         ])
         .setup(|app| {
             let data_dir = app

@@ -410,6 +410,11 @@
       <BrainStatSheet />
     </section>
 
+    <!-- ── Code knowledge (GitNexus mirror) — Phase 13 Tier 4 ────────────── -->
+    <section class="bv-code-knowledge-section">
+      <CodeKnowledgePanel />
+    </section>
+
     <!-- ── Persona panel (data storage & management) ──────────────────────── -->
     <section class="bv-persona-section">
       <PersonaPanel />
@@ -462,6 +467,7 @@ import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
+import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import type { MemoryEntry } from '../types';

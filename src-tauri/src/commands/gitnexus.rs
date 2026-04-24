@@ -253,6 +253,59 @@ pub async fn gitnexus_unmirror(
     gitnexus_mirror::unmirror(&store, &repo_label)
 }
 
+/// One mirrored repo as surfaced by [`gitnexus_list_mirrors`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitNexusMirrorSummary {
+    /// Full `edge_source` value (e.g. `gitnexus:repo:foo/bar@abc`).
+    pub edge_source: String,
+    /// Caller-supplied scope without the `gitnexus:` prefix
+    /// (e.g. `repo:foo/bar@abc`). Pass this to `gitnexus_unmirror`.
+    pub scope: String,
+    /// Number of mirrored edges currently in the store.
+    pub edge_count: i64,
+    /// Wall-clock time (Unix-ms) of the most-recent edge insertion
+    /// for this scope — i.e. when the repo was last synced.
+    pub last_synced_at: i64,
+}
+
+/// `gitnexus_list_mirrors` — enumerate every repo currently mirrored
+/// from GitNexus, ordered by most-recent-sync first.
+///
+/// Powers the Phase 13 Tier 4 BrainView "Code knowledge" panel
+/// (Chunk 2.4): each row is a clickable mirror with edge count,
+/// last-sync timestamp, and a one-button rollback path.
+#[tauri::command]
+pub async fn gitnexus_list_mirrors(
+    state: State<'_, AppState>,
+) -> Result<Vec<GitNexusMirrorSummary>, String> {
+    let store = state
+        .memory_store
+        .lock()
+        .map_err(|e| format!("gitnexus_list_mirrors: memory store lock poisoned: {e}"))?;
+    let rows = store
+        .list_external_mirrors(&format!(
+            "{}%",
+            crate::memory::gitnexus_mirror::GITNEXUS_EDGE_SOURCE_PREFIX
+        ))
+        .map_err(|e| format!("gitnexus_list_mirrors: {e}"))?;
+    let prefix = crate::memory::gitnexus_mirror::GITNEXUS_EDGE_SOURCE_PREFIX;
+    Ok(rows
+        .into_iter()
+        .map(|(edge_source, edge_count, last_synced_at)| {
+            let scope = edge_source
+                .strip_prefix(prefix)
+                .unwrap_or(&edge_source)
+                .to_string();
+            GitNexusMirrorSummary {
+                edge_source,
+                scope,
+                edge_count,
+                last_synced_at,
+            }
+        })
+        .collect())
+}
+
 /// Pull a [`KgPayload`] out of the raw `graph` MCP response.
 ///
 /// Tries three shapes in order:

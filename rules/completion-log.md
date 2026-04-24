@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)](#chunk-24--brainview-code-knowledge-panel-phase-13-tier-4) | 2026-04-24 |
 | [Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)](#chunk-23--knowledge-graph-mirror-v7-edge_source-column-phase-13-tier-3) | 2026-04-24 |
 | [Repo Tooling — File-Size Quality Check (Rust 1000 / Vue 800 lines)](#repo-tooling--file-size-quality-check) | 2026-04-24 |
 | [Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#chunk-22--code-rag-fusion-in-rerank_search_memories-phase-13-tier-2) | 2026-04-24 |
@@ -106,6 +107,71 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)
+
+**Date:** 2026-04-24
+**Reference:** `docs/brain-advanced-design.md` Phase 13 row in §22; built directly on Chunks 2.1 / 2.3 shipped earlier today.
+
+**Goal.** Surface the GitNexus Tier 1 + Tier 3 plumbing in the Brain
+hub so a user can mirror an indexed repo's KG, see what's already
+mirrored, roll back a mirror, and run a blast-radius pre-flight on a
+symbol — all without touching the CLI or copy-pasting JSON.
+
+**Implementation.**
+- `src-tauri/src/memory/edges.rs` — new
+  `MemoryStore::list_external_mirrors(like_pattern)` aggregates
+  `memory_edges` by `edge_source` (filtered by SQL LIKE) into one row
+  per scope: `(edge_source, COUNT(*), MAX(created_at))`. Native edges
+  (NULL `edge_source`) are excluded. Three new unit tests (groups
+  correctly, empty store, scoped delete-by-edge-source).
+- `src-tauri/src/commands/gitnexus.rs` — new
+  `gitnexus_list_mirrors() -> Vec<GitNexusMirrorSummary>` Tauri
+  command. Strips the `gitnexus:` prefix into a separate `scope`
+  field so the frontend can pass it straight back to
+  `gitnexus_unmirror`.
+- `src-tauri/src/lib.rs` — command registered in `invoke_handler`.
+- `src/components/CodeKnowledgePanel.vue` (new, ~430 lines incl.
+  scoped CSS) — Vue 3 `<script setup lang="ts">` component:
+  * Sync form: text input for the `repo:owner/name@sha` scope +
+    "Sync KG" button → calls `gitnexus_sync` and renders an
+    inserted/reused/skipped report.
+  * Mirror list: rendered from `gitnexus_list_mirrors`, formats
+    `last_synced_at` via `Intl.DateTimeFormat` (no extra date lib),
+    per-row "Unmirror" button.
+  * Blast-radius pre-flight: text input for a symbol + "Probe impact"
+    button → calls `gitnexus_impact`; `summariseImpact` extracts a
+    one-line dependent count from the three known upstream response
+    shapes (`{symbol, dependents}`, `{items}`, `{count}`) and falls
+    back to a JSON snippet for unknown shapes (forward-compatible).
+  * All design tokens via `var(--ts-*)`; no hard-coded hex outside
+    the `…, fallback` arguments.
+  * Defensive: `mirrors.value` is always normalised to `[]` so that
+    other test files mounting `BrainView` (with a stub `invoke` that
+    returns `undefined`) don't crash.
+- `src/views/BrainView.vue` — three-line wiring: import +
+  `<section class="bv-code-knowledge-section"><CodeKnowledgePanel /></section>`
+  inserted between the stats sheet and the persona panel. No other
+  BrainView changes.
+
+**Tests.** 9 new Vitest unit tests (`CodeKnowledgePanel.test.ts`):
+empty state, disabled-when-empty sync button, ordered mirror render,
+sync round-trip with refresh, per-row unmirror, impact summary, error
+banner on capability denial, `summariseImpact` shape coverage,
+`formatTimestamp` defensive fallback. **Frontend suite: 1052 → 1061
+passing across 66 files.** Rust suite: 839 → 842 passing.
+`cargo clippy --lib --no-deps -- -D warnings` clean; `npm run lint`
+yields only the pre-existing `v-html` warnings (none on the new
+files); `npx vue-tsc --noEmit` clean.
+
+**Files changed.** 5 files (`memory/edges.rs`,
+`commands/gitnexus.rs`, `lib.rs`,
+`components/CodeKnowledgePanel.vue` [new],
+`components/CodeKnowledgePanel.test.ts` [new],
+`views/BrainView.vue`) + `docs/brain-advanced-design.md` +
+`rules/milestones.md` + `rules/completion-log.md`.
 
 ---
 

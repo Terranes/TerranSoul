@@ -2311,7 +2311,7 @@ when the user grants the `code_intelligence` capability to the
 ### 22.1 Wire diagram
 
 ```
-Frontend (BrainView · Code knowledge panel — Chunk 2.4 will surface this)
+Frontend (BrainView · Code knowledge panel — `src/components/CodeKnowledgePanel.vue`, shipped 2026-04-24)
    │
    │  invoke('gitnexusQuery', { prompt })
    ▼
@@ -2382,7 +2382,7 @@ its own subprocess address space.
 | 1 | 2.1 | ✅ done (2026-04-24) | Sidecar bridge + four read-only Tauri commands behind `code_intelligence` capability |
 | 2 | 2.2 | ✅ done (2026-04-24) | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
 | 3 | 2.3 | ✅ done (2026-04-24) | V7 SQLite migration adds `edge_source` column to `memory_edges` (+ index). New `memory::gitnexus_mirror` module maps `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` into the existing 17-relation taxonomy and writes mirrored edges with `edge_source = 'gitnexus:<scope>'`. Tauri commands `gitnexus_sync` (opt-in; calls the sidecar's `graph` MCP tool) and `gitnexus_unmirror` (single-scope rollback). 11 unit tests + 4 extractor tests. |
-| 4 | 2.4 | not-started | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
+| 4 | 2.4 | ✅ done (2026-04-24) | New `src/components/CodeKnowledgePanel.vue` (sync form + mirror list with last-sync time + edge counts + per-row Unmirror + blast-radius `gitnexus_impact` probe) wired into `BrainView.vue`. New Tauri command `gitnexus_list_mirrors` (powered by `MemoryStore::list_external_mirrors("gitnexus:%")`) returns one row per mirrored scope ordered by most-recent-sync first. 9 Vitest unit tests + 3 new Rust unit tests. |
 
 ---
 

@@ -324,6 +324,38 @@ impl MemoryStore {
         Ok(n)
     }
 
+    /// Aggregate every edge that carries an `edge_source` matching
+    /// `like_pattern` (SQL LIKE syntax) into one row per distinct
+    /// `edge_source` value, ordered by most-recent-sync first.
+    ///
+    /// Used by the Phase 13 Tier 4 BrainView "Code knowledge" panel
+    /// (Chunk 2.4) — pass `"gitnexus:%"` to list every mirrored repo
+    /// with its edge count and last-sync wall-clock timestamp
+    /// (`MAX(created_at)`). The pattern is forwarded verbatim so the
+    /// caller controls the match — empty / `%` selects every external
+    /// mirror across systems.
+    pub fn list_external_mirrors(
+        &self,
+        like_pattern: &str,
+    ) -> SqlResult<Vec<(String, i64, i64)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT edge_source, COUNT(*) AS n, MAX(created_at) AS last_at
+             FROM memory_edges
+             WHERE edge_source IS NOT NULL AND edge_source LIKE ?1
+             GROUP BY edge_source
+             ORDER BY last_at DESC, edge_source ASC",
+        )?;
+        let rows = stmt.query_map(params![like_pattern], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
     /// Return all edges in the graph (ordered by id).
     pub fn list_edges(&self) -> SqlResult<Vec<MemoryEdge>> {
         let conn = self.conn();
@@ -826,6 +858,54 @@ mod tests {
         assert_eq!(store.get_edges_for(b, EdgeDirection::In).unwrap().len(), 2);
         assert_eq!(store.get_edges_for(b, EdgeDirection::Both).unwrap().len(), 2);
         assert_eq!(store.get_edges_for(a, EdgeDirection::Out).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn list_external_mirrors_groups_by_edge_source() {
+        let store = MemoryStore::in_memory();
+        let a = make_memory(&store, "A");
+        let b = make_memory(&store, "B");
+        let c = make_memory(&store, "C");
+        // Two edges in scope #1, one in scope #2, one native (NULL edge_source).
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "contains".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:repo:foo/bar@sha1".into()) }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "depends_on".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:repo:foo/bar@sha1".into()) }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "contains".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:repo:other/repo@sha2".into()) }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: c, dst_id: a, rel_type: "related_to".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+
+        let rows = store.list_external_mirrors("gitnexus:%").unwrap();
+        assert_eq!(rows.len(), 2, "two distinct mirror scopes, native edge ignored");
+        let by_source: std::collections::HashMap<&str, i64> =
+            rows.iter().map(|(s, n, _)| (s.as_str(), *n)).collect();
+        assert_eq!(by_source["gitnexus:repo:foo/bar@sha1"], 2);
+        assert_eq!(by_source["gitnexus:repo:other/repo@sha2"], 1);
+        // Each row carries a non-zero last-sync timestamp.
+        for (_, _, last_at) in &rows {
+            assert!(*last_at > 0, "last_synced_at should be the edge's created_at");
+        }
+    }
+
+    #[test]
+    fn list_external_mirrors_empty_when_no_mirrors() {
+        let store = MemoryStore::in_memory();
+        let a = make_memory(&store, "A");
+        let b = make_memory(&store, "B");
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        let rows = store.list_external_mirrors("gitnexus:%").unwrap();
+        assert!(rows.is_empty(), "native-only graph must report zero mirrors");
+    }
+
+    #[test]
+    fn delete_edges_by_edge_source_only_removes_match() {
+        let store = MemoryStore::in_memory();
+        let a = make_memory(&store, "A");
+        let b = make_memory(&store, "B");
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "contains".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:scope-x".into()) }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: b, dst_id: a, rel_type: "depends_on".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:scope-y".into()) }).unwrap();
+        let removed = store.delete_edges_by_edge_source("gitnexus:scope-x").unwrap();
+        assert_eq!(removed, 1);
+        let remaining = store.list_edges().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].edge_source.as_deref(), Some("gitnexus:scope-y"));
     }
 
     #[test]

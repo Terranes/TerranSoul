@@ -37,15 +37,11 @@
 
 ## Next Chunk
 
-**Chunk 2.4 — BrainView "Code knowledge" panel.** Pure frontend Vue
-work in `src/views/BrainView.vue` that consumes `gitnexus_sync` /
-`gitnexus_unmirror` (Chunk 2.3, shipped 2026-04-24) plus the existing
-`gitnexus_sidecar_status` / `gitnexus_impact` commands: list every
-indexed repo with last-sync time + edge counts (read from
-`get_edge_stats` filtered by `edge_source LIKE 'gitnexus:%'`), and a
-"blast-radius pre-flight" indicator that runs `gitnexus_impact` on the
-symbol the user is about to change. No new Rust surface — wires
-existing commands into the Brain hub.
+_All currently-planned Phase 13 chunks (2.1 → 2.4) shipped on 2026-04-24._
+Future work: deeper integration of code-knowledge mirrors into the
+multi-hop traversal UI, or a new Phase to extend the brain in another
+direction. Pick the next backlog item from `rules/backlog.md` when
+ready.
 
 ---
 
@@ -56,17 +52,6 @@ existing commands into the Brain hub.
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
-
-### Phase 13 — GitNexus Code-Intelligence Integration
-
-> Reverse-engineering and four-tier integration plan derived from GitNexus
-> v1.6.x (`abhigyanpatwari/GitNexus`, PolyForm-Noncommercial-1.0.0).
-> Strategy: out-of-process sidecar — never bundle GitNexus binaries.
-> Each chunk ships independently and may be reordered by user demand.
-
-| # | Chunk | Status | Owner | Notes |
-|---|---|---|---|---|
-| 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator | not-started | agent | Tier 4; pure frontend; depends on 2.1 + 2.3 |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 
