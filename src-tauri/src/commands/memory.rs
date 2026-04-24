@@ -1030,3 +1030,16 @@ pub async fn temporal_query(
         memories,
     })
 }
+
+/// Get the full version history for a memory entry (chunk 16.12).
+///
+/// Returns all previous snapshots ordered oldest-first. An empty list means
+/// the memory has never been edited (or the schema is pre-V8).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_memory_history(
+    memory_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::versioning::MemoryVersion>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    crate::memory::versioning::get_history(store.conn(), memory_id).map_err(|e| e.to_string())
+}

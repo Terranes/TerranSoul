@@ -80,6 +80,7 @@ mod tests {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -111,6 +112,7 @@ mod tests {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

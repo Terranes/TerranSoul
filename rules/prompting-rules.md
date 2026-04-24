@@ -124,6 +124,35 @@ This rule is mandatory for every AI agent session.
 
 ---
 
+## ENFORCEMENT RULE — Clean Up Reverse-Engineering Research on Chunk Completion
+
+When a completed chunk was **derived from** or **inspired by** a section in
+`rules/research-reverse-engineering.md` (e.g. it implements a pattern from
+aituber-kit, Open-LLM-VTuber, VibeVoice, AI4Animation-js, or any other
+reverse-engineered project documented there):
+
+1. **Remove the corresponding section** from `rules/research-reverse-engineering.md`.
+   If the section is partially implemented (some bullets done, others not), remove
+   only the completed bullets and leave a note: `✅ Implemented in Chunk NNN`.
+   If the entire section is fully implemented, delete it and update the Table of
+   Contents.
+2. **Remove the corresponding row** from `rules/backlog.md` if one exists.
+   If the row was already promoted to `milestones.md`, it will be removed by the
+   normal "Completed Chunks Must Be Archived" rule above — no extra action needed.
+3. **Update the "What We Already Have" list** at the bottom of
+   `rules/research-reverse-engineering.md` § 9 to include the newly implemented
+   feature with a `✅` checkmark.
+
+**Why:** Research docs are living references, not archives. Once a pattern has
+been absorbed into TerranSoul's codebase, keeping it in the research doc adds
+noise and misleads future agents into thinking the work is still pending.
+The authoritative record of completed work lives in `rules/completion-log.md`.
+
+This rule is mandatory for every AI agent session that completes a
+reverse-engineering-derived chunk.
+
+---
+
 ## ENFORCEMENT RULE — Completion-Log File Size Cap
 
 > **`rules/completion-log.md` always contains the LATEST entries and must not exceed 10,000 lines.**

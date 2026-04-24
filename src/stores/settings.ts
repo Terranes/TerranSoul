@@ -24,6 +24,8 @@ export interface AppSettings {
   bgm_custom_tracks: BgmTrack[];
   /** When true, LLM auto-tags new memories with curated-prefix tags. */
   auto_tag?: boolean;
+  /** When true, ingest prepends document-level context to each chunk before embedding (Anthropic 2024). */
+  contextual_retrieval?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -36,6 +38,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   bgm_track_id: 'prelude',
   bgm_custom_tracks: [],
   auto_tag: false,
+  contextual_retrieval: false,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

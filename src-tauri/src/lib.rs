@@ -69,9 +69,10 @@ use commands::{
         delete_memory, delete_memory_edge, evaluate_auto_learn, export_to_obsidian,
         extract_edges_via_brain, extract_memories_from_session, gc_memories,
         get_auto_learn_policy, get_edge_stats, get_edges_for_memory, get_memories,
-        get_memories_by_tier, get_memory_stats, get_relevant_memories, get_schema_info,
-        get_short_term_memory, hybrid_search_memories, hybrid_search_memories_rrf,
-        hyde_search_memories, list_memory_edges, list_relation_types,
+        get_memories_by_tier, get_memory_history, get_memory_stats, get_relevant_memories,
+        get_schema_info, get_short_term_memory, hybrid_search_memories,
+        hybrid_search_memories_rrf, hyde_search_memories,
+        list_memory_edges, list_relation_types,
         multi_hop_search_memories, promote_memory, rerank_search_memories,
         search_memories, semantic_search_memories, set_auto_learn_policy, summarize_session,
         temporal_query, update_memory,
@@ -363,6 +364,8 @@ pub fn run() {
             export_to_obsidian,
             // Temporal reasoning queries (Chunk 17.3)
             temporal_query,
+            // Memory versioning (Chunk 16.12)
+            get_memory_history,
             start_registry_server,
             stop_registry_server,
             get_registry_server_port,

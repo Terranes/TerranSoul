@@ -4,6 +4,7 @@ pub mod auto_learn;
 pub mod auto_tag;
 pub mod code_rag;
 pub mod cognitive_kind;
+pub mod contextualize;
 pub mod edges;
 pub mod fusion;
 pub mod gitnexus_mirror;
@@ -14,6 +15,7 @@ pub mod reranker;
 pub mod store;
 pub mod tag_vocabulary;
 pub mod temporal;
+pub mod versioning;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

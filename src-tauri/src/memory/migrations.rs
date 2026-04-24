@@ -224,6 +224,43 @@ DROP INDEX IF EXISTS idx_edges_edge_source;
 ALTER TABLE memory_edges DROP COLUMN edge_source;
 "#,
     },
+    // ── V8: Memory versioning — edit history for memories ──────────────
+    //
+    // Tracks every edit to a memory entry as an immutable snapshot.
+    // When `update_memory` changes `content`, `tags`, `importance`, or
+    // `memory_type`, the *previous* state is saved to `memory_versions`
+    // before the update is applied. This makes edits non-destructive and
+    // enables a "view history" panel in BrainView.
+    //
+    // The `version_num` column starts at 1 for the first edit and auto-
+    // increments per-memory via `MAX(version_num) + 1` at insert time.
+    //
+    // FK cascade ensures that deleting a memory also deletes its version
+    // history (no orphan rows).
+    //
+    // See `docs/brain-advanced-design.md` §16 Phase 4 (chunk 16.12).
+    Migration {
+        version: 8,
+        description: "memory versioning: edit history for memories",
+        up: r#"
+CREATE TABLE IF NOT EXISTS memory_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id   INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    version_num INTEGER NOT NULL,
+    content     TEXT    NOT NULL,
+    tags        TEXT    NOT NULL DEFAULT '',
+    importance  INTEGER NOT NULL DEFAULT 3,
+    memory_type TEXT    NOT NULL DEFAULT 'fact',
+    created_at  INTEGER NOT NULL,
+    UNIQUE(memory_id, version_num)
+);
+CREATE INDEX IF NOT EXISTS idx_versions_memory ON memory_versions(memory_id);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_versions_memory;
+DROP TABLE IF EXISTS memory_versions;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -508,11 +545,11 @@ mod tests {
     }
 
     #[test]
-    fn target_version_is_v7() {
+    fn target_version_is_v8() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
-        assert_eq!(TARGET_VERSION, 7, "V7 is the current external-KG-mirror schema");
+        assert_eq!(TARGET_VERSION, 8, "V8 is the current memory-versioning schema");
     }
 
     #[test]
@@ -524,6 +561,8 @@ mod tests {
         // semantics).
         let conn = fresh_conn();
         migrate_to_latest(&conn).unwrap();
+        // Downgrade to V7 first — the test operates at V7 level.
+        downgrade_to(&conn, 7).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 7);
 
         conn.execute_batch(
@@ -559,7 +598,8 @@ mod tests {
         assert_eq!(n, 1, "edge row must survive V7→V6 downgrade");
 
         migrate_to_latest(&conn).unwrap();
-        assert_eq!(get_version(&conn).unwrap(), 7);
+        // V8 adds memory_versions; the edge_source column round-trips fine.
+        assert_eq!(get_version(&conn).unwrap(), TARGET_VERSION);
         let es2: Option<String> = conn
             .query_row(
                 "SELECT edge_source FROM memory_edges WHERE id = 1",

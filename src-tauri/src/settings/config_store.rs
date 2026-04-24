@@ -81,6 +81,7 @@ mod tests {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -123,6 +124,7 @@ mod tests {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -150,6 +152,7 @@ mod tests {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         };
         save(dir.path(), &s).unwrap();
 

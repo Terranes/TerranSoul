@@ -264,6 +264,27 @@ async fn run_ingest_task(
 
     emit_progress(app, task_id, 30, &format!("Chunked into {} pieces", chunk_count), 0, chunk_count);
 
+    // ── Contextual Retrieval (Anthropic 2024, Chunk 16.2) ──────────────
+    // When enabled, generate a document summary once, then prepend a
+    // 50–100 token context prefix to each chunk before storing.
+    let contextual_retrieval_enabled = state
+        .app_settings
+        .lock()
+        .map(|s| s.contextual_retrieval)
+        .unwrap_or(false);
+
+    let doc_summary = if contextual_retrieval_enabled {
+        let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+        if let Some(mode) = brain_mode {
+            emit_progress(app, task_id, 32, "Generating document summary for contextual retrieval…", 0, chunk_count);
+            crate::memory::contextualize::generate_doc_summary(&text, &mode).await
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Store chunks with progress
     let mut created = 0usize;
     for (i, chunk) in chunks.iter().enumerate() {
@@ -291,10 +312,26 @@ async fn run_ingest_task(
             tags.to_string()
         };
 
+        // Contextual Retrieval: prepend document-level context to the chunk.
+        let final_content = if let Some(ref summary) = doc_summary {
+            let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+            if let Some(mode) = brain_mode {
+                if let Some(ctx) = crate::memory::contextualize::contextualise_chunk(summary, chunk, &mode).await {
+                    crate::memory::contextualize::prepend_context(&ctx, chunk)
+                } else {
+                    chunk.clone()
+                }
+            } else {
+                chunk.clone()
+            }
+        } else {
+            chunk.clone()
+        };
+
         let result = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.add(NewMemory {
-                content: chunk.clone(), tags: chunk_tags,
+                content: final_content, tags: chunk_tags,
                 importance, memory_type: MemoryType::Fact,
                 source_url: Some(source_url.clone()),
                 source_hash: Some(source_hash.clone()),

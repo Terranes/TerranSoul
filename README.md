@@ -239,7 +239,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 **Core modules** (`src-tauri/src/memory/`)
 - `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V7**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal weighted-sum scoring), `hybrid_search_rrf` (RRF-fused vector + keyword + freshness retrievers), `apply_decay`, `promote`
 - `backend.rs` — `StorageBackend` trait + `StorageConfig` + `StorageError` (the seam every backend implements)
-- `migrations.rs` — auto-applied schema migrations through V7 (`memories` + `memory_edges` with temporal `valid_from` / `valid_to` columns + V7 `edge_source` external-KG provenance, `PRAGMA foreign_keys=ON`)
+- `migrations.rs` — auto-applied schema migrations through V8 (`memories` + `memory_edges` with temporal `valid_from` / `valid_to` columns + V7 `edge_source` external-KG provenance + V8 `memory_versions` edit history table, `PRAGMA foreign_keys=ON`)
 - `edges.rs` — `MemoryEdge`, `NewMemoryEdge` (with V7 `edge_source: Option<String>`), `EdgeDirection`, `EdgeSource`, `EdgeStats`, `COMMON_RELATION_TYPES` (17-type taxonomy), `normalise_rel_type`, `parse_llm_edges`, `format_memories_for_extraction`, `delete_edges_by_edge_source`
 - `gitnexus_mirror.rs` — Phase 13 Tier 3 mapper: GitNexus `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` → 17-relation taxonomy; `mirror_kg(store, scope, payload)` / `unmirror(store, scope)` pure functions; idempotent across re-syncs (uses `source_hash` for node dedup)
 - `cognitive_kind.rs` — pure-function `classify(memory_type, tags, content) → CognitiveKind` (`Episodic` / `Semantic` / `Procedural`); mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`
@@ -252,14 +252,16 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - `auto_tag.rs` — LLM auto-tagger: `auto_tag_content()` dispatches to Ollama/FreeApi/PaidApi; `parse_tag_response()` validates + caps at 4 curated-prefix tags; `merge_tags()` deduplicates with user tags. Opt-in via `AppSettings.auto_tag`
 - `obsidian_export.rs` — one-way Obsidian vault export: `export_to_vault(vault_dir, entries)` writes `<id>-<slug>.md` per long-tier memory with YAML frontmatter; idempotent (mtime-based skip); `slugify`, `format_iso`, `render_markdown` pure helpers
 - `temporal.rs` — natural-language time-range parser: `parse_time_range(question, now_ms)` resolves "last N days", "since April", "between X and Y", "today", "yesterday" into `TimeRange { start_ms, end_ms }`; pure std calendar math (Howard Hinnant algorithm), no external crate
+- `contextualize.rs` — Contextual Retrieval (Anthropic 2024): `generate_doc_summary()` + `contextualise_chunk(doc_summary, chunk, brain_mode)` + `prepend_context()`; opt-in via `AppSettings.contextual_retrieval`; adds document-level context to each chunk before embedding, reducing failed retrievals by ~49 %
+- `versioning.rs` — non-destructive edit history: `save_version(conn, memory_id)` snapshots the current state into `memory_versions` (V8 schema) before each update; `get_history()` returns all previous versions; FK cascade on delete
 - Pluggable backends behind cargo features: `postgres.rs` (`sqlx`), `mssql.rs` (`tiberius`), `cassandra.rs` (`scylla`)
 
 **Tauri command surface** (`src-tauri/src/commands/memory.rs`)
-- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal weighted-sum), `hybrid_search_memories_rrf` (RRF-fused vector + keyword + freshness), `hyde_search_memories` (HyDE — embed an LLM-written hypothetical answer), `rerank_search_memories` (two-stage RRF-recall + LLM-as-judge cross-encoder rerank), `multi_hop_search_memories` (graph traversal), `temporal_query` (natural-language time-range filter: "last week", "since April", "between X and Y"), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge` (V6: optional `valid_from` / `valid_to`), `close_memory_edge` (V6: record supersession), `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`, `gitnexus_sync` (V7: opt-in code-KG mirror), `gitnexus_unmirror` (V7: per-scope rollback), `gitnexus_list_mirrors` (V7: BrainView panel), `get_auto_learn_policy`, `set_auto_learn_policy`, `evaluate_auto_learn`, `export_to_obsidian` (one-way vault export with YAML frontmatter)
+- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal weighted-sum), `hybrid_search_memories_rrf` (RRF-fused vector + keyword + freshness), `hyde_search_memories` (HyDE — embed an LLM-written hypothetical answer), `rerank_search_memories` (two-stage RRF-recall + LLM-as-judge cross-encoder rerank), `multi_hop_search_memories` (graph traversal), `temporal_query` (natural-language time-range filter: "last week", "since April", "between X and Y"), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge` (V6: optional `valid_from` / `valid_to`), `close_memory_edge` (V6: record supersession), `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`, `gitnexus_sync` (V7: opt-in code-KG mirror), `gitnexus_unmirror` (V7: per-scope rollback), `gitnexus_list_mirrors` (V7: BrainView panel), `get_auto_learn_policy`, `set_auto_learn_policy`, `evaluate_auto_learn`, `export_to_obsidian` (one-way vault export with YAML frontmatter), `get_memory_history` (V8: version history for a memory entry)
 
 **Storage & RAG**
 - **Three tiers** mirroring human cognition: short-term (in-memory `Vec<Message>`, last ~20 turns) → working (SQLite, session-scoped) → long-term (SQLite, vector-indexed, decay/GC managed)
-- **Knowledge graph (V7):** typed directional `memory_edges` table with FK cascade + temporal `valid_from` / `valid_to` validity intervals + `edge_source` external-KG provenance (e.g. `gitnexus:<scope>` for the Phase 13 Tier 3 code-KG mirror), 17-type relationship taxonomy, LLM edge extractor, multi-hop traversal
+- **Knowledge graph (V8):** typed directional `memory_edges` table with FK cascade + temporal `valid_from` / `valid_to` validity intervals + `edge_source` external-KG provenance (e.g. `gitnexus:<scope>` for the Phase 13 Tier 3 code-KG mirror), 17-type relationship taxonomy, LLM edge extractor, multi-hop traversal; `memory_versions` table for non-destructive edit history
 - **Embeddings:** Ollama `nomic-embed-text` (768-dim) stored as SQLite BLOB; chat-model fallback with process-lifetime "unsupported" cache + 60s `/api/tags` probe cache
 - **Hybrid 6-signal RAG search** — `vector_similarity` (40%) + `keyword_match` (20%) + `recency_bias` (15%) + `importance` (10%) + `decay_score` (10%) + `tier_priority` (5%)
 - **Decay & GC:** exponential decay (`decay_score *= 0.95^(hours/168)`), access-count tracking, periodic garbage collection
@@ -410,7 +412,7 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 │  ├── AI Package Manager                             │
 │  ├── Agent Orchestrator + Routing                   │
 │  ├── Memory (long-term + short-term)                │
-│  ├── TTS (Edge TTS)                                 │
+│  ├── TTS (Web Speech / OpenAI TTS)                  │
 │  ├── TerranSoul Link (cross-device sync + pairing)  │
 │  ├── Messaging (pub/sub IPC)                        │
 │  └── Sandbox (WASM agent isolation)                 │
@@ -426,9 +428,9 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 ## Development Status
 
-**Completed phases:** 12
-**Test suite:** 948 frontend (Vitest) + 583 backend (cargo) + 4 E2E (Playwright) — all passing
-**Current focus:** Phase 12 — Brain Advanced Design + per-user model persistence
+**Completed phases:** 18 (Phases 0–11 foundation, 12 docs, 13 code-RAG, 14 partial, 18 categorisation)
+**Test suite:** 1083 frontend (Vitest) + 989 backend (cargo) + 4 E2E (Playwright) — all passing
+**Current focus:** Phases 14–17 — Persona refinement, AI Coding Integrations, Modern RAG, Brain Intelligence
 **See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 
 See [rules/milestones.md](rules/milestones.md) for upcoming work and [rules/completion-log.md](rules/completion-log.md) for the detailed record of all completed work.

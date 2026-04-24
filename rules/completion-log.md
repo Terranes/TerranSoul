@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.12 — Memory versioning (V8 schema)](#chunk-1612--memory-versioning-v8-schema) | 2026-04-25 |
+| [Chunk 16.2 — Contextual Retrieval (Anthropic 2024)](#chunk-162--contextual-retrieval-anthropic-2024) | 2026-04-25 |
 | [Chunk 17.3 — Temporal reasoning queries](#chunk-173--temporal-reasoning-queries) | 2026-04-25 |
 | [Chunk 18.5 — Obsidian vault export (one-way)](#chunk-185--obsidian-vault-export-one-way) | 2026-04-25 |
 | [Chunk 18.3 — Category filters in Memory View](#chunk-183--category-filters-in-memory-view) | 2026-04-24 |
@@ -159,6 +161,66 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.12 — Memory versioning (V8 schema)
+
+**Date.** 2026-04-25
+**Phase.** 16 (Modern RAG). Maps to `docs/brain-advanced-design.md` §16 Phase 4.
+
+**Goal.** Track edits to memory entries as immutable version snapshots so
+`update_memory` no longer destroys history. New `memory_versions` V8 SQLite
+table + `get_memory_history` Tauri command.
+
+**Files created.**
+- `src-tauri/src/memory/versioning.rs` — `save_version(conn, memory_id)`,
+  `get_history(conn, memory_id)`, `version_count(conn, memory_id)`.
+  `MemoryVersion` struct with `id`, `memory_id`, `version_num`, `content`,
+  `tags`, `importance`, `memory_type`, `created_at`.
+
+**Files modified.**
+- `src-tauri/src/memory/migrations.rs` — V8 migration: `CREATE TABLE memory_versions` (FK cascade, `UNIQUE(memory_id, version_num)`, index on `memory_id`). Sentinel test updated to V8.
+- `src-tauri/src/memory/mod.rs` — added `pub mod versioning`.
+- `src-tauri/src/memory/store.rs` — `update()` now calls `versioning::save_version()` before applying changes (best-effort; silent fallback on pre-V8 schema).
+- `src-tauri/src/commands/memory.rs` — added `get_memory_history` command.
+- `src-tauri/src/lib.rs` — registered `get_memory_history` in imports + handler list.
+- `src/stores/memory.ts` — added `getMemoryHistory(memoryId)` action.
+- `rules/milestones.md` — removed 16.12 row, updated Next Chunk.
+- `docs/brain-advanced-design.md` — marked Memory versioning ✓, updated §16 tree.
+- `README.md` — added `versioning.rs` module listing, `get_memory_history` command, updated V7→V8 references, test count 989.
+
+**Test counts.** 7 new Rust tests (versioning module) + 12 migration tests pass.
+
+---
+
+## Chunk 16.2 — Contextual Retrieval (Anthropic 2024)
+
+**Date.** 2026-04-25
+**Phase.** 16 (Modern RAG). Maps to `docs/brain-advanced-design.md` §19.2 row 3.
+
+**Goal.** At ingest time, LLM prepends a 50–100 token document-level context
+to each chunk *before* embedding. Opt-in via `AppSettings.contextual_retrieval`.
+Anthropic reports ~49 % reduction in failed retrievals.
+
+**Files created.**
+- `src-tauri/src/memory/contextualize.rs` — `generate_doc_summary(text, brain_mode)`,
+  `contextualise_chunk(doc_summary, chunk, brain_mode)`, `prepend_context(ctx, chunk)`.
+  Brain-mode agnostic (dispatches to Ollama / FreeApi / PaidApi via `call_llm` helper).
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod contextualize`.
+- `src-tauri/src/settings/mod.rs` — added `contextual_retrieval: bool` to `AppSettings` (default `false`, `#[serde(default)]`).
+- `src-tauri/src/commands/ingest.rs` — `run_ingest_task` now reads `contextual_retrieval` from settings; generates a doc summary once; prepends context to each chunk.
+- `src-tauri/src/settings/config_store.rs` — added `contextual_retrieval` to 3 test struct literals.
+- `src-tauri/src/commands/settings.rs` — added `contextual_retrieval` to 2 test struct literals.
+- `src/stores/settings.ts` — added `contextual_retrieval` field + default.
+- `src/views/BrainView.test.ts` — added `contextual_retrieval: false` to mock.
+- `rules/milestones.md` — removed 16.2 row, updated Next Chunk.
+- `docs/brain-advanced-design.md` — flipped §19.2 row 3 from 🔵 to ✅, updated §16 tree.
+- `README.md` — added `contextualize.rs` module listing.
+
+**Test counts.** 6 new Rust tests (contextualize module) + all settings tests green.
 
 ---
 

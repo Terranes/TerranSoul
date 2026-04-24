@@ -20,6 +20,10 @@
 >
 > This rule is mandatory for every AI agent session. Never leave done rows
 > in milestones.md — the full historical record lives in `completion-log.md`.
+>
+> **Additional:** If the chunk was derived from reverse-engineering research,
+> also clean up `rules/research-reverse-engineering.md` and `rules/backlog.md`.
+> See `rules/prompting-rules.md` → "ENFORCEMENT RULE — Clean Up Reverse-Engineering Research on Chunk Completion".
 
 > **Completed work lives in [`rules/completion-log.md`](completion-log.md).**
 > Do not re-list done chunks here. Phases 0–11 (Foundation through RPG Brain
@@ -41,8 +45,10 @@ research chunks (14.12 → 14.15). **Phase 15** (AI Coding Integrations
 pending). **Phases 16 / 17** land the remaining items from
 `docs/brain-advanced-design.md` § 16 (Modern RAG, Phase-5
 Intelligence). **Phase 18** is fully complete (18.1–18.5 all shipped).
-**Chunk 17.3** (temporal reasoning queries) shipped 2026-04-25. Pick
-the next item from the active tables below or from `rules/backlog.md`.
+**Chunk 17.3** (temporal reasoning queries) shipped 2026-04-25.
+**Chunk 16.2** (Contextual Retrieval) and **Chunk 16.12** (Memory
+versioning / V8 schema) shipped 2026-04-25. Pick the next item from
+the active tables below or from `rules/backlog.md`.
 
 ---
 
@@ -154,7 +160,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 16.2 | **Contextual Retrieval (Anthropic 2024)** — at ingest time, the LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding (e.g. *"This chunk is from §3 of the Vietnamese Decree 13/2023 on personal data, which discusses lawful processing bases."*). New `memory::contextualize::contextualise_chunk(chunk, doc_summary)` pure prompt builder + integration into `run_ingest_task`. Anthropic reports a ~49 % drop in failed retrievals. Maps to §19.2 row 3. | not-started | Increases ingest cost by 1 LLM call per chunk; opt-in via `BrainConfig.contextual_retrieval = true`. |
 | 16.3 | **Late chunking (Jina AI 2024)** — embed the *whole* document with a long-context embedding model (e.g. `jina-embeddings-v3` or `nomic-embed-text-v2-moe`), then mean-pool per-chunk token windows so each chunk embedding carries cross-chunk context. New `memory::late_chunking` module + ingest-pipeline integration. Maps to §19.2 row 9. | not-started | Requires a long-context embedding model selectable via Ollama. Add to `model_recommender::EmbeddingModel` catalogue. |
 | 16.4 | **Self-RAG iterative refinement** (Asai et al., 2023) — orchestrator-level loop where the brain emits `<Retrieve>` / `<Relevant>` / `<Supported>` / `<Useful>` reflection tokens, and the loop iteratively re-retrieves until `<Useful>` is reached or a max-iteration cap is hit (default 3). Lives under `src-tauri/src/orchestrator/self_rag.rs`. Maps to §19.2 row 5. | not-started | Reuses the existing `StreamTagParser` for tag detection. Capped to prevent runaway loops. |
 | 16.5 | **Corrective RAG (CRAG)** (Yan et al., 2024) — lightweight LLM evaluator classifies the recall set as `Correct` / `Ambiguous` / `Incorrect`. `Ambiguous` triggers a query-rewrite + re-search; `Incorrect` triggers a web-search fallback (gated behind the existing crawl capability). New `memory::crag::evaluate_recall` + integration into `rerank_search_memories`. Pairs naturally with 16.1's relevance threshold. Maps to §19.2 row 6. | not-started | Web-search fallback only when the user has crawl capability granted; otherwise CRAG just rewrites the query and re-ranks. |
@@ -164,7 +169,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | 16.9 | **Cloud embedding API for free / paid modes** — extend `brain::OllamaAgent::embed_text` to also dispatch to OpenAI / Cohere / Voyage when the active brain mode is `FreeApi { provider_id: "..." }` or `PaidApi { ... }`. Allows free-tier users to get real RAG quality without local Ollama. Maps to §16 Phase 4. | not-started | Reuses `provider_rotator::ProviderRotator` for rate-limit handling. |
 | 16.10 | **ANN index (`usearch` crate)** — replace the brute-force cosine pass in `MemoryStore::vector_search` with an HNSW ANN index that scales to 1M+ entries while keeping <10 ms p99. Index lives next to the SQLite file (`vectors.usearch`); rebuilt incrementally on insert. Maps to §16 Phase 4. | not-started | Hard dependency: `usearch = "2"` (run `gh-advisory-database` check before adding). Falls back to brute-force when index file is corrupt or missing. |
 | 16.11 | **Chunking pipeline for large documents** — semantic chunking (recursive char-splitter + sentence boundary detection + 256-token target with 32-token overlap), deduplication by hash, and metadata propagation (page numbers for PDF, headings for Markdown). Replaces the current naive paragraph split in `run_ingest_task`. Maps to §16 Phase 4. | not-started | Use the `text-splitter` crate (LangChain-port, MIT). Run advisory-database check first. |
-| 16.12 | **Memory versioning** — track edits as a `memory_versions` V8 SQLite table (FK to `memories.id`, snapshot of `content` + `tags` + `importance` + `updated_at`) so `update_memory` no longer destroys history. New Tauri command `get_memory_history`. Maps to §16 Phase 4. | not-started | Schema-only chunk + UI panel; no LLM involvement. |
 
 
 ---

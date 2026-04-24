@@ -143,6 +143,17 @@ pub struct AppSettings {
     /// "Auto-categorise via LLM on insert" (chunk 18.1).
     #[serde(default)]
     pub auto_tag: bool,
+
+    /// When `true`, the ingest pipeline prepends a 50–100 token
+    /// document-level context prefix to each chunk before embedding.
+    /// This "Contextual Retrieval" technique (Anthropic 2024) reduces
+    /// failed retrievals by ~49 % because each chunk embedding carries
+    /// the broader document context. Default off — adds one LLM call
+    /// per chunk at ingest time.
+    ///
+    /// Maps to `docs/brain-advanced-design.md` §19.2 row 3 (chunk 16.2).
+    #[serde(default)]
+    pub contextual_retrieval: bool,
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -190,6 +201,7 @@ impl Default for AppSettings {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         }
     }
 }
@@ -291,6 +303,7 @@ mod tests {
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
+            contextual_retrieval: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

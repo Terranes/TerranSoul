@@ -300,6 +300,19 @@ export const useMemoryStore = defineStore('memory', () => {
     return await invoke('export_to_obsidian', { vaultDir });
   }
 
+  /** Get the version history of a memory (chunk 16.12). */
+  async function getMemoryHistory(memoryId: number): Promise<Array<{
+    id: number; memory_id: number; version_num: number;
+    content: string; tags: string; importance: number;
+    memory_type: string; created_at: number;
+  }>> {
+    try {
+      return await invoke('get_memory_history', { memoryId });
+    } catch {
+      return [];
+    }
+  }
+
   return {
     memories,
     stats,
@@ -331,5 +344,6 @@ export const useMemoryStore = defineStore('memory', () => {
     extractEdgesViaBrain,
     multiHopSearch,
     exportToObsidian,
+    getMemoryHistory,
   };
 });

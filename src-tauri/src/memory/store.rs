@@ -326,7 +326,21 @@ impl MemoryStore {
     }
 
     /// Update a memory entry. Only provided fields are changed.
+    ///
+    /// Saves a version snapshot of the *previous* state before applying
+    /// the update (V8 schema, chunk 16.12). The snapshot is best-effort;
+    /// if the versioning table doesn't exist yet (pre-V8 schema), the
+    /// update still proceeds.
     pub fn update(&self, id: i64, upd: MemoryUpdate) -> SqlResult<MemoryEntry> {
+        // Snapshot the current state before editing (best-effort).
+        let has_changes = upd.content.is_some()
+            || upd.tags.is_some()
+            || upd.importance.is_some()
+            || upd.memory_type.is_some();
+        if has_changes {
+            let _ = super::versioning::save_version(&self.conn, id);
+        }
+
         if let Some(content) = upd.content {
             self.conn.execute(
                 "UPDATE memories SET content = ?1 WHERE id = ?2",

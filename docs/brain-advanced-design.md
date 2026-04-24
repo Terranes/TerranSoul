@@ -1846,7 +1846,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ One-way Obsidian vault export (`export_to_obsidian` command,  │
 │  │     `memory::obsidian_export`) — Chunk 18.5                      │
 │  ├── ○ Bidirectional Obsidian sync (extends 18.5)                  │
-│  └── ○ Memory versioning (track edits, not just overwrites)        │
+│  └── ✓ Memory versioning (`memory::versioning`, V8 schema,         │
+│        `memory_versions` table, `get_memory_history` command)       │
+│        — Chunk 16.12                                                │
 │                                                                     │
 │  PHASE 5 — Intelligence                                             │
 │  ├── ✓ Auto-promotion based on access patterns                     │
@@ -1866,8 +1868,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  │     (`memory/hyde.rs` + `hyde_search_memories` Tauri command)   │
 │  ├── ✓ Cross-encoder reranking pass (LLM-as-judge style;           │
 │  │     `memory/reranker.rs` + `rerank_search_memories` command)    │
-│  ├── ○ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
-│  │     context before embedding                                    │
+│  ├── ✓ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
+│  │     context before embedding (`memory::contextualize`,          │
+│  │     `AppSettings.contextual_retrieval`) — Chunk 16.2            │
 │  ├── ○ Late chunking (embed full doc, pool per-chunk windows)      │
 │  ├── ○ GraphRAG / LightRAG-style community summaries over          │
 │  │     memory_edges (multi-hop + LLM cluster summary)              │
@@ -2004,7 +2007,7 @@ Quick reference for all diagrams in this document:
 |---|---|---|---|---|
 | 1 | **Hybrid dense + sparse retrieval** (BM25 + vector, established) | Combine lexical and semantic signals | ✅ | §4 — 6-signal hybrid scoring |
 | 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wired into `hybrid_search_rrf` (`memory/store.rs`) — fuses vector + keyword + freshness rankings with `k = 60`; exposed as `hybrid_search_memories_rrf` Tauri command. |
-| 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | 🔵 | Phase 6 — chunking pipeline (§16) |
+| 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | ✅ | `src-tauri/src/memory/contextualize.rs` — `contextualise_chunk(doc_summary, chunk, brain_mode)` + `generate_doc_summary()`. Opt-in via `AppSettings.contextual_retrieval`. Integrated into `run_ingest_task`. Chunk 16.2. |
 | 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | ✅ | `src-tauri/src/memory/hyde.rs` (prompt + reply cleaner, 10 unit tests) + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command. Falls back to embedding the raw query if the brain is unreachable. |
 | 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | 🔵 | Phase 6 — orchestrator-level loop (`src-tauri/src/orchestrator/`) |
 | 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | 🔵 | Phase 6 — pairs naturally with our `relevance_threshold` Phase 4 item |
