@@ -340,6 +340,201 @@ pub async fn extract_persona_from_brain(state: State<'_, AppState>) -> Result<St
     }
 }
 
+// ── persona pack export / import (Chunk 14.7) ───────────────────────────────
+
+/// Build a [`crate::persona::pack::PersonaPack`] from the on-disk
+/// persona artifacts and return it as a pretty-printed JSON string the
+/// frontend can copy to clipboard / save as a file / drop into Soul
+/// Link sync. `note` is an optional free-form one-liner shown in the
+/// import preview on the receiving side.
+///
+/// Reads through the same paths as `get_persona` / `list_learned_*`
+/// so the pack is always a faithful snapshot of what the avatar would
+/// load on next start. Corrupt asset files are silently skipped (same
+/// "non-blocking" contract documented in `docs/persona-design.md`
+/// § 13).
+#[tauri::command]
+pub async fn export_persona_pack(
+    note: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    use crate::persona::pack::{build_pack, pack_to_string};
+
+    // Traits → JSON value (preserves unknown fields for forward-compat).
+    let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
+    let traits_raw = if traits_path.exists() {
+        std::fs::read_to_string(&traits_path)
+            .map_err(|e| format!("Failed to read persona: {e}"))?
+    } else {
+        default_persona_json().to_string()
+    };
+    let traits: serde_json::Value = serde_json::from_str(&traits_raw)
+        .map_err(|e| format!("Persona file is not valid JSON: {e}"))?;
+
+    // Assets → opaque JSON values (per-entry shape may evolve).
+    let exp_dir = persona_subdir(&state.data_dir, EXPRESSIONS_DIR)?;
+    let mot_dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
+    let expressions = list_assets_as_values(&exp_dir);
+    let motions = list_assets_as_values(&mot_dir);
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let pack = build_pack(traits, expressions, motions, note, now_ms);
+    pack_to_string(&pack)
+}
+
+/// Like [`list_assets`] but returns each file as a raw JSON `Value` so
+/// the export pack preserves any extra fields the per-entry struct
+/// would otherwise drop. Corrupt files are skipped silently per the
+/// design doc § 13 contract.
+fn list_assets_as_values(dir: &Path) -> Vec<serde_json::Value> {
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(v) if v.is_object() => out.push(v),
+            _ => continue,
+        }
+    }
+    // Stable ordering for deterministic round-trips: by `learnedAt`
+    // ascending, which matches the on-disk creation order.
+    out.sort_by_key(|v| {
+        v.get("learnedAt")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0)
+    });
+    out
+}
+
+/// Apply a user-supplied [`crate::persona::pack::PersonaPack`] JSON
+/// string. **Replaces** the persona traits, **merges** the learned
+/// asset libraries (existing files with matching ids are overwritten;
+/// missing ones are added; pre-existing artifacts not in the pack are
+/// left untouched).
+///
+/// Returns an [`crate::persona::pack::ImportReport`] so the UI can
+/// surface "imported 3 expressions, 2 motions, skipped 1 (wrong
+/// kind)" in a single round-trip.
+#[tauri::command]
+pub async fn import_persona_pack(
+    json: String,
+    state: State<'_, AppState>,
+) -> Result<crate::persona::pack::ImportReport, String> {
+    use crate::persona::pack::{note_skip, parse_pack, validate_asset, ImportReport};
+
+    let pack = parse_pack(&json)?;
+    let mut report = ImportReport::default();
+
+    // ── Traits ──────────────────────────────────────────────────────────
+    // Re-serialise the traits value so we write a normalised document
+    // (object keys in deterministic-ish order, no leading whitespace
+    // / BOM). atomic_write guarantees no half-written state if rename
+    // fails — the previous persona.json stays intact.
+    let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
+    let traits_str = serde_json::to_string_pretty(&pack.traits)
+        .map_err(|e| format!("Failed to serialise traits: {e}"))?;
+    atomic_write(&traits_path, &traits_str)?;
+    report.traits_applied = true;
+
+    // ── Expressions ─────────────────────────────────────────────────────
+    let exp_dir = persona_subdir(&state.data_dir, EXPRESSIONS_DIR)?;
+    for (idx, asset) in pack.expressions.iter().enumerate() {
+        let id = match validate_asset(asset, "expression") {
+            Ok(id) => id,
+            Err(e) => {
+                note_skip(&mut report, format!("expression #{idx}: {e}"));
+                continue;
+            }
+        };
+        let path = exp_dir.join(format!("{id}.json"));
+        let body = match serde_json::to_string_pretty(asset) {
+            Ok(s) => s,
+            Err(e) => {
+                note_skip(&mut report, format!("expression {id}: serialise failed: {e}"));
+                continue;
+            }
+        };
+        if let Err(e) = atomic_write(&path, &body) {
+            note_skip(&mut report, format!("expression {id}: write failed: {e}"));
+            continue;
+        }
+        report.expressions_accepted += 1;
+    }
+
+    // ── Motions ─────────────────────────────────────────────────────────
+    let mot_dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
+    for (idx, asset) in pack.motions.iter().enumerate() {
+        let id = match validate_asset(asset, "motion") {
+            Ok(id) => id,
+            Err(e) => {
+                note_skip(&mut report, format!("motion #{idx}: {e}"));
+                continue;
+            }
+        };
+        let path = mot_dir.join(format!("{id}.json"));
+        let body = match serde_json::to_string_pretty(asset) {
+            Ok(s) => s,
+            Err(e) => {
+                note_skip(&mut report, format!("motion {id}: serialise failed: {e}"));
+                continue;
+            }
+        };
+        if let Err(e) = atomic_write(&path, &body) {
+            note_skip(&mut report, format!("motion {id}: write failed: {e}"));
+            continue;
+        }
+        report.motions_accepted += 1;
+    }
+
+    Ok(report)
+}
+
+/// Dry-run: parse the pack and return the per-asset acceptance report
+/// without writing anything. Used by the UI's "Preview" button so the
+/// user can see "this pack would import 3 expressions and skip 1"
+/// before committing.
+#[tauri::command]
+pub async fn preview_persona_pack(
+    json: String,
+) -> Result<crate::persona::pack::ImportReport, String> {
+    use crate::persona::pack::{note_skip, parse_pack, validate_asset, ImportReport};
+
+    let pack = parse_pack(&json)?;
+    let mut report = ImportReport {
+        traits_applied: pack.traits.is_object(),
+        ..Default::default()
+    };
+    for (idx, asset) in pack.expressions.iter().enumerate() {
+        match validate_asset(asset, "expression") {
+            Ok(_) => report.expressions_accepted += 1,
+            Err(e) => note_skip(&mut report, format!("expression #{idx}: {e}")),
+        }
+    }
+    for (idx, asset) in pack.motions.iter().enumerate() {
+        match validate_asset(asset, "motion") {
+            Ok(_) => report.motions_accepted += 1,
+            Err(e) => note_skip(&mut report, format!("motion #{idx}: {e}")),
+        }
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

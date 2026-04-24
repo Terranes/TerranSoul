@@ -82,8 +82,9 @@ use commands::{
         remove_agent, update_agent, validate_agent_manifest,
     },
     persona::{
-        delete_learned_expression, delete_learned_motion, extract_persona_from_brain,
-        get_persona, get_persona_block, list_learned_expressions, list_learned_motions,
+        delete_learned_expression, delete_learned_motion, export_persona_pack,
+        extract_persona_from_brain, get_persona, get_persona_block, import_persona_pack,
+        list_learned_expressions, list_learned_motions, preview_persona_pack,
         save_learned_expression, save_learned_motion, save_persona, set_persona_block,
     },
     registry::{
@@ -434,6 +435,9 @@ pub fn run() {
             save_learned_motion,
             delete_learned_motion,
             extract_persona_from_brain,
+            export_persona_pack,
+            import_persona_pack,
+            preview_persona_pack,
             capture_screen,
             analyze_screen,
             list_languages,

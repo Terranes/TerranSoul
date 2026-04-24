@@ -11,3 +11,4 @@
 //! (LLM-assisted persona authoring).
 
 pub mod extract;
+pub mod pack;

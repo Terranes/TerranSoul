@@ -287,6 +287,9 @@
       </p>
     </div>
 
+    <!-- ── Persona pack: export / import (Chunk 14.7) ─────────────────── -->
+    <PersonaPackPanel @imported="onPackImported" />
+
     <p class="pp-privacy">
       🔒 Camera capture is opt-in <strong>per chat session</strong>. There is no
       "always on" persistent camera flag. See the Persona design doc for details.
@@ -303,6 +306,7 @@ import {
 } from '../stores/persona-types';
 import { buildPersonaBlock } from '../utils/persona-prompt';
 import PersonaListEditor from './PersonaListEditor.vue';
+import PersonaPackPanel from './PersonaPackPanel.vue';
 
 const store = usePersonaStore();
 
@@ -428,6 +432,17 @@ function loadSuggestionIntoDraft(): void {
 function discardSuggestion(): void {
   suggestion.value = null;
   suggestionError.value = null;
+}
+
+/**
+ * Sync the editor draft with the freshly-loaded persona after a pack
+ * import (the store's `importPack` calls `load()` which mutates
+ * `store.traits`).
+ */
+function onPackImported(): void {
+  draft.value = cloneTraits(store.traits);
+  isDirty.value = false;
+  lastSavedAt.value = Date.now();
 }
 
 async function deleteExpression(id: string): Promise<void> {

@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 14.7 — Persona Pack Export / Import](#chunk-147--persona-pack-export--import) | 2026-04-24 |
 | [Chunk 14.2 — Master-Echo Brain-Extraction Loop (Persona Suggestion)](#chunk-142--master-echo-brain-extraction-loop-persona-suggestion) | 2026-04-24 |
 | [Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)](#chunk-24--brainview-code-knowledge-panel-phase-13-tier-4) | 2026-04-24 |
 | [Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)](#chunk-23--knowledge-graph-mirror-v7-edge_source-column-phase-13-tier-3) | 2026-04-24 |
@@ -108,6 +109,60 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 14.7 — Persona Pack Export / Import
+
+**Date:** 2026-04-24
+**Reference:** `docs/persona-design.md` § 11.3 + § 12 (both updated this PR); architectural rule "brain documentation sync" (architecture-rules.md § 11).
+
+**Goal.** Ship the camera-free persona pack so a user can back up an entire persona setup (active traits + every learned-expression + every learned-motion artifact) as a single self-describing JSON document — copyable to clipboard, savable as `.json`, ready to drop into Soul Link sync. Receiving side: dry-run preview before commit, atomic apply, per-entry skip report.
+
+**Architecture.**
+- New module **`src-tauri/src/persona/pack.rs`** — pure, I/O-free codec:
+  - `PersonaPack { packVersion, exportedAt, note?, traits, expressions[], motions[] }` envelope. Per-asset entries kept as opaque `serde_json::Value` so future trait / expression / motion fields round-trip even when this binary doesn't know about them.
+  - `build_pack` (constructor; trims+drops empty/whitespace `note`).
+  - `pack_to_string` (pretty-printed JSON).
+  - `parse_pack` — rejects empty input, oversize input (`PERSONA_PACK_MAX_BYTES = 1 MiB`), malformed JSON, missing required envelope fields, future `pack_version`, non-object `traits`.
+  - `validate_asset(value, expected_kind) -> Result<id>` — mirrors the existing `validate_id` rules (alphanumeric + `_-`, length 1..=128) so path-traversal is impossible regardless of caller behaviour.
+  - `ImportReport { traits_applied, expressions_accepted, motions_accepted, skipped[] }` + `note_skip` helper that caps the report at 32 entries plus a single truncation marker so a hostile pack cannot OOM the UI through skip messages.
+- Three new Tauri commands in **`commands/persona.rs`**:
+  - `export_persona_pack(note?)` — reads `persona.json` + `expressions/*.json` + `motions/*.json`, builds a `PersonaPack`, returns the pretty-printed string. Corrupt asset files are skipped silently (existing § 13 contract). `list_assets_as_values` preserves the on-disk `learnedAt` ordering for deterministic round-trips.
+  - `preview_persona_pack(json)` — dry-run validator returning the per-entry report **without writing anything**. Powers the "🔍 Preview" button.
+  - `import_persona_pack(json)` — replaces traits via the existing `atomic_write` helper; merges asset libraries (matching ids overwrite, others kept). Per-entry failures (wrong `kind`, illegal id, write failure) record a skip and continue, so a single bad asset doesn't lose the rest of the pack.
+- Frontend: new Pinia store actions **`exportPack` / `previewImportPack` / `importPack`** in `src/stores/persona.ts`. `importPack` chains a `load()` so all UI bindings reflect the merged state in a single round-trip.
+- New component **`src/components/PersonaPackPanel.vue`** (extracted from `PersonaPanel.vue` to keep both files under the 800-line Vue budget):
+  - Export: optional one-line note, "⬇ Export" button, "📋 Copy" (uses `navigator.clipboard`), "💾 Save .json" (uses `Blob` + `<a download>` — works inside Tauri's WebView without the `dialog` plugin).
+  - Import: collapsible textarea, "🔍 Preview" / "⤴ Apply import" / "Clear" buttons, inline error pane for parse failures, per-entry skip list. Uses `var(--ts-*)` design tokens throughout.
+- `PersonaPanel.vue` mounts the new component and exposes `onPackImported` to re-sync its local draft state after a successful apply.
+
+**Files created.**
+- `src-tauri/src/persona/pack.rs` (408 lines incl. 18 unit tests).
+- `src/components/PersonaPackPanel.vue` (326 lines incl. scoped styles).
+
+**Files modified.**
+- `src-tauri/src/persona/mod.rs` — added `pub mod pack`.
+- `src-tauri/src/commands/persona.rs` — three new commands + `list_assets_as_values` helper (653 lines, well under 1000-line cap).
+- `src-tauri/src/lib.rs` — register the three commands in the import + invoke-handler list.
+- `src/stores/persona.ts` — three new actions + `ImportReport` type (364 lines).
+- `src/stores/persona.test.ts` — 6 new tests (Tauri-unavailable export, success export, preview-throws-on-parse-error, preview-success, import-reloads-store, import-error).
+- `src/components/PersonaPanel.vue` — replaced inline pack UI with `<PersonaPackPanel>` mount + `onPackImported` handler (653 lines, back under budget).
+- `docs/persona-design.md` — new § 11.3 documents the envelope shape + size cap + merge semantics; § 12 lists the three new commands with ✅ shipped marker.
+- `README.md` — Persona System component listing updated: new pack module, new store actions, new UI component.
+- `rules/milestones.md` — chunk 14.7 row removed; Phase-14 footer + Next-Chunk pointer refreshed.
+- `.gitignore` — added agent-scratch patterns (`test-output.txt`, `*.log`, `*.tmp`, `.scratch/`, `/tmp-agent/`) following the new prompting rule.
+- `rules/prompting-rules.md` — new ENFORCEMENT RULE "Clean Up Temporary Files After Each Session".
+
+**Tests.**
+- Rust: 860 → **878** passing (18 new in `persona::pack` covering round-trip, missing/non-object/oversize/garbage envelope, future-version rejection, traits-only pack, all `validate_asset` rejection paths, and the `note_skip` 32+marker cap).
+- Frontend Vitest: 1067 → **1073** passing across 67 files (6 new in `persona.test.ts`, plus the new `PersonaPackPanel.vue` covered indirectly via the store action tests).
+- `vue-tsc --noEmit` clean.
+- `npm run lint` 0 errors (only pre-existing `v-html` warnings).
+- `cargo clippy --lib --no-deps -- -D warnings` clean.
+- File sizes within budget (PersonaPanel.vue 653/800, PersonaPackPanel.vue 326/800, persona.rs 653/1000, pack.rs 408/1000).
+
+**Privacy contract preserved.** This chunk is entirely camera-free. Persona packs only contain JSON artifacts (traits + landmark presets + retargeted-keypoint clips) — the same data already on disk under `<app_data_dir>/persona/`. No MediaStream is opened by either the export or the import flow; no webcam frames cross the IPC boundary.
 
 ---
 

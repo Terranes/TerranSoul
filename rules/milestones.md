@@ -26,23 +26,17 @@
 > Configuration), Chunks 1.2 / 1.3 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8 / 1.9 / 1.10 / 1.11,
 > the Phase 9 Learned-Features batch, and all Post-Phase polish are recorded
 > there in reverse-chronological order.
->
-> Phase 7 — VRM Model Security: ❌ removed (2026-04-24). Encryption-based
-> VRM asset protection is not feasible for an open-source desktop app
-> (any decryption key compiled into the binary is extractable, reducing
-> the scheme to obfuscation rather than real DRM). Chunks 100–105 will
-> not be re-promoted.
 
 ---
 
 ## Next Chunk
 
 _Phase 13 (2.1 → 2.4) shipped 2026-04-24. Phase 14 main-chain
-(14.1 + 14.2) shipped 2026-04-24._ Remaining Phase 14 work is the
-camera-driven side chain (14.3 / 14.4) and three optional polish chunks
-(14.5 VRMA baking, 14.6 audio-prosody persona, 14.7 persona
-export / import). Pick the next item from the active table below or
-from `rules/backlog.md`.
+(14.1 + 14.2) shipped 2026-04-24. Chunk 14.7 (persona pack export /
+import) shipped 2026-04-24._ Remaining Phase 14 work is the
+camera-driven side chain (14.3 / 14.4) and two optional polish chunks
+(14.5 VRMA baking, 14.6 audio-prosody persona). Pick the next item
+from the active table below or from `rules/backlog.md`.
 
 ---
 
@@ -96,11 +90,10 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | 14.4 | Persona-side camera quest **`motion-capture`** — `pose-mirror.ts` PoseLandmarker wrapper (33-keypoint → VRM humanoid bone retargeting; pure retargeter is the unit-tested seam) + record-and-name-clip UI in `PersonaTeacher.vue`. Activation gate already wired via `persona.learnedMotions.length > 0`. | not-started | Reuses the same per-session consent flow as 14.3. |
 | 14.5 | VRMA baking — convert a recorded learned-motion clip into a VRMA file so the avatar can replay it through the existing `VrmaManager` instead of always streaming landmarks. | not-started | Reduces per-frame cost and unlocks sharing learned motions between devices via the existing Soul Link sync surface. |
 | 14.6 | Audio-prosody persona learning — derive tone/pacing/quirk hints from the user's saved voice prompts (when ASR is configured) and feed them into the Master-Echo persona suggestion. Camera-free; pairs naturally with the voice cluster. | not-started | Optional. |
-| 14.7 | Persona export / import — share a persona pack (`persona.json` + chosen expression / motion artifacts) as a single JSON document the user can email or drop into Soul Link sync. Honours the `active` and `version` fields and runs through `migratePersonaTraits`. | not-started | Manageable from the same Brain-hub panel. |
 
 > Camera quests (14.3 / 14.4) are explicitly **side chain** and ship
-> *after* the main chain (14.1 + 14.2 — both shipped). The current
-> next-up is whichever of {14.5, 14.6, 14.7} the user prioritises.
+> *after* the main chain (14.1 + 14.2 — both shipped). Chunk 14.7
+> (persona pack export / import) shipped 2026-04-24.
 
 ---
 

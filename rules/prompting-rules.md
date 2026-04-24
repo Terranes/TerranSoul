@@ -199,3 +199,42 @@ append exceed, **10,000 lines**:
 - Do **not** rename `rules/completion-log.md` itself — its filename is
   stable so external links and tooling never break. Older entries are
   what move out, not the active file.
+
+---
+
+## ENFORCEMENT RULE — Clean Up Temporary Files After Each Session
+
+> **The agent must leave the repository working tree free of any temporary
+> files it created (or inherited) before ending the session.**
+
+Temporary files are anything that is *not* part of the long-lived source
+tree, *not* part of the established build / test output already covered
+by `.gitignore`, and *not* a deliberate code change for the task. They
+include — but are not limited to:
+
+- ad-hoc test logs (`test-output.txt`, `*.log`, captured CI logs),
+- scratch JSON / dumps used during debugging,
+- one-off helper scripts written under the repo root,
+- editor backup files (`*.tmp`, `*~`, `*.bak`, `*.orig`),
+- any `/tmp-agent`, `.scratch`, or similar throwaway folders.
+
+### Required end-of-session checklist
+
+1. **Run `git status`** before reporting completion.
+2. For every untracked or modified file that is *not* part of the
+   actual code change, decide:
+   - **delete it** (preferred — `rm <file>`), or
+   - if it must stay, add an explicit gitignore entry **and** justify
+     it in the PR description.
+3. **Never commit** scratch logs or debug dumps. If one slips through,
+   remove it in the same PR with `git rm <file>` and add the pattern
+   to `.gitignore` so the mistake cannot recur.
+4. Prefer creating temporary work under `/tmp/` (outside the repo) so
+   it can never be staged by accident — see the existing
+   "tips_and_tricks" guidance in `.github/copilot-instructions.md`.
+
+### Patterns already pinned in `.gitignore`
+
+`test-output.txt`, `*.log`, `*.tmp`, `.scratch/`, `/tmp-agent/`. If a
+new class of temp file appears, add the pattern to `.gitignore` in the
+**same** PR that removes the file — never in a follow-up.

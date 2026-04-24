@@ -249,6 +249,70 @@ export const usePersonaStore = defineStore('persona', () => {
     return candidate;
   }
 
+  // ── Persona pack export / import (Chunk 14.7) ──────────────────────
+
+  /**
+   * Shape of the per-import / per-preview report returned by the
+   * backend. Mirrors `crate::persona::pack::ImportReport`.
+   */
+  interface ImportReport {
+    traits_applied: boolean;
+    expressions_accepted: number;
+    motions_accepted: number;
+    skipped: string[];
+  }
+
+  /**
+   * Build a self-describing JSON pack containing the active traits + every
+   * learned expression / motion artifact and return the pretty-printed
+   * string. Caller is responsible for surfacing the result (clipboard,
+   * file download, share sheet…).
+   *
+   * `note` is an optional one-liner shown in the import preview on the
+   * receiving side. Empty / whitespace-only is dropped.
+   *
+   * Returns `null` when Tauri is unavailable (browser-only / offline test
+   * harness) so the UI can disable the button gracefully.
+   */
+  async function exportPack(note?: string): Promise<string | null> {
+    try {
+      const json = await invoke<string>('export_persona_pack', { note: note ?? null });
+      return typeof json === 'string' && json.length > 0 ? json : null;
+    } catch (e) {
+      console.warn('[persona] export pack failed:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Dry-run a persona pack import: parse + validate every asset and
+   * return the per-entry report **without writing anything**. Used by
+   * the "Preview" button so the user can see what would change before
+   * committing.
+   *
+   * Throws an Error with the human-readable parse failure when the
+   * input is not a valid pack — callers route that into the inline
+   * error message in the import card.
+   */
+  async function previewImportPack(json: string): Promise<ImportReport> {
+    return await invoke<ImportReport>('preview_persona_pack', { json });
+  }
+
+  /**
+   * Apply a persona pack: replace the active traits and merge the
+   * learned-asset libraries (matching ids overwrite; others are kept).
+   * After a successful import the in-memory store reloads from disk so
+   * UI bindings reflect the new state.
+   *
+   * Throws on parse failure (matches `previewImportPack`).
+   */
+  async function importPack(json: string): Promise<ImportReport> {
+    const report = await invoke<ImportReport>('import_persona_pack', { json });
+    // Reload everything so UI reflects the merged state.
+    await load();
+    return report;
+  }
+
   // ── Per-session camera consent (§ 5) ────────────────────────────────
 
   /**
@@ -291,6 +355,9 @@ export const usePersonaStore = defineStore('persona', () => {
     resetToDefault,
     recordBrainExtraction,
     suggestPersonaFromBrain,
+    exportPack,
+    previewImportPack,
+    importPack,
     startCameraSession,
     stopCameraSession,
   };

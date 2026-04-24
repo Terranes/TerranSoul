@@ -7,3 +7,11 @@ src-tauri/gen/
 test-results/
 playwright-report/
 /.claude/worktrees
+
+# Agent / dev session scratch — never commit (see rules/prompting-rules.md
+# "Clean Up Temporary Files After Each Session").
+test-output.txt
+*.log
+*.tmp
+.scratch/
+/tmp-agent/

@@ -882,6 +882,32 @@ current schema, mirroring `skill-tree.ts::migrateTracker`. We do not yet
 have a V2 schema; this is forward-compatibility scaffolding identical to
 how `QuestTrackerData` is handled today.
 
+### 11.3 Persona pack envelope (✅ shipped 2026-04-24, Chunk 14.7)
+
+The export / import flow ships entire persona setups as a single
+self-describing JSON document, the **persona pack**:
+
+```jsonc
+{
+  "packVersion": 1,           // pack-format version (NOT the traits version)
+  "exportedAt": 1714000000000,
+  "note": "My library setup", // optional, free-form, shown on import
+  "traits":      { … },        // opaque persona traits object
+  "expressions": [ { … } ],    // opaque learned-expression artifacts
+  "motions":     [ { … } ]     // opaque learned-motion artifacts
+}
+```
+
+The codec lives in `src-tauri/src/persona/pack.rs` — pure, I/O-free,
+exhaustively unit-tested (18 tests). Hard cap **1 MiB** on input to
+block hostile clipboard payloads. Higher `packVersion` than the binary
+supports → `Err` (so the user knows to upgrade rather than silently
+losing fields). On import the **traits replace**, and the asset
+libraries **merge** (matching ids overwrite; pre-existing artifacts not
+in the pack are kept). A per-entry `ImportReport` is returned so the UI
+can surface "imported 3 expressions, skipped 1 (wrong kind)" in a
+single round-trip.
+
 ---
 
 ## 12. Tauri Command Surface
@@ -900,6 +926,9 @@ commands.** This is by design (§5).
 | `save_learned_motion` | FE → BE | `{ json: string }` | As above for motions. |
 | `delete_learned_motion` | FE → BE | `{ id: string }` | As above. |
 | `extract_persona_from_brain` | FE → BE | — | ✅ Shipped 2026-04-24. Snapshots conversation history + long-tier `personal:*` memories, calls `OllamaAgent::propose_persona`, returns the parsed `PersonaCandidate` as a JSON string (or `""` when the brain reply could not be parsed; or an error string when no brain is configured). **Never** auto-saves — caller routes through `save_persona` after the user clicks Apply. Pure prompt construction + parsing live in `src-tauri/src/persona/extract.rs` for unit-testability. |
+| `export_persona_pack` | FE → BE | `{ note?: string }` | ✅ Shipped 2026-04-24. Reads `persona.json` + every `expressions/*.json` + `motions/*.json`, builds a `PersonaPack`, returns the pretty-printed JSON. Corrupt asset files are skipped silently per §13. |
+| `preview_persona_pack` | FE → BE | `{ json: string }` | ✅ Shipped 2026-04-24. Dry-run validator: parses the pack, validates every asset, returns the per-entry `ImportReport` **without writing anything**. Used by the "🔍 Preview" button. |
+| `import_persona_pack` | FE → BE | `{ json: string }` | ✅ Shipped 2026-04-24. Replaces traits (atomic write); merges asset libraries (matching ids overwrite, others kept). Returns the same `ImportReport` shape. Per-entry failures (wrong `kind`, illegal id, write failure) are recorded as skips so the rest of the pack still applies. |
 
 All commands return `Result<T, String>` per the codebase convention
 (memory: testing/coding standards). All file writes use atomic rename.

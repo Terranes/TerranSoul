@@ -224,4 +224,92 @@ describe('usePersonaStore', () => {
     // `quirks` was the wrong shape → safely defaulted to [].
     expect(suggestion!.quirks).toEqual([]);
   });
+
+  // ── Persona pack export / import (Chunk 14.7) ────────────────────────
+
+  it('exportPack returns null when Tauri is unavailable', async () => {
+    const store = usePersonaStore();
+    const out = await store.exportPack('a note');
+    expect(out).toBeNull();
+  });
+
+  it('exportPack returns the JSON string returned by the backend', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async () => '{"packVersion":1,"exportedAt":0,"traits":{}}',
+    );
+    const store = usePersonaStore();
+    const out = await store.exportPack('hello');
+    expect(out).toContain('"packVersion"');
+  });
+
+  it('previewImportPack propagates backend parse errors as thrown', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      throw new Error('Pack is not valid JSON: expected value at line 1');
+    });
+    const store = usePersonaStore();
+    await expect(store.previewImportPack('garbage')).rejects.toThrow(/not valid JSON/);
+  });
+
+  it('previewImportPack returns the report on success', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      traits_applied: true,
+      expressions_accepted: 2,
+      motions_accepted: 1,
+      skipped: ['expression #2: missing id'],
+    }));
+    const store = usePersonaStore();
+    const r = await store.previewImportPack('{"packVersion":1,"traits":{}}');
+    expect(r.traits_applied).toBe(true);
+    expect(r.expressions_accepted).toBe(2);
+    expect(r.motions_accepted).toBe(1);
+    expect(r.skipped).toHaveLength(1);
+  });
+
+  it('importPack reloads store state after a successful apply', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const mock = invoke as ReturnType<typeof vi.fn>;
+    // 1: import_persona_pack returns the report.
+    mock.mockImplementationOnce(async () => ({
+      traits_applied: true,
+      expressions_accepted: 0,
+      motions_accepted: 0,
+      skipped: [],
+    }));
+    // 2: load() → get_persona returns updated traits.
+    mock.mockImplementationOnce(async () =>
+      JSON.stringify({
+        version: 1,
+        name: 'Imported',
+        role: 'r',
+        bio: 'b',
+        tone: [],
+        quirks: [],
+        avoid: [],
+        active: true,
+        updatedAt: 999,
+      }),
+    );
+    // 3 + 4: list_learned_expressions + list_learned_motions return [].
+    mock.mockImplementationOnce(async () => []);
+    mock.mockImplementationOnce(async () => []);
+    // 5: set_persona_block (syncBlockToBackend) — accept anything.
+    mock.mockImplementationOnce(async () => undefined);
+
+    const store = usePersonaStore();
+    const r = await store.importPack('{"packVersion":1,"traits":{}}');
+    expect(r.traits_applied).toBe(true);
+    expect(store.traits.name).toBe('Imported');
+  });
+
+  it('importPack surfaces backend errors to the caller', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      throw new Error('Pack format version 99 is newer than this build supports');
+    });
+    const store = usePersonaStore();
+    await expect(store.importPack('{}')).rejects.toThrow(/newer than this build/);
+  });
 });
