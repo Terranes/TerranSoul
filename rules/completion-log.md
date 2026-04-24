@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 15.3 — `BrainGateway` trait + shared op surface (Phase 15 foundation)](#chunk-153--braingateway-trait--shared-op-surface) | 2026-04-24 |
+| [Milestones audit — Phase 14.8–14.15 + Phase 16 + Phase 17 + Phase 18 added](#milestones-audit) | 2026-04-24 |
 | [Commercial-Licence Audit & Cleanup (msedge-tts + @vercel/* removed)](#commercial-licence-audit--cleanup) | 2026-04-24 |
 | [Chunk 14.6 — Audio-Prosody Persona Hints (Camera-Free)](#chunk-146--audio-prosody-persona-hints-camera-free) | 2026-04-24 |
 | [Chunk 14.7 — Persona Pack Export / Import](#chunk-147--persona-pack-export--import) | 2026-04-24 |
@@ -114,7 +116,84 @@ Entries are in **reverse chronological order** (newest first).
 
 ---
 
-## Commercial-Licence Audit & Cleanup
+## Chunk 15.3 — `BrainGateway` trait + shared op surface
+
+**Date.** 2026-04-24
+**Phase.** 15 (AI Coding Integrations) — foundation chunk; lands first so 15.1 (MCP) and 15.2 (gRPC) just wire transports onto a finished surface.
+**Goal.** Define a single typed op surface (`BrainGateway`) that every transport (MCP, gRPC) routes through, so the eight ops in `docs/AI-coding-integrations.md § Surface` (`brain.search`, `get_entry`, `list_recent`, `kg_neighbors`, `summarize`, `suggest_context`, `ingest_url`, `health`) cannot drift between transports.
+
+**Architecture.**
+- `src-tauri/src/ai_integrations/mod.rs` — module root + re-exports.
+- `src-tauri/src/ai_integrations/gateway.rs` — typed request/response structs, `GatewayCaps`, `GatewayError` (`thiserror`), `BrainGateway` async trait, `IngestSink` trait, `AppStateGateway` adapter.
+- The adapter delegates straight to `MemoryStore` (for `search`, `get_entry`, `list_recent`, `kg_neighbors`), `OllamaAgent::summarize_conversation` / `embed_text` / `hyde_complete` (for `summarize`, HyDE search), and `IngestSink::start_ingest` (for `ingest_url`). **No new business logic** — the gateway is pure composition over existing `commands::memory` / `brain` surfaces.
+- `IngestSink` trait keeps the gateway free of any Tauri `AppHandle` dependency, so it remains unit-testable without a real Tauri runtime. Production constructs an `AppHandleIngestSink` in the transport layer (15.1 / 15.2) that wraps the existing `commands::ingest::ingest_document` flow.
+- **Capability gates** — every op takes `&GatewayCaps`. Reads require `brain_read`; writes require `brain_write`. `Default` is read-only. Convenience constants `GatewayCaps::NONE` and `GatewayCaps::READ_WRITE` for tests.
+- **Delta-stable `suggest_context`** — composes search (HyDE when a brain is configured, RRF otherwise) → KG one-hop around top hit → LLM summary. Returns a `SuggestContextPack { hits, kg, summary, fingerprint }` where `fingerprint` is a SHA-256 hex over the resolved hit ids + the active brain identifier. Identical inputs ⇒ identical fingerprints — the contract VS Code Copilot caches against in Chunk 15.7.
+- **Lock discipline** — `std::sync::Mutex` locks on `AppState` are scoped tightly and dropped before any `.await`, matching the convention used by the existing Tauri commands.
+
+**Files created.**
+- `src-tauri/src/ai_integrations/mod.rs` (1 module + re-exports, 31 lines).
+- `src-tauri/src/ai_integrations/gateway.rs` (1165 lines including 17 unit tests).
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — added `pub mod ai_integrations;`.
+- `docs/AI-coding-integrations.md` — flipped the Shared Surface section from "Planned" to "shipped 2026-04-24" with as-built specifics (trait shape, capability constants, error variants, IngestSink rationale, delta-stable fingerprint contract, test coverage).
+
+**Tests.** 17 new unit tests in `gateway::tests`, all passing. Coverage:
+1. `read_op_requires_brain_read_capability` — `search` rejects `GatewayCaps::NONE`.
+2. `write_op_requires_brain_write_capability` — `ingest_url` rejects default caps even when sink attached.
+3. `write_op_routes_through_sink_when_permitted` — call reaches `RecordingIngestSink` exactly once with the right args.
+4. `write_op_without_sink_reports_not_configured` — `NotConfigured` error, no panic.
+5. `search_rejects_empty_query` — `InvalidArgument`.
+6. `search_returns_descending_positional_scores` — score ordering invariant.
+7. `get_entry_returns_not_found_for_missing_id` — `NotFound` not `Storage`.
+8. `list_recent_filters_by_kind_and_tag` — kind + tag filters work; `since` is permissive.
+9. `kg_neighbors_reports_truncation_when_depth_above_one` — honest reporting, no silent capping.
+10. `summarize_requires_text_or_memory_ids` — `InvalidArgument` when both empty.
+11. `summarize_no_brain_returns_none_summary_with_resolution_count` — graceful degradation contract.
+12. `suggest_context_is_delta_stable_for_identical_input` — same input ⇒ same fingerprint + same hit order.
+13. `suggest_context_fingerprint_changes_when_brain_changes` — flipping `active_brain` invalidates the fingerprint.
+14. `health_reports_provider_and_memory_total` — counts + provider id correct.
+15. `fingerprint_is_deterministic_and_id_sensitive` — pure-function fingerprint contract.
+16. `default_caps_are_read_only` — security default invariant.
+17. `parse_memory_type_is_tolerant` — case-insensitive + permissive parser.
+
+**Validation.** `cargo build --lib` succeeds; `cargo test --lib` runs 909 tests (all passing); `cargo clippy --lib --tests -- -D warnings` clean.
+
+**Follow-ups (not in this chunk).**
+- 15.1 (MCP transport) wires the adapter behind `127.0.0.1:7421` with bearer-token auth.
+- 15.2 (gRPC transport) wires the adapter behind `127.0.0.1:7422` with mTLS.
+- 15.4–15.8 build the Control Panel, voice intents, auto-setup writers, and the e2e Copilot harness on top.
+
+---
+
+## Milestones audit
+
+**Date.** 2026-04-24
+**Goal.** Surface every chunk that's described in `docs/` but not yet enumerated in `rules/milestones.md`, design coherent phases for each, and make them pickable by future agent sessions.
+
+**Audit findings.** Three docs contained chunks not represented in milestones.md:
+
+1. `docs/persona-design.md` § 15 — eight side-chain rows (143, 147, 149, 151, 152, 153, 154, 155) and one main-chain row (143 drift detection).
+2. `docs/brain-advanced-design.md` § 16 Phase 6 + § 19.2 — eight 🔵 modern-RAG techniques (Contextual Retrieval, Late Chunking, GraphRAG/LightRAG, Self-RAG, CRAG, Sleep-time consolidation, Matryoshka, relevance threshold) plus four Phase-4 items (ANN index, cloud embeddings, chunking pipeline, memory versioning).
+3. `docs/brain-advanced-design.md` § 16 Phase 5 + Phase 2 leftovers — auto-promotion, contradiction resolution, temporal reasoning, importance auto-adjustment, CRDT memory merge, conflict detection, Obsidian sync (bidirectional), auto-categorise on insert, category-aware decay, category filters, tag-prefix enforcement, Obsidian one-way export.
+
+**Phases added to `rules/milestones.md`.**
+- **Phase 14 expansion** — added rows 14.8 (persona drift detection), 14.9 (save/load learned expression presets), 14.10 (save/load learned motion clips + `LearnedMotionPlayer`), 14.11 (side-chain bundle export — persona pack envelope v2), 14.12 (phoneme-aware viseme model), 14.13 (Hunyuan-Motion offline polish, opt-in), 14.14 (MoMask reconstruction), 14.15 (MotionGPT brain capability).
+- **Phase 16 — Modern RAG** (12 chunks): 16.1 relevance threshold, 16.2 contextual retrieval, 16.3 late chunking, 16.4 self-RAG, 16.5 CRAG, 16.6 GraphRAG community summaries, 16.7 sleep-time consolidation, 16.8 matryoshka embeddings, 16.9 cloud embedding API, 16.10 ANN index (`usearch`), 16.11 chunking pipeline, 16.12 memory versioning (V8 schema).
+- **Phase 17 — Brain Phase-5 Intelligence** (7 chunks): 17.1 auto-promotion, 17.2 contradiction resolution + `MemoryConflict`, 17.3 temporal reasoning, 17.4 importance auto-adjustment, 17.5 CRDT memory merge via Soul Link, 17.6 connected-memory conflict detection, 17.7 bidirectional Obsidian sync.
+- **Phase 18 — Categorisation & Taxonomy** (5 chunks): 18.1 auto-categorise on insert, 18.2 category-aware decay rates, 18.3 category filters in MemoryView, 18.4 tag-prefix enforcement lint, 18.5 Obsidian vault export (one-way).
+
+**Files modified.**
+- `rules/milestones.md` — `Next Chunk` summary refreshed; eight rows appended to Phase 14 table; three new phase sections (16 / 17 / 18) added.
+
+**Cross-doc invariants preserved.**
+- Each new chunk row carries an explicit "Maps to" pointer back to the originating doc section so the brain-doc-sync rule (architecture-rules.md rule 11) and persona-doc-sync rule (architecture-rules.md rule 12) keep working when chunks land.
+- No chunk numbering collisions; all rows still match the phase-prefix `<phase>.<n>` convention.
+
+---
+
+
 
 **Date:** 2026-04-24
 **Reference:** `docs/licensing-audit.md` (new); `rules/coding-standards.md` *"Use Existing Libraries First"*.

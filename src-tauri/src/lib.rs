@@ -10,6 +10,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
 pub mod agents;
+pub mod ai_integrations;
 pub mod brain;
 pub mod commands;
 pub mod container;
