@@ -123,15 +123,19 @@ export async function closeDrawer(page: Page) {
   if (!(await drawer.isVisible().catch(() => false))) return;
 
   // Only click the toggle when the drawer is still open so retries never
-  // accidentally re-open it. The 500 ms inner timeout comfortably covers the
-  // Vue leave-transition (~300 ms); the 15 s outer budget allows several
-  // attempts if the first click doesn't register.
+  // accidentally re-open it.
+  //
+  // Inner timeout is 1 000 ms — deliberately longer than the Vue leave
+  // transition (max-height 0.3 s + opacity 0.2 s = 350 ms max). This ensures
+  // the transition fully completes inside the inner window, so the assertion
+  // passes on the first attempt and we never re-click a mid-transition drawer
+  // (which would toggle it back open and cause an infinite oscillation).
   await expect(async () => {
     if (await drawer.isVisible().catch(() => false)) {
       const toggle = page.locator('.chat-drawer-toggle');
       await toggle.evaluate((el) => (el as HTMLElement).click());
     }
-    await expect(drawer).not.toBeVisible({ timeout: 500 });
+    await expect(drawer).not.toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 15_000 });
 }
 
