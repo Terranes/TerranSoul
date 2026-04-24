@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Message } from '../types';
 import { useBrainStore } from './brain';
@@ -882,6 +882,71 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Maximum total size of all message content in bytes (~1MB). */
   const MAX_HISTORY_BYTES = 1_000_000;
 
+  // ── Auto-learn (daily-conversation → brain write-back loop) ─────────────
+  //
+  // After every assistant turn we ask the Rust-side `evaluate_auto_learn`
+  // command (a pure function over `AppSettings.auto_learn_policy` + the
+  // counters below) whether to fire `extract_memories_from_session`.
+  //
+  // The cadence policy lives in Rust so the same logic can be unit-tested
+  // and so the user's chosen settings persist across reloads. See
+  // `docs/brain-advanced-design.md` § 21.
+  /** Total assistant replies seen in this session. */
+  const totalAssistantTurns = ref(0);
+  /** Value of `totalAssistantTurns` at the moment of the last auto-run. */
+  const lastAutoLearnTurn = ref<number | null>(null);
+  /** Latest decision for the UI ("Next auto-learn in N turns…"). */
+  const lastAutoLearnDecision = ref<{
+    should_fire: boolean;
+    reason: string;
+    turns_remaining: number | null;
+  } | null>(null);
+  /** Number of facts extracted on the last auto-fire. */
+  const lastAutoLearnSavedCount = ref<number>(0);
+
+  async function maybeAutoLearn(): Promise<void> {
+    try {
+      const decision = await invoke<{
+        should_fire: boolean;
+        reason: string;
+        turns_remaining: number | null;
+      }>('evaluate_auto_learn', {
+        totalTurns: totalAssistantTurns.value,
+        lastAutolearnTurn: lastAutoLearnTurn.value,
+      });
+      lastAutoLearnDecision.value = decision;
+      if (decision.should_fire) {
+        const count = await invoke<number>('extract_memories_from_session');
+        lastAutoLearnSavedCount.value = count;
+        lastAutoLearnTurn.value = totalAssistantTurns.value;
+      }
+    } catch {
+      // Auto-learn failures must never break a chat turn — the user can
+      // always trigger extraction manually from the Memory tab.
+    }
+  }
+
+  // Track assistant-turn completions by watching the messages array.
+  // We deliberately key on `length + last role + isStreaming=false` so
+  // we fire exactly once per landed assistant message and never during
+  // streaming.
+  let lastSeenLength = 0;
+  watch(
+    () => messages.value.length,
+    (len) => {
+      if (len <= lastSeenLength) {
+        lastSeenLength = len;
+        return;
+      }
+      lastSeenLength = len;
+      const last = messages.value[len - 1];
+      if (!last || last.role !== 'assistant') return;
+      if (isStreaming.value) return;
+      totalAssistantTurns.value += 1;
+      void maybeAutoLearn();
+    },
+  );
+
   /** Trim oldest messages when total content size exceeds the limit. */
   function trimHistory(): void {
     let totalBytes = 0;
@@ -1291,5 +1356,10 @@ export const useConversationStore = defineStore('conversation', () => {
     getConversation,
     addMessage,
     pushProviderWarning,
+    // Auto-learn surface (see docs/brain-advanced-design.md § 21)
+    totalAssistantTurns,
+    lastAutoLearnTurn,
+    lastAutoLearnDecision,
+    lastAutoLearnSavedCount,
   };
 });

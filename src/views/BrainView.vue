@@ -215,6 +215,65 @@
     </section>
 
 
+    <!-- ── Active selection (docs §20) ─────────────────────────────────────── -->
+    <section class="bv-card" data-testid="bv-active-selection">
+      <header class="bv-card-header">
+        <h3>🎯 Active selection</h3>
+        <span class="bv-card-subtle">
+          <a class="bv-link" href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#brain-component-selection--routing--how-the-llm-knows-what-to-use" target="_blank" rel="noopener">
+            How the brain picks each component →
+          </a>
+        </span>
+      </header>
+      <div v-if="!brainSelection" class="bv-cog-desc">Loading…</div>
+      <dl v-else class="bv-config-list">
+        <dt>Provider</dt><dd>{{ selectionProviderLine }}</dd>
+        <dt>Embedding</dt><dd>{{ selectionEmbeddingLine }}</dd>
+        <dt>Search</dt><dd>{{ selectionSearchLine }}</dd>
+        <dt>Storage</dt><dd>{{ selectionStorageLine }}</dd>
+        <dt>Agents</dt><dd>{{ selectionAgentsLine }}</dd>
+        <dt>RAG quality</dt><dd>{{ brainSelection.rag_quality_percent }}% — {{ brainSelection.rag_quality_note }}</dd>
+      </dl>
+    </section>
+
+    <!-- ── Daily learning (docs §21) ───────────────────────────────────────── -->
+    <section class="bv-card" data-testid="bv-daily-learning">
+      <header class="bv-card-header">
+        <h3>📚 Daily learning</h3>
+        <span class="bv-card-subtle">
+          <a class="bv-link" href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop" target="_blank" rel="noopener">
+            How conversation becomes long-term memory →
+          </a>
+        </span>
+      </header>
+      <div v-if="!autoLearnPolicy" class="bv-cog-desc">Loading…</div>
+      <template v-else>
+        <label class="bv-config-list" style="display:flex;align-items:center;gap:8px;">
+          <input
+            type="checkbox"
+            :checked="autoLearnPolicy.enabled"
+            @change="onToggleAutoLearn(($event.target as HTMLInputElement).checked)"
+            data-testid="bv-autolearn-toggle"
+          />
+          <span>Enable auto-learn from conversation</span>
+        </label>
+        <dl class="bv-config-list">
+          <dt>Cadence</dt>
+          <dd>Fire every {{ autoLearnPolicy.every_n_turns }} turns (cooldown {{ autoLearnPolicy.min_cooldown_turns }})</dd>
+          <dt>This session</dt>
+          <dd>{{ autoLearnSessionLine }}</dd>
+          <dt>Status</dt>
+          <dd>{{ autoLearnStatusLine }}</dd>
+        </dl>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button class="bv-link" @click="forceExtractNow" data-testid="bv-autolearn-force">
+            Extract now →
+          </button>
+        </div>
+      </template>
+    </section>
+
+
     <!-- ── RPG stat sheet ──────────────────────────────────────────────────── -->
     <section class="bv-stats-section">
       <BrainStatSheet />
@@ -247,8 +306,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
+import { useConversationStore } from '../stores/conversation';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
@@ -580,6 +641,126 @@ const topEdges = computed(() => {
 
 // ── Refresh ────────────────────────────────────────────────────────────────
 
+const conversation = useConversationStore();
+
+// Active selection snapshot (docs §20)
+interface BrainSelectionSnapshot {
+  provider: { kind: string; configured_provider_id?: string; effective_provider_id?: string;
+    rotator_healthy?: boolean; provider?: string; model?: string; base_url?: string };
+  embedding: { available: boolean; preferred_model: string; unavailable_reason: string | null };
+  memory: { total: number; short_count: number; working_count: number; long_count: number;
+    embedded_count: number; schema_version: number };
+  search: { default_method: string; top_k: number; relevance_threshold: number | null };
+  storage: { backend: string; is_local: boolean; schema_label: string };
+  agents: { registered: string[]; default_agent_id: string };
+  rag_quality_percent: number;
+  rag_quality_note: string;
+}
+const brainSelection = ref<BrainSelectionSnapshot | null>(null);
+
+const selectionProviderLine = computed(() => {
+  const p = brainSelection.value?.provider;
+  if (!p) return '—';
+  switch (p.kind) {
+    case 'none': return 'Not configured';
+    case 'free_api': {
+      const same = p.configured_provider_id === p.effective_provider_id;
+      const health = p.rotator_healthy ? 'healthy' : 'falling back';
+      return same
+        ? `Free API → ${p.effective_provider_id} (${health})`
+        : `Free API → ${p.effective_provider_id} (rotated from ${p.configured_provider_id}, ${health})`;
+    }
+    case 'paid_api': return `Paid API → ${p.provider} · ${p.model} @ ${p.base_url}`;
+    case 'local_ollama': return `Local Ollama → ${p.model}`;
+    default: return p.kind;
+  }
+});
+const selectionEmbeddingLine = computed(() => {
+  const e = brainSelection.value?.embedding;
+  if (!e) return '—';
+  return e.available ? `✓ ${e.preferred_model}` : `✗ unavailable — ${e.unavailable_reason ?? ''}`;
+});
+const selectionSearchLine = computed(() => {
+  const s = brainSelection.value?.search;
+  if (!s) return '—';
+  const thr = s.relevance_threshold == null ? 'no threshold' : `score ≥ ${s.relevance_threshold}`;
+  return `${s.default_method} · top-${s.top_k} · ${thr}`;
+});
+const selectionStorageLine = computed(() => {
+  const s = brainSelection.value?.storage;
+  if (!s) return '—';
+  return `${s.backend} (${s.is_local ? 'local' : 'remote'}) · ${s.schema_label}`;
+});
+const selectionAgentsLine = computed(() => {
+  const a = brainSelection.value?.agents;
+  if (!a) return '—';
+  return `${a.registered.length} registered · default = "auto" → ${a.default_agent_id}`;
+});
+
+// Daily-learning policy (docs §21)
+interface AutoLearnPolicy {
+  enabled: boolean;
+  every_n_turns: number;
+  min_cooldown_turns: number;
+}
+const autoLearnPolicy = ref<AutoLearnPolicy | null>(null);
+
+const autoLearnSessionLine = computed(() => {
+  const turns = conversation.totalAssistantTurns;
+  const last = conversation.lastAutoLearnTurn;
+  const saved = conversation.lastAutoLearnSavedCount;
+  const lastNote = last == null
+    ? 'has not auto-learned yet'
+    : `last auto-learn at turn ${last} (saved ${saved})`;
+  return `${turns} assistant ${turns === 1 ? 'turn' : 'turns'} · ${lastNote}`;
+});
+const autoLearnStatusLine = computed(() => {
+  const d = conversation.lastAutoLearnDecision;
+  if (!d) return 'idle (waiting for first turn)';
+  if (d.should_fire) return 'firing now…';
+  if (d.reason === 'disabled') return 'disabled — toggle on to enable';
+  if (d.reason === 'below_threshold') return `next auto-learn in ${d.turns_remaining} ${d.turns_remaining === 1 ? 'turn' : 'turns'}`;
+  if (d.reason === 'cooldown') return `cooling down (${d.turns_remaining} ${d.turns_remaining === 1 ? 'turn' : 'turns'} left)`;
+  return d.reason;
+});
+
+async function loadBrainSelection() {
+  try {
+    brainSelection.value = await invoke<BrainSelectionSnapshot>('get_brain_selection');
+  } catch {
+    brainSelection.value = null;
+  }
+}
+async function loadAutoLearnPolicy() {
+  try {
+    autoLearnPolicy.value = await invoke<AutoLearnPolicy>('get_auto_learn_policy');
+  } catch {
+    autoLearnPolicy.value = null;
+  }
+}
+async function onToggleAutoLearn(enabled: boolean) {
+  if (!autoLearnPolicy.value) return;
+  const next = { ...autoLearnPolicy.value, enabled };
+  try {
+    await invoke('set_auto_learn_policy', { policy: next });
+    autoLearnPolicy.value = next;
+  } catch {
+    // revert on failure — keep UI in sync with persisted state
+    await loadAutoLearnPolicy();
+  }
+}
+async function forceExtractNow() {
+  try {
+    const count = await invoke<number>('extract_memories_from_session');
+    conversation.lastAutoLearnSavedCount = count;
+    conversation.lastAutoLearnTurn = conversation.totalAssistantTurns;
+    await memory.fetchAll();
+    await memory.getStats();
+  } catch {
+    // surfaced to user via the lastAutoLearnDecision = null branch
+  }
+}
+
 async function refresh() {
   isRefreshing.value = true;
   try {
@@ -593,6 +774,8 @@ async function refresh() {
       memory.getStats(),
       memory.fetchEdges(),
       memory.getEdgeStats(),
+      loadBrainSelection(),
+      loadAutoLearnPolicy(),
     ]);
   } finally {
     isRefreshing.value = false;

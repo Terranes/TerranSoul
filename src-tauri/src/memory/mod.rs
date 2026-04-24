@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod brain_memory;
+pub mod auto_learn;
 pub mod cognitive_kind;
 pub mod edges;
 pub mod fusion;
@@ -14,6 +15,7 @@ pub mod mssql;
 pub mod cassandra;
 
 pub use backend::{StorageBackend, StorageConfig, StorageError, StorageResult};
+pub use auto_learn::{evaluate as evaluate_auto_learn, AutoLearnDecision, AutoLearnPolicy};
 pub use cognitive_kind::{classify as classify_cognitive_kind, CognitiveKind};
 pub use edges::{
     EdgeDirection, EdgeSource, EdgeStats, MemoryEdge, NewMemoryEdge,

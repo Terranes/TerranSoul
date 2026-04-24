@@ -204,6 +204,9 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 
 **Frontend brain hub** (`src/views/BrainView.vue`, `src/components/BrainAvatar.vue`)
 - Top-level **Brain** tab unifies brain config, hardware probe, RAG capability gauges, cognitive-kind breakdown, RPG stats, and a mini memory graph
+- **Active Selection panel** — surfaces the typed `BrainSelection` snapshot (provider · embedding · memory · search · storage · agents · effective RAG quality %) so the user sees, at a glance, exactly *which* component is answering, ranking, embedding, and storing for them. Backed by the `get_brain_selection` Tauri command.
+- **Brain component selection & routing** — every routing decision (provider mode, embedding model, memory tier, search method, RAG injection top-k & threshold, agent dispatch, cognitive-kind classification, storage backend, fallback chains) is documented in **[docs/brain-advanced-design.md § 20](docs/brain-advanced-design.md#brain-component-selection--routing--how-the-llm-knows-what-to-use)**
+- **Daily-conversation write-back loop** — every chat turn lands instantly in short-term memory; the **`memory::auto_learn`** policy (default: every 10 turns, 3-turn cooldown) decides when to fire `extract_memories_from_session` automatically. Tunable per-user via `get_auto_learn_policy` / `set_auto_learn_policy` and previewed live via the pure `evaluate_auto_learn` decision query. Full loop documented in **[docs/brain-advanced-design.md § 21](docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop)**
 - Pinia stores: `brain.ts`, `conversation.ts`, `memory.ts`, `agent-roster.ts`, `skill-tree.ts`
 
 ### 🗣️ Voice System (The "Charisma" Stats)
@@ -225,10 +228,11 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - `cognitive_kind.rs` — pure-function `classify(memory_type, tags, content) → CognitiveKind` (`Episodic` / `Semantic` / `Procedural`); mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`
 - `brain_memory.rs` — LLM-powered ops: `extract_facts`, `summarize`, `semantic_search_entries`, `extract_edges_via_brain`
 - `fusion.rs` — `reciprocal_rank_fuse(rankings, k)` (Cormack RRF, k=60); foundation for multi-retriever / cross-encoder rerank pipelines (April 2026 research gap)
+- `auto_learn.rs` — `AutoLearnPolicy` + pure `evaluate(policy, total_turns, last_autolearn_turn) → AutoLearnDecision`; the cadence policy that turns daily conversation into long-term memory (default: every 10 turns, 3-turn cooldown). See **[docs/brain-advanced-design.md § 21](docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop)**.
 - Pluggable backends behind cargo features: `postgres.rs` (`sqlx`), `mssql.rs` (`tiberius`), `cassandra.rs` (`scylla`)
 
 **Tauri command surface** (`src-tauri/src/commands/memory.rs`)
-- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal), `multi_hop_search_memories` (graph traversal), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge`, `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`
+- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal), `multi_hop_search_memories` (graph traversal), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge`, `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`, `get_auto_learn_policy`, `set_auto_learn_policy`, `evaluate_auto_learn`
 
 **Storage & RAG**
 - **Three tiers** mirroring human cognition: short-term (in-memory `Vec<Message>`, last ~20 turns) → working (SQLite, session-scoped) → long-term (SQLite, vector-indexed, decay/GC managed)

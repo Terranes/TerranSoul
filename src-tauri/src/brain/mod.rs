@@ -7,6 +7,7 @@ pub mod ollama_agent;
 pub mod openai_client;
 pub mod provider_rotator;
 pub mod ram_budget;
+pub mod selection;
 pub mod system_info;
 
 pub use brain_config::BrainMode;
@@ -16,4 +17,8 @@ pub use model_recommender::{recommend, ModelRecommendation};
 pub use ollama_agent::{check_status, list_models, pull_model, OllamaAgent, OllamaStatus};
 pub use openai_client::OpenAiClient;
 pub use provider_rotator::ProviderRotator;
+pub use selection::{
+    AgentSelection, BrainSelection, EmbeddingSelection, MemorySelection, ProviderSelection,
+    SearchMethod, SearchSelection, StorageSelection,
+};
 pub use system_info::{collect as collect_system_info, SystemInfo};

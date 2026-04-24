@@ -113,6 +113,13 @@ pub struct AppSettings {
     /// Desktop is forbidden by company policy).
     #[serde(default)]
     pub preferred_container_runtime: crate::container::RuntimePreference,
+
+    /// Auto-learn policy — controls how often a chat session triggers
+    /// automatic memory extraction. See `docs/brain-advanced-design.md`
+    /// § 21 for the full write-back / learning loop. Persisted here so
+    /// users can tune cadence (or disable entirely) from the Brain hub.
+    #[serde(default)]
+    pub auto_learn_policy: crate::memory::AutoLearnPolicy,
 }
 
 fn default_version() -> u32 {
@@ -148,6 +155,7 @@ impl Default for AppSettings {
             model_camera_positions: HashMap::new(),
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         }
     }
 }
@@ -246,6 +254,7 @@ mod tests {
             model_camera_positions: positions,
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Docker,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
