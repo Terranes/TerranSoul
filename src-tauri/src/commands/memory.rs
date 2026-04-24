@@ -331,6 +331,149 @@ pub async fn hybrid_search_memories(
     store.hybrid_search(&query, query_emb.as_deref(), limit).map_err(|e| e.to_string())
 }
 
+/// RRF-fused hybrid search — combines independent vector / keyword / freshness
+/// retrievers via Reciprocal Rank Fusion (k = 60). Robust to score-scale
+/// mismatch between retrievers; recommended over [`hybrid_search_memories`]
+/// when retrievers may disagree on absolute score magnitudes.
+///
+/// Implements §16 Phase 6 / §19.2 row 2 of `docs/brain-advanced-design.md`.
+#[tauri::command]
+pub async fn hybrid_search_memories_rrf(
+    query: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10);
+
+    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let query_emb = if let Some(model) = model_opt {
+        crate::brain::OllamaAgent::embed_text(&query, &model).await
+    } else {
+        None
+    };
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .hybrid_search_rrf(&query, query_emb.as_deref(), limit)
+        .map_err(|e| e.to_string())
+}
+
+/// **HyDE** — Hypothetical Document Embeddings retrieval (Gao et al., 2022).
+///
+/// Asks the active brain to write a plausible 1-3 sentence answer to
+/// `query`, embeds *that* hypothetical answer, then runs RRF-fused
+/// hybrid search using the hypothetical embedding instead of the raw
+/// query embedding. The hypothetical lives in the same distribution as
+/// real documents, so cosine similarity becomes much sharper on cold,
+/// abstract or one-word queries.
+///
+/// Graceful fallback chain:
+/// 1. No brain configured → falls back to keyword + freshness ranking
+///    via [`MemoryStore::hybrid_search_rrf`] with no embedding.
+/// 2. Brain configured but `hyde_complete` returns `None` (network
+///    failure, empty reply) → falls back to embedding the raw query.
+/// 3. Embedding step returns `None` → falls back to keyword + freshness.
+///
+/// Returns the same `Vec<MemoryEntry>` shape as the other search
+/// commands so it is a drop-in replacement for callers that want
+/// HyDE-quality retrieval without changing their result-handling code.
+///
+/// Implements §16 Phase 6 / §19.2 row 4 of `docs/brain-advanced-design.md`.
+#[tauri::command]
+pub async fn hyde_search_memories(
+    query: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10);
+
+    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+
+    // Step 1+2: HyDE expansion → embed the hypothetical (or fall back to
+    // embedding the raw query if expansion fails).
+    let query_emb = if let Some(model) = model_opt {
+        let agent = crate::brain::OllamaAgent::new(&model);
+        let hypothetical = agent.hyde_complete(&query).await;
+        let text_to_embed = hypothetical.as_deref().unwrap_or(query.as_str());
+        crate::brain::OllamaAgent::embed_text(text_to_embed, &model).await
+    } else {
+        None
+    };
+
+    // Step 3: RRF-fused retrieval with the (possibly hypothetical) embedding.
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .hybrid_search_rrf(&query, query_emb.as_deref(), limit)
+        .map_err(|e| e.to_string())
+}
+
+/// **Cross-encoder rerank** over RRF-fused hybrid search (LLM-as-judge style).
+///
+/// Two-stage retrieval pipeline:
+///
+/// 1. **Recall stage** — `hybrid_search_rrf` returns the top
+///    `candidates_k` candidates (default 20, bounded `limit..=50`).
+/// 2. **Precision stage** — the active brain scores each candidate on
+///    a 0–10 relevance scale via [`OllamaAgent::rerank_score`], and
+///    [`crate::memory::reranker::rerank_candidates`] re-orders them.
+///
+/// Unscored candidates (LLM call failed or unparseable reply) are
+/// kept in the result but ranked below every successfully-scored
+/// candidate, so a flaky reranker never silently loses recall.
+///
+/// When **no brain is configured**, the rerank stage is skipped and
+/// the command behaves exactly like `hybrid_search_memories_rrf` —
+/// callers can adopt this command unconditionally without breaking
+/// the cold-start (no-LLM) experience.
+///
+/// Implements § 16 Phase 6 / § 19.2 row 10 of `docs/brain-advanced-design.md`.
+#[tauri::command]
+pub async fn rerank_search_memories(
+    query: String,
+    limit: Option<usize>,
+    candidates_k: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10).max(1);
+    // Bound the recall stage so the LLM round-trip count stays sane.
+    // We always pull at least `limit` so rerank can't shrink the result.
+    let candidates_k = candidates_k.unwrap_or(20).clamp(limit, 50);
+
+    // Stage 1 — RRF-fused recall.
+    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let query_emb = if let Some(ref model) = model_opt {
+        crate::brain::OllamaAgent::embed_text(&query, model).await
+    } else {
+        None
+    };
+
+    let candidates: Vec<MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .hybrid_search_rrf(&query, query_emb.as_deref(), candidates_k)
+            .map_err(|e| e.to_string())?
+    }; // release the store lock before any LLM await
+
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Stage 2 — LLM-as-judge rerank. If no brain is configured, return
+    // the recall list truncated to `limit` so the command is still useful.
+    let Some(model) = model_opt else {
+        return Ok(candidates.into_iter().take(limit).collect());
+    };
+
+    let agent = crate::brain::OllamaAgent::new(&model);
+    // Score sequentially to stay under provider rate limits.
+    let mut scores: Vec<Option<u8>> = Vec::with_capacity(candidates.len());
+    for cand in &candidates {
+        scores.push(agent.rerank_score(&query, &cand.content).await);
+    }
+
+    Ok(crate::memory::reranker::rerank_candidates(candidates, &scores, limit))
+}
+
 /// Get memory statistics per tier.
 #[tauri::command]
 pub async fn get_memory_stats(
@@ -390,13 +533,20 @@ use crate::memory::{
 
 /// Insert (or fetch existing) typed edge between two memories.
 /// `confidence` is clamped to [0.0, 1.0]; `source` defaults to `"user"`.
+///
+/// **Temporal validity (V6).** `valid_from` / `valid_to` are optional
+/// Unix-ms timestamps bounding the edge's truthiness window.
+/// Omit both for the legacy "always valid" semantics.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn add_memory_edge(
     src_id: i64,
     dst_id: i64,
     rel_type: String,
     confidence: Option<f64>,
     source: Option<String>,
+    valid_from: Option<i64>,
+    valid_to: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<MemoryEdge, String> {
     let edge = NewMemoryEdge {
@@ -405,9 +555,27 @@ pub async fn add_memory_edge(
         rel_type,
         confidence: confidence.unwrap_or(1.0),
         source: source.as_deref().map(EdgeSource::parse).unwrap_or_default(),
+        valid_from,
+        valid_to,
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.add_edge(edge).map_err(|e| e.to_string())
+}
+
+/// Close an edge's validity interval at the given Unix-ms timestamp.
+///
+/// V6 temporal-KG mutation: marks an existing edge as no longer
+/// valid from `valid_to` onwards. Returns `1` if a row was updated,
+/// `0` if no edge with `edge_id` exists. Idempotent — replaying the
+/// call with the same `valid_to` is a no-op semantically.
+#[tauri::command]
+pub async fn close_memory_edge(
+    edge_id: i64,
+    valid_to: i64,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.close_edge(edge_id, valid_to).map_err(|e| e.to_string())
 }
 
 /// Delete an edge by primary key.

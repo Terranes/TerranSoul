@@ -84,6 +84,19 @@ impl EdgeSource {
 }
 
 /// A typed, directional edge between two memories.
+///
+/// **Temporal validity (V6):** `valid_from` and `valid_to` are
+/// optional Unix-ms timestamps that bound when the edge is considered
+/// true. `valid_from = None` means "valid since the beginning of
+/// time", `valid_to = None` means "still valid". The interval is
+/// **right-exclusive**: an edge with `valid_from = t1, valid_to = t2`
+/// is true for `t in [t1, t2)`. See [`MemoryEdge::is_valid_at`].
+///
+/// This shape lets the brain answer point-in-time queries ("what was
+/// true on date X?") and represents superseded facts as a
+/// non-destructive update — close the previous edge with
+/// `valid_to = now` and insert a new one with `valid_from = now`.
+/// Implements the Zep / Graphiti temporal-KG pattern, 2024.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MemoryEdge {
     pub id: i64,
@@ -95,6 +108,30 @@ pub struct MemoryEdge {
     pub confidence: f64,
     pub source: EdgeSource,
     pub created_at: i64,
+    /// Inclusive lower bound of the temporal validity interval, or
+    /// `None` for "valid since the beginning of time".
+    #[serde(default)]
+    pub valid_from: Option<i64>,
+    /// Exclusive upper bound of the temporal validity interval, or
+    /// `None` for "still valid".
+    #[serde(default)]
+    pub valid_to: Option<i64>,
+}
+
+impl MemoryEdge {
+    /// Returns `true` if this edge is in its validity interval at
+    /// the given Unix-ms timestamp `t`. The interval is right-exclusive:
+    /// an edge with `valid_to == Some(t)` is **not** valid at `t`.
+    ///
+    /// `valid_from = None` (open lower bound) is treated as "always
+    /// has been valid"; `valid_to = None` (open upper bound) is
+    /// treated as "still valid". Pure function — used by both the
+    /// in-memory filter on `get_edges_for_at` and unit tests.
+    pub fn is_valid_at(&self, t: i64) -> bool {
+        let lower_ok = self.valid_from.is_none_or(|from| from <= t);
+        let upper_ok = self.valid_to.is_none_or(|to| t < to);
+        lower_ok && upper_ok
+    }
 }
 
 /// Fields needed to insert a new edge.
@@ -107,6 +144,14 @@ pub struct NewMemoryEdge {
     pub confidence: f64,
     #[serde(default)]
     pub source: EdgeSource,
+    /// Optional inclusive lower bound of the temporal validity interval.
+    /// Omit (`None`) for "valid since the beginning of time".
+    #[serde(default)]
+    pub valid_from: Option<i64>,
+    /// Optional exclusive upper bound of the temporal validity interval.
+    /// Omit (`None`) for "still valid".
+    #[serde(default)]
+    pub valid_to: Option<i64>,
 }
 
 fn default_confidence() -> f64 { 1.0 }
@@ -172,9 +217,9 @@ impl MemoryStore {
 
         // Upsert-style insert: if the unique constraint fires, fetch the row.
         self.conn().execute(
-            "INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![e.src_id, e.dst_id, rel, confidence, source, now],
+            "INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![e.src_id, e.dst_id, rel, confidence, source, now, e.valid_from, e.valid_to],
         )?;
         // Fetch (whether newly inserted or already-present).
         self.get_edge_unique(e.src_id, e.dst_id, &rel)
@@ -192,8 +237,8 @@ impl MemoryStore {
         let mut inserted = 0usize;
         {
             let mut stmt = tx.prepare(
-                "INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
             for e in edges {
                 if e.src_id == e.dst_id {
@@ -202,7 +247,10 @@ impl MemoryStore {
                 let rel = normalise_rel_type(&e.rel_type);
                 let confidence = e.confidence.clamp(0.0, 1.0);
                 let source = e.source.as_str();
-                let n = stmt.execute(params![e.src_id, e.dst_id, rel, confidence, source, now])?;
+                let n = stmt.execute(params![
+                    e.src_id, e.dst_id, rel, confidence, source, now,
+                    e.valid_from, e.valid_to,
+                ])?;
                 inserted += n;
             }
         }
@@ -213,7 +261,7 @@ impl MemoryStore {
     /// Get an edge by its primary key.
     pub fn get_edge(&self, id: i64) -> SqlResult<MemoryEdge> {
         self.conn().query_row(
-            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at
+            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to
              FROM memory_edges WHERE id = ?1",
             params![id],
             row_to_edge,
@@ -222,7 +270,7 @@ impl MemoryStore {
 
     fn get_edge_unique(&self, src: i64, dst: i64, rel: &str) -> SqlResult<MemoryEdge> {
         self.conn().query_row(
-            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at
+            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to
              FROM memory_edges WHERE src_id = ?1 AND dst_id = ?2 AND rel_type = ?3",
             params![src, dst, rel],
             row_to_edge,
@@ -251,7 +299,7 @@ impl MemoryStore {
     pub fn list_edges(&self) -> SqlResult<Vec<MemoryEdge>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at
+            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to
              FROM memory_edges ORDER BY id ASC",
         )?;
         let rows = stmt.query_map([], row_to_edge)?;
@@ -267,17 +315,17 @@ impl MemoryStore {
         let conn = self.conn();
         let (sql, args): (&str, Vec<i64>) = match direction {
             EdgeDirection::Out => (
-                "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at
+                "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to
                  FROM memory_edges WHERE src_id = ?1 ORDER BY confidence DESC, id ASC",
                 vec![memory_id],
             ),
             EdgeDirection::In => (
-                "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at
+                "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to
                  FROM memory_edges WHERE dst_id = ?1 ORDER BY confidence DESC, id ASC",
                 vec![memory_id],
             ),
             EdgeDirection::Both => (
-                "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at
+                "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to
                  FROM memory_edges WHERE src_id = ?1 OR dst_id = ?1
                  ORDER BY confidence DESC, id ASC",
                 vec![memory_id],
@@ -286,6 +334,35 @@ impl MemoryStore {
         let mut stmt = conn.prepare(sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(args), row_to_edge)?;
         rows.collect()
+    }
+
+    /// Point-in-time variant of [`MemoryStore::get_edges_for`].
+    ///
+    /// When `valid_at` is `Some(t)`, the result is filtered to edges
+    /// that are *valid at the Unix-ms timestamp `t`* — i.e. their
+    /// `valid_from` (if set) is ≤ `t` and their `valid_to` (if set)
+    /// is > `t`. When `valid_at` is `None`, behaviour is identical to
+    /// `get_edges_for`: every edge is returned regardless of temporal
+    /// validity, preserving full backward compatibility for callers
+    /// that don't yet pass a timestamp.
+    ///
+    /// Implementation: defers to `get_edges_for` and then applies the
+    /// pure [`MemoryEdge::is_valid_at`] filter in Rust. The added
+    /// `idx_edges_valid_to` index from V6 still pays off in the
+    /// future when we push the predicate into SQL, but the in-memory
+    /// filter keeps this implementation simple and exhaustively
+    /// unit-testable today (graphs that fit in one SQLite page).
+    pub fn get_edges_for_at(
+        &self,
+        memory_id: i64,
+        direction: EdgeDirection,
+        valid_at: Option<i64>,
+    ) -> SqlResult<Vec<MemoryEdge>> {
+        let edges = self.get_edges_for(memory_id, direction)?;
+        Ok(match valid_at {
+            None => edges,
+            Some(t) => edges.into_iter().filter(|e| e.is_valid_at(t)).collect(),
+        })
     }
 
     /// Count edges and produce aggregate stats.
@@ -481,7 +558,32 @@ fn row_to_edge(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEdge> {
         confidence: row.get(4)?,
         source: EdgeSource::parse(&row.get::<_, String>(5).unwrap_or_default()),
         created_at: row.get(6)?,
+        valid_from: row.get(7)?,
+        valid_to: row.get(8)?,
     })
+}
+
+impl MemoryStore {
+    /// Close an edge's validity interval at timestamp `t`.
+    ///
+    /// Sets `valid_to = t` on the edge with the given id and returns
+    /// the number of rows updated (`0` if the id was unknown). Does
+    /// **not** mutate `valid_from`. Idempotent: re-closing an edge
+    /// that already has `valid_to == Some(t)` is a no-op semantically
+    /// (the row count is still `1`, but the column value is
+    /// unchanged).
+    ///
+    /// This is the primary mutation used to record a *superseded
+    /// fact* in the temporal KG. Pair with [`MemoryStore::add_edge`]
+    /// using `valid_from = Some(t)` on the replacement edge to express
+    /// "the previous edge was true until `t`, the new edge is true
+    /// from `t` onwards".
+    pub fn close_edge(&self, edge_id: i64, valid_to: i64) -> SqlResult<usize> {
+        self.conn().execute(
+            "UPDATE memory_edges SET valid_to = ?1 WHERE id = ?2",
+            params![valid_to, edge_id],
+        )
+    }
 }
 
 // ── LLM-extraction helpers (pure functions, no DB) ────────────────────────────
@@ -528,6 +630,12 @@ pub fn parse_llm_edges(text: &str, known_ids: &HashSet<i64>) -> Vec<NewMemoryEdg
                 rel_type: rel,
                 confidence: parsed.confidence.clamp(0.0, 1.0),
                 source: EdgeSource::Llm,
+                // The LLM extractor doesn't currently propose temporal
+                // bounds; treat extracted edges as "valid since insert".
+                // Future work can enrich the prompt to elicit explicit
+                // valid_from / valid_to fields.
+                valid_from: None,
+                valid_to: None,
             })
         })
         .collect()
@@ -589,8 +697,7 @@ mod tests {
                 dst_id: b,
                 rel_type: "contains".to_string(),
                 confidence: 0.9,
-                source: EdgeSource::User,
-            })
+                source: EdgeSource::User, valid_from: None, valid_to: None })
             .unwrap();
         assert_eq!(edge.src_id, a);
         assert_eq!(edge.dst_id, b);
@@ -608,8 +715,7 @@ mod tests {
             dst_id: a,
             rel_type: "related_to".to_string(),
             confidence: 1.0,
-            source: EdgeSource::User,
-        });
+            source: EdgeSource::User, valid_from: None, valid_to: None });
         assert!(res.is_err(), "self-loops must be rejected");
     }
 
@@ -623,8 +729,7 @@ mod tests {
             dst_id: b,
             rel_type: "cites".to_string(),
             confidence: 1.0,
-            source: EdgeSource::User,
-        };
+            source: EdgeSource::User, valid_from: None, valid_to: None };
         let e1 = store.add_edge(new_edge()).unwrap();
         let e2 = store.add_edge(new_edge()).unwrap();
         assert_eq!(e1.id, e2.id, "duplicate insert must return existing edge");
@@ -642,8 +747,7 @@ mod tests {
                 dst_id: b,
                 rel_type: "Mother Of".to_string(), // mixed case + space
                 confidence: 1.0,
-                source: EdgeSource::User,
-            })
+                source: EdgeSource::User, valid_from: None, valid_to: None })
             .unwrap();
         assert_eq!(edge.rel_type, "mother_of");
     }
@@ -655,10 +759,10 @@ mod tests {
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
         let edges = vec![
-            NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::Llm },
-            NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::Llm },  // dup
-            NewMemoryEdge { src_id: a, dst_id: a, rel_type: "self".into(), confidence: 1.0, source: EdgeSource::Llm }, // self-loop
-            NewMemoryEdge { src_id: b, dst_id: c, rel_type: "rel".into(), confidence: 0.5, source: EdgeSource::Llm },
+            NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None },
+            NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None },  // dup
+            NewMemoryEdge { src_id: a, dst_id: a, rel_type: "self".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None }, // self-loop
+            NewMemoryEdge { src_id: b, dst_id: c, rel_type: "rel".into(), confidence: 0.5, source: EdgeSource::Llm, valid_from: None, valid_to: None },
         ];
         let n = store.add_edges_batch(&edges).unwrap();
         assert_eq!(n, 2, "expected 2 inserts (dup + self-loop dropped)");
@@ -671,8 +775,8 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "r1".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "r2".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "r1".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "r2".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
         assert_eq!(store.list_edges().unwrap().len(), 2);
         store.delete(b).unwrap();
         // Both edges incident to b must be cascade-deleted.
@@ -685,8 +789,8 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "r1".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: c, dst_id: b, rel_type: "r2".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "r1".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: c, dst_id: b, rel_type: "r2".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
         assert_eq!(store.get_edges_for(b, EdgeDirection::Out).unwrap().len(), 0);
         assert_eq!(store.get_edges_for(b, EdgeDirection::In).unwrap().len(), 2);
         assert_eq!(store.get_edges_for(b, EdgeDirection::Both).unwrap().len(), 2);
@@ -701,10 +805,10 @@ mod tests {
         let c = make_memory(&store, "C");
         let d = make_memory(&store, "D");
         // Chain A → B → C → D, plus a cycle D → A
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: c, dst_id: d, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: d, dst_id: a, rel_type: "cycle".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: c, dst_id: d, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: d, dst_id: a, rel_type: "cycle".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
 
         let one = store.traverse_from(a, 1, None).unwrap();
         // 1-hop neighbours of A are {B, D} (D via the cycle edge).
@@ -726,8 +830,8 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "good".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "bad".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "good".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "bad".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
         let filtered = store
             .traverse_from(a, 2, Some(&["good".to_string()]))
             .unwrap();
@@ -742,9 +846,9 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "cites".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "cites".into(), confidence: 1.0, source: EdgeSource::Llm }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "related_to".into(), confidence: 1.0, source: EdgeSource::Llm }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "cites".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "cites".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "related_to".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None }).unwrap();
 
         let stats = store.edge_stats().unwrap();
         assert_eq!(stats.total_edges, 3);
@@ -821,8 +925,7 @@ not json at all
                 dst_id: neighbour,
                 rel_type: "contains".into(),
                 confidence: 1.0,
-                source: EdgeSource::User,
-            })
+                source: EdgeSource::User, valid_from: None, valid_to: None })
             .unwrap();
         let direct = store.hybrid_search("Family Law", None, 1).unwrap();
         assert_eq!(direct.len(), 1);
@@ -845,7 +948,7 @@ not json at all
         // disappear, but the memory must survive.
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::User }).unwrap();
+        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None }).unwrap();
         assert_eq!(store.list_edges().unwrap().len(), 1);
 
         crate::memory::migrations::downgrade_to(store.conn(), 4).unwrap();
@@ -872,5 +975,258 @@ not json at all
         let s = format_memories_for_extraction(&entries);
         assert!(s.contains('…'));
         assert!(s.len() < 400);
+    }
+
+    // ── V6 — Temporal knowledge-graph tests ───────────────────────────
+
+    /// Helper: build a temporal edge between two fresh memories.
+    fn add_temporal(store: &MemoryStore, rel: &str,
+                    valid_from: Option<i64>, valid_to: Option<i64>) -> MemoryEdge {
+        let a = make_memory(store, &format!("A-{rel}-{:?}-{:?}", valid_from, valid_to));
+        let b = make_memory(store, &format!("B-{rel}-{:?}-{:?}", valid_from, valid_to));
+        store.add_edge(NewMemoryEdge {
+            src_id: a, dst_id: b,
+            rel_type: rel.into(),
+            confidence: 1.0,
+            source: EdgeSource::User,
+            valid_from, valid_to,
+        }).unwrap()
+    }
+
+    #[test]
+    fn is_valid_at_open_open_interval_always_true() {
+        let e = add_temporal(&MemoryStore::in_memory(), "rel", None, None);
+        assert!(e.is_valid_at(0));
+        assert!(e.is_valid_at(i64::MAX));
+        assert!(e.is_valid_at(-1));
+    }
+
+    #[test]
+    fn is_valid_at_respects_lower_bound_inclusive() {
+        let e = add_temporal(&MemoryStore::in_memory(), "rel", Some(100), None);
+        assert!(!e.is_valid_at(99));
+        assert!(e.is_valid_at(100), "valid_from is inclusive");
+        assert!(e.is_valid_at(1_000_000));
+    }
+
+    #[test]
+    fn is_valid_at_respects_upper_bound_exclusive() {
+        let e = add_temporal(&MemoryStore::in_memory(), "rel", None, Some(200));
+        assert!(e.is_valid_at(0));
+        assert!(e.is_valid_at(199));
+        assert!(!e.is_valid_at(200), "valid_to is exclusive");
+        assert!(!e.is_valid_at(201));
+    }
+
+    #[test]
+    fn is_valid_at_closed_interval() {
+        let e = add_temporal(&MemoryStore::in_memory(), "rel", Some(100), Some(200));
+        assert!(!e.is_valid_at(99));
+        assert!(e.is_valid_at(100));
+        assert!(e.is_valid_at(150));
+        assert!(e.is_valid_at(199));
+        assert!(!e.is_valid_at(200));
+    }
+
+    #[test]
+    fn add_edge_persists_validity_columns() {
+        let store = MemoryStore::in_memory();
+        let e = add_temporal(&store, "loved", Some(1_000), Some(2_000));
+        let reloaded = store.get_edge(e.id).unwrap();
+        assert_eq!(reloaded.valid_from, Some(1_000));
+        assert_eq!(reloaded.valid_to,   Some(2_000));
+    }
+
+    #[test]
+    fn list_edges_round_trips_validity_columns() {
+        let store = MemoryStore::in_memory();
+        add_temporal(&store, "rel", None, None);
+        add_temporal(&store, "rel", Some(50), None);
+        add_temporal(&store, "rel", Some(50), Some(150));
+        let all = store.list_edges().unwrap();
+        assert_eq!(all.len(), 3);
+        let intervals: Vec<(Option<i64>, Option<i64>)> =
+            all.iter().map(|e| (e.valid_from, e.valid_to)).collect();
+        assert!(intervals.contains(&(None, None)));
+        assert!(intervals.contains(&(Some(50), None)));
+        assert!(intervals.contains(&(Some(50), Some(150))));
+    }
+
+    #[test]
+    fn get_edges_for_at_with_none_returns_all_edges() {
+        let store = MemoryStore::in_memory();
+        let src = make_memory(&store, "src");
+        let d1 = make_memory(&store, "d1");
+        let d2 = make_memory(&store, "d2");
+        // closed past edge + open present edge
+        store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: d1, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(0), valid_to: Some(100),
+        }).unwrap();
+        store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: d2, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(100), valid_to: None,
+        }).unwrap();
+        // valid_at = None preserves legacy behaviour: returns both.
+        let all = store.get_edges_for_at(src, EdgeDirection::Out, None).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn get_edges_for_at_filters_to_point_in_time() {
+        let store = MemoryStore::in_memory();
+        let src = make_memory(&store, "src");
+        let d1 = make_memory(&store, "d1");
+        let d2 = make_memory(&store, "d2");
+        let d3 = make_memory(&store, "d3");
+        // Past closed: [0, 100)
+        let past = store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: d1, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(0), valid_to: Some(100),
+        }).unwrap();
+        // Present open-ended: [100, ∞)
+        let present = store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: d2, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(100), valid_to: None,
+        }).unwrap();
+        // Always: (-∞, ∞)
+        let always = store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: d3, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: None, valid_to: None,
+        }).unwrap();
+
+        // Before everything started: only "always" survives.
+        let at_neg = store.get_edges_for_at(src, EdgeDirection::Out, Some(-1)).unwrap();
+        let ids_neg: HashSet<i64> = at_neg.iter().map(|e| e.id).collect();
+        assert_eq!(ids_neg, [always.id].into_iter().collect());
+
+        // Mid past window: "past" + "always"; "present" hasn't started.
+        let at_50 = store.get_edges_for_at(src, EdgeDirection::Out, Some(50)).unwrap();
+        let ids_50: HashSet<i64> = at_50.iter().map(|e| e.id).collect();
+        assert_eq!(ids_50, [past.id, always.id].into_iter().collect());
+
+        // Right at boundary 100: "past" closes (exclusive), "present" opens (inclusive).
+        let at_100 = store.get_edges_for_at(src, EdgeDirection::Out, Some(100)).unwrap();
+        let ids_100: HashSet<i64> = at_100.iter().map(|e| e.id).collect();
+        assert_eq!(ids_100, [present.id, always.id].into_iter().collect());
+
+        // Far future: "present" + "always".
+        let at_huge = store.get_edges_for_at(src, EdgeDirection::Out, Some(1_000_000)).unwrap();
+        let ids_huge: HashSet<i64> = at_huge.iter().map(|e| e.id).collect();
+        assert_eq!(ids_huge, [present.id, always.id].into_iter().collect());
+    }
+
+    #[test]
+    fn close_edge_sets_valid_to_and_returns_row_count() {
+        let store = MemoryStore::in_memory();
+        let e = add_temporal(&store, "rel", None, None);
+        assert_eq!(e.valid_to, None);
+
+        let updated = store.close_edge(e.id, 500).unwrap();
+        assert_eq!(updated, 1);
+
+        let reloaded = store.get_edge(e.id).unwrap();
+        assert_eq!(reloaded.valid_to, Some(500));
+        // valid_from is preserved (NULL → None).
+        assert_eq!(reloaded.valid_from, None);
+    }
+
+    #[test]
+    fn close_edge_unknown_id_returns_zero() {
+        let store = MemoryStore::in_memory();
+        let n = store.close_edge(99_999, 1).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn close_edge_then_query_at_drops_the_closed_edge() {
+        let store = MemoryStore::in_memory();
+        let src = make_memory(&store, "src");
+        let dst = make_memory(&store, "dst");
+        let e = store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: dst, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(0), valid_to: None,
+        }).unwrap();
+
+        // Before close: visible at t=500.
+        let before = store.get_edges_for_at(src, EdgeDirection::Out, Some(500)).unwrap();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].id, e.id);
+
+        // Close at t=400 (valid_to=400 means edge ends just before 400).
+        store.close_edge(e.id, 400).unwrap();
+
+        // After close: gone at t=500, still present at t=399.
+        let at_500 = store.get_edges_for_at(src, EdgeDirection::Out, Some(500)).unwrap();
+        assert!(at_500.is_empty(), "closed edge must not appear after valid_to");
+        let at_399 = store.get_edges_for_at(src, EdgeDirection::Out, Some(399)).unwrap();
+        assert_eq!(at_399.len(), 1, "closed edge stays visible inside its window");
+    }
+
+    #[test]
+    fn supersession_pattern_close_then_replace_returns_one_edge_per_timepoint() {
+        // Models the "fact X changed value at time T" pattern: close the
+        // old edge, insert a new one with valid_from=T. Any single
+        // point-in-time query should return exactly one edge.
+        let store = MemoryStore::in_memory();
+        let person = make_memory(&store, "person:Alice");
+        let role_old = make_memory(&store, "role:engineer");
+        let role_new = make_memory(&store, "role:manager");
+
+        // Original fact: Alice was engineer from t=100 onwards.
+        let old = store.add_edge(NewMemoryEdge {
+            src_id: person, dst_id: role_old, rel_type: "has_role".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(100), valid_to: None,
+        }).unwrap();
+
+        // At t=500 she was promoted: close old, open new.
+        store.close_edge(old.id, 500).unwrap();
+        store.add_edge(NewMemoryEdge {
+            src_id: person, dst_id: role_new, rel_type: "has_role".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(500), valid_to: None,
+        }).unwrap();
+
+        // Mid-old: returns engineer.
+        let at_300 = store.get_edges_for_at(person, EdgeDirection::Out, Some(300)).unwrap();
+        assert_eq!(at_300.len(), 1);
+        assert_eq!(at_300[0].dst_id, role_old);
+
+        // Boundary at 500: engineer ended (exclusive), manager started (inclusive).
+        let at_500 = store.get_edges_for_at(person, EdgeDirection::Out, Some(500)).unwrap();
+        assert_eq!(at_500.len(), 1);
+        assert_eq!(at_500[0].dst_id, role_new);
+
+        // Later: still manager.
+        let at_999 = store.get_edges_for_at(person, EdgeDirection::Out, Some(999)).unwrap();
+        assert_eq!(at_999.len(), 1);
+        assert_eq!(at_999[0].dst_id, role_new);
+
+        // Without time filter: both edges visible (full history).
+        let all = store.get_edges_for_at(person, EdgeDirection::Out, None).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn legacy_get_edges_for_returns_temporal_edges_unfiltered() {
+        // The legacy non-temporal API must keep returning every edge
+        // regardless of validity intervals — proves backward compatibility.
+        let store = MemoryStore::in_memory();
+        let src = make_memory(&store, "src");
+        let dst = make_memory(&store, "dst");
+        store.add_edge(NewMemoryEdge {
+            src_id: src, dst_id: dst, rel_type: "rel".into(),
+            confidence: 1.0, source: EdgeSource::User,
+            valid_from: Some(0), valid_to: Some(1),  // closed in the distant past
+        }).unwrap();
+        let legacy = store.get_edges_for(src, EdgeDirection::Out).unwrap();
+        assert_eq!(legacy.len(), 1, "legacy API must ignore temporal bounds");
     }
 }
