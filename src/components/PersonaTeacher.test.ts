@@ -58,7 +58,8 @@ describe('PersonaTeacher', () => {
     const wrapper = mount(PersonaTeacher, {
       props: { visible: true },
     });
-    expect(wrapper.text()).toContain('Teach Expression');
+    expect(wrapper.text()).toContain('Expression');
+    expect(wrapper.text()).toContain('Motion');
     expect(wrapper.text()).toContain('Start Camera');
   });
 

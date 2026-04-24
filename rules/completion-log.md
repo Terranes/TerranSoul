@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 14.4 — Motion-capture camera quest](#chunk-144--motion-capture-camera-quest) | 2026-04-25 |
 | [Chunk 14.3 — Expressions-pack camera quest](#chunk-143--expressions-pack-camera-quest) | 2026-04-25 |
 | [Chunk 16.10 — ANN index (usearch)](#chunk-1610--ann-index-usearch) | 2026-04-25 |
 | [Chunk 17.6 — Edge conflict detection](#chunk-176--edge-conflict-detection) | 2026-04-26 |
@@ -168,6 +169,30 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 14.4 — Motion-capture camera quest
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped the `motion-capture` quest — PoseLandmarker (33 keypoints) → VRM humanoid bone retargeting via inverse trig, with real-time EMA smoothing and fixed-FPS recording (30 fps, max 10s). Reuses the same per-session camera consent from 14.3. PersonaTeacher.vue gained a mode toggle (Expression / Motion tabs), record/stop/save flow, and saved motions list.
+
+**Architecture.**
+- `pose-mirror.ts`: Pure `retargetPoseToVRM()` function (unit-testable seam) maps 33 MediaPipe landmarks → 11 VRM humanoid bones via atan2-based joint angle extraction with per-bone clamping. `PoseMirror` class wraps lazy-loaded PoseLandmarker. `smoothBonePose()` applies EMA with graceful decay when landmarks are lost.
+- `PersonaTeacher.vue`: Expression/Motion tab toggle, motion recording at 30 fps with auto-stop at 10s, save via `save_learned_motion` Tauri command, saved motions list with duration display.
+
+**Files created.**
+- `src/renderer/pose-mirror.ts` — pure retargeter + PoseMirror class (~260 LOC)
+- `src/renderer/pose-mirror.test.ts` — 11 unit tests on the pure retargeter
+
+**Files modified.**
+- `src/components/PersonaTeacher.vue` — added Motion tab, recording flow, saved motions list
+- `src/components/PersonaTeacher.test.ts` — updated for new tab layout
+
+**Test count after.** 1120 Vitest (11 new); 1053 Rust (unchanged).
+
+**Activation gate.** `motion-capture` quest auto-activates when `persona.learnedMotions.length > 0` — already wired in skill-tree.ts.
 
 ---
 
