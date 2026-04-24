@@ -555,7 +555,7 @@ impl BrainGateway for AppStateGateway {
             .get_all()
             .map_err(|e| GatewayError::Storage(e.to_string()))?;
         // Newest-first.
-        all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        all.sort_by_key(|e| std::cmp::Reverse(e.created_at));
 
         // Apply optional filters in-memory. Volume is always bounded by
         // `MemoryStats.total` which the brain-tier UI already polls; for
