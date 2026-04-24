@@ -367,6 +367,77 @@ pub async fn extract_persona_from_brain(state: State<'_, AppState>) -> Result<St
     }
 }
 
+// ── persona drift detection (Chunk 14.8) ────────────────────────────────────
+
+/// Compare the active persona traits against the user's `personal:*`
+/// memories and return a [`crate::persona::drift::DriftReport`] indicating
+/// whether the persona has drifted from the user's evolving interests.
+///
+/// This command is called by the frontend's auto-learn loop after a
+/// configurable number of facts have been accumulated (default 25).
+/// It is deliberately **not** a background loop — it piggybacks on the
+/// existing auto-learn cadence so the brain is only bothered when the
+/// user is actively chatting.
+///
+/// Returns an error string when no brain is configured. Returns a
+/// "no drift" report when the brain replies but can't be parsed.
+#[tauri::command]
+pub async fn check_persona_drift(
+    state: State<'_, AppState>,
+) -> Result<crate::persona::drift::DriftReport, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    // Read the active persona traits from disk.
+    let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
+    let persona_json = if traits_path.exists() {
+        std::fs::read_to_string(&traits_path)
+            .map_err(|e| format!("Failed to read persona: {e}"))?
+    } else {
+        default_persona_json().to_string()
+    };
+
+    // Snapshot `personal:*` long-tier memories without holding the lock
+    // across the await point.
+    let personal_memories: Vec<(String, String)> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_by_tier(&crate::memory::MemoryTier::Long)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| m.tags.to_lowercase().contains("personal:"))
+            .map(|m| (m.content, m.tags))
+            .collect()
+    };
+
+    // Short-circuit: no personal memories → nothing to drift against.
+    if personal_memories.is_empty() {
+        return Ok(crate::persona::drift::DriftReport {
+            drift_detected: false,
+            summary: String::new(),
+            suggested_changes: Vec::new(),
+        });
+    }
+
+    let agent = crate::brain::OllamaAgent::new(&model);
+    match agent
+        .check_persona_drift(&persona_json, &personal_memories)
+        .await
+    {
+        Some(report) => Ok(report),
+        // Brain replied but response couldn't be parsed → treat as no drift.
+        None => Ok(crate::persona::drift::DriftReport {
+            drift_detected: false,
+            summary: String::new(),
+            suggested_changes: Vec::new(),
+        }),
+    }
+}
+
 // ── persona pack export / import (Chunk 14.7) ───────────────────────────────
 
 /// Build a [`crate::persona::pack::PersonaPack`] from the on-disk

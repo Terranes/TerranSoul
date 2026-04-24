@@ -404,6 +404,26 @@ impl OllamaAgent {
         crate::persona::extract::parse_persona_reply(&reply)
     }
 
+    // ── Persona drift detection (Chunk 14.8) ─────────────────────────────
+
+    /// Check whether the user's `personal:*` memories still align with the
+    /// active persona traits. Returns `None` when the brain reply can't be
+    /// parsed (caller should treat this as "no drift detected").
+    pub async fn check_persona_drift(
+        &self,
+        persona_json: &str,
+        personal_memories: &[(String, String)],
+    ) -> Option<crate::persona::drift::DriftReport> {
+        let (system, user) =
+            crate::persona::drift::build_drift_prompt(persona_json, personal_memories);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::persona::drift::parse_drift_reply(&reply)
+    }
+
     // ── Embedding ──────────────────────────────────────────────────────────
 
     /// Generate a vector embedding for `text` via Ollama `/api/embed`.

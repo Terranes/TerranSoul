@@ -1113,7 +1113,7 @@ ships last per the user's explicit ordering). The split mirrors §10.
 | **140** | Persona MVP — `PersonaTraits` store + `persona-prompt.ts` injection + Persona panel + Soul Mirror quest activation | 13 | none |
 | **141** | My Persona quest — full editable traits UI + brain-aware combo | 13 | 140, brain configured |
 | **142** | Master's Echo (main-chain version) — `extract_persona_from_brain` LLM-assisted authoring from chat history + `personal:*` long-term memories | 13 | 141 + memory tier |
-| **143** | Persona drift detection (auto-correction prompt fired by `auto_learn`) | 14 | 142 |
+| **143** | Persona drift detection (auto-correction prompt fired by `auto_learn`) ✅ shipped 2026-04-26 | 14 | 142 |
 | **144** | Persona export / import as a `.terransoul-persona` JSON bundle (no camera assets in the main-chain bundle) | 15 | 140 |
 
 These five chunks deliver everything the user asked for in the main-chain

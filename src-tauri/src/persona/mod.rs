@@ -10,6 +10,7 @@
 //! See `docs/persona-design.md` § 3 (Master-Mirror loop) and § 9.3
 //! (LLM-assisted persona authoring).
 
+pub mod drift;
 pub mod extract;
 pub mod pack;
 pub mod prosody;

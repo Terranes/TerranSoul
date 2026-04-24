@@ -208,6 +208,52 @@ empty_text_produces_no_chunks, min_chunk_chars_enforced.
 
 ---
 
+## Chunk 14.8 — Persona drift detection
+
+**Date.** 2026-04-26
+**Phase.** 14 (Persona self-learning). Maps to `docs/persona-design.md` § 15.1 row 143.
+
+**Goal.** Periodically compare the user's active `PersonaTraits` against their
+accumulated `personal:*` memories. When the auto-learn loop has extracted 25+
+new facts since the last drift check, fire a lightweight LLM comparison prompt.
+If drift is detected, surface a `DriftReport` with a summary and suggested
+changes so the frontend can show "Echo noticed you've shifted toward …".
+
+**Architecture.**
+- `persona::drift` module (`drift.rs`) — pure prompt construction + reply
+  parsing, 14 unit tests. `DriftReport` struct with `drift_detected`,
+  `summary`, and `suggested_changes` (field/current/proposed triples).
+- `OllamaAgent::check_persona_drift()` — sends the drift prompt to the LLM.
+- `check_persona_drift` Tauri command — reads persona from disk, filters
+  `personal:*` long-tier memories, calls brain, returns `DriftReport`.
+- Frontend wiring in `conversation.ts` — `factsSinceDriftCheck` counter
+  accumulates after each `extract_memories_from_session`; at threshold 25,
+  fires `check_persona_drift` and exposes `lastDriftReport` for UI.
+
+**Files created.**
+- `src-tauri/src/persona/drift.rs` — ~280 LOC, 14 unit tests
+
+**Files modified.**
+- `src-tauri/src/persona/mod.rs` — added `pub mod drift`
+- `src-tauri/src/brain/ollama_agent.rs` — added `check_persona_drift` method
+- `src-tauri/src/commands/persona.rs` — added `check_persona_drift` Tauri command
+- `src-tauri/src/lib.rs` — registered import + handler invocation
+- `src/stores/persona-types.ts` — added `DriftReport` + `DriftSuggestion` types
+- `src/stores/conversation.ts` — drift state refs + `maybeAutoLearn` integration
+
+**Tests.** 14 new Rust unit tests in `persona::drift::tests`:
+build_drift_prompt_includes_persona_and_memories, build_drift_prompt_empty_memories,
+build_drift_prompt_respects_char_budget, parse_drift_reply_clean_json,
+parse_drift_reply_no_drift, parse_drift_reply_with_fences,
+parse_drift_reply_with_leading_prose, parse_drift_reply_missing_optional_fields,
+parse_drift_reply_garbage_returns_none, parse_drift_reply_missing_drift_detected_returns_none,
+strip_fences_removes_json_fences, strip_fences_removes_plain_fences,
+strip_fences_passthrough_no_fences, drift_report_serde_round_trip.
+
+**Totals.** 1019 Rust tests, 1083 Vitest, clippy clean, vue-tsc clean.
+
+---
+
 ## Chunk 17.4 — Memory importance auto-adjustment
 
 **Date.** 2026-04-26

@@ -2293,14 +2293,30 @@ Even with auto-learn on, the following commands are always available from the Me
 
 This guarantees the user is never locked out of any maintenance step the auto-learner would have done.
 
-### 21.6 Roadmap gaps (already tracked in §16)
+### 21.6 Persona drift detection (Chunk 14.8) ✅
+
+After every auto-learn extraction, the frontend accumulates a running count of saved facts. When the count crosses a configurable threshold (default **25 facts**), the `check_persona_drift` Tauri command fires — comparing the active `PersonaTraits` JSON against the latest `personal:*` long-tier memories via a lightweight LLM prompt. The result is a `DriftReport`:
+
+| Field | Type | Description |
+|---|---|---|
+| `drift_detected` | `bool` | Whether a meaningful shift was found |
+| `summary` | `String` | 1–2 sentence description of the shift (empty if none) |
+| `suggested_changes` | `Vec<DriftSuggestion>` | 0–3 field/current/proposed triples |
+
+**Design decisions:**
+- **Piggybacks on auto-learn** — no new background loop or scheduler; fires only when the user is actively chatting and facts are accumulating.
+- **Pure prompt + parse** — `persona::drift::build_drift_prompt` and `parse_drift_reply` are I/O-free and exhaustively unit-tested (14 tests).
+- **Non-blocking** — drift check failure never breaks chat. If the brain can't parse a reply, a "no drift" report is returned.
+- **Fact-count-based** — uses accumulated facts (not turns) as the trigger, so quiet sessions with few extractable facts don't waste LLM calls.
+
+### 21.7 Roadmap gaps (already tracked in §16)
 
 - **Background scheduler** — Step 5 maintenance jobs are currently user-triggered. A daily background scheduler (`tasks::manager::TaskManager`) is on the Phase 4 roadmap.
 - **Conversation-aware extraction** — today extraction sees the whole session as one blob. The Phase 5 roadmap adds *segmented* extraction (e.g. one extraction per topic shift detected by embedding-distance peak).
 - **Edge auto-extraction** — `extract_edges_via_brain` is manual; auto-firing it after each successful `extract_facts` is the next iteration of this loop.
 - **Replay-from-history rebuild** — re-run extraction over old chat logs to backfill memories created before auto-learn existed (planned for Phase 5 alongside the export/import work).
 
-### 21.7 Adding a new write path — required steps
+### 21.8 Adding a new write path — required steps
 
 When a contributor adds a new way for conversation to update the brain (new extractor, new edge proposer, new background job), they **must**:
 

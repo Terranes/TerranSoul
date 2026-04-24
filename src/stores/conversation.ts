@@ -8,6 +8,7 @@ import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
 import { useTaskStore } from './tasks';
 import { usePersonaStore } from './persona';
+import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -905,6 +906,22 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Number of facts extracted on the last auto-fire. */
   const lastAutoLearnSavedCount = ref<number>(0);
 
+  // ── Persona drift detection (Chunk 14.8) ──────────────────────────────
+  //
+  // After every auto-learn extraction, we accumulate the count of saved
+  // facts. When the running total since the last drift check crosses a
+  // threshold (default 25), we ask the backend to compare the active
+  // persona against the latest `personal:*` memory cluster. If drift is
+  // detected the report is surfaced in `lastDriftReport` so the UI can
+  // show a suggestion banner.
+
+  /** Running total of facts saved since the last drift check. */
+  const factsSinceDriftCheck = ref(0);
+  /** Default: fire a drift check every 25 accumulated facts. */
+  const DRIFT_FACT_THRESHOLD = 25;
+  /** Latest drift report for the UI. Null = no check has run yet. */
+  const lastDriftReport = ref<DriftReport | null>(null);
+
   async function maybeAutoLearn(): Promise<void> {
     try {
       const decision = await invoke<{
@@ -920,6 +937,19 @@ export const useConversationStore = defineStore('conversation', () => {
         const count = await invoke<number>('extract_memories_from_session');
         lastAutoLearnSavedCount.value = count;
         lastAutoLearnTurn.value = totalAssistantTurns.value;
+
+        // Accumulate facts for drift detection.
+        factsSinceDriftCheck.value += count;
+        if (factsSinceDriftCheck.value >= DRIFT_FACT_THRESHOLD) {
+          try {
+            const report = await invoke<DriftReport>('check_persona_drift');
+            lastDriftReport.value = report;
+          } catch {
+            // Drift check failure is non-fatal — the user can still
+            // use the app normally. Persona drift is a nice-to-have.
+          }
+          factsSinceDriftCheck.value = 0;
+        }
       }
     } catch {
       // Auto-learn failures must never break a chat turn — the user can
@@ -1362,5 +1392,8 @@ export const useConversationStore = defineStore('conversation', () => {
     lastAutoLearnTurn,
     lastAutoLearnDecision,
     lastAutoLearnSavedCount,
+    // Persona drift detection (Chunk 14.8)
+    lastDriftReport,
+    factsSinceDriftCheck,
   };
 });
