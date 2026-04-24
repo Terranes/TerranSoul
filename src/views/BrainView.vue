@@ -279,6 +279,11 @@
       <BrainStatSheet />
     </section>
 
+    <!-- ── Persona panel (data storage & management) ──────────────────────── -->
+    <section class="bv-persona-section">
+      <PersonaPanel />
+    </section>
+
     <!-- ── Mini memory graph ───────────────────────────────────────────────── -->
     <section class="bv-graph-section">
       <header class="bv-graph-header">
@@ -313,6 +318,7 @@ import { useConversationStore } from '../stores/conversation';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
+import PersonaPanel from '../components/PersonaPanel.vue';
 import type { MemoryEntry } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';

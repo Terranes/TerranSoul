@@ -110,6 +110,7 @@ import { useBrainStore } from './stores/brain';
 import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
 import { useSkillTreeStore } from './stores/skill-tree';
+import { usePersonaStore } from './stores/persona';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
@@ -129,6 +130,7 @@ const brain = useBrainStore();
 const voice = useVoiceStore();
 const windowStore = useWindowStore();
 const skillTree = useSkillTreeStore();
+const persona = usePersonaStore();
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain'>('chat');
 const appLoading = ref(true);
 const skipSetup = ref(false);
@@ -239,6 +241,15 @@ onMounted(async () => {
     await voice.initialise();
   } catch {
     // Voice unavailable — will auto-configure below
+  }
+
+  // Load persona traits + learned libraries (best-effort; falls back to
+  // localStorage in browser-only contexts). Lets soul-mirror activate
+  // without first opening the Brain tab.
+  try {
+    await persona.load();
+  } catch {
+    // Persona unavailable — keep default in-memory traits.
   }
 
   // If brain is already set (either legacy or new mode), skip the onboarding.

@@ -538,6 +538,7 @@ use crate::memory::{
 /// Unix-ms timestamps bounding the edge's truthiness window.
 /// Omit both for the legacy "always valid" semantics.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn add_memory_edge(
     src_id: i64,
     dst_id: i64,

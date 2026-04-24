@@ -7,6 +7,7 @@ import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
 import { useTaskStore } from './tasks';
+import { usePersonaStore } from './persona';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -1210,7 +1211,7 @@ export const useConversationStore = defineStore('conversation', () => {
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },
-                getSystemPrompt(useEnhanced) + memoryBlock,
+                getSystemPrompt(useEnhanced) + usePersonaStore().personaBlock + memoryBlock,
               );
               timeout = setTimeout(() => {
                 if (!settled) { settled = true; abortController.abort(); reject(new Error('Stream timeout: no response within 60s')); }

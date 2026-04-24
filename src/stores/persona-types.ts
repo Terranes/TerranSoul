@@ -1,0 +1,117 @@
+/**
+ * Persona-related types shared across the persona Pinia store, the
+ * persona-prompt builder, and the Rust persistence layer.
+ *
+ * Pulled out into its own module so dependency-free utilities like
+ * `persona-prompt.ts` can import from here without dragging the entire
+ * Pinia store + Tauri IPC graph along for the ride.
+ *
+ * Keep this file in lockstep with `src-tauri/src/commands/persona.rs`
+ * and `docs/persona-design.md` § 2 / § 8.
+ */
+
+/** Schema version; bumped only on breaking changes that need migration. */
+export const PERSONA_SCHEMA_VERSION = 1;
+
+/** The single active persona's editable traits (see persona-design.md § 2). */
+export interface PersonaTraits {
+  /** Schema version for forward compatibility. */
+  version: number;
+  /** Display name the LLM uses for itself. */
+  name: string;
+  /** One-line role / archetype, e.g. "studious librarian", "playful imp". */
+  role: string;
+  /** Free-form biography paragraph (capped to ~500 chars at render time). */
+  bio: string;
+  /** Tone descriptors, e.g. ["warm", "concise", "lightly sarcastic"]. */
+  tone: string[];
+  /** Quirks / catchphrases the LLM should sprinkle in. */
+  quirks: string[];
+  /** Hard "don't" list (negative constraints). */
+  avoid: string[];
+  /** Whether the persona block is currently injected into the system prompt. */
+  active: boolean;
+  /** Last edit timestamp (ms epoch). */
+  updatedAt: number;
+}
+
+/**
+ * A learned facial expression preset captured from the camera (side-chain;
+ * see persona-design.md § 8.1). Stored in the main-chain code path because
+ * the same store loads / saves both kinds of artifacts — but creation of
+ * new presets is gated behind the camera consent flow of § 5 and is part
+ * of the deferred Phase 13.B work.
+ */
+export interface LearnedExpression {
+  id: string;
+  kind: 'expression';
+  name: string;
+  /** Motion / emotion key the LLM can emit to trigger this preset. */
+  trigger: string;
+  /** VRM expression weights (0–1) keyed by preset name. */
+  weights: Record<string, number>;
+  /** Optional gaze direction in normalized screen coords. */
+  lookAt?: { x: number; y: number };
+  /** Optional eyelid weight (0 = open, 1 = closed). */
+  blink?: number;
+  /** Capture timestamp (ms epoch). */
+  learnedAt: number;
+}
+
+/**
+ * A learned motion clip captured from the camera (side-chain;
+ * see persona-design.md § 8.2).
+ */
+export interface LearnedMotion {
+  id: string;
+  kind: 'motion';
+  name: string;
+  /** Motion key the LLM can emit to trigger this clip. */
+  trigger: string;
+  fps: number;
+  duration_s: number;
+  frames: Array<{
+    /** Frame timestamp in seconds since clip start. */
+    t: number;
+    /** Bone-name → Euler triple (radians). */
+    bones: Record<string, [number, number, number]>;
+  }>;
+  /** Capture timestamp (ms epoch). */
+  learnedAt: number;
+}
+
+/** The default persona that materialises on first launch (see § 2.1). */
+export function defaultPersona(): PersonaTraits {
+  return {
+    version: PERSONA_SCHEMA_VERSION,
+    name: 'Soul',
+    role: 'TerranSoul companion',
+    bio: 'A curious AI companion who learns who you are over time.',
+    tone: ['warm', 'concise'],
+    quirks: [],
+    avoid: ['unsolicited medical, legal, or financial advice'],
+    active: true,
+    updatedAt: 0,
+  };
+}
+
+/**
+ * Forward-compatibility migrator. Currently a no-op (we are at V1) but the
+ * scaffolding is here so V2 lands without churn — same shape as
+ * `migrateTracker` in `skill-tree.ts`.
+ */
+export function migratePersonaTraits(raw: unknown): PersonaTraits {
+  const fresh = defaultPersona();
+  if (!raw || typeof raw !== 'object') return fresh;
+  const r = raw as Record<string, unknown>;
+  const out: PersonaTraits = { ...fresh };
+  if (typeof r.name === 'string') out.name = r.name;
+  if (typeof r.role === 'string') out.role = r.role;
+  if (typeof r.bio === 'string') out.bio = r.bio;
+  if (Array.isArray(r.tone)) out.tone = r.tone.filter((x): x is string => typeof x === 'string');
+  if (Array.isArray(r.quirks)) out.quirks = r.quirks.filter((x): x is string => typeof x === 'string');
+  if (Array.isArray(r.avoid)) out.avoid = r.avoid.filter((x): x is string => typeof x === 'string');
+  if (typeof r.active === 'boolean') out.active = r.active;
+  if (typeof r.updatedAt === 'number') out.updatedAt = r.updatedAt;
+  return out;
+}

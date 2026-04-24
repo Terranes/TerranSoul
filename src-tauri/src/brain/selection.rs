@@ -152,6 +152,7 @@ impl BrainSelection {
     /// provider the rotator would currently serve and whether the
     /// rotator considers it healthy. Pass `None` when the rotator has
     /// no candidates (e.g. before any `next_healthy_provider()` call).
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         brain_mode: Option<&BrainMode>,
         legacy_active_brain: Option<&str>,

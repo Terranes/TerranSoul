@@ -103,3 +103,22 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
       Vietnamese content loaded.
 
 ---
+### Phase 14 — Persona, Self-Learning Animation & Master-Mirror
+
+> Architectural reference: **[`docs/persona-design.md`](../docs/persona-design.md)**.
+> Privacy contract: per-session/per-chat camera consent only; webcam
+> frames never cross the IPC boundary.
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 14.2 | Master-Echo brain-extraction loop — backend command that reads conversation history + personal-tier memories and proposes a `PersonaTraits` JSON via the active brain. Frontend "Suggest a persona from my chats" button + accept/edit/reject flow. | not-started | Side of 14.1 already wired the activation gate (`persona.lastBrainExtractedAt`); needs the actual brain prompt + UI flow. Must update `docs/persona-design.md` § 3 + § 12. |
+| 14.3 | Persona-side camera quest **`expressions-pack`** — `useCameraCapture.ts` per-session consent composable + `face-mirror.ts` (lazy-loaded `@mediapipe/tasks-vision` FaceLandmarker → ARKit-blendshape → VRM expression mapper) + `PersonaTeacher.vue` "Teach an expression" panel. Activation gate already wired via `persona.learnedExpressions.length > 0`. Must ship `<add @mediapipe/tasks-vision>` dependency, the consent dialog, the always-visible "Camera live" badge, the idle-timeout/chat-change auto-stop, and unit tests on the pure mapper. | not-started | Camera permission MUST be per-session; no on-disk "always on" flag. |
+| 14.4 | Persona-side camera quest **`motion-capture`** — `pose-mirror.ts` PoseLandmarker wrapper (33-keypoint → VRM humanoid bone retargeting; pure retargeter is the unit-tested seam) + record-and-name-clip UI in `PersonaTeacher.vue`. Activation gate already wired via `persona.learnedMotions.length > 0`. | not-started | Reuses the same per-session consent flow as 14.3. |
+| 14.5 | VRMA baking — convert a recorded learned-motion clip into a VRMA file so the avatar can replay it through the existing `VrmaManager` instead of always streaming landmarks. | not-started | Reduces per-frame cost and unlocks sharing learned motions between devices via the existing Soul Link sync surface. |
+| 14.6 | Audio-prosody persona learning — derive tone/pacing/quirk hints from the user's saved voice prompts (when ASR is configured) and feed them into the Master-Echo persona suggestion. Camera-free; pairs naturally with the voice cluster. | not-started | Optional. |
+| 14.7 | Persona export / import — share a persona pack (`persona.json` + chosen expression / motion artifacts) as a single JSON document the user can email or drop into Soul Link sync. Honours the `active` and `version` fields and runs through `migratePersonaTraits`. | not-started | Manageable from the same Brain-hub panel. |
+
+> Camera quests (14.3 / 14.4) are explicitly **side chain** and ship
+> *after* the main chain (14.1 + 14.2) per the user's directive: focus on
+> the April 2026 research-driven, camera-free persona surface first.
+

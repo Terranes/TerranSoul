@@ -11,6 +11,7 @@ pub mod link;
 pub mod memory;
 pub mod messaging;
 pub mod package;
+pub mod persona;
 pub mod quest;
 pub mod registry;
 pub mod routing;
