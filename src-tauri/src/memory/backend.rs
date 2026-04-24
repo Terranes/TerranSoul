@@ -154,6 +154,19 @@ pub trait StorageBackend: Send {
         &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>>;
 
+    /// Hybrid search using **Reciprocal Rank Fusion** over independent
+    /// vector / keyword / freshness retrievers. Robust to score-scale
+    /// mismatch between retrievers (Cormack et al., SIGIR 2009).
+    ///
+    /// Default implementation falls back to [`Self::hybrid_search`] so
+    /// non-default backends keep working until they implement RRF natively.
+    /// See `docs/brain-advanced-design.md` §16 Phase 6 / §19.2 row 2.
+    fn hybrid_search_rrf(
+        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+    ) -> StorageResult<Vec<MemoryEntry>> {
+        self.hybrid_search(query, query_embedding, limit)
+    }
+
     // ── Update ───────────────────────────────────────────────────────────
     fn update(&self, id: i64, upd: MemoryUpdate) -> StorageResult<MemoryEntry>;
     fn promote(&self, id: i64, new_tier: MemoryTier) -> StorageResult<()>;

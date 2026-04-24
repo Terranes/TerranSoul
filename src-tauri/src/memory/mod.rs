@@ -4,6 +4,7 @@ pub mod auto_learn;
 pub mod cognitive_kind;
 pub mod edges;
 pub mod fusion;
+pub mod hyde;
 pub mod migrations;
 pub mod store;
 

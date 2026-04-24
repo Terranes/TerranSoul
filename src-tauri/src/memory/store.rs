@@ -596,6 +596,171 @@ impl MemoryStore {
         Ok(scored.into_iter().map(|(_, e)| e).collect())
     }
 
+    /// Hybrid search using **Reciprocal Rank Fusion** (RRF) over three
+    /// independent retrievers:
+    ///
+    /// 1. **Vector** ranking — cosine similarity vs `query_embedding`
+    ///    (skipped if no embedding is provided).
+    /// 2. **Keyword** ranking — count of distinct query tokens that appear
+    ///    in the memory's content or tags (case-insensitive, words shorter
+    ///    than 3 chars are ignored, BM25-style).
+    /// 3. **Freshness** ranking — composite of recency (24 h half-life),
+    ///    importance (1–5), `decay_score`, and tier weight (Working >
+    ///    Long > Short).
+    ///
+    /// The three rankings are fused with [`crate::memory::fusion::reciprocal_rank_fuse`]
+    /// using the standard `k = 60` constant (see Cormack et al., SIGIR 2009).
+    ///
+    /// RRF is preferred over the weighted-sum fusion in [`Self::hybrid_search`]
+    /// when the underlying retrievers have **incomparable score scales**:
+    /// raw cosine similarity (~0.0–1.0), keyword hit ratio (0.0–1.0), and
+    /// freshness composites are all on different distributions, so summing
+    /// them with hand-tuned weights is fragile. RRF operates purely on
+    /// rank position, giving robust, parameter-light fusion.
+    ///
+    /// Implements §16 Phase 6 / §19.2 row 2 of `docs/brain-advanced-design.md`.
+    /// Scales linearly in the number of memories with embeddings (the
+    /// vector pass is the dominant cost; ~5 ms for 100 k entries).
+    pub fn hybrid_search_rrf(
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
+    ) -> SqlResult<Vec<MemoryEntry>> {
+        use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
+        use std::collections::HashMap;
+
+        if limit == 0 {
+            return Ok(vec![]);
+        }
+
+        let now = now_ms();
+        let hour_ms: f64 = 3_600_000.0;
+
+        // Load all entries with embeddings when we will run a vector pass,
+        // otherwise the lighter `get_all` is sufficient.
+        let all = if query_embedding.is_some() {
+            self.get_with_embeddings()?
+        } else {
+            self.get_all()?
+        };
+
+        if all.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Index entries by id once so we can rebuild MemoryEntry ordering
+        // after fusion without cloning the vector twice.
+        let by_id: HashMap<i64, MemoryEntry> =
+            all.iter().map(|e| (e.id, e.clone())).collect();
+
+        // ── (1) Vector ranking ────────────────────────────────────────────
+        let mut vector_rank: Vec<i64> = Vec::new();
+        if let Some(qe) = query_embedding {
+            let mut scored: Vec<(f32, i64)> = all
+                .iter()
+                .filter_map(|e| {
+                    let emb = e.embedding.as_ref()?;
+                    Some((cosine_similarity(qe, emb), e.id))
+                })
+                .collect();
+            // Descending by similarity. Tie-break by id for determinism.
+            scored.sort_by(|a, b| {
+                b.0.partial_cmp(&a.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+            vector_rank = scored.into_iter().map(|(_, id)| id).collect();
+        }
+
+        // ── (2) Keyword ranking ───────────────────────────────────────────
+        let words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(String::from)
+            .collect();
+
+        let mut keyword_rank: Vec<i64> = Vec::new();
+        if !words.is_empty() {
+            let mut scored: Vec<(usize, i64)> = all
+                .iter()
+                .filter_map(|e| {
+                    let lower_content = e.content.to_lowercase();
+                    let lower_tags = e.tags.to_lowercase();
+                    let hits = words
+                        .iter()
+                        .filter(|w| {
+                            lower_content.contains(w.as_str())
+                                || lower_tags.contains(w.as_str())
+                        })
+                        .count();
+                    if hits > 0 { Some((hits, e.id)) } else { None }
+                })
+                .collect();
+            // Descending by hit count, deterministic id tie-break.
+            scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+            keyword_rank = scored.into_iter().map(|(_, id)| id).collect();
+        }
+
+        // ── (3) Freshness composite ranking ───────────────────────────────
+        let mut freshness_scored: Vec<(f64, i64)> = all
+            .iter()
+            .map(|e| {
+                let age_hours = (now - e.created_at) as f64 / hour_ms;
+                let recency = (-age_hours / 24.0).exp();
+                let importance = e.importance as f64 / 5.0;
+                let tier_boost = match e.tier {
+                    MemoryTier::Working => 1.0,
+                    MemoryTier::Long => 0.5,
+                    MemoryTier::Short => 0.3,
+                };
+                // Equal-weighted composite — RRF only cares about ordering.
+                let score = recency + importance + e.decay_score + tier_boost;
+                (score, e.id)
+            })
+            .collect();
+        freshness_scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        let freshness_rank: Vec<i64> =
+            freshness_scored.into_iter().map(|(_, id)| id).collect();
+
+        // ── Fuse with RRF (k = 60) ────────────────────────────────────────
+        // Build the slice-of-slices input. Empty rankings (e.g. no embedding
+        // or no usable query words) are simply skipped — RRF handles
+        // missing-from-some-rankings gracefully.
+        let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
+        if !vector_rank.is_empty() {
+            rankings.push(&vector_rank);
+        }
+        if !keyword_rank.is_empty() {
+            rankings.push(&keyword_rank);
+        }
+        rankings.push(&freshness_rank);
+
+        let fused = reciprocal_rank_fuse(&rankings, DEFAULT_RRF_K);
+
+        // Materialize the top-`limit` MemoryEntry list, preserving fused order.
+        let top: Vec<MemoryEntry> = fused
+            .into_iter()
+            .take(limit)
+            .filter_map(|(id, _)| by_id.get(&id).cloned())
+            .collect();
+
+        // Touch access counters for the matched entries.
+        for e in &top {
+            let _ = self.conn.execute(
+                "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                params![now, e.id],
+            );
+        }
+
+        Ok(top)
+    }
+
     // ── Tier management ────────────────────────────────────────────────────
 
     /// Promote a memory to a higher tier.
@@ -898,6 +1063,12 @@ impl StorageBackend for MemoryStore {
         &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         Ok(self.hybrid_search(query, query_embedding, limit)?)
+    }
+
+    fn hybrid_search_rrf(
+        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+    ) -> StorageResult<Vec<MemoryEntry>> {
+        Ok(self.hybrid_search_rrf(query, query_embedding, limit)?)
     }
 
     fn update(&self, id: i64, upd: MemoryUpdate) -> StorageResult<MemoryEntry> {
@@ -1325,6 +1496,85 @@ mod tests {
         assert_eq!(results.len(), 2);
         // Python entry should rank first (2 keyword hits vs 1 for Rust)
         assert!(results[0].content.contains("Python"));
+    }
+
+    #[test]
+    fn hybrid_search_rrf_keyword_ranking() {
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("Python programming language")).unwrap();
+        store.add(new_memory("JavaScript for web")).unwrap();
+        store.add(new_memory("Rust systems programming")).unwrap();
+
+        let results = store.hybrid_search_rrf("Python programming", None, 2).unwrap();
+        assert_eq!(results.len(), 2);
+        // Python (2 hits) ranks #1 in keyword and is recent, so RRF puts it first.
+        assert!(results[0].content.contains("Python"));
+    }
+
+    #[test]
+    fn hybrid_search_rrf_zero_limit_returns_empty() {
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("anything")).unwrap();
+        let results = store.hybrid_search_rrf("anything", None, 0).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn hybrid_search_rrf_empty_store_returns_empty() {
+        let store = MemoryStore::in_memory();
+        let results = store.hybrid_search_rrf("anything", None, 5).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn hybrid_search_rrf_no_matching_keyword_still_returns_freshness_ranked() {
+        // When the query has no keyword hits and no embedding, freshness
+        // ranking alone must still produce results so RAG never returns
+        // an empty top-k just because the query is unusual.
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("alpha")).unwrap();
+        store.add(new_memory("beta")).unwrap();
+        store.add(new_memory("gamma")).unwrap();
+
+        let results = store
+            .hybrid_search_rrf("xyzzy-nonexistent-token", None, 2)
+            .unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn hybrid_search_rrf_uses_vector_when_embedding_provided() {
+        let store = MemoryStore::in_memory();
+        let a = store.add(new_memory("alpha content")).unwrap();
+        let b = store.add(new_memory("beta content")).unwrap();
+        let c = store.add(new_memory("gamma content")).unwrap();
+
+        // Hand-crafted unit vectors: query is most similar to `b`.
+        let qe = vec![0.0_f32, 1.0, 0.0];
+        store.set_embedding(a.id, &[1.0, 0.0, 0.0]).unwrap();
+        store.set_embedding(b.id, &[0.0, 1.0, 0.0]).unwrap();
+        store.set_embedding(c.id, &[0.0, 0.0, 1.0]).unwrap();
+
+        // No query keyword overlap → vector + freshness drive the order;
+        // `b` is the unambiguous vector winner, so it must lead the results.
+        let results = store.hybrid_search_rrf("zzz", Some(&qe), 3).unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].id, b.id);
+    }
+
+    #[test]
+    fn hybrid_search_rrf_deterministic_across_runs() {
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("alpha")).unwrap();
+        store.add(new_memory("beta")).unwrap();
+        store.add(new_memory("gamma")).unwrap();
+
+        let r1 = store.hybrid_search_rrf("xyz", None, 3).unwrap();
+        let r2 = store.hybrid_search_rrf("xyz", None, 3).unwrap();
+        let r3 = store.hybrid_search_rrf("xyz", None, 3).unwrap();
+        let ids = |v: &[MemoryEntry]| v.iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(ids(&r1), ids(&r2));
+        assert_eq!(ids(&r2), ids(&r3));
     }
 
     #[test]

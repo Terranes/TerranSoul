@@ -310,6 +310,30 @@ impl OllamaAgent {
         if clean.is_empty() { None } else { Some(clean) }
     }
 
+    /// Generate a **hypothetical answer** for a HyDE retrieval query.
+    ///
+    /// HyDE (Gao et al., 2022) embeds an LLM-written hypothetical answer
+    /// instead of the raw query, dramatically improving recall on cold
+    /// or abstract queries. Returns `None` when the brain is unreachable
+    /// or the reply is too short to carry retrieval signal — in both
+    /// cases the caller should fall back to embedding the raw query.
+    ///
+    /// Prompt construction + reply cleaning live in
+    /// [`crate::memory::hyde`] so they can be unit-tested without the
+    /// network.
+    pub async fn hyde_complete(&self, query: &str) -> Option<String> {
+        if query.trim().is_empty() {
+            return None;
+        }
+        let (system, user) = crate::memory::hyde::build_hyde_prompt(query);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::memory::hyde::clean_hyde_reply(&reply)
+    }
+
     // ── Embedding ──────────────────────────────────────────────────────────
 
     /// Generate a vector embedding for `text` via Ollama `/api/embed`.

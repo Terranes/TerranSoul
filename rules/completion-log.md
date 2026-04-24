@@ -12,6 +12,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.9 — HyDE (Hypothetical Document Embeddings)](#chunk-19--hyde-hypothetical-document-embeddings) | 2026-04-24 |
+| [Chunk 1.8 — RRF Wired into Hybrid Search](#chunk-18--rrf-wired-into-hybrid-search) | 2026-04-24 |
 | [Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution](#chunk-17-distribution--real-downloadable-agent-distribution) | 2026-04-23 |
 | [Chunk 1.7 — Cognitive Memory Axes + Marketplace Catalog Default + Local Models as Agents + OpenClaw Bridge](#chunk-17--cognitive-memory-axes--marketplace-catalog-default--local-models-as-agents--openclaw-bridge) | 2026-04-23 |
 | [Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)](#chunk-16--entity-relationship-graph-v5-schema-typeddirectional-edges-multi-hop-rag) | 2026-04-23 |
@@ -89,6 +91,138 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.9 — HyDE (Hypothetical Document Embeddings)
+
+**Date.** 2026-04-24
+**Phase.** 12 (Brain Advanced Design)
+**Origin.** `docs/brain-advanced-design.md` §16 Phase 6 / §19.2 row 4
+(Gao et al., 2022 — *"Precise Zero-Shot Dense Retrieval without
+Relevance Labels"*).
+
+**Goal.** Add a `hyde_search_memories(query, limit)` Tauri command that
+asks the active brain to write a *hypothetical answer* to the query,
+embeds that hypothetical answer, then runs RRF-fused hybrid search
+using the hypothetical embedding instead of the raw query embedding.
+Improves recall on cold, abstract or one-word queries — the seminal
+HyDE paper reports large gains across BEIR / TREC / Mr. TyDi without
+fine-tuning.
+
+**Architecture.** Three layers:
+
+1. **Pure prompt + reply cleaner** (`src-tauri/src/memory/hyde.rs`).
+   `build_hyde_prompt(query) -> (system, user)` produces the LLM
+   prompt; `clean_hyde_reply(reply) -> Option<String>` strips common
+   chat preambles ("Sure, ...", "Answer: ...", "Hypothetical answer: ..."),
+   collapses whitespace and rejects too-short outputs (< 4 chars). Both
+   are pure, fully unit-tested without the network.
+2. **Brain wrapper** (`OllamaAgent::hyde_complete`). Wraps the prompt +
+   `call` round-trip + cleaner; returns `Option<String>` (`None` on
+   network failure or unusable reply).
+3. **Tauri command** (`commands::memory::hyde_search_memories`). Chains
+   `hyde_complete → embed_text → hybrid_search_rrf` with a three-stage
+   fallback so the command is *always* useful:
+   - HyDE expansion fails → embed the raw query.
+   - Embedding step also fails → fall back to keyword + freshness
+     ranking via `hybrid_search_rrf` with no embedding.
+   - No brain configured → keyword + freshness only.
+
+**Why a separate command, not an option flag.** HyDE costs one extra
+LLM round-trip per query, which is fine for explicit retrieval calls
+but should not silently apply to every chat-time RAG injection.
+Exposing it as `hyde_search_memories` lets callers (a Search panel,
+an "explain my memories" workflow) opt in explicitly while
+`hybrid_search_memories_rrf` stays the cheap default.
+
+**Files modified.**
+- `src-tauri/src/memory/hyde.rs` — **new module** (~190 LOC including 10
+  unit tests covering preamble stripping, whitespace collapsing,
+  too-short rejection, query trimming, idempotence, no-preamble safety).
+- `src-tauri/src/memory/mod.rs` — register `pub mod hyde;`.
+- `src-tauri/src/brain/ollama_agent.rs` — `OllamaAgent::hyde_complete`.
+- `src-tauri/src/commands/memory.rs` — `hyde_search_memories` Tauri
+  command.
+- `src-tauri/src/lib.rs` — command registration.
+- `docs/brain-advanced-design.md` — §16 Phase 6 row + §19.2 row 4 status
+  flipped to ✅; §19.3 expanded with HyDE description.
+- `rules/milestones.md` — Chunk 1.9 row removed; next-chunk pointer
+  advanced to Chunk 1.10.
+
+**Tests.** 754 Rust unit tests pass (744 baseline + 10 new
+`memory::hyde::tests::*`).
+
+---
+
+## Chunk 1.8 — RRF Wired into Hybrid Search
+
+**Date.** 2026-04-24
+**Phase.** 12 (Brain Advanced Design)
+**Origin.** `docs/brain-advanced-design.md` §16 Phase 6 / §19.2 row 2.
+
+**Goal.** Wire the already-shipped Reciprocal Rank Fusion utility
+(`src-tauri/src/memory/fusion.rs`) into a real `MemoryStore` retrieval
+method so RRF moves from "utility on the shelf" to "production retrieval
+path", flipping §19.2 row 2 from 🟡 → ✅.
+
+**Why RRF, not weighted sum.** The legacy `hybrid_search` combines six
+signals (vector cosine, keyword hits, recency, importance, decay, tier)
+with hand-tuned weights summed into a single score. This is fragile when
+the underlying signal scales differ — raw cosine is in `[0, 1]`, keyword
+hit ratio is in `[0, 1]`, decay is in `[0, 1]`, but the sum has no
+principled interpretation. RRF (Cormack et al., SIGIR 2009) operates
+purely on rank position with a single dampening constant (`k = 60`), is
+the de-facto standard across LangChain / LlamaIndex / Weaviate, and
+removes the need for weight tuning when retrievers disagree on score
+magnitude.
+
+**Architecture.**
+
+1. `MemoryStore::hybrid_search_rrf(query, query_embedding, limit)` builds
+   three independent rankings:
+   - **Vector** — cosine similarity of `query_embedding` against every
+     embedded memory, descending; deterministic id tie-break.
+   - **Keyword** — count of distinct query tokens (length > 2) appearing
+     in `content` or `tags`, case-insensitive, descending; entries with
+     zero hits are excluded from this ranking only.
+   - **Freshness** — composite of recency (24 h half-life), importance
+     (1–5), `decay_score`, and tier weight (Working > Long > Short).
+2. The non-empty rankings are passed to
+   `crate::memory::fusion::reciprocal_rank_fuse` with the standard
+   `DEFAULT_RRF_K = 60`. Missing-from-some-rankings is handled
+   gracefully by the fusion utility itself.
+3. Top `limit` ids are materialised back into `MemoryEntry` structs (no
+   second DB round-trip — entries are indexed by id from the original
+   load) and `last_accessed` / `access_count` are updated, matching the
+   semantics of every other search method.
+
+**Storage backend trait.** `StorageBackend::hybrid_search_rrf` ships
+with a default implementation that delegates to
+`StorageBackend::hybrid_search`, so Postgres / MSSQL / Cassandra
+backends keep compiling and may opt into RRF natively later (the SQLite
+backend overrides it with the real implementation).
+
+**Tauri surface.** New command `hybrid_search_memories_rrf(query, limit)`
+registered in `src-tauri/src/lib.rs` next to `hybrid_search_memories`.
+The legacy weighted-sum command is preserved for backward compatibility
+and for callers that want the original behaviour.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — new `hybrid_search_rrf` method
+  (~120 LOC) + 6 unit tests covering keyword ranking, zero-limit, empty
+  store, freshness-only fallback, vector primacy, determinism.
+- `src-tauri/src/memory/backend.rs` — new trait method with default
+  delegation.
+- `src-tauri/src/commands/memory.rs` — new `hybrid_search_memories_rrf`
+  Tauri command.
+- `src-tauri/src/lib.rs` — command registration.
+- `docs/brain-advanced-design.md` — §16 Phase 6 row updated to ✅, §19.2
+  row 2 status text updated, §19.3 expanded with the wire-in details.
+- `rules/milestones.md` — Chunk 1.8 row removed.
+
+**Tests.** 744 Rust unit tests pass (738 baseline + 6 new
+`hybrid_search_rrf_*` tests).
 
 ---
 
