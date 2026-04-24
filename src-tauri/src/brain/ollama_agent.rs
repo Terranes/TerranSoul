@@ -310,6 +310,58 @@ impl OllamaAgent {
         if clean.is_empty() { None } else { Some(clean) }
     }
 
+    /// Generate a **hypothetical answer** for a HyDE retrieval query.
+    ///
+    /// HyDE (Gao et al., 2022) embeds an LLM-written hypothetical answer
+    /// instead of the raw query, dramatically improving recall on cold
+    /// or abstract queries. Returns `None` when the brain is unreachable
+    /// or the reply is too short to carry retrieval signal — in both
+    /// cases the caller should fall back to embedding the raw query.
+    ///
+    /// Prompt construction + reply cleaning live in
+    /// [`crate::memory::hyde`] so they can be unit-tested without the
+    /// network.
+    pub async fn hyde_complete(&self, query: &str) -> Option<String> {
+        if query.trim().is_empty() {
+            return None;
+        }
+        let (system, user) = crate::memory::hyde::build_hyde_prompt(query);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::memory::hyde::clean_hyde_reply(&reply)
+    }
+
+    /// LLM-as-judge **cross-encoder rerank score** for a single
+    /// `(query, document)` pair on a 0–10 integer scale.
+    ///
+    /// This is the per-candidate primitive consumed by the
+    /// `rerank_search_memories` Tauri command. Returns `None` if the
+    /// brain is unreachable or replies with an unparseable score —
+    /// the caller treats `None` as "skip", and
+    /// [`crate::memory::reranker::rerank_candidates`] keeps unscored
+    /// candidates rather than dropping them, so a flaky brain never
+    /// silently loses recall.
+    ///
+    /// Prompt construction + reply parsing live in
+    /// [`crate::memory::reranker`] so they can be unit-tested without
+    /// the network. See `docs/brain-advanced-design.md` § 16 Phase 6 /
+    /// § 19.2 row 10.
+    pub async fn rerank_score(&self, query: &str, document: &str) -> Option<u8> {
+        if query.trim().is_empty() || document.trim().is_empty() {
+            return None;
+        }
+        let (system, user) = crate::memory::reranker::build_rerank_prompt(query, document);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::memory::reranker::parse_rerank_score(&reply)
+    }
+
     // ── Embedding ──────────────────────────────────────────────────────────
 
     /// Generate a vector embedding for `text` via Ollama `/api/embed`.
