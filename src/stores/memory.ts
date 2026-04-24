@@ -1,6 +1,18 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+
+/** A detected contradiction between two memories (Chunk 17.2). */
+export interface MemoryConflict {
+  id: number;
+  entry_a_id: number;
+  entry_b_id: number;
+  status: 'open' | 'resolved' | 'dismissed';
+  winner_id: number | null;
+  created_at: number;
+  resolved_at: number | null;
+  reason: string;
+}
 import type {
   EdgeDirection,
   EdgeStats,
@@ -321,6 +333,33 @@ export const useMemoryStore = defineStore('memory', () => {
     return await invoke('adjust_memory_importance', { hotThreshold, coldDays });
   }
 
+  // ── Contradiction resolution (Chunk 17.2) ──────────────────────────────
+
+  /** List memory conflicts, optionally filtered by status. */
+  async function listConflicts(
+    status?: 'open' | 'resolved' | 'dismissed',
+  ): Promise<MemoryConflict[]> {
+    return await invoke('list_memory_conflicts', { status });
+  }
+
+  /** Resolve a conflict by picking a winner. Loser is soft-closed. */
+  async function resolveConflict(
+    conflictId: number,
+    winnerId: number,
+  ): Promise<MemoryConflict> {
+    return await invoke('resolve_memory_conflict', { conflictId, winnerId });
+  }
+
+  /** Dismiss a conflict (user says "not a real conflict"). */
+  async function dismissConflict(conflictId: number): Promise<void> {
+    return await invoke('dismiss_memory_conflict', { conflictId });
+  }
+
+  /** Count open (unresolved) conflicts. */
+  async function countConflicts(): Promise<number> {
+    return await invoke('count_memory_conflicts');
+  }
+
   return {
     memories,
     stats,
@@ -354,5 +393,10 @@ export const useMemoryStore = defineStore('memory', () => {
     exportToObsidian,
     getMemoryHistory,
     adjustImportance,
+    // Contradiction resolution (Chunk 17.2)
+    listConflicts,
+    resolveConflict,
+    dismissConflict,
+    countConflicts,
   };
 });

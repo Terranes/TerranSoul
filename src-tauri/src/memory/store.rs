@@ -127,6 +127,9 @@ pub struct MemoryEntry {
     pub source_hash: Option<String>,
     /// Optional TTL — Unix-ms timestamp after which memory auto-expires.
     pub expires_at: Option<i64>,
+    /// Soft-close timestamp (Unix ms). Non-NULL means this memory was superseded
+    /// by a contradiction resolution and is no longer active. Never deleted.
+    pub valid_to: Option<i64>,
 }
 
 /// Fields required to create a new memory.
@@ -255,7 +258,7 @@ impl MemoryStore {
     pub fn get_by_id(&self, id: i64) -> SqlResult<MemoryEntry> {
         self.conn.query_row(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories WHERE id = ?1",
             params![id],
             row_to_entry,
@@ -266,7 +269,7 @@ impl MemoryStore {
     pub fn get_all(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories ORDER BY importance DESC, created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
@@ -277,7 +280,7 @@ impl MemoryStore {
     pub fn get_by_tier(&self, tier: &MemoryTier) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories WHERE tier = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![tier.as_str()], row_to_entry)?;
@@ -288,7 +291,7 @@ impl MemoryStore {
     pub fn get_persistent(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories WHERE tier IN ('working', 'long')
              ORDER BY importance DESC, decay_score DESC, created_at DESC",
         )?;
@@ -305,7 +308,7 @@ impl MemoryStore {
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories
              WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
              ORDER BY importance DESC, access_count DESC, created_at DESC",
@@ -375,6 +378,17 @@ impl MemoryStore {
         Ok(())
     }
 
+    /// Soft-close a memory by setting `valid_to` to the given timestamp.
+    /// The entry is never deleted — this preserves the audit trail and
+    /// allows undo. Used by contradiction resolution (Chunk 17.2).
+    pub fn close_memory(&self, id: i64, valid_to_ms: i64) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE memories SET valid_to = ?1 WHERE id = ?2",
+            params![valid_to_ms, id],
+        )?;
+        Ok(())
+    }
+
     /// Return the N most relevant memories for a message (keyword match + importance).
     /// Used to inject long-term context into the brain's system prompt.
     pub fn relevant_for(&self, message: &str, limit: usize) -> Vec<String> {
@@ -437,7 +451,7 @@ impl MemoryStore {
     pub fn get_with_embeddings(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, embedding
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding
              FROM memories WHERE embedding IS NOT NULL",
         )?;
         let rows = stmt.query_map([], row_to_entry_with_embedding)?;
@@ -941,7 +955,7 @@ impl MemoryStore {
     pub fn evict_short_term(&self, session_id: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories WHERE tier = 'short' AND session_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_entry)?;
@@ -1095,7 +1109,7 @@ impl MemoryStore {
     pub fn find_by_source_hash(&self, hash: &str) -> SqlResult<Option<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories WHERE source_hash = ?1 LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![hash], row_to_entry)?;
@@ -1110,7 +1124,7 @@ impl MemoryStore {
     pub fn find_by_source_url(&self, url: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
              FROM memories WHERE source_url = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![url], row_to_entry)?;
@@ -1179,11 +1193,12 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
         source_url: row.get(13).unwrap_or(None),
         source_hash: row.get(14).unwrap_or(None),
         expires_at: row.get(15).unwrap_or(None),
+        valid_to: row.get(16).unwrap_or(None),
     })
 }
 
 fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
-    let blob: Option<Vec<u8>> = row.get(16)?;
+    let blob: Option<Vec<u8>> = row.get(17)?;
     Ok(MemoryEntry {
         id: row.get(0)?,
         content: row.get(1)?,
@@ -1202,6 +1217,7 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
         source_url: row.get(13).unwrap_or(None),
         source_hash: row.get(14).unwrap_or(None),
         expires_at: row.get(15).unwrap_or(None),
+        valid_to: row.get(16).unwrap_or(None),
     })
 }
 

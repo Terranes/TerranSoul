@@ -424,6 +424,26 @@ impl OllamaAgent {
         crate::persona::drift::parse_drift_reply(&reply)
     }
 
+    // ── Contradiction detection (Chunk 17.2) ───────────────────────────────
+
+    /// Ask the LLM whether two memory statements contradict each other.
+    /// Returns `None` when the brain reply can't be parsed (caller should
+    /// treat this as "no contradiction detected").
+    pub async fn check_contradiction(
+        &self,
+        content_a: &str,
+        content_b: &str,
+    ) -> Option<crate::memory::conflicts::ContradictionResult> {
+        let (system, user) =
+            crate::memory::conflicts::build_contradiction_prompt(content_a, content_b);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::memory::conflicts::parse_contradiction_reply(&reply)
+    }
+
     // ── Embedding ──────────────────────────────────────────────────────────
 
     /// Generate a vector embedding for `text` via Ollama `/api/embed`.

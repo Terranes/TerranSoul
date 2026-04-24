@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 17.2 — Contradiction resolution (LLM picks winner)](#chunk-172--contradiction-resolution-llm-picks-winner) | 2026-04-26 |
 | [Chunk 16.11 — Semantic chunking pipeline](#chunk-1611--semantic-chunking-pipeline) | 2026-04-26 |
 | [Chunk 17.4 — Memory importance auto-adjustment](#chunk-174--memory-importance-auto-adjustment) | 2026-04-26 |
 | [Chunk 16.12 — Memory versioning (V8 schema)](#chunk-1612--memory-versioning-v8-schema) | 2026-04-25 |
@@ -163,6 +164,36 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 17.2 — Contradiction resolution (LLM picks winner)
+
+**Date.** 2026-04-26
+
+**What.** When `add_memory` detects a near-duplicate (cosine ≥ 0.85) whose content semantically contradicts the new entry, an LLM "do these contradict?" check runs and opens a `MemoryConflict` row. The user can resolve (pick winner → loser soft-closed via `valid_to`) or dismiss the conflict. Maps to §16 Phase 5 of `brain-advanced-design.md`.
+
+**Schema.** V9 migration adds `valid_to INTEGER` to `memories` and creates `memory_conflicts` table (id, entry_a_id, entry_b_id, status, winner_id, created_at, resolved_at, reason).
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/conflicts.rs` (NEW) | `ConflictStatus` enum, `MemoryConflict` struct, `ContradictionResult` struct, `build_contradiction_prompt`, `parse_contradiction_reply`, `strip_fences`, `MemoryStore` impl: `add_conflict`, `list_conflicts`, `resolve_conflict`, `dismiss_conflict`, `count_open_conflicts`. 12 unit tests. |
+| `src-tauri/src/memory/migrations.rs` | V9 migration (up + down), `TARGET_VERSION` → 9, sentinel test updated. |
+| `src-tauri/src/memory/store.rs` | `valid_to: Option<i64>` on `MemoryEntry`, `close_memory(id, valid_to_ms)` method, all SELECT queries updated to include `valid_to`. |
+| `src-tauri/src/memory/mod.rs` | `pub mod conflicts;` |
+| `src-tauri/src/brain/ollama_agent.rs` | `check_contradiction(content_a, content_b)` method. |
+| `src-tauri/src/commands/memory.rs` | `add_memory` wired with contradiction detection (lock-safe), 4 new commands: `list_memory_conflicts`, `resolve_memory_conflict`, `dismiss_memory_conflict`, `count_memory_conflicts`. |
+| `src-tauri/src/lib.rs` | Registered 4 new conflict commands. |
+| `src-tauri/src/memory/code_rag.rs` | `valid_to: None` in `MemoryEntry` constructors. |
+| `src-tauri/src/memory/obsidian_export.rs` | `valid_to: None` in test helper. |
+| `src-tauri/src/memory/reranker.rs` | `valid_to: None` in test helper. |
+| `src-tauri/src/memory/cassandra.rs` | `valid_to: None` in `row_to_entry` + `add`. |
+| `src-tauri/src/memory/mssql.rs` | `valid_to: None` in `row_to_entry`. |
+| `src-tauri/src/memory/postgres.rs` | `valid_to: None` in `row_to_entry`. |
+
+**Test count.** 1031 Rust (was 1019), 1083 Vitest (unchanged). Clippy + vue-tsc clean.
 
 ---
 

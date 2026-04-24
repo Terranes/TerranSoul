@@ -161,6 +161,7 @@ impl CassandraBackend {
             source_url: Self::cql_to_option_string(row.get(14)),
             source_hash: Self::cql_to_option_string(row.get(15)),
             expires_at: Self::cql_to_option_i64(row.get(16)),
+            valid_to: None,
         }
     }
 
@@ -326,6 +327,7 @@ impl StorageBackend for CassandraBackend {
                 source_url: m.source_url,
                 source_hash: m.source_hash,
                 expires_at: m.expires_at,
+                valid_to: None,
             })
         })
     }

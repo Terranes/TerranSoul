@@ -223,6 +223,7 @@ mod tests {
             source_url: Some("https://example.com".to_string()),
             source_hash: Some("abc123".to_string()),
             expires_at: None,
+            valid_to: None,
         }
     }
 

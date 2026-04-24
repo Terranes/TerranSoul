@@ -204,6 +204,7 @@ mod tests {
             source_url: None,
             source_hash: None,
             expires_at: None,
+            valid_to: None,
         }
     }
 

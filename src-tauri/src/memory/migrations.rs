@@ -261,6 +261,43 @@ DROP INDEX IF EXISTS idx_versions_memory;
 DROP TABLE IF EXISTS memory_versions;
 "#,
     },
+    // ── V9: Contradiction resolution — valid_to on memories + memory_conflicts ─
+    //
+    // `valid_to` is a nullable Unix-ms timestamp on `memories`. A NULL value
+    // means the entry is still valid / active. When a contradiction is resolved,
+    // the losing entry's `valid_to` is set to the resolution timestamp — it is
+    // **never deleted**, preserving audit trail and enabling undo.
+    //
+    // `memory_conflicts` records detected semantic contradictions between two
+    // memories. Status flows: open → resolved (winner picks one side) or
+    // open → dismissed (user says "not a real conflict"). The loser_id is set
+    // only on resolution.
+    //
+    // See `docs/brain-advanced-design.md` §16 Phase 5 (chunk 17.2).
+    Migration {
+        version: 9,
+        description: "contradiction resolution: valid_to on memories + memory_conflicts table",
+        up: r#"
+ALTER TABLE memories ADD COLUMN valid_to INTEGER;
+
+CREATE TABLE IF NOT EXISTS memory_conflicts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_a_id  INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    entry_b_id  INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    status      TEXT    NOT NULL DEFAULT 'open',
+    winner_id   INTEGER,
+    created_at  INTEGER NOT NULL,
+    resolved_at INTEGER,
+    reason      TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_conflicts_status ON memory_conflicts(status);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_conflicts_status;
+DROP TABLE IF EXISTS memory_conflicts;
+ALTER TABLE memories DROP COLUMN valid_to;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -545,11 +582,11 @@ mod tests {
     }
 
     #[test]
-    fn target_version_is_v8() {
+    fn target_version_is_v9() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
-        assert_eq!(TARGET_VERSION, 8, "V8 is the current memory-versioning schema");
+        assert_eq!(TARGET_VERSION, 9, "V9 is the current contradiction-resolution schema");
     }
 
     #[test]

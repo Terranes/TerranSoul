@@ -38,10 +38,41 @@ pub async fn add_memory(
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
-    if let Some(model) = model_opt {
-        if let Some(emb) = crate::brain::OllamaAgent::embed_text(&content, &model).await {
-            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            let _ = store.set_embedding(entry.id, &emb);
+    if let Some(ref model) = model_opt {
+        if let Some(emb) = crate::brain::OllamaAgent::embed_text(&content, model).await {
+            // Find near-duplicate while holding the lock, then release.
+            let dup_info: Option<(i64, String)> = {
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                let _ = store.set_embedding(entry.id, &emb);
+
+                // Contradiction detection (Chunk 17.2): check for near-duplicate.
+                store
+                    .find_duplicate(&emb, 0.85)
+                    .ok()
+                    .flatten()
+                    .filter(|&dup_id| dup_id != entry.id)
+                    .and_then(|dup_id| {
+                        store.get_by_id(dup_id).ok().map(|dup| (dup_id, dup.content))
+                    })
+            }; // lock released here
+
+            // If a near-duplicate exists, ask the LLM whether the two
+            // statements contradict. If so, open a MemoryConflict row.
+            if let Some((dup_id, dup_content)) = dup_info {
+                let agent = crate::brain::OllamaAgent::new(model);
+                if let Some(result) = agent
+                    .check_contradiction(&dup_content, &content)
+                    .await
+                {
+                    if result.contradicts {
+                        let store = state
+                            .memory_store
+                            .lock()
+                            .map_err(|e| e.to_string())?;
+                        let _ = store.add_conflict(dup_id, entry.id, &result.reason);
+                    }
+                }
+            }
         }
     }
 
@@ -683,6 +714,59 @@ pub struct MemoryTagAudit {
 pub struct TagAuditFlag {
     pub tag: String,
     pub reason: String,
+}
+
+// ── Contradiction resolution (Chunk 17.2) ───────────────────────────────────
+
+/// List all memory conflicts, optionally filtered by status.
+/// Defaults to listing only "open" conflicts when no filter is provided.
+#[tauri::command]
+pub async fn list_memory_conflicts(
+    status: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::conflicts::MemoryConflict>, String> {
+    let filter = status.map(|s| crate::memory::conflicts::ConflictStatus::parse(&s));
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .list_conflicts(filter.as_ref())
+        .map_err(|e| e.to_string())
+}
+
+/// Resolve a memory conflict by picking a winner. The loser is soft-closed
+/// via `valid_to` — never deleted.
+#[tauri::command]
+pub async fn resolve_memory_conflict(
+    conflict_id: i64,
+    winner_id: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::conflicts::MemoryConflict, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .resolve_conflict(conflict_id, winner_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Dismiss a memory conflict (user says "not a real conflict").
+#[tauri::command]
+pub async fn dismiss_memory_conflict(
+    conflict_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .dismiss_conflict(conflict_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the number of open (unresolved) memory conflicts.
+#[tauri::command]
+pub async fn count_memory_conflicts(
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .count_open_conflicts()
+        .map_err(|e| e.to_string())
 }
 
 /// Walk every memory, validate its `tags` against the curated vocabulary,

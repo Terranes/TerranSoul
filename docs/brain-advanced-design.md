@@ -1857,7 +1857,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Auto-promotion based on access patterns                     │
 │  │     (`MemoryStore::auto_promote_to_long`,                        │
 │  │      command `auto_promote_memories`) — Chunk 17.1               │
-│  ├── ○ Contradiction resolution (LLM picks winner)                 │
+│  ├── ✓ Contradiction resolution (LLM picks winner)                 │
+│  │     (`memory::conflicts` — V9 schema, `MemoryConflict` CRUD,    │
+│  │      losers soft-closed via `valid_to`) — Chunk 17.2             │
 │  ├── ✓ Temporal reasoning (`memory::temporal::parse_time_range` +   │
 │  │     `temporal_query` command) — Chunk 17.3                       │
 │  ├── ✓ Memory importance auto-adjustment from access_count         │

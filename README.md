@@ -255,6 +255,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - `contextualize.rs` — Contextual Retrieval (Anthropic 2024): `generate_doc_summary()` + `contextualise_chunk(doc_summary, chunk, brain_mode)` + `prepend_context()`; opt-in via `AppSettings.contextual_retrieval`; adds document-level context to each chunk before embedding, reducing failed retrievals by ~49 %
 - `versioning.rs` — non-destructive edit history: `save_version(conn, memory_id)` snapshots the current state into `memory_versions` (V8 schema) before each update; `get_history()` returns all previous versions; FK cascade on delete
 - `chunking.rs` — semantic chunking pipeline: `split_markdown()` (heading/paragraph/sentence-aware via `text-splitter` crate), `split_text()` (Unicode sentence boundaries), `dedup_chunks()` (SHA-256 hash dedup), `Chunk` struct (index, text, hash, heading metadata); replaces naive word-count splitter
+- `conflicts.rs` — contradiction resolution (V9 schema): `build_contradiction_prompt` + `parse_contradiction_reply` for LLM-based contradiction check; `MemoryConflict` CRUD (`add_conflict`, `list_conflicts`, `resolve_conflict`, `dismiss_conflict`, `count_open_conflicts`); losers soft-closed via `valid_to` (never deleted)
 - Pluggable backends behind cargo features: `postgres.rs` (`sqlx`), `mssql.rs` (`tiberius`), `cassandra.rs` (`scylla`)
 
 **Tauri command surface** (`src-tauri/src/commands/memory.rs`)
@@ -432,7 +433,7 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 ## Development Status
 
 **Completed phases:** 18 (Phases 0–11 foundation, 12 docs, 13 code-RAG, 14 partial, 18 categorisation)
-**Test suite:** 1083 frontend (Vitest) + 1019 backend (cargo) + 4 E2E (Playwright) — all passing
+**Test suite:** 1083 frontend (Vitest) + 1031 backend (cargo) + 4 E2E (Playwright) — all passing
 **Current focus:** Phases 14–17 — Persona refinement, AI Coding Integrations, Modern RAG, Brain Intelligence
 **See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 

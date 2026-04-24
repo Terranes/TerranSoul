@@ -179,6 +179,7 @@ impl PostgresBackend {
             source_url: row.get("source_url"),
             source_hash: row.get("source_hash"),
             expires_at: row.get("expires_at"),
+            valid_to: None,
         }
     }
 }
