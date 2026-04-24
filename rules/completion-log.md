@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution](#chunk-17-distribution--real-downloadable-agent-distribution) | 2026-04-23 |
 | [Chunk 1.7 — Cognitive Memory Axes + Marketplace Catalog Default + Local Models as Agents + OpenClaw Bridge](#chunk-17--cognitive-memory-axes--marketplace-catalog-default--local-models-as-agents--openclaw-bridge) | 2026-04-23 |
 | [Chunk 1.6 — Entity-Relationship Graph (V5 schema, typed/directional edges, multi-hop RAG)](#chunk-16--entity-relationship-graph-v5-schema-typeddirectional-edges-multi-hop-rag) | 2026-04-23 |
 | [Chunk 1.5 — Multi-Agent Roster + External CLI Workers + Temporal-style Durable Workflows](#chunk-15--multi-agent-roster--external-cli-workers--temporal-style-durable-workflows) | 2026-04-23 |
@@ -88,6 +89,113 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution
+
+**Date:** 2026-04-23
+
+### Summary
+
+Closed the last "no path to ship a third-party downloadable agent" gap
+in the agent marketplace.
+
+### What changed
+
+1. **Mandatory `sha256` on every downloadable install method.** The
+   installer (`PackageInstaller::install` / `::update`) now refuses to
+   install a `Binary { url }` or `Wasm { url }` agent whose manifest
+   omits the `sha256` field, returning a new
+   `InstallerError::MissingSha256(name)` before any download or disk
+   write. Built-in (`InstallMethod::BuiltIn`) and bundled (`Sidecar`)
+   agents are exempt — they have no remote bytes to hash.
+2. **Optional Ed25519 manifest signatures with a curated publisher
+   allow-list.** New module
+   `src-tauri/src/package_manager/signing.rs` wraps `ed25519-dalek` to
+   verify a detached `signature` field over a deterministic
+   `canonical_signing_payload(manifest)` (covers
+   `name` + `version` + install-method discriminator + URL +
+   `sha256`). When a manifest declares a `publisher`, the publisher
+   must appear in the compile-time `PUBLISHER_ALLOW_LIST` and the
+   signature must verify against the recorded public key. Cosmetic
+   edits (description, homepage, capabilities, license, author) do
+   **not** invalidate the signature; swapping the binary URL or hash
+   does. New `InstallerError::SignatureVerificationFailed(SigningError)`
+   and `SigningError::{UnknownPublisher, InvalidSignatureEncoding,
+   InvalidSignatureLength, SignatureMismatch, InvalidPublicKey}`
+   surface the failure mode. The allow-list ships **empty** — real
+   publisher keys are added by maintainers in code-reviewed PRs only,
+   never injectable at runtime.
+3. **Hosting model: `307 Temporary Redirect` from the registry to the
+   upstream binary host.** `registry_server::server::download_agent`
+   no longer returns a fixed empty body for downloadable agents — it
+   issues `Redirect::temporary(url)` to the manifest's
+   `Binary { url }` / `Wasm { url }`. This keeps the registry stateless
+   and bandwidth-free; agent binaries live on GitHub Releases (or
+   S3 / R2). `reqwest` already follows redirects, so `HttpRegistry`
+   needed no client-side changes.
+4. **End-to-end integration test
+   (`src-tauri/src/registry_server/distribution_e2e_tests.rs`).**
+   Spawns two real `axum` HTTP servers on free ports — an "upstream
+   binary host" serving the bytes and a "registry server" serving the
+   manifest with the redirect contract — then drives
+   `PackageInstaller::install` through `HttpRegistry` and asserts:
+   - the happy path writes a non-empty `agent.bin` whose content and
+     SHA-256 match the upstream payload;
+   - a tampered upstream binary triggers `HashMismatch` with **no disk
+     side-effects** (the agent directory is never created);
+   - a manifest without `sha256` is rejected with `MissingSha256`
+     before any download is attempted.
+5. **Manifest schema extended.** `AgentManifest` gains optional
+   `publisher: Option<String>` and `signature: Option<String>` fields.
+   Validator rejects malformed signatures (must be 128 hex chars / 64
+   bytes); new `ManifestError::InvalidSignature` variant.
+
+### Files touched
+
+- `src-tauri/src/package_manager/manifest.rs` — `publisher` + `signature`
+  fields, `ManifestError::InvalidSignature` + `validate_signature`.
+- `src-tauri/src/package_manager/installer.rs` — `verify_manifest_trust`
+  helper, `InstallerError::{MissingSha256, SignatureVerificationFailed}`,
+  installer + updater enforcement, new tests for missing-sha and
+  unknown-publisher rejection.
+- `src-tauri/src/package_manager/signing.rs` — **new**, full
+  Ed25519 signing/verification module with 11 unit tests.
+- `src-tauri/src/package_manager/mod.rs` — re-exports.
+- `src-tauri/src/registry_server/server.rs` — `307 Temporary Redirect`
+  contract for downloadable install methods.
+- `src-tauri/src/registry_server/catalog.rs` — backfill `publisher`/
+  `signature: None` on built-in catalog entries.
+- `src-tauri/src/registry_server/distribution_e2e_tests.rs` — **new**,
+  three end-to-end integration tests against real `axum` fixtures.
+- `src-tauri/src/registry_server/mod.rs` — wires the new test module.
+- `rules/milestones.md` — Chunk 1.7 row removed (now done).
+- `rules/completion-log.md` — this entry.
+
+### Verification
+
+- `cargo build --tests` (from `src-tauri`) — ✅
+- `cargo test --all-targets` — **712 tests pass** (was 561 before
+  Chunk 1.7 work; 11 new signing tests + 3 new e2e tests + 2 new
+  installer guard tests).
+- `cargo clippy --all-targets -- -D warnings` — ✅ (0 warnings)
+- `npm run build` — ✅
+- `npm run test` — **1016 frontend tests pass** (no frontend code touched
+  by this chunk; verifies nothing regressed).
+
+### Notes for future maintainers
+
+- Adding a real publisher: append a `PublisherEntry` to
+  `PUBLISHER_ALLOW_LIST` in `src-tauri/src/package_manager/signing.rs`.
+  Use a 32-byte raw Ed25519 verifying key; store hex in PR description
+  for review.
+- Signing a manifest: build the canonical payload with
+  `signing::canonical_signing_payload(&manifest)` and sign with
+  `ed25519-dalek`'s `SigningKey::sign`. The hex-encoded 64-byte
+  signature is the `signature` field.
+- The HTTP registry deliberately **does not** stream-proxy binary
+  bytes — keep this property when adding new install methods.
 
 ---
 

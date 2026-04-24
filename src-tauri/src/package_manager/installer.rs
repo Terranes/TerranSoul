@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::manifest::{parse_manifest, serialize_manifest, AgentManifest};
 use super::registry::{RegistryError, RegistrySource};
+use super::signing::{verify_manifest_signature, SigningError};
 
 /// Directory name within the app data dir where agents are installed.
 const AGENTS_DIR: &str = "agents";
@@ -33,6 +34,11 @@ pub enum InstallerError {
         expected: String,
         actual: String,
     },
+    /// A `Binary` / `Wasm` install method was missing the mandatory `sha256` field.
+    /// Built-in agents are exempt because they have no downloadable binary.
+    MissingSha256(String),
+    /// The manifest's Ed25519 signature could not be verified.
+    SignatureVerificationFailed(SigningError),
     /// Registry error during fetch or download.
     Registry(RegistryError),
     /// Filesystem I/O error.
@@ -54,6 +60,16 @@ impl std::fmt::Display for InstallerError {
                     "installer: sha256 mismatch — expected {expected}, got {actual}"
                 )
             }
+            InstallerError::MissingSha256(name) => {
+                write!(
+                    f,
+                    "installer: agent \"{name}\" has a downloadable install method but no sha256 — \
+                     refusing to install untrusted binary"
+                )
+            }
+            InstallerError::SignatureVerificationFailed(e) => {
+                write!(f, "installer: {e}")
+            }
             InstallerError::Registry(e) => write!(f, "installer: {e}"),
             InstallerError::IoError(e) => write!(f, "installer: I/O error: {e}"),
         }
@@ -63,6 +79,12 @@ impl std::fmt::Display for InstallerError {
 impl From<RegistryError> for InstallerError {
     fn from(e: RegistryError) -> Self {
         InstallerError::Registry(e)
+    }
+}
+
+impl From<SigningError> for InstallerError {
+    fn from(e: SigningError) -> Self {
+        InstallerError::SignatureVerificationFailed(e)
     }
 }
 
@@ -229,9 +251,11 @@ impl PackageInstaller {
     /// Install an agent from a registry source.
     ///
     /// 1. Fetches the manifest from the registry.
-    /// 2. Downloads the binary.
-    /// 3. Verifies the SHA-256 hash if declared.
-    /// 4. Writes the manifest and binary to `agents/<name>/`.
+    /// 2. Verifies the manifest's Ed25519 signature when a `publisher` is set.
+    /// 3. For non-built-in install methods, requires a mandatory `sha256` field.
+    /// 4. Downloads the binary.
+    /// 5. Verifies the SHA-256 hash.
+    /// 6. Writes the manifest and binary to `agents/<name>/`.
     pub async fn install(
         &mut self,
         agent_name: &str,
@@ -242,6 +266,8 @@ impl PackageInstaller {
         }
 
         let manifest = registry.fetch_manifest(agent_name).await?;
+        verify_manifest_trust(&manifest)?;
+
         let is_builtin =
             matches!(manifest.install_method, crate::package_manager::InstallMethod::BuiltIn);
 
@@ -255,17 +281,19 @@ impl PackageInstaller {
                 .await?
         };
 
-        // Verify SHA-256 hash if declared (skipped for built-ins, which
-        // have no binary to hash).
+        // Verify SHA-256 hash. `verify_manifest_trust` has already enforced
+        // that downloadable agents declare it, so the `expect` is unreachable.
         if !is_builtin {
-            if let Some(ref expected_hash) = manifest.sha256 {
-                let actual_hash = sha256_hex(&binary);
-                if actual_hash != *expected_hash {
-                    return Err(InstallerError::HashMismatch {
-                        expected: expected_hash.clone(),
-                        actual: actual_hash,
-                    });
-                }
+            let expected_hash = manifest
+                .sha256
+                .as_ref()
+                .expect("verify_manifest_trust enforces sha256 on downloadable agents");
+            let actual_hash = sha256_hex(&binary);
+            if actual_hash != *expected_hash {
+                return Err(InstallerError::HashMismatch {
+                    expected: expected_hash.clone(),
+                    actual: actual_hash,
+                });
             }
         }
 
@@ -299,6 +327,8 @@ impl PackageInstaller {
         }
 
         let manifest = registry.fetch_manifest(agent_name).await?;
+        verify_manifest_trust(&manifest)?;
+
         let is_builtin =
             matches!(manifest.install_method, crate::package_manager::InstallMethod::BuiltIn);
 
@@ -327,16 +357,19 @@ impl PackageInstaller {
                 .await?
         };
 
-        // Verify SHA-256 hash if declared (skipped for built-ins).
+        // Verify SHA-256 hash. `verify_manifest_trust` has already enforced
+        // that downloadable agents declare it.
         if !is_builtin {
-            if let Some(ref expected_hash) = manifest.sha256 {
-                let actual_hash = sha256_hex(&binary);
-                if actual_hash != *expected_hash {
-                    return Err(InstallerError::HashMismatch {
-                        expected: expected_hash.clone(),
-                        actual: actual_hash,
-                    });
-                }
+            let expected_hash = manifest
+                .sha256
+                .as_ref()
+                .expect("verify_manifest_trust enforces sha256 on downloadable agents");
+            let actual_hash = sha256_hex(&binary);
+            if actual_hash != *expected_hash {
+                return Err(InstallerError::HashMismatch {
+                    expected: expected_hash.clone(),
+                    actual: actual_hash,
+                });
             }
         }
 
@@ -367,6 +400,32 @@ impl PackageInstaller {
         self.installed.remove(agent_name);
         Ok(())
     }
+}
+
+/// Combined "is this manifest safe to install" check used by both `install`
+/// and `update`. Two policies, in order:
+///
+/// 1. **Mandatory `sha256`** — every non-built-in install method must
+///    declare a SHA-256 hash of its binary. Built-in agents (compiled
+///    into TerranSoul) are exempt because they have no binary to hash.
+///    `Sidecar` install methods are also exempt: their binaries ship
+///    inside the Tauri app bundle and are validated by the Tauri
+///    resource scope, not by the registry.
+/// 2. **Ed25519 signature verification** — when the manifest declares a
+///    `publisher`, the detached signature is verified against the
+///    publisher's compiled-in public key (via
+///    [`super::signing::verify_manifest_signature`]).
+fn verify_manifest_trust(manifest: &AgentManifest) -> Result<(), InstallerError> {
+    use crate::package_manager::InstallMethod;
+    let needs_hash = matches!(
+        manifest.install_method,
+        InstallMethod::Binary { .. } | InstallMethod::Wasm { .. }
+    );
+    if needs_hash && manifest.sha256.is_none() {
+        return Err(InstallerError::MissingSha256(manifest.name.clone()));
+    }
+    verify_manifest_signature(manifest)?;
+    Ok(())
 }
 
 /// Write agent manifest and (optionally) binary files to disk.
@@ -422,7 +481,11 @@ mod tests {
     use crate::package_manager::registry::MockRegistry;
     use tempfile::TempDir;
 
-    fn sample_manifest_json(name: &str, version: &str) -> String {
+    /// Build a manifest JSON for a `Binary` install method whose `sha256`
+    /// matches the supplied binary bytes. Mandatory-sha256 enforcement
+    /// (Chunk 1.7) means downloadable agents must always declare a hash.
+    fn sample_manifest_json(name: &str, version: &str, binary: &[u8]) -> String {
+        let sha = sha256_hex(binary);
         format!(
             r#"{{
                 "name": "{name}",
@@ -431,7 +494,8 @@ mod tests {
                 "system_requirements": {{}},
                 "install_method": {{ "type": "binary", "url": "https://example.com/{name}" }},
                 "capabilities": ["chat"],
-                "ipc_protocol_version": 1
+                "ipc_protocol_version": 1,
+                "sha256": "{sha}"
             }}"#
         )
     }
@@ -447,6 +511,23 @@ mod tests {
                 "capabilities": ["chat"],
                 "ipc_protocol_version": 1,
                 "sha256": "{sha}"
+            }}"#
+        )
+    }
+
+    /// Build a manifest JSON for a `Binary` install method **without** a
+    /// `sha256`. Used by the test that asserts the installer rejects
+    /// downloadable agents that omit the mandatory hash.
+    fn sample_manifest_json_without_sha(name: &str, version: &str) -> String {
+        format!(
+            r#"{{
+                "name": "{name}",
+                "version": "{version}",
+                "description": "Test agent {name}",
+                "system_requirements": {{}},
+                "install_method": {{ "type": "binary", "url": "https://example.com/{name}" }},
+                "capabilities": ["chat"],
+                "ipc_protocol_version": 1
             }}"#
         )
     }
@@ -477,7 +558,7 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent(
             "test-agent",
-            &sample_manifest_json("test-agent", "1.0.0"),
+            &sample_manifest_json("test-agent", "1.0.0", &[1, 2, 3]),
             vec![1, 2, 3],
         );
 
@@ -494,7 +575,7 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent(
             "test-agent",
-            &sample_manifest_json("test-agent", "1.0.0"),
+            &sample_manifest_json("test-agent", "1.0.0", &[1, 2, 3]),
             vec![1, 2, 3],
         );
 
@@ -590,6 +671,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_install_agent_missing_sha256_is_rejected() {
+        // Chunk 1.7: downloadable agents (Binary / Wasm install methods)
+        // must declare a `sha256`. Omitting it is rejected before any
+        // bytes are written to disk.
+        let tmp = TempDir::new().unwrap();
+        let mut installer = PackageInstaller::new_in(tmp.path().join(AGENTS_DIR));
+        let mut registry = MockRegistry::new();
+        registry.add_agent(
+            "no-hash-agent",
+            &sample_manifest_json_without_sha("no-hash-agent", "1.0.0"),
+            vec![0xAA, 0xBB],
+        );
+
+        let err = installer.install("no-hash-agent", &registry).await.unwrap_err();
+        assert!(matches!(err, InstallerError::MissingSha256(ref n) if n == "no-hash-agent"));
+        // Nothing should have been persisted.
+        assert!(!installer.is_installed("no-hash-agent"));
+        let agent_dir = tmp.path().join(AGENTS_DIR).join("no-hash-agent");
+        assert!(!agent_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_install_agent_with_publisher_unknown_is_rejected() {
+        // Chunk 1.7: a `publisher` that is not on the curated allow-list
+        // is rejected even when the manifest is otherwise valid (sha256
+        // present + correct).
+        let tmp = TempDir::new().unwrap();
+        let mut installer = PackageInstaller::new_in(tmp.path().join(AGENTS_DIR));
+        let binary = b"signed-payload".to_vec();
+        let sha = sha256_hex(&binary);
+        let manifest_json = format!(
+            r#"{{
+                "name": "signed-agent",
+                "version": "1.0.0",
+                "description": "Signed agent",
+                "system_requirements": {{}},
+                "install_method": {{ "type": "binary", "url": "https://example.com/signed-agent" }},
+                "capabilities": ["chat"],
+                "ipc_protocol_version": 1,
+                "sha256": "{sha}",
+                "publisher": "totally-unknown-publisher",
+                "signature": "{sig}"
+            }}"#,
+            sha = sha,
+            sig = "aa".repeat(64),
+        );
+        let mut registry = MockRegistry::new();
+        registry.add_agent("signed-agent", &manifest_json, binary);
+
+        let err = installer.install("signed-agent", &registry).await.unwrap_err();
+        match err {
+            InstallerError::SignatureVerificationFailed(SigningError::UnknownPublisher(p)) => {
+                assert_eq!(p, "totally-unknown-publisher");
+            }
+            other => panic!("expected UnknownPublisher, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn test_list_installed_empty() {
         let tmp = TempDir::new().unwrap();
         let installer = PackageInstaller::new_in(tmp.path().join(AGENTS_DIR));
@@ -603,12 +743,12 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent(
             "agent-a",
-            &sample_manifest_json("agent-a", "1.0.0"),
+            &sample_manifest_json("agent-a", "1.0.0", &[1]),
             vec![1],
         );
         registry.add_agent(
             "agent-b",
-            &sample_manifest_json("agent-b", "2.0.0"),
+            &sample_manifest_json("agent-b", "2.0.0", &[2]),
             vec![2],
         );
 
@@ -629,7 +769,7 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent(
             "test-agent",
-            &sample_manifest_json("test-agent", "1.0.0"),
+            &sample_manifest_json("test-agent", "1.0.0", &[1]),
             vec![1],
         );
 
@@ -656,7 +796,7 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent(
             "test-agent",
-            &sample_manifest_json("test-agent", "1.0.0"),
+            &sample_manifest_json("test-agent", "1.0.0", &[1]),
             vec![1],
         );
 
@@ -666,7 +806,7 @@ mod tests {
         registry = MockRegistry::new();
         registry.add_agent(
             "test-agent",
-            &sample_manifest_json("test-agent", "2.0.0"),
+            &sample_manifest_json("test-agent", "2.0.0", &[2]),
             vec![2],
         );
 
@@ -685,7 +825,7 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent(
             "test-agent",
-            &sample_manifest_json("test-agent", "1.0.0"),
+            &sample_manifest_json("test-agent", "1.0.0", &[1]),
             vec![1],
         );
 
@@ -713,7 +853,7 @@ mod tests {
             let mut registry = MockRegistry::new();
             registry.add_agent(
                 "persist-agent",
-                &sample_manifest_json("persist-agent", "1.0.0"),
+                &sample_manifest_json("persist-agent", "1.0.0", &[1]),
                 vec![1],
             );
             installer.install("persist-agent", &registry).await.unwrap();

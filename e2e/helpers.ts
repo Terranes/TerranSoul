@@ -101,7 +101,6 @@ export async function sendMessage(page: Page, text: string) {
 /** Open the chat history drawer if it's not already open. */
 export async function openDrawer(page: Page) {
   const drawer = page.locator('.chat-history');
-  if (await drawer.isVisible().catch(() => false)) return;
 
   // Click the toggle via raw DOM `el.click()` rather than Playwright's
   // actionable click. This is intentional: the input row may briefly be
@@ -109,26 +108,49 @@ export async function openDrawer(page: Page) {
   // events confuse Playwright's click trial. Dispatching the click via JS
   // bypasses those checks and goes straight to Vue's `@click` handler.
   await expect(async () => {
-    if (await drawer.isVisible().catch(() => false)) return;
-    const toggle = page.locator('.chat-drawer-toggle');
-    await expect(toggle).toBeVisible({ timeout: 2_000 });
-    await toggle.evaluate((el) => (el as HTMLElement).click());
-    await expect(drawer).toBeVisible({ timeout: 2_000 });
+    // If the element is not yet in the DOM, click the toggle to open it.
+    // We use count() > 0 (not isVisible) because `.chat-history` is a
+    // full-width block element: even during the enter-from transition its
+    // width > 0, so Playwright's isVisible() returns true even at height = 0.
+    // Note: locator.isAttached() does not exist in Playwright 1.59.x — use count().
+    if ((await drawer.count()) === 0) {
+      const toggle = page.locator('.chat-drawer-toggle');
+      await expect(toggle).toBeVisible({ timeout: 2_000 });
+      await toggle.evaluate((el) => (el as HTMLElement).click());
+    }
+    // Wait for the element to be mounted in the DOM …
+    await expect(drawer).toBeAttached({ timeout: 2_000 });
+    // … and for the Vue enter-transition to fully finish (all enter-* classes
+    // removed). Returning while the animation is still running would cause
+    // closeDrawer to operate on a half-open drawer, triggering a broken
+    // interrupt → restart cycle.
+    await expect(drawer).not.toHaveClass(/chat-panel-enter/, { timeout: 1_000 });
   }).toPass({ timeout: 10_000 });
 }
 
 /** Close the chat history drawer if it's open. */
 export async function closeDrawer(page: Page) {
   const drawer = page.locator('.chat-history');
-  if (!(await drawer.isVisible().catch(() => false))) return;
 
+  // Guard: if element is already absent from the DOM, nothing to do.
+  // locator.isAttached() does not exist in Playwright 1.59.x — use count().
+  if ((await drawer.count()) === 0) return;
+
+  // We use not.toBeAttached() (not not.toBeVisible()) for two reasons:
+  //   1. Vue's `v-if` directive is what controls the drawer. After the leave
+  //      transition completes the element is *removed from the DOM entirely*.
+  //   2. `.chat-history` is a full-width block: its width is always > 0, so
+  //      Playwright's isVisible() check (width > 0 || height > 0) reports
+  //      "visible" even while max-height is 0 during the leave transition.
+  //      not.toBeAttached() avoids this false-positive completely.
   await expect(async () => {
-    if (!(await drawer.isVisible().catch(() => false))) return;
-    const toggle = page.locator('.chat-drawer-toggle');
-    await expect(toggle).toBeVisible({ timeout: 2_000 });
-    await toggle.evaluate((el) => (el as HTMLElement).click());
-    await expect(drawer).not.toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 10_000 });
+    if ((await drawer.count()) > 0) {
+      const toggle = page.locator('.chat-drawer-toggle');
+      await toggle.evaluate((el) => (el as HTMLElement).click());
+    }
+    // Leave transition takes ≤ 350 ms; 3 s gives ample headroom on slow CI.
+    await expect(drawer).not.toBeAttached({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /**

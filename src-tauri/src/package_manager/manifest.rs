@@ -39,6 +39,17 @@ pub struct AgentManifest {
     /// SHA-256 hash of the agent binary for verification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    /// Identifier of the publisher who signed this manifest. Must appear
+    /// in [`crate::package_manager::signing::PUBLISHER_ALLOW_LIST`] when set.
+    /// Optional — built-in / unsigned community agents leave it `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    /// Detached Ed25519 signature (hex-encoded, 128 chars / 64 bytes) over
+    /// the canonical signing payload built by
+    /// [`crate::package_manager::signing::canonical_signing_payload`].
+    /// Required when `publisher` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 /// System requirements for running an agent.
@@ -155,6 +166,8 @@ pub enum ManifestError {
     UnsupportedIpcVersion(u32),
     /// The SHA-256 hash is malformed.
     InvalidSha256(String),
+    /// The detached signature is malformed (not valid hex of expected length).
+    InvalidSignature(String),
 }
 
 impl fmt::Display for ManifestError {
@@ -171,6 +184,7 @@ impl fmt::Display for ManifestError {
                 )
             }
             ManifestError::InvalidSha256(h) => write!(f, "manifest: invalid sha256: {h}"),
+            ManifestError::InvalidSignature(s) => write!(f, "manifest: invalid signature: {s}"),
         }
     }
 }
@@ -199,6 +213,9 @@ pub fn validate_manifest(manifest: &AgentManifest) -> Result<(), ManifestError> 
     }
     if let Some(ref sha) = manifest.sha256 {
         validate_sha256(sha)?;
+    }
+    if let Some(ref sig) = manifest.signature {
+        validate_signature(sig)?;
     }
     Ok(())
 }
@@ -267,6 +284,22 @@ fn validate_sha256(sha: &str) -> Result<(), ManifestError> {
     Ok(())
 }
 
+/// Validate an Ed25519 detached signature hex string (128 hex chars / 64 bytes).
+fn validate_signature(sig: &str) -> Result<(), ManifestError> {
+    if sig.len() != 128 {
+        return Err(ManifestError::InvalidSignature(format!(
+            "expected 128 hex chars (64-byte Ed25519 signature), got {}",
+            sig.len()
+        )));
+    }
+    if !sig.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(ManifestError::InvalidSignature(
+            "must contain only hex characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Serialize a manifest to a pretty-printed JSON string.
 pub fn serialize_manifest(manifest: &AgentManifest) -> Result<String, ManifestError> {
     serde_json::to_string_pretty(manifest).map_err(|e| ManifestError::ParseError(e.to_string()))
@@ -297,6 +330,8 @@ mod tests {
             license: None,
             author: None,
             sha256: None,
+            publisher: None,
+            signature: None,
         }
     }
 
