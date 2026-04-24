@@ -23,6 +23,16 @@
    a network connection. TerranSoul Link sync is additive, not a prerequisite.
 9. **Performance Budgets** — Cap `devicePixelRatio` at 2 in the Three.js renderer.
    Keep VRM model polygon count < 100k tris for Phase 1 real-time performance.
+10. **Brain Component Reference** — Any implementation that touches the brain
+    (LLM provider, memory, RAG, ingestion, embeddings, cognitive-kind axis,
+    skill-tree quests that gate brain capabilities, etc.) **must** consult
+    `docs/brain-advanced-design.md` first to identify the brain components
+    involved and their dependency order. The doc is the source of truth for
+    which pieces (free/paid/local LLM, long-term memory, RAG, Scholar's Quest,
+    embedding model, ingestion engine) are required for a given feature, and
+    in what order they need to be active. New features must reuse the
+    existing components / quest chain rather than reimplementing parts of
+    the brain from scratch.
 
 ---
 

@@ -93,8 +93,14 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   flex-wrap: wrap;
 }
 
+/*
+ * Inline buttons — each tile sizes to its label so the full text is always
+ * visible. Tiles wrap onto a second row only when they don't fit on one line;
+ * if every label fits, all buttons sit on a single line. Long labels may wrap
+ * inside a tile rather than being truncated with an ellipsis.
+ */
 .hotseat-tile {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 6px 12px;
@@ -106,10 +112,12 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 0 1 auto;
   justify-content: center;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+  min-height: 32px;
 }
 .hotseat-tile:hover { transform: scale(1.03); }
 .hotseat-tile:active { transform: scale(0.97); }
@@ -153,8 +161,9 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   flex-shrink: 0;
 }
 .hotseat-tile-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Allow the label to wrap inside the button instead of getting truncated. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ── Transitions ── */

@@ -183,7 +183,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { useConversationStore, detectSentiment } from '../stores/conversation';
+import { useConversationStore, detectSentiment, handleLearnDocsChoice } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useStreamingStore } from '../stores/streaming';
@@ -887,6 +887,14 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     const target = choiceValue.slice('navigate:'.length);
     await skillTree.handleQuestChoice(questId, choiceValue);
     emit('navigate', target);
+    return;
+  }
+
+  // Handle the "Learn X using my documents" install flow. These values are
+  // produced by the new learn-docs prompts in the conversation store and
+  // route to its quest-driven auto-install path.
+  if (choiceValue.startsWith('learn-docs:')) {
+    await handleLearnDocsChoice(choiceValue);
     return;
   }
 

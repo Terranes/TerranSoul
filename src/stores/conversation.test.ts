@@ -637,6 +637,107 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 });
 
+describe('conversation store — Learn-with-docs flow', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('detectLearnWithDocsIntent matches the canonical phrase', async () => {
+    const { detectLearnWithDocsIntent } = await import('./conversation');
+    expect(detectLearnWithDocsIntent('Learn Vietnamese laws using my provided documents'))
+      .toEqual({ topic: 'Vietnamese laws' });
+    expect(detectLearnWithDocsIntent('Study quantum physics with my files'))
+      .toEqual({ topic: 'quantum physics' });
+    expect(detectLearnWithDocsIntent('learn about contract law from my notes'))
+      .toEqual({ topic: 'contract law' });
+    // Plain question should NOT match — it's a chat, not an instruction.
+    expect(detectLearnWithDocsIntent('What is Vietnamese law?')).toBeNull();
+    // Bare "learn about X" without "documents" reference must not match.
+    expect(detectLearnWithDocsIntent('learn about Vietnamese laws')).toBeNull();
+  });
+
+  it('pushes the missing-components prompt with three choices', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('Learn Vietnamese laws using my provided documents');
+
+    expect(store.messages).toHaveLength(2);
+    const prompt = store.messages[1];
+    expect(prompt.questId).toBe('learn-docs-missing');
+    expect(prompt.content).toMatch(/Vietnamese laws/);
+    const values = prompt.questChoices!.map((c) => c.value);
+    expect(values).toHaveLength(3);
+    expect(values[0]).toMatch(/^learn-docs:install-all:/);
+    expect(values[1]).toMatch(/^learn-docs:install-each:/);
+    expect(values[2]).toBe('dismiss');
+  });
+
+  it('install-all routes to the auto/manual sub-prompt', async () => {
+    const { handleLearnDocsChoice } = await import('./conversation');
+    const store = useConversationStore();
+    await handleLearnDocsChoice(`learn-docs:install-all:${encodeURIComponent('Vietnamese laws')}`);
+
+    expect(store.messages).toHaveLength(1);
+    const prompt = store.messages[0];
+    expect(prompt.questId).toBe('learn-docs-install-mode');
+    const values = prompt.questChoices!.map((c) => c.value);
+    expect(values[0]).toMatch(/^learn-docs:install-auto:/);
+    expect(values[1]).toMatch(/^learn-docs:install-manual:/);
+    expect(values[2]).toMatch(/^learn-docs:install-back:/);
+  });
+
+  it('install-auto auto-triggers the missing quests and ends with the Scholar\'s Quest invitation', async () => {
+    const { handleLearnDocsChoice } = await import('./conversation');
+    const { useSkillTreeStore } = await import('./skill-tree');
+    const skillTree = useSkillTreeStore();
+    const store = useConversationStore();
+
+    // Spy on the quest engine — we want to verify the auto-install path
+    // delegates to it instead of implementing anything from scratch.
+    const triggerSpy = vi.spyOn(skillTree, 'triggerQuestEvent').mockImplementation(() => {});
+    const acceptSpy = vi.spyOn(skillTree, 'handleQuestChoice').mockResolvedValue();
+
+    await handleLearnDocsChoice(`learn-docs:install-auto:${encodeURIComponent('Vietnamese laws')}`);
+
+    // At least one quest in the Scholar's Quest prereq chain must have been
+    // triggered + accepted automatically.
+    expect(triggerSpy).toHaveBeenCalled();
+    expect(acceptSpy).toHaveBeenCalled();
+    for (const call of acceptSpy.mock.calls) {
+      expect(call[1]).toBe('accept');
+    }
+
+    // Last assistant message should either be the Scholar's Quest invite
+    // (when everything finished) or the follow-up listing leftovers.
+    const last = store.messages[store.messages.length - 1];
+    expect(['scholar-quest', 'learn-docs-followup']).toContain(last.questId);
+  });
+
+  it('install-each (one by one) renders one button per missing quest', async () => {
+    const { handleLearnDocsChoice } = await import('./conversation');
+    const store = useConversationStore();
+    await handleLearnDocsChoice(`learn-docs:install-each:${encodeURIComponent('Vietnamese laws')}`);
+
+    expect(store.messages).toHaveLength(1);
+    const prompt = store.messages[0];
+    expect(prompt.questId).toBe('learn-docs-install-each');
+    // Every choice (except Cancel) should be a per-quest install action.
+    const installs = prompt.questChoices!.filter((c) => c.value.startsWith('learn-docs:install-quest:'));
+    expect(installs.length).toBeGreaterThan(0);
+    expect(prompt.questChoices!.some((c) => c.value === 'dismiss')).toBe(true);
+  });
+
+  it('install-back reopens the original three-choice prompt', async () => {
+    const { handleLearnDocsChoice } = await import('./conversation');
+    const store = useConversationStore();
+    await handleLearnDocsChoice(`learn-docs:install-back:${encodeURIComponent('Vietnamese laws')}`);
+
+    const last = store.messages[store.messages.length - 1];
+    expect(last.questId).toBe('learn-docs-missing');
+  });
+});
+
 describe('conversation store — chat-based LLM switching integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
