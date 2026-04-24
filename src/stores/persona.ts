@@ -195,6 +195,60 @@ export const usePersonaStore = defineStore('persona', () => {
     lastBrainExtractedAt.value = Date.now();
   }
 
+  /**
+   * Ask the active brain (via `extract_persona_from_brain`) to propose
+   * a persona based on recent chat history + long-term `personal:*`
+   * memories. Returns `null` when no brain is configured, the brain
+   * could not be reached, or the reply could not be parsed — caller is
+   * responsible for surfacing a "try again" message.
+   *
+   * **Does not auto-apply.** The caller wires the candidate into the
+   * draft state of `PersonaPanel.vue` and the user clicks Apply (which
+   * routes through the existing `saveTraits` flow). This matches the
+   * human-in-the-loop contract documented in `docs/persona-design.md`
+   * § 9.3.
+   */
+  async function suggestPersonaFromBrain(): Promise<Partial<PersonaTraits> | null> {
+    let raw: string;
+    try {
+      raw = await invoke<string>('extract_persona_from_brain');
+    } catch {
+      // No brain configured / Tauri unavailable — UI surfaces this as
+      // a disabled-button tooltip; nothing to do here.
+      return null;
+    }
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      // Brain reachable but reply not parseable.
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const p = parsed as Record<string, unknown>;
+    const name = typeof p.name === 'string' ? p.name : '';
+    const role = typeof p.role === 'string' ? p.role : '';
+    const bio = typeof p.bio === 'string' ? p.bio : '';
+    if (!name.trim() || !role.trim() || !bio.trim()) return null;
+    const candidate: Partial<PersonaTraits> = {
+      name,
+      role,
+      bio,
+      tone: Array.isArray(p.tone) ? p.tone.filter((x): x is string => typeof x === 'string') : [],
+      quirks: Array.isArray(p.quirks)
+        ? p.quirks.filter((x): x is string => typeof x === 'string')
+        : [],
+      avoid: Array.isArray(p.avoid)
+        ? p.avoid.filter((x): x is string => typeof x === 'string')
+        : [],
+    };
+    recordBrainExtraction();
+    return candidate;
+  }
+
   // ── Per-session camera consent (§ 5) ────────────────────────────────
 
   /**
@@ -236,6 +290,7 @@ export const usePersonaStore = defineStore('persona', () => {
     saveTraits,
     resetToDefault,
     recordBrainExtraction,
+    suggestPersonaFromBrain,
     startCameraSession,
     stopCameraSession,
   };

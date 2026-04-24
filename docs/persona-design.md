@@ -251,6 +251,21 @@ Three properties make this a **self-learning** loop and not just mocap:
    choice as the brain's SQLite-as-debug-store (see §14 of the brain doc,
    "Why SQLite?").
 
+There is a third, **camera-free** loop layered on top of the same data
+plane: the **Master-Echo brain-extraction loop** (Chunk 14.2, shipped
+2026-04-24). When a brain is configured the user can press
+**"✨ Suggest a persona from my chats"** in the Persona panel; the
+backend pulls the recent conversation history + every long-tier
+`personal:*` memory, asks the active brain to propose a `PersonaTraits`
+JSON, and surfaces the candidate in a review-before-apply card. Apply
+overwrites the persona via the existing save path; "Load into editor"
+seeds the draft so the user can fine-tune; Discard is a no-op. Nothing
+is auto-saved, mirroring the human-in-the-loop shape of the brain's
+`extract_memories_from_session` path
+(`brain-advanced-design.md` §11). Implementation: `src-tauri/src/persona/extract.rs`
+(pure prompt + parser) + `OllamaAgent::propose_persona` + the
+`extract_persona_from_brain` Tauri command. See § 9.3 + § 12.
+
 ---
 
 ## 4. Camera Pipeline — From Webcam to VRM Bones
@@ -699,16 +714,25 @@ unchanged. Net effect: the master's learned `shrug` shadows the bundled
 This is the same precedence shape as the brain's "user preference shadows
 default" pattern (memory: brain-selection snapshot).
 
-### 9.3 LLM-assisted persona authoring (optional)
+### 9.3 LLM-assisted persona authoring (✅ shipped 2026-04-24)
 
-When a brain is configured, the user can press **"Suggest a persona from
-my chats"** in the Persona panel. This calls `brain::extract_persona`
-(new Tauri command added to `commands/persona.rs`) which runs a one-shot
-prompt over the last N chat turns plus any `tier=long` memories tagged
-`personal:*` and proposes a `PersonaTraits` JSON. The user reviews and
-approves before it overwrites `persona.json` — same human-in-the-loop
-shape as the brain's `extract_memories_from_session` path
-(`brain-advanced-design.md` §11).
+When a brain is configured, the user can press **"✨ Suggest a persona
+from my chats"** in the Persona panel. This calls
+`extract_persona_from_brain` (Tauri command in `commands/persona.rs`)
+which snapshots the last 30 chat turns + up to 20 long-tier memories
+(preferring rows tagged `personal:*` and falling back to plain
+long-tier memories when none are tagged), folds them into a focused
+prompt via `crate::persona::extract::build_persona_prompt`, asks the
+active brain through `OllamaAgent::propose_persona`, and parses the
+reply through `crate::persona::extract::parse_persona_reply` (tolerant
+of markdown fences, leading prose, and non-string list entries). The
+resulting candidate is returned to the frontend as a JSON string for
+the user to **review** in a card with three explicit actions: **Apply**
+(routes through the existing `saveTraits` flow, same as a manual edit),
+**Load into editor** (seeds the draft so the user can fine-tune before
+saving), and **Discard**. Nothing is ever auto-saved — same
+human-in-the-loop shape as the brain's `extract_memories_from_session`
+path (`brain-advanced-design.md` §11).
 
 This makes persona discovery itself a brain-powered feature, closing the
 loop: the brain learns who the user is from chat (memory: auto-learn
@@ -875,7 +899,7 @@ commands.** This is by design (§5).
 | `list_learned_motions` | FE → BE | — | Returns array of motion JSON objects, newest first. Frame arrays included (a motion clip is rarely >100 KB). |
 | `save_learned_motion` | FE → BE | `{ json: string }` | As above for motions. |
 | `delete_learned_motion` | FE → BE | `{ id: string }` | As above. |
-| `extract_persona_from_brain` | FE → BE | `{ chat_history: ChatTurn[] }` | Optional, brain-aware. Routes through the existing `BrainService` and returns a proposed `PersonaTraits` for the user to review. Only callable when a brain is configured. |
+| `extract_persona_from_brain` | FE → BE | — | ✅ Shipped 2026-04-24. Snapshots conversation history + long-tier `personal:*` memories, calls `OllamaAgent::propose_persona`, returns the parsed `PersonaCandidate` as a JSON string (or `""` when the brain reply could not be parsed; or an error string when no brain is configured). **Never** auto-saves — caller routes through `save_persona` after the user clicks Apply. Pure prompt construction + parsing live in `src-tauri/src/persona/extract.rs` for unit-testability. |
 
 All commands return `Result<T, String>` per the codebase convention
 (memory: testing/coding standards). All file writes use atomic rename.

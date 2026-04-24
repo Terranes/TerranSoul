@@ -145,4 +145,83 @@ describe('usePersonaStore', () => {
       expect(val.toLowerCase()).not.toContain('chatid');
     }
   });
+
+  // ── Master-Echo brain-extraction loop (Chunk 14.2) ────────────────────
+
+  it('suggestPersonaFromBrain returns null when Tauri is unavailable', async () => {
+    const store = usePersonaStore();
+    // Default mock throws — same as a non-Tauri / no-brain context.
+    const suggestion = await store.suggestPersonaFromBrain();
+    expect(suggestion).toBeNull();
+    // Failed extraction must NOT stamp lastBrainExtractedAt.
+    expect(store.lastBrainExtractedAt).toBeNull();
+  });
+
+  it('suggestPersonaFromBrain returns null and skips stamp when reply is empty', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => '');
+    const store = usePersonaStore();
+    const suggestion = await store.suggestPersonaFromBrain();
+    expect(suggestion).toBeNull();
+    expect(store.lastBrainExtractedAt).toBeNull();
+  });
+
+  it('suggestPersonaFromBrain returns null and skips stamp when JSON is malformed', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => 'not json');
+    const store = usePersonaStore();
+    expect(await store.suggestPersonaFromBrain()).toBeNull();
+    expect(store.lastBrainExtractedAt).toBeNull();
+  });
+
+  it('suggestPersonaFromBrain returns null when required fields are missing', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () =>
+      JSON.stringify({ name: 'Lia', role: '   ' }),
+    );
+    const store = usePersonaStore();
+    expect(await store.suggestPersonaFromBrain()).toBeNull();
+    expect(store.lastBrainExtractedAt).toBeNull();
+  });
+
+  it('suggestPersonaFromBrain returns parsed candidate and stamps timestamp on success', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () =>
+      JSON.stringify({
+        name: 'Lia',
+        role: 'librarian',
+        bio: 'Quiet bookworm.',
+        tone: ['warm', 'concise'],
+        quirks: ['hums'],
+        avoid: ['medical advice'],
+      }),
+    );
+    const store = usePersonaStore();
+    const before = Date.now();
+    const suggestion = await store.suggestPersonaFromBrain();
+    expect(suggestion).not.toBeNull();
+    expect(suggestion!.name).toBe('Lia');
+    expect(suggestion!.tone).toEqual(['warm', 'concise']);
+    expect(store.lastBrainExtractedAt).not.toBeNull();
+    expect(store.lastBrainExtractedAt!).toBeGreaterThanOrEqual(before);
+  });
+
+  it('suggestPersonaFromBrain drops non-string list entries from the candidate', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    (invoke as ReturnType<typeof vi.fn>).mockImplementationOnce(async () =>
+      JSON.stringify({
+        name: 'Lia',
+        role: 'librarian',
+        bio: 'Quiet bookworm.',
+        tone: ['warm', 7, null, 'concise'],
+        quirks: 'not-an-array',
+      }),
+    );
+    const store = usePersonaStore();
+    const suggestion = await store.suggestPersonaFromBrain();
+    expect(suggestion).not.toBeNull();
+    expect(suggestion!.tone).toEqual(['warm', 'concise']);
+    // `quirks` was the wrong shape → safely defaulted to [].
+    expect(suggestion!.quirks).toEqual([]);
+  });
 });

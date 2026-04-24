@@ -19,6 +19,7 @@ pub mod memory;
 pub mod messaging;
 pub mod orchestrator;
 pub mod package_manager;
+pub mod persona;
 pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
@@ -81,9 +82,9 @@ use commands::{
         remove_agent, update_agent, validate_agent_manifest,
     },
     persona::{
-        delete_learned_expression, delete_learned_motion, get_persona, get_persona_block,
-        list_learned_expressions, list_learned_motions, save_learned_expression,
-        save_learned_motion, save_persona, set_persona_block,
+        delete_learned_expression, delete_learned_motion, extract_persona_from_brain,
+        get_persona, get_persona_block, list_learned_expressions, list_learned_motions,
+        save_learned_expression, save_learned_motion, save_persona, set_persona_block,
     },
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
@@ -432,6 +433,7 @@ pub fn run() {
             list_learned_motions,
             save_learned_motion,
             delete_learned_motion,
+            extract_persona_from_brain,
             capture_screen,
             analyze_screen,
             list_languages,

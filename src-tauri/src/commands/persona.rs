@@ -285,6 +285,61 @@ pub async fn delete_learned_motion(
     delete_asset(&dir, &id)
 }
 
+// ── brain-extracted persona suggestion (Chunk 14.2 — Master-Echo loop) ──────
+
+/// Ask the active brain to propose a [`PersonaCandidate`] from the
+/// user's recent conversation history + their long-term `personal:*`
+/// memories. Returns the candidate as a JSON string the frontend
+/// presents in the review-before-apply card; **nothing is written to
+/// disk** in this command — application happens via the existing
+/// `save_persona` command after the user clicks Apply.
+///
+/// Returns an error string when no brain is configured (so the UI can
+/// disable the button + show a tooltip per `docs/persona-design.md`
+/// § 13). Returns `Ok("")` when a brain is configured but the reply
+/// could not be parsed — caller treats empty as "couldn't suggest right
+/// now, try again". Never auto-saves.
+#[tauri::command]
+pub async fn extract_persona_from_brain(state: State<'_, AppState>) -> Result<String, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    // Snapshot the conversation history without holding the lock across
+    // the await point.
+    let history: Vec<(String, String)> = {
+        let conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.iter()
+            .map(|m| (m.role.clone(), m.content.clone()))
+            .collect()
+    };
+
+    // Snapshot long-tier memories (the canonical "personal-tier" — see
+    // `docs/persona-design.md` § 9.3) likewise without holding the lock.
+    let memories: Vec<(String, String)> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_by_tier(&crate::memory::MemoryTier::Long)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| (m.content, m.tags))
+            .collect()
+    };
+
+    let snippets = crate::persona::extract::assemble_snippets(&history, &memories);
+    let agent = crate::brain::OllamaAgent::new(&model);
+    match agent.propose_persona(&snippets).await {
+        Some(candidate) => serde_json::to_string(&candidate)
+            .map_err(|e| format!("Failed to serialise persona candidate: {e}")),
+        // Empty string = "brain replied but couldn't be parsed". UI
+        // surfaces a soft "try again" message rather than a hard error.
+        None => Ok(String::new()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

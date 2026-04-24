@@ -362,6 +362,33 @@ impl OllamaAgent {
         crate::memory::reranker::parse_rerank_score(&reply)
     }
 
+    /// Master-Echo persona suggestion (Chunk 14.2 of `docs/persona-design.md`).
+    ///
+    /// Reads the rendered `(system, user)` pair from
+    /// [`crate::persona::extract::build_persona_prompt`], asks the active
+    /// brain for a one-shot reply, then parses it via
+    /// [`crate::persona::extract::parse_persona_reply`]. Returns `None`
+    /// when the brain is unreachable, the reply is empty, or the parsed
+    /// candidate is missing required fields — in every failure mode the
+    /// caller surfaces a "couldn't suggest a persona right now" message
+    /// rather than silently writing garbage.
+    ///
+    /// Prompt construction + reply parsing live in
+    /// [`crate::persona::extract`] so they can be unit-tested without
+    /// the network — same shape as `hyde` and `reranker`.
+    pub async fn propose_persona(
+        &self,
+        snippets: &[crate::persona::extract::PromptSnippet],
+    ) -> Option<crate::persona::extract::PersonaCandidate> {
+        let (system, user) = crate::persona::extract::build_persona_prompt(snippets);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::persona::extract::parse_persona_reply(&reply)
+    }
+
     // ── Embedding ──────────────────────────────────────────────────────────
 
     /// Generate a vector embedding for `text` via Ollama `/api/embed`.

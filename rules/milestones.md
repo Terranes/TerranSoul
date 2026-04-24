@@ -37,11 +37,12 @@
 
 ## Next Chunk
 
-_All currently-planned Phase 13 chunks (2.1 → 2.4) shipped on 2026-04-24._
-Future work: deeper integration of code-knowledge mirrors into the
-multi-hop traversal UI, or a new Phase to extend the brain in another
-direction. Pick the next backlog item from `rules/backlog.md` when
-ready.
+_Phase 13 (2.1 → 2.4) shipped 2026-04-24. Phase 14 main-chain
+(14.1 + 14.2) shipped 2026-04-24._ Remaining Phase 14 work is the
+camera-driven side chain (14.3 / 14.4) and three optional polish chunks
+(14.5 VRMA baking, 14.6 audio-prosody persona, 14.7 persona
+export / import). Pick the next item from the active table below or
+from `rules/backlog.md`.
 
 ---
 
@@ -91,7 +92,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 14.2 | Master-Echo brain-extraction loop — backend command that reads conversation history + personal-tier memories and proposes a `PersonaTraits` JSON via the active brain. Frontend "Suggest a persona from my chats" button + accept/edit/reject flow. | not-started | Side of 14.1 already wired the activation gate (`persona.lastBrainExtractedAt`); needs the actual brain prompt + UI flow. Must update `docs/persona-design.md` § 3 + § 12. |
 | 14.3 | Persona-side camera quest **`expressions-pack`** — `useCameraCapture.ts` per-session consent composable + `face-mirror.ts` (lazy-loaded `@mediapipe/tasks-vision` FaceLandmarker → ARKit-blendshape → VRM expression mapper) + `PersonaTeacher.vue` "Teach an expression" panel. Activation gate already wired via `persona.learnedExpressions.length > 0`. Must ship `<add @mediapipe/tasks-vision>` dependency, the consent dialog, the always-visible "Camera live" badge, the idle-timeout/chat-change auto-stop, and unit tests on the pure mapper. | not-started | Camera permission MUST be per-session; no on-disk "always on" flag. |
 | 14.4 | Persona-side camera quest **`motion-capture`** — `pose-mirror.ts` PoseLandmarker wrapper (33-keypoint → VRM humanoid bone retargeting; pure retargeter is the unit-tested seam) + record-and-name-clip UI in `PersonaTeacher.vue`. Activation gate already wired via `persona.learnedMotions.length > 0`. | not-started | Reuses the same per-session consent flow as 14.3. |
 | 14.5 | VRMA baking — convert a recorded learned-motion clip into a VRMA file so the avatar can replay it through the existing `VrmaManager` instead of always streaming landmarks. | not-started | Reduces per-frame cost and unlocks sharing learned motions between devices via the existing Soul Link sync surface. |
@@ -99,8 +99,8 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | 14.7 | Persona export / import — share a persona pack (`persona.json` + chosen expression / motion artifacts) as a single JSON document the user can email or drop into Soul Link sync. Honours the `active` and `version` fields and runs through `migratePersonaTraits`. | not-started | Manageable from the same Brain-hub panel. |
 
 > Camera quests (14.3 / 14.4) are explicitly **side chain** and ship
-> *after* the main chain (14.1 + 14.2) per the user's directive: focus on
-> the April 2026 research-driven, camera-free persona surface first.
+> *after* the main chain (14.1 + 14.2 — both shipped). The current
+> next-up is whichever of {14.5, 14.6, 14.7} the user prioritises.
 
 ---
 

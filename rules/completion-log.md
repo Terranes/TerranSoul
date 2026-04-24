@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 14.2 — Master-Echo Brain-Extraction Loop (Persona Suggestion)](#chunk-142--master-echo-brain-extraction-loop-persona-suggestion) | 2026-04-24 |
 | [Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)](#chunk-24--brainview-code-knowledge-panel-phase-13-tier-4) | 2026-04-24 |
 | [Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)](#chunk-23--knowledge-graph-mirror-v7-edge_source-column-phase-13-tier-3) | 2026-04-24 |
 | [Repo Tooling — File-Size Quality Check (Rust 1000 / Vue 800 lines)](#repo-tooling--file-size-quality-check) | 2026-04-24 |
@@ -107,6 +108,53 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 14.2 — Master-Echo Brain-Extraction Loop (Persona Suggestion)
+
+**Date:** 2026-04-24
+**Reference:** `docs/persona-design.md` § 3 + § 9.3 + § 12 (all updated this PR); architectural rule "brain documentation sync".
+
+**Goal.** Close the camera-free leg of the Master-Mirror loop: when a brain is configured, let the user click "✨ Suggest a persona from my chats" and have the active LLM read recent conversation history + their long-tier `personal:*` memories, propose a `PersonaTraits` JSON, and surface it for review-before-apply. Nothing auto-saves; the candidate flows through the existing `save_persona` path only after the user clicks Apply.
+
+**Architecture.**
+- New module **`src-tauri/src/persona/extract.rs`** (pure, I/O-free — same testable-seam shape as `memory/hyde.rs` / `memory/reranker.rs`):
+  - `PromptSnippet` + `PersonaCandidate` types.
+  - `assemble_snippets(history, memories)` — takes the last 30 turns + up to 20 memories, preferring `personal:*`-tagged ones and falling back to plain long-tier rows when none are tagged.
+  - `build_persona_prompt(snippets) -> (system, user)` — explicit OUTPUT FORMAT block asking for ONLY a JSON object; honours a 12 KB char budget so the prompt never overflows small local models.
+  - `parse_persona_reply(raw) -> Option<PersonaCandidate>` — tolerant of markdown fences, leading prose, brace-balanced extraction (skips `{`/`}` inside string literals), drops non-string list entries, dedupes case-insensitively, caps lists at 6, caps bio at 500 chars, requires non-empty `name`/`role`/`bio`.
+- New brain method **`OllamaAgent::propose_persona(snippets)`** — three-line wrapper: build prompt → call → parse.
+- New Tauri command **`extract_persona_from_brain`** in `commands/persona.rs`:
+  - Snapshots `state.conversation` + `MemoryStore::get_by_tier(MemoryTier::Long)` *without* holding either lock across the await point (consistent with `extract_memories_from_session`).
+  - Returns the candidate as a JSON string, `""` when the reply could not be parsed (UI shows soft "try again" message), or an `Err(...)` when no brain is configured (UI disables button + tooltip).
+  - **Never** auto-saves.
+- Frontend persona store action **`suggestPersonaFromBrain()`** — invokes the command, parses the JSON, defensively coerces list fields, stamps `lastBrainExtractedAt` only on success.
+- Frontend UI in **`PersonaPanel.vue`** — "✨ Suggest from my chats" button next to the existing Save / Discard / Reset buttons + a green-bordered review card with three actions: **Apply** (routes through `saveTraits` so atomic-write + `set_persona_block` sync still happen), **Load into editor** (seeds the draft so the user can fine-tune before saving), **Discard**.
+
+**Files created.**
+- `src-tauri/src/persona/mod.rs` (10 lines, module doc)
+- `src-tauri/src/persona/extract.rs` (463 lines incl. 16 unit tests)
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — register `pub mod persona`, import + invoke-handler-register `extract_persona_from_brain`.
+- `src-tauri/src/brain/ollama_agent.rs` — added `propose_persona` method.
+- `src-tauri/src/commands/persona.rs` — added `extract_persona_from_brain` command.
+- `src/stores/persona.ts` — added `suggestPersonaFromBrain` action.
+- `src/stores/persona.test.ts` — added 6 new tests covering Tauri-unavailable, empty reply, malformed JSON, missing required fields, success stamps timestamp, and non-string list coercion.
+- `src/components/PersonaPanel.vue` — new button + review card + scoped styles.
+- `docs/persona-design.md` — § 3 mentions the camera-free third loop; § 9.3 marked "✅ shipped 2026-04-24" with full implementation breadcrumbs; § 12 updated.
+- `README.md` — Persona System section: new module + new store action + new "✨ Suggest from my chats" UI flow listed.
+
+**Tests.**
+- Rust: 842 → **860** passing (16 new in `persona::extract` covering prompt construction, snippet assembly with personal-tag preference + fallback, char budget, all parser tolerances, and required-field rejection).
+- Frontend Vitest: 1061 → **1067** passing across 66 files (6 new in `persona.test.ts`).
+- `vue-tsc --noEmit` clean.
+- `npm run lint` 0 errors (only pre-existing v-html warnings).
+- `cargo clippy --lib --no-deps -- -D warnings` clean.
+- File sizes well within budget (PersonaPanel.vue 638/800, extract.rs 463/1000, persona.rs 458/1000).
+
+**Privacy contract preserved.** This loop is *entirely* camera-free. The persona-design § 5 invariants remain intact — no MediaStream is opened, no webcam frames cross any boundary, the per-session `cameraSession` state is untouched.
 
 ---
 
