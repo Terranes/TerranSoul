@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 14.12 — Phoneme-aware viseme model](#chunk-1412--phoneme-aware-viseme-model) | 2026-04-25 |
 | [Chunks 14.9 / 14.10 / 14.11 — Learned asset persistence + player + bundle](#chunks-149--1410--1411--learned-asset-persistence--player--bundle) | 2026-04-25 |
 | [Chunk 14.5 — VRMA baking](#chunk-145--vrma-baking) | 2026-04-25 |
 | [Chunk 14.4 — Motion-capture camera quest](#chunk-144--motion-capture-camera-quest) | 2026-04-25 |
@@ -171,6 +172,27 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 14.12 — Phoneme-aware viseme model
+
+**Date.** 2026-04-25
+
+**Summary.** Replaced the FFT band-energy lip-sync fallback with a deterministic text-driven phoneme-to-viseme mapper. English graphemes (including 15 digraphs/trigraphs) are tokenized into the existing 5-channel viseme space (`aa`, `ih`, `ou`, `ee`, `oh`), then distributed proportionally across the audio duration to produce a frame-accurate timeline. The `VisemeScheduler` class samples interpolated weights per animation frame. Integrated into `useLipSyncBridge` — phoneme-driven visemes take priority when text + duration are available; FFT analysis remains as automatic fallback for external audio sources.
+
+**Architecture.**
+- `phoneme-viseme.ts`: `tokenizeToVisemes()` — grapheme tokenizer with digraph-first matching (th, sh, ch, oo, ee, etc.). `buildVisemeTimeline()` — proportional keyframe builder. `VisemeScheduler` — frame-accurate sampler with lerp between keyframes.
+- `useLipSyncBridge.ts`: dual-mode tick loop — `phonemeScheduler.sample()` preferred, `lipSync.getVisemeValues()` fallback. Auto-schedule on `onAudioStart` using `tts.currentSentence` + `audio.duration`.
+
+**Files created.**
+- `src/renderer/phoneme-viseme.ts` — tokenizer + timeline builder + scheduler (~230 LOC)
+- `src/renderer/phoneme-viseme.test.ts` — 22 unit tests (tokenizer, timeline, scheduler)
+
+**Files modified.**
+- `src/composables/useLipSyncBridge.ts` — added `VisemeScheduler` integration, `schedulePhonemes()` API, dual-mode tick
+
+**Test count after.** 1164 Vitest (22 new); 1053 Rust (unchanged).
 
 ---
 

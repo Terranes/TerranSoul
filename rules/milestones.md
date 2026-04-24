@@ -53,7 +53,6 @@ Pick the next `not-started` item from the tables below or from `rules/backlog.md
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 14.12 | **Phoneme-aware viseme model** — phoneme-extracted viseme stream from TTS provider → ARKit blendshapes. Pure mapping table, no LLM. | not-started | Web-Speech API `boundary` events. |
 | 14.13 | **Hunyuan-Motion / MimicMotion offline polish** — research chunk, feature-flagged. ML pass smooths recorded motion clips. | not-started | Deferred until 3+ user requests. |
 | 14.14 | **MoMask full-body retarget from sparse keypoints** — research chunk. SMPL-X reconstruction from 33 PoseLandmarker keypoints. | not-started | Research, off by default. |
 | 14.15 | **MotionGPT motion token generation** — research chunk. Brain generates motion tokens → `LearnedMotionPlayer` playback. | not-started | Furthest-out research chunk. |
