@@ -4,209 +4,675 @@
 
     <!-- Floating particles background -->
     <div class="particles">
-      <div v-for="i in 12" :key="i" class="particle" :class="`p${i}`" />
+      <div
+        v-for="i in 12"
+        :key="i"
+        class="particle"
+        :class="`p${i}`"
+      />
     </div>
 
     <!-- Cute anime cat lying on the floor — kawaii SVG art -->
     <div class="cat-wrapper">
-      <svg class="cat-svg" viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+      <svg
+        class="cat-svg"
+        viewBox="0 0 320 200"
+        xmlns="http://www.w3.org/2000/svg"
+      >
         <defs>
           <!-- Big anime eye gradient — golden amber -->
-          <radialGradient id="eyeGrad" cx="40%" cy="28%">
-            <stop offset="0%" stop-color="#ffe9a0"/>
-            <stop offset="35%" stop-color="#f5c842"/>
-            <stop offset="70%" stop-color="#e8a020"/>
-            <stop offset="100%" stop-color="#c87818"/>
+          <radialGradient
+            id="eyeGrad"
+            cx="40%"
+            cy="28%"
+          >
+            <stop
+              offset="0%"
+              stop-color="#ffe9a0"
+            />
+            <stop
+              offset="35%"
+              stop-color="#f5c842"
+            />
+            <stop
+              offset="70%"
+              stop-color="#e8a020"
+            />
+            <stop
+              offset="100%"
+              stop-color="#c87818"
+            />
           </radialGradient>
           <!-- Soft fur body gradient — warm cream-white -->
-          <radialGradient id="bodyGlow" cx="45%" cy="30%">
-            <stop offset="0%" stop-color="#fefefe"/>
-            <stop offset="60%" stop-color="#f5f0e8"/>
-            <stop offset="100%" stop-color="#e8e0d4"/>
+          <radialGradient
+            id="bodyGlow"
+            cx="45%"
+            cy="30%"
+          >
+            <stop
+              offset="0%"
+              stop-color="#fefefe"
+            />
+            <stop
+              offset="60%"
+              stop-color="#f5f0e8"
+            />
+            <stop
+              offset="100%"
+              stop-color="#e8e0d4"
+            />
           </radialGradient>
           <!-- Head fur gradient -->
-          <radialGradient id="headFur" cx="42%" cy="25%">
-            <stop offset="0%" stop-color="#ffffff"/>
-            <stop offset="100%" stop-color="#f0eae0"/>
+          <radialGradient
+            id="headFur"
+            cx="42%"
+            cy="25%"
+          >
+            <stop
+              offset="0%"
+              stop-color="#ffffff"
+            />
+            <stop
+              offset="100%"
+              stop-color="#f0eae0"
+            />
           </radialGradient>
           <!-- Blush -->
           <radialGradient id="blushGrad">
-            <stop offset="0%" stop-color="rgba(255,140,160,0.55)"/>
-            <stop offset="100%" stop-color="rgba(255,140,160,0)"/>
+            <stop
+              offset="0%"
+              stop-color="rgba(255,140,160,0.55)"
+            />
+            <stop
+              offset="100%"
+              stop-color="rgba(255,140,160,0)"
+            />
           </radialGradient>
           <!-- Sparkle glow filter -->
           <filter id="glow">
-            <feGaussianBlur stdDeviation="2" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            <feGaussianBlur
+              stdDeviation="2"
+              result="blur"
+            />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <!-- Soft warm glow behind cat -->
-          <radialGradient id="warmGlow" cx="50%" cy="50%">
-            <stop offset="0%" stop-color="rgba(255,220,160,0.12)"/>
-            <stop offset="100%" stop-color="rgba(255,220,160,0)"/>
+          <radialGradient
+            id="warmGlow"
+            cx="50%"
+            cy="50%"
+          >
+            <stop
+              offset="0%"
+              stop-color="rgba(255,220,160,0.12)"
+            />
+            <stop
+              offset="100%"
+              stop-color="rgba(255,220,160,0)"
+            />
           </radialGradient>
           <!-- Shadow under body -->
           <radialGradient id="shadowGrad">
-            <stop offset="0%" stop-color="rgba(0,0,0,0.15)"/>
-            <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+            <stop
+              offset="0%"
+              stop-color="rgba(0,0,0,0.15)"
+            />
+            <stop
+              offset="100%"
+              stop-color="rgba(0,0,0,0)"
+            />
           </radialGradient>
           <!-- Ear pink gradient -->
-          <linearGradient id="earPink" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#ffc4d0"/>
-            <stop offset="100%" stop-color="#ffaabb"/>
+          <linearGradient
+            id="earPink"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="100%"
+          >
+            <stop
+              offset="0%"
+              stop-color="#ffc4d0"
+            />
+            <stop
+              offset="100%"
+              stop-color="#ffaabb"
+            />
           </linearGradient>
         </defs>
 
         <!-- Warm ambient glow -->
-        <ellipse cx="155" cy="120" rx="140" ry="90" fill="url(#warmGlow)"/>
+        <ellipse
+          cx="155"
+          cy="120"
+          rx="140"
+          ry="90"
+          fill="url(#warmGlow)"
+        />
 
         <!-- Ground shadow — elongated for lying pose -->
-        <ellipse cx="160" cy="182" rx="100" ry="10" fill="url(#shadowGrad)"/>
+        <ellipse
+          cx="160"
+          cy="182"
+          rx="100"
+          ry="10"
+          fill="url(#shadowGrad)"
+        />
 
         <!-- ── Tail — fluffy, curled up behind body ── -->
         <g class="tail-group">
-          <path d="M255,138 Q280,120 290,95 Q296,78 285,68 Q275,60 268,70" stroke="#e8e0d4" stroke-width="18" stroke-linecap="round" fill="none"/>
-          <path d="M255,138 Q280,120 290,95 Q296,78 285,68 Q275,60 268,70" stroke="#f5f0e8" stroke-width="13" stroke-linecap="round" fill="none"/>
+          <path
+            d="M255,138 Q280,120 290,95 Q296,78 285,68 Q275,60 268,70"
+            stroke="#e8e0d4"
+            stroke-width="18"
+            stroke-linecap="round"
+            fill="none"
+          />
+          <path
+            d="M255,138 Q280,120 290,95 Q296,78 285,68 Q275,60 268,70"
+            stroke="#f5f0e8"
+            stroke-width="13"
+            stroke-linecap="round"
+            fill="none"
+          />
           <!-- Tail tip fluff -->
-          <ellipse cx="268" cy="68" rx="12" ry="10" fill="#f8f4ee"/>
+          <ellipse
+            cx="268"
+            cy="68"
+            rx="12"
+            ry="10"
+            fill="#f8f4ee"
+          />
         </g>
 
         <!-- ── Back legs — tucked under body ── -->
-        <ellipse cx="220" cy="170" rx="22" ry="12" fill="#eee8de"/>
-        <ellipse cx="220" cy="170" rx="20" ry="10" fill="#f5f0e8"/>
+        <ellipse
+          cx="220"
+          cy="170"
+          rx="22"
+          ry="12"
+          fill="#eee8de"
+        />
+        <ellipse
+          cx="220"
+          cy="170"
+          rx="20"
+          ry="10"
+          fill="#f5f0e8"
+        />
         <!-- Back paw peeking out -->
-        <ellipse cx="238" cy="174" rx="10" ry="7" fill="#faf6f0"/>
+        <ellipse
+          cx="238"
+          cy="174"
+          rx="10"
+          ry="7"
+          fill="#faf6f0"
+        />
         <!-- Back paw beans -->
-        <ellipse cx="235" cy="176" rx="2.5" ry="2" fill="rgba(255,170,185,0.5)"/>
-        <ellipse cx="240" cy="176" rx="2.5" ry="2" fill="rgba(255,170,185,0.5)"/>
+        <ellipse
+          cx="235"
+          cy="176"
+          rx="2.5"
+          ry="2"
+          fill="rgba(255,170,185,0.5)"
+        />
+        <ellipse
+          cx="240"
+          cy="176"
+          rx="2.5"
+          ry="2"
+          fill="rgba(255,170,185,0.5)"
+        />
 
         <!-- ── Body — long oval, lying flat ── -->
         <g class="body-group">
-          <ellipse cx="170" cy="145" rx="72" ry="38" fill="url(#bodyGlow)"/>
+          <ellipse
+            cx="170"
+            cy="145"
+            rx="72"
+            ry="38"
+            fill="url(#bodyGlow)"
+          />
           <!-- Belly — lighter, softer underbelly showing -->
-          <ellipse cx="160" cy="155" rx="50" ry="22" fill="#ffffff" opacity="0.6"/>
+          <ellipse
+            cx="160"
+            cy="155"
+            rx="50"
+            ry="22"
+            fill="#ffffff"
+            opacity="0.6"
+          />
           <!-- Subtle fur texture lines -->
-          <path d="M130,135 Q145,130 160,133" stroke="rgba(210,200,185,0.3)" stroke-width="0.7" fill="none"/>
-          <path d="M145,140 Q165,136 185,140" stroke="rgba(210,200,185,0.25)" stroke-width="0.7" fill="none"/>
-          <path d="M140,150 Q160,146 180,150" stroke="rgba(210,200,185,0.2)" stroke-width="0.7" fill="none"/>
+          <path
+            d="M130,135 Q145,130 160,133"
+            stroke="rgba(210,200,185,0.3)"
+            stroke-width="0.7"
+            fill="none"
+          />
+          <path
+            d="M145,140 Q165,136 185,140"
+            stroke="rgba(210,200,185,0.25)"
+            stroke-width="0.7"
+            fill="none"
+          />
+          <path
+            d="M140,150 Q160,146 180,150"
+            stroke="rgba(210,200,185,0.2)"
+            stroke-width="0.7"
+            fill="none"
+          />
         </g>
 
         <!-- ── Front paws — stretched out forward adorably ── -->
         <!-- Left front leg -->
         <g class="paw-left">
-          <path d="M110,152 Q90,158 72,166" stroke="#f0ebe4" stroke-width="16" stroke-linecap="round" fill="none"/>
-          <path d="M110,152 Q90,158 72,166" stroke="#f8f4ee" stroke-width="12" stroke-linecap="round" fill="none"/>
-          <ellipse cx="68" cy="168" rx="14" ry="9" fill="#faf6f0"/>
+          <path
+            d="M110,152 Q90,158 72,166"
+            stroke="#f0ebe4"
+            stroke-width="16"
+            stroke-linecap="round"
+            fill="none"
+          />
+          <path
+            d="M110,152 Q90,158 72,166"
+            stroke="#f8f4ee"
+            stroke-width="12"
+            stroke-linecap="round"
+            fill="none"
+          />
+          <ellipse
+            cx="68"
+            cy="168"
+            rx="14"
+            ry="9"
+            fill="#faf6f0"
+          />
           <!-- Toe beans -->
-          <ellipse cx="60" cy="170" rx="3" ry="2.2" fill="rgba(255,165,185,0.55)"/>
-          <ellipse cx="65" cy="172" rx="3" ry="2.2" fill="rgba(255,165,185,0.55)"/>
-          <ellipse cx="71" cy="172" rx="3" ry="2.2" fill="rgba(255,165,185,0.55)"/>
+          <ellipse
+            cx="60"
+            cy="170"
+            rx="3"
+            ry="2.2"
+            fill="rgba(255,165,185,0.55)"
+          />
+          <ellipse
+            cx="65"
+            cy="172"
+            rx="3"
+            ry="2.2"
+            fill="rgba(255,165,185,0.55)"
+          />
+          <ellipse
+            cx="71"
+            cy="172"
+            rx="3"
+            ry="2.2"
+            fill="rgba(255,165,185,0.55)"
+          />
           <!-- Big center pad -->
-          <ellipse cx="66" cy="166" rx="4.5" ry="3" fill="rgba(255,155,175,0.45)"/>
+          <ellipse
+            cx="66"
+            cy="166"
+            rx="4.5"
+            ry="3"
+            fill="rgba(255,155,175,0.45)"
+          />
         </g>
         <!-- Right front leg -->
         <g class="paw-right">
-          <path d="M118,155 Q100,162 85,172" stroke="#f0ebe4" stroke-width="14" stroke-linecap="round" fill="none"/>
-          <path d="M118,155 Q100,162 85,172" stroke="#f8f4ee" stroke-width="10" stroke-linecap="round" fill="none"/>
-          <ellipse cx="82" cy="174" rx="13" ry="8" fill="#faf6f0"/>
+          <path
+            d="M118,155 Q100,162 85,172"
+            stroke="#f0ebe4"
+            stroke-width="14"
+            stroke-linecap="round"
+            fill="none"
+          />
+          <path
+            d="M118,155 Q100,162 85,172"
+            stroke="#f8f4ee"
+            stroke-width="10"
+            stroke-linecap="round"
+            fill="none"
+          />
+          <ellipse
+            cx="82"
+            cy="174"
+            rx="13"
+            ry="8"
+            fill="#faf6f0"
+          />
           <!-- Toe beans -->
-          <ellipse cx="75" cy="176" rx="2.8" ry="2" fill="rgba(255,165,185,0.5)"/>
-          <ellipse cx="80" cy="177" rx="2.8" ry="2" fill="rgba(255,165,185,0.5)"/>
-          <ellipse cx="86" cy="177" rx="2.8" ry="2" fill="rgba(255,165,185,0.5)"/>
+          <ellipse
+            cx="75"
+            cy="176"
+            rx="2.8"
+            ry="2"
+            fill="rgba(255,165,185,0.5)"
+          />
+          <ellipse
+            cx="80"
+            cy="177"
+            rx="2.8"
+            ry="2"
+            fill="rgba(255,165,185,0.5)"
+          />
+          <ellipse
+            cx="86"
+            cy="177"
+            rx="2.8"
+            ry="2"
+            fill="rgba(255,165,185,0.5)"
+          />
         </g>
 
         <!-- ── Head — big round anime proportions, resting on paws ── -->
         <g class="head-group">
           <!-- Neck connection -->
-          <ellipse cx="125" cy="128" rx="28" ry="22" fill="#f2ece4"/>
+          <ellipse
+            cx="125"
+            cy="128"
+            rx="28"
+            ry="22"
+            fill="#f2ece4"
+          />
 
           <!-- Head shape -->
-          <ellipse cx="118" cy="100" rx="50" ry="46" fill="url(#headFur)"/>
+          <ellipse
+            cx="118"
+            cy="100"
+            rx="50"
+            ry="46"
+            fill="url(#headFur)"
+          />
           <!-- Head outline hint -->
-          <ellipse cx="118" cy="100" rx="50" ry="46" fill="none" stroke="rgba(200,190,175,0.2)" stroke-width="0.5"/>
+          <ellipse
+            cx="118"
+            cy="100"
+            rx="50"
+            ry="46"
+            fill="none"
+            stroke="rgba(200,190,175,0.2)"
+            stroke-width="0.5"
+          />
 
           <!-- ── Ears — tall pointed, slightly tilted ── -->
           <!-- Left ear -->
           <g class="ear-left">
-            <polygon points="82,72 62,22 100,58" fill="#f0eae0"/>
-            <polygon points="84,68 68,30 96,60" fill="url(#earPink)"/>
-            <polygon points="86,64 72,36 93,58" fill="#ffaabb"/>
+            <polygon
+              points="82,72 62,22 100,58"
+              fill="#f0eae0"
+            />
+            <polygon
+              points="84,68 68,30 96,60"
+              fill="url(#earPink)"
+            />
+            <polygon
+              points="86,64 72,36 93,58"
+              fill="#ffaabb"
+            />
           </g>
           <!-- Right ear -->
           <g class="ear-right">
-            <polygon points="148,68 166,20 130,55" fill="#f0eae0"/>
-            <polygon points="146,64 160,28 133,57" fill="url(#earPink)"/>
-            <polygon points="144,60 156,34 136,55" fill="#ffaabb"/>
+            <polygon
+              points="148,68 166,20 130,55"
+              fill="#f0eae0"
+            />
+            <polygon
+              points="146,64 160,28 133,57"
+              fill="url(#earPink)"
+            />
+            <polygon
+              points="144,60 156,34 136,55"
+              fill="#ffaabb"
+            />
           </g>
 
           <!-- Forehead fluff tuft -->
-          <path d="M108,62 Q115,54 118,62 Q121,54 128,62" stroke="#f8f4ee" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path
+            d="M108,62 Q115,54 118,62 Q121,54 128,62"
+            stroke="#f8f4ee"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
 
           <!-- White muzzle area -->
-          <ellipse cx="118" cy="116" rx="24" ry="18" fill="#ffffff"/>
+          <ellipse
+            cx="118"
+            cy="116"
+            rx="24"
+            ry="18"
+            fill="#ffffff"
+          />
 
           <!-- ── Eyes — big sparkly anime, sleepy-happy ── -->
           <g class="eyes">
             <!-- Left eye -->
-            <ellipse cx="98" cy="96" rx="14" ry="16" fill="#1a1420"/>
-            <ellipse cx="98" cy="96" rx="12" ry="14" fill="url(#eyeGrad)"/>
+            <ellipse
+              cx="98"
+              cy="96"
+              rx="14"
+              ry="16"
+              fill="#1a1420"
+            />
+            <ellipse
+              cx="98"
+              cy="96"
+              rx="12"
+              ry="14"
+              fill="url(#eyeGrad)"
+            />
             <!-- Pupil — large, round -->
-            <ellipse cx="98" cy="98" rx="6" ry="10" fill="#1a0e08"/>
+            <ellipse
+              cx="98"
+              cy="98"
+              rx="6"
+              ry="10"
+              fill="#1a0e08"
+            />
             <!-- Large highlight -->
-            <circle cx="104" cy="90" r="5" fill="white" opacity="0.95" filter="url(#glow)"/>
+            <circle
+              cx="104"
+              cy="90"
+              r="5"
+              fill="white"
+              opacity="0.95"
+              filter="url(#glow)"
+            />
             <!-- Secondary highlight -->
-            <circle cx="93" cy="102" r="2.8" fill="white" opacity="0.75"/>
+            <circle
+              cx="93"
+              cy="102"
+              r="2.8"
+              fill="white"
+              opacity="0.75"
+            />
             <!-- Tiny sparkle -->
-            <circle cx="101" cy="95" r="1.4" fill="white" opacity="0.5"/>
+            <circle
+              cx="101"
+              cy="95"
+              r="1.4"
+              fill="white"
+              opacity="0.5"
+            />
             <!-- Bottom lid line — happy squint -->
-            <path d="M86,104 Q98,108 110,104" stroke="#1a1420" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            <path
+              d="M86,104 Q98,108 110,104"
+              stroke="#1a1420"
+              stroke-width="1.5"
+              fill="none"
+              stroke-linecap="round"
+            />
 
             <!-- Right eye -->
-            <ellipse cx="138" cy="96" rx="14" ry="16" fill="#1a1420"/>
-            <ellipse cx="138" cy="96" rx="12" ry="14" fill="url(#eyeGrad)"/>
+            <ellipse
+              cx="138"
+              cy="96"
+              rx="14"
+              ry="16"
+              fill="#1a1420"
+            />
+            <ellipse
+              cx="138"
+              cy="96"
+              rx="12"
+              ry="14"
+              fill="url(#eyeGrad)"
+            />
             <!-- Pupil -->
-            <ellipse cx="138" cy="98" rx="6" ry="10" fill="#1a0e08"/>
+            <ellipse
+              cx="138"
+              cy="98"
+              rx="6"
+              ry="10"
+              fill="#1a0e08"
+            />
             <!-- Large highlight -->
-            <circle cx="144" cy="90" r="5" fill="white" opacity="0.95" filter="url(#glow)"/>
+            <circle
+              cx="144"
+              cy="90"
+              r="5"
+              fill="white"
+              opacity="0.95"
+              filter="url(#glow)"
+            />
             <!-- Secondary highlight -->
-            <circle cx="133" cy="102" r="2.8" fill="white" opacity="0.75"/>
+            <circle
+              cx="133"
+              cy="102"
+              r="2.8"
+              fill="white"
+              opacity="0.75"
+            />
             <!-- Tiny sparkle -->
-            <circle cx="141" cy="95" r="1.4" fill="white" opacity="0.5"/>
+            <circle
+              cx="141"
+              cy="95"
+              r="1.4"
+              fill="white"
+              opacity="0.5"
+            />
             <!-- Bottom lid line -->
-            <path d="M126,104 Q138,108 150,104" stroke="#1a1420" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            <path
+              d="M126,104 Q138,108 150,104"
+              stroke="#1a1420"
+              stroke-width="1.5"
+              fill="none"
+              stroke-linecap="round"
+            />
           </g>
 
           <!-- Blush cheeks — rosy pink -->
-          <ellipse cx="80" cy="110" rx="12" ry="6.5" fill="url(#blushGrad)"/>
-          <ellipse cx="156" cy="110" rx="12" ry="6.5" fill="url(#blushGrad)"/>
+          <ellipse
+            cx="80"
+            cy="110"
+            rx="12"
+            ry="6.5"
+            fill="url(#blushGrad)"
+          />
+          <ellipse
+            cx="156"
+            cy="110"
+            rx="12"
+            ry="6.5"
+            fill="url(#blushGrad)"
+          />
 
           <!-- Small pink nose -->
-          <path d="M114,110 L118,106 L122,110 Z" fill="#f48a9e"/>
-          <ellipse cx="118" cy="107.5" rx="2.2" ry="1.1" fill="rgba(255,255,255,0.4)"/>
+          <path
+            d="M114,110 L118,106 L122,110 Z"
+            fill="#f48a9e"
+          />
+          <ellipse
+            cx="118"
+            cy="107.5"
+            rx="2.2"
+            ry="1.1"
+            fill="rgba(255,255,255,0.4)"
+          />
 
           <!-- Mouth — happy :3 with a tiny fang -->
-          <path d="M110,114 Q114,119 118,114 Q122,119 126,114" stroke="#d0889a" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          <path
+            d="M110,114 Q114,119 118,114 Q122,119 126,114"
+            stroke="#d0889a"
+            stroke-width="1.6"
+            fill="none"
+            stroke-linecap="round"
+          />
           <!-- Tiny fang peeking out -->
-          <path d="M114,114 L113,117.5" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/>
+          <path
+            d="M114,114 L113,117.5"
+            stroke="#ffffff"
+            stroke-width="1.3"
+            stroke-linecap="round"
+          />
 
           <!-- Whiskers — delicate, slightly droopy (relaxed) -->
-          <g class="whiskers" stroke="rgba(180,170,155,0.4)" stroke-width="0.9" stroke-linecap="round">
-            <line x1="76" y1="106" x2="38" y2="100"/>
-            <line x1="74" y1="112" x2="34" y2="112"/>
-            <line x1="76" y1="118" x2="40" y2="126"/>
-            <line x1="160" y1="106" x2="198" y2="100"/>
-            <line x1="162" y1="112" x2="202" y2="112"/>
-            <line x1="160" y1="118" x2="196" y2="126"/>
+          <g
+            class="whiskers"
+            stroke="rgba(180,170,155,0.4)"
+            stroke-width="0.9"
+            stroke-linecap="round"
+          >
+            <line
+              x1="76"
+              y1="106"
+              x2="38"
+              y2="100"
+            />
+            <line
+              x1="74"
+              y1="112"
+              x2="34"
+              y2="112"
+            />
+            <line
+              x1="76"
+              y1="118"
+              x2="40"
+              y2="126"
+            />
+            <line
+              x1="160"
+              y1="106"
+              x2="198"
+              y2="100"
+            />
+            <line
+              x1="162"
+              y1="112"
+              x2="202"
+              y2="112"
+            />
+            <line
+              x1="160"
+              y1="118"
+              x2="196"
+              y2="126"
+            />
           </g>
         </g>
       </svg>
 
       <!-- Floating sparkles around the cat -->
-      <div class="sparkle s1">✦</div>
-      <div class="sparkle s2">✧</div>
-      <div class="sparkle s3">✦</div>
-      <div class="sparkle s4">⋆</div>
-      <div class="sparkle s5">✧</div>
-      <div class="sparkle s6">⋆</div>
+      <div class="sparkle s1">
+        ✦
+      </div>
+      <div class="sparkle s2">
+        ✧
+      </div>
+      <div class="sparkle s3">
+        ✦
+      </div>
+      <div class="sparkle s4">
+        ⋆
+      </div>
+      <div class="sparkle s5">
+        ✧
+      </div>
+      <div class="sparkle s6">
+        ⋆
+      </div>
 
       <!-- Sleeping Z's when idle for a while -->
       <div class="zzz">
@@ -223,7 +689,9 @@
         <span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
       </span>
     </div>
-    <div class="splash-sub">Waking up…</div>
+    <div class="splash-sub">
+      Waking up…
+    </div>
   </div>
 </template>
 

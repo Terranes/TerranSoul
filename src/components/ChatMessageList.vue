@@ -1,27 +1,48 @@
 <template>
-  <div class="message-list" ref="listRef">
+  <div
+    ref="listRef"
+    class="message-list"
+  >
     <!-- Welcome state when no messages yet -->
-    <div v-if="messages.length === 0 && !isThinking && !isStreaming" class="welcome-state">
+    <div
+      v-if="messages.length === 0 && !isThinking && !isStreaming"
+      class="welcome-state"
+    >
       <div class="welcome-glow" />
-      <div class="welcome-icon">✨</div>
-      <p class="welcome-title">Welcome to TerranSoul</p>
-      <p class="welcome-hint">Your AI companion is ready. Pick a quest to begin your adventure!</p>
+      <div class="welcome-icon">
+        ✨
+      </div>
+      <p class="welcome-title">
+        Welcome to TerranSoul
+      </p>
+      <p class="welcome-hint">
+        Your AI companion is ready. Pick a quest to begin your adventure!
+      </p>
       <div class="welcome-quests">
-        <button class="welcome-quest-btn primary" @click="$emit('startQuest')">
+        <button
+          class="welcome-quest-btn primary"
+          @click="$emit('startQuest')"
+        >
           <span class="wq-icon">⚔️</span>
           <span class="wq-text">
             <span class="wq-label">Start First Quest</span>
             <span class="wq-hint">Recommended for you</span>
           </span>
         </button>
-        <button class="welcome-quest-btn" @click="$emit('suggest', 'Tell me about yourself')">
+        <button
+          class="welcome-quest-btn"
+          @click="$emit('suggest', 'Tell me about yourself')"
+        >
           <span class="wq-icon">💬</span>
           <span class="wq-text">
             <span class="wq-label">Just Chat</span>
             <span class="wq-hint">Talk freely</span>
           </span>
         </button>
-        <button class="welcome-quest-btn" @click="$emit('navigate', 'skills')">
+        <button
+          class="welcome-quest-btn"
+          @click="$emit('navigate', 'skills')"
+        >
           <span class="wq-icon">🗺️</span>
           <span class="wq-text">
             <span class="wq-label">View All Quests</span>
@@ -37,27 +58,64 @@
       :class="item.type === 'separator' ? 'date-separator' : ['message-row', item.msg!.role]"
     >
       <!-- Date separator -->
-      <span v-if="item.type === 'separator'" class="date-separator-text">{{ item.label }}</span>
+      <span
+        v-if="item.type === 'separator'"
+        class="date-separator-text"
+      >{{ item.label }}</span>
       <!-- Message bubble -->
-      <div v-else class="bubble-wrapper">
-        <AgentBadge v-if="item.msg!.role === 'assistant'" :name="item.msg!.agentName ?? 'TerranSoul'" />
-        <div class="bubble" v-html="renderMarkdown(item.msg!.content)" />
+      <div
+        v-else
+        class="bubble-wrapper"
+      >
+        <AgentBadge
+          v-if="item.msg!.role === 'assistant'"
+          :name="item.msg!.agentName ?? 'TerranSoul'"
+        />
+        <div
+          class="bubble"
+          v-html="renderMarkdown(item.msg!.content)"
+        />
         <span class="timestamp">{{ formatTime(item.msg!.timestamp) }}</span>
       </div>
     </div>
     <!-- Live streaming response bubble -->
-    <div v-if="isStreaming && streamingText" class="message-row assistant" key="streaming">
+    <div
+      v-if="isStreaming && streamingText"
+      key="streaming"
+      class="message-row assistant"
+    >
       <div class="bubble-wrapper">
         <AgentBadge name="TerranSoul" />
-        <div class="bubble streaming-bubble" v-html="renderMarkdown(streamingText) + '<span class=\'cursor-blink\'>▎</span>'" />
+        <div
+          class="bubble streaming-bubble"
+          v-html="renderMarkdown(streamingText) + '<span class=\'cursor-blink\'>▎</span>'"
+        />
       </div>
     </div>
     <TypingIndicator v-if="isThinking && !isStreaming" />
     <!-- Quick-reply buttons when model asks a yes/no question -->
-    <div v-if="showQuickReplies" class="quick-replies">
-      <button class="quick-reply-btn yes" @click="sendQuickReply('Yes, let\'s do it!')">✅ Yes</button>
-      <button class="quick-reply-btn no" @click="sendQuickReply('No, not right now.')">❌ No</button>
-      <button class="quick-reply-btn more" @click="sendQuickReply('Tell me more about it first.')">💬 Tell me more</button>
+    <div
+      v-if="showQuickReplies"
+      class="quick-replies"
+    >
+      <button
+        class="quick-reply-btn yes"
+        @click="sendQuickReply('Yes, let\'s do it!')"
+      >
+        ✅ Yes
+      </button>
+      <button
+        class="quick-reply-btn no"
+        @click="sendQuickReply('No, not right now.')"
+      >
+        ❌ No
+      </button>
+      <button
+        class="quick-reply-btn more"
+        @click="sendQuickReply('Tell me more about it first.')"
+      >
+        💬 Tell me more
+      </button>
     </div>
   </div>
 </template>

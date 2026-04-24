@@ -1,11 +1,20 @@
 <template>
   <Transition name="hotseat">
-    <div v-if="choices.length > 0" class="hotseat-strip">
+    <div
+      v-if="choices.length > 0"
+      class="hotseat-strip"
+    >
       <!-- Compact question row -->
       <div class="hotseat-header">
         <span class="hotseat-icon">🗡️</span>
         <span class="hotseat-question-text">{{ questionText }}</span>
-        <button class="hotseat-dismiss" @click="$emit('dismiss')" aria-label="Dismiss">✕</button>
+        <button
+          class="hotseat-dismiss"
+          aria-label="Dismiss"
+          @click="$emit('dismiss')"
+        >
+          ✕
+        </button>
       </div>
 
       <!-- Choice buttons — horizontal row -->
@@ -17,7 +26,10 @@
           :class="[`hotseat-tile-${TILE_COLORS[idx] ?? 'blue'}`]"
           @click="$emit('pick', questId, choice.value)"
         >
-          <span v-if="choice.icon" class="hotseat-tile-icon">{{ choice.icon }}</span>
+          <span
+            v-if="choice.icon"
+            class="hotseat-tile-icon"
+          >{{ choice.icon }}</span>
           <span class="hotseat-tile-label">{{ choice.label }}</span>
         </button>
       </div>

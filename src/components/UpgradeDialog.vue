@@ -1,11 +1,18 @@
 <template>
   <Transition name="upgrade-slide">
-    <div v-if="visible" class="upgrade-backdrop">
+    <div
+      v-if="visible"
+      class="upgrade-backdrop"
+    >
       <div class="upgrade-dialog">
         <!-- Game-style header -->
         <div class="upgrade-header">
-          <div class="upgrade-icon">⚡</div>
-          <h3 class="upgrade-title">Level Up Your Brain!</h3>
+          <div class="upgrade-icon">
+            ⚡
+          </div>
+          <h3 class="upgrade-title">
+            Level Up Your Brain!
+          </h3>
         </div>
 
         <p class="upgrade-desc">
@@ -20,7 +27,9 @@
             <strong>{{ currentModelName }}</strong>
             <small>{{ currentModelDesc }}</small>
           </div>
-          <div class="upgrade-arrow">→</div>
+          <div class="upgrade-arrow">
+            →
+          </div>
           <div class="upgrade-tier recommended">
             <span class="tier-badge rec">⭐ Recommended</span>
             <strong>{{ recommendedName }}</strong>
@@ -46,10 +55,17 @@
 
         <!-- Action buttons -->
         <div class="upgrade-actions">
-          <button class="btn-upgrade" :disabled="!selectedOption" @click="handleAccept">
+          <button
+            class="btn-upgrade"
+            :disabled="!selectedOption"
+            @click="handleAccept"
+          >
             {{ acceptLabel }}
           </button>
-          <button class="btn-dismiss" @click="$emit('dismiss')">
+          <button
+            class="btn-dismiss"
+            @click="$emit('dismiss')"
+          >
             Not now
           </button>
         </div>

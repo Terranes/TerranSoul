@@ -50,6 +50,10 @@ use commands::{
         ensure_ollama_container, get_runtime_preference, set_runtime_preference,
         start_docker_desktop, stop_docker_desktop, wait_for_docker,
     },
+    gitnexus::{
+        configure_gitnexus_sidecar, get_gitnexus_sidecar_config, gitnexus_context,
+        gitnexus_detect_changes, gitnexus_impact, gitnexus_query, gitnexus_sidecar_status,
+    },
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
@@ -167,6 +171,14 @@ pub struct AppState {
     /// Empty string means "no persona injection". See
     /// `docs/persona-design.md` § 9.1.
     pub persona_block: Mutex<String>,
+    /// Configuration for spawning the GitNexus sidecar (Chunk 2.1).
+    /// Defaults to `npx gitnexus mcp`. Mutable so the frontend can point at
+    /// a globally-installed binary (`gitnexus`) or supply a working dir.
+    pub gitnexus_config: TokioMutex<agent::gitnexus_sidecar::SidecarConfig>,
+    /// Lazily-spawned GitNexus sidecar handle. The first command invocation
+    /// spawns the child process and caches the bridge here; subsequent calls
+    /// reuse it. Dropped (and the child reaped) on `configure_gitnexus_sidecar`.
+    pub gitnexus_sidecar: TokioMutex<Option<Arc<agent::gitnexus_sidecar::GitNexusSidecar>>>,
 }
 
 impl AppState {
@@ -215,6 +227,8 @@ impl AppState {
                     }),
             ),
             persona_block: Mutex::new(String::new()),
+            gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
+            gitnexus_sidecar: TokioMutex::new(None),
         }
     }
 
@@ -257,6 +271,8 @@ impl AppState {
                     .expect("in-memory workflow engine must open"),
             ),
             persona_block: Mutex::new(String::new()),
+            gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
+            gitnexus_sidecar: TokioMutex::new(None),
         }
     }
 }
@@ -441,6 +457,14 @@ pub fn run() {
             delete_user_model,
             read_user_model_bytes,
             update_user_model,
+            // GitNexus sidecar — Chunk 2.1 (Phase 13 Tier 1)
+            configure_gitnexus_sidecar,
+            get_gitnexus_sidecar_config,
+            gitnexus_sidecar_status,
+            gitnexus_query,
+            gitnexus_context,
+            gitnexus_impact,
+            gitnexus_detect_changes,
         ])
         .setup(|app| {
             let data_dir = app

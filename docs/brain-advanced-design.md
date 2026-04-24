@@ -2279,6 +2279,204 @@ This keeps the write-back side as understandable as the read side (§20).
 
 ---
 
+## 22. Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)
+
+> **Implemented in Chunk 2.1 (2026-04-24).** Tier 1 of the four-tier
+> GitNexus integration plan. See `rules/completion-log.md` for the
+> per-file change manifest.
+
+The brain reads structured **code** intelligence (symbol locations, call
+graphs, blast-radius, change diffs) through a strict out-of-process
+bridge to the upstream **GitNexus** project (`abhigyanpatwari/GitNexus`,
+PolyForm-Noncommercial-1.0.0). The licence forbids bundling, so
+TerranSoul **never ships GitNexus binaries**. Users install GitNexus
+themselves under their own licence terms (most commonly
+`npm i -g gitnexus`) and TerranSoul spawns `npx gitnexus mcp` over stdio
+when the user grants the `code_intelligence` capability to the
+`gitnexus-sidecar` agent.
+
+### 22.1 Wire diagram
+
+```
+Frontend (BrainView · Code knowledge panel — Chunk 2.4 will surface this)
+   │
+   │  invoke('gitnexusQuery', { prompt })
+   ▼
+src-tauri/src/commands/gitnexus.rs  ← capability gate (CapabilityStore)
+   │
+   ▼
+src-tauri/src/agent/gitnexus_sidecar.rs
+   │
+   │  JSON-RPC 2.0 over stdio (line-delimited JSON)
+   ▼
+$ npx gitnexus mcp           ← user-installed, out-of-process, kill_on_drop
+   │
+   ▼
+GitNexus MCP server (TypeScript) — analyses the active repo
+```
+
+### 22.2 Tools exposed (Tier 1)
+
+| Tauri command | MCP tool | Arguments | Returns |
+|---|---|---|---|
+| `gitnexus_query` | `query` | `query: string` | Free-form code-intelligence answer |
+| `gitnexus_context` | `context` | `target: string`, `maxResults: u32 = 10` | Ranked code snippets relevant to a symbol/file |
+| `gitnexus_impact` | `impact` | `symbol: string` | Blast-radius (callers / dependents) of changing a symbol |
+| `gitnexus_detect_changes` | `detect_changes` | `from: string`, `to: string` | Diff-aware summary between two git refs |
+
+The bridge returns the JSON-RPC `result` payload as `serde_json::Value`
+verbatim — TerranSoul does not reshape GitNexus's response schema, so
+upstream changes do not require a TerranSoul release.
+
+### 22.3 Capability model
+
+The bridge uses **two layers** of consent:
+
+1. **Process spawn** — handled by the OS / Tauri sidecar config; the user
+   chose to install GitNexus and configure the sidecar command.
+2. **`code_intelligence` capability** — granted per-agent via the
+   existing `CapabilityStore` consent dialog. Every Tauri command in
+   `commands/gitnexus.rs` re-reads the consent on every call, so revoking
+   consent immediately blocks subsequent tool invocations even if the
+   sidecar is still running.
+
+The bridge never has filesystem or network capabilities of its own — all
+filesystem/network actions are GitNexus's responsibility, performed in
+its own subprocess address space.
+
+### 22.4 Reliability guarantees
+
+- **Lazy initialisation.** The MCP `initialize` handshake (and the
+  spec-mandated `notifications/initialized` follow-up) runs only on the
+  first tool call, then is cached for the bridge's lifetime.
+- **ID matching.** Every JSON-RPC request carries a strictly-increasing
+  numeric `id`. The reader loop skips notifications and stale responses
+  with non-matching ids.
+- **Bounded skip.** The reader will skip at most `MAX_SKIPPED_LINES`
+  (256) unrelated lines before returning `NoMatchingResponse`. This
+  defends Tauri commands against runaway / chatty sidecars.
+- **EOF / pipe closed.** Returns `GitNexusError::Io` so the frontend can
+  show a clean error and offer to respawn the sidecar.
+- **Reaping.** `tokio::process::Command::kill_on_drop(true)` ensures the
+  child process is reaped when the bridge handle is dropped — including
+  on `configure_gitnexus_sidecar`, which intentionally drops the cached
+  bridge to force a respawn under the new config.
+
+### 22.5 Roadmap (later tiers)
+
+| Tier | Chunk | Status | Goal |
+|---|---|---|---|
+| 1 | 2.1 | ✅ done (2026-04-24) | Sidecar bridge + four read-only Tauri commands behind `code_intelligence` capability |
+| 2 | 2.2 | ✅ done (2026-04-24) | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
+| 3 | 2.3 | not-started | Mirror GitNexus's KG into TerranSoul's memory graph via a new V7 `edge_source` column; map `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` to the existing 17-relation taxonomy |
+| 4 | 2.4 | not-started | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
+
+---
+
+## 23. Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)
+
+> **Implemented in Chunk 2.2 (2026-04-24).** Tier 2 of the four-tier
+> GitNexus integration. Builds directly on §22's sidecar bridge and §19.2
+> rows 2 (RRF) and 10 (cross-encoder reranker).
+
+When a user invokes `rerank_search_memories` and **both** of the
+following are true:
+
+1. The `gitnexus-sidecar` agent has been granted the
+   `code_intelligence` capability via `CapabilityStore`.
+2. `AppState.gitnexus_sidecar` holds a live bridge handle (i.e. at least
+   one prior tool call has lazily spawned the child process, or the user
+   explicitly configured it via `configure_gitnexus_sidecar`).
+
+…then the recall stage now **augments** its SQLite candidate set with
+GitNexus snippets before handing off to the LLM-as-judge reranker:
+
+```
+Stage 1   — RRF recall over SQLite (vector ⊕ keyword ⊕ freshness)
+Stage 1.5 — NEW: dispatch user query → GitNexus `query` tool
+            → normalise JSON response → pseudo-MemoryEntries
+            → RRF-fuse with Stage-1 candidates (k=60, DEFAULT_RRF_K)
+            → truncate to candidates_k
+Stage 2   — LLM-as-judge rerank (unchanged) → final top-N
+```
+
+### 23.1 Pseudo-`MemoryEntry` shape
+
+GitNexus snippets are wrapped in `MemoryEntry` records that the existing
+fusion + rerank code can consume without modification, but with two
+discriminators that downstream code can rely on:
+
+| Field             | Value                              | Why                                                           |
+|-------------------|------------------------------------|---------------------------------------------------------------|
+| `id`              | strictly **negative** (`-1, -2, …`) | Cannot collide with SQLite's positive `INTEGER PRIMARY KEY` |
+| `tier`            | `MemoryTier::Working`              | Ephemeral, not persisted                                      |
+| `memory_type`     | `MemoryType::Context`              | Transient retrieval context, not a personal fact              |
+| `tags`            | `code:gitnexus[,code:<path>]`      | Greppable provenance                                          |
+| `embedding`       | `None`                             | We never embed code snippets locally                          |
+| `decay_score`     | `1.0`                              | Always fresh                                                  |
+
+The pure helper `memory::code_rag::is_code_rag_entry(&entry)` is the
+canonical check for "this entry came from GitNexus, do not write it
+back to disk".
+
+### 23.2 Response-shape tolerance
+
+The normaliser `gitnexus_response_to_entries` accepts every published
+GitNexus response shape (and a few defensive variants):
+
+```text
+{ "snippets": [ { "content": "...", "path": "..." }, ... ] }
+{ "answer":   "...", "sources": [ { "content": "...", "path": "..." } ] }
+{ "results":  [ { "content": "...", "path": "..." } ] }
+[ { "content": "...", "path": "..." }, ... ]   // top-level array
+{ "answer": "single sentence" }                // synthesised answer only
+"plain string answer"                          // top-level scalar
+```
+
+Field aliases handled: `content` / `text` / `snippet` / `body` / `code`
+for the body; `path` / `file` / `location` / `uri` / `source` for the
+source link. Anything else is silently dropped.
+
+A defensive cap (`MAX_CODE_RAG_ENTRIES = 16`) prevents a runaway
+response from flooding the rerank stage and blowing up LLM token usage.
+
+### 23.3 Failure modes — all degrade to DB-only recall
+
+The bridge call is wrapped so that **none** of the following ever
+fail the search; each silently returns the original SQLite candidate
+set after an `eprintln!` warning:
+
+| Failure                                | Behaviour                  |
+|----------------------------------------|----------------------------|
+| Capability not granted                 | Skip Stage 1.5 entirely    |
+| Sidecar handle absent                  | Skip Stage 1.5 entirely    |
+| Sidecar process crashed / pipe closed  | Warn + return DB results   |
+| GitNexus returned RPC error            | Warn + return DB results   |
+| GitNexus returned unrecognised shape   | Skip merge (no error)      |
+| Empty snippets list                    | Skip merge (no error)      |
+
+This mirrors the existing rerank fallback contract (§19.2 row 10): the
+system must always serve **some** result, even if every advanced
+component is unreachable.
+
+### 23.4 What this does NOT do (scope guard)
+
+- Does **not** mutate the SQLite store. Code-RAG entries are ephemeral.
+- Does **not** persist GitNexus snippets — Tier 3 (Chunk 2.3) is the
+  opt-in path that mirrors the GitNexus knowledge graph into the
+  memory-graph V7 schema with an `edge_source` column.
+- Does **not** rerank GitNexus snippets via the LLM-as-judge
+  *separately* — they enter Stage 2 through the same `rerank_score`
+  call as DB entries, so the rerank stage's existing `Option<u8>`
+  "unscored kept below scored" contract applies uniformly.
+- Does **not** affect any other RAG command (`hybrid_search_memories`,
+  `hybrid_search_memories_rrf`, `hyde_search_memories`) — fusion lives
+  inside the `rerank_search_memories` Tauri command only, so users
+  who don't want code-RAG can opt out simply by calling a different
+  command.
+
+---
+
 ## Related Documents
 
 - [BRAIN-COMPLEX-EXAMPLE.md](../instructions/BRAIN-COMPLEX-EXAMPLE.md) — Quest-guided setup walkthrough

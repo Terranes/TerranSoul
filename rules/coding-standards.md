@@ -117,6 +117,55 @@ src-tauri/src/
 
 ---
 
+## File Size Budget
+
+Single source files become hard to read, search, and review once they
+balloon past a few hundred lines. To keep modules focused and reviewable,
+TerranSoul enforces size budgets through the **standard ecosystem
+linters** (no custom scripts):
+
+| Language    | Tool                          | Rule                                | Threshold |
+|-------------|-------------------------------|-------------------------------------|-----------|
+| TypeScript  | ESLint v9 (flat config)       | `max-lines`                         | 1000 / file |
+| Vue SFC     | ESLint + `eslint-plugin-vue`  | `max-lines`                         | 800 / file  |
+| Rust        | clippy (`src-tauri/clippy.toml`) | `clippy::too_many_lines` (per-fn) | 250 / fn    |
+
+Run from the repo root:
+
+```bash
+npm run lint        # report issues (CI gate)
+npm run lint:fix    # auto-fix the auto-fixable ones
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+```
+
+ESLint config: [`eslint.config.js`](../eslint.config.js).
+Clippy config: [`src-tauri/clippy.toml`](../src-tauri/clippy.toml).
+
+### Pre-existing oversized files
+
+A small allowlist of pre-existing oversized Vue/TS files lives at the
+bottom of `eslint.config.js` (under the comment "Pre-existing oversized
+files (allowlist)"). Each entry is a temporary exception — the
+long-term goal is for the list to shrink to zero through targeted
+refactors (extract sub-components, move long quest-data blocks to a
+data file, split state machines into separate stores, etc.).
+
+**Do NOT widen this list.** Adding a new entry requires PR justification
+and a tracked follow-up issue for the future split.
+
+For Rust, individual oversized functions can be silenced with
+`#[allow(clippy::too_many_lines)]` and a comment linking the follow-up
+refactor. The `too_many_lines` lint is currently advisory (not enforced
+by CI) — see `src-tauri/clippy.toml` for the rationale.
+
+### Refactoring an oversized file below threshold
+
+When a Vue/TS file is brought back under its budget, **delete its entry
+from the allowlist block in `eslint.config.js`** in the same PR so future
+regressions are caught at the threshold.
+
+---
+
 ## TypeScript / Vue Standards
 
 ### Naming

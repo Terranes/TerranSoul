@@ -1,9 +1,21 @@
 <template>
-  <div class="audio-controls-panel-overlay" @click.stop.self="$emit('close')">
-    <div class="audio-controls-panel" @click.stop>
+  <div
+    class="audio-controls-panel-overlay"
+    @click.stop.self="$emit('close')"
+  >
+    <div
+      class="audio-controls-panel"
+      @click.stop
+    >
       <div class="panel-header">
         <h3>🎛️ Audio Controls</h3>
-        <button class="close-btn" @click="$emit('close')" aria-label="Close">&times;</button>
+        <button
+          class="close-btn"
+          aria-label="Close"
+          @click="$emit('close')"
+        >
+          &times;
+        </button>
       </div>
 
       <div class="panel-body">
@@ -14,8 +26,8 @@
             <button 
               class="mute-btn" 
               :class="{ muted: systemMuted }"
-              @click="toggleSystemMute"
               :title="systemMuted ? 'Unmute' : 'Mute'"
+              @click="toggleSystemMute"
             >
               {{ systemMuted ? '🔇' : '🔊' }}
             </button>
@@ -30,7 +42,7 @@
               :value="Math.round(systemVolume * 100)"
               :disabled="systemMuted"
               @input="handleSystemVolumeChange"
-            />
+            >
             <span class="volume-icon">🔊</span>
             <span class="volume-display">{{ Math.round(systemVolume * 100) }}%</span>
           </div>
@@ -43,8 +55,8 @@
             <button 
               class="mute-btn" 
               :class="{ muted: bgmMuted }"
-              @click="toggleBgmMute"
               :title="bgmMuted ? 'Unmute BGM' : 'Mute BGM'"
+              @click="toggleBgmMute"
             >
               {{ bgmMuted ? '🔇' : '🎵' }}
             </button>
@@ -59,7 +71,7 @@
               :value="Math.round(bgmVolume * 100)"
               :disabled="bgmMuted"
               @input="handleBgmVolumeChange"
-            />
+            >
             <span class="volume-icon">🔊</span>
             <span class="volume-display">{{ Math.round(bgmVolume * 100) }}%</span>
           </div>
@@ -71,7 +83,11 @@
               :value="bgmTrackId"
               @change="handleTrackChange"
             >
-              <option v-for="track in bgmTracks" :key="track.id" :value="track.id">
+              <option
+                v-for="track in bgmTracks"
+                :key="track.id"
+                :value="track.id"
+              >
                 {{ track.name }}
               </option>
             </select>
@@ -85,8 +101,8 @@
             <button 
               class="mute-btn" 
               :class="{ muted: micMuted }"
-              @click="toggleMicMute"
               :title="micMuted ? 'Unmute Microphone' : 'Mute Microphone'"
+              @click="toggleMicMute"
             >
               {{ micMuted ? '🎤' : '🎙️' }}
             </button>
@@ -97,11 +113,17 @@
               id="mic-device-select"
               class="device-select"
               :value="selectedMicDevice"
-              @change="handleMicDeviceChange"
               :disabled="!micDevices.length"
+              @change="handleMicDeviceChange"
             >
-              <option value="">Default System Microphone</option>
-              <option v-for="device in micDevices" :key="device.deviceId" :value="device.deviceId">
+              <option value="">
+                Default System Microphone
+              </option>
+              <option
+                v-for="device in micDevices"
+                :key="device.deviceId"
+                :value="device.deviceId"
+              >
                 {{ device.label || `Microphone ${device.deviceId.slice(0, 8)}...` }}
               </option>
             </select>
@@ -112,7 +134,7 @@
               <div 
                 class="mic-level-fill" 
                 :style="{ width: `${micLevel * 100}%` }"
-              ></div>
+              />
             </div>
             <span class="mic-level-text">{{ Math.round(micLevel * 100) }}%</span>
           </div>
@@ -129,11 +151,17 @@
               id="speaker-device-select"
               class="device-select"
               :value="selectedSpeakerDevice"
-              @change="handleSpeakerDeviceChange"
               :disabled="!speakerDevices.length"
+              @change="handleSpeakerDeviceChange"
             >
-              <option value="">Default System Speaker</option>
-              <option v-for="device in speakerDevices" :key="device.deviceId" :value="device.deviceId">
+              <option value="">
+                Default System Speaker
+              </option>
+              <option
+                v-for="device in speakerDevices"
+                :key="device.deviceId"
+                :value="device.deviceId"
+              >
                 {{ device.label || `Speaker ${device.deviceId.slice(0, 8)}...` }}
               </option>
             </select>
@@ -146,13 +174,17 @@
             <h4>🧪 Audio Test</h4>
           </div>
           <div class="test-controls">
-            <button class="test-btn" @click="testSpeakers" :disabled="testingAudio">
+            <button
+              class="test-btn"
+              :disabled="testingAudio"
+              @click="testSpeakers"
+            >
               {{ testingAudio ? '⏸️ Testing...' : '▶️ Test Speakers' }}
             </button>
             <button 
               class="test-btn" 
-              @click="testMicrophone" 
-              :disabled="testingMic || !selectedMicDevice"
+              :disabled="testingMic || !selectedMicDevice" 
+              @click="testMicrophone"
             >
               {{ testingMic ? '⏸️ Recording...' : '🎤 Test Microphone' }}
             </button>

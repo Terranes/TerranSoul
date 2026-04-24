@@ -1,5 +1,8 @@
 <template>
-  <div class="quest-hub" :style="questHubPosition">
+  <div
+    class="quest-hub"
+    :style="questHubPosition"
+  >
     <!-- Floating crystal orb -->
     <button
       class="ff-orb"
@@ -7,11 +10,21 @@
       :title="`Skill Progress: ${progressPercent}%`"
       @click="toggleConstellation"
     >
-      <svg class="ff-orb-ring" viewBox="0 0 52 52">
-        <circle class="ff-orb-ring-bg" cx="26" cy="26" r="22" />
+      <svg
+        class="ff-orb-ring"
+        viewBox="0 0 52 52"
+      >
+        <circle
+          class="ff-orb-ring-bg"
+          cx="26"
+          cy="26"
+          r="22"
+        />
         <circle
           class="ff-orb-ring-fill"
-          cx="26" cy="26" r="22"
+          cx="26"
+          cy="26"
+          r="22"
           :stroke-dasharray="circumference"
           :stroke-dashoffset="circumference - (circumference * progressPercent / 100)"
         />

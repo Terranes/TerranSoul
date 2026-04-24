@@ -454,6 +454,13 @@ pub async fn rerank_search_memories(
             .map_err(|e| e.to_string())?
     }; // release the store lock before any LLM await
 
+    // Stage 1.5 — Code-RAG fusion (Chunk 2.2). When the GitNexus sidecar
+    // is configured AND the user has granted the `code_intelligence`
+    // capability, also dispatch the user query to GitNexus and RRF-fuse
+    // its snippets into the candidate set. Failures are swallowed: code
+    // intelligence augments recall, it never gates it.
+    let candidates = code_rag_fuse(&query, candidates, candidates_k, &state).await;
+
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
@@ -472,6 +479,89 @@ pub async fn rerank_search_memories(
     }
 
     Ok(crate::memory::reranker::rerank_candidates(candidates, &scores, limit))
+}
+
+/// Code-RAG fusion helper for [`rerank_search_memories`] (Chunk 2.2).
+///
+/// Dispatches `query` to the GitNexus sidecar (when configured + capability
+/// granted), normalises the JSON response into pseudo-`MemoryEntry`
+/// records, and RRF-fuses them with the existing SQLite recall set. The
+/// fused list is truncated to `candidates_k` so the downstream rerank
+/// stage's LLM round-trip count stays bounded.
+///
+/// Failure modes — all silently fall back to returning `db_candidates`
+/// unchanged so the user always gets *some* answer:
+/// 1. Sidecar handle absent (user never spawned it).
+/// 2. Capability not granted (user revoked `code_intelligence`).
+/// 3. Sidecar errors (process died, RPC failure, JSON malformed).
+/// 4. GitNexus returned a shape we don't recognise (normaliser → empty).
+async fn code_rag_fuse(
+    query: &str,
+    db_candidates: Vec<MemoryEntry>,
+    candidates_k: usize,
+    state: &State<'_, AppState>,
+) -> Vec<MemoryEntry> {
+    use crate::commands::gitnexus::GITNEXUS_AGENT;
+    use crate::memory::code_rag::gitnexus_response_to_entries;
+    use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
+    use crate::sandbox::Capability;
+
+    // Cheap pre-check: only proceed when both consent AND a live sidecar
+    // exist. This avoids paying the lock + spawn cost when the feature
+    // is off (the common case).
+    let granted = {
+        let cap = state.capability_store.lock().await;
+        cap.has_capability(GITNEXUS_AGENT, &Capability::CodeIntelligence)
+    };
+    if !granted {
+        return db_candidates;
+    }
+    let sidecar = {
+        let guard = state.gitnexus_sidecar.lock().await;
+        guard.clone()
+    };
+    let Some(sidecar) = sidecar else {
+        return db_candidates;
+    };
+
+    // Make sure the bridge knows the capability is on (cheap idempotent).
+    sidecar.set_capability(true).await;
+
+    let code_entries = match sidecar.query(query).await {
+        Ok(value) => gitnexus_response_to_entries(&value, -1),
+        Err(e) => {
+            eprintln!("[code-rag] gitnexus query failed: {e}; serving DB-only recall");
+            return db_candidates;
+        }
+    };
+    if code_entries.is_empty() {
+        return db_candidates;
+    }
+
+    // RRF-fuse the two rankings. We RRF on ids only (which are unique
+    // across both lists thanks to negative pseudo-ids), then look the
+    // entries back up.
+    let db_ids: Vec<i64> = db_candidates.iter().map(|e| e.id).collect();
+    let code_ids: Vec<i64> = code_entries.iter().map(|e| e.id).collect();
+    let fused: Vec<(i64, f64)> =
+        reciprocal_rank_fuse(&[db_ids.as_slice(), code_ids.as_slice()], DEFAULT_RRF_K);
+
+    use std::collections::HashMap;
+    let mut by_id: HashMap<i64, MemoryEntry> = HashMap::with_capacity(
+        db_candidates.len() + code_entries.len(),
+    );
+    for e in db_candidates {
+        by_id.insert(e.id, e);
+    }
+    for e in code_entries {
+        by_id.entry(e.id).or_insert(e);
+    }
+
+    fused
+        .into_iter()
+        .filter_map(|(id, _score)| by_id.remove(&id))
+        .take(candidates_k)
+        .collect()
 }
 
 /// Get memory statistics per tier.

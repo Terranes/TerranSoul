@@ -268,12 +268,18 @@ impl PackageInstaller {
         let manifest = registry.fetch_manifest(agent_name).await?;
         verify_manifest_trust(&manifest)?;
 
-        let is_builtin =
-            matches!(manifest.install_method, crate::package_manager::InstallMethod::BuiltIn);
+        let skip_binary = matches!(
+            manifest.install_method,
+            crate::package_manager::InstallMethod::BuiltIn
+                | crate::package_manager::InstallMethod::Sidecar { .. }
+        );
 
-        // Built-in agents are compiled into TerranSoul — skip the download
-        // step entirely. Other install methods fetch the binary normally.
-        let binary = if is_builtin {
+        // Built-in / sidecar agents have no binary the registry can deliver:
+        // built-ins are compiled into TerranSoul, and sidecars either ship in
+        // the Tauri bundle or are installed by the user (e.g. `npx gitnexus
+        // mcp` for Chunk 2.1's `gitnexus-sidecar`). Other install methods
+        // fetch the binary normally.
+        let binary = if skip_binary {
             Vec::new()
         } else {
             registry
@@ -283,7 +289,7 @@ impl PackageInstaller {
 
         // Verify SHA-256 hash. `verify_manifest_trust` has already enforced
         // that downloadable agents declare it, so the `expect` is unreachable.
-        if !is_builtin {
+        if !skip_binary {
             let expected_hash = manifest
                 .sha256
                 .as_ref()
@@ -297,10 +303,10 @@ impl PackageInstaller {
             }
         }
 
-        // Write to disk. Built-ins write only the manifest; downloadable
-        // agents also write their binary.
+        // Write to disk. Built-ins / sidecars write only the manifest;
+        // downloadable agents also write their binary.
         let agent_dir = self.agents_dir.join(agent_name);
-        write_agent_files(&agent_dir, &manifest, &binary, is_builtin)?;
+        write_agent_files(&agent_dir, &manifest, &binary, skip_binary)?;
 
         let info = InstalledAgent {
             name: manifest.name.clone(),
@@ -329,8 +335,11 @@ impl PackageInstaller {
         let manifest = registry.fetch_manifest(agent_name).await?;
         verify_manifest_trust(&manifest)?;
 
-        let is_builtin =
-            matches!(manifest.install_method, crate::package_manager::InstallMethod::BuiltIn);
+        let skip_binary = matches!(
+            manifest.install_method,
+            crate::package_manager::InstallMethod::BuiltIn
+                | crate::package_manager::InstallMethod::Sidecar { .. }
+        );
 
         // Check if already at latest version.
         if let Some(current) = self.installed.get(agent_name) {
@@ -348,8 +357,8 @@ impl PackageInstaller {
             }
         }
 
-        // Built-ins skip the download step (they are compiled into TerranSoul).
-        let binary = if is_builtin {
+        // Built-ins / sidecars skip the download step (see `install`).
+        let binary = if skip_binary {
             Vec::new()
         } else {
             registry
@@ -359,7 +368,7 @@ impl PackageInstaller {
 
         // Verify SHA-256 hash. `verify_manifest_trust` has already enforced
         // that downloadable agents declare it.
-        if !is_builtin {
+        if !skip_binary {
             let expected_hash = manifest
                 .sha256
                 .as_ref()
@@ -374,7 +383,7 @@ impl PackageInstaller {
         }
 
         let agent_dir = self.agents_dir.join(agent_name);
-        write_agent_files(&agent_dir, &manifest, &binary, is_builtin)?;
+        write_agent_files(&agent_dir, &manifest, &binary, skip_binary)?;
 
         let info = InstalledAgent {
             name: manifest.name.clone(),
@@ -430,14 +439,15 @@ fn verify_manifest_trust(manifest: &AgentManifest) -> Result<(), InstallerError>
 
 /// Write agent manifest and (optionally) binary files to disk.
 ///
-/// `is_builtin` agents have no binary to write — only the manifest is
-/// persisted so the installed-agents listing can show them. Downloadable
-/// agents always write `agent.bin` alongside `manifest.json`.
+/// `skip_binary` agents (Built-in or Sidecar) have no binary to write —
+/// only the manifest is persisted so the installed-agents listing can show
+/// them. Downloadable agents always write `agent.bin` alongside
+/// `manifest.json`.
 fn write_agent_files(
     agent_dir: &Path,
     manifest: &AgentManifest,
     binary: &[u8],
-    is_builtin: bool,
+    skip_binary: bool,
 ) -> Result<(), InstallerError> {
     std::fs::create_dir_all(agent_dir).map_err(|e| InstallerError::IoError(e.to_string()))?;
 
@@ -446,7 +456,7 @@ fn write_agent_files(
     std::fs::write(agent_dir.join(MANIFEST_FILE), manifest_json)
         .map_err(|e| InstallerError::IoError(e.to_string()))?;
 
-    if !is_builtin {
+    if !skip_binary {
         std::fs::write(agent_dir.join(BINARY_FILE), binary)
             .map_err(|e| InstallerError::IoError(e.to_string()))?;
     }

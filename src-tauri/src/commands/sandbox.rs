@@ -17,6 +17,7 @@ fn parse_capability(s: &str) -> Result<Capability, String> {
         "clipboard" => Ok(Capability::Clipboard),
         "network" => Ok(Capability::Network),
         "process_spawn" => Ok(Capability::ProcessSpawn),
+        "code_intelligence" => Ok(Capability::CodeIntelligence),
         _ => Err(format!("unknown capability: {s}")),
     }
 }

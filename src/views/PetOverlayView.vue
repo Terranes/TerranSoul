@@ -19,47 +19,104 @@
           class="pet-bubble"
           @click.stop="toggleChat"
         >
-          <p class="pet-bubble-text">{{ truncatedMessage }}</p>
+          <p class="pet-bubble-text">
+            {{ truncatedMessage }}
+          </p>
         </div>
       </Transition>
 
       <!-- Expandable chat panel — manga-style speech bubble positioned
            relative to model head so it never covers the character -->
       <Transition name="chat-slide">
-        <div v-if="petChatExpanded" class="pet-chat" :class="petChatClasses" :style="petChatStyle" @click.stop @mousedown.stop>
+        <div
+          v-if="petChatExpanded"
+          class="pet-chat"
+          :class="petChatClasses"
+          :style="petChatStyle"
+          @click.stop
+          @mousedown.stop
+        >
           <div class="pet-chat-header">
             <span class="pet-chat-title">Chat</span>
             <div class="pet-chat-actions">
-              <button class="pet-chat-action-btn" @click.stop="copyChatHistoryToClipboard" title="Copy chat history">Copy</button>
-              <button class="pet-chat-action-btn" @click.stop="pasteClipboardToInput" title="Paste clipboard into input">Paste</button>
-              <button v-if="canSkipDialog" class="pet-chat-action-btn skip" @click.stop="skipCurrentDialog" title="Skip dialog and TTS">Skip</button>
-              <button class="pet-chat-close" @click.stop="closeChat" title="Close chat">×</button>
+              <button
+                class="pet-chat-action-btn"
+                title="Copy chat history"
+                @click.stop="copyChatHistoryToClipboard"
+              >
+                Copy
+              </button>
+              <button
+                class="pet-chat-action-btn"
+                title="Paste clipboard into input"
+                @click.stop="pasteClipboardToInput"
+              >
+                Paste
+              </button>
+              <button
+                v-if="canSkipDialog"
+                class="pet-chat-action-btn skip"
+                title="Skip dialog and TTS"
+                @click.stop="skipCurrentDialog"
+              >
+                Skip
+              </button>
+              <button
+                class="pet-chat-close"
+                title="Close chat"
+                @click.stop="closeChat"
+              >
+                ×
+              </button>
             </div>
           </div>
-          <div class="pet-chat-messages" ref="messagesRef">
-            <template v-for="(msg, idx) in recentMessages" :key="msg.id">
-              <div v-if="showDateSep(idx)" class="pet-date-sep">{{ dateSepLabel(msg.timestamp) }}</div>
+          <div
+            ref="messagesRef"
+            class="pet-chat-messages"
+          >
+            <template
+              v-for="(msg, idx) in recentMessages"
+              :key="msg.id"
+            >
+              <div
+                v-if="showDateSep(idx)"
+                class="pet-date-sep"
+              >
+                {{ dateSepLabel(msg.timestamp) }}
+              </div>
               <div :class="['pet-msg', msg.role]">
                 <span class="pet-msg-text">{{ msg.content }}</span>
                 <span class="pet-msg-time">{{ formatPetTime(msg.timestamp) }}</span>
               </div>
             </template>
-            <div v-if="conversationStore.isThinking" class="pet-msg assistant">
+            <div
+              v-if="conversationStore.isThinking"
+              class="pet-msg assistant"
+            >
               <span class="pet-msg-text pet-thinking">…</span>
             </div>
-            <div v-if="conversationStore.isStreaming && conversationStore.streamingText" class="pet-msg assistant">
+            <div
+              v-if="conversationStore.isStreaming && conversationStore.streamingText"
+              class="pet-msg assistant"
+            >
               <span class="pet-msg-text">{{ conversationStore.streamingText }}</span>
             </div>
           </div>
-          <form class="pet-chat-input" @submit.prevent="handleSend">
+          <form
+            class="pet-chat-input"
+            @submit.prevent="handleSend"
+          >
             <input
               v-model="inputText"
               type="text"
               placeholder="Say something…"
               :disabled="conversationStore.isThinking"
               autocomplete="off"
-            />
-            <button type="submit" :disabled="conversationStore.isThinking || !inputText.trim()">
+            >
+            <button
+              type="submit"
+              :disabled="conversationStore.isThinking || !inputText.trim()"
+            >
               ➤
             </button>
           </form>
@@ -68,8 +125,15 @@
 
       <!-- Onboarding tooltip — shown once on first use of pet mode -->
       <Transition name="fade">
-        <div v-if="showOnboarding" class="pet-onboarding" @click.stop @mousedown.stop>
-          <p class="pet-onboarding-title">Welcome to pet mode</p>
+        <div
+          v-if="showOnboarding"
+          class="pet-onboarding"
+          @click.stop
+          @mousedown.stop
+        >
+          <p class="pet-onboarding-title">
+            Welcome to pet mode
+          </p>
           <ul class="pet-onboarding-list">
             <li><strong>Click</strong> character to toggle chat</li>
             <li><strong>Drag</strong> to move</li>
@@ -78,7 +142,12 @@
             <li><strong>Middle-click drag</strong> to rotate</li>
             <li><strong>Right-click</strong> for menu (mood, settings…)</li>
           </ul>
-          <button class="pet-onboarding-dismiss" @click.stop="dismissOnboarding">Got it</button>
+          <button
+            class="pet-onboarding-dismiss"
+            @click.stop="dismissOnboarding"
+          >
+            Got it
+          </button>
         </div>
       </Transition>
 
@@ -92,7 +161,7 @@
           :style="emotionBubbleStyle"
         >
           <span class="pet-emotion-emoji">{{ emotionEmoji }}</span>
-          <div class="pet-emotion-tail"></div>
+          <div class="pet-emotion-tail" />
         </div>
       </Transition>
 
@@ -100,11 +169,20 @@
       <div
         v-if="resizeActive"
         class="pet-resize-handle"
-        @mousedown.stop.prevent="onResizeMouseDown"
         title="Drag to resize"
+        @mousedown.stop.prevent="onResizeMouseDown"
       >
-        <svg width="18" height="18" viewBox="0 0 18 18">
-          <path d="M14 4L4 14M14 8L8 14M14 12L12 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 18 18"
+        >
+          <path
+            d="M14 4L4 14M14 8L8 14M14 12L12 14"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
         </svg>
       </div>
     </div>

@@ -3,6 +3,15 @@
 > This file is the permanent record of all completed chunks.
 > `rules/milestones.md` contains only chunks that are `not-started` or `in-progress`.
 > When a chunk is done, its full details are recorded here and the row is removed from milestones.md.
+>
+> **📏 File size cap — 10,000 lines max. Always contains the latest history.**
+> When the next append would push this file over 10,000 lines, the **oldest**
+> entries are moved out into a dated archive file named
+> `completion-log-{YYYY-MM-DD}.md` (the date is the archive date — the day
+> the rotation is performed). This file (`completion-log.md`) is never
+> renamed — its filename is stable, so external links keep working, and it
+> always contains the newest history. Full procedure in
+> [`rules/prompting-rules.md` → "ENFORCEMENT RULE — Completion-Log File Size Cap"](prompting-rules.md).
 
 ---
 
@@ -12,6 +21,9 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Repo Tooling — File-Size Quality Check (Rust 1000 / Vue 800 lines)](#repo-tooling--file-size-quality-check) | 2026-04-24 |
+| [Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#chunk-22--code-rag-fusion-in-rerank_search_memories-phase-13-tier-2) | 2026-04-24 |
+| [Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)](#chunk-21--gitnexus-sidecar-agent-phase-13-tier-1) | 2026-04-24 |
 | [Chunk 1.11 — Temporal KG Edges (V6 schema)](#chunk-111--temporal-kg-edges-v6-schema) | 2026-04-24 |
 | [Chunk 1.10 — Cross-encoder Reranker (LLM-as-judge)](#chunk-110--cross-encoder-reranker-llm-as-judge) | 2026-04-24 |
 | [Chunk 1.9 — HyDE (Hypothetical Document Embeddings)](#chunk-19--hyde-hypothetical-document-embeddings) | 2026-04-24 |
@@ -93,6 +105,206 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Repo Tooling — File-Size Quality Check
+
+**Date:** 2026-04-24
+**Reference:** `rules/coding-standards.md` "File Size Budget" section
+**Trigger:** User input: "Please implement quality check for rust and Vue so these tools will make sure not a lot of code in just one file."
+
+**Goal.** Prevent files from ballooning past a reviewable size. Rust
+files capped at **1000 lines**, Vue SFCs at **800 lines**. Existing
+oversized files are pinned in an allowlist and **must not grow** beyond
+their pinned size — the long-term goal is for the allowlist to shrink
+to zero.
+
+**Implementation.**
+- `scripts/check-file-sizes.mjs` — single-purpose Node script (zero
+  dependencies, walks `src-tauri/src/**/*.rs` and `src/**/*.vue`,
+  counts `\n` bytes for accuracy, supports `--update` to regenerate the
+  allowlist, prints top-5 largest files on every run).
+- `scripts/file-size-allowlist.json` — JSON map of repo-relative POSIX
+  paths to their pinned line counts. Currently 10 entries (4 Rust + 6
+  Vue), all pre-existing oversized files.
+- `package.json` — new `check:file-sizes` npm script.
+- `rules/coding-standards.md` — new "File Size Budget" section
+  documenting thresholds, allowlist semantics, and the path to remove
+  an entry once a file is split.
+- `rules/prompting-rules.md` — `npm run check:file-sizes` added to the
+  per-chunk Build Verification block.
+
+**Behaviour.**
+- Pass: every non-allowlisted file is ≤ its threshold AND every
+  allowlisted file is ≤ its pinned size.
+- Fail (exit 1): a non-allowlisted file exceeds its threshold, OR an
+  allowlisted file has grown beyond its pinned size.
+
+**Verified.** `node scripts/check-file-sizes.mjs` passes on the current
+tree with the 10-entry allowlist; new chunk-2.2 files are all well
+under budget (`memory/code_rag.rs` = 415 lines, `commands/memory.rs` =
+847 lines after edits).
+
+---
+
+## Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)
+
+**Date:** 2026-04-24
+**Reference:** `docs/brain-advanced-design.md` §22 (sidecar) + new §23 (fusion); `rules/milestones.md` Phase 13
+
+**Goal.** With the GitNexus sidecar bridge (Chunk 2.1) in place, wire
+its `query` tool into the recall stage of `rerank_search_memories` so
+that — when **both** the user has granted `code_intelligence` for the
+`gitnexus-sidecar` agent **and** a sidecar handle is live — the LLM
+sees code-intelligence snippets alongside SQLite memories during the
+LLM-as-judge rerank stage. Failures degrade silently to DB-only recall.
+
+**Architecture.**
+
+```
+Stage 1   — RRF recall over SQLite (vector ⊕ keyword ⊕ freshness)
+Stage 1.5 — NEW: gitnexus.query(prompt) → normalise → pseudo-MemoryEntries
+            → reciprocal_rank_fuse([db_ids, code_ids], k=60)
+            → truncate to candidates_k
+Stage 2   — LLM-as-judge rerank (unchanged)
+```
+
+**Files created.**
+- `src-tauri/src/memory/code_rag.rs` (415 LOC, 13 unit tests) —
+  `gitnexus_response_to_entries(value, base_id_offset) → Vec<MemoryEntry>`,
+  `is_code_rag_entry(&entry) → bool`, `CODE_RAG_TAG` constant,
+  `MAX_CODE_RAG_ENTRIES = 16` defensive cap. Pure functions; no
+  IO, no async, fully unit-tested.
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — register `code_rag` module.
+- `src-tauri/src/commands/memory.rs` — new private async helper
+  `code_rag_fuse(query, db_candidates, candidates_k, &state)` between
+  Stages 1 and 2 of `rerank_search_memories`. ~80 LOC. Wraps every
+  failure mode in `eprintln!` warnings + DB-only fallback.
+- `docs/brain-advanced-design.md` — new §23 (full fusion pipeline,
+  pseudo-entry schema, response-shape tolerance, failure-mode table,
+  scope guard); §22.5 roadmap row marked ✅.
+- `README.md` — new Brain System bullet under Tier 1.
+
+**Pseudo-entry discriminators** (so downstream code can identify and
+skip GitNexus-derived entries):
+- `id`: strictly **negative** (`-1, -2, …`) — cannot collide with
+  SQLite's positive `INTEGER PRIMARY KEY`.
+- `tier`: `MemoryTier::Working` (ephemeral).
+- `memory_type`: `MemoryType::Context` (transient retrieval context).
+- `tags`: `code:gitnexus[,code:<sanitised-path>]`.
+- `embedding`: `None` (we never embed code snippets locally).
+- `decay_score`: `1.0`.
+
+**Response-shape tolerance.** The normaliser accepts five published
+shapes (`{snippets:[]}`, `{answer,sources:[]}`, `{results:[]}`,
+top-level array, lone `{answer}`) and five field aliases
+(`content`/`text`/`snippet`/`body`/`code` for body; `path`/`file`/
+`location`/`uri`/`source` for source link). Defensive cap of 16 entries
+prevents runaway responses from flooding the rerank stage.
+
+**Failure modes — all degrade to DB-only recall**, never error:
+1. Capability not granted → skip Stage 1.5.
+2. Sidecar handle absent → skip Stage 1.5.
+3. Sidecar process crashed / pipe closed → warn + DB results.
+4. GitNexus returned RPC error → warn + DB results.
+5. Unrecognised JSON shape → no merge.
+6. Empty snippet list → no merge.
+
+**Tests.**
+- 13 new unit tests on the normaliser (empty values, all 5 shapes, ID
+  monotonicity, MAX cap, whitespace dropping, comma-in-path tag
+  round-trip, `is_code_rag_entry` selectivity, unknown-shape graceful
+  empty, ephemeral-entry invariants).
+- Backend total: **823 tests passing** (up from 809 after Chunk 2.1).
+- Frontend total: 1052 tests passing (no changes required).
+- File-size check: ✅ all new/modified files within budget.
+
+**Out of scope (deferred to later tiers).**
+- Tier 3 (Chunk 2.3) — KG mirror with V7 `edge_source` column.
+- Tier 4 (Chunk 2.4) — BrainView "Code knowledge" panel.
+
+---
+
+## Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)
+
+**Date:** 2026-04-24
+**Reference:** `rules/milestones.md` Phase 13 (GitNexus Code-Intelligence Integration), `docs/brain-advanced-design.md` §22 (new)
+
+**Goal.** Ship Tier 1 of the four-tier GitNexus integration: spawn the
+upstream `gitnexus` MCP server (`abhigyanpatwari/GitNexus`,
+PolyForm-Noncommercial-1.0.0) as an out-of-process sidecar over stdio,
+and expose the four core read-only tools (`query`, `context`, `impact`,
+`detect_changes`) as Tauri commands behind a `code_intelligence`
+capability gate. **Strictly out-of-process** — GitNexus's license
+prevents bundling, so the user installs it under their own license terms
+via the marketplace (`npx gitnexus mcp` by default).
+
+**Architecture.**
+- `agent/gitnexus_sidecar.rs` — async JSON-RPC 2.0 / MCP bridge with a
+  pluggable `RpcTransport` trait (production `StdioTransport` wrapping
+  `tokio::process::Command`, in-memory `mock::MockTransport` for tests).
+  Performs the spec-mandated MCP handshake (`initialize` → response →
+  `notifications/initialized`) lazily on first tool call and caches the
+  initialization state. ID-tracked request/response loop skips stray
+  notifications and stale responses; bounded by `MAX_SKIPPED_LINES = 256`
+  to defend against runaway sidecars.
+- `commands/gitnexus.rs` — 7 Tauri commands: `configure_gitnexus_sidecar`,
+  `get_gitnexus_sidecar_config`, `gitnexus_sidecar_status`,
+  `gitnexus_query`, `gitnexus_context`, `gitnexus_impact`,
+  `gitnexus_detect_changes`. Each call refreshes capability state from
+  `CapabilityStore`, lazily spawns the sidecar (cached in `AppState`),
+  and forwards the JSON-RPC `result` to the frontend as `serde_json::Value`.
+- `sandbox::Capability::CodeIntelligence` — new variant gating tool
+  invocation. The user must approve `code_intelligence` for
+  `gitnexus-sidecar` via the existing consent dialog before any tool
+  call is forwarded.
+- `registry_server::catalog` — added `gitnexus-sidecar` manifest with
+  `InstallMethod::Sidecar { path: "npx gitnexus mcp" }`,
+  `Network`+`Filesystem` capabilities, and the upstream's
+  PolyForm-Noncommercial-1.0.0 license declared in the manifest.
+- `package_manager::installer` — extended the "no binary download"
+  branch (formerly `is_builtin`) to `skip_binary` covering both
+  `BuiltIn` and `Sidecar` install methods, matching the existing
+  `verify_manifest_trust` doc comment that already exempted sidecars
+  from `sha256` requirements.
+
+**Files created.**
+- `src-tauri/src/agent/gitnexus_sidecar.rs` (~570 LOC, 11 unit tests)
+- `src-tauri/src/commands/gitnexus.rs` (~230 LOC, 4 unit tests)
+
+**Files modified.**
+- `src-tauri/src/agent/mod.rs` — register new sidecar module
+- `src-tauri/src/commands/mod.rs` — register new commands module
+- `src-tauri/src/commands/sandbox.rs` — accept `"code_intelligence"`
+  capability string in `parse_capability`
+- `src-tauri/src/sandbox/capability.rs` — add `Capability::CodeIntelligence`
+  variant, update `all()` and `display_name()`
+- `src-tauri/src/registry_server/catalog.rs` — add `gitnexus-sidecar` entry
+- `src-tauri/src/registry_server/server.rs` — bump catalog count to 4
+- `src-tauri/src/package_manager/installer.rs` — generalize `is_builtin`
+  → `skip_binary` to include `Sidecar`
+- `src-tauri/src/lib.rs` — `AppState.gitnexus_config` +
+  `AppState.gitnexus_sidecar` fields, register 7 new commands in the
+  invoke handler
+- `docs/brain-advanced-design.md` — new §22 covering the bridge
+- `README.md` — new Code-Intelligence component listing
+
+**Tests.**
+- 11 sidecar unit tests (capability denial, handshake, ID matching,
+  notification skipping, RPC error propagation, EOF handling,
+  malformed-JSON handling, default config sanity)
+- 4 Tauri-command-layer unit tests (capability rejection, full round
+  trip, argument forwarding, RPC error pass-through)
+- Backend total: 809 tests passing (up from 797 pre-chunk)
+- Frontend total: 1052 tests passing (no changes required)
+
+**Out of scope (deferred to later tiers).**
+- Tier 2 (Chunk 2.2) — Code-RAG fusion in `rerank_search_memories`
+- Tier 3 (Chunk 2.3) — Knowledge-graph mirror with `edge_source` column
+- Tier 4 (Chunk 2.4) — BrainView "Code knowledge" panel
 
 ---
 

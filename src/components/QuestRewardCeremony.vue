@@ -9,20 +9,36 @@
         aria-label="Quest Complete"
         @click.self="dismiss"
       >
-        <div class="qrc-bg" aria-hidden="true">
-          <div v-for="i in 18" :key="i" class="qrc-particle" :style="particleStyle(i)" />
+        <div
+          class="qrc-bg"
+          aria-hidden="true"
+        >
+          <div
+            v-for="i in 18"
+            :key="i"
+            class="qrc-particle"
+            :style="particleStyle(i)"
+          />
         </div>
 
         <div class="qrc-card">
-          <div class="qrc-eyebrow">⚔ Quest Complete</div>
+          <div class="qrc-eyebrow">
+            ⚔ Quest Complete
+          </div>
           <div class="qrc-title-row">
             <span class="qrc-icon">{{ activeCeremony.icon }}</span>
-            <h2 class="qrc-title">{{ activeCeremony.name }}</h2>
+            <h2 class="qrc-title">
+              {{ activeCeremony.name }}
+            </h2>
           </div>
-          <p class="qrc-tagline">{{ activeCeremony.tagline }}</p>
+          <p class="qrc-tagline">
+            {{ activeCeremony.tagline }}
+          </p>
 
           <div class="qrc-section">
-            <div class="qrc-section-label">◆ Stat Changes</div>
+            <div class="qrc-section-label">
+              ◆ Stat Changes
+            </div>
             <div class="qrc-stat-grid">
               <div
                 v-for="desc in statDescriptors"
@@ -33,46 +49,80 @@
                 <span class="qrc-stat-icon">{{ desc.icon }}</span>
                 <span class="qrc-stat-abbr">{{ desc.abbr }}</span>
                 <span class="qrc-stat-bar">
-                  <span class="qrc-stat-bar-fill" :style="{
-                    width: activeCeremony.statsAfter[desc.id] + '%',
-                    background: desc.color,
-                  }" />
+                  <span
+                    class="qrc-stat-bar-fill"
+                    :style="{
+                      width: activeCeremony.statsAfter[desc.id] + '%',
+                      background: desc.color,
+                    }"
+                  />
                 </span>
                 <span class="qrc-stat-value">
                   {{ activeCeremony.statsBefore[desc.id] }}
                   <template v-if="activeCeremony.statDelta[desc.id] !== 0">
                     <span class="qrc-stat-arrow">→</span>
                     <strong>{{ activeCeremony.statsAfter[desc.id] }}</strong>
-                    <span v-if="activeCeremony.statDelta[desc.id] > 0" class="qrc-stat-delta">+{{ activeCeremony.statDelta[desc.id] }}</span>
+                    <span
+                      v-if="activeCeremony.statDelta[desc.id] > 0"
+                      class="qrc-stat-delta"
+                    >+{{ activeCeremony.statDelta[desc.id] }}</span>
                   </template>
                 </span>
               </div>
             </div>
           </div>
 
-          <div v-if="activeCeremony.rewards.length" class="qrc-section">
-            <div class="qrc-section-label">◆ Rewards Granted</div>
+          <div
+            v-if="activeCeremony.rewards.length"
+            class="qrc-section"
+          >
+            <div class="qrc-section-label">
+              ◆ Rewards Granted
+            </div>
             <div class="qrc-reward-list">
-              <span v-for="(r, i) in activeCeremony.rewards" :key="i" class="qrc-reward">
+              <span
+                v-for="(r, i) in activeCeremony.rewards"
+                :key="i"
+                class="qrc-reward"
+              >
                 {{ activeCeremony.rewardIcons[i] || '🎁' }} {{ r }}
               </span>
             </div>
           </div>
 
-          <div v-if="activeCeremony.newCombos.length" class="qrc-section">
-            <div class="qrc-section-label">◆ New Combos</div>
+          <div
+            v-if="activeCeremony.newCombos.length"
+            class="qrc-section"
+          >
+            <div class="qrc-section-label">
+              ◆ New Combos
+            </div>
             <div class="qrc-combo-list">
-              <div v-for="combo in activeCeremony.newCombos" :key="combo.name" class="qrc-combo">
+              <div
+                v-for="combo in activeCeremony.newCombos"
+                :key="combo.name"
+                class="qrc-combo"
+              >
                 <span class="qrc-combo-icon">{{ combo.icon }}</span>
                 <div>
-                  <div class="qrc-combo-name">{{ combo.name }}</div>
-                  <div class="qrc-combo-desc">{{ combo.description }}</div>
+                  <div class="qrc-combo-name">
+                    {{ combo.name }}
+                  </div>
+                  <div class="qrc-combo-desc">
+                    {{ combo.description }}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <button class="qrc-dismiss" data-testid="qrc-dismiss" @click="dismiss">Continue ▸</button>
+          <button
+            class="qrc-dismiss"
+            data-testid="qrc-dismiss"
+            @click="dismiss"
+          >
+            Continue ▸
+          </button>
         </div>
       </div>
     </Transition>

@@ -1,8 +1,15 @@
 <template>
   <div class="ple-field">
     <span class="ple-label">{{ label }}</span>
-    <ul v-if="items.length > 0" class="ple-list">
-      <li v-for="(item, idx) in items" :key="idx" class="ple-item">
+    <ul
+      v-if="items.length > 0"
+      class="ple-list"
+    >
+      <li
+        v-for="(item, idx) in items"
+        :key="idx"
+        class="ple-item"
+      >
         <span class="ple-text">{{ item }}</span>
         <button
           type="button"
@@ -10,7 +17,9 @@
           :data-testid="`ple-remove-${idx}`"
           :aria-label="`Remove ${item}`"
           @click="remove(idx)"
-        >×</button>
+        >
+          ×
+        </button>
       </li>
     </ul>
     <div class="ple-add">
@@ -22,14 +31,16 @@
         class="ple-input"
         :data-testid="`ple-input-${label.toLowerCase().replace(/\s+/g, '-')}`"
         @keydown.enter.prevent="add"
-      />
+      >
       <button
         type="button"
         class="ple-add-btn"
         :data-testid="`ple-add-${label.toLowerCase().replace(/\s+/g, '-')}`"
         :disabled="!entry.trim()"
         @click="add"
-      >Add</button>
+      >
+        Add
+      </button>
     </div>
   </div>
 </template>

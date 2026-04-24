@@ -1,5 +1,8 @@
 <template>
-  <section class="brain-stat-sheet" data-testid="brain-stat-sheet">
+  <section
+    class="brain-stat-sheet"
+    data-testid="brain-stat-sheet"
+  >
     <div class="bss-header">
       <span class="bss-title">⚔ Brain Stat Sheet</span>
       <span class="bss-level">Lv. {{ overallLevel }}</span>
@@ -14,10 +17,16 @@
         :data-testid="`stat-${desc.id}`"
       >
         <div class="bss-stat-label-row">
-          <span class="bss-stat-icon" aria-hidden="true">{{ desc.icon }}</span>
+          <span
+            class="bss-stat-icon"
+            aria-hidden="true"
+          >{{ desc.icon }}</span>
           <span class="bss-stat-abbr">{{ desc.abbr }}</span>
           <span class="bss-stat-name">{{ desc.label }}</span>
-          <span class="bss-stat-value" :data-testid="`stat-value-${desc.id}`">{{ stats[desc.id] }}</span>
+          <span
+            class="bss-stat-value"
+            :data-testid="`stat-value-${desc.id}`"
+          >{{ stats[desc.id] }}</span>
         </div>
         <div class="bss-stat-bar">
           <div
@@ -30,14 +39,21 @@
           />
           <div class="bss-stat-bar-shimmer" />
         </div>
-        <div class="bss-stat-desc">{{ desc.description }}</div>
+        <div class="bss-stat-desc">
+          {{ desc.description }}
+        </div>
       </div>
     </div>
 
     <!-- Active modifiers reflect Chunk 134 — show users that the stats actually
          change AI behaviour, not just decorate the panel. -->
-    <div class="bss-modifiers" data-testid="bss-modifiers">
-      <div class="bss-modifiers-title">⚙ Active Modifiers</div>
+    <div
+      class="bss-modifiers"
+      data-testid="bss-modifiers"
+    >
+      <div class="bss-modifiers-title">
+        ⚙ Active Modifiers
+      </div>
       <div class="bss-modifier-row">
         <span class="bss-modifier-label">Memory recall depth</span>
         <span class="bss-modifier-value">{{ modifiers.memoryRecallLimit }} fragments</span>

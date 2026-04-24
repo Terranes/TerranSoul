@@ -843,12 +843,13 @@ export class CharacterAnimator {
         spineOscY = Math.sin(t * 0.3) * 0.015;
         hipsOscY = Math.sin(t * 0.25) * 0.01;
         break;
-      case 'surprised':
+      case 'surprised': {
         // Quick recoil that settles
         const recoilDecay = Math.exp(-t * 2.0);
         headOscX = -0.08 * recoilDecay;
         spineOscX = -0.04 * recoilDecay;
         break;
+      }
     }
 
     // Compose final bone targets: base pose + breathing + per-state oscillation + gesture blending

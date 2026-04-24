@@ -3,15 +3,18 @@
     <Transition name="constellation">
       <div
         v-if="visible"
+        ref="rootRef"
         class="skill-constellation"
         role="dialog"
         aria-label="Skill Constellation"
-        @keydown.esc="onEsc"
         tabindex="-1"
-        ref="rootRef"
+        @keydown.esc="onEsc"
       >
         <!-- Star-field background -->
-        <div class="sc-starfield" aria-hidden="true">
+        <div
+          class="sc-starfield"
+          aria-hidden="true"
+        >
           <div class="sc-stars sc-stars-1" />
           <div class="sc-stars sc-stars-2" />
           <div class="sc-stars sc-stars-3" />
@@ -20,7 +23,10 @@
 
         <!-- Top bar: breadcrumb + close -->
         <div class="sc-topbar">
-          <div class="sc-breadcrumb" data-testid="constellation-breadcrumb">
+          <div
+            class="sc-breadcrumb"
+            data-testid="constellation-breadcrumb"
+          >
             <button
               class="sc-crumb sc-crumb--root"
               :class="{ 'sc-crumb--active': !focusedClusterId && !selectedNode }"
@@ -47,24 +53,33 @@
             <button
               v-if="focusedClusterId || selectedNode"
               class="sc-back-btn"
-              @click="goBack"
               data-testid="constellation-back"
               title="Back"
-            >‹ Back</button>
-            <button class="sc-close-btn" @click="$emit('close')" aria-label="Close" title="Close (Esc)">✕</button>
+              @click="goBack"
+            >
+              ‹ Back
+            </button>
+            <button
+              class="sc-close-btn"
+              aria-label="Close"
+              title="Close (Esc)"
+              @click="$emit('close')"
+            >
+              ✕
+            </button>
           </div>
         </div>
 
         <!-- Pannable / zoomable viewport -->
         <div
+          ref="viewportRef"
           class="sc-viewport"
+          data-testid="constellation-viewport"
           @mousedown="onDragStart"
           @wheel.prevent="onWheel"
           @touchstart.passive="onTouchStart"
           @touchmove="onTouchMove"
           @touchend="onTouchEnd"
-          ref="viewportRef"
-          data-testid="constellation-viewport"
         >
           <div
             class="sc-world"
@@ -72,11 +87,19 @@
             data-testid="constellation-world"
           >
             <!-- Constellation lines between clusters -->
-            <svg class="sc-bg-svg" :viewBox="`0 0 ${WORLD_W} ${WORLD_H}`" preserveAspectRatio="none" aria-hidden="true">
+            <svg
+              class="sc-bg-svg"
+              :viewBox="`0 0 ${WORLD_W} ${WORLD_H}`"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
               <line
                 v-for="(line, i) in interClusterLines"
                 :key="'icl-' + i"
-                :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
+                :x1="line.x1"
+                :y1="line.y1"
+                :x2="line.x2"
+                :y2="line.y2"
                 class="sc-constellation-line"
               />
             </svg>
@@ -96,11 +119,18 @@
               <div class="sc-cluster-diamond" />
 
               <!-- Connection lines between prereq nodes -->
-              <svg class="sc-cluster-svg" :viewBox="`-${CLUSTER_R} -${CLUSTER_R} ${CLUSTER_R*2} ${CLUSTER_R*2}`" aria-hidden="true">
+              <svg
+                class="sc-cluster-svg"
+                :viewBox="`-${CLUSTER_R} -${CLUSTER_R} ${CLUSTER_R*2} ${CLUSTER_R*2}`"
+                aria-hidden="true"
+              >
                 <line
                   v-for="(edge, i) in cluster.edges"
                   :key="'edge-' + i"
-                  :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2"
+                  :x1="edge.x1"
+                  :y1="edge.y1"
+                  :x2="edge.x2"
+                  :y2="edge.y2"
                   class="sc-edge"
                   :class="{ 'sc-edge--active': edge.active }"
                 />
@@ -142,7 +172,10 @@
               >
                 <span class="sc-node-gem">
                   <span class="sc-node-icon">{{ placedNode.node.icon }}</span>
-                  <span v-if="placedNode.status === 'active'" class="sc-node-glow" />
+                  <span
+                    v-if="placedNode.status === 'active'"
+                    class="sc-node-glow"
+                  />
                 </span>
                 <span class="sc-node-cost">{{ placedNode.node.name }}</span>
               </button>
@@ -151,25 +184,70 @@
         </div>
 
         <!-- Zoom controls -->
-        <div class="sc-zoom-controls" aria-label="Zoom controls">
-          <button class="sc-zoom-btn" @click="zoomIn" data-testid="zoom-in" title="Zoom in">＋</button>
-          <button class="sc-zoom-btn" @click="zoomOut" data-testid="zoom-out" title="Zoom out">－</button>
-          <button class="sc-zoom-btn sc-zoom-btn--reset" @click="resetView" data-testid="zoom-reset" title="Reset view">⟲</button>
+        <div
+          class="sc-zoom-controls"
+          aria-label="Zoom controls"
+        >
+          <button
+            class="sc-zoom-btn"
+            data-testid="zoom-in"
+            title="Zoom in"
+            @click="zoomIn"
+          >
+            ＋
+          </button>
+          <button
+            class="sc-zoom-btn"
+            data-testid="zoom-out"
+            title="Zoom out"
+            @click="zoomOut"
+          >
+            －
+          </button>
+          <button
+            class="sc-zoom-btn sc-zoom-btn--reset"
+            data-testid="zoom-reset"
+            title="Reset view"
+            @click="resetView"
+          >
+            ⟲
+          </button>
         </div>
 
         <!-- Minimap -->
-        <div class="sc-minimap" data-testid="constellation-minimap" aria-label="Cluster minimap">
-          <svg :viewBox="`0 0 ${WORLD_W} ${WORLD_H}`" preserveAspectRatio="xMidYMid meet">
-            <rect x="0" y="0" :width="WORLD_W" :height="WORLD_H" class="sc-minimap-bg" />
+        <div
+          class="sc-minimap"
+          data-testid="constellation-minimap"
+          aria-label="Cluster minimap"
+        >
+          <svg
+            :viewBox="`0 0 ${WORLD_W} ${WORLD_H}`"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <rect
+              x="0"
+              y="0"
+              :width="WORLD_W"
+              :height="WORLD_H"
+              class="sc-minimap-bg"
+            />
             <line
               v-for="(line, i) in interClusterLines"
               :key="'mm-icl-' + i"
-              :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2"
+              :x1="line.x1"
+              :y1="line.y1"
+              :x2="line.x2"
+              :y2="line.y2"
               class="sc-minimap-line"
             />
-            <g v-for="cluster in clusters" :key="'mm-' + cluster.id">
+            <g
+              v-for="cluster in clusters"
+              :key="'mm-' + cluster.id"
+            >
               <circle
-                :cx="cluster.cx" :cy="cluster.cy" :r="CLUSTER_R"
+                :cx="cluster.cx"
+                :cy="cluster.cy"
+                :r="CLUSTER_R"
                 class="sc-minimap-cluster"
                 :class="`sc-minimap-cluster--${cluster.id}`"
                 :data-testid="`minimap-cluster-${cluster.id}`"
@@ -186,8 +264,10 @@
             </g>
             <!-- Viewport rectangle -->
             <rect
-              :x="viewportRect.x" :y="viewportRect.y"
-              :width="viewportRect.w" :height="viewportRect.h"
+              :x="viewportRect.x"
+              :y="viewportRect.y"
+              :width="viewportRect.w"
+              :height="viewportRect.h"
               class="sc-minimap-viewport"
             />
           </svg>
@@ -205,31 +285,59 @@
             <div class="sc-detail-top">
               <span class="sc-detail-gem">{{ selectedNode.icon }}</span>
               <div class="sc-detail-title-area">
-                <div class="sc-detail-name">{{ selectedNode.name }}</div>
-                <div class="sc-detail-tagline">{{ selectedNode.tagline }}</div>
+                <div class="sc-detail-name">
+                  {{ selectedNode.name }}
+                </div>
+                <div class="sc-detail-tagline">
+                  {{ selectedNode.tagline }}
+                </div>
               </div>
-              <button class="sc-detail-close" @click="closeDetail" aria-label="Close detail">✕</button>
+              <button
+                class="sc-detail-close"
+                aria-label="Close detail"
+                @click="closeDetail"
+              >
+                ✕
+              </button>
             </div>
 
-            <p class="sc-detail-desc">{{ selectedNode.description }}</p>
+            <p class="sc-detail-desc">
+              {{ selectedNode.description }}
+            </p>
 
             <!-- Quest steps -->
-            <div v-if="selectedNode.questSteps.length" class="sc-detail-section">
-              <div class="sc-detail-section-label">◆ Objectives</div>
-              <div v-for="(step, i) in selectedNode.questSteps" :key="i" class="sc-step">
+            <div
+              v-if="selectedNode.questSteps.length"
+              class="sc-detail-section"
+            >
+              <div class="sc-detail-section-label">
+                ◆ Objectives
+              </div>
+              <div
+                v-for="(step, i) in selectedNode.questSteps"
+                :key="i"
+                class="sc-step"
+              >
                 <span class="sc-step-num">{{ stepNumeral(i) }}</span>
                 <span class="sc-step-text">{{ step.label }}</span>
                 <button
                   v-if="step.target"
                   class="sc-step-go"
                   @click="$emit('navigate', step.target!)"
-                >▸</button>
+                >
+                  ▸
+                </button>
               </div>
             </div>
 
             <!-- Rewards -->
-            <div v-if="selectedNode.rewards.length" class="sc-detail-section">
-              <div class="sc-detail-section-label">◆ Rewards</div>
+            <div
+              v-if="selectedNode.rewards.length"
+              class="sc-detail-section"
+            >
+              <div class="sc-detail-section-label">
+                ◆ Rewards
+              </div>
               <div class="sc-reward-list">
                 <span
                   v-for="(reward, i) in selectedNode.rewards"
@@ -240,8 +348,13 @@
             </div>
 
             <!-- Prerequisites -->
-            <div v-if="selectedNode.requires.length" class="sc-detail-section">
-              <div class="sc-detail-section-label">◆ Prerequisites</div>
+            <div
+              v-if="selectedNode.requires.length"
+              class="sc-detail-section"
+            >
+              <div class="sc-detail-section-label">
+                ◆ Prerequisites
+              </div>
               <div class="sc-prereq-list">
                 <span
                   v-for="reqId in selectedNode.requires"
@@ -258,18 +371,24 @@
                 v-if="!isPinned(selectedNode.id)"
                 class="sc-btn sc-btn--secondary"
                 @click="() => { skillTree.pinQuest(selectedNode!.id); emit('close'); }"
-              >📌 Pin</button>
+              >
+                📌 Pin
+              </button>
               <button
                 v-else
                 class="sc-btn sc-btn--secondary"
                 @click="() => { skillTree.unpinQuest(selectedNode!.id); emit('close'); }"
-              >📌 Unpin</button>
+              >
+                📌 Unpin
+              </button>
               <button
                 v-if="selectedStatus !== 'locked'"
                 class="sc-btn sc-btn--primary"
-                @click="beginQuest(selectedNode!.id)"
                 data-testid="constellation-begin"
-              >⚔️ Begin Quest</button>
+                @click="beginQuest(selectedNode!.id)"
+              >
+                ⚔️ Begin Quest
+              </button>
             </div>
           </div>
         </Transition>

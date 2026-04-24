@@ -37,17 +37,14 @@
 
 ## Next Chunk
 
-**Chunk 2.1 — GitNexus sidecar agent (Tier 1 of GitNexus integration).**
-Add a sidecar agent (`InstallMethod::Sidecar`) that spawns
-`npx gitnexus mcp` over stdio and exposes the four core read-only
-tools (`gitnexus_query`, `gitnexus_context`, `gitnexus_impact`,
-`gitnexus_detect_changes`) as Tauri commands behind a
-`code-intelligence` orchestrator capability gate. **Strictly
-out-of-process** — GitNexus's PolyForm-Noncommercial-1.0.0 license
-prevents bundling, so the user installs it under their own license
-terms via the marketplace. See chat plan from this session for the
-full reverse-engineering analysis and the four-tier roadmap (2.1
-sidecar → 2.2 RAG fusion → 2.3 KG mirror → 2.4 BrainView panel).
+**Chunk 2.3 — Knowledge-graph mirror (V7 `edge_source` column).**
+With the GitNexus sidecar (Chunk 2.1) and Code-RAG fusion (Chunk 2.2)
+both shipped, Tier 3 makes GitNexus's structured KG durable: a new V7
+SQLite migration adds an `edge_source` column to `memory_edges`, plus
+`gitnexus_sync` / `gitnexus_unmirror` Tauri commands map the upstream
+`CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` relations
+into the existing 17-relation taxonomy. Strictly opt-in — no auto-sync
+at startup. ~500 LOC + integration test.
 
 ---
 
@@ -68,8 +65,6 @@ sidecar → 2.2 RAG fusion → 2.3 KG mirror → 2.4 BrainView panel).
 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
-| 2.1 | GitNexus sidecar agent (stdio MCP bridge for `query` / `context` / `impact` / `detect_changes`) | not-started | agent | Tier 1 of integration plan; reuses Chunk 1.5 agent-roster + sidecar `InstallMethod` infra; ~400 LOC + tests |
-| 2.2 | Code-RAG fusion in `rerank_search_memories` (recall stage also queries GitNexus when an active repo is configured) | not-started | agent | Tier 2; depends on 2.1; ~150 LOC; uses existing `memory::fusion::reciprocal_rank_fuse` |
 | 2.3 | Knowledge-graph mirror — V7 schema adds `edge_source` column; `gitnexus_sync` / `gitnexus_unmirror` Tauri commands; map `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` to the existing 17-relation taxonomy | not-started | agent | Tier 3; opt-in only; never auto-syncs at startup; ~500 LOC + integration test |
 | 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator | not-started | agent | Tier 4; pure frontend; depends on 2.1 |
 

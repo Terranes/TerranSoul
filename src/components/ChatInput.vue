@@ -6,7 +6,10 @@
     @dragleave="dragOver = false"
     @drop.prevent="handleDrop"
   >
-    <div class="input-wrapper" :class="{ 'drag-over': dragOver }">
+    <div
+      class="input-wrapper"
+      :class="{ 'drag-over': dragOver }"
+    >
       <button
         type="button"
         class="attach-btn"
@@ -14,8 +17,13 @@
         aria-label="Attach file"
         @click="openFilePicker"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6h-1v9.5a2 2 0 0 0 4 0V5a3.5 3.5 0 0 0-7 0v12.5a5 5 0 0 0 10 0V6h-1z"/>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
+          <path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6h-1v9.5a2 2 0 0 0 4 0V5a3.5 3.5 0 0 0-7 0v12.5a5 5 0 0 0 10 0V6h-1z" />
         </svg>
       </button>
       <input
@@ -28,14 +36,19 @@
         autocomplete="off"
         @focus="handleFocus"
         @blur="handleBlur"
-      />
+      >
       <button
         type="submit"
         class="send-btn"
         :disabled="disabled || !inputText.trim()"
         aria-label="Send"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
         </svg>
       </button>
@@ -46,7 +59,7 @@
       class="hidden-file-input"
       accept=".md,.txt,.csv,.json,.xml,.html,.htm,.log,.rst,.adoc,.pdf"
       @change="handleFileSelected"
-    />
+    >
   </form>
 </template>
 

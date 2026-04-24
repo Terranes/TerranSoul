@@ -60,7 +60,7 @@ pub fn all_entries() -> Vec<AgentManifest> {
             description: "Built-in Claude collaborative workspace integration. \
                           Real Anthropic API calls are made via the Paid-API brain mode."
                 .to_string(),
-            system_requirements: req,
+            system_requirements: req.clone(),
             install_method: InstallMethod::BuiltIn,
             capabilities: vec![
                 Capability::Chat,
@@ -71,6 +71,34 @@ pub fn all_entries() -> Vec<AgentManifest> {
             homepage: Some("https://anthropic.com/claude".to_string()),
             license: None,
             author: Some("Anthropic".to_string()),
+            sha256: None,
+            publisher: None,
+            signature: None,
+        },
+        // ----- GitNexus sidecar (Chunk 2.1) -----------------------------
+        // Tier 1 of the GitNexus Code-Intelligence integration. The user
+        // installs `gitnexus` from npm under its own PolyForm-Noncommercial
+        // licence (we never bundle the binary); TerranSoul only spawns
+        // `npx gitnexus mcp` over stdio when the `code_intelligence`
+        // capability is granted.
+        AgentManifest {
+            name: "gitnexus-sidecar".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Out-of-process bridge to the GitNexus MCP server. \
+                          Exposes read-only code-intelligence tools (query, \
+                          context, impact, detect_changes) to TerranSoul's \
+                          brain. Requires the GitNexus npm package to be \
+                          installed separately under its own license."
+                .to_string(),
+            system_requirements: req,
+            install_method: InstallMethod::Sidecar {
+                path: "npx gitnexus mcp".to_string(),
+            },
+            capabilities: vec![Capability::Network, Capability::Filesystem],
+            ipc_protocol_version: 1,
+            homepage: Some("https://github.com/abhigyanpatwari/GitNexus".to_string()),
+            license: Some("PolyForm-Noncommercial-1.0.0".to_string()),
+            author: Some("Abhigyan Patwari".to_string()),
             sha256: None,
             publisher: None,
             signature: None,

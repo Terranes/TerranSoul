@@ -13,7 +13,10 @@
     </div>
 
     <!-- ── Step 0: Choose voice mode ── -->
-    <div v-if="step === 0" class="vs-card">
+    <div
+      v-if="step === 0"
+      class="vs-card"
+    >
       <h2>🎤 Voice Setup</h2>
       <p class="vs-desc">
         Add voice input/output to TerranSoul. Choose how you'd like to handle speech.
@@ -61,13 +64,20 @@
           <p>Skip voice setup. You can always enable it later.</p>
         </div>
       </div>
-      <button class="btn-primary" :disabled="!selectedMode" @click="goToConfig">
+      <button
+        class="btn-primary"
+        :disabled="!selectedMode"
+        @click="goToConfig"
+      >
         Next →
       </button>
     </div>
 
     <!-- ── Step 1A: Browser voice ── -->
-    <div v-else-if="step === 1 && selectedMode === 'browser'" class="vs-card">
+    <div
+      v-else-if="step === 1 && selectedMode === 'browser'"
+      class="vs-card"
+    >
       <h2>🖥 Browser Voice</h2>
       <p class="vs-desc">
         Uses the Web Speech API for speech input and Edge TTS for high-quality voice output.
@@ -86,13 +96,26 @@
         neural voices in many languages — all running through Tauri's Rust backend.
       </p>
       <div class="vs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
-        <button class="btn-primary" @click="activateBrowser">Activate →</button>
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          @click="activateBrowser"
+        >
+          Activate →
+        </button>
       </div>
     </div>
 
     <!-- ── Step 1B: Cloud API ── -->
-    <div v-else-if="step === 1 && selectedMode === 'cloud'" class="vs-card">
+    <div
+      v-else-if="step === 1 && selectedMode === 'cloud'"
+      class="vs-card"
+    >
       <h2>☁️ Cloud Voice API</h2>
       <p class="vs-desc">
         Use OpenAI's voice APIs. Requires an API key.
@@ -105,20 +128,31 @@
           type="password"
           placeholder="sk-…"
           class="vs-input"
-        />
+        >
         <div class="vs-checkboxes">
           <label class="vs-checkbox">
-            <input v-model="cloudEnableAsr" type="checkbox" />
+            <input
+              v-model="cloudEnableAsr"
+              type="checkbox"
+            >
             Enable ASR (Whisper API) — speech input
           </label>
           <label class="vs-checkbox">
-            <input v-model="cloudEnableTts" type="checkbox" />
+            <input
+              v-model="cloudEnableTts"
+              type="checkbox"
+            >
             Enable TTS (OpenAI TTS) — voice output
           </label>
         </div>
       </div>
       <div class="vs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
         <button
           class="btn-primary"
           :disabled="!cloudApiKey || (!cloudEnableAsr && !cloudEnableTts)"
@@ -130,7 +164,10 @@
     </div>
 
     <!-- ── Step 1C: Groq ── -->
-    <div v-else-if="step === 1 && selectedMode === 'groq'" class="vs-card">
+    <div
+      v-else-if="step === 1 && selectedMode === 'groq'"
+      class="vs-card"
+    >
       <h2>⚡ Groq Voice</h2>
       <p class="vs-desc">
         Groq provides ultra-fast Whisper transcription with a generous free tier.
@@ -144,16 +181,24 @@
           type="password"
           placeholder="gsk_…"
           class="vs-input"
-        />
+        >
         <div class="vs-checkboxes">
           <label class="vs-checkbox">
-            <input v-model="groqEnableTts" type="checkbox" />
+            <input
+              v-model="groqEnableTts"
+              type="checkbox"
+            >
             Also enable TTS (OpenAI TTS) — voice output
           </label>
         </div>
       </div>
       <div class="vs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
         <button
           class="btn-primary"
           :disabled="!groqApiKey"
@@ -165,8 +210,13 @@
     </div>
 
     <!-- ── Done ── -->
-    <div v-else-if="step === 99" class="vs-card vs-done">
-      <div class="vs-done-icon">🎉</div>
+    <div
+      v-else-if="step === 99"
+      class="vs-card vs-done"
+    >
+      <div class="vs-done-icon">
+        🎉
+      </div>
       <h2>Voice configured!</h2>
       <p v-if="selectedMode === 'browser'">
         Using <strong>Web Speech API</strong> for speech input and
@@ -182,7 +232,12 @@
       <p v-else>
         Voice is <strong>disabled</strong>. You can enable it anytime from settings.
       </p>
-      <button class="btn-primary" @click="emit('done')">Continue →</button>
+      <button
+        class="btn-primary"
+        @click="emit('done')"
+      >
+        Continue →
+      </button>
     </div>
   </div>
 </template>

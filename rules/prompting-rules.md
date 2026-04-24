@@ -87,7 +87,8 @@ After every chunk, verify:
 ```bash
 # Frontend
 cd /path/to/TerranSoul
-npm run build          # vue-tsc + vite build; must emit dist/ with zero errors
+npm run build               # vue-tsc + vite build; must emit dist/ with zero errors
+npm run lint                # ESLint (max-lines, vue/recommended, ts-eslint/recommended)
 
 # Rust backend
 cd src-tauri
@@ -120,3 +121,81 @@ When a chunk is marked `done`:
 4. Update the `Next Chunk` section to point to the next `not-started` chunk
 
 This rule is mandatory for every AI agent session.
+
+---
+
+## ENFORCEMENT RULE — Completion-Log File Size Cap
+
+> **`rules/completion-log.md` always contains the LATEST entries and must not exceed 10,000 lines.**
+> When the cap is reached, the OLDEST entries are moved to a dated archive file
+> named `completion-log-{YYYY-MM-DD}.md` (the date is the **archive date**, i.e.
+> the date the rotation is performed). `rules/completion-log.md` itself is
+> never renamed — it is the single, stable filename that always points at the
+> newest history.
+
+The completion log grows monotonically with every shipped chunk. To keep
+the active file readable, greppable, and cheap to load into agent
+context, the log is **rotated when it would otherwise exceed 10,000 lines**.
+
+### Rotation procedure
+
+When an AI agent is about to append a new completion entry and the
+existing `rules/completion-log.md` already has, or would after the
+append exceed, **10,000 lines**:
+
+1. **Decide the split point.** Walk the existing entries (newest first
+   at the top) and pick the boundary so that:
+   - All entries kept in `completion-log.md` together with the new
+     incoming entry stay strictly **under 10,000 lines** (including the
+     banner, the Table of Contents, and the archive index block).
+   - The **oldest** entries — and only the oldest — are the ones that
+     move out. Never split an individual chunk entry across two files.
+2. **Create the archive file** at
+   `rules/completion-log-{YYYY-MM-DD}.md`, where `{YYYY-MM-DD}` is the
+   **archive date** (the UTC date the rotation is performed, e.g.
+   `completion-log-2026-04-24.md`). The archive file contains:
+   - The same top banner / "purpose" paragraph
+   - A short `> Archived on {YYYY-MM-DD}. Newer entries live in
+     [completion-log.md](completion-log.md).` note
+   - A `## Table of Contents` rebuilt for only the archived entries
+   - The full body of every archived entry (oldest at the bottom,
+     newest at the top — reverse-chronological, same convention as the
+     active log).
+3. **Edit `rules/completion-log.md` in place** so it now contains:
+   - The same top banner / "purpose" paragraph (unchanged filename, so
+     all existing links keep working).
+   - A `> 📦 Older entries archived in:` block listing every historical
+     `completion-log-{YYYY-MM-DD}.md` file in reverse-chronological
+     order so future readers can find old chunks.
+   - A `## Table of Contents` rebuilt for only the entries that
+     remain in this file (plus the new incoming entry).
+   - The full body of those remaining entries, with the new entry at
+     the top.
+4. Commit both files in the same commit with message
+   `chore(completion-log): rotate — archive {N} oldest entries to completion-log-{YYYY-MM-DD}.md`.
+
+### Why 10,000 lines?
+
+- A 10k-line markdown file is ~400-500 KB — large but still loadable
+  by every common editor, `view` tool, and AI agent context window.
+- Rotation by **archive date** (not by chunk number, not by creation
+  date) makes the chronology obvious: any
+  `completion-log-{YYYY-MM-DD}.md` file is the snapshot of older
+  history as of that date.
+- Archived files are **never edited again** — they are an immutable
+  historical record. Only the active `rules/completion-log.md` ever
+  receives new entries, and `rules/completion-log.md` always contains
+  the latest history within the 10k-line budget.
+
+### What the agent must NOT do
+
+- Do **not** split a single chunk entry across two files.
+- Do **not** delete or summarize archived entries to save space —
+  rotate instead.
+- Do **not** rotate based on byte size, KB, or chunk count — only the
+  10,000-line threshold applies.
+- Do **not** rotate eagerly when the file is well under the cap — only
+  when the next append would cross 10,000 lines.
+- Do **not** rename `rules/completion-log.md` itself — its filename is
+  stable so external links and tooling never break. Older entries are
+  what move out, not the active file.

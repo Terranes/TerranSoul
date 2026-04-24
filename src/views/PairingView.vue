@@ -2,17 +2,30 @@
   <div class="pairing-view">
     <div class="pairing-header">
       <h2>Device Pairing</h2>
-      <p class="subtitle">Scan the QR code on another device to pair with this one.</p>
+      <p class="subtitle">
+        Scan the QR code on another device to pair with this one.
+      </p>
     </div>
 
-    <div v-if="store.error" class="error-banner">
+    <div
+      v-if="store.error"
+      class="error-banner"
+    >
       {{ store.error }}
-      <button class="dismiss-btn" @click="store.clearError()">✕</button>
+      <button
+        class="dismiss-btn"
+        @click="store.clearError()"
+      >
+        ✕
+      </button>
     </div>
 
     <section class="identity-section">
       <h3>This Device</h3>
-      <div v-if="store.deviceInfo" class="identity-card">
+      <div
+        v-if="store.deviceInfo"
+        class="identity-card"
+      >
         <div class="identity-row">
           <span class="label">Name</span>
           <span class="value">{{ store.deviceInfo.name }}</span>
@@ -26,28 +39,65 @@
           <span class="value mono truncate">{{ store.deviceInfo.public_key_b64 }}</span>
         </div>
       </div>
-      <div v-else-if="store.isLoading" class="loading">Loading identity…</div>
+      <div
+        v-else-if="store.isLoading"
+        class="loading"
+      >
+        Loading identity…
+      </div>
     </section>
 
     <section class="qr-section">
       <h3>Pairing QR Code</h3>
-      <div v-if="store.qrSvg" class="qr-container" v-html="store.qrSvg" />
-      <div v-else-if="store.isLoading" class="loading">Generating QR…</div>
-      <button v-else class="btn-primary" @click="store.loadPairingQr()">Show QR Code</button>
+      <div
+        v-if="store.qrSvg"
+        class="qr-container"
+        v-html="store.qrSvg"
+      />
+      <div
+        v-else-if="store.isLoading"
+        class="loading"
+      >
+        Generating QR…
+      </div>
+      <button
+        v-else
+        class="btn-primary"
+        @click="store.loadPairingQr()"
+      >
+        Show QR Code
+      </button>
     </section>
 
     <section class="trusted-section">
       <h3>Trusted Devices</h3>
-      <ul v-if="store.trustedDevices.length" class="device-list">
-        <li v-for="device in store.trustedDevices" :key="device.device_id" class="device-item">
+      <ul
+        v-if="store.trustedDevices.length"
+        class="device-list"
+      >
+        <li
+          v-for="device in store.trustedDevices"
+          :key="device.device_id"
+          class="device-item"
+        >
           <div class="device-info">
             <span class="device-name">{{ device.name }}</span>
             <span class="device-id mono">{{ device.device_id }}</span>
           </div>
-          <button class="btn-remove" @click="removeDevice(device.device_id)">Remove</button>
+          <button
+            class="btn-remove"
+            @click="removeDevice(device.device_id)"
+          >
+            Remove
+          </button>
         </li>
       </ul>
-      <p v-else class="empty-state">No trusted devices yet. Pair another device using the QR code above.</p>
+      <p
+        v-else
+        class="empty-state"
+      >
+        No trusted devices yet. Pair another device using the QR code above.
+      </p>
     </section>
   </div>
 </template>

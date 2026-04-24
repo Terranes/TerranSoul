@@ -1,5 +1,8 @@
 <template>
-  <div class="brain-view" data-testid="brain-view">
+  <div
+    class="brain-view"
+    data-testid="brain-view"
+  >
     <!-- ── Hero ────────────────────────────────────────────────────────────── -->
     <section class="bv-hero">
       <div class="bv-hero-avatar">
@@ -14,38 +17,67 @@
         <h1 class="bv-hero-title">
           {{ heroTitle }}
         </h1>
-        <p class="bv-hero-subtitle">{{ heroSubtitle }}</p>
+        <p class="bv-hero-subtitle">
+          {{ heroSubtitle }}
+        </p>
         <div class="bv-hero-pills">
-          <span class="bv-pill bv-pill-mood" :class="`bv-pill-${moodKey}`">
+          <span
+            class="bv-pill bv-pill-mood"
+            :class="`bv-pill-${moodKey}`"
+          >
             {{ moodPillLabel }}
           </span>
-          <span v-if="memoryCount > 0" class="bv-pill bv-pill-memory">
+          <span
+            v-if="memoryCount > 0"
+            class="bv-pill bv-pill-memory"
+          >
             🧠 {{ memoryCount }} memories
           </span>
-          <span v-if="edgeCount > 0" class="bv-pill bv-pill-edges">
+          <span
+            v-if="edgeCount > 0"
+            class="bv-pill bv-pill-edges"
+          >
             🔗 {{ edgeCount }} connections
           </span>
-          <span v-if="brain.ollamaStatus.running" class="bv-pill bv-pill-ollama">
+          <span
+            v-if="brain.ollamaStatus.running"
+            class="bv-pill bv-pill-ollama"
+          >
             🖥 Ollama running
           </span>
         </div>
       </div>
       <div class="bv-hero-actions">
-        <button class="btn-primary" @click="$emit('navigate', 'brain-setup')">
+        <button
+          class="btn-primary"
+          @click="$emit('navigate', 'brain-setup')"
+        >
           ⚙ Brain setup
         </button>
-        <button class="btn-secondary" @click="$emit('navigate', 'marketplace')">
+        <button
+          class="btn-secondary"
+          @click="$emit('navigate', 'marketplace')"
+        >
           🏪 Switch model
         </button>
-        <button class="btn-secondary" @click="refresh" :disabled="isRefreshing">
+        <button
+          class="btn-secondary"
+          :disabled="isRefreshing"
+          @click="refresh"
+        >
           {{ isRefreshing ? '⟳ Refreshing…' : '↻ Refresh' }}
         </button>
       </div>
     </section>
 
     <!-- ── Quick mode switcher ─────────────────────────────────────────────── -->
-    <section class="bv-mode-switcher" data-testid="bv-mode-switcher">
-      <div class="bv-section-title">⚡ Quick mode</div>
+    <section
+      class="bv-mode-switcher"
+      data-testid="bv-mode-switcher"
+    >
+      <div class="bv-section-title">
+        ⚡ Quick mode
+      </div>
       <div class="bv-mode-grid">
         <button
           v-for="opt in modeOptions"
@@ -65,7 +97,10 @@
     <!-- ── 3-column data grid ──────────────────────────────────────────────── -->
     <section class="bv-grid">
       <!-- Brain config card -->
-      <article class="bv-card" data-testid="bv-card-config">
+      <article
+        class="bv-card"
+        data-testid="bv-card-config"
+      >
         <header class="bv-card-header">
           <h3>🧬 Configuration</h3>
         </header>
@@ -80,17 +115,30 @@
           </div>
           <div class="bv-dl-row">
             <dt>Model</dt>
-            <dd class="bv-model"><code>{{ configRows.model }}</code></dd>
+            <dd class="bv-model">
+              <code>{{ configRows.model }}</code>
+            </dd>
           </div>
-          <div v-if="configRows.endpoint" class="bv-dl-row">
+          <div
+            v-if="configRows.endpoint"
+            class="bv-dl-row"
+          >
             <dt>Endpoint</dt>
-            <dd class="bv-endpoint" :title="configRows.endpoint">{{ shortUrl(configRows.endpoint) }}</dd>
+            <dd
+              class="bv-endpoint"
+              :title="configRows.endpoint"
+            >
+              {{ shortUrl(configRows.endpoint) }}
+            </dd>
           </div>
         </dl>
       </article>
 
       <!-- Hardware card -->
-      <article class="bv-card" data-testid="bv-card-hardware">
+      <article
+        class="bv-card"
+        data-testid="bv-card-hardware"
+      >
         <header class="bv-card-header">
           <h3>💻 Hardware</h3>
         </header>
@@ -107,32 +155,59 @@
             <dt>RAM</dt>
             <dd>{{ hardwareRows.ram }}</dd>
           </div>
-          <div v-if="hardwareRows.gpu" class="bv-dl-row">
+          <div
+            v-if="hardwareRows.gpu"
+            class="bv-dl-row"
+          >
             <dt>GPU</dt>
             <dd>{{ hardwareRows.gpu }}</dd>
           </div>
         </dl>
-        <div v-if="ramTier" class="bv-ram-bar" :title="`RAM tier: ${ramTier.label}`">
-          <div class="bv-ram-fill" :style="{ width: ramTier.percent + '%', background: ramTier.color }" />
+        <div
+          v-if="ramTier"
+          class="bv-ram-bar"
+          :title="`RAM tier: ${ramTier.label}`"
+        >
+          <div
+            class="bv-ram-fill"
+            :style="{ width: ramTier.percent + '%', background: ramTier.color }"
+          />
         </div>
       </article>
 
       <!-- Memory health card -->
-      <article class="bv-card" data-testid="bv-card-memory">
+      <article
+        class="bv-card"
+        data-testid="bv-card-memory"
+      >
         <header class="bv-card-header">
           <h3>🧠 Memory health</h3>
-          <button class="bv-card-link" @click="emitNavigate('memory')">Open explorer →</button>
+          <button
+            class="bv-card-link"
+            @click="emitNavigate('memory')"
+          >
+            Open explorer →
+          </button>
         </header>
         <div class="bv-memory-tiers">
-          <div class="bv-mem-tier tier-short" :title="`Short-term: ${memoryStats.short_count}`">
+          <div
+            class="bv-mem-tier tier-short"
+            :title="`Short-term: ${memoryStats.short_count}`"
+          >
             <span class="bv-mem-num">{{ memoryStats.short_count }}</span>
             <span class="bv-mem-label">short</span>
           </div>
-          <div class="bv-mem-tier tier-working" :title="`Working: ${memoryStats.working_count}`">
+          <div
+            class="bv-mem-tier tier-working"
+            :title="`Working: ${memoryStats.working_count}`"
+          >
             <span class="bv-mem-num">{{ memoryStats.working_count }}</span>
             <span class="bv-mem-label">working</span>
           </div>
-          <div class="bv-mem-tier tier-long" :title="`Long-term: ${memoryStats.long_count}`">
+          <div
+            class="bv-mem-tier tier-long"
+            :title="`Long-term: ${memoryStats.long_count}`"
+          >
             <span class="bv-mem-num">{{ memoryStats.long_count }}</span>
             <span class="bv-mem-label">long</span>
           </div>
@@ -150,7 +225,10 @@
             <dt>Avg freshness</dt>
             <dd>
               <span class="bv-decay-bar">
-                <span class="bv-decay-fill" :style="{ width: (memoryStats.avg_decay * 100) + '%' }" />
+                <span
+                  class="bv-decay-fill"
+                  :style="{ width: (memoryStats.avg_decay * 100) + '%' }"
+                />
               </span>
               <span class="bv-decay-num">{{ Math.round(memoryStats.avg_decay * 100) }}%</span>
             </dd>
@@ -160,15 +238,24 @@
     </section>
 
     <!-- ── Cognitive-kind breakdown (docs §3.5) ───────────────────────────── -->
-    <section class="bv-card bv-cognitive" data-testid="bv-cognitive-breakdown">
+    <section
+      class="bv-card bv-cognitive"
+      data-testid="bv-cognitive-breakdown"
+    >
       <header class="bv-card-header">
         <h3>🧩 Cognitive kinds</h3>
         <span class="bv-card-subtle">Episodic / Semantic / Procedural — derived from tags + content</span>
       </header>
-      <div v-if="cognitiveKinds.total === 0" class="bv-cognitive-empty">
+      <div
+        v-if="cognitiveKinds.total === 0"
+        class="bv-cognitive-empty"
+      >
         No memories yet — once you add some, they'll be classified here.
       </div>
-      <div v-else class="bv-cognitive-bars">
+      <div
+        v-else
+        class="bv-cognitive-bars"
+      >
         <div
           v-for="row in cognitiveRows"
           :key="row.key"
@@ -182,15 +269,23 @@
             <span class="bv-cog-count">{{ row.count }} <small>({{ row.percent }}%)</small></span>
           </div>
           <div class="bv-cog-bar">
-            <div class="bv-cog-bar-fill" :style="{ width: row.percent + '%' }" />
+            <div
+              class="bv-cog-bar-fill"
+              :style="{ width: row.percent + '%' }"
+            />
           </div>
-          <div class="bv-cog-desc">{{ row.description }}</div>
+          <div class="bv-cog-desc">
+            {{ row.description }}
+          </div>
         </div>
       </div>
     </section>
 
     <!-- ── RAG capability strip (docs §4 / §10) ────────────────────────────── -->
-    <section class="bv-card bv-rag" data-testid="bv-rag-capability">
+    <section
+      class="bv-card bv-rag"
+      data-testid="bv-rag-capability"
+    >
       <header class="bv-card-header">
         <h3>📡 RAG capability</h3>
         <span class="bv-card-subtle">6-signal hybrid scoring — vector search needs a local embedding model</span>
@@ -216,17 +311,33 @@
 
 
     <!-- ── Active selection (docs §20) ─────────────────────────────────────── -->
-    <section class="bv-card" data-testid="bv-active-selection">
+    <section
+      class="bv-card"
+      data-testid="bv-active-selection"
+    >
       <header class="bv-card-header">
         <h3>🎯 Active selection</h3>
         <span class="bv-card-subtle">
-          <a class="bv-link" href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#brain-component-selection--routing--how-the-llm-knows-what-to-use" target="_blank" rel="noopener">
+          <a
+            class="bv-link"
+            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#brain-component-selection--routing--how-the-llm-knows-what-to-use"
+            target="_blank"
+            rel="noopener"
+          >
             How the brain picks each component →
           </a>
         </span>
       </header>
-      <div v-if="!brainSelection" class="bv-cog-desc">Loading…</div>
-      <dl v-else class="bv-config-list">
+      <div
+        v-if="!brainSelection"
+        class="bv-cog-desc"
+      >
+        Loading…
+      </div>
+      <dl
+        v-else
+        class="bv-config-list"
+      >
         <dt>Provider</dt><dd>{{ selectionProviderLine }}</dd>
         <dt>Embedding</dt><dd>{{ selectionEmbeddingLine }}</dd>
         <dt>Search</dt><dd>{{ selectionSearchLine }}</dd>
@@ -237,24 +348,40 @@
     </section>
 
     <!-- ── Daily learning (docs §21) ───────────────────────────────────────── -->
-    <section class="bv-card" data-testid="bv-daily-learning">
+    <section
+      class="bv-card"
+      data-testid="bv-daily-learning"
+    >
       <header class="bv-card-header">
         <h3>📚 Daily learning</h3>
         <span class="bv-card-subtle">
-          <a class="bv-link" href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop" target="_blank" rel="noopener">
+          <a
+            class="bv-link"
+            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop"
+            target="_blank"
+            rel="noopener"
+          >
             How conversation becomes long-term memory →
           </a>
         </span>
       </header>
-      <div v-if="!autoLearnPolicy" class="bv-cog-desc">Loading…</div>
+      <div
+        v-if="!autoLearnPolicy"
+        class="bv-cog-desc"
+      >
+        Loading…
+      </div>
       <template v-else>
-        <label class="bv-config-list" style="display:flex;align-items:center;gap:8px;">
+        <label
+          class="bv-config-list"
+          style="display:flex;align-items:center;gap:8px;"
+        >
           <input
             type="checkbox"
             :checked="autoLearnPolicy.enabled"
-            @change="onToggleAutoLearn(($event.target as HTMLInputElement).checked)"
             data-testid="bv-autolearn-toggle"
-          />
+            @change="onToggleAutoLearn(($event.target as HTMLInputElement).checked)"
+          >
           <span>Enable auto-learn from conversation</span>
         </label>
         <dl class="bv-config-list">
@@ -266,7 +393,11 @@
           <dd>{{ autoLearnStatusLine }}</dd>
         </dl>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <button class="bv-link" @click="forceExtractNow" data-testid="bv-autolearn-force">
+          <button
+            class="bv-link"
+            data-testid="bv-autolearn-force"
+            @click="forceExtractNow"
+          >
             Extract now →
           </button>
         </div>
@@ -291,14 +422,28 @@
         <span class="bv-graph-subtitle">
           Top {{ topMemories.length }} most-connected
           {{ topMemories.length === 1 ? 'memory' : 'memories' }} ·
-          <button class="bv-link" @click="$emit('navigate', 'memory')">Open full explorer →</button>
+          <button
+            class="bv-link"
+            @click="$emit('navigate', 'memory')"
+          >Open full explorer →</button>
         </span>
       </header>
-      <div v-if="topMemories.length === 0" class="bv-graph-empty">
+      <div
+        v-if="topMemories.length === 0"
+        class="bv-graph-empty"
+      >
         No memories yet — chat with your brain or
-        <button class="bv-link" @click="$emit('navigate', 'memory')">add one</button>.
+        <button
+          class="bv-link"
+          @click="$emit('navigate', 'memory')"
+        >
+          add one
+        </button>.
       </div>
-      <div v-else class="bv-graph-wrap">
+      <div
+        v-else
+        class="bv-graph-wrap"
+      >
         <MemoryGraph
           :memories="topMemories"
           :edges="topEdges"

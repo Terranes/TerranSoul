@@ -86,7 +86,7 @@ test('animation: LLM responds with clap, angry, and happy emotions', async ({ pa
   // the entire body lands after `done:true` — the test still has teeth via
   // the explicit Stream 2 / Stream 3 / per-emotion assertions below.
   const observedStreamLen = await sawStreamingText;
-  // eslint-disable-next-line no-console
+   
   console.log(`[3-streams] stream-1 max streamingText length: ${observedStreamLen}`);
 
   // Stream 3 verified: streaming flag cleared once `done:true` arrived.
