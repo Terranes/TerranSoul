@@ -137,6 +137,7 @@ pub async fn set_brain_mode(
     // probes /api/tags again instead of carrying a stale "unsupported"
     // verdict across a brain switch.
     crate::brain::ollama_agent::clear_embed_caches().await;
+    crate::brain::cloud_embeddings::clear_cloud_embed_cache().await;
 
     Ok(())
 }
@@ -156,6 +157,7 @@ pub async fn get_embed_cache_status() -> brain::ollama_agent::EmbedCacheSnapshot
 #[tauri::command]
 pub async fn reset_embed_cache() -> Result<(), String> {
     brain::ollama_agent::clear_embed_caches().await;
+    crate::brain::cloud_embeddings::clear_cloud_embed_cache().await;
     Ok(())
 }
 

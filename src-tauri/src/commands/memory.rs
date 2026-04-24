@@ -3,6 +3,28 @@ use tauri::State;
 use crate::memory::{MemoryEntry, MemoryUpdate, NewMemory};
 use crate::AppState;
 
+/// Read brain_mode + active_brain from state for use by `embed_for_mode`.
+/// Returns `(Option<BrainMode>, Option<String>)`.
+fn read_embed_context(state: &AppState) -> (Option<crate::brain::BrainMode>, Option<String>) {
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+    let active_brain = state
+        .active_brain
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+    (brain_mode, active_brain)
+}
+
+/// Embed text using the current brain mode (cloud or local).
+async fn embed(state: &AppState, text: &str) -> Option<Vec<f32>> {
+    let (brain_mode, active_brain) = read_embed_context(state);
+    crate::brain::embed_for_mode(text, brain_mode.as_ref(), active_brain.as_deref()).await
+}
+
 /// Add a new long-term memory.
 /// Automatically generates a vector embedding when a brain is configured.
 /// When `AppSettings.auto_tag` is enabled and a brain is active, runs an
@@ -33,32 +55,29 @@ pub async fn add_memory(
     }; // lock released before await
 
     // Best-effort embedding — non-blocking, silently ignored on failure.
-    let model_opt = state
-        .active_brain
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
-    if let Some(ref model) = model_opt {
-        if let Some(emb) = crate::brain::OllamaAgent::embed_text(&content, model).await {
-            // Find near-duplicate while holding the lock, then release.
-            let dup_info: Option<(i64, String)> = {
-                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-                let _ = store.set_embedding(entry.id, &emb);
+    // Chunk 16.9: uses cloud embedding API when brain mode is FreeApi/PaidApi.
+    if let Some(emb) = embed(&state, &content).await {
+        // Find near-duplicate while holding the lock, then release.
+        let dup_info: Option<(i64, String)> = {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let _ = store.set_embedding(entry.id, &emb);
 
-                // Contradiction detection (Chunk 17.2): check for near-duplicate.
-                store
-                    .find_duplicate(&emb, 0.85)
-                    .ok()
-                    .flatten()
-                    .filter(|&dup_id| dup_id != entry.id)
-                    .and_then(|dup_id| {
-                        store.get_by_id(dup_id).ok().map(|dup| (dup_id, dup.content))
-                    })
-            }; // lock released here
+            // Contradiction detection (Chunk 17.2): check for near-duplicate.
+            store
+                .find_duplicate(&emb, 0.85)
+                .ok()
+                .flatten()
+                .filter(|&dup_id| dup_id != entry.id)
+                .and_then(|dup_id| {
+                    store.get_by_id(dup_id).ok().map(|dup| (dup_id, dup.content))
+                })
+        }; // lock released here
 
-            // If a near-duplicate exists, ask the LLM whether the two
-            // statements contradict. If so, open a MemoryConflict row.
-            if let Some((dup_id, dup_content)) = dup_info {
+        // If a near-duplicate exists, ask the LLM whether the two
+        // statements contradict. If so, open a MemoryConflict row.
+        if let Some((dup_id, dup_content)) = dup_info {
+            let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+            if let Some(ref model) = model_opt {
                 let agent = crate::brain::OllamaAgent::new(model);
                 if let Some(result) = agent
                     .check_contradiction(&dup_content, &content)
@@ -260,23 +279,24 @@ pub async fn semantic_search_memories(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::memory::MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
+
+    // Fast path: embed query → cosine search (no LLM call needed).
+    // Chunk 16.9: uses cloud embedding when brain mode is FreeApi/PaidApi.
+    if let Some(query_emb) = embed(&state, &query).await {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let results = store.vector_search(&query_emb, limit).map_err(|e| e.to_string())?;
+        if !results.is_empty() {
+            return Ok(results);
+        }
+    }
+
+    // Fallback: brute-force LLM ranking (requires active_brain for Ollama).
     let model_opt = state
         .active_brain
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
-
     if let Some(model) = model_opt {
-        // Fast path: embed query → cosine search (no LLM call needed).
-        if let Some(query_emb) = crate::brain::OllamaAgent::embed_text(&query, &model).await {
-            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            let results = store.vector_search(&query_emb, limit).map_err(|e| e.to_string())?;
-            if !results.is_empty() {
-                return Ok(results);
-            }
-        }
-
-        // Fallback: brute-force LLM ranking.
         let entries: Vec<crate::memory::MemoryEntry> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.get_all().map_err(|e| e.to_string())?
@@ -307,12 +327,11 @@ pub async fn semantic_search_memories(
 pub async fn backfill_embeddings(
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
-    let model = state
-        .active_brain
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+    // Verify at least one embed source is available.
+    let (brain_mode, active_brain) = read_embed_context(&state);
+    if brain_mode.is_none() && active_brain.is_none() {
+        return Err("No brain configured. Set up a brain first.".to_string());
+    }
 
     let unembedded: Vec<(i64, String)> = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -321,7 +340,7 @@ pub async fn backfill_embeddings(
 
     let mut count = 0usize;
     for (id, content) in &unembedded {
-        if let Some(emb) = crate::brain::OllamaAgent::embed_text(content, &model).await {
+        if let Some(emb) = embed(&state, content).await {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             if store.set_embedding(*id, &emb).is_ok() {
                 count += 1;
@@ -382,13 +401,8 @@ pub async fn hybrid_search_memories(
 ) -> Result<Vec<MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
 
-    // Try to generate query embedding for vector component
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, &model).await
-    } else {
-        None
-    };
+    // Chunk 16.9: use cloud embedding when brain mode is FreeApi/PaidApi.
+    let query_emb = embed(&state, &query).await;
 
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.hybrid_search(&query, query_emb.as_deref(), limit).map_err(|e| e.to_string())
@@ -408,12 +422,7 @@ pub async fn hybrid_search_memories_rrf(
 ) -> Result<Vec<MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
 
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, &model).await
-    } else {
-        None
-    };
+    let query_emb = embed(&state, &query).await;
 
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store
@@ -458,9 +467,9 @@ pub async fn hyde_search_memories(
         let agent = crate::brain::OllamaAgent::new(&model);
         let hypothetical = agent.hyde_complete(&query).await;
         let text_to_embed = hypothetical.as_deref().unwrap_or(query.as_str());
-        crate::brain::OllamaAgent::embed_text(text_to_embed, &model).await
+        embed(&state, text_to_embed).await
     } else {
-        None
+        embed(&state, &query).await
     };
 
     // Step 3: RRF-fused retrieval with the (possibly hypothetical) embedding.
@@ -504,11 +513,7 @@ pub async fn rerank_search_memories(
 
     // Stage 1 — RRF-fused recall.
     let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(ref model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, model).await
-    } else {
-        None
-    };
+    let query_emb = embed(&state, &query).await;
 
     let candidates: Vec<MemoryEntry> = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -1010,12 +1015,7 @@ pub async fn multi_hop_search_memories(
 ) -> Result<Vec<MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
     let hops = hops.unwrap_or(1).min(3); // hard cap to avoid runaway expansion
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, &model).await
-    } else {
-        None
-    };
+    let query_emb = embed(&state, &query).await;
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store
         .hybrid_search_with_graph(&query, query_emb.as_deref(), limit, hops)

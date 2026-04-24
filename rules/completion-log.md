@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.9 — Cloud embedding API for free / paid modes](#chunk-169--cloud-embedding-api-for-free--paid-modes) | 2026-04-26 |
 | [Chunk 17.2 — Contradiction resolution (LLM picks winner)](#chunk-172--contradiction-resolution-llm-picks-winner) | 2026-04-26 |
 | [Chunk 16.11 — Semantic chunking pipeline](#chunk-1611--semantic-chunking-pipeline) | 2026-04-26 |
 | [Chunk 17.4 — Memory importance auto-adjustment](#chunk-174--memory-importance-auto-adjustment) | 2026-04-26 |
@@ -164,6 +165,33 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.9 — Cloud embedding API for free / paid modes
+
+**Date.** 2026-04-26
+
+**What.** Extended the embedding pipeline to dispatch to OpenAI-compatible `/v1/embeddings` when the brain mode is `FreeApi` or `PaidApi`, so cloud users get real vector RAG quality without requiring local Ollama. Previously, all embedding calls went through `OllamaAgent::embed_text` which only talks to `127.0.0.1:11434` — when the brain mode was cloud, embeddings were skipped entirely and RAG degraded to keyword-only retrieval.
+
+**Architecture.** New unified `embed_for_mode(text, brain_mode, active_brain)` dispatcher:
+- `LocalOllama` → delegates to existing `OllamaAgent::embed_text`
+- `PaidApi` → calls provider's `/v1/embeddings` with default model (e.g. `text-embedding-3-small` for OpenAI)
+- `FreeApi` → calls free provider's embed endpoint where supported (Mistral, GitHub Models, SiliconFlow, NVIDIA NIM); returns `None` for providers without embed API (Pollinations, Groq, Cerebras)
+- `None` → legacy fallback to Ollama
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/brain/cloud_embeddings.rs` (NEW) | `embed_text_openai` (OpenAI-compat `/v1/embeddings` caller), `embed_for_mode` (unified dispatcher), unsupported-provider cache, default model mappings. 8 unit tests. |
+| `src-tauri/src/brain/mod.rs` | `pub mod cloud_embeddings; pub use cloud_embeddings::embed_for_mode;` |
+| `src-tauri/src/commands/memory.rs` | `embed()` helper + all 8 embed call sites switched from `OllamaAgent::embed_text` to `embed_for_mode`. |
+| `src-tauri/src/commands/streaming.rs` | `stream_openai_api` now calls `embed_for_mode` for vector RAG (was `None` before). |
+| `src-tauri/src/commands/ingest.rs` | Ingest pipeline embed loop switched to `embed_for_mode`. |
+| `src-tauri/src/commands/brain.rs` | `set_brain_mode` + `reset_embed_cache` now also clear cloud embed cache. |
+
+**Test count.** 1039 Rust (+8), 1083 Vitest (unchanged). Clippy + vue-tsc clean.
 
 ---
 

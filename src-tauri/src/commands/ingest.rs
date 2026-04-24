@@ -378,15 +378,21 @@ async fn run_ingest_task(
     // Embed (best effort)
     emit_progress(app, task_id, 85, "Generating embeddings…", created, chunk_count);
 
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    if let Some(model) = model_opt {
+    // Chunk 16.9: use cloud embedding when brain mode is FreeApi/PaidApi.
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
+    if brain_mode.is_some() || active_brain.is_some() {
         let recent: Vec<crate::memory::MemoryEntry> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.get_all().unwrap_or_default().into_iter().take(created).collect()
         };
         for (i, entry) in recent.iter().enumerate() {
             if cancel_flag.load(Ordering::Relaxed) { break; }
-            if let Some(emb) = crate::brain::OllamaAgent::embed_text(&entry.content, &model).await {
+            if let Some(emb) = crate::brain::embed_for_mode(
+                &entry.content,
+                brain_mode.as_ref(),
+                active_brain.as_deref(),
+            ).await {
                 if let Ok(s) = state.memory_store.lock() {
                     let _ = s.set_embedding(entry.id, &emb);
                 }

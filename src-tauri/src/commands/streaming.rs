@@ -294,8 +294,19 @@ async fn stream_openai_api<R: tauri::Runtime>(
         .unwrap_or(_message);
 
     // Hybrid search: combines keyword + recency + importance + decay scoring.
+    // Chunk 16.9: use cloud embedding for the vector component so cloud modes
+    // get real vector RAG instead of keyword-only retrieval.
     // Memories below the user-tunable relevance threshold are skipped
     // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
+    let query_emb = crate::brain::embed_for_mode(
+        user_query,
+        brain_mode.as_ref(),
+        active_brain.as_deref(),
+    )
+    .await;
+
     let threshold = state
         .app_settings
         .lock()
@@ -304,7 +315,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
     let relevant: Vec<crate::memory::MemoryEntry> = {
         match state.memory_store.lock() {
             Ok(store) => {
-                store.hybrid_search_with_threshold(user_query, None, 5, threshold).unwrap_or_default()
+                store.hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold).unwrap_or_default()
             }
             Err(_) => vec![],
         }

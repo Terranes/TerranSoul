@@ -1838,7 +1838,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │                                                                     │
 │  PHASE 4 — Scale                                                    │
 │  ├── ○ ANN index (usearch crate) for >1M memories                 │
-│  ├── ○ Cloud embedding API for free/paid modes                     │
+│  ├── ✓ Cloud embedding API for free/paid modes                     │
+│  │     (`brain::cloud_embeddings::embed_for_mode` dispatcher,       │
+│  │      OpenAI-compat `/v1/embeddings`) — Chunk 16.9                │
 │  ├── ✓ Chunking pipeline for large documents                       │
 │  │     (`memory::chunking`, `text-splitter` crate, semantic         │
 │  │      Markdown/text splitting, dedup, heading metadata)           │

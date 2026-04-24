@@ -182,6 +182,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 **Providers & modes** (`src-tauri/src/brain/`)
 - **4 brain modes:** Free API (Pollinations, Groq), Paid API (OpenAI / Anthropic / Groq / OpenAI-compatible), Local Ollama, Stub fallback
 - Implementations: `OllamaAgent`, `OpenAiClient`, `FreeProvider`, `ProviderRotator`, `StubAgent`
+- Cloud embedding API (`cloud_embeddings.rs`) — unified `embed_for_mode` dispatcher routes to OpenAI-compatible `/v1/embeddings` for paid/free cloud modes, so vector RAG works without local Ollama
 - External CLI agents (Chunk 1.5): multi-agent **roster** + Temporal-style **durable workflow engine** (`src-tauri/src/agents/`, `src-tauri/src/workflows/`)
 - Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM
 - Zero-setup first launch — free brain auto-configures with no API keys
@@ -433,7 +434,7 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 ## Development Status
 
 **Completed phases:** 18 (Phases 0–11 foundation, 12 docs, 13 code-RAG, 14 partial, 18 categorisation)
-**Test suite:** 1083 frontend (Vitest) + 1031 backend (cargo) + 4 E2E (Playwright) — all passing
+**Test suite:** 1083 frontend (Vitest) + 1039 backend (cargo) + 4 E2E (Playwright) — all passing
 **Current focus:** Phases 14–17 — Persona refinement, AI Coding Integrations, Modern RAG, Brain Intelligence
 **See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 
