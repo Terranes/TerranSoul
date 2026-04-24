@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod brain_memory;
+pub mod ann_index;
 pub mod auto_learn;
 pub mod auto_tag;
 pub mod chunking;

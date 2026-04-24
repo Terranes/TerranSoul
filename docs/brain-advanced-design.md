@@ -1840,7 +1840,10 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │         edges, 3-phase lock-safe pattern) — Chunk 17.6              │
 │                                                                     │
 │  PHASE 4 — Scale                                                    │
-│  ├── ○ ANN index (usearch crate) for >1M memories                 │
+│  ├── ✓ ANN index (usearch crate) for >1M memories                 │
+│  │     (`memory::ann_index::AnnIndex` — HNSW via usearch 2.x,       │
+│  │      lazy OnceCell init, auto-rebuild, periodic save)             │
+│  │     — Chunk 16.10                                                │
 │  ├── ✓ Cloud embedding API for free/paid modes                     │
 │  │     (`brain::cloud_embeddings::embed_for_mode` dispatcher,       │
 │  │      OpenAI-compat `/v1/embeddings`) — Chunk 16.9                │

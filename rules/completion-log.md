@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.10 — ANN index (usearch)](#chunk-1610--ann-index-usearch) | 2026-04-25 |
 | [Chunk 17.6 — Edge conflict detection](#chunk-176--edge-conflict-detection) | 2026-04-26 |
 | [Chunk 16.9 — Cloud embedding API for free / paid modes](#chunk-169--cloud-embedding-api-for-free--paid-modes) | 2026-04-26 |
 | [Chunk 17.2 — Contradiction resolution (LLM picks winner)](#chunk-172--contradiction-resolution-llm-picks-winner) | 2026-04-26 |
@@ -166,6 +167,25 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.10 — ANN index (usearch)
+
+**Date.** 2026-04-25
+
+**Summary.** Replace brute-force O(n) cosine scan in `vector_search` and `find_duplicate` with an HNSW ANN index via the `usearch` crate (v2.25). Index is lazily initialized on first vector operation, auto-rebuilt from DB embeddings when missing, and periodically persisted to `vectors.usearch` alongside `memory.db`. Falls back to brute-force when the index is unavailable (dimension mismatch, empty DB, corrupt file).
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/ann_index.rs` | **NEW** — `AnnIndex` wrapper (HNSW via usearch), `detect_dimensions()`, save/load/rebuild, 8 tests. |
+| `src-tauri/src/memory/mod.rs` | Added `pub mod ann_index;` |
+| `src-tauri/src/memory/store.rs` | Added `ann: OnceCell<AnnIndex>` + `data_dir` fields; `ann_index()` lazy init; `ensure_ann_for_dim()`; `vector_search` ANN fast-path; `find_duplicate` ANN fast-path; `set_embedding` updates index; `delete` removes from index |
+| `src-tauri/Cargo.toml` | Added `usearch = "2"` dependency |
+
+**Test counts.** 1053 Rust (+8 new), 1083 Vitest (unchanged).
 
 ---
 

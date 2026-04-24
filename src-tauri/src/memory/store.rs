@@ -178,6 +178,12 @@ pub struct MemoryStats {
 /// SQLite-backed persistent memory store.
 pub struct MemoryStore {
     conn: Connection,
+    /// Optional ANN index for fast vector search (Chunk 16.10).
+    /// Initialized lazily on first vector operation.
+    ann: std::cell::OnceCell<super::ann_index::AnnIndex>,
+    /// Data directory for persisting the ANN index file.
+    /// `None` for in-memory stores (tests).
+    data_dir: Option<std::path::PathBuf>,
 }
 
 impl MemoryStore {
@@ -199,7 +205,11 @@ impl MemoryStore {
         );
         migrations::migrate_to_latest(&conn)
             .expect("memory schema migration failed");
-        MemoryStore { conn }
+        MemoryStore {
+            conn,
+            ann: std::cell::OnceCell::new(),
+            data_dir: Some(data_dir.to_path_buf()),
+        }
     }
 
     /// Create an in-memory store (for tests).
@@ -211,7 +221,11 @@ impl MemoryStore {
         let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
         migrations::migrate_to_latest(&conn)
             .expect("memory schema migration failed");
-        MemoryStore { conn }
+        MemoryStore {
+            conn,
+            ann: std::cell::OnceCell::new(),
+            data_dir: None,
+        }
     }
 
     /// Return the current schema version.
@@ -224,6 +238,63 @@ impl MemoryStore {
     /// own SQL without exposing `rusqlite::Connection` to the rest of the app.
     pub(crate) fn conn(&self) -> &Connection {
         &self.conn
+    }
+
+    /// Lazily initialize and return the ANN index.
+    ///
+    /// On first call, detects the embedding dimensionality from the DB,
+    /// then either loads the persisted index from disk or rebuilds it.
+    /// Returns `None` if no embeddings exist yet (dimension unknown).
+    fn ann_index(&self) -> Option<&super::ann_index::AnnIndex> {
+        // If already initialized, return it.
+        if let Some(idx) = self.ann.get() {
+            return Some(idx);
+        }
+        // Detect dimensions from existing embeddings.
+        let dims = super::ann_index::detect_dimensions(&self.conn)?;
+        if dims == 0 {
+            return None;
+        }
+        // Try to initialize the index.
+        let idx = if let Some(dir) = &self.data_dir {
+            super::ann_index::AnnIndex::open(dir, dims).ok()?
+        } else {
+            super::ann_index::AnnIndex::new(dims).ok()?
+        };
+        // If the index is empty, rebuild from DB.
+        if idx.is_empty() {
+            if let Ok(entries) = self.get_with_embeddings() {
+                let iter = entries.iter().filter_map(|e| {
+                    let emb = e.embedding.as_ref()?;
+                    Some((e.id, emb.as_slice()))
+                });
+                let _ = idx.rebuild(iter);
+            }
+        }
+        // Store in OnceCell (may race if called concurrently, but
+        // MemoryStore is behind a Mutex so that won't happen).
+        let _ = self.ann.set(idx);
+        self.ann.get()
+    }
+
+    /// Initialize the ANN index with a known dimensionality (e.g. after
+    /// the first embedding is computed).  No-op if already initialized.
+    fn ensure_ann_for_dim(&self, dim: usize) -> Option<&super::ann_index::AnnIndex> {
+        if let Some(idx) = self.ann.get() {
+            if idx.dimensions() == dim {
+                return Some(idx);
+            }
+            // Dimension changed — can't reinitialize a OnceCell, so fall
+            // back to brute-force until restart.
+            return None;
+        }
+        let idx = if let Some(dir) = &self.data_dir {
+            super::ann_index::AnnIndex::open(dir, dim).ok()?
+        } else {
+            super::ann_index::AnnIndex::new(dim).ok()?
+        };
+        let _ = self.ann.set(idx);
+        self.ann.get()
     }
 
     /// Insert a new memory entry and return it with its assigned id.
@@ -375,6 +446,10 @@ impl MemoryStore {
     pub fn delete(&self, id: i64) -> SqlResult<()> {
         self.conn
             .execute("DELETE FROM memories WHERE id = ?1", params![id])?;
+        // Remove from ANN index (best-effort).
+        if let Some(idx) = self.ann.get() {
+            let _ = idx.remove(id);
+        }
         Ok(())
     }
 
@@ -444,6 +519,10 @@ impl MemoryStore {
             "UPDATE memories SET embedding = ?1 WHERE id = ?2",
             params![bytes, id],
         )?;
+        // Keep the ANN index in sync (best-effort).
+        if let Some(idx) = self.ensure_ann_for_dim(embedding.len()) {
+            let _ = idx.add(id, embedding);
+        }
         Ok(())
     }
 
@@ -471,12 +550,38 @@ impl MemoryStore {
 
     /// Fast cosine-similarity vector search.  Returns the top `limit`
     /// memory entries ranked by similarity to `query_embedding`.
-    /// Pure arithmetic — no LLM call, runs in <5 ms for 100 k entries.
+    ///
+    /// Uses the HNSW ANN index (Chunk 16.10) when available for O(log n)
+    /// lookup; falls back to brute-force O(n) scan when the index is
+    /// missing, empty, or has a dimension mismatch.
     pub fn vector_search(
         &self,
         query_embedding: &[f32],
         limit: usize,
     ) -> SqlResult<Vec<MemoryEntry>> {
+        // ── Fast path: ANN index ──────────────────────────────────────────
+        if let Some(idx) = self.ann_index() {
+            if let Ok(matches) = idx.search(query_embedding, limit) {
+                if !matches.is_empty() {
+                    let now = now_ms();
+                    let mut results = Vec::with_capacity(matches.len());
+                    for (id, _sim) in &matches {
+                        if let Ok(entry) = self.get_by_id(*id) {
+                            let _ = self.conn.execute(
+                                "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                                params![now, entry.id],
+                            );
+                            results.push(entry);
+                        }
+                    }
+                    if !results.is_empty() {
+                        return Ok(results);
+                    }
+                }
+            }
+        }
+
+        // ── Fallback: brute-force scan ────────────────────────────────────
         let all = self.get_with_embeddings()?;
         if all.is_empty() {
             return Ok(vec![]);
@@ -509,11 +614,26 @@ impl MemoryStore {
 
     /// Check if a new text is a near-duplicate of an existing memory.
     /// Returns `Some(id)` of the most similar existing entry if cosine > threshold.
+    ///
+    /// Uses ANN index when available; falls back to brute-force scan.
     pub fn find_duplicate(
         &self,
         query_embedding: &[f32],
         threshold: f32,
     ) -> SqlResult<Option<i64>> {
+        // ── Fast path: ANN index ──────────────────────────────────────────
+        if let Some(idx) = self.ann_index() {
+            if let Ok(matches) = idx.search(query_embedding, 1) {
+                if let Some(&(id, sim)) = matches.first() {
+                    if sim >= threshold {
+                        return Ok(Some(id));
+                    }
+                }
+                return Ok(None);
+            }
+        }
+
+        // ── Fallback: brute-force scan ────────────────────────────────────
         let all = self.get_with_embeddings()?;
         let best = all
             .iter()
