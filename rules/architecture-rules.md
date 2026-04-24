@@ -23,13 +23,26 @@
    a network connection. TerranSoul Link sync is additive, not a prerequisite.
 9. **Performance Budgets** — Cap `devicePixelRatio` at 2 in the Three.js renderer.
    Keep VRM model polygon count < 100k tris for Phase 1 real-time performance.
-10. **Brain Documentation Sync (mandatory)** — Any change that touches the brain
+10. **Brain Component Reference** — Any implementation that touches the brain
+    (LLM provider, memory, RAG, ingestion, embeddings, cognitive-kind axis,
+    skill-tree quests that gate brain capabilities, etc.) **must** consult
+    `docs/brain-advanced-design.md` first to identify the brain components
+    involved and their dependency order. The doc is the source of truth for
+    which pieces (free/paid/local LLM, long-term memory, RAG, Scholar's Quest,
+    embedding model, ingestion engine) are required for a given feature, and
+    in what order they need to be active. New features must reuse the
+    existing components / quest chain rather than reimplementing parts of
+    the brain from scratch.
+11. **Brain Documentation Sync (mandatory)** — Any change that touches the brain
     surface (LLM providers, memory store, RAG pipeline, ingestion, embeddings,
     cognitive-kind classification, knowledge graph, decay/GC, brain-gating
     quests, brain-related Tauri commands or Pinia stores) **must** update
     **both** of the following in the same PR:
     - `docs/brain-advanced-design.md` — keep the design / schema / pipeline
-      / roadmap / April 2026 research-survey sections accurate.
+      / roadmap / April 2026 research-survey sections accurate, including
+      the Brain Component Selection / Routing section (§20) that explains
+      how the LLM and the orchestrator decide which component to use for
+      a given turn.
     - `README.md` — keep the "🧠 Brain System" and "💾 Memory System"
       component listings, the Human-Brain ↔ AI-System ↔ RPG-Stat mapping
       table, and the link to `docs/brain-advanced-design.md` in sync with
