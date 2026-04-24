@@ -79,6 +79,12 @@ pub enum AutoLearnDecision {
 ///   the last auto-run, or `None` if the auto-learner has never fired
 ///   in this session.
 ///
+/// Both `every_n_turns` and `min_cooldown_turns` are clamped to a
+/// minimum of `1` at evaluation time — values of `0` are treated as if
+/// the user had set `1`. This guarantees the function never divides by
+/// zero or never-fires due to mis-configuration; invalid values are
+/// neutralised rather than rejected.
+///
 /// Returns an [`AutoLearnDecision`] describing what to do and (for the
 /// "skip" variants) why.
 pub fn evaluate(

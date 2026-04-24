@@ -147,6 +147,11 @@ impl BrainSelection {
     /// All inputs are owned-or-cloned to keep this helper cheap and
     /// independent of any locks; the caller is expected to gather them
     /// from `AppState` before invoking this.
+    ///
+    /// `rotator_pick` is `(provider_id, is_healthy)` — the id of the
+    /// provider the rotator would currently serve and whether the
+    /// rotator considers it healthy. Pass `None` when the rotator has
+    /// no candidates (e.g. before any `next_healthy_provider()` call).
     pub fn from_parts(
         brain_mode: Option<&BrainMode>,
         legacy_active_brain: Option<&str>,

@@ -727,14 +727,16 @@ const autoLearnStatusLine = computed(() => {
 async function loadBrainSelection() {
   try {
     brainSelection.value = await invoke<BrainSelectionSnapshot>('get_brain_selection');
-  } catch {
+  } catch (err) {
+    console.warn('[BrainView] get_brain_selection failed:', err);
     brainSelection.value = null;
   }
 }
 async function loadAutoLearnPolicy() {
   try {
     autoLearnPolicy.value = await invoke<AutoLearnPolicy>('get_auto_learn_policy');
-  } catch {
+  } catch (err) {
+    console.warn('[BrainView] get_auto_learn_policy failed:', err);
     autoLearnPolicy.value = null;
   }
 }
@@ -744,8 +746,10 @@ async function onToggleAutoLearn(enabled: boolean) {
   try {
     await invoke('set_auto_learn_policy', { policy: next });
     autoLearnPolicy.value = next;
-  } catch {
-    // revert on failure — keep UI in sync with persisted state
+  } catch (err) {
+    console.warn('[BrainView] set_auto_learn_policy failed; reverting UI:', err);
+    // Revert on failure — keep UI in sync with persisted state.
+    // loadAutoLearnPolicy logs its own errors if the revert read also fails.
     await loadAutoLearnPolicy();
   }
 }
@@ -756,8 +760,8 @@ async function forceExtractNow() {
     conversation.lastAutoLearnTurn = conversation.totalAssistantTurns;
     await memory.fetchAll();
     await memory.getStats();
-  } catch {
-    // surfaced to user via the lastAutoLearnDecision = null branch
+  } catch (err) {
+    console.warn('[BrainView] force extract_memories_from_session failed:', err);
   }
 }
 
