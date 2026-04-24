@@ -47,6 +47,9 @@
 16. [Scaling Roadmap](#scaling-roadmap)
 17. [FAQ](#faq)
 18. [Diagrams Index](#diagrams-index)
+19. [April 2026 Research Survey — Modern RAG & Agent-Memory Techniques](#april-2026-research-survey--modern-rag--agent-memory-techniques)
+20. [Brain Component Selection & Routing — How the LLM Knows What to Use](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
+21. [How Daily Conversation Updates the Brain — Write-Back / Learning Loop](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
 
 ---
 
@@ -1827,6 +1830,22 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ○ Temporal reasoning ("last month you said...")               │
 │  ├── ○ Memory importance auto-adjustment from access_count         │
 │  └── ○ Cross-device memory merge via CRDT sync                    │
+│                                                                     │
+│  PHASE 6 — Modern RAG (April 2026 research absorption — see §19)   │
+│  ├── ✓ Reciprocal Rank Fusion utility (memory/fusion.rs)           │
+│  ├── ○ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
+│  │     context before embedding                                    │
+│  ├── ○ HyDE (Hypothetical Document Embeddings) for cold queries   │
+│  ├── ○ Cross-encoder reranking pass (BGE-reranker-v2-m3 via Ollama)│
+│  ├── ○ Late chunking (embed full doc, pool per-chunk windows)      │
+│  ├── ○ GraphRAG / LightRAG-style community summaries over          │
+│  │     memory_edges (multi-hop + LLM cluster summary)              │
+│  ├── ○ Self-RAG / Corrective RAG (CRAG) iterative refinement loop  │
+│  ├── ○ Sleep-time consolidation (Letta-style background job that   │
+│  │     compresses/links short→working→long during idle)            │
+│  ├── ○ Temporal knowledge graph (Zep / Graphiti-style valid_from / │
+│  │     valid_to edges on memory_edges)                             │
+│  └── ○ Matryoshka embeddings (variable-dim 256/512/768 truncation) │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1928,7 +1947,323 @@ Quick reference for all diagrams in this document:
 | §13 | RAG ecosystem | 5 framework comparison tables |
 | §14 | DB Browser | SQLite debug tool UI |
 | §15 | Hardware scaling | Memory count → RAM/speed table |
-| §16 | Scaling roadmap | 5-phase plan from foundation to intelligence |
+| §16 | Scaling roadmap | 6-phase plan from foundation to modern-RAG absorption |
+| §19 | Research survey | April 2026 modern RAG / agent-memory technique map |
+| §20 | Selection topology | How the LLM / orchestrator chooses each brain component |
+| §21 | Write-back loop | How daily conversation updates the brain (auto-learn cadence, fact extraction, decay) |
+
+---
+
+## 19. April 2026 Research Survey — Modern RAG & Agent-Memory Techniques
+
+> **Why this section exists**: the RAG and agent-memory landscape moved fast in 2024–2026. This section catalogs every major technique that emerged or matured during that window, maps each one to TerranSoul's current implementation status, and links each gap to a concrete Phase 6 roadmap item (§16). It is the canonical "what are we missing?" reference — consult it (alongside §10 and §13) before designing any new brain / memory work.
+
+### 19.1 Status legend
+
+| Symbol | Meaning |
+|---|---|
+| ✅ | Shipped in the current binary |
+| 🟡 | Partial / foundations in place, full feature pending |
+| 🔵 | Documented gap with concrete Phase 6 roadmap item |
+| ⚪ | Intentionally rejected (does not fit single-user desktop companion) |
+
+### 19.2 Technique → TerranSoul status map
+
+| # | Technique (year, source) | What it is | TerranSoul status | Where / Roadmap |
+|---|---|---|---|---|
+| 1 | **Hybrid dense + sparse retrieval** (BM25 + vector, established) | Combine lexical and semantic signals | ✅ | §4 — 6-signal hybrid scoring |
+| 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wire-in to `hybrid_search` is Phase 6. |
+| 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | 🔵 | Phase 6 — chunking pipeline (§16) |
+| 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | 🔵 | Phase 6 — Brain has `chat_completion` + `embed_text` already, ~50 LOC to add `hyde_search_memories` command |
+| 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | 🔵 | Phase 6 — orchestrator-level loop (`src-tauri/src/orchestrator/`) |
+| 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | 🔵 | Phase 6 — pairs naturally with our `relevance_threshold` Phase 4 item |
+| 7 | **GraphRAG** ([Microsoft, 2024](https://github.com/microsoft/graphrag)) | LLM extracts entities + relations into a KG, runs Leiden community detection, summarizes each community; queries hit community summaries first | 🟡 → 🔵 | Foundations: `memory_edges` V5 + `multi_hop_search_memories` (§6). Missing: community detection + LLM community-summary rollups. Phase 6. |
+| 8 | **LightRAG** (HKU, 2024) | GraphRAG variant: dual-level retrieval (low-level entity + high-level theme) with incremental graph updates; cheaper than full GraphRAG | 🔵 | Phase 6 — natural follow-on once community summaries land |
+| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | 🔵 | Phase 6 — requires long-context embedding model (e.g. `jina-embeddings-v3`) selectable via Ollama |
+| 10 | **Cross-encoder reranking** (BGE-reranker-v2-m3, Cohere Rerank 3, etc.) | Second-pass scorer over top-k candidates with a query-doc joint encoder, much higher precision than bi-encoder cosine | 🔵 | Phase 6 — slot a reranker between `hybrid_search` and prompt formatting; RRF utility (item 2) is the fusion primitive |
+| 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | 🔵 | Phase 6 — pairs with ANN index (Phase 4); current `nomic-embed-text` is fixed-dim |
+| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | 🔵 | Phase 6 — fits TerranSoul's tier model (§2); reuses durable workflow engine (`workflows/engine.rs`) for the idle-time job |
+| 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | 🔵 | Phase 6 — additive columns on `memory_edges`; complements Phase 5 "Temporal reasoning" |
+| 14 | **Agentic RAG** (industry term, 2024–2026) | RAG embedded in an agent loop: plan → retrieve → reflect → re-retrieve → generate, with tool use | 🟡 | Foundations: roster + workflow engine (Chunk 1.5, `agents/roster.rs`). Phase 6: explicit retrieve-as-tool wiring. |
+| 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
+| 16 | **Long-context vs RAG ("just stuff 1M tokens")** | Use 200K–2M token windows instead of retrieval | ⚪ | Rejected for personal companion: cost-prohibitive on local hardware, attention blind spots, privacy. RAG remains primary; long-context is a per-call tactical choice. |
+| 17 | **ColBERT / late-interaction retrieval** (Khattab & Zaharia, 2020; ColBERTv2, 2022) | Token-level multi-vector retrieval with MaxSim, very high recall but storage-heavy | ⚪ | Rejected for desktop: ~10× embedding storage. Cross-encoder reranker (item 10) gives most of the quality at far lower cost. |
+| 18 | **External vector DB (Qdrant, Weaviate, Milvus, pgvector)** | Dedicated vector database service | ⚪ | Rejected by design: TerranSoul ships as a single Tauri binary (§13 "Why TerranSoul Doesn't Use an External RAG Framework"). SQLite + optional ANN index (Phase 4) keeps the offline-first promise. |
+
+### 19.3 Implementation already shipped from this survey
+
+**Reciprocal Rank Fusion utility** — `src-tauri/src/memory/fusion.rs` ships `reciprocal_rank_fuse(rankings, k)`, a pure stable function that takes any number of ranked candidate lists (e.g. vector-rank, keyword-rank, graph-rank) and returns a fused ranking by `Σ 1/(k + rank_i)` with `k = 60` per the original Cormack et al. paper. It is intentionally decoupled from `MemoryStore` so Phase 6 work (cross-encoder reranking, multi-retriever fusion, GraphRAG community vs entity-level fusion) can plug into it without further refactoring. Unit tests cover: stable ordering, missing-from-some-rankings handling, single-list passthrough, and tie behaviour.
+
+### 19.4 How to use this section
+
+1. **Before designing brain work**, scan the `Status` column for 🔵 items relevant to your goal — they already have a Phase 6 roadmap slot.
+2. **When picking up a 🔵 item**, file a Chunk in `rules/milestones.md` referencing both its row in §19.2 and its Phase 6 entry in §16.
+3. **When a new 2026+ technique emerges**, append a row to §19.2 with a `[citation](url)` and assign a status symbol — never silently absorb new work without updating this map.
+
+### 19.5 Sources
+
+- Anthropic — *Contextual Retrieval* (Sep 2024)
+- Asai et al. — *Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection* (NeurIPS 2023)
+- Cormack, Clarke, Büttcher — *Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods* (SIGIR 2009)
+- Edge et al. (Microsoft) — *From Local to Global: A GraphRAG Approach to Query-Focused Summarization* (2024)
+- Gao et al. — *Precise Zero-Shot Dense Retrieval without Relevance Labels* (HyDE, 2022)
+- Guo et al. — *LightRAG: Simple and Fast Retrieval-Augmented Generation* (HKU, 2024)
+- Jina AI — *Late Chunking in Long-Context Embedding Models* (Sep 2024)
+- Khattab & Zaharia — *ColBERT* (SIGIR 2020) and *ColBERTv2* (NAACL 2022)
+- Kusupati et al. — *Matryoshka Representation Learning* (NeurIPS 2022)
+- Letta — *Sleep-Time Compute for AI Agents* (2024)
+- Packer et al. — *MemGPT: Towards LLMs as Operating Systems* (2023)
+- Yan et al. — *Corrective Retrieval Augmented Generation (CRAG)* (2024)
+- Zep / `getzep/graphiti` — Temporal Knowledge Graph for Agent Memory (2024)
+- Industry surveys: Redis "Agentic RAG" (2025), Eden AI "2025 Guide to RAG", Microsoft Research GraphRAG releases through 2026Q1.
+
+---
+
+## 20. Brain Component Selection & Routing — How the LLM Knows What to Use
+
+> **Why this section exists**: TerranSoul's brain is composed of **many independent components** (4 provider modes × N free providers, 2 embedding models, 3 memory tiers, 3 search methods, 4 storage backends, 17 edge relation types, agent roster, durable workflow engine, …). A frequent contributor question is *"how does the LLM know which one to pick for a given turn?"* The honest answer is: **most routing is deterministic and happens in Rust, not inside the LLM.** The LLM is invoked only at a few precise decision points. This section is the canonical decision matrix.
+
+### 20.1 Selection topology — who decides what?
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    BRAIN COMPONENT SELECTION TOPOLOGY                      │
+│                                                                            │
+│   USER (Setup wizard, Brain hub UI, chat command)                          │
+│      │  sets:     active brain mode, paid model, Ollama model,             │
+│      │            storage backend, RAG injection toggle                    │
+│      ▼                                                                     │
+│   PERSISTED CONFIG  (active_brain.txt · brain_mode.json · settings)        │
+│      │                                                                     │
+│      ▼                                                                     │
+│   RUST DETERMINISTIC ROUTER  (no LLM in this layer)                       │
+│   ├── streaming::stream_chat       → match BrainMode { Free/Paid/Local }   │
+│   ├── ProviderRotator              → fastest healthy free provider         │
+│   ├── OllamaAgent::resolve_embed_model → nomic-embed-text → chat fallback │
+│   ├── MemoryStore::hybrid_search   → score every memory, top-k            │
+│   ├── StorageBackend trait         → SQLite | Postgres | MSSQL | Cassandra│
+│   ├── cognitive_kind::classify     → episodic | semantic | procedural     │
+│   ├── AgentOrchestrator::dispatch  → agent_id="auto" → default ("stub")   │
+│   └── PermissionStore              → cross-device command gating          │
+│      │                                                                     │
+│      ▼                                                                     │
+│   LLM-DRIVEN DECISION POINTS  (the few places the LLM actually chooses)   │
+│   ├── semantic_search_entries      → LLM ranks memory relevance           │
+│   ├── extract_facts / summarize    → LLM picks what is worth remembering   │
+│   ├── extract_edges_via_brain      → LLM picks relation type from 17-list │
+│   └── Free-text intent in chat     → "switch to groq" → conversation.ts   │
+│      │                                                                     │
+│      ▼                                                                     │
+│   CHAT TURN  (provider answers user with retrieved context)                │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Design principle**: keep routing in Rust whenever it can be expressed as a pure function of state — the LLM is expensive, non-deterministic, and harder to test. The LLM is reserved for *content* decisions (what is relevant, what is a fact, what relation connects two facts), not for *plumbing* decisions (which provider, which model, which tier).
+
+### 20.2 Decision matrix
+
+Each row below is one selection point. The "Decided by" column tells you **whether the LLM, the user, or pure code makes the call**, and where the logic lives.
+
+| # | Selection point | Decided by | Algorithm / signal | Source of truth | Fallback chain |
+|---|---|---|---|---|---|
+| 1 | **Brain mode** (Free / Paid / Local / Stub) | User (setup wizard, mode switcher, chat intent) | Persisted `BrainMode` enum | `brain/brain_config.rs::load_brain_mode` | `BrainMode::default()` → Free API (Groq) → Pollinations |
+| 2 | **Free provider** (Groq, Pollinations, …) | Pure code | `ProviderRotator::next_healthy_provider` — fastest healthy non-rate-limited | `brain/provider_rotator.rs:161` | Configured provider → next in `sorted_ids` → Stub |
+| 3 | **Paid model & endpoint** | User (paid setup) | Persisted in `BrainMode::PaidApi { model, base_url }` | `brain/brain_config.rs` | None — paid mode requires explicit config |
+| 4 | **Local Ollama chat model** | User (model picker, hardware-adaptive recommender) | `model_recommender::recommend_for_ram(ram_mb)` | `brain/model_recommender.rs` | Default `gemma3:4b` |
+| 5 | **Local Ollama embedding model** | Pure code with cache | `OllamaAgent::resolve_embed_model` — try `nomic-embed-text`, else fall back to active chat model; cache result for 60s; mark unsupported permanently | `brain/ollama_agent.rs` | `nomic-embed-text` → chat model → skip vector signal entirely |
+| 6 | **Memory tier to write into** | User explicit + auto-promotion | `MemoryStore::add_memory(tier=Working/Long)`, `promote()` triggered by importance ≥ 4 | `memory/store.rs` | New entries default to Working |
+| 7 | **Memory tier to search** | Pure code | `hybrid_search` scans **all tiers**, applies `tier_priority` weight (working 1.0 → long 0.5 → short 0.3) | `memory/store.rs:574` | All tiers always considered |
+| 8 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command) | Frontend calls `hybrid_search_memories` for RAG injection; `search_memories` for the explicit search bar | `commands/memory.rs` | `hybrid_search` → degrades to keyword if embedding fails |
+| 9 | **Top-k for RAG injection** | Pure code (constant) | `top 5` after hybrid scoring; **no relevance threshold yet** (Phase 4 gap, §16) | `commands/streaming.rs` | Always inject top 5 |
+| 10 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
+| 11 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
+| 12 | **Cognitive kind** (episodic / semantic / procedural) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` | Defaults to `Semantic` |
+| 13 | **Knowledge-graph edge relation type** | **LLM** + normaliser | `extract_edges_via_brain` prompts LLM with the 17-type taxonomy; `edges::normalise_rel_type` snaps free-form types to canonical | `memory/edges.rs` | Free-form edges allowed (preserved as-is) |
+| 14 | **Storage backend** | User (compile-time + config) | Cargo features `postgres` / `mssql` / `cassandra`; runtime `StorageConfig` selects which `StorageBackend` impl is bound | `memory/backend.rs` + `lib.rs` startup | SQLite (always available, default) |
+| 15 | **Agent dispatch** | Caller / orchestrator | `AgentOrchestrator::dispatch(agent_id, msg)`; `agent_id="auto"` → `default_agent_id` ("stub") | `orchestrator/agent_orchestrator.rs:34` | Stub agent when no others registered |
+| 16 | **Cross-device command permission** | Permission store + user prompt | `PermissionStore::check(origin_device)` → Allowed / Denied / Ask | `routing/router.rs:36` + `routing/permission.rs` | First-time → Ask |
+| 17 | **Streaming timeout** | Pure code (constant) | 60s overall stream timeout, 30s fallback timeout | `commands/streaming.rs` | Emit completion sentinel and surface error |
+
+### 20.3 Worked example — what happens on one chat turn
+
+> User types: "What did the lawyer say about Cook County filings?"
+
+1. **Provider selection (rule 1, 2)** — Frontend calls `stream_chat` Tauri command. Backend reads `state.brain_mode`. If `FreeApi`, the `ProviderRotator` (rule 2) picks the fastest healthy provider; if `LocalOllama`, `stream_ollama` is called with the user-configured model (rule 4).
+2. **History assembly (rule 7)** — Last 20 messages from `state.conversation` (short-term memory) are loaded into the prompt verbatim — no LLM decision, just a FIFO slice.
+3. **Embedding model selection (rule 5)** — Backend calls `OllamaAgent::embed_text(query)`. The cached resolver picks `nomic-embed-text` if installed; otherwise the chat model; otherwise returns `None` and the vector signal is skipped (degrades to 60% RAG quality, see §17 FAQ).
+4. **Hybrid search (rule 7, 8, 9)** — `MemoryStore::hybrid_search(query, embedding, limit=5)` scans **every tier** of every stored memory, scoring each with the 6-signal formula (§4). The cognitive-kind classifier (rule 12) is **not** invoked at search time — it is computed at write time and stored derived.
+5. **Top-5 injection (rule 9)** — Top 5 entries are formatted into the `[LONG-TERM MEMORY]` block. There is currently **no relevance threshold** — even a weakly-matching memory at rank 5 is injected. This is a documented Phase 4 gap (§16); the user can preview what would be injected via the Brain hub "Active Selection" panel (§20.5).
+6. **Provider call (rule 1)** — The chosen provider streams tokens back via `llm-chunk` events; `<anim>` blocks are split off into `llm-animation` (per repo memory `streaming architecture`).
+7. **Post-turn (rules 10, 11)** — The chat turn is *not* automatically extracted as facts. Extraction runs only when the user clicks "Extract from session" or when the session ends, at which point `extract_facts` (rule 11) and optionally `summarize` are called, producing new Working-tier memories that may later be promoted (rule 6).
+8. **Edge extraction (rule 13)** — Optional, user-triggered. `extract_edges_via_brain` asks the LLM to propose typed edges between newly-added memories, using the 17-type taxonomy. Free-form types are accepted; `normalise_rel_type` snaps near-matches.
+
+### 20.4 Failure / degradation contract
+
+When a component is unavailable, the router **degrades silently** rather than erroring — every selection point has a documented fallback (rightmost column of §20.2). The user-visible effect is captured by the `effective_quality` percentage on the Brain hub:
+
+| Failure mode | Effect | Effective RAG quality | UI signal |
+|---|---|---|---|
+| No brain configured | Persona-based stub responses, no RAG | 0 % | Brain hub shows ⚠ "Not configured" |
+| Free API rate-limited | Rotator skips to next provider | 100 % (cloud quality) | Provider badge shows live status |
+| Ollama down (Local mode) | Vector signal skipped, keyword + temporal only | 60 % | RAG capability strip greys out the Vector cell |
+| Embedding model missing | Cached "unsupported" → no further calls | 60 % | RAG capability strip greys out the Vector cell |
+| Hybrid search returns nothing | Empty `[LONG-TERM MEMORY]` block injected | n/a | "No relevant memories" subtitle |
+| Cross-device command from new origin | Held in `pending_envelopes` | n/a | Toast prompts user to allow / block / ask-once |
+
+### 20.5 What the user sees — Brain hub "Active Selection" panel
+
+The Brain hub view (`src/views/BrainView.vue`) renders an **Active Selection** panel that mirrors §20.2 in plain English, fed by the typed `BrainSelection` snapshot returned by the new `get_brain_selection` Tauri command:
+
+```
+┌─ Active brain selection ───────────────────────────────────────┐
+│  Provider     :  Free API → Groq (auto-rotated, healthy)       │
+│  Chat model   :  llama-3.3-70b-versatile                       │
+│  Embedding    :  ✗ unavailable (cloud mode — vector RAG off)   │
+│  Memory       :  3 tiers active · 1,247 long · 18 working      │
+│  Search       :  Hybrid 6-signal · top-5 injection · no threshold │
+│  Storage      :  SQLite (WAL) · schema V5                      │
+│  Agents       :  1 registered (stub) · default = "auto" → stub │
+│  RAG quality  :  60 % (cloud APIs cannot compute embeddings)   │
+└────────────────────────────────────────────────────────────────┘
+                                                  [Configure ▸]
+```
+
+This panel is the operational answer to "how does the LLM know what to choose?" — the user can read each selection at a glance, click `Configure` to override any of them, and immediately see the effect on the RAG capability strip (§20.4 row 3 vs row 1).
+
+### 20.6 Adding new components — required steps
+
+Whenever a contributor adds a new brain component (new provider, new embedding model, new search method, new storage backend, new agent, new edge-extraction strategy), they **must**:
+
+1. Add a row to the §20.2 decision matrix specifying who decides, what algorithm, source-of-truth file, and fallback.
+2. Extend the `BrainSelection` snapshot struct (`src-tauri/src/brain/selection.rs`) so the Active Selection panel can report it.
+3. Add a fallback row to §20.4 if the new component can fail or be unavailable.
+4. Update the Brain hub UI panel (`src/views/BrainView.vue` "Active selection" section) to render the new field.
+5. Update `README.md` per architecture rule 11 (Brain Documentation Sync).
+
+This keeps the "how does the LLM choose what to use?" question answerable in one place forever.
+
+---
+
+## 21. How Daily Conversation Updates the Brain — Write-Back / Learning Loop
+
+> **Why this section exists**: §20 explains how the brain *reads* memory on every chat turn. This section is the matching answer for the *write* side — *"how does daily conversation update the brain?"*. The honest summary is: every chat turn lands instantly in **short-term** memory, but promotion into **long-term** memory only happens when the auto-learner fires (or when the user clicks an explicit button). This section documents the full loop, the cadence policy, and the gaps.
+
+### 21.1 The five-step write-back loop
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                CONVERSATION → BRAIN  WRITE-BACK LOOP                       │
+│                                                                            │
+│   Step 1  ── Live append                                                   │
+│   Every chat turn pushes user + assistant messages into                    │
+│     state.conversation : Mutex<Vec<Message>>   (short-term, in-memory)     │
+│     ▼                                                                      │
+│   Step 2  ── History window for next turn                                  │
+│   The next chat turn reads the **last 20** messages from short-term        │
+│   into the LLM prompt (commands/streaming.rs ~line 224).                   │
+│     ▼                                                                      │
+│   Step 3  ── Auto-learn evaluator (NEW — §21.2)                            │
+│   After each assistant turn the frontend asks                              │
+│     evaluate_auto_learn(total_turns, last_autolearn_turn)                  │
+│   which returns Fire | SkipDisabled | SkipBelowThreshold | SkipCooldown.   │
+│     ▼  (only on Fire)                                                      │
+│   Step 4  ── Extraction & persistence                                      │
+│   extract_memories_from_session  (commands/memory.rs:134)                  │
+│     → brain_memory::extract_facts (LLM picks ≤5 atomic facts)              │
+│     → brain_memory::save_facts    (writes Working-tier rows to SQLite)     │
+│   Each new row gets:                                                       │
+│     · cognitive_kind = classify(type, tags, content)   (pure fn, §3.5)     │
+│     · embedding      = nomic-embed-text(content)        (if local Ollama)  │
+│     · created_at, decay = 1.0                                              │
+│     ▼                                                                      │
+│   Step 5  ── Background maintenance                                        │
+│   On its own cadence (currently user-triggered, daily-job target):         │
+│     · apply_memory_decay  — exponential decay multiplier on all rows        │
+│     · gc_memories         — drop rows below GC threshold                   │
+│     · promote_memory      — Working → Long when importance ≥ 4             │
+│     · extract_edges_via_brain — LLM proposes typed edges between new rows  │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 21.2 Auto-learn cadence policy (`memory::auto_learn`)
+
+Steps 1–2 are unconditional and free. Step 4 calls an LLM (cost + latency), so it is gated by a **pure-function policy** evaluated after every assistant turn. The policy lives in `src-tauri/src/memory/auto_learn.rs` and is exposed via three Tauri commands:
+
+| Command | Purpose |
+|---|---|
+| `get_auto_learn_policy` | Read the user-configured cadence (toggle + every-N-turns + cooldown) |
+| `set_auto_learn_policy` | Persist a new cadence (Brain hub "Daily learning" card) |
+| `evaluate_auto_learn(total_turns, last_autolearn_turn)` | Pure decision query — "should I fire right now?" |
+
+**Default cadence**: enabled, fire every 10 turns, minimum cooldown 3 turns. With these defaults a typical 30-turn session yields three auto-extractions (~15 new memories), with no LLM cost during quiet periods.
+
+**Decision values** (mirrored to the frontend as `AutoLearnDecisionDto`):
+
+| Decision | UI signal |
+|---|---|
+| `Fire` | Toast: *"Brain is learning from this conversation…"*, then refresh memory list |
+| `SkipDisabled` | "Daily learning" toggle visibly off in Brain hub |
+| `SkipBelowThreshold { turns_until_next: N }` | Progress dial in Brain hub: "Next auto-learn in N turns" |
+| `SkipCooldown { turns_remaining: N }` | Same dial, "Cooling down (N)" |
+
+The policy is intentionally not negotiable by the LLM — it is **user-configurable state** so privacy-conscious users can disable automatic learning entirely (Step 4 still runs on demand from the Memory tab "Extract from session" button).
+
+### 21.3 What gets written, and why
+
+| Memory tier | Triggered by | Purpose | Lifetime |
+|---|---|---|---|
+| **Short-term** (in-memory `Vec<Message>`) | Every chat turn (Step 1) | LLM prompt history | Lost on app restart |
+| **Working** (SQLite, `tier='working'`) | Auto-learn fire (Step 4) **or** explicit "Extract from session" / "Summarize" | Recently-learned facts pending consolidation | Survives restart; subject to decay & GC |
+| **Long** (SQLite, `tier='long'`) | `promote_memory` (Step 5) when importance ≥ 4 | Durable knowledge, biased highest in hybrid scoring (`tier_priority` = 1.0) | Permanent until user deletes |
+
+Notes:
+
+- **Decay (Step 5)** is the slow forgetting curve; `apply_memory_decay` multiplies each row's `decay` field by an exponential factor based on age. This signal contributes 10 % to the hybrid RAG score (§4) — old memories quietly recede unless re-accessed.
+- **GC (Step 5)** drops rows whose `decay × importance` falls below a threshold, so the database doesn't grow without bound.
+- **Edge extraction (Step 5)** is *not* automatic today. It is a Phase 4 / 5 gap — the design doc carries it under §16 "Scaling Roadmap".
+
+### 21.4 Failure / cost contract
+
+| Failure mode | Effect on the loop |
+|---|---|
+| No brain configured | Steps 1–2 still work (history is just a prompt slice). Step 4 errors with `"No brain configured"`; the auto-learner silently skips. |
+| LLM call fails during extraction | `extract_facts` returns `Vec::new()`; `save_facts` saves nothing; UI surfaces "extraction returned 0 facts" rather than aborting the chat. |
+| Embedding model missing | New Working-tier rows still write — but with `embedding = NULL`. They participate in keyword + recency + importance + decay + tier scoring (60 % RAG quality, §17 FAQ); a future `backfill_embeddings` call adds vectors when an embedding model becomes available. |
+| User disables auto-learn mid-session | Next `evaluate_auto_learn` returns `SkipDisabled`; existing memories are untouched; no chat impact. |
+| User reduces `every_n_turns` mid-session | Cooldown clause prevents immediate re-fire (≥3 turns must elapse since the last run). |
+
+### 21.5 Manual overrides (always available)
+
+Even with auto-learn on, the following commands are always available from the Memory tab and via Tauri:
+
+- `extract_memories_from_session` — force Step 4 now
+- `summarize_session` — collapse the whole session into one summary memory
+- `add_memory` / `update_memory` / `delete_memory` — direct CRUD
+- `apply_memory_decay` — force decay tick
+- `gc_memories` — force garbage collection
+- `extract_edges_via_brain` — propose typed edges via LLM
+- `backfill_embeddings` — compute missing vectors
+
+This guarantees the user is never locked out of any maintenance step the auto-learner would have done.
+
+### 21.6 Roadmap gaps (already tracked in §16)
+
+- **Background scheduler** — Step 5 maintenance jobs are currently user-triggered. A daily background scheduler (`tasks::manager::TaskManager`) is on the Phase 4 roadmap.
+- **Conversation-aware extraction** — today extraction sees the whole session as one blob. The Phase 5 roadmap adds *segmented* extraction (e.g. one extraction per topic shift detected by embedding-distance peak).
+- **Edge auto-extraction** — `extract_edges_via_brain` is manual; auto-firing it after each successful `extract_facts` is the next iteration of this loop.
+- **Replay-from-history rebuild** — re-run extraction over old chat logs to backfill memories created before auto-learn existed (planned for Phase 5 alongside the export/import work).
+
+### 21.7 Adding a new write path — required steps
+
+When a contributor adds a new way for conversation to update the brain (new extractor, new edge proposer, new background job), they **must**:
+
+1. Decide whether it belongs in Step 4 (per-turn, LLM-cost) or Step 5 (background, batched). Cost-sensitive paths must go in Step 5.
+2. If it triggers per-turn, gate it behind the same `AutoLearnPolicy` (or a sibling policy with its own `enabled` flag) — never run an LLM after every turn unconditionally.
+3. Update §21.1 diagram, §21.3 table, and §21.4 failure contract above.
+4. Surface a "what just happened?" signal in the Brain hub UI so the user can see the brain learn in real time.
+5. Update `README.md` per architecture rule 11 (Brain Documentation Sync).
+
+This keeps the write-back side as understandable as the read side (§20).
 
 ---
 

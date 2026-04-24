@@ -33,6 +33,22 @@
     in what order they need to be active. New features must reuse the
     existing components / quest chain rather than reimplementing parts of
     the brain from scratch.
+11. **Brain Documentation Sync (mandatory)** — Any change that touches the brain
+    surface (LLM providers, memory store, RAG pipeline, ingestion, embeddings,
+    cognitive-kind classification, knowledge graph, decay/GC, brain-gating
+    quests, brain-related Tauri commands or Pinia stores) **must** update
+    **both** of the following in the same PR:
+    - `docs/brain-advanced-design.md` — keep the design / schema / pipeline
+      / roadmap / April 2026 research-survey sections accurate, including
+      the Brain Component Selection / Routing section (§20) that explains
+      how the LLM and the orchestrator decide which component to use for
+      a given turn.
+    - `README.md` — keep the "🧠 Brain System" and "💾 Memory System"
+      component listings, the Human-Brain ↔ AI-System ↔ RPG-Stat mapping
+      table, and the link to `docs/brain-advanced-design.md` in sync with
+      reality.
+    A brain PR that updates code without updating these two documents is
+    incomplete and must not be merged. Reviewers should reject such PRs.
 
 ---
 

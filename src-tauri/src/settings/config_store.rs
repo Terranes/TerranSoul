@@ -78,6 +78,7 @@ mod tests {
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -117,6 +118,7 @@ mod tests {
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -141,6 +143,7 @@ mod tests {
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         };
         save(dir.path(), &s).unwrap();
 

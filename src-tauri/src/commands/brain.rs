@@ -188,6 +188,88 @@ pub async fn get_next_provider(
     Ok(rotator.next_healthy_provider().map(|p| p.id.clone()))
 }
 
+// ── Brain Selection Snapshot ────────────────────────────────────────────────
+
+/// Return a typed snapshot of every active brain selection (provider, embedding,
+/// memory, search, storage, agents, RAG quality).
+///
+/// This is the operational answer to the question
+/// *"how does the LLM know which component to use?"* surfaced to the
+/// Brain hub UI ("Active selection" panel). See
+/// `docs/brain-advanced-design.md` § 20 for the full decision matrix.
+#[tauri::command]
+pub async fn get_brain_selection(
+    state: State<'_, AppState>,
+) -> Result<brain::BrainSelection, String> {
+    // (1) Provider — read brain_mode + legacy fallback + ask the rotator
+    // who it would currently pick (without committing to a request).
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+    let legacy_active_brain = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+
+    let rotator_pick: Option<(String, bool)> = {
+        let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+        rotator.next_healthy_provider().map(|p| (p.id.clone(), true))
+    };
+
+    // (2) Embedding — only meaningful in Local Ollama mode. Use the
+    // resolver cache (filled by previous /api/embed calls); when nothing
+    // is cached we conservatively report "unavailable" rather than probe
+    // synchronously here.
+    let embed_snapshot = brain::ollama_agent::embed_cache_snapshot().await;
+    let embedding_available = embed_snapshot.chosen_model.is_some();
+    let embedding_preferred_model = embed_snapshot
+        .chosen_model
+        .clone()
+        .unwrap_or_else(|| "nomic-embed-text".to_string());
+
+    // (3) Memory — read live SQLite stats.
+    let memory_snapshot = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let stats = store.stats().map_err(|e| e.to_string())?;
+        brain::MemorySelection {
+            total: stats.total,
+            short_count: stats.short,
+            working_count: stats.working,
+            long_count: stats.long,
+            embedded_count: stats.embedded,
+            // Schema is migrated through V5 (see memory/migrations.rs).
+            schema_version: 5,
+        }
+    };
+
+    // (4) Storage backend — derived from compile-time features. SQLite is
+    // always the runtime default in the shipped binary; alternative
+    // backends (postgres / mssql / cassandra) are gated behind cargo
+    // features and selected via StorageConfig at startup.
+    let storage_snapshot = brain::StorageSelection {
+        backend: "sqlite".to_string(),
+        is_local: true,
+        schema_label: "V5 — memory_edges".to_string(),
+    };
+
+    // (5) Agents — read the orchestrator roster. The default routing
+    // target ("auto" → default_agent_id) is currently hardcoded to
+    // "stub" inside AgentOrchestrator::new; we surface the same fact
+    // here so the UI explains it.
+    let agents_snapshot = brain::AgentSelection {
+        registered: vec!["stub".to_string()],
+        default_agent_id: "stub".to_string(),
+    };
+
+    let rotator_pick_ref = rotator_pick.as_ref().map(|(id, h)| (id.as_str(), *h));
+
+    Ok(brain::BrainSelection::from_parts(
+        brain_mode.as_ref(),
+        legacy_active_brain.as_deref(),
+        rotator_pick_ref,
+        embedding_available,
+        &embedding_preferred_model,
+        memory_snapshot,
+        storage_snapshot,
+        agents_snapshot,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

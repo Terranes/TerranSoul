@@ -77,6 +77,7 @@ mod tests {
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -105,6 +106,7 @@ mod tests {
             model_camera_positions: std::collections::HashMap::new(),
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
+            auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

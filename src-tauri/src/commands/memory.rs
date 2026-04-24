@@ -537,3 +537,53 @@ pub async fn multi_hop_search_memories(
         .hybrid_search_with_graph(&query, query_emb.as_deref(), limit, hops)
         .map_err(|e| e.to_string())
 }
+
+// ── Auto-Learn Policy Commands ───────────────────────────────────────────────
+
+/// Return the user's current auto-learn policy from `AppSettings`.
+///
+/// See `docs/brain-advanced-design.md` § 21 ("How Daily Conversation Updates
+/// the Brain") for how the frontend uses this to decide when to call
+/// `extract_memories_from_session` automatically.
+#[tauri::command]
+pub async fn get_auto_learn_policy(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::AutoLearnPolicy, String> {
+    let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    Ok(settings.auto_learn_policy)
+}
+
+/// Persist a new auto-learn policy. The policy is validated by the
+/// `evaluate_auto_learn` decision function, which clamps zero-or-negative
+/// thresholds at runtime — invalid values are accepted but neutralised
+/// rather than rejected.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_auto_learn_policy(
+    policy: crate::memory::AutoLearnPolicy,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.auto_learn_policy = policy;
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+    Ok(())
+}
+
+/// Pure decision query — given the current session counters, return what
+/// the auto-learner *would* do right now without actually firing it.
+/// The frontend calls this after every assistant turn to decide whether
+/// to invoke `extract_memories_from_session`.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn evaluate_auto_learn(
+    total_turns: u32,
+    last_autolearn_turn: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::auto_learn::AutoLearnDecisionDto, String> {
+    let policy = {
+        let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.auto_learn_policy
+    };
+    let decision = crate::memory::evaluate_auto_learn(policy, total_turns, last_autolearn_turn);
+    Ok(crate::memory::auto_learn::AutoLearnDecisionDto::from(decision))
+}
