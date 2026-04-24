@@ -936,6 +936,57 @@ impl MemoryStore {
         Ok(entries)
     }
 
+    /// Promote working-tier entries to long-tier when they pass an
+    /// access-pattern threshold. Pure SQL — no LLM, no embedding I/O.
+    ///
+    /// An entry is promoted when **both** conditions hold:
+    /// 1. `access_count >= min_access_count` (default 5)
+    /// 2. The most recent access (`last_accessed`) falls within the last
+    ///    `window_days` days (default 7).
+    ///
+    /// Returns the IDs of promoted entries (in ascending id order). Designed
+    /// to be called periodically (e.g. on app startup, alongside `apply_decay`).
+    /// Idempotent — re-running on an already-long entry is a no-op because
+    /// only `tier = 'working'` rows are considered.
+    ///
+    /// Maps to `docs/brain-advanced-design.md` § 16 Phase 5
+    /// "Auto-promotion based on access patterns".
+    pub fn auto_promote_to_long(
+        &self,
+        min_access_count: i64,
+        window_days: i64,
+    ) -> SqlResult<Vec<i64>> {
+        // Defensive — non-positive window means "no recency requirement"; we
+        // still treat 0 as "any time" to avoid silently promoting nothing.
+        let cutoff_ms = if window_days <= 0 {
+            0
+        } else {
+            now_ms().saturating_sub(window_days.saturating_mul(86_400_000))
+        };
+        let min_count = min_access_count.max(0);
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM memories
+             WHERE tier = 'working'
+               AND access_count >= ?1
+               AND last_accessed IS NOT NULL
+               AND last_accessed >= ?2
+             ORDER BY id ASC",
+        )?;
+        let rows: Vec<i64> = stmt
+            .query_map(params![min_count, cutoff_ms], |row| row.get::<_, i64>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for id in &rows {
+            self.conn.execute(
+                "UPDATE memories SET tier = 'long' WHERE id = ?1",
+                params![id],
+            )?;
+        }
+        Ok(rows)
+    }
+
     /// Find a memory by its source_hash.  Returns the first match (if any).
     pub fn find_by_source_hash(&self, hash: &str) -> SqlResult<Option<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
@@ -1959,5 +2010,96 @@ mod tests {
         }
         let r = store.hybrid_search_with_threshold("Python programming", None, 3, 0.0).unwrap();
         assert_eq!(r.len(), 3);
+    }
+
+    // ------------------------------------------------------------------
+    // Chunk 17.1 — auto_promote_to_long
+    // ------------------------------------------------------------------
+
+    /// Helper: force a working-tier row's access_count + last_accessed
+    /// to a known state. Tests only.
+    fn force_access(store: &MemoryStore, id: i64, count: i64, last_accessed_ms: i64) {
+        store.conn()
+            .execute(
+                "UPDATE memories SET access_count = ?1, last_accessed = ?2 WHERE id = ?3",
+                params![count, last_accessed_ms, id],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn auto_promote_promotes_when_both_thresholds_met() {
+        let store = MemoryStore::in_memory();
+        let e = store.add_to_tier(new_memory("hot working entry"), MemoryTier::Working, None).unwrap();
+        force_access(&store, e.id, 5, now_ms());
+
+        let promoted = store.auto_promote_to_long(5, 7).unwrap();
+        assert_eq!(promoted, vec![e.id]);
+        assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Long);
+    }
+
+    #[test]
+    fn auto_promote_skips_when_access_count_below_threshold() {
+        let store = MemoryStore::in_memory();
+        let e = store.add_to_tier(new_memory("cold working entry"), MemoryTier::Working, None).unwrap();
+        force_access(&store, e.id, 4, now_ms()); // one short of the threshold
+
+        let promoted = store.auto_promote_to_long(5, 7).unwrap();
+        assert!(promoted.is_empty(), "below-threshold row must not be promoted");
+        assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Working);
+    }
+
+    #[test]
+    fn auto_promote_skips_when_outside_recency_window() {
+        let store = MemoryStore::in_memory();
+        let e = store.add_to_tier(new_memory("stale working entry"), MemoryTier::Working, None).unwrap();
+        // last_accessed is well outside a 7-day window
+        force_access(&store, e.id, 99, now_ms() - 30 * 86_400_000);
+
+        let promoted = store.auto_promote_to_long(5, 7).unwrap();
+        assert!(promoted.is_empty(), "stale row must not be promoted");
+        assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Working);
+    }
+
+    #[test]
+    fn auto_promote_ignores_long_and_short_tiers() {
+        let store = MemoryStore::in_memory();
+        let l = store.add_to_tier(new_memory("already long"), MemoryTier::Long, None).unwrap();
+        let s = store.add_to_tier(new_memory("short term"), MemoryTier::Short, Some("sess")).unwrap();
+        force_access(&store, l.id, 100, now_ms());
+        force_access(&store, s.id, 100, now_ms());
+
+        let promoted = store.auto_promote_to_long(5, 7).unwrap();
+        assert!(promoted.is_empty(), "non-working tiers must not be promoted");
+    }
+
+    #[test]
+    fn auto_promote_is_idempotent() {
+        let store = MemoryStore::in_memory();
+        let e = store.add_to_tier(new_memory("hot"), MemoryTier::Working, None).unwrap();
+        force_access(&store, e.id, 10, now_ms());
+
+        let first = store.auto_promote_to_long(5, 7).unwrap();
+        let second = store.auto_promote_to_long(5, 7).unwrap();
+        assert_eq!(first, vec![e.id]);
+        assert!(second.is_empty(), "second run is a no-op once promoted to long");
+    }
+
+    #[test]
+    fn auto_promote_skips_rows_with_null_last_accessed() {
+        // A working entry that was inserted but never accessed has
+        // last_accessed = NULL — must not be promoted regardless of count.
+        let store = MemoryStore::in_memory();
+        let e = store.add_to_tier(new_memory("never accessed"), MemoryTier::Working, None).unwrap();
+        store.conn()
+            .execute(
+                "UPDATE memories SET access_count = 50, last_accessed = NULL WHERE id = ?1",
+                params![e.id],
+            )
+            .unwrap();
+
+        let promoted = store.auto_promote_to_long(5, 7).unwrap();
+        assert!(promoted.is_empty(), "NULL last_accessed must be treated as not-recent");
+        assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Working);
     }
 }

@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 17.1 — Auto-promotion based on access patterns (Phase 17 first chunk)](#chunk-171--auto-promotion-based-on-access-patterns) | 2026-04-24 |
 | [Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection (Phase 16 first chunk)](#chunk-161--relevance-threshold-for-long-term-memory-injection) | 2026-04-24 |
 | [Chunk 15.3 — `BrainGateway` trait + shared op surface (Phase 15 foundation)](#chunk-153--braingateway-trait--shared-op-surface) | 2026-04-24 |
 | [Milestones audit — Phase 14.8–14.15 + Phase 16 + Phase 17 + Phase 18 added](#milestones-audit) | 2026-04-24 |
@@ -151,6 +152,43 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 17.1 — Auto-promotion based on access patterns
+
+**Date.** 2026-04-24
+**Phase.** 17 (Brain Phase-5 Intelligence) — first chunk; pure-Rust foundation that the rest of Phase 17 composes onto.
+**Goal.** Stop forcing the user to manually promote frequently-revisited working-tier memories. When a working-tier entry is accessed often enough recently, it earns long-tier status automatically — and the heuristic is honest enough to be a no-op on stale or never-touched rows.
+
+**Architecture.**
+- New `MemoryStore::auto_promote_to_long(min_access_count: i64, window_days: i64) -> SqlResult<Vec<i64>>`. Pure SQL — selects every `tier = 'working'` row where `access_count >= min_access_count` AND `last_accessed IS NOT NULL` AND `last_accessed >= now - window_days * 86_400_000`, then `UPDATE`s their tier to `'long'`. Returns the IDs that were promoted in ascending order so callers (BrainView, future workflow jobs) can audit / display them.
+- The `last_accessed IS NOT NULL` guard is load-bearing: a working entry that was inserted but never accessed has `last_accessed = NULL` even if its `access_count` happens to be high (e.g. set by a backfill job). Treating NULL as "not recent" prevents accidental promotion of cold rows.
+- Defensive math: `window_days <= 0` collapses to "no recency requirement" (cutoff = 0), and `min_access_count` is floored at 0, so callers can't trip arithmetic underflow.
+- Idempotent by construction — a second call only sees `tier = 'working'` rows, so already-promoted entries stay put.
+- Stays off the `StorageBackend` trait (mirrors `apply_decay`'s scope) — this is a SQLite-only concern; Postgres / MSSQL / Cassandra backends ignore it. Avoids touching three backend impls for a feature the alternative backends don't need.
+- New `commands::memory::auto_promote_memories(min_access_count: Option<i64>, window_days: Option<i64>)` Tauri command with sensible defaults (5, 7). Registered in `lib.rs` invoke-handler list.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — new method + 6 new unit tests.
+- `src-tauri/src/commands/memory.rs` — new Tauri command.
+- `src-tauri/src/lib.rs` — wired into invoke handler + command imports.
+- `docs/brain-advanced-design.md` § 16 Phase 5 — flipped row from `○` to `✓` with module + command pointers.
+- `rules/milestones.md` — Phase 17 row 17.1 removed (per the "completed chunks belong in completion-log only" rule).
+
+**Tests.** 6 new unit tests in `memory::store::tests`, all passing alongside 914 existing tests (total **920 passing**):
+1. `auto_promote_promotes_when_both_thresholds_met` — happy path.
+2. `auto_promote_skips_when_access_count_below_threshold` — boundary: 4 vs threshold 5 stays working.
+3. `auto_promote_skips_when_outside_recency_window` — 30-day-old access doesn't promote at 7-day window.
+4. `auto_promote_ignores_long_and_short_tiers` — only working-tier is considered (idempotency-by-tier).
+5. `auto_promote_is_idempotent` — second call after a successful promotion is a no-op.
+6. `auto_promote_skips_rows_with_null_last_accessed` — the load-bearing NULL-guard invariant.
+
+**Validation.** `cargo test --lib` (920 pass / 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- Frontend: surface the promoted IDs in BrainView's "Active selection" panel so the user can see what just got promoted (deferred — pure Rust surface is in place).
+- Schedule: today the command is invoke-on-demand (frontend or background job's choice). Once the workflow engine grows a periodic-job slot (post-17.5), schedule this daily alongside `apply_memory_decay`.
 
 ---
 

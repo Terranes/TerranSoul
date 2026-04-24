@@ -177,7 +177,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 17.1 | **Auto-promotion based on access patterns** — background workflow job watches `memories.access_count` + `last_accessed`; when a working-tier entry crosses both thresholds (default ≥ 5 accesses in last 7 days), promotes to long. Pure Rust, no LLM. Maps to §16 Phase 5. | not-started | Reuses `workflows::engine` for resume-on-restart. ~150 LOC + 6 tests. |
 | 17.2 | **Contradiction resolution (LLM picks winner)** — when `add_memory` finds a near-duplicate (existing dedup-by-cosine path) whose content semantically *contradicts* the new one (LLM "do these contradict?" check), opens a `MemoryConflict` row that the BrainView surfaces as a "resolve" prompt. User picks winner; loser is closed via `valid_to` (V6 schema) — never deleted. Maps to §16 Phase 5. | not-started | Builds on existing dedup pipeline; new `memory_conflicts` V8 table (or co-locate with V8 from 16.12). |
 | 17.3 | **Temporal reasoning queries** — extend `commands::memory` with `temporal_query(question, time_range)`. Examples: *"what did I learn last month about X?"*, *"have my preferences shifted since April?"*. Uses existing `valid_from` / `valid_to` (V6) + a small time-range parser; returns the resolved memories with their validity intervals. Maps to §16 Phase 5. | not-started | Pure Rust time parser (use `chrono`-only — no extra crate). |
 | 17.4 | **Memory importance auto-adjustment from access_count** — daily job that nudges `importance` up by 1 (capped at 5) for entries with `access_count >= 10` since last adjustment, and down by 1 (floored at 1) for entries with `access_count == 0` over the last 30 days. Auditable via the new `memory_versions` table (16.12). Maps to §16 Phase 5. | not-started | Depends on 16.12 (memory versioning) for audit trail. ~80 LOC + 8 tests. |
@@ -205,3 +204,22 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 ---
 
+
+### Phase 19 — Pre-release schema cleanup
+
+> **Why this phase exists.** TerranSoul has not had a public release yet,
+> so there is **no installed-base SQLite database in the wild that needs
+> to be migrated forward**. The current `src-tauri/src/memory/migrations.rs`
+> module (V1 → V7+ schema-first migration runner with up/down SQL blocks
+> and per-version test fixtures) is dead weight before v1.0 — it pays a
+> compile-time + maintenance cost on every PR and forces every new schema
+> field to ship as a numbered migration block instead of just being added
+> to the canonical `CREATE TABLE` statement. After Phase 16 / 17 / 18 land,
+> we collapse the entire migration history into one canonical schema and
+> delete the migration runner. The next time we need a schema change
+> *after* the public v1 release, we re-introduce a versioned migration
+> (starting cleanly at V1 again, against the v1 baseline).
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 19.1 | **Collapse migration history into a canonical schema; delete the migration runner.** Lands as the very last chunk before the v1 cut. Steps: (1) inline the final state of every `CREATE TABLE` / `CREATE INDEX` from `migrations.rs` into a single `MemoryStore::create_canonical_schema(&Connection)` block (or a `schema.sql` constant); (2) remove `src-tauri/src/memory/migrations.rs` and its 600+ test lines; (3) remove the `pub mod migrations;` entry in `src-tauri/src/memory/mod.rs`; (4) remove every `migrations::migrate_to_latest` / `migrations::get_version` / `migrations::downgrade_to` / `MIGRATIONS` / `TARGET_VERSION` reference (`store.rs`, `edges.rs`, `commands::memory::get_schema_status`, `postgres.rs::run_migrations`); (5) drop the `schema_migrations` SQLite table from the canonical schema (no longer needed); (6) drop the `get_schema_status` Tauri command + its frontend caller in `BrainView`. After this chunk, `MemoryStore::open` is just `Connection::open + create_canonical_schema`. Maps to: this phase. | not-started | **MUST land last** — every other in-flight chunk that adds a column (16.6, 16.10, 16.12, 17.2, 17.5) currently does so via a numbered migration block; if 19.1 lands first they would ship as plain canonical-schema additions instead. Concretely: the chunk owner of 19.1 must rebase after 16.x / 17.x / 18.x merge and fold their additions into the canonical block. ~200 LOC removed, ~50 LOC added; 600+ test lines removed (the per-version migration tests are obsolete once there is only one schema). |

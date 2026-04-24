@@ -1840,7 +1840,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  └── ○ Memory versioning (track edits, not just overwrites)        │
 │                                                                     │
 │  PHASE 5 — Intelligence                                             │
-│  ├── ○ Auto-promotion based on access patterns                     │
+│  ├── ✓ Auto-promotion based on access patterns                     │
+│  │     (`MemoryStore::auto_promote_to_long`,                        │
+│  │      command `auto_promote_memories`) — Chunk 17.1               │
 │  ├── ○ Contradiction resolution (LLM picks winner)                 │
 │  ├── ○ Temporal reasoning ("last month you said...")               │
 │  ├── ○ Memory importance auto-adjustment from access_count         │

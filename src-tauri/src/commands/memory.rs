@@ -582,6 +582,27 @@ pub async fn apply_memory_decay(
     store.apply_decay().map_err(|e| e.to_string())
 }
 
+/// Auto-promote frequently accessed working-tier entries to long-tier.
+///
+/// Pure access-pattern heuristic — no LLM. An entry is promoted when both
+/// `access_count >= min_access_count` (default 5) and `last_accessed` is
+/// within the last `window_days` days (default 7). Returns the IDs that
+/// were promoted (in ascending order). Idempotent.
+///
+/// Maps to `docs/brain-advanced-design.md` § 16 Phase 5
+/// "Auto-promotion based on access patterns" (chunk 17.1).
+#[tauri::command]
+pub async fn auto_promote_memories(
+    min_access_count: Option<i64>,
+    window_days: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<Vec<i64>, String> {
+    let min = min_access_count.unwrap_or(5);
+    let win = window_days.unwrap_or(7);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.auto_promote_to_long(min, win).map_err(|e| e.to_string())
+}
+
 /// Garbage-collect decayed low-importance memories. Returns count removed.
 #[tauri::command]
 pub async fn gc_memories(
