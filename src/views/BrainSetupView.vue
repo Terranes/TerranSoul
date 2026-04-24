@@ -13,7 +13,10 @@
     </div>
 
     <!-- ── Step 0: Choose brain tier ── -->
-    <div v-if="step === 0" class="bs-card">
+    <div
+      v-if="step === 0"
+      class="bs-card"
+    >
       <h2>🧠 Choose how to power your Brain</h2>
       <p class="bs-desc">
         TerranSoul needs an AI brain for conversations. Choose how you'd like to connect it.
@@ -51,13 +54,20 @@
           <small>Requires Ollama installed · Best for privacy</small>
         </div>
       </div>
-      <button class="btn-primary" :disabled="!selectedTier" @click="goToTierStep">
+      <button
+        class="btn-primary"
+        :disabled="!selectedTier"
+        @click="goToTierStep"
+      >
         Next →
       </button>
     </div>
 
     <!-- ── Step 1A: Free API setup (auto-select provider) ── -->
-    <div v-else-if="step === 1 && selectedTier === 'free'" class="bs-card">
+    <div
+      v-else-if="step === 1 && selectedTier === 'free'"
+      class="bs-card"
+    >
       <h2>☁️ Free Cloud API</h2>
       <p class="bs-desc">
         Select a free LLM provider. These use OpenAI-compatible APIs with generous free tiers.
@@ -71,59 +81,129 @@
         >
           <div class="bs-provider-header">
             <strong>{{ p.display_name }}</strong>
-            <span v-if="p.id === 'pollinations'" class="bs-badge">⭐ Recommended</span>
+            <span
+              v-if="p.id === 'pollinations'"
+              class="bs-badge"
+            >⭐ Recommended</span>
           </div>
           <p>{{ p.notes }}</p>
           <small>Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM</small>
         </div>
       </div>
-      <div v-if="freeApiKey !== null" class="bs-api-key">
+      <div
+        v-if="freeApiKey !== null"
+        class="bs-api-key"
+      >
         <label>API Key (optional for some providers):</label>
-        <input v-model="freeApiKeyInput" type="password" placeholder="Enter API key…" class="bs-input" />
+        <input
+          v-model="freeApiKeyInput"
+          type="password"
+          placeholder="Enter API key…"
+          class="bs-input"
+        >
       </div>
       <div class="bs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
-        <button class="btn-primary" :disabled="!selectedProvider" @click="activateFreeApi">
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!selectedProvider"
+          @click="activateFreeApi"
+        >
           Activate →
         </button>
       </div>
     </div>
 
     <!-- ── Step 1B: Paid API setup ── -->
-    <div v-else-if="step === 1 && selectedTier === 'paid'" class="bs-card">
+    <div
+      v-else-if="step === 1 && selectedTier === 'paid'"
+      class="bs-card"
+    >
       <h2>💳 Paid Cloud API</h2>
       <p class="bs-desc">
         Enter your API credentials. We support any OpenAI-compatible endpoint.
       </p>
       <div class="bs-form">
         <label for="paid-provider-select">Provider:</label>
-        <select id="paid-provider-select" v-model="paidProvider" class="bs-select">
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="custom">Custom endpoint</option>
+        <select
+          id="paid-provider-select"
+          v-model="paidProvider"
+          class="bs-select"
+        >
+          <option value="openai">
+            OpenAI
+          </option>
+          <option value="anthropic">
+            Anthropic
+          </option>
+          <option value="custom">
+            Custom endpoint
+          </option>
         </select>
         <label for="paid-api-key-input">API Key:</label>
-        <input id="paid-api-key-input" v-model="paidApiKey" type="password" placeholder="sk-…" class="bs-input" />
+        <input
+          id="paid-api-key-input"
+          v-model="paidApiKey"
+          type="password"
+          placeholder="sk-…"
+          class="bs-input"
+        >
         <label for="paid-model-input">Model:</label>
-        <input id="paid-model-input" v-model="paidModel" type="text" placeholder="gpt-4o" class="bs-input" />
-        <label v-if="paidProvider === 'custom'" for="paid-base-url-input">Base URL:</label>
-        <input v-if="paidProvider === 'custom'" id="paid-base-url-input" v-model="paidBaseUrl" type="url" placeholder="https://api.example.com" class="bs-input" />
+        <input
+          id="paid-model-input"
+          v-model="paidModel"
+          type="text"
+          placeholder="gpt-4o"
+          class="bs-input"
+        >
+        <label
+          v-if="paidProvider === 'custom'"
+          for="paid-base-url-input"
+        >Base URL:</label>
+        <input
+          v-if="paidProvider === 'custom'"
+          id="paid-base-url-input"
+          v-model="paidBaseUrl"
+          type="url"
+          placeholder="https://api.example.com"
+          class="bs-input"
+        >
       </div>
       <div class="bs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
-        <button class="btn-primary" :disabled="!paidApiKey || !paidModel" @click="activatePaidApi">
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!paidApiKey || !paidModel"
+          @click="activatePaidApi"
+        >
           Activate →
         </button>
       </div>
     </div>
 
     <!-- ── Step 1C: Local Ollama setup — Hardware analysis ── -->
-    <div v-else-if="step === 1 && selectedTier === 'local'" class="bs-card">
+    <div
+      v-else-if="step === 1 && selectedTier === 'local'"
+      class="bs-card"
+    >
       <h2>🖥 Local LLM Setup</h2>
       <p class="bs-desc">
         We'll analyse your hardware and recommend the best model for your machine.
       </p>
-      <div v-if="brain.systemInfo" class="bs-hw">
+      <div
+        v-if="brain.systemInfo"
+        class="bs-hw"
+      >
         <div class="bs-hw-row">
           <span>💾 RAM</span>
           <strong>{{ formatRam(brain.systemInfo.total_ram_mb) }} ({{ brain.systemInfo.ram_tier_label }})</strong>
@@ -137,19 +217,38 @@
           <strong>{{ brain.systemInfo.os_name }} ({{ brain.systemInfo.arch }})</strong>
         </div>
       </div>
-      <p v-else class="bs-loading">Analysing hardware…</p>
+      <p
+        v-else
+        class="bs-loading"
+      >
+        Analysing hardware…
+      </p>
       <div class="bs-nav">
-        <button class="btn-secondary" @click="step = 0">← Back</button>
-        <button class="btn-primary" :disabled="!brain.systemInfo" @click="step = 2">
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!brain.systemInfo"
+          @click="step = 2"
+        >
           Next →
         </button>
       </div>
     </div>
 
     <!-- ── Step 2: Choose local model ── -->
-    <div v-else-if="step === 2" class="bs-card">
+    <div
+      v-else-if="step === 2"
+      class="bs-card"
+    >
       <h2>Choose your Brain</h2>
-      <p class="bs-desc">Based on your {{ formatRam(brain.systemInfo?.total_ram_mb ?? 0) }} of RAM, we recommend:</p>
+      <p class="bs-desc">
+        Based on your {{ formatRam(brain.systemInfo?.total_ram_mb ?? 0) }} of RAM, we recommend:
+      </p>
       <ul class="bs-models">
         <li
           v-for="m in brain.recommendations"
@@ -159,8 +258,14 @@
         >
           <div class="bs-model-header">
             <strong>{{ m.display_name }}</strong>
-            <span v-if="m.is_top_pick" class="bs-badge">⭐ Recommended</span>
-            <span v-if="m.is_cloud" class="bs-badge bs-cloud">☁️ Cloud</span>
+            <span
+              v-if="m.is_top_pick"
+              class="bs-badge"
+            >⭐ Recommended</span>
+            <span
+              v-if="m.is_cloud"
+              class="bs-badge bs-cloud"
+            >☁️ Cloud</span>
           </div>
           <p>{{ m.description }}</p>
           <small v-if="m.is_cloud">Cloud-routed · no local RAM needed · tag: <code>{{ m.model_tag }}</code></small>
@@ -168,59 +273,115 @@
         </li>
       </ul>
       <div class="bs-nav">
-        <button class="btn-secondary" @click="step = 1">← Back</button>
-        <button class="btn-primary" :disabled="!selectedModel" @click="step = 3">Next →</button>
+        <button
+          class="btn-secondary"
+          @click="step = 1"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!selectedModel"
+          @click="step = 3"
+        >
+          Next →
+        </button>
       </div>
     </div>
 
     <!-- ── Step 3: Check / install Ollama ── -->
-    <div v-else-if="step === 3" class="bs-card">
+    <div
+      v-else-if="step === 3"
+      class="bs-card"
+    >
       <h2>Check Ollama</h2>
       <p class="bs-desc">
-        TerranSoul uses <a href="https://ollama.ai" target="_blank">Ollama</a> to run models
+        TerranSoul uses <a
+          href="https://ollama.ai"
+          target="_blank"
+        >Ollama</a> to run models
         locally. It must be running before we can download your brain.
       </p>
       <div :class="['bs-status-indicator', brain.ollamaStatus.running ? 'ok' : 'error']">
         {{ brain.ollamaStatus.running ? '✅ Ollama is running' : '❌ Ollama is not running' }}
       </div>
-      <div v-if="!brain.ollamaStatus.running" class="bs-install-hint">
+      <div
+        v-if="!brain.ollamaStatus.running"
+        class="bs-install-hint"
+      >
         <p>Install and start Ollama:</p>
         <ol>
-          <li>Download from <a href="https://ollama.ai" target="_blank">ollama.ai</a></li>
+          <li>
+            Download from <a
+              href="https://ollama.ai"
+              target="_blank"
+            >ollama.ai</a>
+          </li>
           <li>Run <code>ollama serve</code> in a terminal</li>
           <li>Click Retry below</li>
         </ol>
       </div>
       <div class="bs-nav">
-        <button class="btn-secondary" @click="step = 2">← Back</button>
-        <button class="btn-secondary" @click="brain.checkOllamaStatus()">🔄 Retry</button>
-        <button class="btn-primary" :disabled="!brain.ollamaStatus.running" @click="step = 4">
+        <button
+          class="btn-secondary"
+          @click="step = 2"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-secondary"
+          @click="brain.checkOllamaStatus()"
+        >
+          🔄 Retry
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!brain.ollamaStatus.running"
+          @click="step = 4"
+        >
           Next →
         </button>
       </div>
     </div>
 
     <!-- ── Step 4: Download model ── -->
-    <div v-else-if="step === 4" class="bs-card">
+    <div
+      v-else-if="step === 4"
+      class="bs-card"
+    >
       <h2>Download {{ selectedModel }}</h2>
       <p class="bs-desc">
         This will download the model via Ollama. It may take several minutes depending on
         your connection speed.
       </p>
 
-      <div v-if="modelAlreadyInstalled" class="bs-status-indicator ok">
+      <div
+        v-if="modelAlreadyInstalled"
+        class="bs-status-indicator ok"
+      >
         ✅ Model already installed locally
       </div>
-      <div v-else-if="brain.isPulling" class="bs-pulling">
+      <div
+        v-else-if="brain.isPulling"
+        class="bs-pulling"
+      >
         <div class="bs-spinner" />
         <span>Downloading… this may take a few minutes.</span>
       </div>
-      <div v-else-if="brain.pullError" class="bs-status-indicator error">
+      <div
+        v-else-if="brain.pullError"
+        class="bs-status-indicator error"
+      >
         ❌ {{ brain.pullError }}
       </div>
 
       <div class="bs-nav">
-        <button class="btn-secondary" @click="step = 3">← Back</button>
+        <button
+          class="btn-secondary"
+          @click="step = 3"
+        >
+          ← Back
+        </button>
         <button
           v-if="!modelAlreadyInstalled && !brain.isPulling"
           class="btn-primary"
@@ -239,8 +400,13 @@
     </div>
 
     <!-- ── Step 5 (or done): Brain connected ── -->
-    <div v-else-if="step === 5 || step === 99" class="bs-card bs-done">
-      <div class="bs-done-icon">🎉</div>
+    <div
+      v-else-if="step === 5 || step === 99"
+      class="bs-card bs-done"
+    >
+      <div class="bs-done-icon">
+        🎉
+      </div>
       <h2>Brain connected!</h2>
       <p v-if="selectedTier === 'free'">
         Using <strong>{{ selectedProviderName }}</strong> (free cloud API).
@@ -254,7 +420,12 @@
         <strong>{{ selectedModel }}</strong> is now your local brain.
         TerranSoul will use it for all future conversations, memory extraction, and smart recall.
       </p>
-      <button class="btn-primary" @click="emit('done')">Start chatting →</button>
+      <button
+        class="btn-primary"
+        @click="emit('done')"
+      >
+        Start chatting →
+      </button>
     </div>
   </div>
 </template>

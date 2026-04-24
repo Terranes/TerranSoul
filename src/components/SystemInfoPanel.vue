@@ -1,9 +1,21 @@
 <template>
-  <div class="system-info-panel-overlay" @click.stop.self="$emit('close')">
-    <div class="system-info-panel" @click.stop>
+  <div
+    class="system-info-panel-overlay"
+    @click.stop.self="$emit('close')"
+  >
+    <div
+      class="system-info-panel"
+      @click.stop
+    >
       <div class="panel-header">
         <h3>📊 System Information</h3>
-        <button class="close-btn" @click="$emit('close')" aria-label="Close">&times;</button>
+        <button
+          class="close-btn"
+          aria-label="Close"
+          @click="$emit('close')"
+        >
+          &times;
+        </button>
       </div>
 
       <div class="panel-body">
@@ -23,7 +35,10 @@
               <span class="info-label">RAM:</span>
               <span class="info-value">{{ formatRam(systemInfo?.total_ram_mb || 0) }} ({{ systemInfo?.ram_tier_label || 'Unknown' }})</span>
             </div>
-            <div class="info-row" v-if="systemInfo?.gpu_name">
+            <div
+              v-if="systemInfo?.gpu_name"
+              class="info-row"
+            >
               <span class="info-label">GPU:</span>
               <span class="info-value">{{ systemInfo.gpu_name }}</span>
             </div>
@@ -36,19 +51,31 @@
           <div class="info-grid">
             <div class="info-row">
               <span class="info-label">Status:</span>
-              <span class="info-value" :class="{ 'status-active': brain.hasBrain, 'status-inactive': !brain.hasBrain }">
+              <span
+                class="info-value"
+                :class="{ 'status-active': brain.hasBrain, 'status-inactive': !brain.hasBrain }"
+              >
                 {{ brain.hasBrain ? 'Connected' : 'Not Configured' }}
               </span>
             </div>
-            <div v-if="brain.brainMode" class="info-row">
+            <div
+              v-if="brain.brainMode"
+              class="info-row"
+            >
               <span class="info-label">Mode:</span>
               <span class="info-value">{{ getBrainModeDisplay() }}</span>
             </div>
-            <div v-if="brain.brainMode?.mode === 'local_ollama' && brain.activeBrain" class="info-row">
+            <div
+              v-if="brain.brainMode?.mode === 'local_ollama' && brain.activeBrain"
+              class="info-row"
+            >
               <span class="info-label">Model:</span>
               <span class="info-value">{{ brain.activeBrain }}</span>
             </div>
-            <div v-if="brain.brainMode?.mode === 'free_api'" class="info-row">
+            <div
+              v-if="brain.brainMode?.mode === 'free_api'"
+              class="info-row"
+            >
               <span class="info-label">Provider:</span>
               <span class="info-value">{{ getProviderName() }}</span>
             </div>

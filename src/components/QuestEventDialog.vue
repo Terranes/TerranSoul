@@ -1,8 +1,16 @@
 <template>
   <Teleport to="body">
-    <div class="qe-backdrop" @click.self="$emit('close')">
+    <div
+      class="qe-backdrop"
+      @click.self="$emit('close')"
+    >
       <div class="qe-dialog">
-        <button class="qe-close" @click="$emit('close')">✕</button>
+        <button
+          class="qe-close"
+          @click="$emit('close')"
+        >
+          ✕
+        </button>
 
         <!-- Quest Header -->
         <div class="qe-header">
@@ -11,16 +19,24 @@
           </div>
           <div class="qe-header-text">
             <span class="qe-label">🗺️ Quest Event</span>
-            <h3 class="qe-name">{{ node.name }}</h3>
+            <h3 class="qe-name">
+              {{ node.name }}
+            </h3>
             <span class="qe-tagline">{{ node.tagline }}</span>
           </div>
         </div>
 
         <!-- Reward Preview (rich icons) -->
         <section class="qe-rewards">
-          <h4 class="qe-section-title">🎁 Rewards you'll unlock</h4>
+          <h4 class="qe-section-title">
+            🎁 Rewards you'll unlock
+          </h4>
           <div class="qe-reward-grid">
-            <div v-for="(reward, i) in node.rewards" :key="i" class="qe-reward-card">
+            <div
+              v-for="(reward, i) in node.rewards"
+              :key="i"
+              class="qe-reward-card"
+            >
               <span class="qe-reward-icon">{{ node.rewardIcons[i] || '🎯' }}</span>
               <span class="qe-reward-text">{{ reward }}</span>
             </div>
@@ -28,8 +44,13 @@
         </section>
 
         <!-- Video Reference -->
-        <section v-if="node.videoRef" class="qe-video-section">
-          <h4 class="qe-section-title">🎬 See it in action</h4>
+        <section
+          v-if="node.videoRef"
+          class="qe-video-section"
+        >
+          <h4 class="qe-section-title">
+            🎬 See it in action
+          </h4>
           <div class="qe-video-wrapper">
             <iframe
               :src="videoEmbedUrl"
@@ -45,8 +66,13 @@
 
         <!-- AI Conversation -->
         <section class="qe-chat">
-          <h4 class="qe-section-title">💬 Quest Guide</h4>
-          <div class="qe-messages" ref="messagesEl">
+          <h4 class="qe-section-title">
+            💬 Quest Guide
+          </h4>
+          <div
+            ref="messagesEl"
+            class="qe-messages"
+          >
             <div
               v-for="(msg, i) in chatMessages"
               :key="i"
@@ -54,9 +80,15 @@
               :class="'qe-msg-' + msg.role"
             >
               <span class="qe-msg-avatar">{{ msg.role === 'assistant' ? '🧙' : '🗡️' }}</span>
-              <div class="qe-msg-bubble" v-html="renderMarkdown(msg.content)"></div>
+              <div
+                class="qe-msg-bubble"
+                v-html="renderMarkdown(msg.content)"
+              />
             </div>
-            <div v-if="isStreaming" class="qe-msg qe-msg-assistant">
+            <div
+              v-if="isStreaming"
+              class="qe-msg qe-msg-assistant"
+            >
               <span class="qe-msg-avatar">🧙</span>
               <div class="qe-msg-bubble qe-typing">
                 <span class="qe-dot" /><span class="qe-dot" /><span class="qe-dot" />
@@ -66,18 +98,42 @@
         </section>
 
         <!-- Yes / No buttons -->
-        <div v-if="awaitingResponse" class="qe-choices">
-          <button class="qe-btn qe-btn-yes" @click="respond('yes')">✅ Yes</button>
-          <button class="qe-btn qe-btn-no" @click="respond('no')">❌ No</button>
+        <div
+          v-if="awaitingResponse"
+          class="qe-choices"
+        >
+          <button
+            class="qe-btn qe-btn-yes"
+            @click="respond('yes')"
+          >
+            ✅ Yes
+          </button>
+          <button
+            class="qe-btn qe-btn-no"
+            @click="respond('no')"
+          >
+            ❌ No
+          </button>
         </div>
 
         <!-- Navigate to quest button when done -->
-        <div v-if="questComplete" class="qe-done">
-          <p class="qe-done-text">Ready to start?</p>
-          <button class="qe-btn qe-btn-start" @click="$emit('navigate', node.questSteps[0]?.target ?? 'skills')">
+        <div
+          v-if="questComplete"
+          class="qe-done"
+        >
+          <p class="qe-done-text">
+            Ready to start?
+          </p>
+          <button
+            class="qe-btn qe-btn-start"
+            @click="$emit('navigate', node.questSteps[0]?.target ?? 'skills')"
+          >
             🚀 Begin Quest
           </button>
-          <button class="qe-btn qe-btn-pin" @click="handlePin">
+          <button
+            class="qe-btn qe-btn-pin"
+            @click="handlePin"
+          >
             📌 Pin & Decide Later
           </button>
         </div>

@@ -16,18 +16,59 @@
     >
       <!-- Soft outer aura (only when active) -->
       <defs>
-        <radialGradient :id="gradientId" cx="50%" cy="45%" r="60%">
-          <stop offset="0%" :stop-color="colors.aura" stop-opacity="0.55" />
-          <stop offset="70%" :stop-color="colors.aura" stop-opacity="0.05" />
-          <stop offset="100%" :stop-color="colors.aura" stop-opacity="0" />
+        <radialGradient
+          :id="gradientId"
+          cx="50%"
+          cy="45%"
+          r="60%"
+        >
+          <stop
+            offset="0%"
+            :stop-color="colors.aura"
+            stop-opacity="0.55"
+          />
+          <stop
+            offset="70%"
+            :stop-color="colors.aura"
+            stop-opacity="0.05"
+          />
+          <stop
+            offset="100%"
+            :stop-color="colors.aura"
+            stop-opacity="0"
+          />
         </radialGradient>
-        <linearGradient :id="leftHemiId" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" :stop-color="colors.left" />
-          <stop offset="100%" :stop-color="colors.leftDeep" />
+        <linearGradient
+          :id="leftHemiId"
+          x1="0%"
+          y1="0%"
+          x2="100%"
+          y2="100%"
+        >
+          <stop
+            offset="0%"
+            :stop-color="colors.left"
+          />
+          <stop
+            offset="100%"
+            :stop-color="colors.leftDeep"
+          />
         </linearGradient>
-        <linearGradient :id="rightHemiId" x1="100%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" :stop-color="colors.right" />
-          <stop offset="100%" :stop-color="colors.rightDeep" />
+        <linearGradient
+          :id="rightHemiId"
+          x1="100%"
+          y1="0%"
+          x2="0%"
+          y2="100%"
+        >
+          <stop
+            offset="0%"
+            :stop-color="colors.right"
+          />
+          <stop
+            offset="100%"
+            :stop-color="colors.rightDeep"
+          />
         </linearGradient>
       </defs>
 
@@ -42,7 +83,11 @@
       />
 
       <!-- Synapse dots — count scales with memory density -->
-      <g v-if="active" class="brain-synapses" data-testid="brain-synapses">
+      <g
+        v-if="active"
+        class="brain-synapses"
+        data-testid="brain-synapses"
+      >
         <circle
           v-for="(s, i) in synapses"
           :key="i"
@@ -58,7 +103,13 @@
       <!-- Brain body: two hemispheres + cerebellum -->
       <g class="brain-body">
         <!-- Cerebellum (bottom) — subtle rounded base -->
-        <ellipse cx="100" cy="148" rx="44" ry="20" :fill="colors.cerebellum" />
+        <ellipse
+          cx="100"
+          cy="148"
+          rx="44"
+          ry="20"
+          :fill="colors.cerebellum"
+        />
 
         <!-- Left hemisphere -->
         <path
@@ -82,7 +133,13 @@
         />
 
         <!-- Sulci / brain folds (non-functional decoration) -->
-        <g class="brain-sulci" :stroke="colors.fold" stroke-width="1.5" fill="none" stroke-linecap="round">
+        <g
+          class="brain-sulci"
+          :stroke="colors.fold"
+          stroke-width="1.5"
+          fill="none"
+          stroke-linecap="round"
+        >
           <path d="M 55 70 Q 70 75, 65 95" />
           <path d="M 50 105 Q 70 105, 75 125" />
           <path d="M 78 55 Q 88 75, 80 95" />
@@ -102,19 +159,62 @@
       </g>
 
       <!-- Cute face — expression -->
-      <g class="brain-face" :transform="faceTransform">
+      <g
+        class="brain-face"
+        :transform="faceTransform"
+      >
         <!-- Eyes -->
-        <g v-if="expression !== 'sleepy'" class="brain-eyes">
-          <ellipse cx="80" cy="100" rx="5" ry="6" :fill="colors.eye" />
-          <ellipse cx="120" cy="100" rx="5" ry="6" :fill="colors.eye" />
+        <g
+          v-if="expression !== 'sleepy'"
+          class="brain-eyes"
+        >
+          <ellipse
+            cx="80"
+            cy="100"
+            rx="5"
+            ry="6"
+            :fill="colors.eye"
+          />
+          <ellipse
+            cx="120"
+            cy="100"
+            rx="5"
+            ry="6"
+            :fill="colors.eye"
+          />
           <!-- Eye sparkle -->
-          <circle cx="82" cy="98" r="1.5" fill="#ffffff" />
-          <circle cx="122" cy="98" r="1.5" fill="#ffffff" />
+          <circle
+            cx="82"
+            cy="98"
+            r="1.5"
+            fill="#ffffff"
+          />
+          <circle
+            cx="122"
+            cy="98"
+            r="1.5"
+            fill="#ffffff"
+          />
         </g>
         <!-- Sleepy / no-brain: closed eye lines -->
-        <g v-else class="brain-eyes-closed">
-          <path d="M 75 100 Q 80 104, 85 100" :stroke="colors.eye" stroke-width="2" fill="none" stroke-linecap="round" />
-          <path d="M 115 100 Q 120 104, 125 100" :stroke="colors.eye" stroke-width="2" fill="none" stroke-linecap="round" />
+        <g
+          v-else
+          class="brain-eyes-closed"
+        >
+          <path
+            d="M 75 100 Q 80 104, 85 100"
+            :stroke="colors.eye"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+          <path
+            d="M 115 100 Q 120 104, 125 100"
+            :stroke="colors.eye"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
         </g>
 
         <!-- Mouth -->
@@ -160,16 +260,58 @@
         />
 
         <!-- Tiny rosy cheeks when happy / idle (active) -->
-        <g v-if="active && (expression === 'happy' || expression === 'idle')" class="brain-cheeks">
-          <ellipse cx="72" cy="115" rx="4" ry="2.5" :fill="colors.cheek" opacity="0.7" />
-          <ellipse cx="128" cy="115" rx="4" ry="2.5" :fill="colors.cheek" opacity="0.7" />
+        <g
+          v-if="active && (expression === 'happy' || expression === 'idle')"
+          class="brain-cheeks"
+        >
+          <ellipse
+            cx="72"
+            cy="115"
+            rx="4"
+            ry="2.5"
+            :fill="colors.cheek"
+            opacity="0.7"
+          />
+          <ellipse
+            cx="128"
+            cy="115"
+            rx="4"
+            ry="2.5"
+            :fill="colors.cheek"
+            opacity="0.7"
+          />
         </g>
 
         <!-- Thinking dots above when expression='thinking' -->
-        <g v-if="expression === 'thinking'" class="brain-thoughts" data-testid="brain-thoughts">
-          <circle cx="138" cy="48" r="3" :fill="colors.spark" class="brain-thought-dot" style="animation-delay: 0s" />
-          <circle cx="148" cy="38" r="4" :fill="colors.spark" class="brain-thought-dot" style="animation-delay: 0.3s" />
-          <circle cx="160" cy="26" r="5" :fill="colors.spark" class="brain-thought-dot" style="animation-delay: 0.6s" />
+        <g
+          v-if="expression === 'thinking'"
+          class="brain-thoughts"
+          data-testid="brain-thoughts"
+        >
+          <circle
+            cx="138"
+            cy="48"
+            r="3"
+            :fill="colors.spark"
+            class="brain-thought-dot"
+            style="animation-delay: 0s"
+          />
+          <circle
+            cx="148"
+            cy="38"
+            r="4"
+            :fill="colors.spark"
+            class="brain-thought-dot"
+            style="animation-delay: 0.3s"
+          />
+          <circle
+            cx="160"
+            cy="26"
+            r="5"
+            :fill="colors.spark"
+            class="brain-thought-dot"
+            style="animation-delay: 0.6s"
+          />
         </g>
       </g>
     </svg>

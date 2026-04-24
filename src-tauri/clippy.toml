@@ -1,0 +1,29 @@
+# Clippy configuration for TerranSoul.
+#
+# Industry-standard replacement for the previous custom file-size script.
+# Where ESLint enforces a per-FILE size budget for Vue/TS via the
+# `max-lines` rule, clippy enforces a per-FUNCTION budget for Rust via
+# the `clippy::too_many_lines` lint (configured here).
+#
+# Why per-function (not per-file) for Rust:
+#   Clippy doesn't ship a per-file line-count rule. The community
+#   consensus is that `too_many_lines` is the closest standard signal —
+#   if every function is small, files naturally stay manageable.
+#
+# Threshold rationale:
+#   The clippy default is 100 lines (very strict). TerranSoul's existing
+#   functions occasionally exceed 100 due to LLM prompt assembly,
+#   migration SQL blocks, and renderer state-machine bodies. We pick
+#   250 as a pragmatic compromise — strict enough to catch genuinely
+#   bloated functions, lenient enough not to drown CI in pre-existing
+#   warnings. Tighten over time.
+#
+# To opt into the lint per-crate, add `too_many_lines = "warn"` under
+# `[lints.clippy]` in `Cargo.toml`. We keep it advisory (not enforced)
+# for now to avoid blocking CI on legacy code.
+too-many-lines-threshold = 250
+
+# A handful of other tunable thresholds for related size lints:
+type-complexity-threshold = 250
+too-many-arguments-threshold = 8
+cognitive-complexity-threshold = 30

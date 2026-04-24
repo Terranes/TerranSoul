@@ -128,9 +128,8 @@ export function streamChatCompletion(
       // Combine user abort with a 15s connection timeout so network
       // failures surface quickly instead of waiting for the outer 60s guard.
       const timeoutMs = 15_000;
-      let connTimeout: ReturnType<typeof setTimeout> | undefined;
       const timeoutAbort = new AbortController();
-      connTimeout = setTimeout(() => timeoutAbort.abort(), timeoutMs);
+      const connTimeout = setTimeout(() => timeoutAbort.abort(), timeoutMs);
       // Abort if either the caller or the connection timeout fires.
       const combinedSignal = controller.signal.aborted
         ? controller.signal

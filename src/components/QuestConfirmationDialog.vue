@@ -1,25 +1,50 @@
 <template>
   <Transition name="quest-confirm-backdrop">
-    <div v-if="visible" class="quest-confirm-backdrop" @click.self="$emit('cancel')">
+    <div
+      v-if="visible"
+      class="quest-confirm-backdrop"
+      @click.self="$emit('cancel')"
+    >
       <Transition name="quest-confirm-dialog">
-        <div v-if="visible" class="quest-confirm-dialog" @click.stop>
+        <div
+          v-if="visible"
+          class="quest-confirm-dialog"
+          @click.stop
+        >
           <!-- Header -->
           <div class="qcd-header">
             <span class="qcd-icon">{{ quest?.icon || '⚔️' }}</span>
             <div class="qcd-title-area">
-              <h3 class="qcd-title">{{ quest?.name || 'Quest Available' }}</h3>
-              <p class="qcd-tagline">{{ quest?.tagline || 'Ready to embark on this journey?' }}</p>
+              <h3 class="qcd-title">
+                {{ quest?.name || 'Quest Available' }}
+              </h3>
+              <p class="qcd-tagline">
+                {{ quest?.tagline || 'Ready to embark on this journey?' }}
+              </p>
             </div>
-            <button class="qcd-close" @click="$emit('cancel')" title="Cancel">✕</button>
+            <button
+              class="qcd-close"
+              title="Cancel"
+              @click="$emit('cancel')"
+            >
+              ✕
+            </button>
           </div>
 
           <!-- Quest Details -->
           <div class="qcd-content">
-            <p class="qcd-description">{{ quest?.description || 'Accept this quest to continue your journey.' }}</p>
+            <p class="qcd-description">
+              {{ quest?.description || 'Accept this quest to continue your journey.' }}
+            </p>
 
             <!-- Steps Preview -->
-            <div v-if="quest?.questSteps?.length" class="qcd-steps">
-              <div class="qcd-section-label">📋 What you'll do:</div>
+            <div
+              v-if="quest?.questSteps?.length"
+              class="qcd-steps"
+            >
+              <div class="qcd-section-label">
+                📋 What you'll do:
+              </div>
               <div class="qcd-step-list">
                 <div 
                   v-for="(step, i) in quest.questSteps.slice(0, 3)" 
@@ -29,7 +54,10 @@
                   <span class="qcd-step-num">{{ i + 1 }}</span>
                   <span class="qcd-step-text">{{ step.label }}</span>
                 </div>
-                <div v-if="quest.questSteps.length > 3" class="qcd-step-more">
+                <div
+                  v-if="quest.questSteps.length > 3"
+                  class="qcd-step-more"
+                >
                   <span class="qcd-step-num">…</span>
                   <span class="qcd-step-text">{{ quest.questSteps.length - 3 }} more steps</span>
                 </div>
@@ -37,8 +65,13 @@
             </div>
 
             <!-- Rewards Preview -->
-            <div v-if="quest?.rewards?.length" class="qcd-rewards">
-              <div class="qcd-section-label">🎁 Rewards:</div>
+            <div
+              v-if="quest?.rewards?.length"
+              class="qcd-rewards"
+            >
+              <div class="qcd-section-label">
+                🎁 Rewards:
+              </div>
               <div class="qcd-reward-grid">
                 <span
                   v-for="(reward, i) in quest.rewards"
@@ -60,10 +93,16 @@
 
           <!-- Action Buttons -->
           <div class="qcd-actions">
-            <button class="qcd-btn-secondary" @click="$emit('cancel')">
+            <button
+              class="qcd-btn-secondary"
+              @click="$emit('cancel')"
+            >
               💤 Not Now
             </button>
-            <button class="qcd-btn-primary" @click="$emit('accept')">
+            <button
+              class="qcd-btn-primary"
+              @click="$emit('accept')"
+            >
               ⚔️ Accept Quest
             </button>
           </div>

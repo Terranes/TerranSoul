@@ -88,7 +88,7 @@ After every chunk, verify:
 # Frontend
 cd /path/to/TerranSoul
 npm run build               # vue-tsc + vite build; must emit dist/ with zero errors
-npm run check:file-sizes    # per-file line-count budget; see coding-standards.md → "File Size Budget"
+npm run lint                # ESLint (max-lines, vue/recommended, ts-eslint/recommended)
 
 # Rust backend
 cd src-tauri

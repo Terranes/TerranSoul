@@ -3,7 +3,9 @@
     <!-- ── Progress Header ── -->
     <header class="st-header">
       <div class="st-title-row">
-        <h2 class="st-title">⚔️ Skill Tree</h2>
+        <h2 class="st-title">
+          ⚔️ Skill Tree
+        </h2>
         <div class="st-progress-badge">
           <span class="st-progress-num">{{ skillTree.activeCount }}</span>
           <span class="st-progress-sep">/</span>
@@ -12,7 +14,10 @@
         </div>
       </div>
       <div class="st-progress-bar-track">
-        <div class="st-progress-bar-fill" :style="{ width: skillTree.progressPercent + '%' }" />
+        <div
+          class="st-progress-bar-fill"
+          :style="{ width: skillTree.progressPercent + '%' }"
+        />
       </div>
     </header>
 
@@ -20,7 +25,10 @@
     <BrainStatSheet />
 
     <!-- ── Daily Quests Banner ── -->
-    <section v-if="dailySuggestions.length > 0" class="st-daily-section">
+    <section
+      v-if="dailySuggestions.length > 0"
+      class="st-daily-section"
+    >
       <div class="st-daily-header">
         <span class="st-daily-icon">📋</span>
         <span class="st-daily-title">Today's Quests</span>
@@ -29,9 +37,14 @@
           :disabled="skillTree.isLoadingSuggestions"
           title="Ask AI for new suggestions"
           @click="skillTree.refreshDailySuggestions()"
-        >{{ skillTree.isLoadingSuggestions ? '⏳' : '🔄' }}</button>
+        >
+          {{ skillTree.isLoadingSuggestions ? '⏳' : '🔄' }}
+        </button>
       </div>
-      <p v-if="skillTree.tracker.dailySuggestionReason" class="st-daily-reason">
+      <p
+        v-if="skillTree.tracker.dailySuggestionReason"
+        class="st-daily-reason"
+      >
         {{ skillTree.tracker.dailySuggestionReason }}
       </p>
       <div class="st-daily-cards">
@@ -47,15 +60,27 @@
             <span class="st-daily-card-name">{{ suggestion.node.name }}</span>
             <span class="st-daily-card-tagline">{{ suggestion.node.tagline }}</span>
           </div>
-          <span v-if="suggestion.status === 'active'" class="st-daily-card-badge st-badge-active">✓</span>
-          <span v-else-if="suggestion.status === 'available'" class="st-daily-card-badge st-badge-available">!</span>
-          <span v-else class="st-daily-card-badge st-badge-locked">🔒</span>
+          <span
+            v-if="suggestion.status === 'active'"
+            class="st-daily-card-badge st-badge-active"
+          >✓</span>
+          <span
+            v-else-if="suggestion.status === 'available'"
+            class="st-daily-card-badge st-badge-available"
+          >!</span>
+          <span
+            v-else
+            class="st-daily-card-badge st-badge-locked"
+          >🔒</span>
         </button>
       </div>
     </section>
 
     <!-- ── Pinned Quests ── -->
-    <section v-if="skillTree.pinnedQuests.length > 0" class="st-pinned-section">
+    <section
+      v-if="skillTree.pinnedQuests.length > 0"
+      class="st-pinned-section"
+    >
       <div class="st-section-header">
         <span>📌 Pinned Quests</span>
       </div>
@@ -72,18 +97,31 @@
         >
           <span class="st-pinned-icon">{{ node.icon }}</span>
           <span class="st-pinned-name">{{ node.name }}</span>
-          <button class="st-unpin-btn" title="Unpin" @click.stop="skillTree.unpinQuest(node.id)">✕</button>
+          <button
+            class="st-unpin-btn"
+            title="Unpin"
+            @click.stop="skillTree.unpinQuest(node.id)"
+          >
+            ✕
+          </button>
         </div>
       </div>
     </section>
 
     <!-- ── Active Combos Banner ── -->
-    <section v-if="skillTree.activeCombos.length > 0" class="st-combos-section">
+    <section
+      v-if="skillTree.activeCombos.length > 0"
+      class="st-combos-section"
+    >
       <div class="st-section-header">
         <span>🔥 Active Combos</span>
       </div>
       <div class="st-combo-list">
-        <div v-for="c in skillTree.activeCombos" :key="c.combo.name" class="st-combo-card">
+        <div
+          v-for="c in skillTree.activeCombos"
+          :key="c.combo.name"
+          class="st-combo-card"
+        >
           <span class="st-combo-icon">{{ c.combo.icon }}</span>
           <div class="st-combo-body">
             <span class="st-combo-name">{{ c.combo.name }}</span>
@@ -113,14 +151,25 @@
             <span class="st-tracker-name">{{ entry.node.name }}</span>
             <span class="st-tracker-tagline">{{ entry.node.tagline }}</span>
           </div>
-          <span v-if="entry.status === 'active' && entry.activatedAt" class="st-tracker-time">{{ formatActivation(entry.activatedAt) }}</span>
-          <span v-if="skillTree.tracker.pinnedQuestIds.includes(entry.node.id)" class="st-tracker-pin" title="Pinned">📌</span>
+          <span
+            v-if="entry.status === 'active' && entry.activatedAt"
+            class="st-tracker-time"
+          >{{ formatActivation(entry.activatedAt) }}</span>
+          <span
+            v-if="skillTree.tracker.pinnedQuestIds.includes(entry.node.id)"
+            class="st-tracker-pin"
+            title="Pinned"
+          >📌</span>
         </div>
       </div>
     </section>
 
     <!-- ── Tech Tree by Tier ── -->
-    <section v-for="tier in tiers" :key="tier.id" class="st-tier-section">
+    <section
+      v-for="tier in tiers"
+      :key="tier.id"
+      class="st-tier-section"
+    >
       <div class="st-tier-header">
         <span class="st-tier-icon">{{ tier.icon }}</span>
         <span class="st-tier-name">{{ tier.label }}</span>
@@ -136,12 +185,23 @@
         >
           <div class="st-node-icon-wrap">
             <span class="st-node-icon">{{ node.icon }}</span>
-            <span v-if="skillTree.getSkillStatus(node.id) === 'active'" class="st-node-check">✓</span>
+            <span
+              v-if="skillTree.getSkillStatus(node.id) === 'active'"
+              class="st-node-check"
+            >✓</span>
           </div>
           <span class="st-node-name">{{ node.name }}</span>
           <span class="st-node-tagline">{{ node.tagline }}</span>
-          <div v-if="node.combos.length > 0" class="st-node-combo-hint">
-            <span v-for="combo in node.combos" :key="combo.name" class="st-combo-pip" :title="combo.name">
+          <div
+            v-if="node.combos.length > 0"
+            class="st-node-combo-hint"
+          >
+            <span
+              v-for="combo in node.combos"
+              :key="combo.name"
+              class="st-combo-pip"
+              :title="combo.name"
+            >
               {{ combo.icon }}
             </span>
           </div>

@@ -6,7 +6,11 @@
     <SplashScreen v-if="appLoading" />
   </Transition>
 
-  <div v-show="!appLoading" class="app-shell" :class="{ 'pet-mode': isPetMode }">
+  <div
+    v-show="!appLoading"
+    class="app-shell"
+    :class="{ 'pet-mode': isPetMode }"
+  >
     <!-- Floating mode-toggle pill — visible on the Chat tab (but not while the
          quest constellation panel is open) and always in pet mode (where it's
          the only way back to desktop mode).  Hidden on all other tabs so it
@@ -36,19 +40,31 @@
     <!-- Normal mode: Brain onboarding or tabbed UI -->
     <template v-else>
       <!-- Brain onboarding: shown until a brain is configured -->
-      <BrainSetupView v-if="!hasBrain && !skipSetup" @done="onBrainDone" />
+      <BrainSetupView
+        v-if="!hasBrain && !skipSetup"
+        @done="onBrainDone"
+      />
 
       <template v-else>
         <!-- Desktop side navigation -->
         <nav class="app-nav desktop-nav">
-          <div class="nav-logo"><img :src="appIconUrl" alt="TerranSoul" class="nav-logo-img" /></div>
+          <div class="nav-logo">
+            <img
+              :src="appIconUrl"
+              alt="TerranSoul"
+              class="nav-logo-img"
+            >
+          </div>
           <button
             v-for="tab in tabs"
             :key="tab.id"
             :class="['nav-btn', { active: activeTab === tab.id }]"
             @click="activeTab = tab.id"
           >
-            <span class="nav-icon" v-html="tab.svg"></span>
+            <span
+              class="nav-icon"
+              v-html="tab.svg"
+            />
             <span class="nav-label">{{ tab.label }}</span>
           </button>
 
@@ -63,7 +79,6 @@
             <span class="nav-icon">⚠</span>
             <span class="nav-label">Brain</span>
           </button>
-
         </nav>
 
         <!-- Mobile bottom tab bar (replaces hamburger menu) -->
@@ -74,24 +89,44 @@
             :class="['mobile-tab', { active: activeTab === tab.id }]"
             @click="activeTab = tab.id"
           >
-            <span class="mobile-tab-icon" v-html="tab.svg"></span>
+            <span
+              class="mobile-tab-icon"
+              v-html="tab.svg"
+            />
             <span class="mobile-tab-label">{{ tab.label }}</span>
           </button>
         </nav>
 
         <!-- Main area -->
         <main class="app-main">
-          <ChatView v-show="activeTab === 'chat'" @navigate="handleSkillNavigate" />
-          <SkillTreeView v-if="activeTab === 'skills'" @navigate="handleSkillNavigate" />
-          <BrainView v-if="activeTab === 'brain'" @navigate="handleSkillNavigate" />
+          <ChatView
+            v-show="activeTab === 'chat'"
+            @navigate="handleSkillNavigate"
+          />
+          <SkillTreeView
+            v-if="activeTab === 'skills'"
+            @navigate="handleSkillNavigate"
+          />
+          <BrainView
+            v-if="activeTab === 'brain'"
+            @navigate="handleSkillNavigate"
+          />
           <MemoryView v-if="activeTab === 'memory'" />
           <MarketplaceView v-if="activeTab === 'marketplace'" />
-          <VoiceSetupView v-if="activeTab === 'voice'" @done="activeTab = 'chat'" />
+          <VoiceSetupView
+            v-if="activeTab === 'voice'"
+            @done="activeTab = 'chat'"
+          />
         </main>
 
         <!-- Floating quest progress bubble — chat tab only so it doesn't
              overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
-        <QuestBubble v-if="activeTab === 'chat'" @trigger="handleQuestBubble" @navigate="handleSkillNavigate" @update:constellation-open="questConstellationOpen = $event" />
+        <QuestBubble
+          v-if="activeTab === 'chat'"
+          @trigger="handleQuestBubble"
+          @navigate="handleSkillNavigate"
+          @update:constellation-open="questConstellationOpen = $event"
+        />
 
         <!-- Combo unlock notifications (Chunk 131) -->
         <ComboToast />
@@ -100,7 +135,6 @@
         <QuestRewardCeremony />
       </template>
     </template>
-
   </div>
 </template>
 

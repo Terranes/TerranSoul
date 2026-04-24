@@ -1,5 +1,8 @@
 <template>
-  <section class="persona-panel" data-testid="persona-panel">
+  <section
+    class="persona-panel"
+    data-testid="persona-panel"
+  >
     <header class="pp-header">
       <h3>🎭 Persona</h3>
       <span class="pp-subtitle">
@@ -17,7 +20,7 @@
             :checked="draft.active"
             data-testid="pp-active"
             @change="onActiveToggle"
-          />
+          >
           Inject persona into every chat
         </label>
       </div>
@@ -32,7 +35,7 @@
             placeholder="e.g. Lia"
             data-testid="pp-name"
             @input="markDirty"
-          />
+          >
         </label>
         <label class="pp-field">
           <span>Role</span>
@@ -43,7 +46,7 @@
             placeholder="e.g. studious librarian"
             data-testid="pp-role"
             @input="markDirty"
-          />
+          >
         </label>
       </div>
 
@@ -56,7 +59,7 @@
           placeholder="A few sentences of backstory…"
           data-testid="pp-bio"
           @input="markDirty"
-        ></textarea>
+        />
       </label>
 
       <PersonaListEditor
@@ -89,28 +92,43 @@
           :disabled="!isDirty || isSaving"
           data-testid="pp-save"
           @click="save"
-        >{{ isSaving ? 'Saving…' : 'Save persona' }}</button>
+        >
+          {{ isSaving ? 'Saving…' : 'Save persona' }}
+        </button>
         <button
           class="pp-btn pp-btn-secondary"
           :disabled="isSaving"
           data-testid="pp-reset"
           @click="resetDraftFromStore"
-        >Discard changes</button>
+        >
+          Discard changes
+        </button>
         <button
           class="pp-btn pp-btn-ghost"
           :disabled="isSaving"
           data-testid="pp-default"
           @click="resetToDefault"
-        >Reset to default</button>
-        <span v-if="lastSavedAt" class="pp-saved">Saved {{ relativeTime(lastSavedAt) }}</span>
+        >
+          Reset to default
+        </button>
+        <span
+          v-if="lastSavedAt"
+          class="pp-saved"
+        >Saved {{ relativeTime(lastSavedAt) }}</span>
       </div>
     </div>
 
     <!-- ── Live preview of the rendered [PERSONA] block ─────────────── -->
-    <details class="pp-preview" data-testid="pp-preview">
+    <details
+      class="pp-preview"
+      data-testid="pp-preview"
+    >
       <summary>Preview the system-prompt block</summary>
       <pre v-if="previewBlock">{{ previewBlock }}</pre>
-      <p v-else class="pp-preview-empty">
+      <p
+        v-else
+        class="pp-preview-empty"
+      >
         No persona block will be injected (persona inactive or all fields empty).
       </p>
     </details>
@@ -123,7 +141,10 @@
           Captured by the camera-mirror side quest (ships later — see Quests).
         </span>
       </header>
-      <ul v-if="(store.learnedExpressions?.length ?? 0) > 0" class="pp-lib-list">
+      <ul
+        v-if="(store.learnedExpressions?.length ?? 0) > 0"
+        class="pp-lib-list"
+      >
         <li
           v-for="exp in (store.learnedExpressions ?? [])"
           :key="exp.id"
@@ -136,10 +157,15 @@
             class="pp-btn pp-btn-danger"
             :data-testid="`pp-delete-exp-${exp.id}`"
             @click="deleteExpression(exp.id)"
-          >Delete</button>
+          >
+            Delete
+          </button>
         </li>
       </ul>
-      <p v-if="(store.learnedExpressions?.length ?? 0) === 0" class="pp-lib-empty">
+      <p
+        v-if="(store.learnedExpressions?.length ?? 0) === 0"
+        class="pp-lib-empty"
+      >
         No learned expressions yet. The "Mask of a Thousand Faces" side quest
         unlocks per-session camera capture for adding presets.
       </p>
@@ -153,7 +179,10 @@
           Captured by the camera-mirror side quest (ships later — see Quests).
         </span>
       </header>
-      <ul v-if="(store.learnedMotions?.length ?? 0) > 0" class="pp-lib-list">
+      <ul
+        v-if="(store.learnedMotions?.length ?? 0) > 0"
+        class="pp-lib-list"
+      >
         <li
           v-for="m in (store.learnedMotions ?? [])"
           :key="m.id"
@@ -167,10 +196,15 @@
             class="pp-btn pp-btn-danger"
             :data-testid="`pp-delete-motion-${m.id}`"
             @click="deleteMotion(m.id)"
-          >Delete</button>
+          >
+            Delete
+          </button>
         </li>
       </ul>
-      <p v-if="(store.learnedMotions?.length ?? 0) === 0" class="pp-lib-empty">
+      <p
+        v-if="(store.learnedMotions?.length ?? 0) === 0"
+        class="pp-lib-empty"
+      >
         No learned motions yet. The "Mirror Dance" side quest unlocks
         per-session camera capture for adding clips.
       </p>

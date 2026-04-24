@@ -1,5 +1,8 @@
 <template>
-  <div class="consent-backdrop" @click.self="$emit('cancel')">
+  <div
+    class="consent-backdrop"
+    @click.self="$emit('cancel')"
+  >
     <div class="consent-dialog">
       <h3>🔒 Capability Consent</h3>
       <p class="consent-desc">
@@ -14,18 +17,34 @@
         >
           <span class="consent-icon">{{ capabilityIcon(cap) }}</span>
           <span class="consent-label">{{ capabilityLabel(cap) }}</span>
-          <span v-if="isSensitive(cap)" class="consent-warn">⚠ sensitive</span>
+          <span
+            v-if="isSensitive(cap)"
+            class="consent-warn"
+          >⚠ sensitive</span>
         </li>
       </ul>
 
-      <p v-if="hasSensitive" class="consent-warning">
+      <p
+        v-if="hasSensitive"
+        class="consent-warning"
+      >
         This agent requests sensitive capabilities that could access your files, clipboard,
         network, or spawn processes. Only grant these if you trust the agent.
       </p>
 
       <div class="consent-btns">
-        <button class="btn-primary" @click="$emit('confirm')">Grant &amp; Install</button>
-        <button class="btn-secondary" @click="$emit('cancel')">Cancel</button>
+        <button
+          class="btn-primary"
+          @click="$emit('confirm')"
+        >
+          Grant &amp; Install
+        </button>
+        <button
+          class="btn-secondary"
+          @click="$emit('cancel')"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   </div>

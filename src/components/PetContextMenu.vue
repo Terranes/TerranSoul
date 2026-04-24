@@ -25,12 +25,19 @@
           >
             <span class="ctx-icon">🎭</span>
             <span class="ctx-label">Mood</span>
-            <span class="ctx-chev" :class="{ 'ctx-chev--open': moodOpen }">▸</span>
+            <span
+              class="ctx-chev"
+              :class="{ 'ctx-chev--open': moodOpen }"
+            >▸</span>
           </div>
 
           <!-- Inline mood list -->
           <Transition name="ctx-sub-fade">
-            <div v-if="moodOpen" class="pet-ctx-inline-sub" role="menu">
+            <div
+              v-if="moodOpen"
+              class="pet-ctx-inline-sub"
+              role="menu"
+            >
               <div
                 v-for="mood in MOOD_ENTRIES"
                 :key="mood.key"
@@ -41,7 +48,10 @@
               >
                 <span class="ctx-icon">{{ mood.emoji }}</span>
                 <span class="ctx-label">{{ mood.label }}</span>
-                <span v-if="isActive(mood)" class="ctx-check">✓</span>
+                <span
+                  v-if="isActive(mood)"
+                  class="ctx-check"
+                >✓</span>
               </div>
             </div>
           </Transition>
@@ -57,11 +67,18 @@
           >
             <span class="ctx-icon">🎭</span>
             <span class="ctx-label">Model</span>
-            <span class="ctx-chev" :class="{ 'ctx-chev--open': modelOpen }">▸</span>
+            <span
+              class="ctx-chev"
+              :class="{ 'ctx-chev--open': modelOpen }"
+            >▸</span>
           </div>
 
           <Transition name="ctx-sub-fade">
-            <div v-if="modelOpen" class="pet-ctx-inline-sub" role="menu">
+            <div
+              v-if="modelOpen"
+              class="pet-ctx-inline-sub"
+              role="menu"
+            >
               <div
                 v-for="model in DEFAULT_MODELS"
                 :key="model.id"
@@ -72,32 +89,55 @@
               >
                 <span class="ctx-icon">{{ model.gender === 'male' ? '🧑' : '👩' }}</span>
                 <span class="ctx-label">{{ model.name }}</span>
-                <span v-if="model.id === characterStore.selectedModelId" class="ctx-check">✓</span>
+                <span
+                  v-if="model.id === characterStore.selectedModelId"
+                  class="ctx-check"
+                >✓</span>
               </div>
             </div>
           </Transition>
 
           <div class="ctx-separator" />
 
-          <div class="ctx-item" role="menuitem" @click="onToggleChat">
+          <div
+            class="ctx-item"
+            role="menuitem"
+            @click="onToggleChat"
+          >
             <span class="ctx-icon">💬</span>
             <span class="ctx-label">Toggle chat</span>
           </div>
 
-          <div class="ctx-item" role="menuitem" @click="onToggleMode">
+          <div
+            class="ctx-item"
+            role="menuitem"
+            @click="onToggleMode"
+          >
             <span class="ctx-icon">🖥</span>
             <span class="ctx-label">Switch to desktop mode</span>
           </div>
 
-          <div class="ctx-item" role="menuitemcheckbox" :aria-checked="props.resizeActive" @click="onToggleResize">
+          <div
+            class="ctx-item"
+            role="menuitemcheckbox"
+            :aria-checked="props.resizeActive"
+            @click="onToggleResize"
+          >
             <span class="ctx-icon">↔</span>
             <span class="ctx-label">Resize</span>
-            <span v-if="props.resizeActive" class="ctx-check">✓</span>
+            <span
+              v-if="props.resizeActive"
+              class="ctx-check"
+            >✓</span>
           </div>
 
           <div class="ctx-separator" />
 
-          <div class="ctx-item ctx-item--danger" role="menuitem" @click="onExit">
+          <div
+            class="ctx-item ctx-item--danger"
+            role="menuitem"
+            @click="onExit"
+          >
             <span class="ctx-icon">✕</span>
             <span class="ctx-label">Exit</span>
           </div>

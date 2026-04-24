@@ -1,5 +1,8 @@
 <template>
-  <div v-if="taskStore.activeTasks.length > 0" class="task-progress-panel">
+  <div
+    v-if="taskStore.activeTasks.length > 0"
+    class="task-progress-panel"
+  >
     <div
       v-for="task in taskStore.activeTasks"
       :key="task.id"
@@ -8,9 +11,14 @@
     >
       <div class="task-header">
         <span class="task-kind">{{ kindLabel(task.kind) }}</span>
-        <span class="task-status" :class="task.status">{{ statusLabel(task.status) }}</span>
+        <span
+          class="task-status"
+          :class="task.status"
+        >{{ statusLabel(task.status) }}</span>
       </div>
-      <p class="task-desc">{{ task.description }}</p>
+      <p class="task-desc">
+        {{ task.description }}
+      </p>
       <div class="progress-track">
         <div
           class="progress-fill"
@@ -40,7 +48,12 @@
           Resume
         </button>
       </div>
-      <p v-if="task.error" class="task-error">{{ task.error }}</p>
+      <p
+        v-if="task.error"
+        class="task-error"
+      >
+        {{ task.error }}
+      </p>
     </div>
   </div>
 </template>

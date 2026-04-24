@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check:file-sizes": "node scripts/check-file-sizes.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -30,18 +31,26 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.59.1",
     "@tauri-apps/cli": "^2",
     "@types/three": "^0.183.1",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "^2.4.6",
     "better-sqlite3": "^12.9.0",
     "cypress": "^15.14.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-vue": "^9.33.0",
+    "globals": "^15.15.0",
     "jsdom": "^29.0.2",
     "pdfkit": "^0.18.0",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.59.0",
     "vite": "^6.3.2",
     "vitest": "^4.1.4",
+    "vue-eslint-parser": "^9.4.3",
     "vue-tsc": "^2.2.10"
   }
 }

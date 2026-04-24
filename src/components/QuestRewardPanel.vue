@@ -1,19 +1,39 @@
 <template>
   <Transition name="reward-panel">
-    <div v-if="visible && quest" class="reward-panel" @click.stop>
+    <div
+      v-if="visible && quest"
+      class="reward-panel"
+      @click.stop
+    >
       <!-- Header -->
       <div class="rp-header">
-        <div class="rp-icon">{{ quest.icon }}</div>
-        <div class="rp-title-section">
-          <h3 class="rp-title">{{ quest.name }}</h3>
-          <p class="rp-tagline">{{ quest.tagline }}</p>
+        <div class="rp-icon">
+          {{ quest.icon }}
         </div>
-        <button class="rp-close" @click="$emit('close')">✕</button>
+        <div class="rp-title-section">
+          <h3 class="rp-title">
+            {{ quest.name }}
+          </h3>
+          <p class="rp-tagline">
+            {{ quest.tagline }}
+          </p>
+        </div>
+        <button
+          class="rp-close"
+          @click="$emit('close')"
+        >
+          ✕
+        </button>
       </div>
 
       <!-- Rewards Section -->
-      <div v-if="quest.rewards && quest.rewards.length > 0" class="rp-rewards">
-        <div class="rp-rewards-label">🎁 Quest Rewards</div>
+      <div
+        v-if="quest.rewards && quest.rewards.length > 0"
+        class="rp-rewards"
+      >
+        <div class="rp-rewards-label">
+          🎁 Quest Rewards
+        </div>
         <div class="rp-reward-grid">
           <div 
             v-for="(reward, index) in quest.rewards"
@@ -27,8 +47,13 @@
       </div>
 
       <!-- Quest Steps Preview -->
-      <div v-if="quest.questSteps && quest.questSteps.length > 0" class="rp-steps">
-        <div class="rp-steps-label">📋 What you'll learn</div>
+      <div
+        v-if="quest.questSteps && quest.questSteps.length > 0"
+        class="rp-steps"
+      >
+        <div class="rp-steps-label">
+          📋 What you'll learn
+        </div>
         <div class="rp-step-list">
           <div 
             v-for="(step, index) in quest.questSteps.slice(0, 3)"
@@ -38,15 +63,23 @@
             <span class="rp-step-number">{{ index + 1 }}</span>
             <span class="rp-step-text">{{ step.label }}</span>
           </div>
-          <div v-if="quest.questSteps.length > 3" class="rp-step-more">
+          <div
+            v-if="quest.questSteps.length > 3"
+            class="rp-step-more"
+          >
             +{{ quest.questSteps.length - 3 }} more steps
           </div>
         </div>
       </div>
 
       <!-- Multiple Choice Section -->
-      <div v-if="showChoices" class="rp-choices">
-        <div class="rp-choice-question">{{ choiceQuestion }}</div>
+      <div
+        v-if="showChoices"
+        class="rp-choices"
+      >
+        <div class="rp-choice-question">
+          {{ choiceQuestion }}
+        </div>
         <div class="rp-choice-buttons">
           <button 
             v-for="choice in choices"

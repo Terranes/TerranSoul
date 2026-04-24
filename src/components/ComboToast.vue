@@ -1,6 +1,10 @@
 <template>
   <Teleport to="body">
-    <div class="combo-toast-stack" data-testid="combo-toast-stack" aria-live="polite">
+    <div
+      class="combo-toast-stack"
+      data-testid="combo-toast-stack"
+      aria-live="polite"
+    >
       <TransitionGroup name="combo-toast">
         <div
           v-for="toast in visibleToasts"
@@ -9,17 +13,41 @@
           :data-testid="`combo-toast-${comboTestId(toast.key)}`"
           @click="dismiss(toast.key)"
         >
-          <div class="ct-burst" aria-hidden="true">
-            <span v-for="n in 6" :key="n" class="ct-spark" :style="{ '--ct-i': n }" />
+          <div
+            class="ct-burst"
+            aria-hidden="true"
+          >
+            <span
+              v-for="n in 6"
+              :key="n"
+              class="ct-spark"
+              :style="{ '--ct-i': n }"
+            />
           </div>
-          <div class="ct-icon">{{ toast.icon }}</div>
+          <div class="ct-icon">
+            {{ toast.icon }}
+          </div>
           <div class="ct-body">
-            <div class="ct-eyebrow">⚡ Combo Unlocked</div>
-            <div class="ct-name">{{ toast.name }}</div>
-            <div class="ct-desc">{{ toast.description }}</div>
-            <div class="ct-source">via <strong>{{ toast.sourceName }}</strong></div>
+            <div class="ct-eyebrow">
+              ⚡ Combo Unlocked
+            </div>
+            <div class="ct-name">
+              {{ toast.name }}
+            </div>
+            <div class="ct-desc">
+              {{ toast.description }}
+            </div>
+            <div class="ct-source">
+              via <strong>{{ toast.sourceName }}</strong>
+            </div>
           </div>
-          <button class="ct-close" aria-label="Dismiss combo notification" @click.stop="dismiss(toast.key)">✕</button>
+          <button
+            class="ct-close"
+            aria-label="Dismiss combo notification"
+            @click.stop="dismiss(toast.key)"
+          >
+            ✕
+          </button>
         </div>
       </TransitionGroup>
     </div>

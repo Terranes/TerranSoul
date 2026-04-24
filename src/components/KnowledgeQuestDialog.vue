@@ -1,20 +1,44 @@
 <template>
   <Teleport to="body">
     <Transition name="kq-enter">
-      <div v-if="visible" class="kq-backdrop" @click.self="$emit('close')">
-        <div class="kq-dialog" role="dialog" aria-labelledby="kq-title">
+      <div
+        v-if="visible"
+        class="kq-backdrop"
+        @click.self="$emit('close')"
+      >
+        <div
+          class="kq-dialog"
+          role="dialog"
+          aria-labelledby="kq-title"
+        >
           <!-- ═══ Header ═══ -->
           <header class="kq-header">
-            <div class="kq-header-icon">📚</div>
+            <div class="kq-header-icon">
+              📚
+            </div>
             <div class="kq-header-text">
               <span class="kq-label">SCHOLAR'S QUEST</span>
-              <h2 id="kq-title" class="kq-title">{{ topic || 'Knowledge Acquisition' }}</h2>
+              <h2
+                id="kq-title"
+                class="kq-title"
+              >
+                {{ topic || 'Knowledge Acquisition' }}
+              </h2>
             </div>
-            <button class="kq-close" @click="$emit('close')" aria-label="Close">✕</button>
+            <button
+              class="kq-close"
+              aria-label="Close"
+              @click="$emit('close')"
+            >
+              ✕
+            </button>
           </header>
 
           <!-- ═══ Step Tracker ═══ -->
-          <nav class="kq-steps" aria-label="Quest progress">
+          <nav
+            class="kq-steps"
+            aria-label="Quest progress"
+          >
             <div
               v-for="(step, i) in steps"
               :key="i"
@@ -33,25 +57,53 @@
 
           <!-- ═══ Step Content ═══ -->
           <div class="kq-body">
-
             <!-- Step 1: Verify Brain -->
-            <section v-if="currentStep === 0" class="kq-section">
-              <h3 class="kq-section-title">🧠 Verifying Brain</h3>
+            <section
+              v-if="currentStep === 0"
+              class="kq-section"
+            >
+              <h3 class="kq-section-title">
+                🧠 Verifying Brain
+              </h3>
               <div class="kq-check-list">
-                <div v-for="check in brainChecks" :key="check.label" class="kq-check">
+                <div
+                  v-for="check in brainChecks"
+                  :key="check.label"
+                  class="kq-check"
+                >
                   <span class="kq-check-icon">{{ check.ok ? '✅' : check.checking ? '⏳' : '❌' }}</span>
                   <span class="kq-check-label">{{ check.label }}</span>
-                  <span v-if="check.detail" class="kq-check-detail">{{ check.detail }}</span>
+                  <span
+                    v-if="check.detail"
+                    class="kq-check-detail"
+                  >{{ check.detail }}</span>
                 </div>
               </div>
-              <p v-if="brainReady" class="kq-success-text">All systems ready! Your brain can learn.</p>
-              <p v-else-if="brainError" class="kq-error-text">{{ brainError }}</p>
+              <p
+                v-if="brainReady"
+                class="kq-success-text"
+              >
+                All systems ready! Your brain can learn.
+              </p>
+              <p
+                v-else-if="brainError"
+                class="kq-error-text"
+              >
+                {{ brainError }}
+              </p>
             </section>
 
             <!-- Step 2: Gather Sources -->
-            <section v-if="currentStep === 1" class="kq-section">
-              <h3 class="kq-section-title">📖 Gather Sources</h3>
-              <p class="kq-hint">Add URLs or attach files containing the knowledge you want me to learn.</p>
+            <section
+              v-if="currentStep === 1"
+              class="kq-section"
+            >
+              <h3 class="kq-section-title">
+                📖 Gather Sources
+              </h3>
+              <p class="kq-hint">
+                Add URLs or attach files containing the knowledge you want me to learn.
+              </p>
 
               <div class="kq-source-input">
                 <div class="kq-url-row">
@@ -61,13 +113,20 @@
                     class="kq-url-field"
                     placeholder="https://example.com/document"
                     @keydown.enter.prevent="addUrl"
-                  />
-                  <button class="kq-url-add" :disabled="!urlInput.trim()" @click="addUrl">
+                  >
+                  <button
+                    class="kq-url-add"
+                    :disabled="!urlInput.trim()"
+                    @click="addUrl"
+                  >
                     ＋ Add URL
                   </button>
                 </div>
                 <div class="kq-file-row">
-                  <button class="kq-file-btn" @click="openFilePicker">
+                  <button
+                    class="kq-file-btn"
+                    @click="openFilePicker"
+                  >
                     📎 Attach File
                   </button>
                   <input
@@ -76,44 +135,89 @@
                     class="kq-file-hidden"
                     accept=".md,.txt,.csv,.json,.xml,.html,.htm,.log,.rst,.adoc,.pdf"
                     @change="handleFileSelected"
-                  />
+                  >
                 </div>
               </div>
 
-              <div v-if="sources.length > 0" class="kq-source-list">
-                <h4 class="kq-source-list-title">Sources added:</h4>
-                <div v-for="(src, i) in sources" :key="i" class="kq-source-item">
+              <div
+                v-if="sources.length > 0"
+                class="kq-source-list"
+              >
+                <h4 class="kq-source-list-title">
+                  Sources added:
+                </h4>
+                <div
+                  v-for="(src, i) in sources"
+                  :key="i"
+                  class="kq-source-item"
+                >
                   <span class="kq-source-icon">{{ src.type === 'url' ? '🔗' : '📄' }}</span>
                   <span class="kq-source-name">{{ src.name }}</span>
-                  <button class="kq-source-remove" @click="removeSource(i)" aria-label="Remove">✕</button>
+                  <button
+                    class="kq-source-remove"
+                    aria-label="Remove"
+                    @click="removeSource(i)"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             </section>
 
             <!-- Step 3: Learning -->
-            <section v-if="currentStep === 2" class="kq-section">
-              <h3 class="kq-section-title">⚡ Learning in Progress</h3>
+            <section
+              v-if="currentStep === 2"
+              class="kq-section"
+            >
+              <h3 class="kq-section-title">
+                ⚡ Learning in Progress
+              </h3>
               <div class="kq-progress-area">
-                <div v-for="task in activeTasks" :key="task.id" class="kq-task">
+                <div
+                  v-for="task in activeTasks"
+                  :key="task.id"
+                  class="kq-task"
+                >
                   <div class="kq-task-header">
                     <span class="kq-task-desc">{{ task.description }}</span>
                     <span class="kq-task-pct">{{ task.progress }}%</span>
                   </div>
                   <div class="kq-progress-bar">
-                    <div class="kq-progress-fill" :style="{ width: task.progress + '%' }" />
+                    <div
+                      class="kq-progress-fill"
+                      :style="{ width: task.progress + '%' }"
+                    />
                   </div>
-                  <p v-if="task.status === 'completed'" class="kq-task-done">✅ Complete — {{ task.processed_items }} chunks stored</p>
-                  <p v-else-if="task.status === 'failed'" class="kq-task-fail">❌ {{ task.error }}</p>
+                  <p
+                    v-if="task.status === 'completed'"
+                    class="kq-task-done"
+                  >
+                    ✅ Complete — {{ task.processed_items }} chunks stored
+                  </p>
+                  <p
+                    v-else-if="task.status === 'failed'"
+                    class="kq-task-fail"
+                  >
+                    ❌ {{ task.error }}
+                  </p>
                 </div>
-                <p v-if="allTasksDone" class="kq-success-text">
+                <p
+                  v-if="allTasksDone"
+                  class="kq-success-text"
+                >
                   🎉 All sources ingested! {{ totalChunks }} knowledge chunks stored.
                 </p>
               </div>
             </section>
 
             <!-- Step 4: Ready -->
-            <section v-if="currentStep === 3" class="kq-section">
-              <h3 class="kq-section-title">🎯 Knowledge Acquired!</h3>
+            <section
+              v-if="currentStep === 3"
+              class="kq-section"
+            >
+              <h3 class="kq-section-title">
+                🎯 Knowledge Acquired!
+              </h3>
               <div class="kq-complete-card">
                 <span class="kq-complete-icon">🏆</span>
                 <p class="kq-complete-text">

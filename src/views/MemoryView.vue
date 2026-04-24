@@ -3,26 +3,57 @@
     <header class="mv-header">
       <h2>🧠 Memory</h2>
       <div class="mv-header-actions">
-        <button class="btn-secondary" @click="handleExtract" :disabled="isActing">
+        <button
+          class="btn-secondary"
+          :disabled="isActing"
+          @click="handleExtract"
+        >
           {{ isActing ? 'Working…' : '⬇ Extract from session' }}
         </button>
-        <button class="btn-secondary" @click="handleSummarize" :disabled="isActing">
+        <button
+          class="btn-secondary"
+          :disabled="isActing"
+          @click="handleSummarize"
+        >
           📄 Summarize session
         </button>
-        <button class="btn-secondary" @click="handleDecay" :disabled="isActing" title="Apply time-decay to all memories">
+        <button
+          class="btn-secondary"
+          :disabled="isActing"
+          title="Apply time-decay to all memories"
+          @click="handleDecay"
+        >
           ⏳ Decay
         </button>
-        <button class="btn-secondary" @click="handleGC" :disabled="isActing" title="Remove fully decayed memories">
+        <button
+          class="btn-secondary"
+          :disabled="isActing"
+          title="Remove fully decayed memories"
+          @click="handleGC"
+        >
           🧹 GC
         </button>
-        <button class="btn-primary" @click="showAdd = true">＋ Add memory</button>
+        <button
+          class="btn-primary"
+          @click="showAdd = true"
+        >
+          ＋ Add memory
+        </button>
       </div>
     </header>
 
-    <p v-if="feedback" class="mv-feedback">{{ feedback }}</p>
+    <p
+      v-if="feedback"
+      class="mv-feedback"
+    >
+      {{ feedback }}
+    </p>
 
     <!-- Stats dashboard -->
-    <div v-if="store.stats" class="mv-stats">
+    <div
+      v-if="store.stats"
+      class="mv-stats"
+    >
       <div class="mv-stat">
         <span class="mv-stat-value">{{ store.stats.total }}</span>
         <span class="mv-stat-label">Total</span>
@@ -56,16 +87,24 @@
         :key="tab"
         :class="['mv-tab', { active: activeTab === tab }]"
         @click="activeTab = tab"
-      >{{ tab }}</button>
+      >
+        {{ tab }}
+      </button>
     </nav>
 
     <!-- ── Graph tab ── -->
-    <div v-if="activeTab === 'Graph'" class="mv-graph-panel">
+    <div
+      v-if="activeTab === 'Graph'"
+      class="mv-graph-panel"
+    >
       <div class="mv-graph-main">
         <div class="mv-graph-toolbar">
           <label class="mv-graph-toggle">
             <span>Edges:</span>
-            <select v-model="edgeMode" class="mv-edge-mode">
+            <select
+              v-model="edgeMode"
+              class="mv-edge-mode"
+            >
               <option value="typed">Typed (knowledge graph)</option>
               <option value="tag">Tag co-occurrence</option>
               <option value="both">Both</option>
@@ -73,11 +112,16 @@
           </label>
           <button
             class="btn-secondary"
-            @click="handleExtractEdges"
             :disabled="isActing || store.memories.length < 2"
             :title="store.memories.length < 2 ? 'Add at least 2 memories first' : 'Use the brain to propose edges'"
-          >🔗 Extract edges</button>
-          <span v-if="store.edgeStats" class="mv-edge-counter">
+            @click="handleExtractEdges"
+          >
+            🔗 Extract edges
+          </button>
+          <span
+            v-if="store.edgeStats"
+            class="mv-edge-counter"
+          >
             {{ store.edgeStats.total_edges }} edge{{ store.edgeStats.total_edges === 1 ? '' : 's' }}
             · {{ store.edgeStats.connected_memories }} connected
           </span>
@@ -89,7 +133,10 @@
           @select="onNodeSelect"
         />
       </div>
-      <aside v-if="selectedEntry" class="mv-node-detail">
+      <aside
+        v-if="selectedEntry"
+        class="mv-node-detail"
+      >
         <h3>{{ selectedEntry.content }}</h3>
         <p><strong>Type:</strong> {{ selectedEntry.memory_type }}</p>
         <p><strong>Tier:</strong> <span :class="'mv-tier-badge tier-' + selectedEntry.tier">{{ selectedEntry.tier }}</span></p>
@@ -97,40 +144,79 @@
         <p><strong>Importance:</strong> {{ '★'.repeat(selectedEntry.importance) }}</p>
         <p><strong>Decay:</strong> {{ (selectedEntry.decay_score * 100).toFixed(0) }}%</p>
         <p><strong>Accessed:</strong> {{ selectedEntry.access_count }}×</p>
-        <div v-if="selectedEdges.length" class="mv-node-edges">
+        <div
+          v-if="selectedEdges.length"
+          class="mv-node-edges"
+        >
           <strong>Edges ({{ selectedEdges.length }}):</strong>
           <ul>
-            <li v-for="e in selectedEdges" :key="e.id" class="mv-node-edge">
+            <li
+              v-for="e in selectedEdges"
+              :key="e.id"
+              class="mv-node-edge"
+            >
               <span class="mv-rel-pill">{{ e.rel_type }}</span>
               <span class="mv-edge-direction">
                 {{ e.src_id === selectedEntry.id ? '→' : '←' }}
                 #{{ e.src_id === selectedEntry.id ? e.dst_id : e.src_id }}
               </span>
-              <button class="mv-edge-del" title="Delete edge" @click="handleDeleteEdge(e.id)">×</button>
+              <button
+                class="mv-edge-del"
+                title="Delete edge"
+                @click="handleDeleteEdge(e.id)"
+              >
+                ×
+              </button>
             </li>
           </ul>
         </div>
         <div class="mv-node-btns">
-          <button class="btn-secondary" @click="startEdit(selectedEntry)">✏ Edit</button>
-          <button class="btn-danger" @click="confirmDelete(selectedEntry.id)">🗑 Delete</button>
+          <button
+            class="btn-secondary"
+            @click="startEdit(selectedEntry)"
+          >
+            ✏ Edit
+          </button>
+          <button
+            class="btn-danger"
+            @click="confirmDelete(selectedEntry.id)"
+          >
+            🗑 Delete
+          </button>
         </div>
       </aside>
     </div>
 
     <!-- ── List tab ── -->
-    <div v-else-if="activeTab === 'List'" class="mv-list-panel">
+    <div
+      v-else-if="activeTab === 'List'"
+      class="mv-list-panel"
+    >
       <div class="mv-search-row">
         <input
           v-model="searchQuery"
           placeholder="Search memories…"
           class="mv-search"
           @keyup.enter="doSearch"
-        />
-        <button class="btn-secondary" @click="doSearch">🔍 Search</button>
-        <button class="btn-secondary" @click="doSemanticSearch" title="Brain-powered semantic search">
+        >
+        <button
+          class="btn-secondary"
+          @click="doSearch"
+        >
+          🔍 Search
+        </button>
+        <button
+          class="btn-secondary"
+          title="Brain-powered semantic search"
+          @click="doSemanticSearch"
+        >
           🤖 Semantic
         </button>
-        <button class="btn-primary" @click="doHybridSearch" title="6-signal hybrid search">
+        <button
+          class="btn-primary"
+          title="6-signal hybrid search"
+          @click="doHybridSearch"
+        >
           ⚡ Hybrid
         </button>
       </div>
@@ -142,7 +228,9 @@
           :key="t"
           :class="['mv-type-chip', { active: typeFilter === t }]"
           @click="typeFilter = typeFilter === t ? null : t"
-        >{{ t }}</button>
+        >
+          {{ t }}
+        </button>
         <span class="mv-filter-divider">|</span>
         <span class="mv-filter-label">Tier:</span>
         <button
@@ -150,13 +238,28 @@
           :key="tier"
           :class="['mv-tier-chip', 'tier-' + tier, { active: tierFilter === tier }]"
           @click="tierFilter = tierFilter === tier ? null : tier"
-        >{{ tier }}</button>
+        >
+          {{ tier }}
+        </button>
       </div>
 
-      <p v-if="store.isLoading" class="mv-status">Loading…</p>
-      <p v-else-if="displayedMemories.length === 0" class="mv-status">No memories yet.</p>
+      <p
+        v-if="store.isLoading"
+        class="mv-status"
+      >
+        Loading…
+      </p>
+      <p
+        v-else-if="displayedMemories.length === 0"
+        class="mv-status"
+      >
+        No memories yet.
+      </p>
 
-      <ul v-else class="mv-list">
+      <ul
+        v-else
+        class="mv-list"
+      >
         <li
           v-for="m in displayedMemories"
           :key="m.id"
@@ -166,39 +269,87 @@
             <span class="mv-chip">{{ m.memory_type }}</span>
             <span :class="'mv-tier-badge tier-' + m.tier">{{ m.tier }}</span>
             <span class="mv-stars">{{ '★'.repeat(m.importance) }}</span>
-            <span class="mv-decay-bar" :title="'Decay: ' + (m.decay_score * 100).toFixed(0) + '%'">
-              <span class="mv-decay-fill" :style="{ width: (m.decay_score * 100) + '%' }" />
+            <span
+              class="mv-decay-bar"
+              :title="'Decay: ' + (m.decay_score * 100).toFixed(0) + '%'"
+            >
+              <span
+                class="mv-decay-fill"
+                :style="{ width: (m.decay_score * 100) + '%' }"
+              />
             </span>
           </div>
-          <p class="mv-content">{{ m.content }}</p>
-          <div v-if="m.tags" class="mv-tags">
-            <span v-for="tag in m.tags.split(',')" :key="tag" class="mv-tag">{{ tag.trim() }}</span>
+          <p class="mv-content">
+            {{ m.content }}
+          </p>
+          <div
+            v-if="m.tags"
+            class="mv-tags"
+          >
+            <span
+              v-for="tag in m.tags.split(',')"
+              :key="tag"
+              class="mv-tag"
+            >{{ tag.trim() }}</span>
           </div>
           <div class="mv-card-footer">
             <span class="mv-ts">{{ formatDate(m.created_at) }}</span>
-            <span v-if="m.token_count" class="mv-token-count" title="Token count">{{ m.token_count }}t</span>
+            <span
+              v-if="m.token_count"
+              class="mv-token-count"
+              title="Token count"
+            >{{ m.token_count }}t</span>
             <button
               v-if="m.tier !== 'long'"
               class="btn-icon"
-              @click="handlePromote(m.id, promoteTier(m.tier))"
               :title="'Promote to ' + promoteTier(m.tier)"
-            >⬆</button>
-            <button class="btn-icon" @click="startEdit(m)" title="Edit">✏</button>
-            <button class="btn-icon danger" @click="confirmDelete(m.id)" title="Delete">🗑</button>
+              @click="handlePromote(m.id, promoteTier(m.tier))"
+            >
+              ⬆
+            </button>
+            <button
+              class="btn-icon"
+              title="Edit"
+              @click="startEdit(m)"
+            >
+              ✏
+            </button>
+            <button
+              class="btn-icon danger"
+              title="Delete"
+              @click="confirmDelete(m.id)"
+            >
+              🗑
+            </button>
           </div>
         </li>
       </ul>
     </div>
 
     <!-- ── Session tab ── -->
-    <div v-else class="mv-session-panel">
+    <div
+      v-else
+      class="mv-session-panel"
+    >
       <p class="mv-session-hint">
         Short-term memory — the last 20 messages of the current session that the brain reads
         before every reply.
       </p>
-      <p v-if="shortTerm.length === 0" class="mv-status">No conversation yet.</p>
-      <ul v-else class="mv-session-list">
-        <li v-for="msg in shortTerm" :key="msg.id" :class="['mv-session-msg', msg.role]">
+      <p
+        v-if="shortTerm.length === 0"
+        class="mv-status"
+      >
+        No conversation yet.
+      </p>
+      <ul
+        v-else
+        class="mv-session-list"
+      >
+        <li
+          v-for="msg in shortTerm"
+          :key="msg.id"
+          :class="['mv-session-msg', msg.role]"
+        >
           <strong>{{ msg.role === 'user' ? 'You' : '🤖' }}</strong>
           <span>{{ msg.content }}</span>
         </li>
@@ -206,27 +357,57 @@
     </div>
 
     <!-- Add / Edit modal -->
-    <div v-if="showAdd || editTarget" class="mv-modal-backdrop" @click.self="closeModal">
+    <div
+      v-if="showAdd || editTarget"
+      class="mv-modal-backdrop"
+      @click.self="closeModal"
+    >
       <div class="mv-modal">
         <h3>{{ editTarget ? 'Edit memory' : 'Add memory' }}</h3>
         <label>Content
-          <textarea v-model="form.content" rows="3" placeholder="What should I remember?" />
+          <textarea
+            v-model="form.content"
+            rows="3"
+            placeholder="What should I remember?"
+          />
         </label>
         <label>Tags (comma-separated)
-          <input v-model="form.tags" placeholder="python, work, project" />
+          <input
+            v-model="form.tags"
+            placeholder="python, work, project"
+          >
         </label>
         <label>Type
           <select v-model="form.memory_type">
-            <option v-for="t in allTypes" :key="t" :value="t">{{ t }}</option>
+            <option
+              v-for="t in allTypes"
+              :key="t"
+              :value="t"
+            >{{ t }}</option>
           </select>
         </label>
         <label>Importance (1–5)
-          <input v-model.number="form.importance" type="range" min="1" max="5" />
+          <input
+            v-model.number="form.importance"
+            type="range"
+            min="1"
+            max="5"
+          >
           <span>{{ form.importance }}</span>
         </label>
         <div class="mv-modal-btns">
-          <button class="btn-primary" @click="saveMemory">Save</button>
-          <button class="btn-secondary" @click="closeModal">Cancel</button>
+          <button
+            class="btn-primary"
+            @click="saveMemory"
+          >
+            Save
+          </button>
+          <button
+            class="btn-secondary"
+            @click="closeModal"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

@@ -1,19 +1,31 @@
 <template>
-  <div class="chat-view" :style="{ '--keyboard-offset': keyboardHeight + 'px' }">
+  <div
+    class="chat-view"
+    :style="{ '--keyboard-offset': keyboardHeight + 'px' }"
+  >
     <!-- Full-screen character viewport — the star of the show -->
     <div class="viewport-layer">
-      <CharacterViewport ref="viewportRef" @request-add-music="handleAddMusicRequest" />
+      <CharacterViewport
+        ref="viewportRef"
+        @request-add-music="handleAddMusicRequest"
+      />
       <!-- Teleport target for the music bar (left side, below settings button).
            Must live inside .viewport-layer so its z-index competes with the
            settings dropdown rather than sitting above the entire viewport. -->
-      <div id="music-bar-portal" class="music-bar-portal" />
+      <div
+        id="music-bar-portal"
+        class="music-bar-portal"
+      />
     </div>
 
     <!-- ── Floating overlays on top of the character ── -->
 
     <!-- Brain setup card (shown when no brain is configured) -->
     <Transition name="fade-up">
-      <div v-if="!brain.hasBrain" class="brain-overlay">
+      <div
+        v-if="!brain.hasBrain"
+        class="brain-overlay"
+      >
         <div class="brain-card">
           <div class="brain-card-header">
             <span>🧠</span>
@@ -21,19 +33,31 @@
           </div>
           <div class="brain-free-start">
             <p>Start chatting instantly with a free cloud LLM:</p>
-            <button class="brain-activate-btn" @click="activateFreeApi">
+            <button
+              class="brain-activate-btn"
+              @click="activateFreeApi"
+            >
               ☁️ Use Free Cloud API (no setup)
             </button>
           </div>
           <div class="brain-local-section">
-            <p class="brain-hw" v-if="brain.systemInfo">
+            <p
+              v-if="brain.systemInfo"
+              class="brain-hw"
+            >
               {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
             </p>
-            <p v-if="brain.topRecommendation" class="brain-rec">
+            <p
+              v-if="brain.topRecommendation"
+              class="brain-rec"
+            >
               Or run locally: <strong>{{ brain.topRecommendation.display_name }}</strong>
               <br><small>{{ brain.topRecommendation.description }}</small>
             </p>
-            <div v-if="brain.recommendations.length" class="brain-models">
+            <div
+              v-if="brain.recommendations.length"
+              class="brain-models"
+            >
               <button
                 v-for="m in brain.recommendations"
                 :key="m.model_tag"
@@ -41,17 +65,36 @@
                 @click="selectedBrain = m.model_tag"
               >
                 <span>{{ m.display_name }}</span>
-                <span v-if="m.is_top_pick" class="brain-star">⭐</span>
+                <span
+                  v-if="m.is_top_pick"
+                  class="brain-star"
+                >⭐</span>
               </button>
             </div>
-            <div v-if="!brain.ollamaStatus.running && brain.recommendations.length" class="brain-warn">
+            <div
+              v-if="!brain.ollamaStatus.running && brain.recommendations.length"
+              class="brain-warn"
+            >
               ❌ Ollama not running — start it first (<code>ollama serve</code>)
-              <button class="brain-retry-btn" @click="brain.checkOllamaStatus()">🔄 Retry</button>
+              <button
+                class="brain-retry-btn"
+                @click="brain.checkOllamaStatus()"
+              >
+                🔄 Retry
+              </button>
             </div>
-            <div v-else-if="brain.isPulling" class="brain-pulling">
+            <div
+              v-else-if="brain.isPulling"
+              class="brain-pulling"
+            >
               <div class="brain-spinner" /> Downloading…
             </div>
-            <div v-else-if="brain.pullError" class="brain-warn">❌ {{ brain.pullError }}</div>
+            <div
+              v-else-if="brain.pullError"
+              class="brain-warn"
+            >
+              ❌ {{ brain.pullError }}
+            </div>
             <button
               v-if="brain.ollamaStatus.running && !brain.isPulling && selectedBrain"
               class="brain-local-btn"
@@ -65,28 +108,50 @@
     </Transition>
 
     <!-- Floating subtitle — shows AI response synced with TTS voice -->
-    <Transition name="subtitle" mode="out-in">
-      <div v-if="subtitleVisible" class="subtitle-overlay" :style="{ bottom: subtitleBottom }" :key="subtitleKey">
-        <div class="subtitle-text" ref="subtitleRef" v-html="subtitleHtml"></div>
+    <Transition
+      name="subtitle"
+      mode="out-in"
+    >
+      <div
+        v-if="subtitleVisible"
+        :key="subtitleKey"
+        class="subtitle-overlay"
+        :style="{ bottom: subtitleBottom }"
+      >
+        <div
+          ref="subtitleRef"
+          class="subtitle-text"
+          v-html="subtitleHtml"
+        />
       </div>
     </Transition>
 
     <!-- Floating emoji popup above character head -->
     <Transition name="emoji-pop">
-      <div v-if="emojiPopupVisible" class="emoji-popup" :key="emojiPopupKey">
+      <div
+        v-if="emojiPopupVisible"
+        :key="emojiPopupKey"
+        class="emoji-popup"
+      >
         {{ emojiPopupText }}
       </div>
     </Transition>
 
     <!-- AI state indicator pill -->
-    <div class="ai-state-pill" :class="characterStore.state">
+    <div
+      class="ai-state-pill"
+      :class="characterStore.state"
+    >
       <span class="ai-state-dot" />
       <span class="ai-state-label">{{ stateLabel }}</span>
     </div>
 
     <!-- Brain status (shows active provider/model) -->
     <Transition name="fade">
-      <div v-if="brain.hasBrain" class="brain-status-pill">
+      <div
+        v-if="brain.hasBrain"
+        class="brain-status-pill"
+      >
         <span class="brain-pill-dot" />
         <span>{{ activeProviderName }}</span>
       </div>
@@ -113,17 +178,49 @@
     />
 
     <!-- Bottom chat panel — input always visible, history toggles via button -->
-    <div class="bottom-panel" :class="{ expanded: chatDrawerExpanded }">
+    <div
+      class="bottom-panel"
+      :class="{ expanded: chatDrawerExpanded }"
+    >
       <!-- Chat history (shown when expanded) -->
       <Transition name="chat-panel">
-        <div v-if="chatDrawerExpanded" class="chat-history" @click.stop>
+        <div
+          v-if="chatDrawerExpanded"
+          class="chat-history"
+          @click.stop
+        >
           <div class="chat-history-header">
             <span class="chat-history-title">Chat History</span>
             <div class="chat-history-actions">
-              <button class="chat-history-action-btn" @click="copyChatHistoryToClipboard" aria-label="Copy chat history">Copy</button>
-              <button class="chat-history-action-btn" @click="pasteClipboardAsMessage" aria-label="Paste clipboard as message">Paste</button>
-              <button v-if="canSkipDialog" class="chat-history-action-btn skip" @click="skipCurrentDialog" aria-label="Skip dialog and TTS">Skip</button>
-              <button class="chat-history-close" @click="toggleChatDrawer()" aria-label="Close chat history">&times;</button>
+              <button
+                class="chat-history-action-btn"
+                aria-label="Copy chat history"
+                @click="copyChatHistoryToClipboard"
+              >
+                Copy
+              </button>
+              <button
+                class="chat-history-action-btn"
+                aria-label="Paste clipboard as message"
+                @click="pasteClipboardAsMessage"
+              >
+                Paste
+              </button>
+              <button
+                v-if="canSkipDialog"
+                class="chat-history-action-btn skip"
+                aria-label="Skip dialog and TTS"
+                @click="skipCurrentDialog"
+              >
+                Skip
+              </button>
+              <button
+                class="chat-history-close"
+                aria-label="Close chat history"
+                @click="toggleChatDrawer()"
+              >
+                &times;
+              </button>
             </div>
           </div>
           <TaskProgressBar />
@@ -152,11 +249,20 @@
           <button
             class="chat-drawer-toggle"
             :class="{ active: chatDrawerExpanded }"
-            @click="toggleChatDrawer()"
             :aria-label="chatDrawerExpanded ? 'Hide chat' : 'Show chat'"
+            @click="toggleChatDrawer()"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
             <span class="toggle-label">{{ chatDrawerExpanded ? 'Hide' : 'Chat' }}</span>
           </button>
@@ -167,14 +273,37 @@
             :aria-label="asr.isListening.value ? 'Stop listening' : 'Start voice input'"
             @click="toggleMic"
           >
-            <svg v-if="!asr.isListening.value" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"/>
+            <svg
+              v-if="!asr.isListening.value"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z" />
             </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            <svg
+              v-else
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <rect
+                x="6"
+                y="6"
+                width="12"
+                height="12"
+                rx="2"
+              />
             </svg>
           </button>
-          <ChatInput :disabled="conversationStore.isThinking" @submit="handleSend" @focus="onInputFocused" @blur="onInputBlurred" />
+          <ChatInput
+            :disabled="conversationStore.isThinking"
+            @submit="handleSend"
+            @focus="onInputFocused"
+            @blur="onInputBlurred"
+          />
         </div>
       </div>
     </div>

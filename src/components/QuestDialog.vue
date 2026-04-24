@@ -1,41 +1,77 @@
 <template>
   <Teleport to="body">
-    <div class="quest-backdrop" @click.self="$emit('close')">
-      <div class="quest-dialog" :class="'quest-status-' + status">
+    <div
+      class="quest-backdrop"
+      @click.self="$emit('close')"
+    >
+      <div
+        class="quest-dialog"
+        :class="'quest-status-' + status"
+      >
         <!-- Close button -->
-        <button class="quest-close" @click="$emit('close')">✕</button>
+        <button
+          class="quest-close"
+          @click="$emit('close')"
+        >
+          ✕
+        </button>
 
         <!-- Header -->
         <div class="quest-header">
-          <div class="quest-icon-wrap" :class="'quest-status-' + status">
+          <div
+            class="quest-icon-wrap"
+            :class="'quest-status-' + status"
+          >
             <span class="quest-icon">{{ node.icon }}</span>
-            <span v-if="status === 'active'" class="quest-icon-badge">✓</span>
+            <span
+              v-if="status === 'active'"
+              class="quest-icon-badge"
+            >✓</span>
           </div>
           <div class="quest-header-text">
-            <h3 class="quest-name">{{ node.name }}</h3>
+            <h3 class="quest-name">
+              {{ node.name }}
+            </h3>
             <span class="quest-tier-badge">{{ tierLabel }}</span>
             <span class="quest-cat-badge">{{ categoryLabel }}</span>
           </div>
         </div>
 
         <!-- Status banner -->
-        <div class="quest-status-banner" :class="'quest-banner-' + status">
+        <div
+          class="quest-status-banner"
+          :class="'quest-banner-' + status"
+        >
           <span v-if="status === 'active'">✅ Skill Active</span>
           <span v-else-if="status === 'available'">⚡ Ready to Unlock!</span>
           <span v-else>🔒 Prerequisites Required</span>
-          <span v-if="activationTime" class="quest-activation-time">
+          <span
+            v-if="activationTime"
+            class="quest-activation-time"
+          >
             Activated {{ formatRelativeTime(activationTime) }}
           </span>
         </div>
 
         <!-- Description -->
-        <p class="quest-description">{{ node.description }}</p>
+        <p class="quest-description">
+          {{ node.description }}
+        </p>
 
         <!-- Prerequisites -->
-        <section v-if="node.requires.length > 0" class="quest-section">
-          <h4 class="quest-section-title">📋 Prerequisites</h4>
+        <section
+          v-if="node.requires.length > 0"
+          class="quest-section"
+        >
+          <h4 class="quest-section-title">
+            📋 Prerequisites
+          </h4>
           <ul class="quest-prereq-list">
-            <li v-for="reqId in node.requires" :key="reqId" class="quest-prereq-item">
+            <li
+              v-for="reqId in node.requires"
+              :key="reqId"
+              class="quest-prereq-item"
+            >
               <span class="quest-prereq-check">{{ isPrereqMet(reqId) ? '✅' : '❌' }}</span>
               <span>{{ getNodeName(reqId) }}</span>
             </li>
@@ -43,17 +79,28 @@
         </section>
 
         <!-- Quest Steps -->
-        <section v-if="status !== 'active'" class="quest-section">
-          <h4 class="quest-section-title">🗺️ Quest Steps</h4>
+        <section
+          v-if="status !== 'active'"
+          class="quest-section"
+        >
+          <h4 class="quest-section-title">
+            🗺️ Quest Steps
+          </h4>
           <ol class="quest-steps">
-            <li v-for="(step, i) in node.questSteps" :key="i" class="quest-step">
+            <li
+              v-for="(step, i) in node.questSteps"
+              :key="i"
+              class="quest-step"
+            >
               <span class="quest-step-num">{{ i + 1 }}</span>
               <span class="quest-step-label">{{ step.label }}</span>
               <button
                 v-if="step.action === 'navigate' && step.target"
                 class="quest-step-action"
                 @click="$emit('navigate', step.target!)"
-              >Go →</button>
+              >
+                Go →
+              </button>
               <a
                 v-if="step.action === 'external' && step.target"
                 class="quest-step-action"
@@ -67,18 +114,32 @@
 
         <!-- Rewards -->
         <section class="quest-section">
-          <h4 class="quest-section-title">🎁 Rewards</h4>
+          <h4 class="quest-section-title">
+            🎁 Rewards
+          </h4>
           <ul class="quest-reward-list">
-            <li v-for="(reward, i) in node.rewards" :key="i" class="quest-reward-item">
+            <li
+              v-for="(reward, i) in node.rewards"
+              :key="i"
+              class="quest-reward-item"
+            >
               <span class="quest-reward-icon">{{ node.rewardIcons?.[i] || (status === 'active' ? '✨' : '🎯') }}</span>
-              <span class="quest-reward-text" :class="status === 'active' ? 'reward-active' : ''">{{ reward }}</span>
+              <span
+                class="quest-reward-text"
+                :class="status === 'active' ? 'reward-active' : ''"
+              >{{ reward }}</span>
             </li>
           </ul>
         </section>
 
         <!-- Video Reference -->
-        <section v-if="node.videoRef" class="quest-section">
-          <h4 class="quest-section-title">🎬 See it in action</h4>
+        <section
+          v-if="node.videoRef"
+          class="quest-section"
+        >
+          <h4 class="quest-section-title">
+            🎬 See it in action
+          </h4>
           <div class="quest-video-wrapper">
             <iframe
               :src="videoEmbedUrl"
@@ -93,10 +154,19 @@
         </section>
 
         <!-- Combos -->
-        <section v-if="node.combos.length > 0" class="quest-section">
-          <h4 class="quest-section-title">🔥 Combo Potential</h4>
+        <section
+          v-if="node.combos.length > 0"
+          class="quest-section"
+        >
+          <h4 class="quest-section-title">
+            🔥 Combo Potential
+          </h4>
           <div class="quest-combo-list">
-            <div v-for="combo in node.combos" :key="combo.name" class="quest-combo-item">
+            <div
+              v-for="combo in node.combos"
+              :key="combo.name"
+              class="quest-combo-item"
+            >
               <span class="quest-combo-icon">{{ combo.icon }}</span>
               <div class="quest-combo-body">
                 <span class="quest-combo-name">{{ combo.name }}</span>
@@ -109,13 +179,25 @@
 
         <!-- Action buttons -->
         <div class="quest-actions">
-          <button v-if="!isPinned && status !== 'active'" class="quest-btn quest-btn-pin" @click="$emit('pin')">
+          <button
+            v-if="!isPinned && status !== 'active'"
+            class="quest-btn quest-btn-pin"
+            @click="$emit('pin')"
+          >
             📌 Pin Quest
           </button>
-          <button v-if="isPinned" class="quest-btn quest-btn-unpin" @click="$emit('unpin')">
+          <button
+            v-if="isPinned"
+            class="quest-btn quest-btn-unpin"
+            @click="$emit('unpin')"
+          >
             Unpin
           </button>
-          <button v-if="status === 'available' && !isDismissed" class="quest-btn quest-btn-dismiss" @click="$emit('dismiss')">
+          <button
+            v-if="status === 'available' && !isDismissed"
+            class="quest-btn quest-btn-dismiss"
+            @click="$emit('dismiss')"
+          >
             Skip for now
           </button>
         </div>

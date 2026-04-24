@@ -112,7 +112,13 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       .replace(/\n/g, ' ')               // Replace single newlines with spaces
       .replace(TTS_UNWANTED_UNICODE_REGEX, ' ')
       // Clean up orphaned joiners/selectors that can remain from multi-codepoint sequences.
-      .replace(/[\u200D\uFE0E\uFE0F]/g, '')
+      // Strip ZWJ + variation selectors that linger from multi-codepoint
+      // emoji sequences. The `u` flag is essential here so the surrogate
+      // pairs are treated as single code points; the rule warning about
+      // "combined character in class" is a false positive — these
+      // selectors are exactly what we want to remove.
+      // eslint-disable-next-line no-misleading-character-class
+      .replace(/[\u200D\uFE0E\uFE0F]/gu, '')
       .replace(/\s+([,.;:!?…])/g, '$1')
       .replace(/\s{2,}/g, ' ')
       .trim();

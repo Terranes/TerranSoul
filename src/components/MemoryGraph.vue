@@ -1,5 +1,8 @@
 <template>
-  <div ref="container" class="memory-graph" />
+  <div
+    ref="container"
+    class="memory-graph"
+  />
 </template>
 
 <script setup lang="ts">

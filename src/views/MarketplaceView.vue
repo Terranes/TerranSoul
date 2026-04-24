@@ -3,13 +3,22 @@
     <header class="mp-header">
       <h2>🏪 Agent Marketplace</h2>
       <div class="mp-header-actions">
-        <button class="btn-secondary" @click="refreshAll" :disabled="isLoading || !tauriAvailable">
+        <button
+          class="btn-secondary"
+          :disabled="isLoading || !tauriAvailable"
+          @click="refreshAll"
+        >
           {{ isLoading ? 'Loading…' : '🔄 Refresh' }}
         </button>
       </div>
     </header>
 
-    <p v-if="packageStore.error && tauriAvailable" class="mp-error">{{ packageStore.error }}</p>
+    <p
+      v-if="packageStore.error && tauriAvailable"
+      class="mp-error"
+    >
+      {{ packageStore.error }}
+    </p>
 
     <!-- Tabs -->
     <nav class="mp-tabs">
@@ -18,11 +27,16 @@
         :key="tab.id"
         :class="['mp-tab', { active: activeTab === tab.id }]"
         @click="activeTab = tab.id"
-      >{{ tab.icon }} {{ tab.label }}</button>
+      >
+        {{ tab.icon }} {{ tab.label }}
+      </button>
     </nav>
 
     <!-- ── Browse tab ── -->
-    <div v-if="activeTab === 'browse'" class="mp-panel">
+    <div
+      v-if="activeTab === 'browse'"
+      class="mp-panel"
+    >
       <!-- No Tauri: show inline Tauri notification banner -->
       <template v-if="!tauriAvailable">
         <div class="tauri-banner">
@@ -39,7 +53,10 @@
           </div>
 
           <!-- Brain status -->
-          <div v-if="brainStore.hasBrain" class="tauri-brain-row">
+          <div
+            v-if="brainStore.hasBrain"
+            class="tauri-brain-row"
+          >
             <span class="tauri-brain-dot" />
             <span v-if="brainStore.isFreeApiMode">☁️ Free Cloud LLM active — <strong>{{ activeProviderName }}</strong></span>
             <span v-else-if="brainStore.brainMode?.mode === 'paid_api'">💳 Paid API active — <strong>{{ brainStore.brainMode.model }}</strong></span>
@@ -48,21 +65,40 @@
 
           <!-- LLM configuration section -->
           <div class="llm-config">
-            <div class="llm-config-header" @click="showLlmConfig = !showLlmConfig">
+            <div
+              class="llm-config-header"
+              @click="showLlmConfig = !showLlmConfig"
+            >
               <span>🔧</span>
               <strong>Configure LLM</strong>
               <span class="llm-config-hint">Change your AI model {{ showLlmConfig ? '▾' : '▸' }}</span>
             </div>
 
-            <div v-if="showLlmConfig" class="llm-config-body">
+            <div
+              v-if="showLlmConfig"
+              class="llm-config-body"
+            >
               <!-- Tab bar: Free / Paid -->
               <div class="llm-tier-tabs">
-                <button :class="['llm-tier-tab', { active: llmTier === 'free' }]" @click="llmTier = 'free'">☁️ Free Cloud</button>
-                <button :class="['llm-tier-tab', { active: llmTier === 'paid' }]" @click="llmTier = 'paid'">💳 Paid API</button>
+                <button
+                  :class="['llm-tier-tab', { active: llmTier === 'free' }]"
+                  @click="llmTier = 'free'"
+                >
+                  ☁️ Free Cloud
+                </button>
+                <button
+                  :class="['llm-tier-tab', { active: llmTier === 'paid' }]"
+                  @click="llmTier = 'paid'"
+                >
+                  💳 Paid API
+                </button>
               </div>
 
               <!-- Free provider selection -->
-              <div v-if="llmTier === 'free'" class="llm-providers">
+              <div
+                v-if="llmTier === 'free'"
+                class="llm-providers"
+              >
                 <div
                   v-for="p in brainStore.freeProviders"
                   :key="p.id"
@@ -71,15 +107,29 @@
                 >
                   <div class="llm-provider-row">
                     <strong>{{ p.display_name }}</strong>
-                    <span v-if="p.id === currentFreeProviderId" class="llm-current-badge">current</span>
-                    <span v-if="p.id === 'pollinations'" class="llm-rec-badge">⭐ no key needed</span>
+                    <span
+                      v-if="p.id === currentFreeProviderId"
+                      class="llm-current-badge"
+                    >current</span>
+                    <span
+                      v-if="p.id === 'pollinations'"
+                      class="llm-rec-badge"
+                    >⭐ no key needed</span>
                   </div>
                   <small>{{ p.notes }}</small>
                   <small class="llm-provider-model">Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM{{ p.requires_api_key ? ' · API key required' : '' }}</small>
                 </div>
-                <div v-if="selectedFreeProviderNeedsKey" class="llm-field">
+                <div
+                  v-if="selectedFreeProviderNeedsKey"
+                  class="llm-field"
+                >
                   <label>API Key:</label>
-                  <input v-model="llmFreeApiKey" type="password" placeholder="Enter API key…" class="llm-input" />
+                  <input
+                    v-model="llmFreeApiKey"
+                    type="password"
+                    placeholder="Enter API key…"
+                    class="llm-input"
+                  >
                 </div>
                 <button
                   class="btn-primary btn-sm llm-apply-btn"
@@ -91,26 +141,56 @@
               </div>
 
               <!-- Paid API configuration -->
-              <div v-if="llmTier === 'paid'" class="llm-paid-form">
+              <div
+                v-if="llmTier === 'paid'"
+                class="llm-paid-form"
+              >
                 <div class="llm-field">
                   <label>Provider:</label>
-                  <select v-model="llmPaidProvider" class="llm-select">
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="custom">Custom endpoint</option>
+                  <select
+                    v-model="llmPaidProvider"
+                    class="llm-select"
+                  >
+                    <option value="openai">
+                      OpenAI
+                    </option>
+                    <option value="anthropic">
+                      Anthropic
+                    </option>
+                    <option value="custom">
+                      Custom endpoint
+                    </option>
                   </select>
                 </div>
                 <div class="llm-field">
                   <label>API Key:</label>
-                  <input v-model="llmPaidApiKey" type="password" placeholder="sk-…" class="llm-input" />
+                  <input
+                    v-model="llmPaidApiKey"
+                    type="password"
+                    placeholder="sk-…"
+                    class="llm-input"
+                  >
                 </div>
                 <div class="llm-field">
                   <label>Model:</label>
-                  <input v-model="llmPaidModel" type="text" placeholder="gpt-4o" class="llm-input" />
+                  <input
+                    v-model="llmPaidModel"
+                    type="text"
+                    placeholder="gpt-4o"
+                    class="llm-input"
+                  >
                 </div>
-                <div v-if="llmPaidProvider === 'custom'" class="llm-field">
+                <div
+                  v-if="llmPaidProvider === 'custom'"
+                  class="llm-field"
+                >
                   <label>Base URL:</label>
-                  <input v-model="llmPaidBaseUrl" type="url" placeholder="https://api.example.com" class="llm-input" />
+                  <input
+                    v-model="llmPaidBaseUrl"
+                    type="url"
+                    placeholder="https://api.example.com"
+                    class="llm-input"
+                  >
                 </div>
                 <button
                   class="btn-primary btn-sm llm-apply-btn"
@@ -122,12 +202,22 @@
               </div>
 
               <!-- Confirmation after switching -->
-              <div v-if="llmConfirmation" class="llm-confirmation">
+              <div
+                v-if="llmConfirmation"
+                class="llm-confirmation"
+              >
                 <span class="llm-confirm-icon">✅</span>
                 <div>
                   <strong>{{ llmConfirmation.name }}</strong> is now active.
-                  <span v-if="llmConfirmation.url" class="llm-confirm-url">
-                    Verify at: <a :href="llmConfirmation.url" target="_blank" rel="noopener">{{ llmConfirmation.url }}</a>
+                  <span
+                    v-if="llmConfirmation.url"
+                    class="llm-confirm-url"
+                  >
+                    Verify at: <a
+                      :href="llmConfirmation.url"
+                      target="_blank"
+                      rel="noopener"
+                    >{{ llmConfirmation.url }}</a>
                   </span>
                 </div>
               </div>
@@ -141,15 +231,25 @@
           </div>
 
           <!-- Collapsible details -->
-          <button class="tauri-details-toggle" @click="showDetails = !showDetails">
+          <button
+            class="tauri-details-toggle"
+            @click="showDetails = !showDetails"
+          >
             {{ showDetails ? '▾ Hide details' : '▸ Show details — why & how to fix' }}
           </button>
 
-          <div v-if="showDetails" class="tauri-details">
+          <div
+            v-if="showDetails"
+            class="tauri-details"
+          >
             <div class="tauri-section">
               <h4>Why am I seeing this?</h4>
               <p>
-                TerranSoul uses <a href="https://v2.tauri.app" target="_blank" rel="noopener">Tauri</a>,
+                TerranSoul uses <a
+                  href="https://v2.tauri.app"
+                  target="_blank"
+                  rel="noopener"
+                >Tauri</a>,
                 a Rust-based desktop runtime.
                 When running as a web app {{ isVercel ? 'on Vercel' : 'in the browser' }},
                 the native backend isn't available.
@@ -161,17 +261,34 @@
             <div class="tauri-section">
               <h4>What works {{ isVercel ? 'on Vercel' : 'in browser mode' }}?</h4>
               <ul class="tauri-feature-list">
-                <li class="avail">✅ Chat with free cloud LLM</li>
-                <li class="avail">✅ 3D character &amp; animations</li>
-                <li class="avail">✅ Model / background selection</li>
-                <li class="unavail">❌ Agent Marketplace (install / manage agents)</li>
-                <li class="unavail">❌ Local Ollama models</li>
-                <li class="unavail">❌ Long-term memory persistence</li>
-                <li class="unavail">❌ Device pairing &amp; sync</li>
+                <li class="avail">
+                  ✅ Chat with free cloud LLM
+                </li>
+                <li class="avail">
+                  ✅ 3D character &amp; animations
+                </li>
+                <li class="avail">
+                  ✅ Model / background selection
+                </li>
+                <li class="unavail">
+                  ❌ Agent Marketplace (install / manage agents)
+                </li>
+                <li class="unavail">
+                  ❌ Local Ollama models
+                </li>
+                <li class="unavail">
+                  ❌ Long-term memory persistence
+                </li>
+                <li class="unavail">
+                  ❌ Device pairing &amp; sync
+                </li>
               </ul>
             </div>
 
-            <div v-if="isVercel" class="tauri-section">
+            <div
+              v-if="isVercel"
+              class="tauri-section"
+            >
               <h4>Deploying on Vercel (UAT)</h4>
               <p>
                 Vercel serves only the static frontend — it cannot run Tauri's Rust backend.
@@ -195,7 +312,10 @@
               </ol>
             </div>
 
-            <div v-else class="tauri-section">
+            <div
+              v-else
+              class="tauri-section"
+            >
               <h4>Getting the full experience</h4>
               <p>
                 Download the TerranSoul desktop app or run
@@ -211,25 +331,52 @@
       <template v-else>
         <!-- LLM Configuration section (also available on desktop) -->
         <div class="llm-config llm-config-desktop">
-          <div class="llm-config-header" @click="showLlmConfig = !showLlmConfig">
+          <div
+            class="llm-config-header"
+            @click="showLlmConfig = !showLlmConfig"
+          >
             <span>🧠</span>
             <strong>Configure LLM</strong>
-            <span v-if="brainStore.hasBrain" class="llm-active-badge">
+            <span
+              v-if="brainStore.hasBrain"
+              class="llm-active-badge"
+            >
               {{ activeBrainBadge }}
             </span>
             <span class="llm-config-hint">{{ showLlmConfig ? '▾' : '▸' }}</span>
           </div>
 
-          <div v-if="showLlmConfig" class="llm-config-body">
+          <div
+            v-if="showLlmConfig"
+            class="llm-config-body"
+          >
             <!-- Tab bar: Free / Paid / Local -->
             <div class="llm-tier-tabs">
-              <button :class="['llm-tier-tab', { active: llmTier === 'free' }]" @click="llmTier = 'free'">☁️ Free Cloud</button>
-              <button :class="['llm-tier-tab', { active: llmTier === 'paid' }]" @click="llmTier = 'paid'">💳 Paid API</button>
-              <button :class="['llm-tier-tab', { active: llmTier === 'local' }]" @click="llmTier = 'local'">🖥 Local Ollama</button>
+              <button
+                :class="['llm-tier-tab', { active: llmTier === 'free' }]"
+                @click="llmTier = 'free'"
+              >
+                ☁️ Free Cloud
+              </button>
+              <button
+                :class="['llm-tier-tab', { active: llmTier === 'paid' }]"
+                @click="llmTier = 'paid'"
+              >
+                💳 Paid API
+              </button>
+              <button
+                :class="['llm-tier-tab', { active: llmTier === 'local' }]"
+                @click="llmTier = 'local'"
+              >
+                🖥 Local Ollama
+              </button>
             </div>
 
             <!-- Free provider selection -->
-            <div v-if="llmTier === 'free'" class="llm-providers">
+            <div
+              v-if="llmTier === 'free'"
+              class="llm-providers"
+            >
               <div
                 v-for="p in brainStore.freeProviders"
                 :key="p.id"
@@ -238,15 +385,29 @@
               >
                 <div class="llm-provider-row">
                   <strong>{{ p.display_name }}</strong>
-                  <span v-if="p.id === currentFreeProviderId" class="llm-current-badge">current</span>
-                  <span v-if="p.id === 'pollinations'" class="llm-rec-badge">⭐ no key needed</span>
+                  <span
+                    v-if="p.id === currentFreeProviderId"
+                    class="llm-current-badge"
+                  >current</span>
+                  <span
+                    v-if="p.id === 'pollinations'"
+                    class="llm-rec-badge"
+                  >⭐ no key needed</span>
                 </div>
                 <small>{{ p.notes }}</small>
                 <small class="llm-provider-model">Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM{{ p.requires_api_key ? ' · API key required' : '' }}</small>
               </div>
-              <div v-if="selectedFreeProviderNeedsKey" class="llm-field">
+              <div
+                v-if="selectedFreeProviderNeedsKey"
+                class="llm-field"
+              >
                 <label>API Key:</label>
-                <input v-model="llmFreeApiKey" type="password" placeholder="Enter API key…" class="llm-input" />
+                <input
+                  v-model="llmFreeApiKey"
+                  type="password"
+                  placeholder="Enter API key…"
+                  class="llm-input"
+                >
               </div>
               <button
                 class="btn-primary btn-sm llm-apply-btn"
@@ -258,26 +419,56 @@
             </div>
 
             <!-- Paid API configuration -->
-            <div v-if="llmTier === 'paid'" class="llm-paid-form">
+            <div
+              v-if="llmTier === 'paid'"
+              class="llm-paid-form"
+            >
               <div class="llm-field">
                 <label>Provider:</label>
-                <select v-model="llmPaidProvider" class="llm-select">
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="custom">Custom endpoint</option>
+                <select
+                  v-model="llmPaidProvider"
+                  class="llm-select"
+                >
+                  <option value="openai">
+                    OpenAI
+                  </option>
+                  <option value="anthropic">
+                    Anthropic
+                  </option>
+                  <option value="custom">
+                    Custom endpoint
+                  </option>
                 </select>
               </div>
               <div class="llm-field">
                 <label>API Key:</label>
-                <input v-model="llmPaidApiKey" type="password" placeholder="sk-…" class="llm-input" />
+                <input
+                  v-model="llmPaidApiKey"
+                  type="password"
+                  placeholder="sk-…"
+                  class="llm-input"
+                >
               </div>
               <div class="llm-field">
                 <label>Model:</label>
-                <input v-model="llmPaidModel" type="text" placeholder="gpt-4o" class="llm-input" />
+                <input
+                  v-model="llmPaidModel"
+                  type="text"
+                  placeholder="gpt-4o"
+                  class="llm-input"
+                >
               </div>
-              <div v-if="llmPaidProvider === 'custom'" class="llm-field">
+              <div
+                v-if="llmPaidProvider === 'custom'"
+                class="llm-field"
+              >
                 <label>Base URL:</label>
-                <input v-model="llmPaidBaseUrl" type="url" placeholder="https://api.example.com" class="llm-input" />
+                <input
+                  v-model="llmPaidBaseUrl"
+                  type="url"
+                  placeholder="https://api.example.com"
+                  class="llm-input"
+                >
               </div>
               <button
                 class="btn-primary btn-sm llm-apply-btn"
@@ -289,11 +480,17 @@
             </div>
 
             <!-- Local Ollama configuration -->
-            <div v-if="llmTier === 'local'" class="llm-local-form">
+            <div
+              v-if="llmTier === 'local'"
+              class="llm-local-form"
+            >
               <div :class="['bs-status-indicator', brainStore.ollamaStatus.running ? 'ok' : 'error']">
                 {{ brainStore.ollamaStatus.running ? '✅ Ollama is running' : '❌ Ollama is not running — start it with `ollama serve`' }}
               </div>
-              <div v-if="brainStore.recommendations.length" class="llm-local-models">
+              <div
+                v-if="brainStore.recommendations.length"
+                class="llm-local-models"
+              >
                 <div
                   v-for="m in brainStore.recommendations"
                   :key="m.model_tag"
@@ -302,7 +499,10 @@
                 >
                   <div class="llm-provider-row">
                     <strong>{{ m.display_name }}</strong>
-                    <span v-if="m.is_top_pick" class="llm-rec-badge">⭐ Recommended</span>
+                    <span
+                      v-if="m.is_top_pick"
+                      class="llm-rec-badge"
+                    >⭐ Recommended</span>
                   </div>
                   <small>{{ m.description }}</small>
                 </div>
@@ -317,12 +517,22 @@
             </div>
 
             <!-- Confirmation after switching -->
-            <div v-if="llmConfirmation" class="llm-confirmation">
+            <div
+              v-if="llmConfirmation"
+              class="llm-confirmation"
+            >
               <span class="llm-confirm-icon">✅</span>
               <div>
                 <strong>{{ llmConfirmation.name }}</strong> is now active.
-                <span v-if="llmConfirmation.url" class="llm-confirm-url">
-                  Verify at: <a :href="llmConfirmation.url" target="_blank" rel="noopener">{{ llmConfirmation.url }}</a>
+                <span
+                  v-if="llmConfirmation.url"
+                  class="llm-confirm-url"
+                >
+                  Verify at: <a
+                    :href="llmConfirmation.url"
+                    target="_blank"
+                    rel="noopener"
+                  >{{ llmConfirmation.url }}</a>
                 </span>
               </div>
             </div>
@@ -335,7 +545,9 @@
           </div>
         </div>
 
-        <h3 class="mp-section-title">🤖 Agents</h3>
+        <h3 class="mp-section-title">
+          🤖 Agents
+        </h3>
         <div class="mp-search-row">
           <input
             v-model="searchQuery"
@@ -343,14 +555,32 @@
             class="mp-search"
             aria-label="Search agents"
             @keyup.enter="doSearch"
-          />
-          <button class="btn-secondary" @click="doSearch">🔍 Search</button>
+          >
+          <button
+            class="btn-secondary"
+            @click="doSearch"
+          >
+            🔍 Search
+          </button>
         </div>
 
-        <p v-if="isLoading" class="mp-status">Loading agents…</p>
-        <p v-else-if="displayedAgents.length === 0" class="mp-status">No agents found.</p>
+        <p
+          v-if="isLoading"
+          class="mp-status"
+        >
+          Loading agents…
+        </p>
+        <p
+          v-else-if="displayedAgents.length === 0"
+          class="mp-status"
+        >
+          No agents found.
+        </p>
 
-        <div v-else class="mp-grid">
+        <div
+          v-else
+          class="mp-grid"
+        >
           <div
             v-for="agent in displayedAgents"
             :key="agent.name"
@@ -358,31 +588,55 @@
           >
             <div class="mp-card-header">
               <h3 class="mp-agent-name">
-                <span v-if="agent.kind === 'local_llm'" class="mp-kind-icon" title="Local LLM model">🖥</span>
+                <span
+                  v-if="agent.kind === 'local_llm'"
+                  class="mp-kind-icon"
+                  title="Local LLM model"
+                >🖥</span>
                 {{ agentDisplayName(agent) }}
               </h3>
               <span class="mp-version">v{{ agent.version }}</span>
             </div>
-            <p class="mp-description">{{ agent.description }}</p>
+            <p class="mp-description">
+              {{ agent.description }}
+            </p>
             <div class="mp-caps">
               <span
                 v-for="cap in agent.capabilities"
                 :key="cap"
                 class="mp-cap-badge"
               >{{ cap }}</span>
-              <span v-if="agent.is_top_pick" class="mp-cap-badge mp-cap-rec">⭐ Recommended</span>
-              <span v-if="agent.is_cloud" class="mp-cap-badge mp-cap-cloud">☁️ Cloud</span>
-              <span v-if="agent.required_ram_mb" class="mp-cap-badge mp-cap-ram">
+              <span
+                v-if="agent.is_top_pick"
+                class="mp-cap-badge mp-cap-rec"
+              >⭐ Recommended</span>
+              <span
+                v-if="agent.is_cloud"
+                class="mp-cap-badge mp-cap-cloud"
+              >☁️ Cloud</span>
+              <span
+                v-if="agent.required_ram_mb"
+                class="mp-cap-badge mp-cap-ram"
+              >
                 {{ formatRam(agent.required_ram_mb) }} RAM
               </span>
             </div>
-            <div v-if="agent.homepage" class="mp-homepage">
+            <div
+              v-if="agent.homepage"
+              class="mp-homepage"
+            >
               <span class="mp-link-label">🔗 {{ agent.homepage }}</span>
             </div>
             <div class="mp-card-actions">
               <template v-if="agent.kind === 'local_llm'">
-                <span v-if="isLocalLlmActive(agent)" class="mp-installed-badge">✅ Active brain</span>
-                <span v-else-if="isLocalLlmInstalled(agent)" class="mp-installed-badge">✅ Installed</span>
+                <span
+                  v-if="isLocalLlmActive(agent)"
+                  class="mp-installed-badge"
+                >✅ Active brain</span>
+                <span
+                  v-else-if="isLocalLlmInstalled(agent)"
+                  class="mp-installed-badge"
+                >✅ Installed</span>
                 <button
                   class="btn-primary btn-sm"
                   :disabled="brainStore.isPulling || !brainStore.ollamaStatus.running || isLocalLlmActive(agent)"
@@ -404,21 +658,27 @@
                 <span class="mp-installed-badge">✅ Installed</span>
                 <button
                   class="btn-secondary btn-sm"
-                  @click="handleUpdate(agent)"
                   :disabled="isLoading"
-                >⬆ Update</button>
+                  @click="handleUpdate(agent)"
+                >
+                  ⬆ Update
+                </button>
                 <button
                   class="btn-danger btn-sm"
-                  @click="handleRemove(agent.name)"
                   :disabled="isLoading"
-                >🗑 Remove</button>
+                  @click="handleRemove(agent.name)"
+                >
+                  🗑 Remove
+                </button>
               </template>
               <template v-else>
                 <button
                   class="btn-primary btn-sm"
-                  @click="promptInstall(agent)"
                   :disabled="isLoading"
-                >⬇ Install</button>
+                  @click="promptInstall(agent)"
+                >
+                  ⬇ Install
+                </button>
               </template>
             </div>
           </div>
@@ -427,7 +687,10 @@
     </div>
 
     <!-- ── Installed tab ── -->
-    <div v-if="activeTab === 'installed'" class="mp-panel">
+    <div
+      v-if="activeTab === 'installed'"
+      class="mp-panel"
+    >
       <template v-if="!tauriAvailable">
         <div class="tauri-banner tauri-banner-compact">
           <div class="tauri-banner-main">
@@ -443,21 +706,36 @@
           </div>
         </div>
       </template>
-      <p v-else-if="packageStore.installedAgents.length === 0" class="mp-status">No agents installed yet.</p>
+      <p
+        v-else-if="packageStore.installedAgents.length === 0"
+        class="mp-status"
+      >
+        No agents installed yet.
+      </p>
 
-      <div v-else class="mp-grid">
+      <div
+        v-else
+        class="mp-grid"
+      >
         <div
           v-for="agent in packageStore.installedAgents"
           :key="agent.name"
           class="mp-card mp-card-installed"
         >
           <div class="mp-card-header">
-            <h3 class="mp-agent-name">{{ agent.name }}</h3>
+            <h3 class="mp-agent-name">
+              {{ agent.name }}
+            </h3>
             <span class="mp-version">v{{ agent.version }}</span>
           </div>
-          <p class="mp-description">{{ agent.description }}</p>
+          <p class="mp-description">
+            {{ agent.description }}
+          </p>
           <div class="mp-sandbox-status">
-            <span class="mp-sandbox-badge" :class="sandboxBadgeClass(agent.name)">
+            <span
+              class="mp-sandbox-badge"
+              :class="sandboxBadgeClass(agent.name)"
+            >
               {{ sandboxLabel(agent.name) }}
             </span>
           </div>
@@ -465,12 +743,16 @@
             <button
               class="btn-secondary btn-sm"
               @click="viewCapabilities(agent.name)"
-            >🔐 Capabilities</button>
+            >
+              🔐 Capabilities
+            </button>
             <button
               class="btn-danger btn-sm"
-              @click="handleRemove(agent.name)"
               :disabled="isLoading"
-            >🗑 Remove</button>
+              @click="handleRemove(agent.name)"
+            >
+              🗑 Remove
+            </button>
           </div>
         </div>
       </div>
@@ -487,11 +769,23 @@
     />
 
     <!-- Capabilities detail modal -->
-    <div v-if="capDetailAgent" class="mp-modal-backdrop" @click.self="capDetailAgent = null">
+    <div
+      v-if="capDetailAgent"
+      class="mp-modal-backdrop"
+      @click.self="capDetailAgent = null"
+    >
       <div class="mp-modal">
         <h3>🔐 {{ capDetailAgent }} — Capabilities</h3>
-        <p v-if="sandboxStore.isLoading" class="mp-status">Loading…</p>
-        <ul v-else-if="sandboxStore.consents.length > 0" class="mp-cap-list">
+        <p
+          v-if="sandboxStore.isLoading"
+          class="mp-status"
+        >
+          Loading…
+        </p>
+        <ul
+          v-else-if="sandboxStore.consents.length > 0"
+          class="mp-cap-list"
+        >
           <li
             v-for="c in sandboxStore.consents"
             :key="c.capability"
@@ -503,9 +797,19 @@
             </span>
           </li>
         </ul>
-        <p v-else class="mp-status">No capability consents recorded.</p>
+        <p
+          v-else
+          class="mp-status"
+        >
+          No capability consents recorded.
+        </p>
         <div class="mp-modal-btns">
-          <button class="btn-secondary" @click="capDetailAgent = null">Close</button>
+          <button
+            class="btn-secondary"
+            @click="capDetailAgent = null"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>

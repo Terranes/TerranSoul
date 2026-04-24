@@ -1,48 +1,100 @@
 <template>
-  <div class="viewport-wrapper" :class="{ 'viewport-wrapper--pet': isPetMode }">
+  <div
+    class="viewport-wrapper"
+    :class="{ 'viewport-wrapper--pet': isPetMode }"
+  >
     <!-- Background layers: scenic background + tint.  Hidden in pet mode so
          only the character floats above the desktop. -->
-    <div v-if="!isPetMode" class="background-layer" :style="backgroundStyle" />
-    <div v-if="!isPetMode" class="background-tint" />
-    <canvas ref="canvasRef" class="viewport-canvas" />
+    <div
+      v-if="!isPetMode"
+      class="background-layer"
+      :style="backgroundStyle"
+    />
+    <div
+      v-if="!isPetMode"
+      class="background-tint"
+    />
+    <canvas
+      ref="canvasRef"
+      class="viewport-canvas"
+    />
     <!-- Loading overlay -->
     <Transition name="fade">
-      <div v-if="characterStore.isLoading" class="loading-overlay">
+      <div
+        v-if="characterStore.isLoading"
+        class="loading-overlay"
+      >
         <div class="loading-spinner" />
         <span class="loading-text">Loading model…</span>
       </div>
     </Transition>
     <!-- Error overlay -->
     <Transition name="fade">
-      <div v-if="characterStore.loadError && !characterStore.isLoading" class="loading-overlay load-error-overlay">
+      <div
+        v-if="characterStore.loadError && !characterStore.isLoading"
+        class="loading-overlay load-error-overlay"
+      >
         <span class="load-error-icon">⚠️</span>
         <span class="loading-text">{{ characterStore.loadError }}</span>
-        <button class="load-error-retry" @click="retryModelLoad">Retry</button>
+        <button
+          class="load-error-retry"
+          @click="retryModelLoad"
+        >
+          Retry
+        </button>
       </div>
     </Transition>
     <!-- Character name / author / settings — hidden in pet mode (which has
          its own minimal chrome anchored at the app level). -->
     <template v-if="!isPetMode">
-      <div class="character-name-overlay">{{ characterName }}</div>
-      <div v-if="characterStore.vrmMetadata" class="character-meta-overlay">
+      <div class="character-name-overlay">
+        {{ characterName }}
+      </div>
+      <div
+        v-if="characterStore.vrmMetadata"
+        class="character-meta-overlay"
+      >
         <span>by {{ characterStore.vrmMetadata.author }}</span>
       </div>
     </template>
 
     <!-- ── Corner settings button — hidden in pet mode (the PetContextMenu
          exposes pet-specific options instead) ── -->
-    <div v-if="!isPetMode" class="settings-corner" ref="settingsRef">
-      <button class="settings-toggle" @click.stop="settingsOpen = !settingsOpen" aria-label="Settings">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+    <div
+      v-if="!isPetMode"
+      ref="settingsRef"
+      class="settings-corner"
+    >
+      <button
+        class="settings-toggle"
+        aria-label="Settings"
+        @click.stop="settingsOpen = !settingsOpen"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
+          <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
         </svg>
         <span class="settings-label">Settings</span>
       </button>
       <Transition name="dropdown">
-        <div v-if="settingsOpen" class="settings-dropdown" @click.stop>
+        <div
+          v-if="settingsOpen"
+          class="settings-dropdown"
+          @click.stop
+        >
           <div class="settings-header">
             <span class="settings-header-title">Settings</span>
-            <button class="settings-close-btn" @click="settingsOpen = false" aria-label="Close settings">&times;</button>
+            <button
+              class="settings-close-btn"
+              aria-label="Close settings"
+              @click="settingsOpen = false"
+            >
+              &times;
+            </button>
           </div>
           <!-- Model selector -->
           <div class="dropdown-section">
@@ -56,22 +108,33 @@
                 v-for="model in characterStore.defaultModels"
                 :key="model.id"
                 :value="model.id"
-              >{{ model.name }}</option>
+              >
+                {{ model.name }}
+              </option>
             </select>
-            <button class="dropdown-btn" @click="openVrmPicker">📁 Import VRM</button>
+            <button
+              class="dropdown-btn"
+              @click="openVrmPicker"
+            >
+              📁 Import VRM
+            </button>
             <input
               ref="vrmInputRef"
               class="hidden-file-input"
               type="file"
               accept=".vrm"
               @change="handleVrmImport"
-            />
+            >
           </div>
           <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
                so desktop and pet modes offer the same configurable states. -->
           <div class="dropdown-section">
             <label class="dropdown-label">Mood / Pose</label>
-            <div class="mood-grid" role="radiogroup" aria-label="Character mood">
+            <div
+              class="mood-grid"
+              role="radiogroup"
+              aria-label="Character mood"
+            >
               <button
                 v-for="mood in MOOD_ENTRIES"
                 :key="mood.key"
@@ -101,14 +164,19 @@
                 {{ background.name }}
               </button>
             </div>
-            <button class="dropdown-btn" @click="openBackgroundPicker">🖼 Import BG</button>
+            <button
+              class="dropdown-btn"
+              @click="openBackgroundPicker"
+            >
+              🖼 Import BG
+            </button>
             <input
               ref="backgroundInputRef"
               class="hidden-file-input"
               type="file"
               accept="image/*"
               @change="handleBackgroundImport"
-            />
+            >
           </div>
           <!-- Background music -->
           <div class="dropdown-section">
@@ -119,7 +187,7 @@
                   type="checkbox"
                   :checked="bgmEnabled"
                   @change="handleBgmToggle"
-                />
+                >
                 <span class="bgm-slider" />
               </label>
               <span class="bgm-status">{{ bgmEnabled ? 'On' : 'Off' }}</span>
@@ -130,29 +198,62 @@
               :value="bgmTrackId"
               @change="handleBgmTrackChange"
             >
-              <option v-for="track in bgm.allTracks.value" :key="track.id" :value="track.id">
+              <option
+                v-for="track in bgm.allTracks.value"
+                :key="track.id"
+                :value="track.id"
+              >
                 {{ track.name }}
               </option>
             </select>
-            <div v-if="bgmEnabled" class="bgm-track-actions">
-              <button class="dropdown-btn" @click="requestAddMusic">🎵 Add File</button>
-              <button class="dropdown-btn" @click="openUrlDialog">🔗 Add URL</button>
+            <div
+              v-if="bgmEnabled"
+              class="bgm-track-actions"
+            >
+              <button
+                class="dropdown-btn"
+                @click="requestAddMusic"
+              >
+                🎵 Add File
+              </button>
+              <button
+                class="dropdown-btn"
+                @click="openUrlDialog"
+              >
+                🔗 Add URL
+              </button>
               <input
                 ref="bgmFileInputRef"
                 class="hidden-file-input"
                 type="file"
                 accept="audio/*,video/*"
                 @change="handleBgmFileImport"
-              />
+              >
             </div>
             <!-- Custom track list with delete -->
-            <div v-if="bgmEnabled && bgm.customTracks.value.length" class="bgm-custom-list">
-              <div v-for="track in bgm.customTracks.value" :key="track.id" class="bgm-custom-item">
+            <div
+              v-if="bgmEnabled && bgm.customTracks.value.length"
+              class="bgm-custom-list"
+            >
+              <div
+                v-for="track in bgm.customTracks.value"
+                :key="track.id"
+                class="bgm-custom-item"
+              >
                 <span class="bgm-custom-name">{{ track.name }}</span>
-                <button class="bgm-remove-btn" @click="handleRemoveTrack(track.id)" title="Remove track">✕</button>
+                <button
+                  class="bgm-remove-btn"
+                  title="Remove track"
+                  @click="handleRemoveTrack(track.id)"
+                >
+                  ✕
+                </button>
               </div>
             </div>
-            <div v-if="bgmEnabled" class="bgm-volume-row">
+            <div
+              v-if="bgmEnabled"
+              class="bgm-volume-row"
+            >
               <span class="bgm-vol-icon">🔈</span>
               <input
                 type="range"
@@ -161,30 +262,46 @@
                 max="100"
                 :value="Math.round(bgmVolume * 100)"
                 @input="handleBgmVolumeChange"
-              />
+              >
               <span class="bgm-vol-icon">🔊</span>
             </div>
           </div>
           
           <!-- Toggle buttons for full-screen panels -->
           <div class="dropdown-section">
-            <button class="dropdown-btn" @click="showSystemInfo = !showSystemInfo">📊 System Information</button>
-            <button class="dropdown-btn" @click="showAudioControls = !showAudioControls">🎛️ Audio Controls</button>
+            <button
+              class="dropdown-btn"
+              @click="showSystemInfo = !showSystemInfo"
+            >
+              📊 System Information
+            </button>
+            <button
+              class="dropdown-btn"
+              @click="showAudioControls = !showAudioControls"
+            >
+              🎛️ Audio Controls
+            </button>
           </div>
         </div>
       </Transition>
 
       <!-- Full-screen overlays (rendered outside the dropdown to avoid z-index issues) -->
-      <SystemInfoPanel v-if="showSystemInfo" @close="showSystemInfo = false" />
+      <SystemInfoPanel
+        v-if="showSystemInfo"
+        @close="showSystemInfo = false"
+      />
       <AudioControlsPanel
         v-if="showAudioControls"
         @close="showAudioControls = false"
-        @update:bgmVolume="handleAudioBgmVolumeChange"
-        @update:bgmTrackId="handleAudioBgmTrackChange"
+        @update:bgm-volume="handleAudioBgmVolumeChange"
+        @update:bgm-track-id="handleAudioBgmTrackChange"
       />
     </div>
 
-    <div v-if="backgroundStore.importError" class="background-error-banner">
+    <div
+      v-if="backgroundStore.importError"
+      class="background-error-banner"
+    >
       {{ backgroundStore.importError }}
     </div>
     <!-- ── Floating Music Bar (teleported to left side of viewport) ──
@@ -193,56 +310,110 @@
          #music-bar-portal only exists inside ChatView; trying to teleport
          to a missing target throws during Vue's component update phase and
          breaks subsequent reactivity. -->
-    <Teleport to="#music-bar-portal" defer :disabled="isPetMode">
-    <div v-if="!isPetMode" class="music-bar" :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }">
-      <button class="music-bar-toggle" @click.stop="bgmBarExpanded = !bgmBarExpanded" :title="bgmBarExpanded ? 'Collapse' : 'Music'">
-        <span class="music-bar-toggle-icon" :class="{ open: bgmBarExpanded }">{{ bgmBarExpanded ? '▶' : '🎵' }}</span>
-      </button>
-      <Transition name="music-expand">
-        <div v-if="bgmBarExpanded" class="music-bar-panel" @click.stop>
-          <button class="music-btn play-btn" @click="toggleBgmFromBar" :title="bgmEnabled ? 'Stop music' : 'Play music'">
-            {{ bgmEnabled ? '⏸' : '▶️' }}
-          </button>
-          <div class="music-track-info">
-            <span class="music-track-name">{{ currentTrackName }}</span>
+    <Teleport
+      to="#music-bar-portal"
+      defer
+      :disabled="isPetMode"
+    >
+      <div
+        v-if="!isPetMode"
+        class="music-bar"
+        :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }"
+      >
+        <button
+          class="music-bar-toggle"
+          :title="bgmBarExpanded ? 'Collapse' : 'Music'"
+          @click.stop="bgmBarExpanded = !bgmBarExpanded"
+        >
+          <span
+            class="music-bar-toggle-icon"
+            :class="{ open: bgmBarExpanded }"
+          >{{ bgmBarExpanded ? '▶' : '🎵' }}</span>
+        </button>
+        <Transition name="music-expand">
+          <div
+            v-if="bgmBarExpanded"
+            class="music-bar-panel"
+            @click.stop
+          >
+            <button
+              class="music-btn play-btn"
+              :title="bgmEnabled ? 'Stop music' : 'Play music'"
+              @click="toggleBgmFromBar"
+            >
+              {{ bgmEnabled ? '⏸' : '▶️' }}
+            </button>
+            <div class="music-track-info">
+              <span class="music-track-name">{{ currentTrackName }}</span>
+            </div>
+            <button
+              class="music-btn"
+              title="Next track"
+              @click="nextTrack"
+            >
+              ⏭
+            </button>
+            <input
+              type="range"
+              class="music-vol-slider"
+              min="0"
+              max="100"
+              :value="Math.round(bgmVolume * 100)"
+              title="Volume"
+              @input="handleBarVolumeChange"
+            >
+            <button
+              class="music-btn add-btn"
+              title="Add more music"
+              @click="emit('request-add-music')"
+            >
+              ➕
+            </button>
           </div>
-          <button class="music-btn" @click="nextTrack" title="Next track">⏭</button>
-          <input
-            type="range"
-            class="music-vol-slider"
-            min="0" max="100"
-            :value="Math.round(bgmVolume * 100)"
-            @input="handleBarVolumeChange"
-            title="Volume"
-          />
-          <button class="music-btn add-btn" @click="emit('request-add-music')" title="Add more music">➕</button>
-        </div>
-      </Transition>
-    </div>
+        </Transition>
+      </div>
     </Teleport>
 
     <!-- ── Add URL Dialog ── -->
     <Transition name="fade">
-      <div v-if="showUrlDialog" class="url-dialog-backdrop" @click.self="cancelUrlDialog">
+      <div
+        v-if="showUrlDialog"
+        class="url-dialog-backdrop"
+        @click.self="cancelUrlDialog"
+      >
         <div class="url-dialog">
           <label class="url-dialog-label">Add music from URL</label>
           <input
-            class="url-dialog-input"
             v-model="urlInput"
+            class="url-dialog-input"
             type="url"
             placeholder="https://example.com/music.mp3"
             @keydown.enter="confirmUrlAdd"
             @keydown.escape="cancelUrlDialog"
-          />
+          >
           <div class="url-dialog-actions">
-            <button class="url-dialog-btn cancel" @click="cancelUrlDialog">Cancel</button>
-            <button class="url-dialog-btn confirm" @click="confirmUrlAdd" :disabled="!urlInput.trim()">Add</button>
+            <button
+              class="url-dialog-btn cancel"
+              @click="cancelUrlDialog"
+            >
+              Cancel
+            </button>
+            <button
+              class="url-dialog-btn confirm"
+              :disabled="!urlInput.trim()"
+              @click="confirmUrlAdd"
+            >
+              Add
+            </button>
           </div>
         </div>
       </div>
     </Transition>
 
-    <div v-if="showDebug" class="debug-overlay">
+    <div
+      v-if="showDebug"
+      class="debug-overlay"
+    >
       <span>WebGL</span>
       <span>▲ {{ debugInfo.triangles }}</span>
       <span>⬡ {{ debugInfo.calls }} draws</span>

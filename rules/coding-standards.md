@@ -121,48 +121,48 @@ src-tauri/src/
 
 Single source files become hard to read, search, and review once they
 balloon past a few hundred lines. To keep modules focused and reviewable,
-TerranSoul enforces a **per-file line-count budget**:
+TerranSoul enforces size budgets through the **standard ecosystem
+linters** (no custom scripts):
 
-| Language | Path scope                | Max lines |
-|----------|---------------------------|-----------|
-| Rust     | `src-tauri/src/**/*.rs`   | 1000      |
-| Vue SFC  | `src/**/*.vue`            | 800       |
+| Language    | Tool                          | Rule                                | Threshold |
+|-------------|-------------------------------|-------------------------------------|-----------|
+| TypeScript  | ESLint v9 (flat config)       | `max-lines`                         | 1000 / file |
+| Vue SFC     | ESLint + `eslint-plugin-vue`  | `max-lines`                         | 800 / file  |
+| Rust        | clippy (`src-tauri/clippy.toml`) | `clippy::too_many_lines` (per-fn) | 250 / fn    |
 
-The check is implemented by `scripts/check-file-sizes.mjs` and runs via:
+Run from the repo root:
 
 ```bash
-npm run check:file-sizes
+npm run lint        # report issues (CI gate)
+npm run lint:fix    # auto-fix the auto-fixable ones
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
-It scans every Rust and Vue file under the configured roots, prints the
-top 5 largest, and **fails (exit 1)** if any non-allowlisted file exceeds
-its threshold OR if an allowlisted file has grown beyond its pinned size.
+ESLint config: [`eslint.config.js`](../eslint.config.js).
+Clippy config: [`src-tauri/clippy.toml`](../src-tauri/clippy.toml).
 
-### Allowlist
+### Pre-existing oversized files
 
-`scripts/file-size-allowlist.json` pins the recorded line count of files
-that already exceed the threshold at the time the rule was introduced.
-Allowlisted files are tolerated **at or below** their pinned size — they
-**must not grow**. The long-term goal is for this allowlist to shrink
-to zero entries through targeted refactors (extract submodules,
-extract sub-components, move tests to a `tests/` folder, etc.).
+A small allowlist of pre-existing oversized Vue/TS files lives at the
+bottom of `eslint.config.js` (under the comment "Pre-existing oversized
+files (allowlist)"). Each entry is a temporary exception — the
+long-term goal is for the list to shrink to zero through targeted
+refactors (extract sub-components, move long quest-data blocks to a
+data file, split state machines into separate stores, etc.).
 
-### Adding to the allowlist
+**Do NOT widen this list.** Adding a new entry requires PR justification
+and a tracked follow-up issue for the future split.
 
-Adding new entries is a **last resort**. Prefer splitting the file
-first. If you genuinely need to extend the allowlist:
-
-1. Open a PR that runs `node scripts/check-file-sizes.mjs --update`
-   (which rewrites the allowlist with the *current* file sizes).
-2. In the PR description, justify per-file why splitting is impractical
-   and link to a follow-up issue tracking the future split.
+For Rust, individual oversized functions can be silenced with
+`#[allow(clippy::too_many_lines)]` and a comment linking the follow-up
+refactor. The `too_many_lines` lint is currently advisory (not enforced
+by CI) — see `src-tauri/clippy.toml` for the rationale.
 
 ### Refactoring an oversized file below threshold
 
-When a file is brought back under its budget, **delete its entry from
-`scripts/file-size-allowlist.json`** in the same PR. Future regressions
-will then be caught at the threshold instead of the (now obsolete)
-larger pinned size.
+When a Vue/TS file is brought back under its budget, **delete its entry
+from the allowlist block in `eslint.config.js`** in the same PR so future
+regressions are caught at the threshold.
 
 ---
 

@@ -1,14 +1,29 @@
 <template>
-  <div class="model-panel-overlay" @click.stop.self="$emit('close')">
-    <div class="model-panel" @click.stop>
+  <div
+    class="model-panel-overlay"
+    @click.stop.self="$emit('close')"
+  >
+    <div
+      class="model-panel"
+      @click.stop
+    >
       <div class="panel-header">
         <h3>3D Models</h3>
-        <button class="close-btn" @click="$emit('close')" aria-label="Close">&times;</button>
+        <button
+          class="close-btn"
+          aria-label="Close"
+          @click="$emit('close')"
+        >
+          &times;
+        </button>
       </div>
 
       <div class="panel-body">
         <div class="model-select-section">
-          <label class="select-label" for="model-select">Active Model</label>
+          <label
+            class="select-label"
+            for="model-select"
+          >Active Model</label>
           <select
             id="model-select"
             class="model-select"
@@ -25,7 +40,10 @@
                 {{ model.name }}
               </option>
             </optgroup>
-            <optgroup v-if="characterStore.userModels.length > 0" label="Imported">
+            <optgroup
+              v-if="characterStore.userModels.length > 0"
+              label="Imported"
+            >
               <option
                 v-for="model in characterStore.userModels"
                 :key="model.id"
@@ -38,9 +56,18 @@
         </div>
 
         <div class="import-section">
-          <button class="import-btn" @click="handleImport" :disabled="isLoading">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          <button
+            class="import-btn"
+            :disabled="isLoading"
+            @click="handleImport"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
             </svg>
             {{ isLoading ? 'Loading…' : 'Import VRM Model' }}
           </button>
@@ -50,7 +77,10 @@
           </p>
         </div>
 
-        <div v-if="characterStore.loadError" class="error-banner">
+        <div
+          v-if="characterStore.loadError"
+          class="error-banner"
+        >
           {{ characterStore.loadError }}
         </div>
 
@@ -62,8 +92,18 @@
             :class="{ active: characterStore.selectedModelId === model.id }"
             @click="handleSelectModel(model.id)"
           >
-            <img v-if="model.thumbnail" :src="model.thumbnail" :alt="model.name" class="model-thumb" />
-            <div v-else class="model-icon">👤</div>
+            <img
+              v-if="model.thumbnail"
+              :src="model.thumbnail"
+              :alt="model.name"
+              class="model-thumb"
+            >
+            <div
+              v-else
+              class="model-icon"
+            >
+              👤
+            </div>
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
               <span class="model-author">Bundled</span>
@@ -77,7 +117,9 @@
             :class="{ active: characterStore.selectedModelId === model.id }"
             @click="handleSelectModel(model.id)"
           >
-            <div class="model-icon">📁</div>
+            <div class="model-icon">
+              📁
+            </div>
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
               <span class="model-author">Imported · {{ model.original_filename }}</span>
