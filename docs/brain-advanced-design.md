@@ -2364,11 +2364,116 @@ its own subprocess address space.
 
 ### 22.5 Roadmap (later tiers)
 
-| Tier | Chunk | Goal |
-|---|---|---|
-| 2 | 2.2 | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
-| 3 | 2.3 | Mirror GitNexus's KG into TerranSoul's memory graph via a new V7 `edge_source` column; map `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` to the existing 17-relation taxonomy |
-| 4 | 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
+| Tier | Chunk | Status | Goal |
+|---|---|---|---|
+| 1 | 2.1 | ✅ done (2026-04-24) | Sidecar bridge + four read-only Tauri commands behind `code_intelligence` capability |
+| 2 | 2.2 | ✅ done (2026-04-24) | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
+| 3 | 2.3 | not-started | Mirror GitNexus's KG into TerranSoul's memory graph via a new V7 `edge_source` column; map `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` to the existing 17-relation taxonomy |
+| 4 | 2.4 | not-started | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
+
+---
+
+## 23. Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)
+
+> **Implemented in Chunk 2.2 (2026-04-24).** Tier 2 of the four-tier
+> GitNexus integration. Builds directly on §22's sidecar bridge and §19.2
+> rows 2 (RRF) and 10 (cross-encoder reranker).
+
+When a user invokes `rerank_search_memories` and **both** of the
+following are true:
+
+1. The `gitnexus-sidecar` agent has been granted the
+   `code_intelligence` capability via `CapabilityStore`.
+2. `AppState.gitnexus_sidecar` holds a live bridge handle (i.e. at least
+   one prior tool call has lazily spawned the child process, or the user
+   explicitly configured it via `configure_gitnexus_sidecar`).
+
+…then the recall stage now **augments** its SQLite candidate set with
+GitNexus snippets before handing off to the LLM-as-judge reranker:
+
+```
+Stage 1   — RRF recall over SQLite (vector ⊕ keyword ⊕ freshness)
+Stage 1.5 — NEW: dispatch user query → GitNexus `query` tool
+            → normalise JSON response → pseudo-MemoryEntries
+            → RRF-fuse with Stage-1 candidates (k=60, DEFAULT_RRF_K)
+            → truncate to candidates_k
+Stage 2   — LLM-as-judge rerank (unchanged) → final top-N
+```
+
+### 23.1 Pseudo-`MemoryEntry` shape
+
+GitNexus snippets are wrapped in `MemoryEntry` records that the existing
+fusion + rerank code can consume without modification, but with two
+discriminators that downstream code can rely on:
+
+| Field             | Value                              | Why                                                           |
+|-------------------|------------------------------------|---------------------------------------------------------------|
+| `id`              | strictly **negative** (`-1, -2, …`) | Cannot collide with SQLite's positive `INTEGER PRIMARY KEY` |
+| `tier`            | `MemoryTier::Working`              | Ephemeral, not persisted                                      |
+| `memory_type`     | `MemoryType::Context`              | Transient retrieval context, not a personal fact              |
+| `tags`            | `code:gitnexus[,code:<path>]`      | Greppable provenance                                          |
+| `embedding`       | `None`                             | We never embed code snippets locally                          |
+| `decay_score`     | `1.0`                              | Always fresh                                                  |
+
+The pure helper `memory::code_rag::is_code_rag_entry(&entry)` is the
+canonical check for "this entry came from GitNexus, do not write it
+back to disk".
+
+### 23.2 Response-shape tolerance
+
+The normaliser `gitnexus_response_to_entries` accepts every published
+GitNexus response shape (and a few defensive variants):
+
+```text
+{ "snippets": [ { "content": "...", "path": "..." }, ... ] }
+{ "answer":   "...", "sources": [ { "content": "...", "path": "..." } ] }
+{ "results":  [ { "content": "...", "path": "..." } ] }
+[ { "content": "...", "path": "..." }, ... ]   // top-level array
+{ "answer": "single sentence" }                // synthesised answer only
+"plain string answer"                          // top-level scalar
+```
+
+Field aliases handled: `content` / `text` / `snippet` / `body` / `code`
+for the body; `path` / `file` / `location` / `uri` / `source` for the
+source link. Anything else is silently dropped.
+
+A defensive cap (`MAX_CODE_RAG_ENTRIES = 16`) prevents a runaway
+response from flooding the rerank stage and blowing up LLM token usage.
+
+### 23.3 Failure modes — all degrade to DB-only recall
+
+The bridge call is wrapped so that **none** of the following ever
+fail the search; each silently returns the original SQLite candidate
+set after an `eprintln!` warning:
+
+| Failure                                | Behaviour                  |
+|----------------------------------------|----------------------------|
+| Capability not granted                 | Skip Stage 1.5 entirely    |
+| Sidecar handle absent                  | Skip Stage 1.5 entirely    |
+| Sidecar process crashed / pipe closed  | Warn + return DB results   |
+| GitNexus returned RPC error            | Warn + return DB results   |
+| GitNexus returned unrecognised shape   | Skip merge (no error)      |
+| Empty snippets list                    | Skip merge (no error)      |
+
+This mirrors the existing rerank fallback contract (§19.2 row 10): the
+system must always serve **some** result, even if every advanced
+component is unreachable.
+
+### 23.4 What this does NOT do (scope guard)
+
+- Does **not** mutate the SQLite store. Code-RAG entries are ephemeral.
+- Does **not** persist GitNexus snippets — Tier 3 (Chunk 2.3) is the
+  opt-in path that mirrors the GitNexus knowledge graph into the
+  memory-graph V7 schema with an `edge_source` column.
+- Does **not** rerank GitNexus snippets via the LLM-as-judge
+  *separately* — they enter Stage 2 through the same `rerank_score`
+  call as DB entries, so the rerank stage's existing `Option<u8>`
+  "unscored kept below scored" contract applies uniformly.
+- Does **not** affect any other RAG command (`hybrid_search_memories`,
+  `hybrid_search_memories_rrf`, `hyde_search_memories`) — fusion lives
+  inside the `rerank_search_memories` Tauri command only, so users
+  who don't want code-RAG can opt out simply by calling a different
+  command.
 
 ---
 

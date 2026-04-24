@@ -117,6 +117,55 @@ src-tauri/src/
 
 ---
 
+## File Size Budget
+
+Single source files become hard to read, search, and review once they
+balloon past a few hundred lines. To keep modules focused and reviewable,
+TerranSoul enforces a **per-file line-count budget**:
+
+| Language | Path scope                | Max lines |
+|----------|---------------------------|-----------|
+| Rust     | `src-tauri/src/**/*.rs`   | 1000      |
+| Vue SFC  | `src/**/*.vue`            | 800       |
+
+The check is implemented by `scripts/check-file-sizes.mjs` and runs via:
+
+```bash
+npm run check:file-sizes
+```
+
+It scans every Rust and Vue file under the configured roots, prints the
+top 5 largest, and **fails (exit 1)** if any non-allowlisted file exceeds
+its threshold OR if an allowlisted file has grown beyond its pinned size.
+
+### Allowlist
+
+`scripts/file-size-allowlist.json` pins the recorded line count of files
+that already exceed the threshold at the time the rule was introduced.
+Allowlisted files are tolerated **at or below** their pinned size — they
+**must not grow**. The long-term goal is for this allowlist to shrink
+to zero entries through targeted refactors (extract submodules,
+extract sub-components, move tests to a `tests/` folder, etc.).
+
+### Adding to the allowlist
+
+Adding new entries is a **last resort**. Prefer splitting the file
+first. If you genuinely need to extend the allowlist:
+
+1. Open a PR that runs `node scripts/check-file-sizes.mjs --update`
+   (which rewrites the allowlist with the *current* file sizes).
+2. In the PR description, justify per-file why splitting is impractical
+   and link to a follow-up issue tracking the future split.
+
+### Refactoring an oversized file below threshold
+
+When a file is brought back under its budget, **delete its entry from
+`scripts/file-size-allowlist.json`** in the same PR. Future regressions
+will then be caught at the threshold instead of the (now obsolete)
+larger pinned size.
+
+---
+
 ## TypeScript / Vue Standards
 
 ### Naming

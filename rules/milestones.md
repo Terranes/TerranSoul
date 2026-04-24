@@ -37,14 +37,14 @@
 
 ## Next Chunk
 
-**Chunk 2.2 — Code-RAG fusion in `rerank_search_memories`.**
-Now that the GitNexus sidecar bridge is live (Chunk 2.1, completion-log
-entry 2026-04-24), Tier 2 wires its `query` tool into the RAG recall
-stage: when an active GitNexus repo is configured, `rerank_search_memories`
-should also dispatch the user prompt to GitNexus, normalise the snippet
-list into pseudo-`MemoryEntry` records, and fuse them with the existing
-SQLite hits via `memory::fusion::reciprocal_rank_fuse`. ~150 LOC; depends
-only on Chunk 2.1.
+**Chunk 2.3 — Knowledge-graph mirror (V7 `edge_source` column).**
+With the GitNexus sidecar (Chunk 2.1) and Code-RAG fusion (Chunk 2.2)
+both shipped, Tier 3 makes GitNexus's structured KG durable: a new V7
+SQLite migration adds an `edge_source` column to `memory_edges`, plus
+`gitnexus_sync` / `gitnexus_unmirror` Tauri commands map the upstream
+`CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` relations
+into the existing 17-relation taxonomy. Strictly opt-in — no auto-sync
+at startup. ~500 LOC + integration test.
 
 ---
 
@@ -65,7 +65,6 @@ only on Chunk 2.1.
 
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
-| 2.2 | Code-RAG fusion in `rerank_search_memories` (recall stage also queries GitNexus when an active repo is configured) | not-started | agent | Tier 2; depends on 2.1; ~150 LOC; uses existing `memory::fusion::reciprocal_rank_fuse` |
 | 2.3 | Knowledge-graph mirror — V7 schema adds `edge_source` column; `gitnexus_sync` / `gitnexus_unmirror` Tauri commands; map `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` to the existing 17-relation taxonomy | not-started | agent | Tier 3; opt-in only; never auto-syncs at startup; ~500 LOC + integration test |
 | 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator | not-started | agent | Tier 4; pure frontend; depends on 2.1 |
 

@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Repo Tooling — File-Size Quality Check (Rust 1000 / Vue 800 lines)](#repo-tooling--file-size-quality-check) | 2026-04-24 |
+| [Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#chunk-22--code-rag-fusion-in-rerank_search_memories-phase-13-tier-2) | 2026-04-24 |
 | [Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)](#chunk-21--gitnexus-sidecar-agent-phase-13-tier-1) | 2026-04-24 |
 | [Chunk 1.11 — Temporal KG Edges (V6 schema)](#chunk-111--temporal-kg-edges-v6-schema) | 2026-04-24 |
 | [Chunk 1.10 — Cross-encoder Reranker (LLM-as-judge)](#chunk-110--cross-encoder-reranker-llm-as-judge) | 2026-04-24 |
@@ -103,6 +105,126 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Repo Tooling — File-Size Quality Check
+
+**Date:** 2026-04-24
+**Reference:** `rules/coding-standards.md` "File Size Budget" section
+**Trigger:** User input: "Please implement quality check for rust and Vue so these tools will make sure not a lot of code in just one file."
+
+**Goal.** Prevent files from ballooning past a reviewable size. Rust
+files capped at **1000 lines**, Vue SFCs at **800 lines**. Existing
+oversized files are pinned in an allowlist and **must not grow** beyond
+their pinned size — the long-term goal is for the allowlist to shrink
+to zero.
+
+**Implementation.**
+- `scripts/check-file-sizes.mjs` — single-purpose Node script (zero
+  dependencies, walks `src-tauri/src/**/*.rs` and `src/**/*.vue`,
+  counts `\n` bytes for accuracy, supports `--update` to regenerate the
+  allowlist, prints top-5 largest files on every run).
+- `scripts/file-size-allowlist.json` — JSON map of repo-relative POSIX
+  paths to their pinned line counts. Currently 10 entries (4 Rust + 6
+  Vue), all pre-existing oversized files.
+- `package.json` — new `check:file-sizes` npm script.
+- `rules/coding-standards.md` — new "File Size Budget" section
+  documenting thresholds, allowlist semantics, and the path to remove
+  an entry once a file is split.
+- `rules/prompting-rules.md` — `npm run check:file-sizes` added to the
+  per-chunk Build Verification block.
+
+**Behaviour.**
+- Pass: every non-allowlisted file is ≤ its threshold AND every
+  allowlisted file is ≤ its pinned size.
+- Fail (exit 1): a non-allowlisted file exceeds its threshold, OR an
+  allowlisted file has grown beyond its pinned size.
+
+**Verified.** `node scripts/check-file-sizes.mjs` passes on the current
+tree with the 10-entry allowlist; new chunk-2.2 files are all well
+under budget (`memory/code_rag.rs` = 415 lines, `commands/memory.rs` =
+847 lines after edits).
+
+---
+
+## Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)
+
+**Date:** 2026-04-24
+**Reference:** `docs/brain-advanced-design.md` §22 (sidecar) + new §23 (fusion); `rules/milestones.md` Phase 13
+
+**Goal.** With the GitNexus sidecar bridge (Chunk 2.1) in place, wire
+its `query` tool into the recall stage of `rerank_search_memories` so
+that — when **both** the user has granted `code_intelligence` for the
+`gitnexus-sidecar` agent **and** a sidecar handle is live — the LLM
+sees code-intelligence snippets alongside SQLite memories during the
+LLM-as-judge rerank stage. Failures degrade silently to DB-only recall.
+
+**Architecture.**
+
+```
+Stage 1   — RRF recall over SQLite (vector ⊕ keyword ⊕ freshness)
+Stage 1.5 — NEW: gitnexus.query(prompt) → normalise → pseudo-MemoryEntries
+            → reciprocal_rank_fuse([db_ids, code_ids], k=60)
+            → truncate to candidates_k
+Stage 2   — LLM-as-judge rerank (unchanged)
+```
+
+**Files created.**
+- `src-tauri/src/memory/code_rag.rs` (415 LOC, 13 unit tests) —
+  `gitnexus_response_to_entries(value, base_id_offset) → Vec<MemoryEntry>`,
+  `is_code_rag_entry(&entry) → bool`, `CODE_RAG_TAG` constant,
+  `MAX_CODE_RAG_ENTRIES = 16` defensive cap. Pure functions; no
+  IO, no async, fully unit-tested.
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — register `code_rag` module.
+- `src-tauri/src/commands/memory.rs` — new private async helper
+  `code_rag_fuse(query, db_candidates, candidates_k, &state)` between
+  Stages 1 and 2 of `rerank_search_memories`. ~80 LOC. Wraps every
+  failure mode in `eprintln!` warnings + DB-only fallback.
+- `docs/brain-advanced-design.md` — new §23 (full fusion pipeline,
+  pseudo-entry schema, response-shape tolerance, failure-mode table,
+  scope guard); §22.5 roadmap row marked ✅.
+- `README.md` — new Brain System bullet under Tier 1.
+
+**Pseudo-entry discriminators** (so downstream code can identify and
+skip GitNexus-derived entries):
+- `id`: strictly **negative** (`-1, -2, …`) — cannot collide with
+  SQLite's positive `INTEGER PRIMARY KEY`.
+- `tier`: `MemoryTier::Working` (ephemeral).
+- `memory_type`: `MemoryType::Context` (transient retrieval context).
+- `tags`: `code:gitnexus[,code:<sanitised-path>]`.
+- `embedding`: `None` (we never embed code snippets locally).
+- `decay_score`: `1.0`.
+
+**Response-shape tolerance.** The normaliser accepts five published
+shapes (`{snippets:[]}`, `{answer,sources:[]}`, `{results:[]}`,
+top-level array, lone `{answer}`) and five field aliases
+(`content`/`text`/`snippet`/`body`/`code` for body; `path`/`file`/
+`location`/`uri`/`source` for source link). Defensive cap of 16 entries
+prevents runaway responses from flooding the rerank stage.
+
+**Failure modes — all degrade to DB-only recall**, never error:
+1. Capability not granted → skip Stage 1.5.
+2. Sidecar handle absent → skip Stage 1.5.
+3. Sidecar process crashed / pipe closed → warn + DB results.
+4. GitNexus returned RPC error → warn + DB results.
+5. Unrecognised JSON shape → no merge.
+6. Empty snippet list → no merge.
+
+**Tests.**
+- 13 new unit tests on the normaliser (empty values, all 5 shapes, ID
+  monotonicity, MAX cap, whitespace dropping, comma-in-path tag
+  round-trip, `is_code_rag_entry` selectivity, unknown-shape graceful
+  empty, ephemeral-entry invariants).
+- Backend total: **823 tests passing** (up from 809 after Chunk 2.1).
+- Frontend total: 1052 tests passing (no changes required).
+- File-size check: ✅ all new/modified files within budget.
+
+**Out of scope (deferred to later tiers).**
+- Tier 3 (Chunk 2.3) — KG mirror with V7 `edge_source` column.
+- Tier 4 (Chunk 2.4) — BrainView "Code knowledge" panel.
 
 ---
 

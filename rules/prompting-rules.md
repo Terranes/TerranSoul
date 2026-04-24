@@ -87,7 +87,8 @@ After every chunk, verify:
 ```bash
 # Frontend
 cd /path/to/TerranSoul
-npm run build          # vue-tsc + vite build; must emit dist/ with zero errors
+npm run build               # vue-tsc + vite build; must emit dist/ with zero errors
+npm run check:file-sizes    # per-file line-count budget; see coding-standards.md → "File Size Budget"
 
 # Rust backend
 cd src-tauri
