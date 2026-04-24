@@ -122,9 +122,13 @@ export const usePersonaStore = defineStore('persona', () => {
   async function syncBlockToBackend(): Promise<void> {
     try {
       await invoke('set_persona_block', { block: personaBlock.value });
-    } catch {
+    } catch (err) {
       // Browser-only or backend not yet ready — fine, the browser path
-      // assembles the block itself from `personaBlock.value`.
+      // assembles the block itself from `personaBlock.value`. Logged at
+      // debug level so Tauri-side troubleshooting is still possible.
+      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+        console.debug('[persona] set_persona_block unavailable:', err);
+      }
     }
   }
 

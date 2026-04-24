@@ -37,8 +37,9 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 | Working Memory Network     | Short-term Memory                  | 🎯 Focus             |
 | Neocortex                  | Retrieval System (RAG / Knowledge) | 📚 Knowledge         |
 | Basal Ganglia / Cerebellum | Control & Execution Layer          | ⚡ Dexterity         |
+| Sense of Self / Mirror Neurons | Persona & Self-Learning Animation | 🎭 Charisma       |
 
-> 📖 **Deep dive:** every cell in this table — the LLM providers behind Intelligence, the three-tier store and embedding model behind Wisdom, the hybrid 6-signal RAG behind Knowledge, the typed entity-relationship graph, decay/GC, cognitive episodic/semantic/procedural axes, multi-source ingestion, sleep-time consolidation, and the April 2026 research survey — is documented in **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)**. Any contribution that touches the brain (LLM, memory, RAG, ingestion, embeddings, cognitive-kind, brain-gating quests) must consult that doc first.
+> 📖 **Deep dive:** every cell in this table — the LLM providers behind Intelligence, the three-tier store and embedding model behind Wisdom, the hybrid 6-signal RAG behind Knowledge, the typed entity-relationship graph, decay/GC, cognitive episodic/semantic/procedural axes, multi-source ingestion, sleep-time consolidation, and the April 2026 research survey — is documented in **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)**. Any contribution that touches the brain (LLM, memory, RAG, ingestion, embeddings, cognitive-kind, brain-gating quests) must consult that doc first. The Charisma row — persona traits, the master-mirror self-learning loop, ARKit-blendshape → VRM expression mapping, MediaPipe FaceLandmarker / PoseLandmarker, and the per-session camera consent contract — is documented in **[docs/persona-design.md](docs/persona-design.md)**, which any persona/animation contribution must consult first.
 
 As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
 
@@ -246,6 +247,28 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - `src/views/MemoryView.vue` — list / grid / graph view, tier chips, filters, decay viz
 - `src/components/MemoryGraph.vue` — Cytoscape.js semantic graph visualization with typed edges
 - `src/stores/memory.ts` — Pinia store (CRUD + search + streaming results)
+
+### 🎭 Persona System (The "Sense of Self & Mirror Neurons")
+
+> Architectural reference: **[docs/persona-design.md](docs/persona-design.md)** — full traits schema, the master-mirror self-learning loop, ARKit-blendshape → VRM 1.0 expression mapping, MediaPipe FaceLandmarker / PoseLandmarker pipeline, the per-session camera consent contract, the persona quest chain, and the April 2026 research survey (Hunyuan Motion, MoCha, OmniHuman, ID-Patch, MotionAura).
+
+**Core modules**
+- `src-tauri/src/commands/persona.rs` — Tauri persistence: `get_persona`, `save_persona`, `set_persona_block` / `get_persona_block`, `list_/save_/delete_learned_expression`, `list_/save_/delete_learned_motion`. Atomic JSON-on-disk under `<app_data_dir>/persona/{persona.json, expressions/, motions/}`. Path-traversal-safe id validation. **No camera commands** — webcam frames never cross the IPC boundary; only user-confirmed JSON landmark artifacts ever reach Rust.
+- `src/stores/persona-types.ts` — `PersonaTraits` (name, role, bio, tone, quirks, avoid, active, version), `LearnedExpression`, `LearnedMotion`, `defaultPersona()`, forward-compatible `migratePersonaTraits()`.
+- `src/stores/persona.ts` — Pinia store for the active persona + learned libraries + ephemeral per-session camera consent state (never persisted). Tauri-persisted with localStorage fallback.
+- `src/utils/persona-prompt.ts` — pure `buildPersonaBlock(traits, learnedMotions)` that renders the `[PERSONA]` block injected into every chat's system prompt next to `[LONG-TERM MEMORY]` (browser path) or via `set_persona_block` (server path).
+
+**Persona ↔ Brain integration**
+- The rendered `[PERSONA]` block is spliced into the system prompt by both streaming pipelines (`stream_ollama` + `stream_openai_api` in `src-tauri/src/commands/streaming.rs`) alongside `[LONG-TERM MEMORY]`. Empty traits → no injection.
+- The "Master's Echo" quest asks the brain to read your conversations + personal memories and propose a persona that mirrors who you are — the master-mirror self-learning loop documented in [persona-design.md § 3](docs/persona-design.md#3-the-master-mirror-self-learning-loop).
+
+**Persona quest chain (main + side)**
+- **Main chain (camera-free):** `soul-mirror` → `my-persona` → `master-echo` — every step works without ever turning on the camera.
+- **Side chain (camera-driven, ships after the main chain):** `expressions-pack` ("Mask of a Thousand Faces") + `motion-capture` ("Mirror Dance"). Privacy contract: **per-session/per-chat consent only**, never always-on. See [persona-design.md § 5](docs/persona-design.md#5-privacy--consent--the-per-session-camera-leash).
+
+**Frontend**
+- `src/components/PersonaPanel.vue` — full add / update / delete / review management UI mounted in the Brain hub (`BrainView.vue`); edits all traits, lists every learned-expression / learned-motion artifact with one-click delete, and live-previews the rendered `[PERSONA]` system-prompt block.
+- `src/components/PersonaListEditor.vue` — small chip-style list editor used by the persona panel for `tone` / `quirks` / `avoid` arrays.
 
 ### 🔗 TerranSoul Link
 - Device identity + pairing with QR codes

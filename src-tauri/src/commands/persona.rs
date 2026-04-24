@@ -90,13 +90,21 @@ fn validate_id(id: &str) -> Result<(), String> {
 
 /// Atomic write: write to `<dest>.tmp` then rename. Same shape used elsewhere
 /// in TerranSoul (settings store, brain config) so power-loss can't leave a
-/// half-written persona file behind.
+/// half-written persona file behind. Uses `with_file_name(...)` instead of
+/// `with_extension(...)` so multi-dot filenames (e.g. `foo.bar.json`) get a
+/// correct sibling temp file (`foo.bar.json.tmp`) rather than a clobbered
+/// extension.
 fn atomic_write(dest: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory: {e}"))?;
     }
-    let tmp = dest.with_extension("json.tmp");
+    let file_name = dest
+        .file_name()
+        .ok_or_else(|| "Persona destination has no file name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let tmp = dest.with_file_name(format!("{file_name}.tmp"));
     std::fs::write(&tmp, contents).map_err(|e| format!("Failed to write temp file: {e}"))?;
     std::fs::rename(&tmp, dest).map_err(|e| format!("Failed to commit write: {e}"))?;
     Ok(())

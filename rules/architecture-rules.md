@@ -49,6 +49,28 @@
       reality.
     A brain PR that updates code without updating these two documents is
     incomplete and must not be merged. Reviewers should reject such PRs.
+12. **Persona Component Reference** — Any implementation that touches the
+    persona surface (persona traits, learned-expression / learned-motion
+    libraries, persona Pinia store, persona-prompt builder, persona Tauri
+    commands, persona quest chain, camera capture composables, MediaPipe
+    FaceLandmarker / PoseLandmarker integration, ARKit-blendshape → VRM
+    expression mapping) **must consult `docs/persona-design.md` first**
+    to determine which subsystems are involved and how the per-session
+    camera consent contract works. New features must reuse the existing
+    persona components and the main-chain → side-chain quest layout
+    rather than reimplementing parts of the persona surface.
+13. **Persona Documentation Sync (mandatory)** — Any change that touches
+    the persona surface (the items listed in rule 12) **must** update
+    **both** of the following in the same PR:
+    - `docs/persona-design.md` — keep the design / schema / pipeline /
+      roadmap / April 2026 research-survey / quest-chain / privacy-contract
+      sections accurate.
+    - `README.md` — keep the "🎭 Persona System" component listing, the
+      Human-Soul ↔ AI-System ↔ RPG-Stat row for persona, and the link to
+      `docs/persona-design.md` in sync with reality.
+    A persona PR that updates code without updating these two documents
+    is incomplete and must not be merged. Reviewers should reject such
+    PRs.
 
 ---
 

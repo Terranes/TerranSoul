@@ -20,13 +20,13 @@
         :placeholder="placeholder"
         maxlength="120"
         class="ple-input"
-        :data-testid="`ple-input-${label.toLowerCase().replace(/\\s+/g, '-')}`"
+        :data-testid="`ple-input-${label.toLowerCase().replace(/\s+/g, '-')}`"
         @keydown.enter.prevent="add"
       />
       <button
         type="button"
         class="ple-add-btn"
-        :data-testid="`ple-add-${label.toLowerCase().replace(/\\s+/g, '-')}`"
+        :data-testid="`ple-add-${label.toLowerCase().replace(/\s+/g, '-')}`"
         :disabled="!entry.trim()"
         @click="add"
       >Add</button>

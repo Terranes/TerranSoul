@@ -188,7 +188,6 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { usePersonaStore } from '../stores/persona';
 import {
-  defaultPersona,
   type PersonaTraits,
 } from '../stores/persona-types';
 import { buildPersonaBlock } from '../utils/persona-prompt';
@@ -324,9 +323,6 @@ watch(
     if (loaded && !isDirty.value) draft.value = cloneTraits(store.traits);
   },
 );
-
-// Default persona reference for the "Reset" guard.
-defaultPersona; // referenced for type-only side-effect
 </script>
 
 <style scoped>
