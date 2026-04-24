@@ -894,17 +894,22 @@ impl MemoryStore {
     pub fn apply_decay(&self) -> SqlResult<usize> {
         let now = now_ms();
         let mut stmt = self.conn.prepare(
-            "SELECT id, last_accessed, decay_score FROM memories WHERE tier = 'long'",
+            "SELECT id, last_accessed, decay_score, tags FROM memories WHERE tier = 'long'",
         )?;
-        let rows: Vec<(i64, Option<i64>, f64)> = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get::<_, f64>(2)?))
+        let rows: Vec<(i64, Option<i64>, f64, String)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get::<_, f64>(2)?, row.get::<_, String>(3)?))
         })?.filter_map(|r| r.ok()).collect();
 
         let mut updated = 0;
-        for (id, last_accessed, current_decay) in &rows {
+        for (id, last_accessed, current_decay, tags) in &rows {
             let last = last_accessed.unwrap_or(now);
             let hours_since = (now - last) as f64 / 3_600_000.0;
-            let factor = 0.95f64.powf(hours_since / 168.0);
+            // Chunk 18.2 — category-aware decay: per-prefix multiplier
+            // pulled from the curated vocabulary. `personal:*` decays 2×
+            // slower; `tool:*` 1.5× faster; default 1.0 for legacy /
+            // non-conforming tags.
+            let multiplier = crate::memory::tag_vocabulary::category_decay_multiplier(tags);
+            let factor = 0.95f64.powf((hours_since / 168.0) * multiplier);
             let new_decay = (current_decay * factor).max(0.01);
             if (new_decay - current_decay).abs() > 0.001 {
                 self.conn.execute(
@@ -2101,5 +2106,65 @@ mod tests {
         let promoted = store.auto_promote_to_long(5, 7).unwrap();
         assert!(promoted.is_empty(), "NULL last_accessed must be treated as not-recent");
         assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Working);
+    }
+
+    // ------------------------------------------------------------------
+    // Chunk 18.2 — category-aware decay (integration with apply_decay)
+    // ------------------------------------------------------------------
+
+    fn add_long_with_tags(store: &MemoryStore, content: &str, tags: &str) -> i64 {
+        let m = NewMemory {
+            content: content.to_string(),
+            tags: tags.to_string(),
+            importance: 3,
+            memory_type: MemoryType::Fact,
+            source_url: None,
+            source_hash: None,
+            expires_at: None,
+        };
+        let e = store.add(m).unwrap();
+        // Force last_accessed to ~30 days ago so apply_decay actually moves the score.
+        let thirty_days_ago = now_ms() - 30 * 86_400_000;
+        store.conn()
+            .execute(
+                "UPDATE memories SET last_accessed = ?1, decay_score = 1.0 WHERE id = ?2",
+                params![thirty_days_ago, e.id],
+            )
+            .unwrap();
+        e.id
+    }
+
+    #[test]
+    fn apply_decay_personal_decays_slower_than_tool() {
+        let store = MemoryStore::in_memory();
+        let personal = add_long_with_tags(&store, "user loves pho", "personal:loves_pho");
+        let tool = add_long_with_tags(&store, "bun --hot flag", "tool:bun");
+        store.apply_decay().unwrap();
+
+        let p = store.get_by_id(personal).unwrap();
+        let t = store.get_by_id(tool).unwrap();
+        assert!(
+            p.decay_score > t.decay_score,
+            "personal:* (mult 0.5) must decay slower than tool:* (mult 1.5); got personal={}, tool={}",
+            p.decay_score, t.decay_score
+        );
+    }
+
+    #[test]
+    fn apply_decay_baseline_for_legacy_or_non_conforming_tags() {
+        // Two entries with default-multiplier-equivalent tags should land at
+        // the same decay_score (within float tolerance).
+        let store = MemoryStore::in_memory();
+        let legacy = add_long_with_tags(&store, "legacy", "fact");
+        let project = add_long_with_tags(&store, "project x", "project:x");
+        store.apply_decay().unwrap();
+
+        let l = store.get_by_id(legacy).unwrap();
+        let p = store.get_by_id(project).unwrap();
+        assert!(
+            (l.decay_score - p.decay_score).abs() < 1e-6,
+            "legacy tag and project:* (both mult 1.0) must decay identically; got legacy={}, project={}",
+            l.decay_score, p.decay_score
+        );
     }
 }

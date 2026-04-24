@@ -129,6 +129,57 @@ pub fn validate_csv(tags_csv: &str) -> Vec<TagValidation> {
         .collect()
 }
 
+/// Per-prefix decay-rate multiplier used by `MemoryStore::apply_decay`.
+///
+/// The decay formula is `0.95 ^ ((hours_since_access / 168) * multiplier)`,
+/// so lower values decay **slower** (more durable) and higher values decay
+/// **faster** (more ephemeral). The defaults below are calibrated against
+/// the Phase-2 design intent in `docs/brain-advanced-design.md` §16:
+/// personal facts about the user are precious; tool-specific flags rot
+/// fastest because product UI changes quarterly.
+///
+/// | Prefix      | Multiplier | Effective half-life vs default          |
+/// |-------------|-----------:|-----------------------------------------|
+/// | `personal`  | 0.5        | 2× slower — precious                    |
+/// | `domain`    | 0.7        | ~1.4× slower — reference material       |
+/// | `code`      | 0.7        | ~1.4× slower — patterns are durable     |
+/// | `project`   | 1.0        | baseline                                 |
+/// | `external`  | 1.0        | baseline (sources cited by URL)         |
+/// | `tool`      | 1.5        | 1.5× faster — UI / flags change         |
+/// | `session`   | 2.0        | 2× faster — short-lived scratch         |
+/// | `quest`     | 2.0        | 2× faster — superseded by next quest    |
+///
+/// Returns the **lowest** (slowest-decaying) multiplier among the prefixes
+/// present on the entry: a single `personal:*` tag protects the whole row
+/// even if other tags would decay faster. Entries with no curated prefix
+/// at all (legacy / non-conforming) get the baseline `1.0`.
+///
+/// Maps to `docs/brain-advanced-design.md` §16 Phase 2 row "Category-aware
+/// decay rates" (chunk 18.2).
+pub fn category_decay_multiplier(tags_csv: &str) -> f64 {
+    const DEFAULT: f64 = 1.0;
+
+    let mut min_mult = f64::MAX;
+    let mut saw_curated = false;
+    for verdict in validate_csv(tags_csv) {
+        if let TagValidation::Curated { prefix } = verdict {
+            saw_curated = true;
+            let m = match prefix {
+                "personal" => 0.5,
+                "domain" | "code" => 0.7,
+                "project" | "external" => 1.0,
+                "tool" => 1.5,
+                "session" | "quest" => 2.0,
+                _ => DEFAULT, // future-proof: unknown sanctioned prefixes
+            };
+            if m < min_mult {
+                min_mult = m;
+            }
+        }
+    }
+    if saw_curated { min_mult } else { DEFAULT }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,6 +288,51 @@ mod tests {
         assert_eq!(
             validate("personal:🍕"),
             TagValidation::Curated { prefix: "personal" }
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Chunk 18.2 — category_decay_multiplier
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn decay_multiplier_baseline_for_no_curated_tags() {
+        assert_eq!(category_decay_multiplier(""), 1.0);
+        assert_eq!(category_decay_multiplier("fact"), 1.0); // legacy
+        assert_eq!(category_decay_multiplier("randomtag"), 1.0); // non-conforming
+    }
+
+    #[test]
+    fn decay_multiplier_per_prefix() {
+        assert_eq!(category_decay_multiplier("personal:loves_pho"), 0.5);
+        assert_eq!(category_decay_multiplier("domain:law"), 0.7);
+        assert_eq!(category_decay_multiplier("code:rust"), 0.7);
+        assert_eq!(category_decay_multiplier("project:x"), 1.0);
+        assert_eq!(category_decay_multiplier("external:https://x"), 1.0);
+        assert_eq!(category_decay_multiplier("tool:bun"), 1.5);
+        assert_eq!(category_decay_multiplier("session:abc"), 2.0);
+        assert_eq!(category_decay_multiplier("quest:rag-knowledge"), 2.0);
+    }
+
+    #[test]
+    fn decay_multiplier_picks_slowest_when_multiple_prefixes() {
+        // personal (0.5) wins over tool (1.5) — a precious tag protects the row.
+        assert_eq!(
+            category_decay_multiplier("tool:bun, personal:loves_pho"),
+            0.5
+        );
+        // domain (0.7) wins over project (1.0).
+        assert_eq!(category_decay_multiplier("project:x, domain:law"), 0.7);
+        // session (2.0) loses to project (1.0).
+        assert_eq!(category_decay_multiplier("session:abc, project:x"), 1.0);
+    }
+
+    #[test]
+    fn decay_multiplier_ignores_legacy_and_non_conforming_when_curated_present() {
+        // `fact` is legacy (acceptable but not curated); ignored. Curated `personal:*` wins.
+        assert_eq!(
+            category_decay_multiplier("fact, personal:loves_pho, randomtag"),
+            0.5
         );
     }
 }

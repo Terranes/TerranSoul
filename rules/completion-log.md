@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 18.2 — Category-aware decay rates](#chunk-182--category-aware-decay-rates) | 2026-04-24 |
 | [Chunk 18.4 — Tag-prefix convention vocabulary + audit (Phase 18 first chunk)](#chunk-184--tag-prefix-convention-vocabulary--audit) | 2026-04-24 |
 | [Chunk 17.1 — Auto-promotion based on access patterns (Phase 17 first chunk)](#chunk-171--auto-promotion-based-on-access-patterns) | 2026-04-24 |
 | [Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection (Phase 16 first chunk)](#chunk-161--relevance-threshold-for-long-term-memory-injection) | 2026-04-24 |
@@ -153,6 +154,43 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 18.2 — Category-aware decay rates
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy). Composes directly on top of 18.4 (tag-prefix vocabulary).
+**Goal.** Stop decaying every long-term memory at the same uniform rate. A `personal:*` fact about the user (precious) should outlive a `tool:*` flag (rots quarterly when product UI changes).
+
+**Architecture.**
+- New `memory::tag_vocabulary::category_decay_multiplier(tags_csv: &str) -> f64`. Pure — no I/O. Returns the **lowest** (slowest-decaying) multiplier among all curated prefixes present on the entry; legacy / non-conforming tags collapse to the baseline `1.0`.
+- Per-prefix multipliers (calibrated against §16 Phase 2 design intent):
+  - `personal` → **0.5** (2× slower — precious)
+  - `domain`, `code` → **0.7** (~1.4× slower — reference material)
+  - `project`, `external` → **1.0** (baseline)
+  - `tool` → **1.5** (1.5× faster — flags / UI change)
+  - `session`, `quest` → **2.0** (2× faster — short-lived)
+- "Slowest wins" rule: a single `personal:*` tag protects a row even if it also carries `tool:*` — matches the design principle that downgrading a precious memory is the costliest mistake.
+- `MemoryStore::apply_decay` SELECT extended with `tags`; computes `0.95 ^ ((hours_since / 168) * multiplier)` instead of the previous prefix-blind formula. Clamp to `>= 0.01` and the `> 0.001` change-threshold are unchanged so the call remains idempotent on already-decayed-flat rows.
+
+**Files modified.**
+- `src-tauri/src/memory/tag_vocabulary.rs` — added `category_decay_multiplier` + 4 unit tests.
+- `src-tauri/src/memory/store.rs` — `apply_decay` now passes the entry's `tags` through `category_decay_multiplier`; added 2 integration tests.
+
+**Tests.** 6 new tests, all passing alongside 930 existing tests (total **936 passing**):
+1. `decay_multiplier_baseline_for_no_curated_tags` — empty / legacy / non-conforming → 1.0.
+2. `decay_multiplier_per_prefix` — every curated prefix returns its expected multiplier.
+3. `decay_multiplier_picks_slowest_when_multiple_prefixes` — `personal` (0.5) beats `tool` (1.5); `domain` (0.7) beats `project` (1.0); `session` (2.0) loses to `project` (1.0).
+4. `decay_multiplier_ignores_legacy_and_non_conforming_when_curated_present` — `fact` + `personal:*` + `randomtag` → 0.5.
+5. `apply_decay_personal_decays_slower_than_tool` — store integration: forced `last_accessed = -30 days`, `personal:*` row ends up with strictly higher `decay_score` than `tool:*` row after one `apply_decay()`.
+6. `apply_decay_baseline_for_legacy_or_non_conforming_tags` — `fact` (legacy) and `project:*` (curated 1.0) decay identically (within float tolerance).
+
+**Validation.** `cargo test --lib` (936 pass / 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- BrainView: per-user multiplier tuning UI (the chunk description mentions this; deferred — defaults are calibrated and shipping the multiplier engine first lets later UI just edit them).
+- 18.3 (Memory View filter chips) — frontend chunk that surfaces the same prefix taxonomy.
 
 ---
 
