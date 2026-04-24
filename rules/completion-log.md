@@ -3,6 +3,12 @@
 > This file is the permanent record of all completed chunks.
 > `rules/milestones.md` contains only chunks that are `not-started` or `in-progress`.
 > When a chunk is done, its full details are recorded here and the row is removed from milestones.md.
+>
+> **📏 File size cap — 10,000 lines max.** When the next append would push
+> this file over 10,000 lines, rotate it to `completion-log-{YYYY-MM-DD}.md`
+> (using the date of the file's *first* entry as the suffix) and start a
+> fresh `completion-log.md`. Full procedure in
+> [`rules/prompting-rules.md` → "ENFORCEMENT RULE — Completion-Log File Size Cap"](prompting-rules.md).
 
 ---
 

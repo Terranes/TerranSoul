@@ -120,3 +120,57 @@ When a chunk is marked `done`:
 4. Update the `Next Chunk` section to point to the next `not-started` chunk
 
 This rule is mandatory for every AI agent session.
+
+---
+
+## ENFORCEMENT RULE — Completion-Log File Size Cap
+
+> **`rules/completion-log.md` and any rolled-over file must not exceed 10,000 lines.**
+
+The completion log grows monotonically with every shipped chunk. To keep
+any single file readable, greppable, and cheap to load into agent
+context, the log is **rotated when it would otherwise exceed 10,000 lines**.
+
+### Rotation procedure
+
+When an AI agent is about to append a new completion entry and the
+existing `rules/completion-log.md` already has, or would after the
+append exceed, **10,000 lines**:
+
+1. **Rename** the current `rules/completion-log.md` to
+   `rules/completion-log-{YYYY-MM-DD}.md`, where `{YYYY-MM-DD}` is the
+   **creation date of the file being rotated** (i.e. the date of its
+   *first* entry — read from the `**Date:**` field of the oldest
+   entry, or from the file's earliest git history if no date field is
+   present). This is the file's "creation date" for archival purposes.
+2. **Create a fresh `rules/completion-log.md`** — copy only the
+   following from the rotated file:
+   - The top banner / "purpose" paragraph
+   - The `## Table of Contents` header (with an empty table body)
+   - A new `> Previous entries archived in:` block listing every
+     historical `completion-log-{YYYY-MM-DD}.md` file in
+     reverse-chronological order so future readers can find old chunks.
+3. **Append the new chunk entry** to the fresh file as usual.
+4. Commit both the rotated file and the new file in the same commit
+   with message `chore(completion-log): rotate at 10,000 lines`.
+
+### Why 10,000 lines?
+
+- A 10k-line markdown file is ~400-500 KB — large but still loadable
+  by every common editor, `view` tool, and AI agent context window.
+- Rotation by **calendar date** (not by chunk number) makes archived
+  files self-describing: `completion-log-2026-04-24.md` is obviously
+  the log that *started* on 2026-04-24.
+- Archived files are **never edited again** — they are an immutable
+  historical record. Only the current `rules/completion-log.md`
+  receives new entries.
+
+### What the agent must NOT do
+
+- Do **not** split a single chunk entry across two files.
+- Do **not** delete or summarize archived entries to save space —
+  rotate instead.
+- Do **not** rotate based on byte size, KB, or chunk count — only the
+  10,000-line threshold applies.
+- Do **not** rotate eagerly when the file is well under the cap — only
+  when the next append would cross 10,000 lines.
