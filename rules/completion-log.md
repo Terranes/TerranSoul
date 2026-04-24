@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 14.3 — Expressions-pack camera quest](#chunk-143--expressions-pack-camera-quest) | 2026-04-25 |
 | [Chunk 16.10 — ANN index (usearch)](#chunk-1610--ann-index-usearch) | 2026-04-25 |
 | [Chunk 17.6 — Edge conflict detection](#chunk-176--edge-conflict-detection) | 2026-04-26 |
 | [Chunk 16.9 — Cloud embedding API for free / paid modes](#chunk-169--cloud-embedding-api-for-free--paid-modes) | 2026-04-26 |
@@ -167,6 +168,33 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 14.3 — Expressions-pack camera quest
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped the `expressions-pack` camera quest — per-session webcam capture with MediaPipe FaceLandmarker (52 ARKit blendshapes) mapped to TerranSoul's 12+2 VRM expression channels. Includes a pure ARKit→VRM mapper (`face-mirror.ts`), per-session consent composable (`useCameraCapture.ts`), "Teach an Expression" panel (`PersonaTeacher.vue`), idle-timeout auto-stop (5 min), and camera live badge. The `@mediapipe/tasks-vision` dependency is lazy-imported to avoid bundle bloat until the quest is used.
+
+**Architecture.**
+- `face-mirror.ts`: Pure `mapBlendshapesToVRM()` function (unit-testable seam) maps 52 ARKit blendshape coefficients → happy/sad/angry/relaxed/surprised/neutral + 5 visemes + blink + lookAt, following the `docs/persona-design.md` § 6.1 mapping table. `FaceMirror` class wraps MediaPipe FaceLandmarker with lazy WASM init and EMA smoothing.
+- `useCameraCapture.ts`: Per-session getUserMedia + FaceMirror lifecycle. Camera consent is in-memory only (no on-disk flag). Auto-stops on unmount, idle timeout, or explicit stop.
+- `PersonaTeacher.vue`: 4-step UI flow — consent dialog → live camera preview with CAMERA LIVE badge → capture pose → name + trigger word → save to Tauri backend via `save_learned_expression` command.
+
+**Files created.**
+- `src/renderer/face-mirror.ts` — pure mapper + FaceMirror class (~200 LOC)
+- `src/renderer/face-mirror.test.ts` — 16 unit tests on the pure mapper
+- `src/composables/useCameraCapture.ts` — camera session composable (~130 LOC)
+- `src/components/PersonaTeacher.vue` — teach expression panel (~310 LOC)
+- `src/components/PersonaTeacher.test.ts` — 5 component tests
+
+**Dependencies added.**
+- `@mediapipe/tasks-vision` (Apache-2.0, ~3 MB, lazy-loaded)
+
+**Test count after.** 1109 Vitest (21 new); 1053 Rust (unchanged).
+
+**Activation gate.** `expressions-pack` quest auto-activates when `persona.learnedExpressions.length > 0` — already wired in skill-tree.ts.
 
 ---
 

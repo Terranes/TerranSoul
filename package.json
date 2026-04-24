@@ -16,6 +16,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.34",
     "@pixiv/three-vrm": "^3.4.0",
     "@pixiv/three-vrm-animation": "^3.5.2",
     "@ricky0123/vad-web": "^0.0.30",

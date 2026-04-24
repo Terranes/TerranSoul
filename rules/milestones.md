@@ -37,12 +37,13 @@
 
 _Phase 13 (2.1 → 2.4) shipped 2026-04-24. Phase 14 main-chain
 (14.1 + 14.2) shipped 2026-04-24. Chunk 14.7 (persona pack export /
-import) shipped 2026-04-24._ Remaining Phase 14 work is the
-camera-driven side chain (14.3 / 14.4 / 14.5), the persona-storage +
-self-learning chunks (14.8 → 14.11) and the optional offline-polish
-research chunks (14.12 → 14.15). **Phase 15** (AI Coding Integrations
-— MCP + gRPC) is in progress (15.3 landed; 15.1 / 15.2 / 15.4–15.8
-pending). **Phases 16 / 17** land the remaining items from
+import) shipped 2026-04-24._ **Chunk 14.3** (expressions-pack: camera
+capture + face-mirror + PersonaTeacher) shipped 2026-04-25. Remaining
+Phase 14 work is the camera-driven side chain (14.4 / 14.5), the
+persona-storage + self-learning chunks (14.9 → 14.11) and the optional
+offline-polish research chunks (14.12 → 14.15). **Phase 15** (AI Coding
+Integrations — MCP + gRPC) is in progress (15.3 landed; 15.1 / 15.2 /
+15.4–15.8 pending). **Phases 16 / 17** land the remaining items from
 `docs/brain-advanced-design.md` § 16 (Modern RAG, Phase-5
 Intelligence). **Phase 18** is fully complete (18.1–18.5 all shipped).
 **Chunk 17.3** (temporal reasoning queries) shipped 2026-04-25.
@@ -100,7 +101,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 14.3 | Persona-side camera quest **`expressions-pack`** — `useCameraCapture.ts` per-session consent composable + `face-mirror.ts` (lazy-loaded `@mediapipe/tasks-vision` FaceLandmarker → ARKit-blendshape → VRM expression mapper) + `PersonaTeacher.vue` "Teach an expression" panel. Activation gate already wired via `persona.learnedExpressions.length > 0`. Must ship `<add @mediapipe/tasks-vision>` dependency, the consent dialog, the always-visible "Camera live" badge, the idle-timeout/chat-change auto-stop, and unit tests on the pure mapper. | not-started | Camera permission MUST be per-session; no on-disk "always on" flag. |
 | 14.4 | Persona-side camera quest **`motion-capture`** — `pose-mirror.ts` PoseLandmarker wrapper (33-keypoint → VRM humanoid bone retargeting; pure retargeter is the unit-tested seam) + record-and-name-clip UI in `PersonaTeacher.vue`. Activation gate already wired via `persona.learnedMotions.length > 0`. | not-started | Reuses the same per-session consent flow as 14.3. |
 | 14.5 | VRMA baking — convert a recorded learned-motion clip into a VRMA file so the avatar can replay it through the existing `VrmaManager` instead of always streaming landmarks. | not-started | Reduces per-frame cost and unlocks sharing learned motions between devices via the existing Soul Link sync surface. |
 | 14.8 | **Persona drift detection** — `auto_learn` evaluator gains a `persona_drift_check` step: every N (default 25) memorised facts, the existing extractor compares the latest `personal:*` cluster against the active `PersonaTraits`, and surfaces a chat-side suggestion ("Echo noticed you've shifted toward …; update persona?"). Pure additive on top of `memory::auto_learn::evaluate` — no new background loop. Maps to `docs/persona-design.md` § 15.1 row 143. | done | Reuses the auto-learn cadence shipped in chunk 14.2; the only new state is a `last_drift_check_turn: i64` field on `AutoLearnState`. |

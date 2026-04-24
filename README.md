@@ -297,7 +297,10 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 
 **Persona quest chain (main + side)**
 - **Main chain (camera-free):** `soul-mirror` → `my-persona` → `master-echo` — every step works without ever turning on the camera.
-- **Side chain (camera-driven, ships after the main chain):** `expressions-pack` ("Mask of a Thousand Faces") + `motion-capture` ("Mirror Dance"). Privacy contract: **per-session/per-chat consent only**, never always-on. See [persona-design.md § 5](docs/persona-design.md#5-privacy--consent--the-per-session-camera-leash).
+- **Side chain (camera-driven):** `expressions-pack` ("Mask of a Thousand Faces") + `motion-capture` ("Mirror Dance"). Privacy contract: **per-session/per-chat consent only**, never always-on. See [persona-design.md § 5](docs/persona-design.md#5-privacy--consent--the-per-session-camera-leash).
+- `src/renderer/face-mirror.ts` — pure `mapBlendshapesToVRM()` ARKit→VRM mapper (52 blendshapes → 12+2 channels) + `FaceMirror` class wrapping lazy-loaded `@mediapipe/tasks-vision` FaceLandmarker with EMA smoothing. 16 unit tests.
+- `src/composables/useCameraCapture.ts` — per-session camera consent composable (getUserMedia + FaceMirror lifecycle, 5-min idle auto-stop, component-unmount cleanup).
+- `src/components/PersonaTeacher.vue` — "Teach an Expression" panel: consent dialog → live camera preview (CAMERA LIVE badge) → capture pose → name + trigger → save via `save_learned_expression` Tauri command. 5 component tests.
 
 **Frontend**
 - `src/components/PersonaPanel.vue` — full add / update / delete / review management UI mounted in the Brain hub (`BrainView.vue`); edits all traits, lists every learned-expression / learned-motion artifact with one-click delete, live-previews the rendered `[PERSONA]` system-prompt block, and includes the "✨ Suggest from my chats" Master-Echo button.
@@ -436,7 +439,7 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 ## Development Status
 
 **Completed phases:** 18 (Phases 0–11 foundation, 12 docs, 13 code-RAG, 14 partial, 18 categorisation)
-**Test suite:** 1083 frontend (Vitest) + 1053 backend (cargo) + 4 E2E (Playwright) — all passing
+**Test suite:** 1109 frontend (Vitest) + 1053 backend (cargo) + 4 E2E (Playwright) — all passing
 **Current focus:** Phases 14–17 — Persona refinement, AI Coding Integrations, Modern RAG, Brain Intelligence
 **See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 
