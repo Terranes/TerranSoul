@@ -109,10 +109,11 @@ export async function openDrawer(page: Page) {
   // bypasses those checks and goes straight to Vue's `@click` handler.
   await expect(async () => {
     // If the element is not yet in the DOM, click the toggle to open it.
-    // We check attachment rather than visibility because `.chat-history` is a
+    // We use count() > 0 (not isVisible) because `.chat-history` is a
     // full-width block element: even during the enter-from transition its
     // width > 0, so Playwright's isVisible() returns true even at height = 0.
-    if (!(await drawer.isAttached().catch(() => false))) {
+    // Note: locator.isAttached() does not exist in Playwright 1.59.x — use count().
+    if ((await drawer.count().catch(() => 0)) === 0) {
       const toggle = page.locator('.chat-drawer-toggle');
       await expect(toggle).toBeVisible({ timeout: 2_000 });
       await toggle.evaluate((el) => (el as HTMLElement).click());
@@ -132,7 +133,8 @@ export async function closeDrawer(page: Page) {
   const drawer = page.locator('.chat-history');
 
   // Guard: if element is already absent from the DOM, nothing to do.
-  if (!(await drawer.isAttached().catch(() => false))) return;
+  // locator.isAttached() does not exist in Playwright 1.59.x — use count().
+  if ((await drawer.count().catch(() => 0)) === 0) return;
 
   // We use not.toBeAttached() (not not.toBeVisible()) for two reasons:
   //   1. Vue's `v-if` directive is what controls the drawer. After the leave
@@ -142,7 +144,7 @@ export async function closeDrawer(page: Page) {
   //      "visible" even while max-height is 0 during the leave transition.
   //      not.toBeAttached() avoids this false-positive completely.
   await expect(async () => {
-    if (await drawer.isAttached().catch(() => false)) {
+    if ((await drawer.count().catch(() => 0)) > 0) {
       const toggle = page.locator('.chat-drawer-toggle');
       await toggle.evaluate((el) => (el as HTMLElement).click());
     }
