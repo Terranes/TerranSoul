@@ -1843,7 +1843,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  │  ├── ✓ Relevance threshold (skip injection if score < 0.3,         │
 │  │  │     user-tunable via `AppSettings.relevance_threshold`,         │
 │  │  │     `MemoryStore::hybrid_search_with_threshold`) — Chunk 16.1   │
-│  ├── ○ Bidirectional Obsidian sync                                 │
+│  ├── ✓ One-way Obsidian vault export (`export_to_obsidian` command,  │
+│  │     `memory::obsidian_export`) — Chunk 18.5                      │
+│  ├── ○ Bidirectional Obsidian sync (extends 18.5)                  │
 │  └── ○ Memory versioning (track edits, not just overwrites)        │
 │                                                                     │
 │  PHASE 5 — Intelligence                                             │
@@ -1851,7 +1853,8 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  │     (`MemoryStore::auto_promote_to_long`,                        │
 │  │      command `auto_promote_memories`) — Chunk 17.1               │
 │  ├── ○ Contradiction resolution (LLM picks winner)                 │
-│  ├── ○ Temporal reasoning ("last month you said...")               │
+│  ├── ✓ Temporal reasoning (`memory::temporal::parse_time_range` +   │
+│  │     `temporal_query` command) — Chunk 17.3                       │
 │  ├── ○ Memory importance auto-adjustment from access_count         │
 │  └── ○ Cross-device memory merge via CRDT sync                    │
 │                                                                     │

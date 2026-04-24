@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 17.3 — Temporal reasoning queries](#chunk-173--temporal-reasoning-queries) | 2026-04-25 |
+| [Chunk 18.5 — Obsidian vault export (one-way)](#chunk-185--obsidian-vault-export-one-way) | 2026-04-25 |
 | [Chunk 18.3 — Category filters in Memory View](#chunk-183--category-filters-in-memory-view) | 2026-04-24 |
 | [Chunk 18.1 — Auto-categorise via LLM on insert](#chunk-181--auto-categorise-via-llm-on-insert) | 2026-04-24 |
 | [CI Fix — Embed cache test race condition](#ci-fix--embed-cache-test-race-condition) | 2026-04-24 |
@@ -157,6 +159,84 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 17.3 — Temporal reasoning queries
+
+**Date.** 2026-04-25
+**Phase.** 17 (Brain Phase-5 Intelligence). Maps to `docs/brain-advanced-design.md` §16 Phase 5.
+**Goal.** Extend `commands::memory` with `temporal_query(question)` that
+parses natural-language time expressions and returns memories whose
+`created_at` falls within the resolved range.
+
+**Architecture.**
+- New `src-tauri/src/memory/temporal.rs` module (~300 LOC):
+  - `TimeRange { start_ms, end_ms }` — resolved interval in Unix ms.
+  - `parse_time_range(question, now_ms) -> Option<TimeRange>` — parses:
+    `last N days/weeks/months/hours`, `last day/week/month/year`,
+    `today`, `yesterday`, `since YYYY-MM-DD`, `since <month-name>`,
+    `before YYYY-MM-DD`, `between YYYY-MM-DD and YYYY-MM-DD`.
+  - Pure-std calendar helpers: `ymd_to_ms`, `ms_to_ymd` (Howard Hinnant
+    civil-from-days algorithm), `midnight_utc`, `strip_punct`.
+  - No external crate — all date math is pure `std::time`.
+- New Tauri command `temporal_query(question)`:
+  - Parses time range from question.
+  - Filters `get_all()` by `created_at ∈ [start_ms, end_ms)`.
+  - Falls back to keyword `search()` when no time expression detected.
+  - Returns `TemporalQueryResult { time_range, memories }`.
+- 20 unit tests (calendar roundtrips, all parse patterns, edge cases).
+
+**Files created.**
+- `src-tauri/src/memory/temporal.rs` — **new** (20 tests)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod temporal`
+- `src-tauri/src/commands/memory.rs` — added `temporal_query` command + `TemporalQueryResult`
+- `src-tauri/src/lib.rs` — registered `temporal_query` in import + handler
+
+**Test counts.** Backend: 976 cargo tests; Frontend: 1083 Vitest tests.
+
+---
+
+## Chunk 18.5 — Obsidian vault export (one-way)
+
+**Date.** 2026-04-25
+**Phase.** 18 (Categorisation & Taxonomy — final chunk). Maps to §16 Phase 2 + Phase 4.
+**Goal.** New Tauri command `export_to_obsidian(vault_dir)` that writes one
+Markdown file per long-tier memory under `<vault_dir>/TerranSoul/<id>-<slug>.md`
+with YAML frontmatter. Idempotent: file mtime drives "should I rewrite?"
+decision. Completes Phase 18.
+
+**Architecture.**
+- New `src-tauri/src/memory/obsidian_export.rs` module (~280 LOC):
+  - `slugify(content)` — filesystem-safe slug (≤60 bytes).
+  - `filename_for(entry)` — `<id>-<slug>.md`.
+  - `format_iso(ms)` — pure Unix-ms → ISO 8601 UTC (Howard Hinnant).
+  - `render_markdown(entry)` — YAML frontmatter (id, created_at,
+    importance, memory_type, tier, tags as list, source_url, source_hash)
+    + body.
+  - `export_to_vault(vault_dir, entries) -> ExportReport` — creates
+    `TerranSoul/` dir, writes only long-tier entries, skips unchanged
+    files (mtime >= memory's `last_accessed`).
+- New Tauri command `export_to_obsidian(vault_dir)`.
+- Frontend: `MemoryView.vue` gains "📓 Export to Obsidian" button +
+  modal with vault-path input and result feedback.
+- `memory.ts` Pinia store: `exportToObsidian(vaultDir)` action.
+- 14 Rust unit tests (slugify, filename, ISO, frontmatter, export
+  idempotency, tier filtering).
+
+**Files created.**
+- `src-tauri/src/memory/obsidian_export.rs` — **new** (14 tests)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod obsidian_export`
+- `src-tauri/src/commands/memory.rs` — added `export_to_obsidian` command
+- `src-tauri/src/lib.rs` — registered `export_to_obsidian` in import + handler
+- `src/stores/memory.ts` — added `exportToObsidian` action
+- `src/views/MemoryView.vue` — added export button + modal + handler
+
+**Test counts.** Backend: 976 cargo tests; Frontend: 1083 Vitest tests.
 
 ---
 

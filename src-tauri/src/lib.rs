@@ -66,14 +66,15 @@ use commands::{
     memory::{
         add_memory, add_memory_edge, apply_memory_decay, audit_memory_tags,
         auto_promote_memories, backfill_embeddings, close_memory_edge,
-        delete_memory, delete_memory_edge, evaluate_auto_learn, extract_edges_via_brain,
-        extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
-        get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_stats,
-        get_relevant_memories, get_schema_info, get_short_term_memory, hybrid_search_memories,
-        hybrid_search_memories_rrf, hyde_search_memories, list_memory_edges, list_relation_types,
+        delete_memory, delete_memory_edge, evaluate_auto_learn, export_to_obsidian,
+        extract_edges_via_brain, extract_memories_from_session, gc_memories,
+        get_auto_learn_policy, get_edge_stats, get_edges_for_memory, get_memories,
+        get_memories_by_tier, get_memory_stats, get_relevant_memories, get_schema_info,
+        get_short_term_memory, hybrid_search_memories, hybrid_search_memories_rrf,
+        hyde_search_memories, list_memory_edges, list_relation_types,
         multi_hop_search_memories, promote_memory, rerank_search_memories,
         search_memories, semantic_search_memories, set_auto_learn_policy, summarize_session,
-        update_memory,
+        temporal_query, update_memory,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message,
@@ -358,6 +359,10 @@ pub fn run() {
             get_auto_learn_policy,
             set_auto_learn_policy,
             evaluate_auto_learn,
+            // Obsidian vault export (Chunk 18.5)
+            export_to_obsidian,
+            // Temporal reasoning queries (Chunk 17.3)
+            temporal_query,
             start_registry_server,
             stop_registry_server,
             get_registry_server_port,

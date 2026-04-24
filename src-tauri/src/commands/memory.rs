@@ -954,3 +954,79 @@ pub async fn evaluate_auto_learn(
     let decision = crate::memory::evaluate_auto_learn(policy, total_turns, last_autolearn_turn);
     Ok(crate::memory::auto_learn::AutoLearnDecisionDto::from(decision))
 }
+
+// ── Obsidian vault export (Chunk 18.5) ───────────────────────────────
+
+/// Export all long-tier memories to an Obsidian vault directory.
+///
+/// Creates `<vault_dir>/TerranSoul/` and writes one `.md` file per long-tier
+/// memory with YAML frontmatter. Idempotent — skips files whose mtime is >=
+/// the memory's last modification.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_to_obsidian(
+    vault_dir: String,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::obsidian_export::ExportReport, String> {
+    let entries = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    let path = std::path::Path::new(&vault_dir);
+    if !path.exists() {
+        return Err(format!("Vault directory does not exist: {vault_dir}"));
+    }
+    crate::memory::obsidian_export::export_to_vault(path, &entries)
+}
+
+// ── Temporal reasoning queries (Chunk 17.3) ──────────────────────────
+
+/// Result of a temporal query: the parsed time range + matching memories.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TemporalQueryResult {
+    /// The resolved time range, or `None` if no time expression was detected.
+    pub time_range: Option<crate::memory::temporal::TimeRange>,
+    /// Memories whose `created_at` falls within the time range.
+    /// When no time range is detected, falls back to keyword search over all memories.
+    pub memories: Vec<crate::memory::MemoryEntry>,
+}
+
+/// Query memories within a natural-language time range.
+///
+/// Examples: *"what did I learn last month about X?"*, *"have my preferences
+/// shifted since April?"*, *"show yesterday's memories"*.
+///
+/// The `question` is parsed for time expressions (last N days, since date,
+/// between dates, today, yesterday, etc.). Memories within the range are
+/// returned, optionally keyword-filtered by any non-time-related terms.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn temporal_query(
+    question: String,
+    state: State<'_, AppState>,
+) -> Result<TemporalQueryResult, String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let time_range = crate::memory::temporal::parse_time_range(&question, now_ms);
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+    let memories = match time_range {
+        Some(range) => {
+            let all = store.get_all().map_err(|e| e.to_string())?;
+            all.into_iter()
+                .filter(|m| m.created_at >= range.start_ms && m.created_at < range.end_ms)
+                .collect()
+        }
+        None => {
+            // No time range detected — fall back to keyword search
+            store.search(&question).map_err(|e| e.to_string())?
+        }
+    };
+
+    Ok(TemporalQueryResult {
+        time_range,
+        memories,
+    })
+}

@@ -470,7 +470,7 @@ function onCharacterWheel(e: WheelEvent) {
   ctx.controls.update();
 }
 
-// ── Cursor tracking + click-through (Open-LLM-VTuber pattern) ─────────────────
+// ── Cursor tracking + click-through ─────────────────
 // Rust polls OS cursor position (~33 Hz) and emits `pet-cursor-pos` events.
 // We check if the cursor is inside any interactive element (character, menu,
 // chat panel).  If yes → passthrough OFF (accept clicks).  If no → passthrough
@@ -985,7 +985,7 @@ onMounted(async () => {
 
   // Span the window across all monitors so the character can be dragged
   // anywhere and the context menu can appear without clipping.
-  // This is the Open-LLM-VTuber approach: full-screen transparent window
+  // full-screen transparent window
   // with cursor-tracking for click-through on blank areas.
   windowStore.spanAllMonitors();
   // Load monitor info so the context menu and emotion bubble can detect

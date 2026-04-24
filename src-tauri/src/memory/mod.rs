@@ -9,9 +9,11 @@ pub mod fusion;
 pub mod gitnexus_mirror;
 pub mod hyde;
 pub mod migrations;
+pub mod obsidian_export;
 pub mod reranker;
 pub mod store;
 pub mod tag_vocabulary;
+pub mod temporal;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

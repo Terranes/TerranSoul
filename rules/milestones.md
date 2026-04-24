@@ -38,12 +38,11 @@ camera-driven side chain (14.3 / 14.4 / 14.5), the persona-storage +
 self-learning chunks (14.8 → 14.11) and the optional offline-polish
 research chunks (14.12 → 14.15). **Phase 15** (AI Coding Integrations
 — MCP + gRPC) is in progress (15.3 landed; 15.1 / 15.2 / 15.4–15.8
-pending). **Phases 16 / 17 / 18** were added 2026-04-24 to land the
-remaining items from `docs/brain-advanced-design.md` § 16 (Modern RAG,
-Phase-5 Intelligence, Phase-2 Categorisation leftovers). **Phase 18**
-is nearly complete (18.1 auto-tag + 18.2 decay + 18.3 filters + 18.4
-vocabulary all shipped; only 18.5 Obsidian export remains). Pick the
-next item from the active tables below or from `rules/backlog.md`.
+pending). **Phases 16 / 17** land the remaining items from
+`docs/brain-advanced-design.md` § 16 (Modern RAG, Phase-5
+Intelligence). **Phase 18** is fully complete (18.1–18.5 all shipped).
+**Chunk 17.3** (temporal reasoning queries) shipped 2026-04-25. Pick
+the next item from the active tables below or from `rules/backlog.md`.
 
 ---
 
@@ -180,25 +179,10 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 17.2 | **Contradiction resolution (LLM picks winner)** — when `add_memory` finds a near-duplicate (existing dedup-by-cosine path) whose content semantically *contradicts* the new one (LLM "do these contradict?" check), opens a `MemoryConflict` row that the BrainView surfaces as a "resolve" prompt. User picks winner; loser is closed via `valid_to` (V6 schema) — never deleted. Maps to §16 Phase 5. | not-started | Builds on existing dedup pipeline; new `memory_conflicts` V8 table (or co-locate with V8 from 16.12). |
-| 17.3 | **Temporal reasoning queries** — extend `commands::memory` with `temporal_query(question, time_range)`. Examples: *"what did I learn last month about X?"*, *"have my preferences shifted since April?"*. Uses existing `valid_from` / `valid_to` (V6) + a small time-range parser; returns the resolved memories with their validity intervals. Maps to §16 Phase 5. | not-started | Pure Rust time parser (use `chrono`-only — no extra crate). |
 | 17.4 | **Memory importance auto-adjustment from access_count** — daily job that nudges `importance` up by 1 (capped at 5) for entries with `access_count >= 10` since last adjustment, and down by 1 (floored at 1) for entries with `access_count == 0` over the last 30 days. Auditable via the new `memory_versions` table (16.12). Maps to §16 Phase 5. | not-started | Depends on 16.12 (memory versioning) for audit trail. ~80 LOC + 8 tests. |
 | 17.5 | **Cross-device memory merge via CRDT sync** — wire `MemoryStore` into the existing Soul Link sync engine (`src-tauri/src/sync/`). LWW-Map CRDT keyed on `(content_hash, source_url)`; conflicts resolved by `last_accessed` then `device_id` lexicographic tiebreak. Maps to §16 Phase 5. | not-started | Reuses Soul Link's QUIC + WebSocket transport. The hardest chunk in this phase — likely splits into 17.5a (schema + handshake) and 17.5b (delta sync). |
 | 17.6 | **Conflict detection between connected memories** — Phase 3 leftover. Daily LLM-as-judge pass over `memory_edges` looking for `EdgeRelType::CONTRADICTS` between entries that previously had `SUPPORTS` / `IMPLIES`. Surfaces conflicts in BrainView. Maps to §16 Phase 3 row "Conflict detection between connected memories". | not-started | Composes naturally with 17.2 — both feed the same MemoryConflict surface. |
 | 17.7 | **Bidirectional Obsidian sync** — extends the one-way export (18.5) into a bidirectional sync. Watches the configured Obsidian vault dir via `notify`; new / edited markdown files become memories; deleted files close the corresponding memories via `valid_to`. Conflict resolution mirrors 17.5 (LWW). Maps to §16 Phase 4 row "Bidirectional Obsidian sync". | not-started | Depends on 18.5 (one-way export) landing first. |
-
----
-
-### Phase 18 — Categorisation & Taxonomy
-
-> Architectural reference: **[`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)** §16 Phase 2 leftovers.
-> The original Phase 2 plan added a flat `category` column; this revised
-> phase keeps the existing `tags` column (free-form) but adds an LLM
-> auto-tagger, a curated tag-prefix vocabulary, and the long-promised
-> Obsidian one-way export.
-
-| # | Chunk | Status | Notes |
-|---|---|---|---|
-| 18.5 | **Obsidian vault export (one-way)** — new Tauri command `export_to_obsidian(vault_dir)` that writes one markdown file per long-tier memory under `${vault_dir}/TerranSoul/<id>-<slug>.md` with YAML frontmatter (id, tags, importance, source_url, created_at). Idempotent; file mtime drives "should I rewrite?" decision. Maps to §16 Phase 2 + Phase 4. | not-started | Pre-req for 17.7's bidirectional sync. |
 
 ---
 

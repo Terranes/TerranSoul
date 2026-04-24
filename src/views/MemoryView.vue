@@ -39,6 +39,14 @@
         >
           ＋ Add memory
         </button>
+        <button
+          class="btn-secondary"
+          data-testid="mv-obsidian-export"
+          :disabled="isActing"
+          @click="showObsidianExport = true"
+        >
+          📓 Export to Obsidian
+        </button>
       </div>
     </header>
 
@@ -428,6 +436,42 @@
         </div>
       </div>
     </div>
+
+    <!-- Obsidian export modal -->
+    <div
+      v-if="showObsidianExport"
+      class="mv-modal-backdrop"
+      @click.self="showObsidianExport = false"
+    >
+      <div class="mv-modal" data-testid="mv-obsidian-dialog">
+        <h3>📓 Export to Obsidian</h3>
+        <p class="mv-desc">Export all long-tier memories as Markdown files with YAML frontmatter into your Obsidian vault.</p>
+        <label>Vault directory
+          <input
+            v-model="obsidianVaultDir"
+            placeholder="e.g. C:\Users\Me\Documents\MyVault"
+            data-testid="mv-obsidian-path"
+          >
+        </label>
+        <p v-if="obsidianResult" class="mv-feedback" data-testid="mv-obsidian-result">{{ obsidianResult }}</p>
+        <div class="mv-modal-btns">
+          <button
+            class="btn-primary"
+            :disabled="!obsidianVaultDir.trim() || isActing"
+            data-testid="mv-obsidian-run"
+            @click="handleObsidianExport"
+          >
+            {{ isActing ? 'Exporting…' : 'Export' }}
+          </button>
+          <button
+            class="btn-secondary"
+            @click="showObsidianExport = false"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -643,6 +687,23 @@ function formatDate(ts: number) {
 
 function formatTokens(n: number) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+// Obsidian export
+const showObsidianExport = ref(false);
+const obsidianVaultDir = ref('');
+const obsidianResult = ref('');
+
+async function handleObsidianExport() {
+  isActing.value = true;
+  obsidianResult.value = '';
+  try {
+    const report = await store.exportToObsidian(obsidianVaultDir.value.trim());
+    obsidianResult.value = `✅ Exported ${report.written} file${report.written === 1 ? '' : 's'}, skipped ${report.skipped} unchanged (${report.total} long-tier total).`;
+  } catch (e) {
+    obsidianResult.value = `❌ Export failed: ${String(e)}`;
+  }
+  isActing.value = false;
 }
 
 onMounted(async () => {

@@ -295,6 +295,11 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /** Export long-tier memories to an Obsidian vault directory. */
+  async function exportToObsidian(vaultDir: string): Promise<{ written: number; skipped: number; total: number; output_dir: string }> {
+    return await invoke('export_to_obsidian', { vaultDir });
+  }
+
   return {
     memories,
     stats,
@@ -325,5 +330,6 @@ export const useMemoryStore = defineStore('memory', () => {
     listRelationTypes,
     extractEdgesViaBrain,
     multiHopSearch,
+    exportToObsidian,
   };
 });

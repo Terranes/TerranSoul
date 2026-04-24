@@ -272,7 +272,7 @@ pub async fn set_pet_mode_bounds(
 
 // ── Pet-mode cursor tracking (Windows) ────────────────────────────────────────
 // Replicates Electron's `setIgnoreMouseEvents(true, { forward: true })` pattern
-// used by Open-LLM-VTuber.  A background task polls the OS cursor position and
+// A background task polls the OS cursor position and
 // emits `pet-cursor-pos` events so the frontend can toggle `set_ignore_cursor_events`
 // based on whether the cursor is over an opaque canvas pixel or a transparent area.
 

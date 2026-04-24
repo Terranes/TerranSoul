@@ -33,4 +33,3 @@
 
 | Chunk | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 117 | **Docker Containerization** — Run TerranSoul in isolated containers for CI/testing and server deployment (Open-LLM-VTuber pattern). CPU/GPU variants. | `not-needed` | Re-analysis: TerranSoul is a Tauri desktop app — Docker is not applicable. If container orchestration for LLM inference servers is ever needed, use .NET Aspire to manage Docker instead of raw Dockerfiles. |
