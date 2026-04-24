@@ -395,8 +395,14 @@ export function getMissingPrereqQuests(
     if (!node) return;
     for (const req of node.requires) visit(req);
     let status: string;
-    try { status = skillTree.getSkillStatus(id); }
-    catch { status = 'available'; }
+    try {
+      status = skillTree.getSkillStatus(id);
+    } catch (err) {
+      // Defensive: treat status-check failures as "not active yet" so the
+      // quest is included in the install list rather than silently skipped.
+      console.warn(`getSkillStatus(${id}) failed; assuming not active`, err);
+      status = 'available';
+    }
     if (status !== 'active') ordered.push(id);
   }
 
@@ -561,13 +567,15 @@ async function runAutoInstall(topic: string): Promise<void> {
     try {
       skillTree.triggerQuestEvent(id);
       await skillTree.handleQuestChoice(id, 'accept');
-    } catch {
-      // Quest engine refused — surface it to the user but keep going so the
-      // remaining quests still get a chance to install.
+    } catch (err) {
+      // Quest engine refused — surface it to the user (with the actual
+      // error) but keep going so the remaining quests still get a chance
+      // to install.
+      const detail = err instanceof Error ? err.message : String(err);
       conversation.messages.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `⚠️ Could not auto-accept **${questDisplayName(skillTree, id)}**. Try installing it manually from the Quests tab.`,
+        content: `⚠️ Could not auto-accept **${questDisplayName(skillTree, id)}**: ${detail}. Try installing it manually from the Quests tab.`,
         agentName: 'System',
         sentiment: 'sad',
         timestamp: Date.now(),
@@ -613,11 +621,21 @@ function runManualInstall(topic: string): void {
 /** Trigger a single missing quest (used by the per-quest buttons). */
 async function runInstallSingleQuest(topic: string, questId: string): Promise<void> {
   const skillTree = useSkillTreeStore();
+  const conversation = useConversationStore();
   try {
     skillTree.triggerQuestEvent(questId);
-  } catch {
-    // The quest engine pushes its own error message via handleQuestChoice;
-    // nothing more to do here.
+  } catch (err) {
+    // triggerQuestEvent throws before handleQuestChoice runs — surface the
+    // error explicitly so the user isn't left with a silent no-op.
+    const detail = err instanceof Error ? err.message : String(err);
+    conversation.messages.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `⚠️ Could not start **${questDisplayName(skillTree, questId)}**: ${detail}. Try opening it from the Quests tab.`,
+      agentName: 'System',
+      sentiment: 'sad',
+      timestamp: Date.now(),
+    });
   }
   // Re-evaluate after the user finishes interacting with this quest. We
   // surface the rest of the missing list so the user can keep going, or the
