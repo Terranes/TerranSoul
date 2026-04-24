@@ -429,11 +429,13 @@ import { useCharacterStore } from '../stores/character';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
 import { useWindowStore } from '../stores/window';
+import { usePersonaStore } from '../stores/persona';
 import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
 import { VrmaManager, getAnimationForMood, getAnimationForMotion } from '../renderer/vrma-manager';
+import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -448,6 +450,7 @@ const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
 const settingsStore = useSettingsStore();
 const windowStoreLocal = useWindowStore();
+const personaStore = usePersonaStore();
 /** Viewport behaves differently in pet mode: no background, no chrome,
  *  transparent clear colour, and pedestal hidden in the 3D scene. */
 const isPetMode = computed(() => windowStoreLocal.mode === 'pet');
@@ -674,6 +677,8 @@ let sceneCtx: SceneContext | null = null;
 let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
 const vrmaManager = new VrmaManager();
+const motionPlayer = new LearnedMotionPlayer(vrmaManager);
+let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Wire VRMA playback state to the animator
 vrmaManager.onPlaybackChange((playing) => {
@@ -718,6 +723,28 @@ defineExpose({
   /** Whether a mood-suppressed VRMA animation is actively playing (e.g. angry.vrma). */
   get isAnimationActive(): boolean {
     return vrmaManager.isMoodSuppressed && vrmaManager.isPlaying;
+  },
+  /**
+   * Play a learned motion clip on the avatar. Bakes the JSON frames
+   * into an AnimationClip on the fly.
+   */
+  playLearnedMotion(motion: import('../stores/persona-types').LearnedMotion) {
+    vrmaManager.suppressMoodAnimation();
+    motionPlayer.play(motion, false, 0.4);
+  },
+  /**
+   * Preview a learned expression by applying its weights to the VRM
+   * for 3 seconds, then resetting.
+   */
+  previewExpression(expr: import('../stores/persona-types').LearnedExpression) {
+    const vrm = vrmaManager.vrm;
+    if (!vrm) return;
+    if (expressionPreviewTimer) clearTimeout(expressionPreviewTimer);
+    applyLearnedExpression(vrm, expr);
+    expressionPreviewTimer = setTimeout(() => {
+      clearExpressionPreview(vrm);
+      expressionPreviewTimer = null;
+    }, 3000);
   },
 });
 
@@ -964,6 +991,36 @@ watch(
       // Return to procedural animation for idle/talking
       vrmaManager.stop(0.4);
     }
+  },
+);
+
+// ── Persona preview bridge ────────────────────────────────────────────────
+// PersonaPanel (BrainView) writes requests; we consume them here.
+
+watch(
+  () => personaStore.previewExpressionRequest,
+  (expr) => {
+    if (!expr) return;
+    const vrm = vrmaManager.vrm;
+    if (vrm) {
+      if (expressionPreviewTimer) clearTimeout(expressionPreviewTimer);
+      applyLearnedExpression(vrm, expr);
+      expressionPreviewTimer = setTimeout(() => {
+        clearExpressionPreview(vrm);
+        expressionPreviewTimer = null;
+      }, 3000);
+    }
+    personaStore.previewExpressionRequest = null;
+  },
+);
+
+watch(
+  () => personaStore.previewMotionRequest,
+  (motion) => {
+    if (!motion) return;
+    vrmaManager.suppressMoodAnimation();
+    motionPlayer.play(motion, false, 0.4);
+    personaStore.previewMotionRequest = null;
   },
 );
 

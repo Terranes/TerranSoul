@@ -58,6 +58,14 @@ export const usePersonaStore = defineStore('persona', () => {
   // ── Ephemeral, session-only state (NOT persisted, see § 5) ──────────
   const cameraSession = ref<CameraSessionState>(freshSession());
 
+  /**
+   * Preview requests — set by PersonaPanel, consumed by CharacterViewport.
+   * Cross-view bridge since the two live in different routes.
+   * Cleared by the consumer after handling.
+   */
+  const previewExpressionRequest = ref<LearnedExpression | null>(null);
+  const previewMotionRequest = ref<LearnedMotion | null>(null);
+
   // ── Computed ────────────────────────────────────────────────────────
 
   /**
@@ -337,6 +345,16 @@ export const usePersonaStore = defineStore('persona', () => {
     cameraSession.value = freshSession();
   }
 
+  /** Request the avatar preview an expression (consumed by CharacterViewport). */
+  function requestExpressionPreview(expr: LearnedExpression): void {
+    previewExpressionRequest.value = expr;
+  }
+
+  /** Request the avatar play a learned motion (consumed by CharacterViewport). */
+  function requestMotionPreview(motion: LearnedMotion): void {
+    previewMotionRequest.value = motion;
+  }
+
   return {
     // state
     traits,
@@ -345,6 +363,8 @@ export const usePersonaStore = defineStore('persona', () => {
     learnedMotions,
     lastBrainExtractedAt,
     cameraSession,
+    previewExpressionRequest,
+    previewMotionRequest,
     // computed
     personaBlock,
     learnedMotionRefs,
@@ -360,5 +380,7 @@ export const usePersonaStore = defineStore('persona', () => {
     importPack,
     startCameraSession,
     stopCameraSession,
+    requestExpressionPreview,
+    requestMotionPreview,
   };
 });

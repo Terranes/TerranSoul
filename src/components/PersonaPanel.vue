@@ -231,6 +231,13 @@
           <span class="pp-lib-trigger">trigger: <code>{{ exp.trigger }}</code></span>
           <span class="pp-lib-meta">{{ relativeTime(exp.learnedAt) }}</span>
           <button
+            class="pp-btn pp-btn-secondary"
+            :data-testid="`pp-preview-exp-${exp.id}`"
+            @click="store.requestExpressionPreview(exp)"
+          >
+            ▶ Preview
+          </button>
+          <button
             class="pp-btn pp-btn-danger"
             :data-testid="`pp-delete-exp-${exp.id}`"
             @click="deleteExpression(exp.id)"
@@ -269,6 +276,13 @@
           <span class="pp-lib-trigger">trigger: <code>{{ m.trigger }}</code></span>
           <span class="pp-lib-meta">{{ m.duration_s.toFixed(1) }}s · {{ m.fps }}fps</span>
           <span class="pp-lib-meta">{{ relativeTime(m.learnedAt) }}</span>
+          <button
+            class="pp-btn pp-btn-secondary"
+            :data-testid="`pp-play-motion-${m.id}`"
+            @click="store.requestMotionPreview(m)"
+          >
+            ▶ Play
+          </button>
           <button
             class="pp-btn pp-btn-danger"
             :data-testid="`pp-delete-motion-${m.id}`"

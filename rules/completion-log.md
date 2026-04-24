@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunks 14.9 / 14.10 / 14.11 — Learned asset persistence + player + bundle](#chunks-149--1410--1411--learned-asset-persistence--player--bundle) | 2026-04-25 |
 | [Chunk 14.5 — VRMA baking](#chunk-145--vrma-baking) | 2026-04-25 |
 | [Chunk 14.4 — Motion-capture camera quest](#chunk-144--motion-capture-camera-quest) | 2026-04-25 |
 | [Chunk 14.3 — Expressions-pack camera quest](#chunk-143--expressions-pack-camera-quest) | 2026-04-25 |
@@ -170,6 +171,32 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunks 14.9 / 14.10 / 14.11 — Learned asset persistence + player + bundle
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped the learned-asset persistence + playback trifecta. Chunk 14.9 (expression presets) and 14.11 (persona side-chain bundle) were already fully implemented in prior chunks — the backend CRUD commands, frontend store wiring, and persona pack export/import all existed. Chunk 14.10's new deliverable is `LearnedMotionPlayer` + expression preview helper, wired into CharacterViewport with a cross-view Pinia bridge so PersonaPanel's "Play" / "Preview" buttons work from BrainView.
+
+**Architecture.**
+- `learned-motion-player.ts`: `LearnedMotionPlayer` class wraps `bakeMotionToClip()` (14.5) + `VrmaManager.playClip()`. `applyLearnedExpression()` + `clearExpressionPreview()` static helpers set/reset VRM expression manager weights for timed previews.
+- `VrmaManager.vrm` getter: exposes the bound VRM model for expression preview access.
+- Persona store bridge: `previewExpressionRequest` / `previewMotionRequest` refs + `requestExpressionPreview()` / `requestMotionPreview()` actions. PersonaPanel writes, CharacterViewport watches and consumes.
+- PersonaPanel: "▶ Preview" buttons for expressions, "▶ Play" buttons for motions.
+
+**Files created.**
+- `src/renderer/learned-motion-player.ts` — player + expression preview helpers (~80 LOC)
+- `src/renderer/learned-motion-player.test.ts` — 10 unit tests
+
+**Files modified.**
+- `src/renderer/vrma-manager.ts` — added `vrm` getter
+- `src/stores/persona.ts` — added preview request refs + actions
+- `src/components/CharacterViewport.vue` — wired `LearnedMotionPlayer`, persona preview watchers
+- `src/components/PersonaPanel.vue` — added Preview/Play buttons for expressions and motions
+
+**Test count after.** 1142 Vitest (10 new); 1053 Rust (unchanged).
 
 ---
 

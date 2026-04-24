@@ -157,6 +157,11 @@ export class VrmaManager {
     return this._suppressMoodAnimation;
   }
 
+  /** The currently bound VRM model (null until setVRM is called). */
+  get vrm(): VRM | null {
+    return this.currentVrm;
+  }
+
   /** Mark that an explicit motion is playing — mood watcher should not override. */
   suppressMoodAnimation() {
     this._suppressMoodAnimation = true;
