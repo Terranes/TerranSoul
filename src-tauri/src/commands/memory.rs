@@ -407,6 +407,73 @@ pub async fn hyde_search_memories(
         .map_err(|e| e.to_string())
 }
 
+/// **Cross-encoder rerank** over RRF-fused hybrid search (LLM-as-judge style).
+///
+/// Two-stage retrieval pipeline:
+///
+/// 1. **Recall stage** — `hybrid_search_rrf` returns the top
+///    `candidates_k` candidates (default 20, bounded `limit..=50`).
+/// 2. **Precision stage** — the active brain scores each candidate on
+///    a 0–10 relevance scale via [`OllamaAgent::rerank_score`], and
+///    [`crate::memory::reranker::rerank_candidates`] re-orders them.
+///
+/// Unscored candidates (LLM call failed or unparseable reply) are
+/// kept in the result but ranked below every successfully-scored
+/// candidate, so a flaky reranker never silently loses recall.
+///
+/// When **no brain is configured**, the rerank stage is skipped and
+/// the command behaves exactly like `hybrid_search_memories_rrf` —
+/// callers can adopt this command unconditionally without breaking
+/// the cold-start (no-LLM) experience.
+///
+/// Implements § 16 Phase 6 / § 19.2 row 10 of `docs/brain-advanced-design.md`.
+#[tauri::command]
+pub async fn rerank_search_memories(
+    query: String,
+    limit: Option<usize>,
+    candidates_k: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10).max(1);
+    // Bound the recall stage so the LLM round-trip count stays sane.
+    // We always pull at least `limit` so rerank can't shrink the result.
+    let candidates_k = candidates_k.unwrap_or(20).clamp(limit, 50);
+
+    // Stage 1 — RRF-fused recall.
+    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let query_emb = if let Some(ref model) = model_opt {
+        crate::brain::OllamaAgent::embed_text(&query, model).await
+    } else {
+        None
+    };
+
+    let candidates: Vec<MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .hybrid_search_rrf(&query, query_emb.as_deref(), candidates_k)
+            .map_err(|e| e.to_string())?
+    }; // release the store lock before any LLM await
+
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Stage 2 — LLM-as-judge rerank. If no brain is configured, return
+    // the recall list truncated to `limit` so the command is still useful.
+    let Some(model) = model_opt else {
+        return Ok(candidates.into_iter().take(limit).collect());
+    };
+
+    let agent = crate::brain::OllamaAgent::new(&model);
+    // Score sequentially to stay under provider rate limits.
+    let mut scores: Vec<Option<u8>> = Vec::with_capacity(candidates.len());
+    for cand in &candidates {
+        scores.push(agent.rerank_score(&query, &cand.content).await);
+    }
+
+    Ok(crate::memory::reranker::rerank_candidates(candidates, &scores, limit))
+}
+
 /// Get memory statistics per tier.
 #[tauri::command]
 pub async fn get_memory_stats(

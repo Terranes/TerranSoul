@@ -37,9 +37,10 @@
 
 ## Next Chunk
 
-**Chunk 1.10 — Cross-encoder reranker pass.** Use BGE-reranker-v2-m3
-(or any reranker model) via Ollama to re-score the top-k candidates
-returned by `hybrid_search_rrf` for higher precision.
+**Chunk 1.11 — Temporal KG edges (V6 schema).** Additive `valid_from` /
+`valid_to` columns on `memory_edges` plus an optional `valid_at`
+parameter on edge queries so graph traversal can answer "what was true
+on date X?". Supports contradicting-fact resolution.
 
 ---
 
@@ -50,7 +51,6 @@ returned by `hybrid_search_rrf` for higher precision.
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
-| 1.10 | Cross-encoder reranker pass (BGE-reranker-v2-m3 via Ollama) | not-started | agent | §19.2 row 10 (🔵→✅), §16 Phase 6 |
 | 1.11 | Temporal KG edges — V6 schema with `valid_from` / `valid_to` | not-started | agent | §19.2 row 13 (🔵→✅), §16 Phase 6 |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
@@ -81,17 +81,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 **Remaining (user environment / follow-up).**
 - [ ] Capture **scenario-specific** screenshots on a real Tauri build with
       Vietnamese content loaded.
-
-#### Chunk 1.10 — Cross-encoder reranker pass
-
-**Goal.** After hybrid retrieval returns top-k candidates, re-score them
-with a cross-encoder model (BGE-reranker-v2-m3 via Ollama) for higher
-precision, then return the top-N reranked subset. Ollama is queried via
-the existing `OllamaAgent` wrapper; reranker model is configurable.
-
-**Acceptance.** Unit tests on the reranker request/response parser and
-the score-merge function; integration with `hybrid_search_rrf` (Chunk
-1.8); documented in §19.2 row 10 status update.
 
 #### Chunk 1.11 — Temporal KG edges (V6 schema)
 

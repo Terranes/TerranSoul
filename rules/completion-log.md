@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.10 — Cross-encoder Reranker (LLM-as-judge)](#chunk-110--cross-encoder-reranker-llm-as-judge) | 2026-04-24 |
 | [Chunk 1.9 — HyDE (Hypothetical Document Embeddings)](#chunk-19--hyde-hypothetical-document-embeddings) | 2026-04-24 |
 | [Chunk 1.8 — RRF Wired into Hybrid Search](#chunk-18--rrf-wired-into-hybrid-search) | 2026-04-24 |
 | [Chunk 1.7 (Distribution) — Real Downloadable Agent Distribution](#chunk-17-distribution--real-downloadable-agent-distribution) | 2026-04-23 |
@@ -91,6 +92,90 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.10 — Cross-encoder Reranker (LLM-as-judge)
+
+**Date.** 2026-04-24
+**Phase.** 12 (Brain Advanced Design)
+**Origin.** `docs/brain-advanced-design.md` §16 Phase 6 / §19.2 row 10.
+
+**Goal.** Add a true two-stage retrieval pipeline:
+
+```text
+RRF-fused hybrid recall (top candidates_k = 20)
+        │
+        ▼
+Cross-encoder rerank (top limit = 10)  ──► prompt context
+```
+
+Bi-encoders (cosine vector search) embed query and document
+independently and compare them with one dot product — fast at retrieval
+time but lossy. A cross-encoder feeds `(query, document)` together so
+phrase-level interactions are preserved; this is too expensive to run
+over the whole corpus, hence the recall → precision split.
+
+**Implementation choice — LLM-as-judge.** Rather than ship a separate
+BGE-reranker-v2-m3 / mxbai-rerank model (extra download, extra RAM,
+not available in the Free brain mode), we **reuse the active brain**
+as the reranker by asking it to score each `(query, document)` pair
+on a 0–10 integer scale. This is the well-documented LLM-as-judge
+pattern (widely used in 2024 RAG eval pipelines and as a pragmatic
+production reranker fallback). Quality is competitive when the chat
+model is decent (Llama-3-8B+, Qwen-2.5+, any cloud model), and it
+works in *all three* brain modes (Free / Paid / Local Ollama). The
+`(query, document) -> Option<u8>` interface is identical to a future
+dedicated-reranker backend, so swapping it in later is a one-line
+change in the Tauri command.
+
+**Architecture (three layers — same shape as Chunk 1.9 HyDE).**
+
+1. **Pure logic** (`src-tauri/src/memory/reranker.rs`):
+   - `build_rerank_prompt(query, doc) -> (system, user)` — includes a
+     calibrated 0/3/6/8/10 rubric so even small models produce
+     consistent scores; clips the document to 1500 chars to stay
+     within small-model context budgets.
+   - `parse_rerank_score(reply) -> Option<u8>` — robust to chat
+     noise: `"7"`, `"7."`, `"**7**"`, `"Score: 7"`, `"7 out of 10"`
+     all parse to `Some(7)`; rejects out-of-range and unparseable.
+   - `rerank_candidates(candidates, scores, limit) -> Vec<MemoryEntry>`
+     — sorts by score descending, breaks ties by original bi-encoder
+     rank, **keeps unscored candidates ranked below scored ones
+     rather than dropping them** so a flaky brain never silently
+     loses recall.
+2. **Brain wrapper** (`OllamaAgent::rerank_score`) — single LLM round-
+   trip per pair; returns `Option<u8>` (`None` on failure).
+3. **Tauri command** (`commands::memory::rerank_search_memories`) —
+   stage 1 calls `hybrid_search_rrf` with `candidates_k` (default 20,
+   clamped `limit..=50`) for recall; stage 2 scores each candidate
+   sequentially (sequential to stay under provider rate limits) and
+   reorders. **Cold-start safety:** if no brain is configured, the
+   rerank stage is skipped and the command behaves exactly like
+   `hybrid_search_memories_rrf` so callers can adopt it
+   unconditionally.
+
+**Files modified.**
+- `src-tauri/src/memory/reranker.rs` — **new module** (~260 LOC
+  including 14 unit tests covering prompt structure, doc truncation,
+  whitespace trimming, score parsing across 6 reply shapes,
+  out-of-range rejection, no-digits rejection, zero-limit, empty-
+  candidates, score-descending sort, original-rank tie break,
+  unscored-kept-below, all-unscored-preserves-order, limit truncation).
+- `src-tauri/src/memory/mod.rs` — register `pub mod reranker;`.
+- `src-tauri/src/brain/ollama_agent.rs` — `OllamaAgent::rerank_score`.
+- `src-tauri/src/commands/memory.rs` — `rerank_search_memories` Tauri
+  command with two-stage pipeline + no-brain fallback.
+- `src-tauri/src/lib.rs` — command registration.
+- `docs/brain-advanced-design.md` — §16 Phase 6 row + §19.2 row 10
+  status flipped to ✅; §19.3 expanded.
+- `rules/milestones.md` — Chunk 1.10 row removed; next-chunk pointer
+  advanced to Chunk 1.11.
+- `README.md` — Brain System / Memory System / Tauri command surface
+  sections updated.
+
+**Tests.** 768 Rust unit tests pass (754 baseline + 14 new
+`memory::reranker::tests::*`).
 
 ---
 

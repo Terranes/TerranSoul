@@ -6,6 +6,7 @@ pub mod edges;
 pub mod fusion;
 pub mod hyde;
 pub mod migrations;
+pub mod reranker;
 pub mod store;
 
 #[cfg(feature = "postgres")]
