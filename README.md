@@ -38,6 +38,8 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 | Neocortex                  | Retrieval System (RAG / Knowledge) | 📚 Knowledge         |
 | Basal Ganglia / Cerebellum | Control & Execution Layer          | ⚡ Dexterity         |
 
+> 📖 **Deep dive:** every cell in this table — the LLM providers behind Intelligence, the three-tier store and embedding model behind Wisdom, the hybrid 6-signal RAG behind Knowledge, the typed entity-relationship graph, decay/GC, cognitive episodic/semantic/procedural axes, multi-source ingestion, sleep-time consolidation, and the April 2026 research survey — is documented in **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)**. Any contribution that touches the brain (LLM, memory, RAG, ingestion, embeddings, cognitive-kind, brain-gating quests) must consult that doc first.
+
 As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
 
 ### The Skill Tree — Constellation Map
@@ -171,14 +173,38 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - Error overlay with retry button
 
 ### 🧠 Brain System (LLM Integration — The "Prefrontal Cortex")
-- **4 modes:** Free API (Groq/Pollinations), Paid API (OpenAI/Anthropic), Local Ollama, Stub fallback
-- Zero-setup first launch — free brain auto-configures with no API keys needed
-- Streaming responses with real-time token display
-- Provider health monitoring with automatic failover
-- Provider migration detection — warns users and suggests brain upgrades when APIs deprecate
+
+> Architectural reference: **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)** covers every component below in depth, including the April 2026 modern-RAG research survey.
+
+**Providers & modes** (`src-tauri/src/brain/`)
+- **4 brain modes:** Free API (Pollinations, Groq), Paid API (OpenAI / Anthropic / Groq / OpenAI-compatible), Local Ollama, Stub fallback
+- Implementations: `OllamaAgent`, `OpenAiClient`, `FreeProvider`, `ProviderRotator`, `StubAgent`
+- External CLI agents (Chunk 1.5): multi-agent **roster** + Temporal-style **durable workflow engine** (`src-tauri/src/agents/`, `src-tauri/src/workflows/`)
+- Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM
+- Zero-setup first launch — free brain auto-configures with no API keys
+- Streaming responses (SSE → `llm-chunk` Tauri event, parsed by `StreamTagParser` state machine)
+- Animation channel: `llm-animation` events for `<anim>` JSON blocks emitted by the LLM
+- Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
 - Persona-based fallback when no LLM is configured
 - 60s streaming timeout + 30s fallback timeout to prevent stuck states
+
+**Three-tier memory + RAG** (`src-tauri/src/memory/`)
+- **Three tiers** mirroring human cognition: **Short-term** (in-memory `Vec<Message>`, last ~20 turns) → **Working** (SQLite, session-scoped) → **Long-term** (SQLite, vector-indexed, decay/GC managed)
+- **Cognitive memory axes** — every memory is also classified `episodic` / `semantic` / `procedural` via the pure-function classifier `memory::cognitive_kind::classify` (mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`)
+- **Hybrid 6-signal RAG search** — `vector_similarity` (40%) + `keyword_match` (20%) + `recency_bias` (15%) + `importance` (10%) + `decay_score` (10%) + `tier_priority` (5%)
+- **Embeddings:** Ollama `nomic-embed-text` (768-dim) by default, stored as SQLite BLOB; chat-model fallback with process-lifetime "unsupported" cache + 60s `/api/tags` probe cache
+- **Reciprocal Rank Fusion (RRF)** utility (`memory/fusion.rs`) — Cormack-style fusion of multiple ranked retrievers, foundation for future multi-retriever / cross-encoder rerank pipelines (April 2026 research gap)
+- **Knowledge graph (V5):** typed directional `memory_edges` table with FK cascade + 17-type relationship taxonomy, `extract_edges_via_brain` LLM extractor, `multi_hop_search_memories` traversal, Cytoscape.js visualization
+- **Decay & GC:** exponential decay (`decay_score *= 0.95^(hours/168)`), access-count tracking, periodic garbage collection
+- **Multi-source knowledge management:** source-hash change detection, TTL expiry, access-count decay, **LLM-powered conflict resolution**
+- **Pluggable storage backends** via `StorageBackend` trait: SQLite (default), PostgreSQL (`sqlx`), SQL Server (`tiberius`), CassandraDB (`scylla`)
+- **LLM-powered memory ops:** `extract_facts`, `summarize`, `semantic_search_entries`, `embed_text`
+- **SQLite schema at V5** with `PRAGMA foreign_keys=ON` and auto-migrating `memories` + `memory_edges` tables
+
+**Frontend brain hub** (`src/views/BrainView.vue`, `src/components/BrainAvatar.vue`)
+- Top-level **Brain** tab unifies brain config, hardware probe, RAG capability gauges, cognitive-kind breakdown, RPG stats, and a mini memory graph
+- Pinia stores: `brain.ts`, `conversation.ts`, `memory.ts`, `agent-roster.ts`, `skill-tree.ts`
 
 ### 🗣️ Voice System (The "Charisma" Stats)
 - **ASR:** Web Speech API, Whisper, Groq speech-to-text
@@ -188,9 +214,34 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - LipSync ↔ TTS audio pipeline for real-time mouth animation
 
 ### 💾 Memory System (The "Hippocampus")
-- Long-term + short-term memory stores
-- Semantic graph visualization (Cytoscape.js)
-- Memory extraction and summarization
+
+> Architectural reference: **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)** — full schema, RAG pipeline, decay model, knowledge graph, and April 2026 research survey.
+
+**Core modules** (`src-tauri/src/memory/`)
+- `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V5**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal scoring), `apply_decay`, `promote`
+- `backend.rs` — `StorageBackend` trait + `StorageConfig` + `StorageError` (the seam every backend implements)
+- `migrations.rs` — auto-applied schema migrations through V5 (`memories` + `memory_edges`, `PRAGMA foreign_keys=ON`)
+- `edges.rs` — `MemoryEdge`, `NewMemoryEdge`, `EdgeDirection`, `EdgeSource`, `EdgeStats`, `COMMON_RELATION_TYPES` (17-type taxonomy), `normalise_rel_type`, `parse_llm_edges`, `format_memories_for_extraction`
+- `cognitive_kind.rs` — pure-function `classify(memory_type, tags, content) → CognitiveKind` (`Episodic` / `Semantic` / `Procedural`); mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`
+- `brain_memory.rs` — LLM-powered ops: `extract_facts`, `summarize`, `semantic_search_entries`, `extract_edges_via_brain`
+- `fusion.rs` — `reciprocal_rank_fuse(rankings, k)` (Cormack RRF, k=60); foundation for multi-retriever / cross-encoder rerank pipelines (April 2026 research gap)
+- Pluggable backends behind cargo features: `postgres.rs` (`sqlx`), `mssql.rs` (`tiberius`), `cassandra.rs` (`scylla`)
+
+**Tauri command surface** (`src-tauri/src/commands/memory.rs`)
+- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal), `multi_hop_search_memories` (graph traversal), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge`, `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`
+
+**Storage & RAG**
+- **Three tiers** mirroring human cognition: short-term (in-memory `Vec<Message>`, last ~20 turns) → working (SQLite, session-scoped) → long-term (SQLite, vector-indexed, decay/GC managed)
+- **Knowledge graph (V5):** typed directional `memory_edges` table with FK cascade, 17-type relationship taxonomy, LLM edge extractor, multi-hop traversal
+- **Embeddings:** Ollama `nomic-embed-text` (768-dim) stored as SQLite BLOB; chat-model fallback with process-lifetime "unsupported" cache + 60s `/api/tags` probe cache
+- **Hybrid 6-signal RAG search** — `vector_similarity` (40%) + `keyword_match` (20%) + `recency_bias` (15%) + `importance` (10%) + `decay_score` (10%) + `tier_priority` (5%)
+- **Decay & GC:** exponential decay (`decay_score *= 0.95^(hours/168)`), access-count tracking, periodic garbage collection
+- **Multi-source knowledge management:** source-hash change detection, TTL expiry, access-count decay, **LLM-powered conflict resolution**
+
+**Frontend**
+- `src/views/MemoryView.vue` — list / grid / graph view, tier chips, filters, decay viz
+- `src/components/MemoryGraph.vue` — Cytoscape.js semantic graph visualization with typed edges
+- `src/stores/memory.ts` — Pinia store (CRUD + search + streaming results)
 
 ### 🔗 TerranSoul Link
 - Device identity + pairing with QR codes

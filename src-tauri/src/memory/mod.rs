@@ -2,6 +2,7 @@ pub mod backend;
 pub mod brain_memory;
 pub mod cognitive_kind;
 pub mod edges;
+pub mod fusion;
 pub mod migrations;
 pub mod store;
 

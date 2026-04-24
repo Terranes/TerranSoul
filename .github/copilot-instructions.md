@@ -56,6 +56,16 @@ Rust Core Engine (src-tauri/src/)
 2. **Paid API** — OpenAI/Anthropic/Groq with user-supplied API key
 3. **Local Ollama** — Private, offline-capable, hardware-adaptive model selection
 
+> ⚠️ **Brain Documentation Sync (mandatory rule)** — Any change that touches
+> the brain surface (LLM providers, memory store, RAG pipeline, ingestion,
+> embeddings, cognitive-kind classification, knowledge graph, decay/GC,
+> brain-gating quests, brain Tauri commands or Pinia stores) **must update
+> both `docs/brain-advanced-design.md` and `README.md` in the same PR** —
+> the design doc for architecture/schema/pipeline/roadmap, and the README
+> for the "🧠 Brain System" + "💾 Memory System" component listings, the
+> Human-Brain ↔ AI-System ↔ RPG-Stat table, and the link to the design
+> doc. See `rules/architecture-rules.md` rule 10.
+
 ## RAG Pipeline (Current)
 
 Every chat message triggers:

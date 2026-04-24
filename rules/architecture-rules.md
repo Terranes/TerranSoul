@@ -23,6 +23,19 @@
    a network connection. TerranSoul Link sync is additive, not a prerequisite.
 9. **Performance Budgets** — Cap `devicePixelRatio` at 2 in the Three.js renderer.
    Keep VRM model polygon count < 100k tris for Phase 1 real-time performance.
+10. **Brain Documentation Sync (mandatory)** — Any change that touches the brain
+    surface (LLM providers, memory store, RAG pipeline, ingestion, embeddings,
+    cognitive-kind classification, knowledge graph, decay/GC, brain-gating
+    quests, brain-related Tauri commands or Pinia stores) **must** update
+    **both** of the following in the same PR:
+    - `docs/brain-advanced-design.md` — keep the design / schema / pipeline
+      / roadmap / April 2026 research-survey sections accurate.
+    - `README.md` — keep the "🧠 Brain System" and "💾 Memory System"
+      component listings, the Human-Brain ↔ AI-System ↔ RPG-Stat mapping
+      table, and the link to `docs/brain-advanced-design.md` in sync with
+      reality.
+    A brain PR that updates code without updating these two documents is
+    incomplete and must not be merged. Reviewers should reject such PRs.
 
 ---
 

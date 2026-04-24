@@ -47,6 +47,7 @@
 16. [Scaling Roadmap](#scaling-roadmap)
 17. [FAQ](#faq)
 18. [Diagrams Index](#diagrams-index)
+19. [April 2026 Research Survey — Modern RAG & Agent-Memory Techniques](#april-2026-research-survey--modern-rag--agent-memory-techniques)
 
 ---
 
@@ -1827,6 +1828,22 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ○ Temporal reasoning ("last month you said...")               │
 │  ├── ○ Memory importance auto-adjustment from access_count         │
 │  └── ○ Cross-device memory merge via CRDT sync                    │
+│                                                                     │
+│  PHASE 6 — Modern RAG (April 2026 research absorption — see §19)   │
+│  ├── ✓ Reciprocal Rank Fusion utility (memory/fusion.rs)           │
+│  ├── ○ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
+│  │     context before embedding                                    │
+│  ├── ○ HyDE (Hypothetical Document Embeddings) for cold queries   │
+│  ├── ○ Cross-encoder reranking pass (BGE-reranker-v2-m3 via Ollama)│
+│  ├── ○ Late chunking (embed full doc, pool per-chunk windows)      │
+│  ├── ○ GraphRAG / LightRAG-style community summaries over          │
+│  │     memory_edges (multi-hop + LLM cluster summary)              │
+│  ├── ○ Self-RAG / Corrective RAG (CRAG) iterative refinement loop  │
+│  ├── ○ Sleep-time consolidation (Letta-style background job that   │
+│  │     compresses/links short→working→long during idle)            │
+│  ├── ○ Temporal knowledge graph (Zep / Graphiti-style valid_from / │
+│  │     valid_to edges on memory_edges)                             │
+│  └── ○ Matryoshka embeddings (variable-dim 256/512/768 truncation) │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1928,7 +1945,73 @@ Quick reference for all diagrams in this document:
 | §13 | RAG ecosystem | 5 framework comparison tables |
 | §14 | DB Browser | SQLite debug tool UI |
 | §15 | Hardware scaling | Memory count → RAM/speed table |
-| §16 | Scaling roadmap | 5-phase plan from foundation to intelligence |
+| §16 | Scaling roadmap | 6-phase plan from foundation to modern-RAG absorption |
+| §19 | Research survey | April 2026 modern RAG / agent-memory technique map |
+
+---
+
+## 19. April 2026 Research Survey — Modern RAG & Agent-Memory Techniques
+
+> **Why this section exists**: the RAG and agent-memory landscape moved fast in 2024–2026. This section catalogs every major technique that emerged or matured during that window, maps each one to TerranSoul's current implementation status, and links each gap to a concrete Phase 6 roadmap item (§16). It is the canonical "what are we missing?" reference — consult it (alongside §10 and §13) before designing any new brain / memory work.
+
+### 19.1 Status legend
+
+| Symbol | Meaning |
+|---|---|
+| ✅ | Shipped in the current binary |
+| 🟡 | Partial / foundations in place, full feature pending |
+| 🔵 | Documented gap with concrete Phase 6 roadmap item |
+| ⚪ | Intentionally rejected (does not fit single-user desktop companion) |
+
+### 19.2 Technique → TerranSoul status map
+
+| # | Technique (year, source) | What it is | TerranSoul status | Where / Roadmap |
+|---|---|---|---|---|
+| 1 | **Hybrid dense + sparse retrieval** (BM25 + vector, established) | Combine lexical and semantic signals | ✅ | §4 — 6-signal hybrid scoring |
+| 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wire-in to `hybrid_search` is Phase 6. |
+| 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | 🔵 | Phase 6 — chunking pipeline (§16) |
+| 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | 🔵 | Phase 6 — Brain has `chat_completion` + `embed_text` already, ~50 LOC to add `hyde_search_memories` command |
+| 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | 🔵 | Phase 6 — orchestrator-level loop (`src-tauri/src/orchestrator/`) |
+| 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | 🔵 | Phase 6 — pairs naturally with our `relevance_threshold` Phase 4 item |
+| 7 | **GraphRAG** ([Microsoft, 2024](https://github.com/microsoft/graphrag)) | LLM extracts entities + relations into a KG, runs Leiden community detection, summarizes each community; queries hit community summaries first | 🟡 → 🔵 | Foundations: `memory_edges` V5 + `multi_hop_search_memories` (§6). Missing: community detection + LLM community-summary rollups. Phase 6. |
+| 8 | **LightRAG** (HKU, 2024) | GraphRAG variant: dual-level retrieval (low-level entity + high-level theme) with incremental graph updates; cheaper than full GraphRAG | 🔵 | Phase 6 — natural follow-on once community summaries land |
+| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | 🔵 | Phase 6 — requires long-context embedding model (e.g. `jina-embeddings-v3`) selectable via Ollama |
+| 10 | **Cross-encoder reranking** (BGE-reranker-v2-m3, Cohere Rerank 3, etc.) | Second-pass scorer over top-k candidates with a query-doc joint encoder, much higher precision than bi-encoder cosine | 🔵 | Phase 6 — slot a reranker between `hybrid_search` and prompt formatting; RRF utility (item 2) is the fusion primitive |
+| 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | 🔵 | Phase 6 — pairs with ANN index (Phase 4); current `nomic-embed-text` is fixed-dim |
+| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | 🔵 | Phase 6 — fits TerranSoul's tier model (§2); reuses durable workflow engine (`workflows/engine.rs`) for the idle-time job |
+| 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | 🔵 | Phase 6 — additive columns on `memory_edges`; complements Phase 5 "Temporal reasoning" |
+| 14 | **Agentic RAG** (industry term, 2024–2026) | RAG embedded in an agent loop: plan → retrieve → reflect → re-retrieve → generate, with tool use | 🟡 | Foundations: roster + workflow engine (Chunk 1.5, `agents/roster.rs`). Phase 6: explicit retrieve-as-tool wiring. |
+| 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
+| 16 | **Long-context vs RAG ("just stuff 1M tokens")** | Use 200K–2M token windows instead of retrieval | ⚪ | Rejected for personal companion: cost-prohibitive on local hardware, attention blind spots, privacy. RAG remains primary; long-context is a per-call tactical choice. |
+| 17 | **ColBERT / late-interaction retrieval** (Khattab & Zaharia, 2020; ColBERTv2, 2022) | Token-level multi-vector retrieval with MaxSim, very high recall but storage-heavy | ⚪ | Rejected for desktop: ~10× embedding storage. Cross-encoder reranker (item 10) gives most of the quality at far lower cost. |
+| 18 | **External vector DB (Qdrant, Weaviate, Milvus, pgvector)** | Dedicated vector database service | ⚪ | Rejected by design: TerranSoul ships as a single Tauri binary (§13 "Why TerranSoul Doesn't Use an External RAG Framework"). SQLite + optional ANN index (Phase 4) keeps the offline-first promise. |
+
+### 19.3 Implementation already shipped from this survey
+
+**Reciprocal Rank Fusion utility** — `src-tauri/src/memory/fusion.rs` ships `reciprocal_rank_fuse(rankings, k)`, a pure stable function that takes any number of ranked candidate lists (e.g. vector-rank, keyword-rank, graph-rank) and returns a fused ranking by `Σ 1/(k + rank_i)` with `k = 60` per the original Cormack et al. paper. It is intentionally decoupled from `MemoryStore` so Phase 6 work (cross-encoder reranking, multi-retriever fusion, GraphRAG community vs entity-level fusion) can plug into it without further refactoring. Unit tests cover: stable ordering, missing-from-some-rankings handling, single-list passthrough, and tie behaviour.
+
+### 19.4 How to use this section
+
+1. **Before designing brain work**, scan the `Status` column for 🔵 items relevant to your goal — they already have a Phase 6 roadmap slot.
+2. **When picking up a 🔵 item**, file a Chunk in `rules/milestones.md` referencing both its row in §19.2 and its Phase 6 entry in §16.
+3. **When a new 2026+ technique emerges**, append a row to §19.2 with a `[citation](url)` and assign a status symbol — never silently absorb new work without updating this map.
+
+### 19.5 Sources
+
+- Anthropic — *Contextual Retrieval* (Sep 2024)
+- Asai et al. — *Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection* (NeurIPS 2023)
+- Cormack, Clarke, Büttcher — *Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods* (SIGIR 2009)
+- Edge et al. (Microsoft) — *From Local to Global: A GraphRAG Approach to Query-Focused Summarization* (2024)
+- Gao et al. — *Precise Zero-Shot Dense Retrieval without Relevance Labels* (HyDE, 2022)
+- Guo et al. — *LightRAG: Simple and Fast Retrieval-Augmented Generation* (HKU, 2024)
+- Jina AI — *Late Chunking in Long-Context Embedding Models* (Sep 2024)
+- Khattab & Zaharia — *ColBERT* (SIGIR 2020) and *ColBERTv2* (NAACL 2022)
+- Kusupati et al. — *Matryoshka Representation Learning* (NeurIPS 2022)
+- Letta — *Sleep-Time Compute for AI Agents* (2024)
+- Packer et al. — *MemGPT: Towards LLMs as Operating Systems* (2023)
+- Yan et al. — *Corrective Retrieval Augmented Generation (CRAG)* (2024)
+- Zep / `getzep/graphiti` — Temporal Knowledge Graph for Agent Memory (2024)
+- Industry surveys: Redis "Agentic RAG" (2025), Eden AI "2025 Guide to RAG", Microsoft Research GraphRAG releases through 2026Q1.
 
 ---
 
