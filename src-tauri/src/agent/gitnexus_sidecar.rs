@@ -11,8 +11,8 @@
 //! This module ships:
 //!
 //! 1. [`RpcTransport`] — a tiny async trait that abstracts the stdio framing
-//!    (one JSON object per `\n`-terminated line) so unit tests can drive the
-//!    bridge with a [`mock::MockTransport`] instead of a real subprocess.
+//!    (one JSON object per `\n`-terminated line). A test-only [`mock::MockTransport`]
+//!    is available under `#[cfg(test)]` to drive the bridge without a real subprocess.
 //! 2. [`StdioTransport`] — the production transport that spawns the sidecar
 //!    via [`tokio::process::Command`] and pipes stdin/stdout through tokio's
 //!    [`AsyncBufReadExt`] / [`AsyncWriteExt`].
@@ -437,22 +437,26 @@ impl RpcTransport for StdioTransport {
 }
 
 // ---------------------------------------------------------------------------
-// In-memory mock transport for unit tests
+// In-memory mock transport for unit tests (test-only; not compiled in release)
 // ---------------------------------------------------------------------------
 
-/// Test helpers — deliberately public so other modules / integration tests
-/// can drive the bridge without spawning real subprocesses.
+#[cfg(test)]
 pub mod mock {
     use super::*;
     use std::collections::VecDeque;
     use tokio::sync::Mutex as TokioMutex;
 
+    /// Shared handle to the log of lines the bridge has sent.
+    pub type SentLog = Arc<TokioMutex<Vec<String>>>;
+    /// Shared handle to the queue of lines the bridge will receive.
+    pub type IncomingQueue = Arc<TokioMutex<VecDeque<String>>>;
+
     /// In-memory transport. Records every line the bridge writes and returns
     /// pre-queued lines from `recv_line`. Construct queued responses with
     /// [`MockTransport::push_response`] / [`MockTransport::push_raw`].
     pub struct MockTransport {
-        sent: Arc<TokioMutex<Vec<String>>>,
-        incoming: Arc<TokioMutex<VecDeque<String>>>,
+        sent: SentLog,
+        incoming: IncomingQueue,
     }
 
     impl MockTransport {
@@ -464,12 +468,7 @@ pub mod mock {
         }
 
         /// Returns shared handles for asserting in tests.
-        pub fn handles(
-            &self,
-        ) -> (
-            Arc<TokioMutex<Vec<String>>>,
-            Arc<TokioMutex<VecDeque<String>>>,
-        ) {
+        pub fn handles(&self) -> (SentLog, IncomingQueue) {
             (self.sent.clone(), self.incoming.clone())
         }
 
