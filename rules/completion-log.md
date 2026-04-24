@@ -12,6 +12,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 1.11 — Temporal KG Edges (V6 schema)](#chunk-111--temporal-kg-edges-v6-schema) | 2026-04-24 |
 | [Chunk 1.10 — Cross-encoder Reranker (LLM-as-judge)](#chunk-110--cross-encoder-reranker-llm-as-judge) | 2026-04-24 |
 | [Chunk 1.9 — HyDE (Hypothetical Document Embeddings)](#chunk-19--hyde-hypothetical-document-embeddings) | 2026-04-24 |
 | [Chunk 1.8 — RRF Wired into Hybrid Search](#chunk-18--rrf-wired-into-hybrid-search) | 2026-04-24 |
@@ -92,6 +93,44 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 1.11 — Temporal KG Edges (V6 schema)
+
+**Date:** 2026-04-24
+**Phase 6 / §19.2 row 13 status:** 🔵 → ✅
+**Reference:** `docs/brain-advanced-design.md` §16 Phase 6, §19.2 row 13 (Zep / Graphiti pattern, 2024)
+
+### Goal
+Give every `memory_edges` row an optional **temporal validity interval** so the brain can answer point-in-time graph queries ("what was true on date X?") and represent superseded facts non-destructively.
+
+### Architecture
+- **V6 migration** adds two nullable Unix-ms columns: `valid_from` (inclusive lower bound, `NULL` ≡ "always") and `valid_to` (exclusive upper bound, `NULL` ≡ "still valid"), plus an `idx_edges_valid_to` index. Right-exclusive convention keeps supersession unambiguous: closing edge A at `t` and inserting B with `valid_from = Some(t)` produces exactly one valid edge per timestamp.
+- **`MemoryEdge::is_valid_at(t)`** — pure interval predicate. Uses `is_none_or` (clippy-clean).
+- **`MemoryStore::get_edges_for_at(memory, dir, valid_at: Option<i64>)`** — point-in-time query; `valid_at = None` preserves legacy "return all edges" behaviour for full backward compatibility.
+- **`MemoryStore::close_edge(id, t)`** — idempotent supersession (returns SQL row count).
+- **Tauri surface:** `add_memory_edge` gained optional `valid_from` / `valid_to`; new `close_memory_edge` command exposes supersession to the frontend.
+- **`StorageSelection.schema_label`** bumped from `"V5 — memory_edges"` to `"V6 — memory_edges + temporal validity"`.
+
+### Files modified
+- `src-tauri/src/memory/migrations.rs` — V6 migration up/down, `TARGET_VERSION = 6`, V6 round-trip + sentinel tests.
+- `src-tauri/src/memory/edges.rs` — `MemoryEdge` + `NewMemoryEdge` extended with two `Option<i64>` fields; `add_edge` / `add_edges_batch` / `get_edge` / `get_edge_unique` / `list_edges` / `get_edges_for` / `row_to_edge` updated; new `is_valid_at`, `get_edges_for_at`, `close_edge` + 13 unit tests covering open/closed intervals, boundary inclusivity, point-in-time filtering, supersession pattern, and legacy-API non-regression.
+- `src-tauri/src/commands/memory.rs` — `add_memory_edge` gained `valid_from` / `valid_to` parameters; new `close_memory_edge` command.
+- `src-tauri/src/lib.rs` — registered `close_memory_edge`.
+- `src-tauri/src/brain/selection.rs`, `src-tauri/src/commands/brain.rs` — schema label bumped to V6.
+- 23 existing `NewMemoryEdge { … }` literals across the test suite updated with `valid_from: None, valid_to: None` (script-driven additive change; no behavioural diff).
+- `docs/brain-advanced-design.md` — §16 ASCII roadmap row, §19.2 row 13 status + payoff text, §19.3 explanatory paragraph, §22 storage line bumped to V6.
+- `README.md` — Brain System bullet for V6 temporal KG, Memory System V6 schema labels, Tauri command surface listing.
+- `rules/milestones.md` — Chunk 1.11 row removed; Phase 13 (GitNexus integration, Chunks 2.1–2.4) filed as the new active set per the deep-analysis plan delivered in this session.
+
+### Tests
+- `cargo test --lib`: **783 passed** (768 baseline + 13 new edge tests + 2 new migration tests). 0 failures.
+- Clippy: 1 warning fixed (`map_or` → `is_none_or`).
+
+### Backward compatibility
+- All 4 alternate storage backends (Postgres / MSSQL / Cassandra) do not implement the edges API today — V6 is SQLite-only and additive.
+- Every legacy caller of `get_edges_for(..)` continues to receive every edge; the temporal filter is opt-in via the new `get_edges_for_at(..)` / `valid_at: Some(t)` path.
 
 ---
 

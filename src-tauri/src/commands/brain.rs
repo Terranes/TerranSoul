@@ -244,7 +244,7 @@ pub async fn get_brain_selection(
     let storage_snapshot = brain::StorageSelection {
         backend: "sqlite".to_string(),
         is_local: true,
-        schema_label: "V5 — memory_edges".to_string(),
+        schema_label: "V6 — memory_edges + temporal validity".to_string(),
     };
 
     // (5) Agents — read the orchestrator roster. The default routing

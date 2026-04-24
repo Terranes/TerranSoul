@@ -533,6 +533,10 @@ use crate::memory::{
 
 /// Insert (or fetch existing) typed edge between two memories.
 /// `confidence` is clamped to [0.0, 1.0]; `source` defaults to `"user"`.
+///
+/// **Temporal validity (V6).** `valid_from` / `valid_to` are optional
+/// Unix-ms timestamps bounding the edge's truthiness window.
+/// Omit both for the legacy "always valid" semantics.
 #[tauri::command]
 pub async fn add_memory_edge(
     src_id: i64,
@@ -540,6 +544,8 @@ pub async fn add_memory_edge(
     rel_type: String,
     confidence: Option<f64>,
     source: Option<String>,
+    valid_from: Option<i64>,
+    valid_to: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<MemoryEdge, String> {
     let edge = NewMemoryEdge {
@@ -548,9 +554,27 @@ pub async fn add_memory_edge(
         rel_type,
         confidence: confidence.unwrap_or(1.0),
         source: source.as_deref().map(EdgeSource::parse).unwrap_or_default(),
+        valid_from,
+        valid_to,
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.add_edge(edge).map_err(|e| e.to_string())
+}
+
+/// Close an edge's validity interval at the given Unix-ms timestamp.
+///
+/// V6 temporal-KG mutation: marks an existing edge as no longer
+/// valid from `valid_to` onwards. Returns `1` if a row was updated,
+/// `0` if no edge with `edge_id` exists. Idempotent — replaying the
+/// call with the same `valid_to` is a no-op semantically.
+#[tauri::command]
+pub async fn close_memory_edge(
+    edge_id: i64,
+    valid_to: i64,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.close_edge(edge_id, valid_to).map_err(|e| e.to_string())
 }
 
 /// Delete an edge by primary key.

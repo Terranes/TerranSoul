@@ -23,8 +23,8 @@
 
 > **Completed work lives in [`rules/completion-log.md`](completion-log.md).**
 > Do not re-list done chunks here. Phases 0–11 (Foundation through RPG Brain
-> Configuration), Chunks 1.2 / 1.3 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8, the
-> Phase 9 Learned-Features batch, and all Post-Phase polish are recorded
+> Configuration), Chunks 1.2 / 1.3 / 1.4 / 1.5 / 1.6 / 1.7 / 1.8 / 1.9 / 1.10 / 1.11,
+> the Phase 9 Learned-Features batch, and all Post-Phase polish are recorded
 > there in reverse-chronological order.
 >
 > Phase 7 — VRM Model Security: ❌ removed (2026-04-24). Encryption-based
@@ -37,10 +37,17 @@
 
 ## Next Chunk
 
-**Chunk 1.11 — Temporal KG edges (V6 schema).** Additive `valid_from` /
-`valid_to` columns on `memory_edges` plus an optional `valid_at`
-parameter on edge queries so graph traversal can answer "what was true
-on date X?". Supports contradicting-fact resolution.
+**Chunk 2.1 — GitNexus sidecar agent (Tier 1 of GitNexus integration).**
+Add a sidecar agent (`InstallMethod::Sidecar`) that spawns
+`npx gitnexus mcp` over stdio and exposes the four core read-only
+tools (`gitnexus_query`, `gitnexus_context`, `gitnexus_impact`,
+`gitnexus_detect_changes`) as Tauri commands behind a
+`code-intelligence` orchestrator capability gate. **Strictly
+out-of-process** — GitNexus's PolyForm-Noncommercial-1.0.0 license
+prevents bundling, so the user installs it under their own license
+terms via the marketplace. See chat plan from this session for the
+full reverse-engineering analysis and the four-tier roadmap (2.1
+sidecar → 2.2 RAG fusion → 2.3 KG mirror → 2.4 BrainView panel).
 
 ---
 
@@ -51,7 +58,20 @@ on date X?". Supports contradicting-fact resolution.
 | # | Chunk | Status | Owner | Notes |
 |---|---|---|---|---|
 | 1.1 | Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough | in-progress | agent + user (screenshots) | Source tracking + cross-framework comparison table done; user-captured screenshots remain |
-| 1.11 | Temporal KG edges — V6 schema with `valid_from` / `valid_to` | not-started | agent | §19.2 row 13 (🔵→✅), §16 Phase 6 |
+
+### Phase 13 — GitNexus Code-Intelligence Integration
+
+> Reverse-engineering and four-tier integration plan derived from GitNexus
+> v1.6.x (`abhigyanpatwari/GitNexus`, PolyForm-Noncommercial-1.0.0).
+> Strategy: out-of-process sidecar — never bundle GitNexus binaries.
+> Each chunk ships independently and may be reordered by user demand.
+
+| # | Chunk | Status | Owner | Notes |
+|---|---|---|---|---|
+| 2.1 | GitNexus sidecar agent (stdio MCP bridge for `query` / `context` / `impact` / `detect_changes`) | not-started | agent | Tier 1 of integration plan; reuses Chunk 1.5 agent-roster + sidecar `InstallMethod` infra; ~400 LOC + tests |
+| 2.2 | Code-RAG fusion in `rerank_search_memories` (recall stage also queries GitNexus when an active repo is configured) | not-started | agent | Tier 2; depends on 2.1; ~150 LOC; uses existing `memory::fusion::reciprocal_rank_fuse` |
+| 2.3 | Knowledge-graph mirror — V7 schema adds `edge_source` column; `gitnexus_sync` / `gitnexus_unmirror` Tauri commands; map `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` to the existing 17-relation taxonomy | not-started | agent | Tier 3; opt-in only; never auto-syncs at startup; ~500 LOC + integration test |
+| 2.4 | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator | not-started | agent | Tier 4; pure frontend; depends on 2.1 |
 
 #### Chunk 1.1 — Brain Advanced Design — Validation, Docs Rewrite, QA Walkthrough
 
@@ -81,17 +101,5 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 **Remaining (user environment / follow-up).**
 - [ ] Capture **scenario-specific** screenshots on a real Tauri build with
       Vietnamese content loaded.
-
-#### Chunk 1.11 — Temporal KG edges (V6 schema)
-
-**Goal.** Add `valid_from` / `valid_to` columns to `memory_edges` (V6
-migration), expose `valid_at: i64` parameter on edge queries so
-graph traversal can answer "what was true on date X?". Supports
-contradicting-fact resolution (Zep / Graphiti pattern, 2024).
-
-**Acceptance.** V6 migration up/down + tests; `MemoryEdge` struct
-extended; `list_memory_edges` and graph traversal accept optional
-`valid_at`; backward-compat default keeps current behaviour for callers
-that don't pass `valid_at`; §19.2 row 13 status update.
 
 ---

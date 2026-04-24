@@ -129,7 +129,7 @@ pub struct StorageSelection {
     pub backend: String,
     /// True iff the backend is the bundled offline-first default.
     pub is_local: bool,
-    /// Schema label (e.g. `V5 — memory_edges`).
+    /// Schema label (e.g. `V6 — memory_edges + temporal validity`).
     pub schema_label: String,
 }
 
@@ -301,7 +301,7 @@ mod tests {
         StorageSelection {
             backend: "sqlite".to_string(),
             is_local: true,
-            schema_label: "V5 — memory_edges".to_string(),
+            schema_label: "V6 — memory_edges + temporal validity".to_string(),
         }
     }
     fn dummy_agents() -> AgentSelection {

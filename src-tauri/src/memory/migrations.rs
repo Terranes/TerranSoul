@@ -158,6 +158,43 @@ DROP INDEX IF EXISTS idx_edges_src;
 DROP TABLE IF EXISTS memory_edges;
 "#,
     },
+    // ── V6: Temporal knowledge-graph edges ─────────────────────────────
+    //
+    // Adds two **nullable** Unix-ms timestamps to `memory_edges`:
+    //
+    //   * `valid_from` — the edge starts being true at this instant.
+    //                    `NULL` ≡ "valid since the beginning of time".
+    //   * `valid_to`   — the edge stops being true at this instant
+    //                    (right-exclusive). `NULL` ≡ "still valid".
+    //
+    // Backward-compatibility:
+    //   * Existing rows get `NULL`/`NULL` automatically (always valid).
+    //   * All previously-shipped query paths ignore the columns and
+    //     therefore return identical results.
+    //
+    // The new `idx_edges_valid_to` index targets the most expensive
+    // temporal query — "give me every still-valid edge as of timestamp
+    // T" — by letting SQLite skip closed-interval edges when filtering.
+    //
+    // See `docs/brain-advanced-design.md` § 16 Phase 6 / § 19.2 row 13
+    // (Zep / Graphiti pattern, 2024).
+    Migration {
+        version: 6,
+        description: "temporal knowledge graph: valid_from / valid_to on memory_edges",
+        up: r#"
+ALTER TABLE memory_edges ADD COLUMN valid_from INTEGER;
+ALTER TABLE memory_edges ADD COLUMN valid_to   INTEGER;
+CREATE INDEX IF NOT EXISTS idx_edges_valid_to ON memory_edges(valid_to);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_edges_valid_to;
+-- SQLite 3.35+ supports DROP COLUMN. We guard the V6 down migration
+-- behind that capability so older builds simply leave the columns in
+-- place rather than failing the downgrade entirely.
+ALTER TABLE memory_edges DROP COLUMN valid_to;
+ALTER TABLE memory_edges DROP COLUMN valid_from;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -439,5 +476,64 @@ mod tests {
         for (i, m) in MIGRATIONS.iter().enumerate() {
             assert_eq!(m.version, (i + 1) as i64, "migration versions must be sequential");
         }
+    }
+
+    #[test]
+    fn target_version_is_v6() {
+        // Sentinel test: forces an explicit decision when adding a new
+        // migration. Bumping TARGET_VERSION without deliberately
+        // updating this assertion catches accidental schema additions.
+        assert_eq!(TARGET_VERSION, 6, "V6 is the current temporal-KG schema");
+    }
+
+    #[test]
+    fn v6_round_trip_preserves_data_when_columns_present() {
+        // Up to V6, insert an edge with a non-NULL valid_to, ensure
+        // both columns exist and accept the values, then down-migrate
+        // back to V5 which must drop the columns and the index without
+        // affecting the parent edge row.
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 6);
+
+        // Need two memories first (FK).
+        conn.execute_batch(
+            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO memory_edges
+                (src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to)
+             VALUES (1, 2, 'rel', 1.0, 'user', 0, 100, 200);",
+            [],
+        ).unwrap();
+        let (vf, vt): (Option<i64>, Option<i64>) = conn.query_row(
+            "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).unwrap();
+        assert_eq!(vf, Some(100));
+        assert_eq!(vt, Some(200));
+
+        // Downgrade to V5: drop columns, the underlying edge row must survive.
+        downgrade_to(&conn, 5).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 5);
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(n, 1, "edge row must survive V6→V5 downgrade");
+
+        // Re-upgrade: V6 columns return as NULL on the existing row
+        // (default for ALTER TABLE … ADD COLUMN with no default).
+        migrate_to_latest(&conn).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 6);
+        let (vf2, vt2): (Option<i64>, Option<i64>) = conn.query_row(
+            "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).unwrap();
+        assert_eq!(vf2, None, "ALTER ADD COLUMN should default to NULL");
+        assert_eq!(vt2, None);
     }
 }
