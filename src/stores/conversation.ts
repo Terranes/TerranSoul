@@ -349,6 +349,344 @@ function executeGatedSetupCommand(cmd: NonNullable<ReturnType<typeof detectGated
   };
 }
 
+// ── "Learn X using my documents" flow ────────────────────────────────────────
+
+/**
+ * Detect an explicit "learn / study X using my documents" request.
+ *
+ * Examples that match:
+ *   "Learn Vietnamese laws using my provided documents"
+ *   "Study quantum physics with my files"
+ *   "Learn about contract law from my notes"
+ *
+ * Returns the extracted topic, or null when the phrase doesn't match.
+ */
+export function detectLearnWithDocsIntent(userInput: string): { topic: string } | null {
+  const trimmed = userInput.trim();
+  const re =
+    /^(?:please\s+|i\s+(?:want|would\s+like)\s+to\s+)?(?:learn|study)\s+(?:about\s+)?(.+?)\s+(?:using|with|from|via)\s+(?:my|the|our)\s+(?:own\s+|provided\s+)?(?:documents?|docs?|files?|sources?|notes?|materials?|pdfs?|articles?)\b[\s.!?]*$/i;
+  const m = trimmed.match(re);
+  if (m) {
+    const topic = (m[1] ?? '').trim();
+    if (topic) return { topic };
+  }
+  return null;
+}
+
+/**
+ * Walk the prerequisite chain of `targetQuestId` and return the ordered list
+ * of quest IDs that aren't yet `active`. The target quest itself is included
+ * at the end of the list when it isn't active either.
+ *
+ * The order is dependency-first: every prerequisite appears before the quest
+ * that depends on it, so the auto-install loop can simply iterate left → right.
+ */
+export function getMissingPrereqQuests(
+  skillTree: ReturnType<typeof useSkillTreeStore>,
+  targetQuestId: string,
+): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+
+  function visit(id: string): void {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const node = skillTree.nodes.find((n) => n.id === id);
+    if (!node) return;
+    for (const req of node.requires) visit(req);
+    let status: string;
+    try { status = skillTree.getSkillStatus(id); }
+    catch { status = 'available'; }
+    if (status !== 'active') ordered.push(id);
+  }
+
+  visit(targetQuestId);
+  return ordered;
+}
+
+/** Look up a quest's display name (fallback: the id itself). */
+function questDisplayName(skillTree: ReturnType<typeof useSkillTreeStore>, id: string): string {
+  const node = skillTree.nodes.find((n) => n.id === id);
+  return node ? `${node.icon} ${node.name}` : id;
+}
+
+/**
+ * Push the initial assistant prompt for the new learn-with-docs flow:
+ *   1. List the prerequisite quests that still need to be active, then
+ *   2. Offer **Install all**, **Install one by one**, **Cancel**.
+ *
+ * `topic` is round-tripped through the choice values so we can resume the
+ * flow without keeping any extra state in the store.
+ */
+function pushMissingComponentsPrompt(topic: string, missingIds: string[]): void {
+  const conversation = useConversationStore();
+  const skillTree = useSkillTreeStore();
+  const list = missingIds
+    .map((id) => `• **${questDisplayName(skillTree, id)}**`)
+    .join('\n');
+  const enc = encodeURIComponent(topic);
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `To learn **${topic}** from your documents I need a few quests to be active first:\n\n` +
+      `${list}\n\n` +
+      `How would you like to proceed?`,
+    agentName: 'System',
+    sentiment: 'neutral',
+    timestamp: Date.now(),
+    questId: 'learn-docs-missing',
+    questChoices: [
+      { label: 'Install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
+      { label: 'Install one by one', value: `learn-docs:install-each:${enc}`, icon: '📋' },
+      { label: 'Cancel', value: 'dismiss', icon: '❌' },
+    ],
+  });
+}
+
+/** Sub-prompt: choose Auto vs Manual install after picking "Install all". */
+function pushInstallAllModePrompt(topic: string): void {
+  const conversation = useConversationStore();
+  const enc = encodeURIComponent(topic);
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `Great — installing everything. Should I do it **automatically** ` +
+      `(I'll trigger and accept each quest for you) or **manually** ` +
+      `(you accept each quest one by one)?`,
+    agentName: 'System',
+    sentiment: 'neutral',
+    timestamp: Date.now(),
+    questId: 'learn-docs-install-mode',
+    questChoices: [
+      { label: 'Auto install', value: `learn-docs:install-auto:${enc}`, icon: '⚡' },
+      { label: 'Manual install', value: `learn-docs:install-manual:${enc}`, icon: '🛠️' },
+      { label: 'Back', value: `learn-docs:install-back:${enc}`, icon: '↩️' },
+    ],
+  });
+}
+
+/** Sub-prompt for "Install one by one": one button per missing quest. */
+function pushInstallEachPrompt(topic: string, missingIds: string[]): void {
+  if (missingIds.length === 0) {
+    pushReadyForLearnDocs(topic);
+    return;
+  }
+  const conversation = useConversationStore();
+  const skillTree = useSkillTreeStore();
+  const enc = encodeURIComponent(topic);
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: `Pick the next quest to install:`,
+    agentName: 'System',
+    sentiment: 'neutral',
+    timestamp: Date.now(),
+    questId: 'learn-docs-install-each',
+    questChoices: [
+      ...missingIds.map((id) => ({
+        label: `Install ${questDisplayName(skillTree, id)}`,
+        value: `learn-docs:install-quest:${id}:${enc}`,
+        icon: '⚔️',
+      })),
+      { label: 'Cancel', value: 'dismiss', icon: '❌' },
+    ],
+  });
+}
+
+/**
+ * Push the existing Scholar's Quest invitation so the user can pick which
+ * documents about `topic` to import. This is the same overlay the rest of
+ * the codebase uses for the document-gather step.
+ */
+function pushReadyForLearnDocs(topic: string): void {
+  const conversation = useConversationStore();
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `Everything I need is ready. Let's start a **📚 Scholar's Quest** so you can pick the documents about **${topic}** to import.`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+    questId: 'scholar-quest',
+    questChoices: [
+      { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
+      { label: 'No thanks', value: 'dismiss', icon: '💤' },
+    ],
+  });
+}
+
+/**
+ * Entry point for the new flow. Walks the Scholar's Quest prerequisite chain
+ * and either:
+ *   • short-circuits straight into Scholar's Quest when nothing is missing,
+ *   • or pushes the install-choice prompt above.
+ */
+function startLearnDocsFlow(topic: string): void {
+  const skillTree = useSkillTreeStore();
+  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  if (missing.length === 0) {
+    pushReadyForLearnDocs(topic);
+    return;
+  }
+  pushMissingComponentsPrompt(topic, missing);
+}
+
+/**
+ * Auto-install path: trigger every still-missing quest in the prereq chain
+ * and immediately accept it on the user's behalf — leveraging the existing
+ * skill-tree quest engine rather than implementing any installer from
+ * scratch. After the chain is walked, push the Scholar's Quest invitation
+ * so the user can pick documents to import (same as the existing flow).
+ */
+async function runAutoInstall(topic: string): Promise<void> {
+  const skillTree = useSkillTreeStore();
+  const conversation = useConversationStore();
+
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: `⚡ Auto-installing all required quests…`,
+    agentName: 'System',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+  });
+
+  // Re-evaluate the missing list at run time — the user may have completed
+  // a quest by hand between the prompt and clicking "Auto install".
+  let missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  for (const id of missing) {
+    try {
+      skillTree.triggerQuestEvent(id);
+      await skillTree.handleQuestChoice(id, 'accept');
+    } catch {
+      // Quest engine refused — surface it to the user but keep going so the
+      // remaining quests still get a chance to install.
+      conversation.messages.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `⚠️ Could not auto-accept **${questDisplayName(skillTree, id)}**. Try installing it manually from the Quests tab.`,
+        agentName: 'System',
+        sentiment: 'sad',
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  // Recompute — anything still inactive is something we couldn't auto-finish.
+  missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  if (missing.length > 0) {
+    const list = missing.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
+    conversation.messages.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content:
+        `Some quests still need attention before I can ingest documents:\n\n${list}\n\n` +
+        `Open the **Quests** tab to finish them.`,
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+      questId: 'learn-docs-followup',
+      questChoices: [
+        { label: 'Open Quests tab', value: 'navigate:skills', icon: '🗺️' },
+        { label: 'Dismiss', value: 'dismiss', icon: '💤' },
+      ],
+    });
+    return;
+  }
+  pushReadyForLearnDocs(topic);
+}
+
+/**
+ * Manual install: surface the same per-quest list as "Install one by one".
+ * The two paths share the same per-quest button — the only difference is the
+ * intro message — but they're kept distinct so future prompts can diverge.
+ */
+function runManualInstall(topic: string): void {
+  const skillTree = useSkillTreeStore();
+  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  pushInstallEachPrompt(topic, missing);
+}
+
+/** Trigger a single missing quest (used by the per-quest buttons). */
+async function runInstallSingleQuest(topic: string, questId: string): Promise<void> {
+  const skillTree = useSkillTreeStore();
+  try {
+    skillTree.triggerQuestEvent(questId);
+  } catch {
+    // The quest engine pushes its own error message via handleQuestChoice;
+    // nothing more to do here.
+  }
+  // Re-evaluate after the user finishes interacting with this quest. We
+  // surface the rest of the missing list so the user can keep going, or the
+  // ready-for-docs prompt if everything's now active.
+  const stillMissing = getMissingPrereqQuests(skillTree, 'scholar-quest').filter((id) => id !== questId);
+  if (stillMissing.length === 0) {
+    pushReadyForLearnDocs(topic);
+  } else {
+    pushInstallEachPrompt(topic, stillMissing);
+  }
+}
+
+/**
+ * Route a `learn-docs:*` quest-choice value emitted by the chat overlay.
+ * Returns `true` when the value was handled.
+ */
+export async function handleLearnDocsChoice(value: string): Promise<boolean> {
+  if (!value.startsWith('learn-docs:')) return false;
+  const rest = value.slice('learn-docs:'.length);
+  // Forms:
+  //   install-all:<topic>
+  //   install-each:<topic>
+  //   install-auto:<topic>
+  //   install-manual:<topic>
+  //   install-back:<topic>
+  //   install-quest:<questId>:<topic>
+  if (rest.startsWith('install-quest:')) {
+    const tail = rest.slice('install-quest:'.length);
+    const colon = tail.indexOf(':');
+    if (colon < 0) return false;
+    const questId = tail.slice(0, colon);
+    const topic = decodeURIComponent(tail.slice(colon + 1));
+    await runInstallSingleQuest(topic, questId);
+    return true;
+  }
+  const colon = rest.indexOf(':');
+  if (colon < 0) return false;
+  const action = rest.slice(0, colon);
+  const topic = decodeURIComponent(rest.slice(colon + 1));
+  switch (action) {
+    case 'install-all': {
+      pushInstallAllModePrompt(topic);
+      return true;
+    }
+    case 'install-each': {
+      const skillTree = useSkillTreeStore();
+      const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+      pushInstallEachPrompt(topic, missing);
+      return true;
+    }
+    case 'install-auto': {
+      await runAutoInstall(topic);
+      return true;
+    }
+    case 'install-manual': {
+      runManualInstall(topic);
+      return true;
+    }
+    case 'install-back': {
+      const skillTree = useSkillTreeStore();
+      const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+      pushMissingComponentsPrompt(topic, missing);
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
 
 /** Known free-provider keywords mapped to provider IDs. */
@@ -590,6 +928,18 @@ export const useConversationStore = defineStore('conversation', () => {
     const gatedCmd = detectGatedSetupCommand(content);
     if (gatedCmd) {
       messages.value.push(executeGatedSetupCommand(gatedCmd));
+      isThinking.value = false;
+      return;
+    }
+
+    // Explicit "Learn X using my [provided] documents" intent — never calls
+    // the LLM. Walks the Scholar's Quest prerequisite chain, lists the
+    // quests that aren't active yet, and offers Install all / Install one
+    // by one / Cancel. The "Auto install all" path simply auto-triggers and
+    // accepts each missing quest via the existing skill-tree engine.
+    const learnDocs = detectLearnWithDocsIntent(content);
+    if (learnDocs) {
+      startLearnDocsFlow(learnDocs.topic);
       isThinking.value = false;
       return;
     }
