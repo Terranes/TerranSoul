@@ -10,6 +10,7 @@ pub mod hyde;
 pub mod migrations;
 pub mod reranker;
 pub mod store;
+pub mod tag_vocabulary;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

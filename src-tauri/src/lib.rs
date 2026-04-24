@@ -64,8 +64,8 @@ use commands::{
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
     ingest::{ingest_document, cancel_ingest_task, resume_ingest_task, get_all_tasks},
     memory::{
-        add_memory, add_memory_edge, apply_memory_decay, auto_promote_memories,
-        backfill_embeddings, close_memory_edge,
+        add_memory, add_memory_edge, apply_memory_decay, audit_memory_tags,
+        auto_promote_memories, backfill_embeddings, close_memory_edge,
         delete_memory, delete_memory_edge, evaluate_auto_learn, extract_edges_via_brain,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_stats,
@@ -340,6 +340,7 @@ pub fn run() {
             get_memory_stats,
             apply_memory_decay,
             auto_promote_memories,
+            audit_memory_tags,
             gc_memories,
             promote_memory,
             get_memories_by_tier,

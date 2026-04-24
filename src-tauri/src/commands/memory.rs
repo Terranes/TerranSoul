@@ -603,6 +603,61 @@ pub async fn auto_promote_memories(
     store.auto_promote_to_long(min, win).map_err(|e| e.to_string())
 }
 
+/// Per-memory tag-validation report (chunk 18.4).
+///
+/// Returned by [`audit_memory_tags`] for BrainView's "review tags" panel.
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct MemoryTagAudit {
+    pub memory_id: i64,
+    /// `tag` text exactly as stored, paired with the human-readable
+    /// reason it was flagged. Acceptable tags are not included.
+    pub flagged: Vec<TagAuditFlag>,
+}
+
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct TagAuditFlag {
+    pub tag: String,
+    pub reason: String,
+}
+
+/// Walk every memory, validate its `tags` against the curated vocabulary,
+/// and return only the rows that have at least one non-conforming tag.
+///
+/// This is the read-only surface BrainView calls to render its
+/// "review tags" warning. The write path is **not** affected — ingest
+/// always accepts tags, this is purely an audit lens.
+///
+/// Maps to `docs/brain-advanced-design.md` § 16 Phase 2 row "Tag-prefix
+/// convention enforcement" (chunk 18.4).
+#[tauri::command]
+pub async fn audit_memory_tags(
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryTagAudit>, String> {
+    use crate::memory::tag_vocabulary::{validate_csv, NonConformingReason, TagValidation};
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let entries = store.get_all().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for entry in entries {
+        let mut flagged = Vec::new();
+        for (raw, verdict) in entry.tags.split(',').map(str::trim).filter(|t| !t.is_empty()).zip(validate_csv(&entry.tags)) {
+            if let TagValidation::NonConforming { reason } = verdict {
+                let reason_str = match reason {
+                    NonConformingReason::UnknownPrefix(p) => format!("Unknown prefix `{}` (use one of: personal, domain, project, tool, code, external, session, quest)", p),
+                    NonConformingReason::MissingPrefix => "Missing `<prefix>:<value>` shape — consider adding a curated prefix".to_string(),
+                    NonConformingReason::EmptyValue { prefix } => format!("Empty value after `{}:`", prefix),
+                    NonConformingReason::Empty => "Empty tag".to_string(),
+                };
+                flagged.push(TagAuditFlag { tag: raw.to_string(), reason: reason_str });
+            }
+        }
+        if !flagged.is_empty() {
+            out.push(MemoryTagAudit { memory_id: entry.id, flagged });
+        }
+    }
+    Ok(out)
+}
+
 /// Garbage-collect decayed low-importance memories. Returns count removed.
 #[tauri::command]
 pub async fn gc_memories(

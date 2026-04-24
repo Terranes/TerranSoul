@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 18.4 — Tag-prefix convention vocabulary + audit (Phase 18 first chunk)](#chunk-184--tag-prefix-convention-vocabulary--audit) | 2026-04-24 |
 | [Chunk 17.1 — Auto-promotion based on access patterns (Phase 17 first chunk)](#chunk-171--auto-promotion-based-on-access-patterns) | 2026-04-24 |
 | [Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection (Phase 16 first chunk)](#chunk-161--relevance-threshold-for-long-term-memory-injection) | 2026-04-24 |
 | [Chunk 15.3 — `BrainGateway` trait + shared op surface (Phase 15 foundation)](#chunk-153--braingateway-trait--shared-op-surface) | 2026-04-24 |
@@ -152,6 +153,55 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 18.4 — Tag-prefix convention vocabulary + audit
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy) — first chunk; pure-Rust foundation that 18.1 (auto-categorise), 18.2 (category-aware decay), and 18.3 (Memory View filters) all consume.
+**Goal.** Make the long-implicit `<prefix>:<value>` tag convention explicit and auditable, without breaking the write path. Existing free-form tags continue to work; non-conforming tags surface as a soft "review tag" warning in BrainView instead of being rejected.
+
+**Architecture.**
+- New `src-tauri/src/memory/tag_vocabulary.rs` (~230 LOC + 10 unit tests). Pure — no I/O.
+- `CURATED_PREFIXES: &[&str]` lists the 8 sanctioned prefixes (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`) with a docblock describing each one's intent. Adding a new prefix is a small design decision documented in the source.
+- `LEGACY_ALLOW_LIST: &[&str]` covers the seed-fixture / pre-convention tags (`user`, `assistant`, `system`, `fact`, `preference`, `todo`, `summary`) — short by design, every entry is debt to be migrated.
+- `validate(tag: &str) -> TagValidation` returns one of:
+  - `Curated { prefix }` — canonical-cased prefix from `CURATED_PREFIXES` (so callers can pattern-match safely against `&'static str`).
+  - `Legacy` — case-insensitive whole-tag match against the allow-list.
+  - `NonConforming { reason: NonConformingReason }` — `UnknownPrefix(String)`, `MissingPrefix`, `EmptyValue { prefix }`, or `Empty`.
+- `validate_csv(tags_csv: &str) -> Vec<TagValidation>` matches the on-disk shape stored in `MemoryEntry.tags` (comma-separated). Empty entries from a trailing comma are dropped.
+- Case-insensitive prefix matching (`Personal:Foo` and `personal:foo` both validate as `Curated { prefix: "personal" }`).
+- Values are not interpreted — `personal:🍕` and `external:https://foo.bar:8080/x` both pass cleanly because `split_once(':')` only splits on the first colon.
+- New Tauri command `audit_memory_tags` in `commands/memory.rs` — walks every memory, returns only the rows with at least one non-conforming tag, paired with a human-readable reason. Read-only; ingest still accepts everything.
+- New types `MemoryTagAudit { memory_id, flagged: Vec<TagAuditFlag> }` and `TagAuditFlag { tag, reason }` for the BrainView surface.
+
+**Files modified / created.**
+- `src-tauri/src/memory/tag_vocabulary.rs` (new, 230 LOC + 10 tests).
+- `src-tauri/src/memory/mod.rs` — added `pub mod tag_vocabulary;`.
+- `src-tauri/src/commands/memory.rs` — added `audit_memory_tags` Tauri command + `MemoryTagAudit` / `TagAuditFlag` serde types.
+- `src-tauri/src/lib.rs` — wired into `commands::memory::*` import + invoke handler list.
+- `rules/milestones.md` — Phase 18 row 18.4 removed.
+
+**Tests.** 10 new unit tests, all passing alongside 920 existing tests (total **930 passing**):
+1. `curated_prefixes_validate` — happy path for several prefixes.
+2. `case_insensitive_prefix_match` — `Personal:Foo` and `DOMAIN:law` accepted.
+3. `legacy_allow_list_passes` — case-insensitive whole-tag match.
+4. `unknown_prefix_is_non_conforming` — `color:blue` flagged with `UnknownPrefix("color")`.
+5. `no_separator_and_not_in_allow_list_is_non_conforming` — `randomtag` flagged with `MissingPrefix`.
+6. `empty_value_is_non_conforming` — `personal:` and `personal:   ` both flagged with `EmptyValue`.
+7. `empty_or_whitespace_tag_is_non_conforming` — `""` and `"   "` flagged with `Empty`.
+8. `validate_csv_parses_each_tag_in_order` — 5-tag CSV with one empty entry collapses to 4 results in input order.
+9. `is_acceptable_only_curated_or_legacy` — convenience predicate.
+10. `value_can_contain_colons_and_unicode` — URL-as-value and emoji-as-value edge cases.
+
+**Validation.** `cargo test --lib` (930 pass / 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- 18.1 (auto-categorise via LLM) — will write tags using `CURATED_PREFIXES` as the LLM's allowed-prefix prompt.
+- 18.2 (category-aware decay) — will look up per-prefix multipliers keyed off `Curated { prefix }`.
+- 18.3 (Memory View filter chips) — frontend chunk that calls `audit_memory_tags` for the warning badge + filters by prefix.
+- BrainView "review tags" warning panel that consumes `audit_memory_tags`.
 
 ---
 
