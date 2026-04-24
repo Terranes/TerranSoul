@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from './brain';
 import { useVoiceStore } from './voice';
 import { useSettingsStore } from './settings';
+import { usePersonaStore } from './persona';
 import { useConversationStore } from './conversation';
 import { useMemoryStore } from './memory';
 import { streamChatCompletion, type ChatMessage } from '../utils/free-api-client';
@@ -985,16 +986,17 @@ const SKILL_NODES: SkillNode[] = [
   {
     id: 'expressions-pack',
     name: 'Mask of a Thousand Faces',
-    tagline: 'Extended facial expressions & blendshapes',
-    description: 'Unlock the full BlendShape expression palette — subtle smirks, blushing, half-closed eyes, and more — wired to detected sentiment in real time.',
+    tagline: 'Webcam-recorded facial expression presets (side quest)',
+    description: 'Capture a face with the camera, save it as a named expression preset, and let the brain trigger it on its own. Privacy: per-session camera consent only — never always-on. Side quest in the Persona chain; ships after the main persona chain. See docs/persona-design.md § 10.',
     icon: '🎭',
     tier: 'advanced',
-    requires: ['avatar'],
-    rewards: ['Extended expression palette', 'Sentiment-driven micro-expressions', 'Manual expression triggers'],
-    rewardIcons: ['😏', '😳', '😴'],
+    requires: ['avatar', 'soul-mirror'],
+    rewards: ['Named custom expression presets', 'Per-session camera consent flow', 'Brain-triggered personal faces'],
+    rewardIcons: ['😏', '📸', '✨'],
     questSteps: [
-      { label: 'Open the chat view\'s model panel', action: 'navigate', target: 'chat' },
-      { label: 'Enable Expression Pack on the loaded VRM', action: 'configure', target: 'tts_provider' },
+      { label: 'Open Brain → Persona panel', action: 'navigate', target: 'brain' },
+      { label: 'Click "Teach an expression" — grants camera for THIS session only', action: 'info' },
+      { label: 'Hold a pose, name it, save. Browse / delete from the same panel.', action: 'info' },
     ],
     category: 'avatar',
     combos: [
@@ -1026,16 +1028,17 @@ const SKILL_NODES: SkillNode[] = [
   {
     id: 'motion-capture',
     name: 'Mirror Dance',
-    tagline: 'Webcam-driven motion capture',
-    description: 'Use your webcam to drive the avatar\'s body and head — wave, nod, lean. The avatar mirrors you in real time.',
+    tagline: 'Webcam-driven motion capture (side quest)',
+    description: 'Record a short motion clip from your webcam and let the brain trigger it as a personal gesture. Privacy: per-session camera consent only — never always-on. Side quest in the Persona chain; ships after the main persona chain. See docs/persona-design.md § 10.',
     icon: '🪩',
     tier: 'ultimate',
-    requires: ['avatar', 'asr'],
-    rewards: ['Webcam mocap', 'Head & body tracking', 'Hand gesture recognition'],
+    requires: ['avatar', 'soul-mirror'],
+    rewards: ['Webcam motion capture', 'Named personal gesture clips', 'Per-session camera consent flow'],
     rewardIcons: ['📹', '🧍', '✋'],
     questSteps: [
       { label: 'Run TerranSoul desktop app (Tauri required)', action: 'info' },
-      { label: 'Grant webcam permission and enable Motion Capture', action: 'configure', target: 'tts_provider' },
+      { label: 'Open Brain → Persona panel', action: 'navigate', target: 'brain' },
+      { label: 'Click "Teach a motion" — grants camera for THIS session only', action: 'info' },
     ],
     category: 'avatar',
     combos: [
@@ -1044,6 +1047,76 @@ const SKILL_NODES: SkillNode[] = [
         name: 'Living Mirror',
         description: 'Mocap + expressions = the avatar reflects your face and body together.',
         icon: '🌟',
+      },
+    ],
+  },
+
+  // ── PERSONA MAIN CHAIN (research-driven, no camera) ─────────────────────
+  // See docs/persona-design.md § 10. These quests teach the user how to
+  // author the LLM's persona via traits / brain extraction. They form the
+  // gateway and main path; the camera quests above are the side chain.
+  {
+    id: 'soul-mirror',
+    name: 'Soul Mirror',
+    tagline: 'Open the Persona panel and meet your default companion',
+    description: 'Discover the Persona panel inside the Brain hub. The default "Soul" persona materialises on disk and is injected into every chat. From here you can customise who your companion is — without ever needing the camera.',
+    icon: '🪞',
+    tier: 'advanced',
+    requires: ['avatar'],
+    rewards: ['Persona panel in Brain hub', '[PERSONA] block in every chat prompt', 'Default "Soul" persona on first launch'],
+    rewardIcons: ['🎭', '📜', '✨'],
+    questSteps: [
+      { label: 'Open the Brain tab', action: 'navigate', target: 'brain' },
+      { label: 'Scroll to the Persona panel — review the default traits', action: 'info' },
+    ],
+    category: 'avatar',
+    combos: [],
+  },
+  {
+    id: 'my-persona',
+    name: 'My Persona',
+    tagline: 'Teach your companion who they are',
+    description: 'Edit the persona name, role, background, tone, quirks and "never" list. Every chat from now on is shaped by this block, alongside your long-term memory. No camera required.',
+    icon: '🎭',
+    tier: 'advanced',
+    requires: ['soul-mirror', 'free-brain'],
+    rewards: ['Custom persona traits', 'Live system-prompt preview', 'Per-trait list editor'],
+    rewardIcons: ['📝', '👁️', '➕'],
+    questSteps: [
+      { label: 'Open Brain → Persona panel', action: 'navigate', target: 'brain' },
+      { label: 'Edit name / role / bio / tone, then click Save persona', action: 'info' },
+    ],
+    category: 'avatar',
+    combos: [
+      {
+        withSkills: ['free-brain'],
+        name: 'Soul of the Words',
+        description: 'Persona block now flows into every chat turn\'s system prompt.',
+        icon: '💬',
+      },
+    ],
+  },
+  {
+    id: 'master-echo',
+    name: "Master's Echo",
+    tagline: 'Let the brain propose a persona from your past chats',
+    description: 'Ask the brain to read your conversations and personal-tier memories, then propose a persona that mirrors who you are. Review, edit, and accept the suggestion. The persona keeps learning over time without any camera.',
+    icon: '🌒',
+    tier: 'ultimate',
+    requires: ['my-persona', 'memory'],
+    rewards: ['Brain-extracted persona suggestions', 'One-click accept / edit', 'Drift-detection prompts as you grow'],
+    rewardIcons: ['🧠', '✅', '🌱'],
+    questSteps: [
+      { label: 'Open Brain → Persona panel', action: 'navigate', target: 'brain' },
+      { label: 'Click "Suggest a persona from my chats" (requires brain + memories)', action: 'info' },
+    ],
+    category: 'avatar',
+    combos: [
+      {
+        withSkills: ['rag-knowledge'],
+        name: 'Soul of the Library',
+        description: 'Persona drawn from your long-term memory — the companion now mirrors who you actually are.',
+        icon: '📚',
       },
     ],
   },
@@ -1316,6 +1389,34 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         return voice.config.asr_provider === 'groq-whisper' || voice.config.asr_provider === 'whisper-api';
       case 'avatar':
         return true; // Always loaded by default
+      // ── Persona main chain (docs/persona-design.md § 10.2) ──────────────
+      case 'soul-mirror': {
+        // Active once the persona panel has been opened at least once and
+        // the default traits have materialised on disk.
+        const persona = usePersonaStore();
+        return persona.traitsLoaded;
+      }
+      case 'my-persona': {
+        // Active when the user customised the default persona AND a brain
+        // is configured (so the [PERSONA] block actually flows somewhere).
+        const persona = usePersonaStore();
+        return persona.hasCustomPersona && brain.brainMode !== null;
+      }
+      case 'master-echo': {
+        // Active once the brain has produced a persona suggestion at least
+        // once. The frontend records this when the suggestion is accepted.
+        const persona = usePersonaStore();
+        return persona.lastBrainExtractedAt !== null;
+      }
+      // ── Persona side chain (camera-driven, durable artifacts) ───────────
+      case 'expressions-pack': {
+        const persona = usePersonaStore();
+        return (persona.learnedExpressions?.length ?? 0) > 0;
+      }
+      case 'motion-capture': {
+        const persona = usePersonaStore();
+        return (persona.learnedMotions?.length ?? 0) > 0;
+      }
       case 'bgm':
         return settings.settings?.bgm_enabled ?? false;
       case 'bgm-custom':

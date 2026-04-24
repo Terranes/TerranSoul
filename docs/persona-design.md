@@ -719,84 +719,121 @@ camera-learned expression library.
 
 ## 10. The Persona Quest Chain — How the User Discovers This
 
-Per the user requirement: *"This should be a quest chain from the current
-quest system."* The persona surface is exposed entirely through the
-existing skill-tree (memory: App tabs — Quests is a top-level tab). It
-forms a chain in the **avatar** category with explicit prerequisite edges
-into the existing Brain category:
+Per the user requirements: *"This should be a quest chain from the current
+quest system"* AND *"camera quests should be a side quest, please focus on
+the research conduct on April 2026 features. Camera quests & implementation
+should come last."*
+
+The persona surface is therefore split into a **main chain** (text- and
+brain-driven persona; ships first) and a **side chain** (camera-driven
+self-learning; ships last). Both sit in the existing skill-tree (memory:
+App tabs — Quests is a top-level tab) under the **avatar** category, with
+explicit prerequisite edges into the existing Brain category.
 
 ```
-                              avatar/foundation
-                              ┌──────────────┐
-                              │  Avatar      │
-                              │  ✨ Summon   │
-                              └──────┬───────┘
-                                     │ requires
-                                     ▼
-                              avatar/advanced
-                              ┌──────────────┐
-                              │ Soul Mirror  │  ← NEW (gateway quest)
-                              │ 🪞 Persona   │
-                              │   panel      │
-                              └──┬────────┬──┘
-                  requires       │        │      requires
-            ┌──────────────────┘        └──────────────────┐
-            ▼                                              ▼
-     ┌──────────────┐                              ┌──────────────┐
-     │ Mask of a    │ (was already in tree —       │ Mirror Dance │ (was already
-     │ Thousand     │  now a real persona-driven   │ 🪩 Webcam     │  in tree —
-     │ Faces 🎭     │  expression library)         │ mocap        │  now real)
-     └──────┬───────┘                              └──────┬───────┘
-            │                                              │
-            │  combos: "Living Mirror" (existing)          │
-            └────────────────────┬─────────────────────────┘
-                                 │
-                                 ▼
-                  avatar/ultimate (NEW)
-                  ┌─────────────────────────────┐
-                  │  Master's Echo  🌒         │  ← self-learning loop
-                  │  Camera-recorded expression │
-                  │  presets + motion clips     │
-                  │  become first-class motion  │
-                  │  keys the LLM can pick.     │
-                  └──────────┬──────────────────┘
-                             │ combos with brain
-                             │ ↓
-                             ▼
-                  ┌─────────────────────────────┐
-                  │  My Persona  🎭✨           │  ← user-authored persona
-                  │  Edit name/role/tone/quirks │
-                  │  + LLM persona-extract from │
-                  │  chats.                     │
-                  │  Requires: free-brain       │
-                  └─────────────────────────────┘
+                            avatar/foundation
+                            ┌──────────────┐
+                            │  Avatar      │  (existing)
+                            │  ✨ Summon   │
+                            └──────┬───────┘
+                                   │ requires
+                                   ▼
+                            avatar/advanced  ── MAIN CHAIN ───────────
+                            ┌──────────────┐
+                            │ Soul Mirror  │  ← NEW (gateway quest)
+                            │ 🪞 Persona   │   Open the Persona panel,
+                            │   panel      │   default persona materialises
+                            └──┬───────────┘
+                               │ requires
+                               ▼
+                            ┌──────────────────────────────┐
+                            │ My Persona  🎭✨             │  ← NEW
+                            │ Edit name / role / tone /    │
+                            │ quirks. The persona block is │
+                            │ injected into every chat.    │
+                            │ Requires: free-brain          │
+                            └──┬───────────────────────────┘
+                               │ requires
+                               ▼
+                            ┌──────────────────────────────┐
+                            │ Master's Echo  🌒            │  ← NEW
+                            │ Brain-assisted persona       │
+                            │ extraction from chats +      │
+                            │ long-term memory (`personal:*`).
+                            │ Requires: my-persona, memory │
+                            └──────────────────────────────┘
+
+                            ─── SIDE CHAIN (camera, ships LAST) ───
+                            ┌──────────────────────────────┐
+                            │ Mask of a Thousand Faces 🎭  │  (existing stub
+                            │ Custom expression presets    │  → real, post
+                            │ recorded from the camera.    │   camera lands)
+                            │ Requires: soul-mirror        │
+                            └──┬───────────────────────────┘
+                               │ requires
+                               ▼
+                            ┌──────────────────────────────┐
+                            │ Mirror Dance  🪩            │  (existing stub
+                            │ Webcam motion mirror — the   │  → real, post
+                            │ avatar mimics your motion.   │   camera lands)
+                            │ Requires: soul-mirror        │
+                            └──┬───────────────────────────┘
+                               │ requires
+                               ▼
+                            ┌──────────────────────────────┐
+                            │ Living Mirror (combo)        │  (existing combo)
+                            │ Mocap + expressions together │
+                            └──────────────────────────────┘
 ```
 
-### 10.1 Auto-detection rules (mirroring `skill-tree.ts::checkActive`)
+### 10.1 Why this split
 
-| Quest id | Active when |
-|---|---|
-| `soul-mirror` | `personaStore.traitsLoaded === true` (the panel has been opened at least once and the default persona materialised on disk) |
-| `expressions-pack` | Camera-mirror has been used at least once *or* the user has saved at least one custom expression preset. Real activation, replacing the Chunk-128-era stub. |
-| `motion-capture` | Camera-mirror has been used at least once in the current install (recorded as a non-personal flag in tracker; never the per-session live state, see §5). |
-| `master-echo` | `personaStore.learnedMotions.length > 0` OR `personaStore.learnedExpressions.length > 0` |
-| `my-persona` | `personaStore.traits.active && personaStore.traits.name !== 'Soul'` (i.e. user customised the default) AND a brain is configured |
+The user explicitly directed: focus on the April-2026 *research-conducted*
+persona features first; treat the camera path as a side quest that ships
+last. That maps onto two clean facts about the codebase:
+
+- The brain-driven part of persona (traits, prompt injection, LLM-assisted
+  authoring, drift detection) reuses **only** existing infrastructure
+  (skill-tree, brain, memory, conversation store). No new browser APIs,
+  no new heavy deps. It can land in one PR with high confidence.
+- The camera part introduces `getUserMedia`, MediaPipe WASM payloads,
+  ARKit→VRM expression maths, IK retargeting, and a brand-new
+  privacy-critical UI surface (the per-session ConsentDialog of §5).
+  That is a meaningfully larger surface area and benefits from landing
+  on top of a well-exercised main-chain foundation rather than alongside.
+
+The split also matches the user's strict privacy requirement (§5): the
+main chain is **camera-free**, so there is no path by which a user has to
+go anywhere near the camera to get a meaningful, persona-driven companion.
+
+### 10.2 Auto-detection rules (mirroring `skill-tree.ts::checkActive`)
+
+| Quest id | Chain | Active when |
+|---|---|---|
+| `soul-mirror` | main | `personaStore.traitsLoaded === true` (the panel has been opened at least once and the default persona materialised on disk) |
+| `my-persona` | main | `personaStore.traits.active && personaStore.traits.name !== 'Soul'` (i.e. user customised the default) AND a brain is configured |
+| `master-echo` | main | `personaStore.lastBrainExtractedAt !== null` (the user has at least once asked the brain to propose a persona from their chats) |
+| `expressions-pack` | side | `personaStore.learnedExpressions.length > 0`. Real activation, replacing the Chunk-128-era stub. **Camera-dependent — ships last.** |
+| `motion-capture` | side | `personaStore.learnedMotions.length > 0`. **Camera-dependent — ships last.** |
 
 **Critical:** none of these read the *current-session* `cameraSession`
 ref. Quest activation is based on durable artifacts (saved presets, edited
 traits) not on whether the camera happens to be live right now. The live
 state is a privacy boundary, not a progress signal.
 
-### 10.2 Combos
+### 10.3 Combos
 
 The existing `motion-capture × expressions-pack → "Living Mirror"` combo
-stays untouched. We add:
+stays untouched (side chain, ships when both sides ship). We add to the
+**main chain**:
 
-- `master-echo × free-brain → "Self-Taught Companion"` — explains that
-  the LLM now uses the master-recorded gestures on its own initiative.
-- `my-persona × rag-knowledge → "Soul of the Library"` — explains that
-  persona-aware system prompt + RAG-injected long-term memory together
-  produce a companion that talks *and* moves like its master.
+- `my-persona × free-brain → "Soul of the Words"` — explains that the
+  persona traits are now flowing into every chat turn's system prompt.
+- `master-echo × rag-knowledge → "Soul of the Library"` — explains that
+  the persona is now bootstrapped from the user's long-term memory:
+  the LLM read your past conversations, proposed who the companion
+  should be, and you confirmed it. Closes the loop with the brain
+  documentation's auto-learn cadence (memory: auto-learn cadence).
 
 ---
 
@@ -904,18 +941,35 @@ right now" — never "the camera is on but you can't tell".
 
 ### 14.3 Implementation already shipped from this survey
 
-- **MediaPipe FaceLandmarker** — wrapped in `face-mirror.ts`, lazy-loaded
-  on first mirror start, no impact on cold-start bundle.
-- **ARKit → VRM expression mapping (§6.1)** — pure mapper in
-  `face-mirror.ts::arKitToVrmExpressions`, fully tested.
-- **Per-session consent (§5)** — `useCameraCapture.ts` is the only
-  callsite of `getUserMedia` and is gated by the ConsentDialog; auditable
-  via a single grep.
-- **Persona Pinia store with traits + learned libraries (§2, §8)** —
-  `src/stores/persona.ts`, persisted via `commands/persona.rs`.
-- **Quest chain (§10)** — Soul Mirror / Master's Echo / My Persona added
-  to `src/stores/skill-tree.ts`; existing `expressions-pack` and
-  `motion-capture` quests promoted from stubs to real activation.
+**Main chain (this PR — research-conducted persona, no camera):**
+
+- **`PersonaTraits` model + persona-aware system prompt** (§2, §9.1) —
+  `src/stores/persona.ts` + pure `src/utils/persona-prompt.ts::buildPersonaBlock()`
+  injects an `[PERSONA]` block ahead of the existing `[LONG-TERM MEMORY]`
+  block. Same precedence shape as the brain doc's §4 RAG injection flow.
+- **Default persona (cold start)** (§2.1) — formalises what was previously
+  a hard-coded fallback string in `conversation.ts::createPersonaResponse()`.
+- **Quest chain** (§10) — Soul Mirror / My Persona / Master's Echo added
+  to `src/stores/skill-tree.ts` as the **main chain**. The existing
+  `expressions-pack` and `motion-capture` quests are reclassified as the
+  **side chain** (camera-driven, ships last) but stay in the tree as
+  visible aspirational quests.
+- **JSON-on-disk persistence** (§11) — `commands/persona.rs` ships
+  `get_persona`, `save_persona`, `list_*`/`save_*`/`delete_*` for learned
+  expressions and motions. **No camera commands** — the surface is built
+  ready for the side-chain code drop without the camera itself.
+- **Architecture rule "Persona Documentation Sync"** — added as rule 12
+  in `rules/architecture-rules.md`, mirroring rule 11 (Brain Documentation
+  Sync). Any change touching the persona surface must update both this
+  doc and `README.md` in the same PR.
+
+**Side chain (deferred per user requirement, ships last):**
+
+- MediaPipe Tasks Vision FaceLandmarker / PoseLandmarker integration,
+  per-session ConsentDialog + `useCameraCapture` composable, ARKit→VRM
+  expression mapper, IK pose retargeter, learned-asset recording UI —
+  all chunked as Phase 13.B (chunks 145–155, see §15) and **gated behind
+  the consent contract of §5**.
 
 ### 14.4 Sources
 
@@ -938,25 +992,47 @@ right now" — never "the camera is on but you can't tell".
 Captured as Phase 13 — Persona & Self-Learning in `rules/milestones.md`.
 Each chunk maps to a row in §14.2.
 
+The roadmap is split into a **main chain** (research-conducted, brain-driven
+persona; ships first) and a **side chain** (camera-driven self-learning;
+ships last per the user's explicit ordering). The split mirrors §10.
+
+### 15.1 Phase 13.A — Main chain (ships first)
+
 | Chunk | Title | Maps to §14.2 row | Phase 1 dep |
 |---|---|---|---|
-| **140** | Persona MVP — traits store + persona-prompt injection + Persona panel | 13 | none |
-| **141** | Per-session camera consent + MediaPipe FaceLandmarker face mirror | 1, 3 | 140 |
-| **142** | Save / load learned expression presets (JSON-on-disk) | — (storage) | 141 |
-| **143** | PoseLandmarker upper-body mirror + IK retargeting | 2 | 141 |
-| **144** | Save / load learned motion clips + LearnedMotionPlayer | — (storage) | 143 |
-| **145** | Brain integration — `extract_persona_from_brain` LLM-assisted authoring | 13 | 140, brain configured |
-| **146** | Persona drift detection (auto-correction prompt) | 14 | 145 |
-| **147** | Phoneme-aware viseme model (FaceFormer / EMOTalk-class) | 11 | 141 |
-| **148** | Bake learned motion clips → `.vrma` files for VrmaManager / sharing | — | 144 |
-| **149** | Persona export / import as a .terransoul-persona zip | 15 | 142, 144 |
-| **150** | Hunyuan-Motion / MimicMotion offline polish pass (opt-in) | 4, 6 | 144 |
-| **151** | MoMask reconstruction for full-body retarget from sparse keypoints | 5 | 143 |
-| **152** | MotionGPT — let the brain *generate* motion tokens directly | 8 | 144, brain configured |
+| **140** | Persona MVP — `PersonaTraits` store + `persona-prompt.ts` injection + Persona panel + Soul Mirror quest activation | 13 | none |
+| **141** | My Persona quest — full editable traits UI + brain-aware combo | 13 | 140, brain configured |
+| **142** | Master's Echo (main-chain version) — `extract_persona_from_brain` LLM-assisted authoring from chat history + `personal:*` long-term memories | 13 | 141 + memory tier |
+| **143** | Persona drift detection (auto-correction prompt fired by `auto_learn`) | 14 | 142 |
+| **144** | Persona export / import as a `.terransoul-persona` JSON bundle (no camera assets in the main-chain bundle) | 15 | 140 |
 
-Chunks 140–146 land first because they are the user's stated request:
-self-learning animation from camera + master persona authoring + the
-quest chain. The rest are advances on the same foundation.
+These five chunks deliver everything the user asked for in the main-chain
+sense: research-conducted (§14), brain-driven, persona-as-quest-chain,
+no camera dependency.
+
+### 15.2 Phase 13.B — Side chain (camera-driven, ships LAST)
+
+> Per the user requirement: *"Camera quests & implementation should come
+> last."* Every chunk below depends on the consent contract in §5 being
+> implemented first; none may land before the main chain.
+
+| Chunk | Title | Maps to §14.2 row | Phase 1 dep |
+|---|---|---|---|
+| **145** | Per-session camera consent dialog + `useCameraCapture` composable + always-visible "Camera live" badge | — (privacy infra, §5) | 140 |
+| **146** | MediaPipe FaceLandmarker face mirror + ARKit→VRM expression mapper (face-mirror.ts) | 1, 3 | 145 |
+| **147** | Save / load learned expression presets (JSON-on-disk) — promotes `expressions-pack` from stub to real | — (storage) | 146 |
+| **148** | PoseLandmarker upper-body mirror + IK retargeting (pose-mirror.ts) | 2 | 146 |
+| **149** | Save / load learned motion clips + `LearnedMotionPlayer` — promotes `motion-capture` from stub to real | — (storage) | 148 |
+| **150** | Bake learned motion clips → `.vrma` files for VrmaManager / sharing | — | 149 |
+| **151** | Side-chain export — bundle learned expressions + motions into the persona zip | 15 | 147, 149 |
+| **152** | Phoneme-aware viseme model (FaceFormer / EMOTalk-class) | 11 | 146 |
+| **153** | Hunyuan-Motion / MimicMotion offline polish pass (opt-in, deferred) | 4, 6 | 149 |
+| **154** | MoMask reconstruction for full-body retarget from sparse keypoints | 5 | 148 |
+| **155** | MotionGPT — let the brain *generate* motion tokens directly | 8 | 149, brain configured |
+
+Chunks 140–144 (main chain) deliver the user-authored / brain-extracted
+persona experience first. Chunks 145–155 (side chain, camera) layer the
+self-learning embodiment on top, in strict consent-first order.
 
 ---
 

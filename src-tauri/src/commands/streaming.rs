@@ -314,6 +314,15 @@ async fn stream_openai_api<R: tauri::Runtime>(
         ));
     }
 
+    // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
+    // Pushed from the frontend persona store via `set_persona_block`.
+    // Empty string means no persona injection.
+    if let Ok(persona) = state.persona_block.lock() {
+        if !persona.is_empty() {
+            system_prompt.push_str(persona.as_str());
+        }
+    }
+
     // Build OpenAI message array
     let mut messages = vec![OpenAiMessage {
         role: "system".to_string(),
@@ -422,6 +431,13 @@ async fn stream_ollama<R: tauri::Runtime>(
         system_prompt.push_str(&format!(
             "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
         ));
+    }
+
+    // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
+    if let Ok(persona) = state.persona_block.lock() {
+        if !persona.is_empty() {
+            system_prompt.push_str(persona.as_str());
+        }
     }
 
     // Build Ollama message array

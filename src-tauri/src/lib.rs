@@ -74,6 +74,11 @@ use commands::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
         remove_agent, update_agent, validate_agent_manifest,
     },
+    persona::{
+        delete_learned_expression, delete_learned_motion, get_persona, get_persona_block,
+        list_learned_expressions, list_learned_motions, save_learned_expression,
+        save_learned_motion, save_persona, set_persona_block,
+    },
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
     },
@@ -155,6 +160,12 @@ pub struct AppState {
     pub pet_cursor_active: Arc<AtomicBool>,
     /// Durable workflow engine for long-running agent tasks (Chunk 1.5).
     pub workflow_engine: TokioMutex<workflows::WorkflowEngine>,
+    /// Rendered `[PERSONA]` block pushed from the frontend persona store.
+    /// Server-driven streaming paths (Ollama / OpenAI) splice this into the
+    /// system prompt, alongside the existing `[LONG-TERM MEMORY]` block.
+    /// Empty string means "no persona injection". See
+    /// `docs/persona-design.md` § 9.1.
+    pub persona_block: Mutex<String>,
 }
 
 impl AppState {
@@ -202,6 +213,7 @@ impl AppState {
                             .expect("in-memory workflow engine must open")
                     }),
             ),
+            persona_block: Mutex::new(String::new()),
         }
     }
 
@@ -243,6 +255,7 @@ impl AppState {
                 workflows::WorkflowEngine::open(std::path::Path::new(":memory:"))
                     .expect("in-memory workflow engine must open"),
             ),
+            persona_block: Mutex::new(String::new()),
         }
     }
 }
@@ -387,6 +400,16 @@ pub fn run() {
             save_model_camera_position,
             get_quest_tracker,
             save_quest_tracker,
+            get_persona,
+            save_persona,
+            set_persona_block,
+            get_persona_block,
+            list_learned_expressions,
+            save_learned_expression,
+            delete_learned_expression,
+            list_learned_motions,
+            save_learned_motion,
+            delete_learned_motion,
             capture_screen,
             analyze_screen,
             list_languages,
