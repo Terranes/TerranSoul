@@ -1839,7 +1839,10 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  PHASE 4 — Scale                                                    │
 │  ├── ○ ANN index (usearch crate) for >1M memories                 │
 │  ├── ○ Cloud embedding API for free/paid modes                     │
-│  ├── ○ Chunking pipeline for large documents                       │
+│  ├── ✓ Chunking pipeline for large documents                       │
+│  │     (`memory::chunking`, `text-splitter` crate, semantic         │
+│  │      Markdown/text splitting, dedup, heading metadata)           │
+│  │     — Chunk 16.11                                                │
 │  │  ├── ✓ Relevance threshold (skip injection if score < 0.3,         │
 │  │  │     user-tunable via `AppSettings.relevance_threshold`,         │
 │  │  │     `MemoryStore::hybrid_search_with_threshold`) — Chunk 16.1   │
@@ -1857,7 +1860,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ○ Contradiction resolution (LLM picks winner)                 │
 │  ├── ✓ Temporal reasoning (`memory::temporal::parse_time_range` +   │
 │  │     `temporal_query` command) — Chunk 17.3                       │
-│  ├── ○ Memory importance auto-adjustment from access_count         │
+│  ├── ✓ Memory importance auto-adjustment from access_count         │
+│  │     (`MemoryStore::adjust_importance_by_access`,                  │
+│  │      command `adjust_memory_importance`) — Chunk 17.4            │
 │  └── ○ Cross-device memory merge via CRDT sync                    │
 │                                                                     │
 │  PHASE 6 — Modern RAG (April 2026 research absorption — see §19)   │

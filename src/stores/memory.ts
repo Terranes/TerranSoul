@@ -313,6 +313,14 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /** Auto-adjust importance based on access patterns (chunk 17.4). */
+  async function adjustImportance(
+    hotThreshold?: number,
+    coldDays?: number,
+  ): Promise<{ boosted: number; demoted: number }> {
+    return await invoke('adjust_memory_importance', { hotThreshold, coldDays });
+  }
+
   return {
     memories,
     stats,
@@ -345,5 +353,6 @@ export const useMemoryStore = defineStore('memory', () => {
     multiHopSearch,
     exportToObsidian,
     getMemoryHistory,
+    adjustImportance,
   };
 });

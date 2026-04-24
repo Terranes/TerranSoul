@@ -1007,6 +1007,90 @@ impl MemoryStore {
         Ok(rows)
     }
 
+    /// Nudge memory importance based on access patterns (Chunk 17.4).
+    ///
+    /// * Entries with `access_count >= hot_threshold` (default 10) gain +1
+    ///   importance (capped at 5).
+    /// * Entries with `access_count == 0` whose `last_accessed` is older
+    ///   than `cold_days` (default 30) or NULL lose −1 importance (floored
+    ///   at 1).
+    ///
+    /// Each adjustment is audited via `memory_versions` (V8 schema).
+    /// Designed to be called periodically (daily or on app startup).
+    /// Returns `(boosted, demoted)` counts.
+    ///
+    /// Maps to `docs/brain-advanced-design.md` §16 Phase 5
+    /// "Memory importance auto-adjustment from access_count".
+    pub fn adjust_importance_by_access(
+        &self,
+        hot_threshold: i64,
+        cold_days: i64,
+    ) -> SqlResult<(usize, usize)> {
+        let hot = hot_threshold.max(1);
+        let cold_cutoff = if cold_days <= 0 {
+            now_ms() // everything is "cold" — edge case, still safe
+        } else {
+            now_ms().saturating_sub(cold_days.saturating_mul(86_400_000))
+        };
+
+        // ── Boost hot entries ──
+        let mut boost_stmt = self.conn.prepare(
+            "SELECT id, importance FROM memories
+             WHERE access_count >= ?1
+               AND importance < 5",
+        )?;
+        let hot_rows: Vec<(i64, i64)> = boost_stmt
+            .query_map(params![hot], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut boosted = 0usize;
+        for (id, current_imp) in &hot_rows {
+            let new_imp = (*current_imp + 1).min(5);
+            // Audit trail (best-effort; silently ignored on pre-V8 schemas)
+            let _ = super::versioning::save_version(&self.conn, *id);
+            self.conn.execute(
+                "UPDATE memories SET importance = ?1 WHERE id = ?2",
+                params![new_imp, id],
+            )?;
+            boosted += 1;
+        }
+
+        // ── Demote cold entries ──
+        let mut cold_stmt = self.conn.prepare(
+            "SELECT id, importance FROM memories
+             WHERE access_count = 0
+               AND (last_accessed IS NULL OR last_accessed < ?1)
+               AND importance > 1",
+        )?;
+        let cold_rows: Vec<(i64, i64)> = cold_stmt
+            .query_map(params![cold_cutoff], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut demoted = 0usize;
+        for (id, current_imp) in &cold_rows {
+            let new_imp = (*current_imp - 1).max(1);
+            let _ = super::versioning::save_version(&self.conn, *id);
+            self.conn.execute(
+                "UPDATE memories SET importance = ?1 WHERE id = ?2",
+                params![new_imp, id],
+            )?;
+            demoted += 1;
+        }
+
+        // Reset access_count for boosted entries so the next run doesn't
+        // re-boost the same entries that already graduated.
+        for (id, _) in &hot_rows {
+            self.conn.execute(
+                "UPDATE memories SET access_count = 0 WHERE id = ?1",
+                params![id],
+            )?;
+        }
+
+        Ok((boosted, demoted))
+    }
+
     /// Find a memory by its source_hash.  Returns the first match (if any).
     pub fn find_by_source_hash(&self, hash: &str) -> SqlResult<Option<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
@@ -2181,5 +2265,106 @@ mod tests {
             "legacy tag and project:* (both mult 1.0) must decay identically; got legacy={}, project={}",
             l.decay_score, p.decay_score
         );
+    }
+
+    // ── Importance auto-adjustment (chunk 17.4) ────────────────────────
+
+    /// Helper: simulate N accesses on a memory by directly bumping access_count.
+    fn set_access_count(store: &MemoryStore, id: i64, count: i64) {
+        store.conn.execute(
+            "UPDATE memories SET access_count = ?1, last_accessed = ?2 WHERE id = ?3",
+            params![count, now_ms(), id],
+        ).unwrap();
+    }
+
+    #[test]
+    fn adjust_boosts_hot_entries() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(NewMemory { importance: 3, ..new_memory("hot") }).unwrap();
+        set_access_count(&store, e.id, 10);
+        let (boosted, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
+        assert_eq!(boosted, 1);
+        assert_eq!(demoted, 0);
+        assert_eq!(store.get_by_id(e.id).unwrap().importance, 4);
+    }
+
+    #[test]
+    fn adjust_caps_at_5() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(NewMemory { importance: 5, ..new_memory("maxed") }).unwrap();
+        set_access_count(&store, e.id, 20);
+        let (boosted, _) = store.adjust_importance_by_access(10, 30).unwrap();
+        // Already at max → no boost
+        assert_eq!(boosted, 0);
+        assert_eq!(store.get_by_id(e.id).unwrap().importance, 5);
+    }
+
+    #[test]
+    fn adjust_demotes_cold_entries() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(NewMemory { importance: 3, ..new_memory("cold") }).unwrap();
+        // access_count stays 0, last_accessed is NULL → cold
+        let (_, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
+        assert_eq!(demoted, 1);
+        assert_eq!(store.get_by_id(e.id).unwrap().importance, 2);
+    }
+
+    #[test]
+    fn adjust_floors_at_1() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(NewMemory { importance: 1, ..new_memory("min") }).unwrap();
+        let (_, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
+        // Already at min → no demote
+        assert_eq!(demoted, 0);
+        assert_eq!(store.get_by_id(e.id).unwrap().importance, 1);
+    }
+
+    #[test]
+    fn adjust_resets_access_count_after_boost() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("reset")).unwrap();
+        set_access_count(&store, e.id, 15);
+        store.adjust_importance_by_access(10, 30).unwrap();
+        let updated = store.get_by_id(e.id).unwrap();
+        assert_eq!(updated.access_count, 0, "access_count should reset after boost");
+    }
+
+    #[test]
+    fn adjust_leaves_middling_entries_alone() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("middling")).unwrap();
+        // access_count = 5 (below hot_threshold 10), recently accessed → neither hot nor cold
+        set_access_count(&store, e.id, 5);
+        let (boosted, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
+        assert_eq!(boosted, 0);
+        assert_eq!(demoted, 0);
+        assert_eq!(store.get_by_id(e.id).unwrap().importance, 3);
+    }
+
+    #[test]
+    fn adjust_mixed_hot_and_cold() {
+        let store = MemoryStore::in_memory();
+        let hot = store.add(NewMemory { importance: 2, ..new_memory("hot one") }).unwrap();
+        let cold = store.add(NewMemory { importance: 4, ..new_memory("cold one") }).unwrap();
+        set_access_count(&store, hot.id, 12);
+        // cold stays at access_count=0, last_accessed=NULL
+
+        let (boosted, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
+        assert_eq!(boosted, 1);
+        assert_eq!(demoted, 1);
+        assert_eq!(store.get_by_id(hot.id).unwrap().importance, 3);
+        assert_eq!(store.get_by_id(cold.id).unwrap().importance, 3);
+    }
+
+    #[test]
+    fn adjust_creates_version_audit_trail() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(NewMemory { importance: 3, ..new_memory("audited") }).unwrap();
+        set_access_count(&store, e.id, 10);
+        store.adjust_importance_by_access(10, 30).unwrap();
+
+        let history = crate::memory::versioning::get_history(&store.conn, e.id).unwrap();
+        assert_eq!(history.len(), 1, "boost should create one version snapshot");
+        assert_eq!(history[0].importance, 3, "snapshot should capture pre-boost value");
     }
 }

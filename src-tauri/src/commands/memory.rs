@@ -635,6 +635,39 @@ pub async fn auto_promote_memories(
     store.auto_promote_to_long(min, win).map_err(|e| e.to_string())
 }
 
+/// Auto-adjust memory importance based on access patterns (Chunk 17.4).
+///
+/// * Hot entries (`access_count >= hot_threshold`, default 10) get +1
+///   importance (capped at 5). Their access_count is then reset to 0.
+/// * Cold entries (`access_count == 0` for `cold_days`, default 30) get
+///   −1 importance (floored at 1).
+///
+/// Each adjustment is audited via `memory_versions` (V8 schema).
+/// Returns `{ boosted, demoted }`.
+///
+/// Maps to `docs/brain-advanced-design.md` §16 Phase 5 (chunk 17.4).
+#[tauri::command]
+pub async fn adjust_memory_importance(
+    hot_threshold: Option<i64>,
+    cold_days: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<ImportanceAdjustResult, String> {
+    let hot = hot_threshold.unwrap_or(10);
+    let cold = cold_days.unwrap_or(30);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let (boosted, demoted) = store
+        .adjust_importance_by_access(hot, cold)
+        .map_err(|e| e.to_string())?;
+    Ok(ImportanceAdjustResult { boosted, demoted })
+}
+
+/// Result of an importance auto-adjustment run.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImportanceAdjustResult {
+    pub boosted: usize,
+    pub demoted: usize,
+}
+
 /// Per-memory tag-validation report (chunk 18.4).
 ///
 /// Returned by [`audit_memory_tags`] for BrainView's "review tags" panel.

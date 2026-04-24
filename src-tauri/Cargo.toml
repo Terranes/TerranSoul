@@ -39,6 +39,7 @@ hex = "0.4"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 thiserror = "2"
+text-splitter = { version = "0.30", features = ["markdown"] }
 rand = { version = "0.8", optional = true }
 
 # Distributed database backends (optional)

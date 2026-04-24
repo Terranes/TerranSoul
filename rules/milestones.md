@@ -47,7 +47,9 @@ pending). **Phases 16 / 17** land the remaining items from
 Intelligence). **Phase 18** is fully complete (18.1–18.5 all shipped).
 **Chunk 17.3** (temporal reasoning queries) shipped 2026-04-25.
 **Chunk 16.2** (Contextual Retrieval) and **Chunk 16.12** (Memory
-versioning / V8 schema) shipped 2026-04-25. Pick the next item from
+versioning / V8 schema) shipped 2026-04-25. **Chunk 17.4** (importance
+auto-adjustment) and **Chunk 16.11** (semantic chunking pipeline)
+shipped 2026-04-26. Pick the next item from
 the active tables below or from `rules/backlog.md`.
 
 ---
@@ -168,7 +170,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | 16.8 | **Matryoshka embeddings** (Kusupati et al., 2022; widely adopted 2024) — switch the active embedding model to a Matryoshka-trained one (e.g. `nomic-embed-text-v1.5`, truncatable to 256 / 512 / 768 dim). Cheap fast first pass at 256-dim → re-rank survivors at 768-dim. New `memory::matryoshka::truncate(emb, target_dim)` + two-stage hybrid_search. Maps to §19.2 row 11 + §16 Phase 6. | not-started | Pairs naturally with the Phase-4 ANN index (16.10). |
 | 16.9 | **Cloud embedding API for free / paid modes** — extend `brain::OllamaAgent::embed_text` to also dispatch to OpenAI / Cohere / Voyage when the active brain mode is `FreeApi { provider_id: "..." }` or `PaidApi { ... }`. Allows free-tier users to get real RAG quality without local Ollama. Maps to §16 Phase 4. | not-started | Reuses `provider_rotator::ProviderRotator` for rate-limit handling. |
 | 16.10 | **ANN index (`usearch` crate)** — replace the brute-force cosine pass in `MemoryStore::vector_search` with an HNSW ANN index that scales to 1M+ entries while keeping <10 ms p99. Index lives next to the SQLite file (`vectors.usearch`); rebuilt incrementally on insert. Maps to §16 Phase 4. | not-started | Hard dependency: `usearch = "2"` (run `gh-advisory-database` check before adding). Falls back to brute-force when index file is corrupt or missing. |
-| 16.11 | **Chunking pipeline for large documents** — semantic chunking (recursive char-splitter + sentence boundary detection + 256-token target with 32-token overlap), deduplication by hash, and metadata propagation (page numbers for PDF, headings for Markdown). Replaces the current naive paragraph split in `run_ingest_task`. Maps to §16 Phase 4. | not-started | Use the `text-splitter` crate (LangChain-port, MIT). Run advisory-database check first. |
 
 
 ---
@@ -183,7 +184,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 17.2 | **Contradiction resolution (LLM picks winner)** — when `add_memory` finds a near-duplicate (existing dedup-by-cosine path) whose content semantically *contradicts* the new one (LLM "do these contradict?" check), opens a `MemoryConflict` row that the BrainView surfaces as a "resolve" prompt. User picks winner; loser is closed via `valid_to` (V6 schema) — never deleted. Maps to §16 Phase 5. | not-started | Builds on existing dedup pipeline; new `memory_conflicts` V8 table (or co-locate with V8 from 16.12). |
-| 17.4 | **Memory importance auto-adjustment from access_count** — daily job that nudges `importance` up by 1 (capped at 5) for entries with `access_count >= 10` since last adjustment, and down by 1 (floored at 1) for entries with `access_count == 0` over the last 30 days. Auditable via the new `memory_versions` table (16.12). Maps to §16 Phase 5. | not-started | Depends on 16.12 (memory versioning) for audit trail. ~80 LOC + 8 tests. |
 | 17.5 | **Cross-device memory merge via CRDT sync** — wire `MemoryStore` into the existing Soul Link sync engine (`src-tauri/src/sync/`). LWW-Map CRDT keyed on `(content_hash, source_url)`; conflicts resolved by `last_accessed` then `device_id` lexicographic tiebreak. Maps to §16 Phase 5. | not-started | Reuses Soul Link's QUIC + WebSocket transport. The hardest chunk in this phase — likely splits into 17.5a (schema + handshake) and 17.5b (delta sync). |
 | 17.6 | **Conflict detection between connected memories** — Phase 3 leftover. Daily LLM-as-judge pass over `memory_edges` looking for `EdgeRelType::CONTRADICTS` between entries that previously had `SUPPORTS` / `IMPLIES`. Surfaces conflicts in BrainView. Maps to §16 Phase 3 row "Conflict detection between connected memories". | not-started | Composes naturally with 17.2 — both feed the same MemoryConflict surface. |
 | 17.7 | **Bidirectional Obsidian sync** — extends the one-way export (18.5) into a bidirectional sync. Watches the configured Obsidian vault dir via `notify`; new / edited markdown files become memories; deleted files close the corresponding memories via `valid_to`. Conflict resolution mirrors 17.5 (LWW). Maps to §16 Phase 4 row "Bidirectional Obsidian sync". | not-started | Depends on 18.5 (one-way export) landing first. |

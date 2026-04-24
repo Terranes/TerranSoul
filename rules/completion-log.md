@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.11 — Semantic chunking pipeline](#chunk-1611--semantic-chunking-pipeline) | 2026-04-26 |
+| [Chunk 17.4 — Memory importance auto-adjustment](#chunk-174--memory-importance-auto-adjustment) | 2026-04-26 |
 | [Chunk 16.12 — Memory versioning (V8 schema)](#chunk-1612--memory-versioning-v8-schema) | 2026-04-25 |
 | [Chunk 16.2 — Contextual Retrieval (Anthropic 2024)](#chunk-162--contextual-retrieval-anthropic-2024) | 2026-04-25 |
 | [Chunk 17.3 — Temporal reasoning queries](#chunk-173--temporal-reasoning-queries) | 2026-04-25 |
@@ -161,6 +163,82 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.11 — Semantic chunking pipeline
+
+**Date.** 2026-04-26
+**Phase.** 16 (Modern RAG). Maps to `docs/brain-advanced-design.md` §16 Phase 4.
+
+**Goal.** Replace the naive word-count splitter in `commands::ingest` with
+semantic-boundary-aware chunking via the `text-splitter` crate (MIT, 1.2M+
+downloads). Markdown documents are split at heading / paragraph / sentence
+boundaries; plain text uses Unicode sentence boundary detection.
+Deduplication by SHA-256 hash and Markdown heading metadata propagation.
+
+**Architecture.**
+- New `memory::chunking` module with `split_markdown()`, `split_text()`,
+  `dedup_chunks()`, `Chunk` struct (index, text, hash, heading).
+- `MarkdownSplitter` (from `text-splitter` crate with `markdown` feature)
+  for `.md` files and HTML-sourced content; `TextSplitter` for everything
+  else.
+- Default chunk capacity: 1024 chars (≈256 tokens at ~4 chars/token).
+- Heading metadata propagated as `section:<slug>` tags on each chunk.
+- Old `chunk_text()` function kept (dead code) for resume-from-checkpoint
+  path.
+
+**Files created.**
+- `src-tauri/src/memory/chunking.rs` — new module (~165 LOC)
+
+**Files modified.**
+- `src-tauri/Cargo.toml` — added `text-splitter = { version = "0.30", features = ["markdown"] }`
+- `src-tauri/src/memory/mod.rs` — registered `pub mod chunking`
+- `src-tauri/src/commands/ingest.rs` — replaced `chunk_text(&text, 800, 100)` with
+  `split_markdown` / `split_text` + `dedup_chunks`; heading metadata propagated as
+  `section:*` tags; old `chunk_text` marked `#[allow(dead_code)]` with deprecation note
+
+**Tests.** 8 new Rust unit tests in `memory::chunking::tests`:
+short_text_single_chunk, long_text_produces_multiple_chunks,
+markdown_heading_extraction, markdown_splits_at_heading_boundaries,
+dedup_removes_duplicates, sha256_hex_deterministic,
+empty_text_produces_no_chunks, min_chunk_chars_enforced.
+
+**Totals.** 1005 Rust tests, 1083 Vitest, clippy clean.
+
+---
+
+## Chunk 17.4 — Memory importance auto-adjustment
+
+**Date.** 2026-04-26
+**Phase.** 17 (Brain Phase-5 Intelligence). Maps to `docs/brain-advanced-design.md` §16 Phase 5.
+
+**Goal.** Periodic job that nudges memory `importance` based on access
+patterns: hot entries (access_count ≥ 10) gain +1 (capped at 5); cold
+entries (access_count = 0 for 30+ days) lose −1 (floored at 1). Each
+adjustment is audited via the `memory_versions` table (V8 schema from
+chunk 16.12). Access counts are reset after boosting to prevent re-boost.
+
+**Architecture.**
+- `MemoryStore::adjust_importance_by_access(hot_threshold, cold_days)`
+  method on `store.rs`. Pure SQL + version audit trail.
+- `adjust_memory_importance` Tauri command (wraps store method with defaults
+  hot=10, cold=30). Returns `{ boosted, demoted }`.
+- `adjustImportance()` action on `src/stores/memory.ts`.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — new `adjust_importance_by_access` method (~80 LOC) + 8 tests
+- `src-tauri/src/commands/memory.rs` — new `adjust_memory_importance` Tauri command + `ImportanceAdjustResult` struct
+- `src-tauri/src/lib.rs` — registered import + handler invocation
+- `src/stores/memory.ts` — new `adjustImportance()` action + exposed in store return
+
+**Tests.** 8 new Rust unit tests in `memory::store::tests`:
+adjust_boosts_hot_entries, adjust_caps_at_5, adjust_demotes_cold_entries,
+adjust_floors_at_1, adjust_resets_access_count_after_boost,
+adjust_leaves_middling_entries_alone, adjust_mixed_hot_and_cold,
+adjust_creates_version_audit_trail.
+
+**Totals.** 1005 Rust tests, 1083 Vitest, clippy clean.
 
 ---
 
