@@ -65,6 +65,21 @@ pub struct PersonaCandidate {
 /// parsed by [`parse_persona_reply`] which is tolerant of common
 /// deviations (markdown fences, leading prose).
 pub fn build_persona_prompt(snippets: &[PromptSnippet]) -> (String, String) {
+    build_persona_prompt_with_hints(snippets, None)
+}
+
+/// Same as [`build_persona_prompt`] but also folds an optional
+/// prosody-hint block into the user message (Chunk 14.6). When `hints`
+/// is `None` the output is byte-identical to [`build_persona_prompt`]
+/// so existing tests stay green.
+///
+/// The hint block lives **between** the transcript and the OUTPUT
+/// FORMAT instructions so a model that respects positional cues sees
+/// the hints as supporting context, not as user content to echo back.
+pub fn build_persona_prompt_with_hints(
+    snippets: &[PromptSnippet],
+    hints: Option<&str>,
+) -> (String, String) {
     let system = "You are a thoughtful character-design assistant. \
 Read the user's recent conversations and stored personal notes, \
 and propose a single JSON object describing the AI companion persona \
@@ -80,10 +95,19 @@ no markdown fences, no commentary."
         transcript
     };
 
+    // Optional prosody-hint block (Chunk 14.6). Rendered as a
+    // single-line aside between transcript and OUTPUT FORMAT so the
+    // model treats it as context, not content to echo.
+    let hints_block = hints
+        .map(|h| h.trim())
+        .filter(|h| !h.is_empty())
+        .map(|h| format!("\n{}\n", h))
+        .unwrap_or_default();
+
     let user = format!(
         "Below is recent conversation history and personal notes about the user.\n\
         Use them to infer a persona that would converse comfortably with this user.\n\n\
-        ---\n{body}\n---\n\n\
+        ---\n{body}\n---\n{hints_block}\n\
         OUTPUT FORMAT — reply with exactly one JSON object, no prose, no fences:\n\
         {{\n  \"name\": \"<short character name>\",\n  \"role\": \"<one-line archetype>\",\n  \"bio\": \"<2–3 sentence backstory tailored to the user>\",\n  \"tone\": [\"<adjective>\", \"<adjective>\", \"<adjective>\"],\n  \"quirks\": [\"<short habit or catchphrase>\", \"...\"],\n  \"avoid\": [\"<a hard 'don't' for this companion>\", \"...\"]\n}}\n\n\
         Rules:\n\
@@ -308,6 +332,34 @@ mod tests {
         let (_system, user) = build_persona_prompt(&[]);
         assert!(user.contains("No conversation or personal memories"));
         assert!(user.contains("OUTPUT FORMAT"));
+    }
+
+    #[test]
+    fn build_prompt_with_hints_includes_hint_block() {
+        let snippets = vec![PromptSnippet { label: "user".into(), body: "yes".into() }];
+        let (_s, user) = build_persona_prompt_with_hints(
+            &snippets,
+            Some("Voice-derived hints: tone: concise · pacing: fast."),
+        );
+        assert!(user.contains("Voice-derived hints"));
+        assert!(user.contains("OUTPUT FORMAT"));
+    }
+
+    #[test]
+    fn build_prompt_with_none_hints_matches_legacy_output() {
+        let snippets = vec![PromptSnippet { label: "user".into(), body: "yes".into() }];
+        let (s_a, u_a) = build_persona_prompt(&snippets);
+        let (s_b, u_b) = build_persona_prompt_with_hints(&snippets, None);
+        assert_eq!(s_a, s_b);
+        assert_eq!(u_a, u_b);
+    }
+
+    #[test]
+    fn build_prompt_with_blank_hints_is_treated_as_none() {
+        let snippets = vec![PromptSnippet { label: "user".into(), body: "yes".into() }];
+        let (_s, u_a) = build_persona_prompt(&snippets);
+        let (_s, u_b) = build_persona_prompt_with_hints(&snippets, Some("   \n\t  "));
+        assert_eq!(u_a, u_b);
     }
 
     #[test]

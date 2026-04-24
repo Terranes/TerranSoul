@@ -380,7 +380,22 @@ impl OllamaAgent {
         &self,
         snippets: &[crate::persona::extract::PromptSnippet],
     ) -> Option<crate::persona::extract::PersonaCandidate> {
-        let (system, user) = crate::persona::extract::build_persona_prompt(snippets);
+        self.propose_persona_with_hints(snippets, None).await
+    }
+
+    /// Hint-aware variant of [`Self::propose_persona`] (Chunk 14.6).
+    /// `prosody_hints` is an already-rendered single-line block from
+    /// [`crate::persona::prosody::render_prosody_block`]. Pass `None`
+    /// when ASR is not configured or no signal was strong enough.
+    pub async fn propose_persona_with_hints(
+        &self,
+        snippets: &[crate::persona::extract::PromptSnippet],
+        prosody_hints: Option<&str>,
+    ) -> Option<crate::persona::extract::PersonaCandidate> {
+        let (system, user) = crate::persona::extract::build_persona_prompt_with_hints(
+            snippets,
+            prosody_hints,
+        );
         let msgs = vec![
             ChatMessage { role: "system".to_string(), content: system },
             ChatMessage { role: "user".to_string(),   content: user },

@@ -330,8 +330,35 @@ pub async fn extract_persona_from_brain(state: State<'_, AppState>) -> Result<St
     };
 
     let snippets = crate::persona::extract::assemble_snippets(&history, &memories);
+
+    // Audio-prosody hints (Chunk 14.6) — only computed when the user has
+    // ASR configured, so their typed turns reflect spoken patterns. The
+    // analyzer is pure and I/O-free; we never read raw audio (it's gone
+    // by the time text reaches the message log) and we never persist
+    // the hints — they live only for the duration of this prompt.
+    let asr_configured = state
+        .voice_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .asr_provider
+        .is_some();
+    let prosody_block: Option<String> = if asr_configured {
+        let user_utterances: Vec<&str> = history
+            .iter()
+            .filter(|(role, _)| role.eq_ignore_ascii_case("user"))
+            .map(|(_, content)| content.as_str())
+            .collect();
+        let hints = crate::persona::prosody::analyze_user_utterances(&user_utterances);
+        crate::persona::prosody::render_prosody_block(&hints)
+    } else {
+        None
+    };
+
     let agent = crate::brain::OllamaAgent::new(&model);
-    match agent.propose_persona(&snippets).await {
+    match agent
+        .propose_persona_with_hints(&snippets, prosody_block.as_deref())
+        .await
+    {
         Some(candidate) => serde_json::to_string(&candidate)
             .map_err(|e| format!("Failed to serialise persona candidate: {e}")),
         // Empty string = "brain replied but couldn't be parsed". UI
