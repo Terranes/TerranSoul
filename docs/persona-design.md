@@ -739,6 +739,63 @@ loop: the brain learns who the user is from chat (memory: auto-learn
 cadence), and proposes a persona that the avatar then *embodies* via the
 camera-learned expression library.
 
+### 9.4 Audio-prosody persona hints (✅ shipped 2026-04-24, Chunk 14.6)
+
+When the user has an ASR provider configured (Web Speech / Whisper /
+Groq), every text user-turn that reached the chat originally came
+through speech (or could have). Chunk 14.6 derives **camera-free**
+prosody-style hints from that text corpus and folds them into the same
+persona-extraction prompt as 9.3.
+
+The analyzer lives in `src-tauri/src/persona/prosody.rs` and is
+deliberately **pure** — no I/O, no time, no PRNG, no network, no audio
+access — so every signal is exhaustively unit-testable. The thin
+wiring in `commands/persona::extract_persona_from_brain` only invokes
+it when `voice_config.asr_provider.is_some()`.
+
+**Signals derived (per `analyze_user_utterances`):**
+
+| Signal                       | Source                                                         | Output tag    |
+|------------------------------|----------------------------------------------------------------|---------------|
+| Avg words / utterance ≤ 6    | concise speakers tend toward short utterances                  | `concise`     |
+| Avg words / utterance ≥ 25   | elaborate speakers favour long sentences                       | `elaborate`   |
+| Exclamation density ≥ 0.4    | energetic / enthusiastic delivery                              | `energetic`   |
+| Question density ≥ 0.3       | inquisitive conversational style                               | `inquisitive` |
+| ALLCAPS letter ratio ≥ 20 %  | emphatic delivery (gated to ≥50 alpha letters to avoid noise)  | `emphatic`    |
+| Emoji density ≥ 0.5 / utter. | playful tone                                                   | `playful`     |
+| Avg words ≤ 6                | pacing                                                         | `fast`        |
+| Avg words 7–18               | pacing                                                         | `measured`    |
+| Avg words ≥ 19               | pacing                                                         | `slow`        |
+| Filler ≥ 1/3 of utterances   | quirk (`um`, `uh`, `like`, `literally`, `you know`, …)         | quirk string  |
+| Emoji ≥ 1 per utterance      | quirk                                                          | `frequent emoji use` |
+
+Tone is hard-capped at 4 entries, quirks at 3, matching the persona
+schema's existing budget. The renderer (`render_prosody_block`) emits a
+single line shaped as:
+
+> `Voice-derived hints (the user has ASR configured, so their typed turns reflect spoken patterns): tone: <list> · pacing: <label> · quirks: <list>.`
+
+This block is inserted **between** the transcript and the OUTPUT FORMAT
+instructions inside the user message via
+`build_persona_prompt_with_hints`, so a model that respects positional
+cues treats the hints as supporting context rather than content to echo.
+`OllamaAgent::propose_persona_with_hints` is the matching agent surface;
+the legacy `propose_persona` delegates with `hints = None` so existing
+tests stay byte-identical.
+
+**Privacy contract:**
+
+- The analyzer never reads raw audio — by the time a turn reaches the
+  message log, the audio is already gone.
+- Hints are computed on demand at suggestion time and discarded once the
+  LLM reply is parsed; no on-disk artefact is ever produced.
+- Hints only fire when `MIN_UTTERANCES = 3` is reached, and an input
+  hard-cap of `MAX_INPUT_BYTES = 1 MiB` short-circuits pathological
+  payloads.
+- The hints read as friendly tone guidance (single-word adjectives + at
+  most three quirk strings); they are deliberately coarse, not a
+  forensic profile.
+
 ---
 
 ## 10. The Persona Quest Chain — How the User Discovers This

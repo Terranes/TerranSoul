@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Commercial-Licence Audit & Cleanup (msedge-tts + @vercel/* removed)](#commercial-licence-audit--cleanup) | 2026-04-24 |
+| [Chunk 14.6 — Audio-Prosody Persona Hints (Camera-Free)](#chunk-146--audio-prosody-persona-hints-camera-free) | 2026-04-24 |
 | [Chunk 14.7 — Persona Pack Export / Import](#chunk-147--persona-pack-export--import) | 2026-04-24 |
 | [Chunk 14.2 — Master-Echo Brain-Extraction Loop (Persona Suggestion)](#chunk-142--master-echo-brain-extraction-loop-persona-suggestion) | 2026-04-24 |
 | [Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)](#chunk-24--brainview-code-knowledge-panel-phase-13-tier-4) | 2026-04-24 |
@@ -112,7 +114,151 @@ Entries are in **reverse chronological order** (newest first).
 
 ---
 
-## Chunk 14.7 — Persona Pack Export / Import
+## Commercial-Licence Audit & Cleanup
+
+**Date:** 2026-04-24
+**Reference:** `docs/licensing-audit.md` (new); `rules/coding-standards.md` *"Use Existing Libraries First"*.
+
+**Trigger.** User requirement: *"check to make sure all package or
+integrations or libraries meet the commercial usage."*
+
+**Findings.** Every other dependency is permissively licensed
+(MIT / Apache-2.0 / BSD / ISC / MPL-2.0). Two integrations failed
+the strict commercial-use bar and were removed:
+
+- **`msedge-tts`** (Rust). Crate is MIT, but it calls Microsoft Edge's
+  undocumented `speech.platform.bing.com` *"Read Aloud"* WebSocket
+  endpoint. Microsoft directs commercial users to paid Azure
+  Cognitive Services — TTS; the unofficial endpoint is a ToS-violation
+  risk and historically rate-limited.
+- **`@vercel/analytics` + `@vercel/speed-insights`** (npm). Libraries
+  are MPL-2.0, but they phone home to Vercel servers without a
+  user-visible privacy contract; Vercel's free Web Analytics tier is
+  restricted to non-commercial projects; runtime telemetry from a
+  desktop binary conflicts with TerranSoul's local-first privacy
+  posture. `vue-router` was only included to satisfy these libraries'
+  unconditional `useRoute()` calls and was removed too.
+
+**Replacements.**
+
+- **TTS:** new `web-speech` provider id (browser `SpeechSynthesis`
+  API). The backend's `synthesize_tts` returns `Vec::new()` for
+  `web-speech` and the existing `useTtsPlayback` composable already
+  falls back to `speechSynthesis.speak()` when the WAV payload is
+  empty (≤44 bytes). Free, offline-capable, no telemetry, no
+  third-party ToS. Default `tts_provider` flips from `"edge-tts"` →
+  `"web-speech"`. Optional cloud upgrade remains available via the
+  user-supplied `openai-tts` provider with an explicit API key.
+- **Analytics:** none. A privacy-first desktop app should not phone
+  home for usage analytics.
+
+**Files touched.**
+
+- Deleted: `src-tauri/src/voice/edge_tts.rs`.
+- Removed deps: `msedge-tts` from `src-tauri/Cargo.toml`;
+  `@vercel/analytics`, `@vercel/speed-insights`, `vue-router` from
+  `package.json`.
+- Updated: `src-tauri/src/voice/mod.rs` (catalogue + default config +
+  tests), `src-tauri/src/voice/config_store.rs` (test fixture),
+  `src-tauri/src/commands/voice.rs` (`synthesize_tts` arm + tests),
+  `src-tauri/src/commands/ipc_contract_tests.rs` (test fixture),
+  `src/stores/voice.ts` (fallback provider + `autoConfigureVoice`),
+  `src/stores/voice.test.ts` (id sweep), `src/views/VoiceSetupView.vue`
+  (`activateBrowser`), `src/views/ChatView.vue` (`gift-of-speech`
+  quest auto-config), `src/App.vue` (drop Analytics / SpeedInsights
+  components + imports), `src/main.ts` (drop createRouter +
+  vue-router import), `README.md` (Voice System section).
+- Added: `docs/licensing-audit.md` capturing findings + process.
+
+**Validation.** `cargo test --lib` 892 passing (was 901; the deleted
+`edge_tts` module accounted for the delta, including its 6 routing
+tests). `npm test -- --run` 1073 passing. `npm run lint` 0 errors.
+`cargo clippy --lib --no-deps -- -D warnings` clean.
+
+**Privacy / commercial implications.** TerranSoul builds can now be
+distributed as part of a paid commercial product without requiring any
+extra third-party licence purchase, without violating any upstream ToS,
+and without any silent runtime telemetry to a third-party SaaS.
+
+---
+
+## Chunk 14.6 — Audio-Prosody Persona Hints (Camera-Free)
+
+**Date:** 2026-04-24
+**Reference:** `docs/persona-design.md` § 9.4 (new); `rules/milestones.md` Phase 14 row 14.6 (removed).
+
+**Goal.** When the user has an ASR provider configured, derive
+camera-free *prosody-style* hints (tone / pacing / quirks) from their
+typed turns — which mirror their spoken patterns — and fold them into
+the Master-Echo persona-extraction prompt so the suggested persona
+better matches how the user actually talks.
+
+**What shipped.**
+
+- New module `src-tauri/src/persona/prosody.rs` (≈490 lines, 23 unit
+  tests). Pure / I/O-free analyzer over user-role utterances →
+  `ProsodyHints { tone, pacing, quirks }`. Signals: avg sentence
+  length (concise / elaborate), exclamation density (energetic),
+  question density (inquisitive), ALLCAPS ratio gated by ≥50 alpha
+  letters (emphatic), filler-word density via whole-word matcher
+  (quirk: `um`, `uh`, `like`, `literally`, `you know`, `i mean`,
+  `kind of`, `sort of`, `actually`, `basically`, `er`, `hmm`), emoji
+  density via Unicode-block check (playful + quirk). Tone capped at
+  4, quirks at 3, both matching the persona-schema budget.
+  `MIN_UTTERANCES = 3` and `MAX_INPUT_BYTES = 1 MiB` short-circuit
+  thin or pathological corpora.
+- `render_prosody_block(&hints) -> Option<String>` emits a single
+  user-facing line and returns `None` for empty hints so the caller
+  skips the section entirely (no dead cue for the LLM to hallucinate
+  from).
+- New extract overload
+  `build_persona_prompt_with_hints(snippets, hints) -> (system, user)`.
+  When `hints == None`, the output is **byte-identical** to the
+  existing `build_persona_prompt`, so all prior tests stay green
+  (verified by a new equivalence test).
+- New agent surface
+  `OllamaAgent::propose_persona_with_hints(snippets, hints)`. Legacy
+  `propose_persona` delegates with `hints = None`.
+- Wired into `commands/persona::extract_persona_from_brain`: only
+  when `voice_config.asr_provider.is_some()` are user-role utterances
+  filtered out of the conversation snapshot, fed through
+  `analyze_user_utterances`, rendered, and passed to the agent.
+
+**Privacy contract.**
+
+- Raw audio is never read — by the time a turn reaches the message
+  log, the audio is already gone.
+- Hints are computed on demand at suggestion time and discarded once
+  the LLM reply is parsed; no on-disk artefact is ever produced.
+- Hints are deliberately coarse (single-word adjectives + at most
+  three quirk strings); they read as friendly tone guidance rather
+  than a forensic profile.
+- The hint block is inserted between the transcript and the
+  OUTPUT FORMAT instructions inside the user message, so positionally
+  the LLM treats it as supporting context, not content to echo.
+
+**Files touched.**
+
+- `src-tauri/src/persona/mod.rs` — register `prosody` module.
+- `src-tauri/src/persona/prosody.rs` — new (analyzer + 23 tests).
+- `src-tauri/src/persona/extract.rs` — `build_persona_prompt_with_hints`
+  + 4 new equivalence / integration tests.
+- `src-tauri/src/brain/ollama_agent.rs` — `propose_persona_with_hints`
+  surface.
+- `src-tauri/src/commands/persona.rs` — wiring (only when ASR is
+  configured).
+- `docs/persona-design.md` — new § 9.4 with full signal table and
+  privacy contract.
+- `README.md` — Voice System section.
+- `rules/milestones.md` — row 14.6 removed; Phase-14 summary updated.
+
+**Validation.** Persona test family grew from 47 → 70 (`cargo test
+--lib persona::`). Full lib suite: 892 passing. Clippy clean. No
+network or audio I/O introduced.
+
+---
+
+
 
 **Date:** 2026-04-24
 **Reference:** `docs/persona-design.md` § 11.3 + § 12 (both updated this PR); architectural rule "brain documentation sync" (architecture-rules.md § 11).

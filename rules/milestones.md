@@ -34,8 +34,8 @@
 _Phase 13 (2.1 → 2.4) shipped 2026-04-24. Phase 14 main-chain
 (14.1 + 14.2) shipped 2026-04-24. Chunk 14.7 (persona pack export /
 import) shipped 2026-04-24._ Remaining Phase 14 work is the
-camera-driven side chain (14.3 / 14.4) and two optional polish chunks
-(14.5 VRMA baking, 14.6 audio-prosody persona). Pick the next item
+camera-driven side chain (14.3 / 14.4) and one optional polish chunk
+(14.5 VRMA baking). Pick the next item
 from the active table below or from `rules/backlog.md`.
 
 ---
@@ -89,7 +89,6 @@ internal-firm-rules PDF) so a fresh user can reproduce it step-by-step.
 | 14.3 | Persona-side camera quest **`expressions-pack`** — `useCameraCapture.ts` per-session consent composable + `face-mirror.ts` (lazy-loaded `@mediapipe/tasks-vision` FaceLandmarker → ARKit-blendshape → VRM expression mapper) + `PersonaTeacher.vue` "Teach an expression" panel. Activation gate already wired via `persona.learnedExpressions.length > 0`. Must ship `<add @mediapipe/tasks-vision>` dependency, the consent dialog, the always-visible "Camera live" badge, the idle-timeout/chat-change auto-stop, and unit tests on the pure mapper. | not-started | Camera permission MUST be per-session; no on-disk "always on" flag. |
 | 14.4 | Persona-side camera quest **`motion-capture`** — `pose-mirror.ts` PoseLandmarker wrapper (33-keypoint → VRM humanoid bone retargeting; pure retargeter is the unit-tested seam) + record-and-name-clip UI in `PersonaTeacher.vue`. Activation gate already wired via `persona.learnedMotions.length > 0`. | not-started | Reuses the same per-session consent flow as 14.3. |
 | 14.5 | VRMA baking — convert a recorded learned-motion clip into a VRMA file so the avatar can replay it through the existing `VrmaManager` instead of always streaming landmarks. | not-started | Reduces per-frame cost and unlocks sharing learned motions between devices via the existing Soul Link sync surface. |
-| 14.6 | Audio-prosody persona learning — derive tone/pacing/quirk hints from the user's saved voice prompts (when ASR is configured) and feed them into the Master-Echo persona suggestion. Camera-free; pairs naturally with the voice cluster. | not-started | Optional. |
 
 > Camera quests (14.3 / 14.4) are explicitly **side chain** and ship
 > *after* the main chain (14.1 + 14.2 — both shipped). Chunk 14.7

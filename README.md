@@ -220,11 +220,17 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - Pinia stores: `brain.ts`, `conversation.ts`, `memory.ts`, `agent-roster.ts`, `skill-tree.ts`
 
 ### 🗣️ Voice System (The "Charisma" Stats)
-- **ASR:** Web Speech API, Whisper, Groq speech-to-text
-- **TTS:** Edge TTS with gender-matched voices (pitch/rate prosody per character)
+- **ASR:** Web Speech API (browser-native), Whisper, Groq speech-to-text
+- **TTS:** Web Speech (browser SpeechSynthesis — free, offline-capable, no third-party endpoint), OpenAI TTS (optional, requires API key)
 - **Hotword detection** for wake-word activation
 - **Speaker diarization** support
 - LipSync ↔ TTS audio pipeline for real-time mouth animation
+- **Audio-prosody persona hints** — when ASR is configured, the Master-Echo
+  persona suggester analyses the user's typed turns (which mirror their spoken
+  patterns) for tone (concise / elaborate / energetic / inquisitive / emphatic
+  / playful), pacing (fast / measured / slow), and quirks (filler words, emoji
+  use), and folds those hints into the persona-extraction prompt.
+  Camera-free; raw audio is never read; hints are never persisted.
 
 ### 💾 Memory System (The "Hippocampus")
 
