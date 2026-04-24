@@ -7,6 +7,7 @@ pub mod code_rag;
 pub mod cognitive_kind;
 pub mod conflicts;
 pub mod contextualize;
+pub mod edge_conflict_scan;
 pub mod edges;
 pub mod fusion;
 pub mod gitnexus_mirror;

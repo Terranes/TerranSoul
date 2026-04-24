@@ -774,6 +774,60 @@ pub async fn count_memory_conflicts(
         .map_err(|e| e.to_string())
 }
 
+/// Scan connected memories for contradictions (Chunk 17.6).
+///
+/// Iterates edges with positive relation types (supports, implies,
+/// related_to, etc.) and asks the LLM whether the connected pair
+/// actually contradicts. When found, inserts a "contradicts" edge
+/// and opens a MemoryConflict row.
+///
+/// `max_pairs` caps the scan to avoid runaway LLM calls (default 50).
+/// Intended to be triggered on user idle from the frontend.
+#[tauri::command]
+pub async fn scan_edge_conflicts(
+    max_pairs: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::edge_conflict_scan::EdgeConflictScanResult, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured — edge conflict scan requires an LLM.".to_string())?;
+
+    let max_pairs = max_pairs.unwrap_or(50).min(200);
+
+    // Phase 1: collect candidate pairs while holding the lock.
+    let candidates = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        crate::memory::edge_conflict_scan::collect_scan_candidates(&store, max_pairs)
+    };
+
+    // Phase 2: run LLM checks without holding the lock.
+    let agent = crate::brain::OllamaAgent::new(&model);
+    let mut result = crate::memory::edge_conflict_scan::EdgeConflictScanResult {
+        pairs_scanned: 0,
+        conflicts_found: 0,
+        pairs_skipped: candidates.skipped,
+    };
+
+    for (src_id, dst_id, content_a, content_b) in &candidates.pairs {
+        result.pairs_scanned += 1;
+        if let Some(cr) = agent.check_contradiction(content_a, content_b).await {
+            if cr.contradicts {
+                // Phase 3: write results, re-acquiring the lock per write.
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                crate::memory::edge_conflict_scan::record_contradiction(
+                    &store, *src_id, *dst_id, &cr.reason,
+                );
+                result.conflicts_found += 1;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 /// Walk every memory, validate its `tags` against the curated vocabulary,
 /// and return only the rows that have at least one non-conforming tag.
 ///

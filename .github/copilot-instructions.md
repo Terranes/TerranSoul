@@ -86,7 +86,7 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - **State**: `AppState` holds `Mutex<MemoryStore>`, `Mutex<BrainStore>`, etc.
 - **Streaming**: SSE via Tauri events (`llm-chunk`), parsed by `StreamTagParser` state machine
 - **Error handling**: `?` operator, `thiserror` for typed errors, never `.unwrap()` in library code
-- **Testing**: Vitest for frontend (941+ tests), `cargo test` for Rust (514+ tests)
+- **Testing**: Vitest for frontend (1083+ tests), `cargo test` for Rust (1045+ tests)
 - **CSS**: Use `var(--ts-*)` design tokens from `src/style.css`, never hardcode hex colors
 
 ## Coding Standards

@@ -1834,7 +1834,10 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Relationship type taxonomy (17 curated types + free-form)   │
 │  ├── ✓ Multi-hop RAG via graph traversal (hybrid_search_with_graph)│
 │  ├── ✓ Graph-enhanced Cytoscape visualization (typed/directional)  │
-│  └── ○ Conflict detection between connected memories               │
+│  └── ✓ Conflict detection between connected memories               │
+│        (`memory::edge_conflict_scan` — collect_scan_candidates +    │
+│         record_contradiction, LLM-as-judge over positive-relation   │
+│         edges, 3-phase lock-safe pattern) — Chunk 17.6              │
 │                                                                     │
 │  PHASE 4 — Scale                                                    │
 │  ├── ○ ANN index (usearch crate) for >1M memories                 │

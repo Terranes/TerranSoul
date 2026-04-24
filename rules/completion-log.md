@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 17.6 — Edge conflict detection](#chunk-176--edge-conflict-detection) | 2026-04-26 |
 | [Chunk 16.9 — Cloud embedding API for free / paid modes](#chunk-169--cloud-embedding-api-for-free--paid-modes) | 2026-04-26 |
 | [Chunk 17.2 — Contradiction resolution (LLM picks winner)](#chunk-172--contradiction-resolution-llm-picks-winner) | 2026-04-26 |
 | [Chunk 16.11 — Semantic chunking pipeline](#chunk-1611--semantic-chunking-pipeline) | 2026-04-26 |
@@ -165,6 +166,25 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 17.6 — Edge conflict detection
+
+**Date.** 2026-04-26
+
+**Summary.** Scheduled LLM-as-judge scan over `memory_edges` with positive relation types (supports, implies, related_to, derived_from, cites, part_of). When the LLM says two connected memories actually contradict, a `"contradicts"` edge is inserted and a `MemoryConflict` row is opened for the user to resolve. Lock-safe three-phase pattern: collect candidates → async LLM calls → write results.
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/edge_conflict_scan.rs` | **NEW** — `collect_scan_candidates()`, `record_contradiction()`, `has_contradicts_edge()`, `has_open_conflict()`, `ScanCandidates`, `EdgeConflictScanResult`. 6 tests. |
+| `src-tauri/src/memory/mod.rs` | Added `pub mod edge_conflict_scan;` |
+| `src-tauri/src/commands/memory.rs` | `scan_edge_conflicts` Tauri command — 3-phase lock-safe pattern |
+| `src-tauri/src/lib.rs` | Registered `scan_edge_conflicts` in imports + handler list |
+
+**Test counts.** 1045 Rust (6 new), 1083 Vitest (unchanged).
 
 ---
 
