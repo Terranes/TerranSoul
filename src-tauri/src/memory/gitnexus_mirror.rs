@@ -196,7 +196,7 @@ pub fn mirror_kg(
         // Hash key = scope + node id, so two scopes that share a node
         // id (very unlikely, but possible in monorepos) don't collide.
         let source_hash_input = format!("{scope}|{}", node.id);
-        let source_hash = format!("{:x}", md5_like(&source_hash_input));
+        let source_hash = format!("{:x}", stable_hash_64(&source_hash_input));
 
         // De-dup against existing memories with the same source_hash.
         let existing_id = store
@@ -276,13 +276,13 @@ pub fn unmirror(store: &MemoryStore, scope: &str) -> Result<usize, String> {
         .map_err(|e| format!("unmirror: {e}"))
 }
 
-/// Tiny, dependency-free hash for stable source-hash keys.
+/// Stable 64-bit non-cryptographic hash for `source_hash` dedup keys.
 ///
-/// We deliberately avoid pulling in `md-5`/`sha2` for this — the hash
+/// We deliberately avoid pulling in `sha2`/`md-5` for this — the hash
 /// only needs to be stable within a single TerranSoul installation
 /// (it's used as a string key for de-duplication, not for security).
 /// The 64-bit `DefaultHasher` output rendered as hex is plenty.
-fn md5_like(s: &str) -> u64 {
+fn stable_hash_64(s: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
