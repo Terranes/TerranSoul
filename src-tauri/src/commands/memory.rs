@@ -216,12 +216,12 @@ pub async fn get_short_term_memory(
 pub async fn extract_memories_from_session(
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
-    let model = state
-        .active_brain
+    // Read brain_mode first — works for Free/Paid/Local.
+    let brain_mode = state
+        .brain_mode
         .lock()
         .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        .clone();
 
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
@@ -230,7 +230,23 @@ pub async fn extract_memories_from_session(
             .collect()
     }; // lock released before await
 
-    let facts = crate::memory::brain_memory::extract_facts(&model, &history).await;
+    let facts = if let Some(mode) = brain_mode {
+        crate::memory::brain_memory::extract_facts_any_mode(
+            &mode,
+            &history,
+            &state.provider_rotator,
+        )
+        .await
+    } else {
+        // Legacy path: check active_brain for Ollama model name.
+        let model = state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        crate::memory::brain_memory::extract_facts(&model, &history).await
+    };
 
     let count = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -244,12 +260,11 @@ pub async fn extract_memories_from_session(
 pub async fn summarize_session(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let model = state
-        .active_brain
+    let brain_mode = state
+        .brain_mode
         .lock()
         .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        .clone();
 
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
@@ -258,9 +273,25 @@ pub async fn summarize_session(
             .collect()
     }; // lock released before await
 
-    let summary = crate::memory::brain_memory::summarize(&model, &history)
+    let summary = if let Some(mode) = brain_mode {
+        crate::memory::brain_memory::summarize_any_mode(
+            &mode,
+            &history,
+            &state.provider_rotator,
+        )
         .await
-        .ok_or_else(|| "Session is empty or brain is unreachable.".to_string())?;
+    } else {
+        let model = state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        crate::memory::brain_memory::summarize(&model, &history).await
+    };
+
+    let summary =
+        summary.ok_or_else(|| "Session is empty or brain is unreachable.".to_string())?;
 
     {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;

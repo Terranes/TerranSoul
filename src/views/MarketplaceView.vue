@@ -1401,4 +1401,27 @@ onMounted(async () => {
 .bs-status-indicator.error { background: var(--ts-error-bg); color: var(--ts-error); }
 .llm-local-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .llm-local-models { display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto; }
+
+/* ── Responsive: Tablet ── */
+@media (max-width: 840px) {
+  .mp-header { flex-direction: column; align-items: stretch; }
+  .mp-header-actions { flex-wrap: wrap; }
+  .mp-search-row { flex-wrap: wrap; }
+  .mp-search { flex-basis: 100%; }
+}
+
+/* ── Responsive: Mobile ── */
+@media (max-width: 640px) {
+  .marketplace-view { padding: 0.75rem 0.5rem; gap: 0.5rem; }
+  .mp-header h2 { font-size: 1.1rem; }
+  .mp-header-actions { gap: 0.35rem; }
+  .mp-tabs { flex-wrap: wrap; }
+  .mp-tab { padding: 0.35rem 0.75rem; font-size: 0.78rem; }
+  .mp-card { padding: 0.75rem; gap: 0.35rem; }
+  .mp-modal { padding: 1rem; width: min(400px, 95vw); }
+  .tauri-feature-list { grid-template-columns: 1fr; }
+  .tauri-details { padding: 0.5rem 0.75rem 1rem; }
+  .llm-tier-tabs { flex-wrap: wrap; }
+  .llm-tier-tab { padding: 0.3rem 0.4rem; font-size: 0.72rem; }
+}
 </style>

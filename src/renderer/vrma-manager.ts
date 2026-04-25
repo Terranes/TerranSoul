@@ -55,6 +55,10 @@ export const VRMA_ANIMATIONS: VrmaAnimationEntry[] = [
   { label: 'Sleepy',      path: '/animations/sleepy.vrma',      loop: true,                       motionKey: 'sleepy' },
   { label: 'Clapping',    path: '/animations/clapping.vrma',    loop: false,                      motionKey: 'clapping' },
   { label: 'Jump',        path: '/animations/jump.vrma',        loop: false,                      motionKey: 'jump' },
+  // Additional
+  { label: 'Waiting',     path: '/animations/waiting.vrma',     loop: true,                       motionKey: 'waiting' },
+  { label: 'Appearing',   path: '/animations/appearing.vrma',   loop: false,                      motionKey: 'appearing' },
+  { label: 'Liked',       path: '/animations/liked.vrma',       loop: false,                      motionKey: 'liked' },
 ];
 
 /** All valid motion keys the LLM can emit. Used for prompt and validation. */
@@ -106,6 +110,15 @@ const MOTION_ALIASES: Record<string, string> = {
   crouch:    'squat',
   victory:   'peace',
   stroll:    'walk',
+  wait:      'waiting',
+  patient:   'waiting',
+  appear:    'appearing',
+  entrance:  'appearing',
+  arrive:    'appearing',
+  like:      'liked',
+  love:      'liked',
+  heart:     'liked',
+  adore:     'liked',
 };
 
 /**

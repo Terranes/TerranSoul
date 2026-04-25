@@ -34,7 +34,7 @@ export interface AppSettings {
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 2,
-  selected_model_id: 'ao',
+  selected_model_id: 'shinra',
   camera_azimuth: 0,
   camera_distance: 2.8,
   bgm_enabled: false,

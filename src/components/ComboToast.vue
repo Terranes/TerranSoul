@@ -67,13 +67,13 @@ interface ComboToastItem {
   expiresAt: number;
 }
 
-const TOAST_DURATION_MS = 6000;
+const TOAST_DURATION_MS = 5000;
 
 const skillTree = useSkillTreeStore();
 const toasts = ref<ComboToastItem[]>([]);
 let interval: ReturnType<typeof setInterval> | null = null;
 
-const visibleToasts = computed(() => toasts.value.slice(0, 3));
+const visibleToasts = computed(() => toasts.value.slice(0, 2));
 
 function comboKey(sourceSkill: string, comboName: string): string {
   return `${sourceSkill}::${comboName}`;
@@ -260,14 +260,39 @@ onUnmounted(() => {
 .combo-toast-enter-from { transform: translateX(-120%); opacity: 0; }
 .combo-toast-leave-to { transform: translateX(-30px); opacity: 0; }
 
-/* Don't fight the mobile bottom navigation. */
+/* ── Tablet: keep width constrained, raise above scrollable content ── */
+@media (max-width: 840px) {
+  .combo-toast-stack {
+    max-width: min(300px, calc(100vw - 90px));
+  }
+  .combo-toast {
+    padding: 8px 30px 8px 10px;
+    gap: 10px;
+    min-width: 0;
+  }
+  .ct-icon { font-size: 1.4rem; width: 32px; height: 32px; }
+  .ct-name { font-size: 0.82rem; }
+  .ct-desc { font-size: 0.65rem; }
+  .ct-source { font-size: 0.55rem; }
+}
+
+/* ── Mobile: compact toasts above bottom nav, don't cover content ── */
 @media (max-width: 640px) {
   .combo-toast-stack {
     left: 8px;
-    right: 8px;
-    bottom: 64px; /* Above .mobile-bottom-nav (56px tall) */
-    max-width: none;
+    right: auto;
+    bottom: 68px; /* Above .mobile-bottom-nav (56px) + 12px gap */
+    max-width: calc(100vw - 16px);
   }
-  .combo-toast { min-width: 0; }
+  .combo-toast {
+    min-width: 0;
+    padding: 8px 28px 8px 10px;
+    gap: 10px;
+  }
+  .ct-icon { font-size: 1.4rem; width: 30px; height: 30px; }
+  .ct-eyebrow { font-size: 0.55rem; }
+  .ct-name { font-size: 0.8rem; }
+  .ct-desc { font-size: 0.65rem; }
+  .ct-source { display: none; }
 }
 </style>

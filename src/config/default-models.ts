@@ -29,23 +29,17 @@ export const GENDER_VOICES: Record<ModelGender, {
 
 export const DEFAULT_MODELS: DefaultModel[] = [
   {
-    id: 'ao',
-    name: 'Ao',
-    path: '/models/default/Ao.vrm',
+    id: 'shinra',
+    name: 'Shinra',
+    path: '/models/default/Shinra.vrm',
     gender: 'female',
   },
   {
-    id: 'karina',
-    name: 'Karina',
-    path: '/models/default/Karina.vrm',
-    gender: 'female',
-  },
-  {
-    id: 'ki',
-    name: 'Ki',
-    path: '/models/default/Ki.vrm',
+    id: 'komori',
+    name: 'Komori',
+    path: '/models/default/Komori.vrm',
     gender: 'female',
   },
 ];
 
-export const DEFAULT_MODEL_ID = 'ao';
+export const DEFAULT_MODEL_ID = 'shinra';

@@ -73,6 +73,9 @@ All VRMA files live in `public/animations/`. Source origins:
 | `sleepy.vrma` | tk256ailab | Yes |
 | `clapping.vrma` | tk256ailab | No |
 | `jump.vrma` | tk256ailab | No |
+| `waiting.vrma` | user-added | Yes |
+| `appearing.vrma` | user-added | No |
+| `liked.vrma` | user-added | No |
 
 > **Note:** Figure commented out the tk256ailab animations ("kinda bad"), but we include them because they fill important emotion/motion gaps for LLM-driven animation.
 
@@ -110,6 +113,9 @@ The LLM may use natural words instead of exact motion keys. `getAnimationForMoti
 | `model`, `strike` | `pose` | model-pose.vrma |
 | `crouch` | `squat` | squat.vrma |
 | `stroll` | `walk` | walk.vrma |
+| `wait`, `patient` | `waiting` | waiting.vrma |
+| `appear`, `entrance`, `arrive` | `appearing` | appearing.vrma |
+| `like`, `love`, `heart`, `adore` | `liked` | liked.vrma |
 
 ## LLM → Animation Pipeline
 

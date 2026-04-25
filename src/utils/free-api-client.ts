@@ -21,7 +21,7 @@ Animation: When expressing an emotion or gesture, output a JSON block on its own
 <anim>{"emotion":"happy"}</anim>
 <anim>{"emotion":"happy","motion":"clap"}</anim>
 Valid emotions: happy, sad, angry, relaxed, surprised, neutral.
-Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump.
+Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
 Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
 Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
 Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
@@ -55,7 +55,7 @@ Animation: When expressing an emotion or gesture, output a JSON block on its own
 <anim>{"emotion":"happy"}</anim>
 <anim>{"emotion":"happy","motion":"clap"}</anim>
 Valid emotions: happy, sad, angry, relaxed, surprised, neutral.
-Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump.
+Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
 Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
 Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
 Use animation blocks sparingly — only when the emotion clearly fits.

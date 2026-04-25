@@ -82,22 +82,22 @@ mod tests {
     fn app_settings_roundtrip_with_camera_positions() {
         let payload = json!({
             "version": 2,
-            "selected_model_id": "ao",
+            "selected_model_id": "shinra",
             "camera_azimuth": 0.5,
             "camera_distance": 3.0,
             "bgm_enabled": true,
             "bgm_volume": 0.25,
             "bgm_track_id": "prelude",
             "model_camera_positions": {
-                "ao": { "azimuth": 0.5, "distance": 3.0 }
+                "shinra": { "azimuth": 0.5, "distance": 3.0 }
             }
         });
         let settings: crate::settings::AppSettings =
             serde_json::from_value(payload).unwrap();
-        assert_eq!(settings.selected_model_id, "ao");
+        assert_eq!(settings.selected_model_id, "shinra");
         assert!(settings.bgm_enabled);
         assert_eq!(settings.model_camera_positions.len(), 1);
-        let cam = &settings.model_camera_positions["ao"];
+        let cam = &settings.model_camera_positions["shinra"];
         assert!((cam.azimuth - 0.5).abs() < 0.001);
     }
 

@@ -1,12 +1,13 @@
 /// Brain-powered memory operations.
 ///
-/// Reuses the active Ollama model to provide semantic understanding for
+/// Supports all three brain modes (Free API, Paid API, Local Ollama) for
 /// memory extraction, summarization, and relevance ranking.
 ///
 /// Design principle: all async LLM calls work on plain data (Vec/String),
 /// never holding a MutexGuard across an `.await` point.  The caller is
 /// responsible for locking the store before/after the async call.
-use crate::brain::OllamaAgent;
+use crate::brain::openai_client::OpenAiMessage;
+use crate::brain::{BrainMode, OllamaAgent, OpenAiClient};
 use crate::memory::{MemoryEntry, MemoryStore, MemoryType, NewMemory};
 
 /// Format a flat list of (role, content) pairs into a readable transcript.
@@ -30,6 +31,153 @@ pub async fn extract_facts(model: &str, history: &[(String, String)]) -> Vec<Str
     }
     let transcript = format_transcript(history);
     OllamaAgent::new(model).extract_memories(&transcript).await
+}
+
+/// Extract memorable facts via any brain mode (Free/Paid/Local).
+///
+/// This is the mode-agnostic version of [`extract_facts`] that routes through
+/// `OpenAiClient` for Free and Paid API modes instead of requiring Ollama.
+pub async fn extract_facts_any_mode(
+    brain_mode: &BrainMode,
+    history: &[(String, String)],
+    rotator: &std::sync::Mutex<crate::brain::ProviderRotator>,
+) -> Vec<String> {
+    if history.is_empty() {
+        return vec![];
+    }
+    let transcript = format_transcript(history);
+    let prompt = format!(
+        "Read this conversation and extract up to 5 important facts worth remembering \
+        about the user (preferences, goals, personal details, ongoing projects). \
+        Reply with ONLY a bullet list, one fact per line, starting each line with '- '. \
+        If there is nothing worth remembering, reply with exactly: NONE\n\n{transcript}"
+    );
+
+    let reply = complete_via_mode(
+        brain_mode,
+        "You are a memory extraction assistant. Extract concise facts about the user from conversations.",
+        &prompt,
+        rotator,
+    )
+    .await;
+
+    let text = match reply {
+        Ok(t) => t,
+        Err(_) => return vec![],
+    };
+    if text.trim() == "NONE" || text.trim().is_empty() {
+        return vec![];
+    }
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim().trim_start_matches("- ").trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .collect()
+}
+
+/// Summarize a conversation via any brain mode (Free/Paid/Local).
+pub async fn summarize_any_mode(
+    brain_mode: &BrainMode,
+    history: &[(String, String)],
+    rotator: &std::sync::Mutex<crate::brain::ProviderRotator>,
+) -> Option<String> {
+    if history.is_empty() {
+        return None;
+    }
+    let transcript = format_transcript(history);
+    let prompt = format!(
+        "Summarize this conversation in 1-3 sentences, focusing on what the user \
+        was trying to accomplish and any conclusions reached. Be concise.\n\n{transcript}"
+    );
+    let reply = complete_via_mode(
+        brain_mode,
+        "You are a concise summarizer. Summarize conversations into 1-3 sentences.",
+        &prompt,
+        rotator,
+    )
+    .await
+    .ok()?;
+    let clean = reply.trim().to_string();
+    if clean.is_empty() {
+        None
+    } else {
+        Some(clean)
+    }
+}
+
+/// Route a single prompt through the configured brain mode.
+async fn complete_via_mode(
+    brain_mode: &BrainMode,
+    system: &str,
+    user_prompt: &str,
+    rotator: &std::sync::Mutex<crate::brain::ProviderRotator>,
+) -> Result<String, String> {
+    match brain_mode {
+        BrainMode::FreeApi {
+            provider_id,
+            api_key,
+        } => {
+            let effective_id = rotator
+                .lock()
+                .ok()
+                .and_then(|mut r| r.next_healthy_provider().map(|p| p.id.clone()))
+                .unwrap_or_else(|| provider_id.clone());
+            let provider = crate::brain::get_free_provider(&effective_id)
+                .ok_or_else(|| format!("Unknown free provider: {effective_id}"))?;
+            let client =
+                OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let msgs = vec![
+                OpenAiMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                OpenAiMessage {
+                    role: "user".to_string(),
+                    content: user_prompt.to_string(),
+                },
+            ];
+            client.chat(msgs).await
+        }
+        BrainMode::PaidApi {
+            api_key,
+            model,
+            base_url,
+            ..
+        } => {
+            let client = OpenAiClient::new(base_url, model, Some(api_key));
+            let msgs = vec![
+                OpenAiMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                OpenAiMessage {
+                    role: "user".to_string(),
+                    content: user_prompt.to_string(),
+                },
+            ];
+            client.chat(msgs).await
+        }
+        BrainMode::LocalOllama { model } => {
+            let agent = OllamaAgent::new(model);
+            let msgs = vec![
+                crate::brain::ollama_agent::ChatMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                crate::brain::ollama_agent::ChatMessage {
+                    role: "user".to_string(),
+                    content: user_prompt.to_string(),
+                },
+            ];
+            let (reply, _) = agent.call(msgs).await;
+            Ok(reply)
+        }
+    }
 }
 
 /// Use the brain to produce a one-paragraph summary of a conversation.

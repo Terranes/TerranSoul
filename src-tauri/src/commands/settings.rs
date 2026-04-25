@@ -68,7 +68,7 @@ mod tests {
         let state = crate::AppState::for_test();
         let new_settings = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "karina".into(),
+            selected_model_id: "komori".into(),
             camera_azimuth: 1.0,
             camera_distance: 3.0,
             bgm_enabled: true,
@@ -90,7 +90,7 @@ mod tests {
             *current = new_settings.clone();
         }
         let loaded = state.app_settings.lock().unwrap();
-        assert_eq!(loaded.selected_model_id, "karina");
+        assert_eq!(loaded.selected_model_id, "komori");
         assert!((loaded.camera_azimuth - 1.0).abs() < 0.001);
         assert!(loaded.bgm_enabled);
         assert!((loaded.bgm_volume - 0.25).abs() < 0.001);
@@ -102,7 +102,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let settings = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "karina".into(),
+            selected_model_id: "komori".into(),
             camera_azimuth: 0.5,
             camera_distance: 4.0,
             bgm_enabled: false,
@@ -120,7 +120,7 @@ mod tests {
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());
-        assert_eq!(loaded.selected_model_id, "karina");
+        assert_eq!(loaded.selected_model_id, "komori");
     }
 
     #[test]
@@ -129,12 +129,12 @@ mod tests {
         {
             let mut settings = state.app_settings.lock().unwrap();
             settings.model_camera_positions.insert(
-                "ao".into(),
+                "shinra".into(),
                 crate::settings::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
             );
         }
         let settings = state.app_settings.lock().unwrap();
-        let pos = settings.model_camera_positions.get("ao").unwrap();
+        let pos = settings.model_camera_positions.get("shinra").unwrap();
         assert!((pos.azimuth - 0.5).abs() < 0.001);
         assert!((pos.distance - 3.0).abs() < 0.001);
     }
@@ -145,17 +145,17 @@ mod tests {
         {
             let mut settings = state.app_settings.lock().unwrap();
             settings.model_camera_positions.insert(
-                "ao".into(),
+                "shinra".into(),
                 crate::settings::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
             );
             settings.model_camera_positions.insert(
-                "karina".into(),
+                "komori".into(),
                 crate::settings::ModelCameraPosition { azimuth: 1.2, distance: 2.0 },
             );
         }
         let settings = state.app_settings.lock().unwrap();
         assert_eq!(settings.model_camera_positions.len(), 2);
-        assert!((settings.model_camera_positions["ao"].azimuth - 0.5).abs() < 0.001);
-        assert!((settings.model_camera_positions["karina"].azimuth - 1.2).abs() < 0.001);
+        assert!((settings.model_camera_positions["shinra"].azimuth - 0.5).abs() < 0.001);
+        assert!((settings.model_camera_positions["komori"].azimuth - 1.2).abs() < 0.001);
     }
 }

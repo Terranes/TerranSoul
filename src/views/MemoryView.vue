@@ -715,7 +715,7 @@ onMounted(async () => {
 <style scoped>
 .memory-view { display: flex; flex-direction: column; height: 100%; padding: 1rem; gap: 0.75rem; overflow: hidden; }
 .mv-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
-.mv-header h2 { margin: 0; font-size: 1.25rem; }
+.mv-header h2 { margin: 0; font-size: 1.25rem; white-space: nowrap; }
 .mv-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .mv-feedback { padding: 0.5rem 1rem; background: var(--ts-success-bg); color: var(--ts-success); border-radius: 6px; margin: 0; }
 
@@ -826,4 +826,37 @@ onMounted(async () => {
 .btn-icon:hover { color: var(--ts-text-primary); }
 .btn-icon.danger { color: var(--ts-error); }
 .btn-danger { padding: 0.35rem 0.75rem; background: var(--ts-error-bg); color: var(--ts-error); border: none; border-radius: 6px; cursor: pointer; }
+
+/* ── Responsive: Tablet ── */
+@media (max-width: 840px) {
+  .mv-header { flex-direction: column; align-items: stretch; }
+  .mv-header-actions { justify-content: flex-start; }
+  .mv-search-row { flex-wrap: wrap; }
+  .mv-search { min-width: 0; flex-basis: 100%; }
+  .mv-node-detail { width: 200px; }
+  .mv-graph-panel { flex-direction: column; }
+  .mv-node-detail { width: auto; max-height: 200px; }
+}
+
+/* ── Responsive: Mobile ── */
+@media (max-width: 640px) {
+  .memory-view { padding: 0.75rem 0.5rem; gap: 0.5rem; }
+  .mv-header h2 { font-size: 1.1rem; }
+  .mv-header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+    width: 100%;
+  }
+  .mv-header-actions .btn-secondary,
+  .mv-header-actions .btn-primary { font-size: 0.75rem; padding: 0.35rem 0.5rem; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mv-stats { gap: 0.35rem; }
+  .mv-stat { padding: 0.3rem 0.5rem; min-width: 50px; }
+  .mv-stat-value { font-size: 0.95rem; }
+  .mv-search-row { flex-wrap: wrap; }
+  .mv-search { flex-basis: 100%; }
+  .mv-filter-row { gap: 0.25rem; }
+  .mv-type-chip, .mv-tier-chip, .mv-tag-chip { font-size: 0.7rem; padding: 0.2rem 0.5rem; }
+  .mv-modal { padding: 1rem; width: min(400px, 95vw); }
+}
 </style>

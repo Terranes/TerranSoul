@@ -8,6 +8,7 @@ import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
 import { useTaskStore } from './tasks';
 import { usePersonaStore } from './persona';
+import { useMemoryStore } from './memory';
 import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
@@ -1037,6 +1038,12 @@ export const useConversationStore = defineStore('conversation', () => {
         const count = await invoke<number>('extract_memories_from_session');
         lastAutoLearnSavedCount.value = count;
         lastAutoLearnTurn.value = totalAssistantTurns.value;
+
+        if (count > 0) {
+          // Refresh memory store so the Memory tab reflects new entries.
+          try { await useMemoryStore().fetchAll(); } catch { /* non-fatal */ }
+          console.info(`[auto-learn] Extracted ${count} memories at turn ${totalAssistantTurns.value}`);
+        }
 
         // Accumulate facts for drift detection.
         factsSinceDriftCheck.value += count;

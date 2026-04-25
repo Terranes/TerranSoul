@@ -11,9 +11,9 @@ This folder contains guides for working with 3D models in TerranSoul.
 
 ## Quick Start
 
-1. Launch TerranSoul — **Ao** loads automatically as the default character
+1. Launch TerranSoul — **Shinra** loads automatically as the default character
 2. Click the **ℹ** button in the top-right of the 3D viewport to open the Model Panel
-3. Use the **Default Model** dropdown to switch between bundled models (Ao, Karina, Ki)
+3. Use the **Default Model** dropdown to switch between bundled models (Shinra, Komori)
 4. Or click **Import VRM Model** to load a custom `.vrm` file from your computer
 5. Your character appears in the viewport and reacts to chat messages
 
@@ -27,13 +27,12 @@ TerranSoul supports:
 
 ## Default Character
 
-TerranSoul ships with three bundled VRM models in `public/models/default/`:
+TerranSoul ships with two bundled VRM models in `public/models/default/`:
 
 | Model | File | Description |
 |-------|------|-------------|
-| Ao | `Ao.vrm` | Default character (loaded on startup) |
-| Karina | `Karina.vrm` | Additional bundled character |
-| Ki | `Ki.vrm` | Additional bundled character |
+| Shinra | `Shinra.vrm` | Default character (loaded on startup) |
+| Komori | `Komori.vrm` | Additional bundled character |
 
 You can switch between them using the dropdown in the Model Panel. The default model registry is defined in `src/config/default-models.ts`.
 

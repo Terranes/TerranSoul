@@ -1333,10 +1333,20 @@ onMounted(async () => {
     flex-direction: row;
     flex-wrap: wrap;
   }
+  .bv-grid { grid-template-columns: 1fr 1fr; }
+  .bv-cognitive-bars { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .bv-hero { grid-template-columns: 1fr; text-align: center; }
   .bv-hero-avatar { justify-self: center; }
   .bv-hero-pills { justify-content: center; }
+  .bv-hero-actions { justify-content: center; }
+  .bv-grid { grid-template-columns: 1fr; }
+  .bv-mode-grid { grid-template-columns: 1fr 1fr; }
+  .bv-rag-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+  .brain-view { padding: 0.75rem 0.5rem; gap: 0.5rem; }
+  .bv-hero { padding: 0.85rem 0.75rem; gap: 0.75rem; }
+  .bv-hero-title { font-size: 1.2rem; }
+  .bv-section-title { font-size: 0.7rem; }
 }
 </style>

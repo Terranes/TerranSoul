@@ -203,21 +203,19 @@ Default models shipped with TerranSoul are stored in the `public/models/default/
 public/
   models/
     default/
-      Ao.vrm                       # Default character (loaded on startup)
-      Karina.vrm                   # Additional bundled character
-      Ki.vrm                       # Additional bundled character
+      Shinra.vrm                       # Default character (loaded on startup)
+      Komori.vrm                      # Additional bundled character
 ```
 
 The model registry is defined in `src/config/default-models.ts`:
 
 ```ts
 export const DEFAULT_MODELS: DefaultModel[] = [
-  { id: 'ao', name: 'Ao', path: '/models/default/Ao.vrm' },
-  { id: 'karina', name: 'Karina', path: '/models/default/Karina.vrm' },
-  { id: 'ki', name: 'Ki', path: '/models/default/Ki.vrm' },
+  { id: 'shinra', name: 'Shinra', path: '/models/default/Shinra.vrm' },
+  { id: 'komori', name: 'Komori', path: '/models/default/Komori.vrm' },
 ];
 
-export const DEFAULT_MODEL_ID = 'ao';
+export const DEFAULT_MODEL_ID = 'shinra';
 ```
 
 **To add a new default model:**

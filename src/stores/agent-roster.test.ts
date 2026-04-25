@@ -24,7 +24,7 @@ import { useAgentRosterStore } from './agent-roster';
 const sampleNative: AgentProfile = {
   id: 'default',
   display_name: 'TerranSoul',
-  vrm_model_id: 'ao',
+  vrm_model_id: 'shinra',
   brain_backend: { kind: 'native', data: { mode: null } },
   working_folder: null,
   created_at: 1,
@@ -34,7 +34,7 @@ const sampleNative: AgentProfile = {
 const sampleCli: AgentProfile = {
   id: 'coder',
   display_name: 'Coder',
-  vrm_model_id: 'karina',
+  vrm_model_id: 'komori',
   brain_backend: {
     kind: 'external_cli',
     data: { kind: 'codex', binary: 'codex', extra_args: ['--json'] },
@@ -199,13 +199,13 @@ describe('agent roster store', () => {
       kind: 'external_cli',
       data: { kind: 'codex', binary: 'codex', extra_args: ['--json'] },
     };
-    const created = await store.createAgent('Coder', 'karina', backend, '/tmp/repo');
+    const created = await store.createAgent('Coder', 'komori', backend, '/tmp/repo');
     expect(created?.id).toBe('coder');
     const createCall = mockInvoke.mock.calls.find((c) => c[0] === 'roster_create');
     expect(createCall?.[1]).toEqual({
       request: {
         display_name: 'Coder',
-        vrm_model_id: 'karina',
+        vrm_model_id: 'komori',
         brain_backend: backend,
         working_folder: '/tmp/repo',
       },

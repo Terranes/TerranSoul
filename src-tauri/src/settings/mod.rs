@@ -1,7 +1,7 @@
 //! Application settings — persistence, schema validation, and env overrides.
 //!
 //! Settings that are persisted between sessions:
-//!   - `selected_model_id` — active 3D character model (e.g. "ao")
+//!   - `selected_model_id` — active 3D character model (e.g. "shinra")
 //!   - `camera_azimuth`    — horizontal orbit angle (radians)
 //!   - `camera_distance`   — zoom / distance from origin
 //!   - `bgm_enabled`       — whether background music is playing
@@ -59,7 +59,7 @@ fn default_user_model_gender() -> String {
 }
 
 /// Default character model ID (must match `DEFAULT_MODEL_ID` in frontend).
-pub const DEFAULT_MODEL_ID: &str = "ao";
+pub const DEFAULT_MODEL_ID: &str = "shinra";
 
 /// Default BGM volume (0.0–1.0).
 pub const DEFAULT_BGM_VOLUME: f32 = 0.15;
@@ -275,11 +275,11 @@ mod tests {
     #[test]
     fn apply_env_overrides_sets_model_id() {
         let _lock = super::ENV_MUTEX.lock().unwrap();
-        std::env::set_var("TERRANSOUL_MODEL_ID", "karina");
+        std::env::set_var("TERRANSOUL_MODEL_ID", "komori");
         let mut s = AppSettings::default();
         s.apply_env_overrides();
         std::env::remove_var("TERRANSOUL_MODEL_ID");
-        assert_eq!(s.selected_model_id, "karina");
+        assert_eq!(s.selected_model_id, "komori");
     }
 
     #[test]
@@ -304,10 +304,10 @@ mod tests {
     #[test]
     fn roundtrip_serde() {
         let mut positions = HashMap::new();
-        positions.insert("ao".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        positions.insert("shinra".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "karina".into(),
+            selected_model_id: "komori".into(),
             camera_azimuth: 1.57,
             camera_distance: 3.2,
             bgm_enabled: true,
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn serde_fills_bgm_defaults_when_missing() {
         // Simulate a JSON blob without the new BGM fields (forward compat)
-        let json = r#"{"version":2,"selected_model_id":"ao","camera_azimuth":0,"camera_distance":2.8}"#;
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(!parsed.bgm_enabled);
         assert!((parsed.bgm_volume - DEFAULT_BGM_VOLUME).abs() < 0.001);
@@ -363,18 +363,18 @@ mod tests {
     #[test]
     fn model_camera_positions_independent_per_model() {
         let mut s = AppSettings::default();
-        s.model_camera_positions.insert("ao".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
-        s.model_camera_positions.insert("karina".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
+        s.model_camera_positions.insert("shinra".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        s.model_camera_positions.insert("komori".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
 
         assert_eq!(s.model_camera_positions.len(), 2);
-        assert!((s.model_camera_positions["ao"].azimuth - 0.5).abs() < 0.001);
-        assert!((s.model_camera_positions["karina"].distance - 2.0).abs() < 0.001);
+        assert!((s.model_camera_positions["shinra"].azimuth - 0.5).abs() < 0.001);
+        assert!((s.model_camera_positions["komori"].distance - 2.0).abs() < 0.001);
     }
 
     #[test]
     fn serde_fills_model_camera_positions_default_when_missing() {
         // JSON without model_camera_positions field — should default to empty map
-        let json = r#"{"version":2,"selected_model_id":"ao","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(parsed.model_camera_positions.is_empty());
     }

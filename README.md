@@ -165,7 +165,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 
 ### 🎭 3D Character System
 - **VRM 1.0 & 0.x** model support via Three.js + `@pixiv/three-vrm`
-- 3 bundled default models (Ao, Karina, Ki) + persistent custom VRM import
+- 2 bundled default models (Shinra, Komori) + persistent custom VRM import
 - Natural relaxed pose (not T-pose), spring bone warmup, frustum culling disabled
 - **AvatarStateMachine** — 5 body states (idle, thinking, talking, happy, sad) with expression-driven animation
 - **Exponential damping** for smooth bone/expression transitions

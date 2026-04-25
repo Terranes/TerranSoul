@@ -187,12 +187,12 @@ async function renderUserModelHeadshot(userModelId: string): Promise<string> {
  * On first call, checks IndexedDB cache. If missing, renders the VRM
  * offscreen and caches the result.
  *
- * For **default models**, pass `modelPath` (e.g. `/models/default/Ao.vrm`).
+ * For **default models**, pass `modelPath` (e.g. `/models/default/Shinra.vrm`).
  * For **user-imported models**, pass `userModelId` — bytes will be read from
  * the Rust backend via `read_user_model_bytes`, rendered offscreen, and cached.
  * Once cached, subsequent calls are instant (no backend round-trip).
  *
- * @param cacheKey     - Unique key for IndexedDB (e.g. model id like `ao` or `u-1`)
+ * @param cacheKey     - Unique key for IndexedDB (e.g. model id like `shinra` or `u-1`)
  * @param modelPath    - Static VRM path for bundled models (mutually exclusive with userModelId)
  * @param userModelId  - User-model ID for backend byte fetch (mutually exclusive with modelPath)
  */

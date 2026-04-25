@@ -145,7 +145,7 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
           {
             id: 'default',
             display_name: 'TerranSoul',
-            vrm_model_id: 'ao',
+            vrm_model_id: 'shinra',
             brain_backend: { kind: 'native', data: { mode: null } },
             working_folder: null,
             created_at: 0,

@@ -27,7 +27,7 @@ describe('useVrmThumbnail', () => {
 
   it('returns null thumbnailUrl initially', () => {
     const { thumbnailUrl, isGenerating } = useVrmThumbnail('test-id', {
-      modelPath: '/models/default/Ao.vrm',
+      modelPath: '/models/default/Shinra.vrm',
     });
     expect(thumbnailUrl.value).toBeNull();
     expect(isGenerating.value).toBe(false);
@@ -35,7 +35,7 @@ describe('useVrmThumbnail', () => {
 
   it('generate gracefully handles WebGL unavailability', async () => {
     const { thumbnailUrl, generate } = useVrmThumbnail('test-id', {
-      modelPath: '/models/default/Ao.vrm',
+      modelPath: '/models/default/Shinra.vrm',
     });
     // Should not throw — error is caught internally
     await generate();
@@ -45,7 +45,7 @@ describe('useVrmThumbnail', () => {
 
   it('does not throw on concurrent generate calls for same key', async () => {
     const { generate } = useVrmThumbnail('dup-key', {
-      modelPath: '/models/default/Ao.vrm',
+      modelPath: '/models/default/Shinra.vrm',
     });
     // Both calls should complete without throwing (errors caught internally)
     await Promise.all([generate(), generate()]);
@@ -53,7 +53,7 @@ describe('useVrmThumbnail', () => {
 
   it('skips generate if thumbnailUrl is already set', async () => {
     const { thumbnailUrl, generate } = useVrmThumbnail('skip-key', {
-      modelPath: '/models/default/Ao.vrm',
+      modelPath: '/models/default/Shinra.vrm',
     });
     // Simulate cached value
     thumbnailUrl.value = 'data:image/png;base64,cached';

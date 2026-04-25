@@ -1,4 +1,28 @@
 <template>
+  <!-- Panel-only window: opened from pet mode context menu -->
+  <div
+    v-if="panelOnly"
+    class="app-shell panel-window"
+  >
+    <main class="app-main panel-main">
+      <SkillTreeView
+        v-if="panelOnly === 'skills'"
+        @navigate="handleSkillNavigate"
+      />
+      <BrainView
+        v-if="panelOnly === 'brain'"
+        @navigate="handleSkillNavigate"
+      />
+      <MemoryView v-if="panelOnly === 'memory'" />
+      <MarketplaceView v-if="panelOnly === 'marketplace'" />
+      <VoiceSetupView
+        v-if="panelOnly === 'voice'"
+        @done="() => {}"
+      />
+    </main>
+  </div>
+
+  <template v-else>
   <!-- Loading splash shown during app initialization -->
   <Transition name="splash-fade">
     <SplashScreen v-if="appLoading" />
@@ -15,51 +39,21 @@
     class="app-shell"
     :class="{ 'pet-mode': isPetMode }"
   >
-    <!-- DEV badge — shown in both desktop and pet modes when running a debug build -->
-    <div
-      v-if="windowStore.isDevBuild"
-      class="dev-badge"
-      :class="{ 'dev-badge--pet': isPetMode }"
-      title="Development build — MCP on port 7422"
-    >
-      DEV
-    </div>
-
-    <!-- Floating mode-toggle pill — visible on the Chat tab (but not while the
-         quest constellation panel is open) and always in pet mode (where it's
-         the only way back to desktop mode).  Hidden on all other tabs so it
-         doesn't overlap Memory, Marketplace, Voice, or the Skill tree. -->
-    <div
-      v-if="!appLoading && activeTab === 'chat' && !questConstellationOpen && !isPetMode"
-      class="mode-toggle-pill"
-    >
-      <div class="mode-segmented">
-        <button
-          :class="['mode-seg-btn', { active: !isChatboxMode }]"
-          title="3D character mode"
-          @click="setDisplayMode('desktop')"
-        >
-          🖥 <span class="mode-seg-label">3D</span>
-        </button>
-        <button
-          :class="['mode-seg-btn', { active: isChatboxMode }]"
-          title="Chat-only mode (no 3D character)"
-          @click="setDisplayMode('chatbox')"
-        >
-          💬 <span class="mode-seg-label">Chat</span>
-        </button>
-        <button
-          class="mode-seg-btn"
-          title="Switch to pet mode"
-          @click="togglePetMode"
-        >
-          🐾 <span class="mode-seg-label">Pet</span>
-        </button>
-      </div>
-    </div>
 
     <!-- Pet overlay mode: transparent character + floating chat -->
-    <PetOverlayView v-if="isPetMode" />
+    <div v-if="isPetMode" class="pet-mode-wrapper">
+      <!-- DEV badge — inline in the pet mode layout, top-left -->
+      <FloatingBadge
+        v-if="windowStore.isDevBuild"
+        class="pet-dev-badge"
+        tone="warning"
+        readonly
+        title="Development build — MCP on port 7422"
+      >
+        DEV
+      </FloatingBadge>
+      <PetOverlayView />
+    </div>
 
     <!-- Normal mode: Brain onboarding or tabbed UI -->
     <template v-else>
@@ -103,10 +97,27 @@
             <span class="nav-icon">⚠</span>
             <span class="nav-label">Brain</span>
           </button>
+
+          <!-- DEV badge — inline in the sidebar, below spacer -->
+          <FloatingBadge
+            v-if="windowStore.isDevBuild"
+            class="nav-dev-badge"
+            tone="warning"
+            readonly
+            title="Development build — MCP on port 7422"
+          >
+            DEV
+          </FloatingBadge>
         </nav>
 
         <!-- Mobile bottom tab bar (replaces hamburger menu) -->
         <nav class="mobile-bottom-nav">
+          <!-- DEV indicator — sits as first item in the tab row -->
+          <span
+            v-if="windowStore.isDevBuild"
+            class="mobile-dev-indicator"
+            title="Development build"
+          >DEV</span>
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -123,6 +134,37 @@
 
         <!-- Main area -->
         <main class="app-main">
+          <!-- Mode toggle toolbar — sits in the layout flow above ChatView.
+               Hidden on non-chat tabs and when quest constellation is open. -->
+          <div
+            v-if="activeTab === 'chat' && !questConstellationOpen"
+            class="mode-toggle-toolbar"
+          >
+            <div class="mode-segmented">
+              <button
+                :class="['mode-seg-btn', { active: !isChatboxMode }]"
+                title="3D character mode"
+                @click="setDisplayMode('desktop')"
+              >
+                🖥 <span class="mode-seg-label">3D</span>
+              </button>
+              <button
+                :class="['mode-seg-btn', { active: isChatboxMode }]"
+                title="Chat-only mode (no 3D character)"
+                @click="setDisplayMode('chatbox')"
+              >
+                💬 <span class="mode-seg-label">Chat</span>
+              </button>
+              <button
+                class="mode-seg-btn"
+                title="Switch to pet mode"
+                @click="togglePetMode"
+              >
+                🐾 <span class="mode-seg-label">Pet</span>
+              </button>
+            </div>
+          </div>
+
           <ChatView
             v-show="activeTab === 'chat'"
             :chatbox-mode="isChatboxMode"
@@ -161,6 +203,7 @@
       </template>
     </template>
   </div>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -184,6 +227,7 @@ import ComboToast from './components/ComboToast.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
+import FloatingBadge from './components/ui/FloatingBadge.vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();
@@ -203,6 +247,12 @@ const hasBrain = computed(() => brain.hasBrain);
 const isPetMode = computed(() => windowStore.mode === 'pet');
 const isChatboxMode = computed(() => settingsStore.settings.chatbox_mode === true);
 const appIconUrl = '/icon.png';
+
+/** Panel-only window mode: when opened from pet mode context menu with ?panel=<id>. */
+const panelParam = new URLSearchParams(window.location.search).get('panel');
+const VALID_PANELS = ['brain', 'memory', 'skills', 'marketplace', 'voice'] as const;
+type PanelId = typeof VALID_PANELS[number];
+const panelOnly = VALID_PANELS.includes(panelParam as PanelId) ? (panelParam as PanelId) : null;
 
 const tabs = [
   { id: 'chat' as const, label: 'Chat', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
@@ -284,6 +334,22 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  // Panel-only windows (opened from pet mode) skip the full init sequence.
+  // They share the same Pinia stores via the same origin, and the main
+  // window already initialised the brain/voice/settings.
+  if (panelOnly) {
+    try {
+      await brain.loadActiveBrain();
+    } catch {
+      brain.autoConfigureFreeApi();
+    }
+    try {
+      await settingsStore.loadSettings();
+    } catch { /* best-effort */ }
+    await skillTree.initialise();
+    return;
+  }
+
   // Register the Escape-to-exit-pet-mode safety net first so the listener
   // is attached whether we take the Tauri path or the browser fallback.
   window.addEventListener('keydown', onKeyDown);
@@ -395,6 +461,8 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 
 .app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 .app-shell.pet-mode { background: transparent; }
+.app-shell.panel-window { display: block; }
+.panel-main { height: 100vh; height: 100dvh; overflow-y: auto; }
 
 /* ── Desktop sidebar navigation ── */
 .app-nav {
@@ -402,7 +470,7 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   padding: 12px 6px;
   background: var(--ts-bg-nav);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  width: 72px; flex-shrink: 0;
+  width: var(--ts-nav-width); flex-shrink: 0;
   position: relative;
 }
 .nav-logo {
@@ -459,31 +527,13 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 }
 .nav-spacer { flex: 1; }
 .nav-brain-warn { color: var(--ts-warning); }
-/* ── Floating Desktop/Pet mode-toggle pill ──
- * Always-visible, fixed-position toggle — lives outside the sidebar so it
- * remains reachable in pet mode (where the sidebar disappears).
- *
- * Position is mode-aware so the pill never covers the character's status:
- *  - Desktop mode: anchored just right of the sidebar at the top so it sits
- *    clear of the IDLE state pill and other chat-header chrome.
- *  - Pet mode: top-right corner (the only decoration there). */
-.mode-toggle-pill {
-  position: fixed;
-  top: 12px;
-  left: 82px;
-  z-index: 1000;
+/* ── Mode toggle toolbar (in-flow, inside .app-main) ── */
+.mode-toggle-toolbar {
+  position: absolute;
+  top: var(--ts-space-sm);
+  left: var(--ts-space-sm);
+  z-index: var(--ts-z-sticky);
   pointer-events: auto;
-}
-.mode-toggle-pill.is-pet {
-  left: auto;
-  right: 14px;
-}
-@media (max-width: 640px) {
-  /* No sidebar on mobile; pin to top-left with a small gutter. */
-  .mode-toggle-pill {
-    top: 6px;
-    left: 10px;
-  }
 }
 
 /* ── 3-way segmented mode toggle ── */
@@ -525,7 +575,7 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 .mode-seg-label {
   display: inline;
 }
-.app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 
 /* ── Mobile bottom tab bar ── */
 .mobile-bottom-nav {
@@ -534,8 +584,8 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 50;
-  height: 56px;
+  z-index: var(--ts-z-dropdown);
+  height: var(--ts-mobile-nav-height);
   background: rgba(9, 14, 28, 0.95);
   backdrop-filter: blur(20px);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -587,32 +637,52 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   .app-shell { flex-direction: column; }
   .desktop-nav { display: none; }
   .mobile-bottom-nav { display: flex; }
-  .app-main { flex: 1; min-height: 0; padding-bottom: 56px; }
+  .app-main { flex: 1; min-height: 0; padding-bottom: var(--ts-mobile-nav-height); }
 }
 
-/* ── DEV badge ── */
-.dev-badge {
-  position: fixed;
-  top: 6px;
-  right: 6px;
-  z-index: 9999;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #0f172a;
-  background: var(--ts-warning, #fbbf24);
-  border-radius: var(--ts-radius-sm, 4px);
-  pointer-events: none;
-  user-select: none;
-  opacity: 0.9;
-  line-height: 16px;
+/* ── DEV badge (layout-aware, no fixed positioning) ── */
+
+/* Desktop sidebar: sits at the bottom of the flex column, after nav-spacer */
+.nav-dev-badge {
+  margin-top: 4px;
+  margin-bottom: 4px;
+  font-size: 0.6rem;
+  flex-shrink: 0;
 }
-/* Pet mode: position near the top-right of the transparent overlay,
-   with a darker background so it's visible against any desktop wallpaper */
-.dev-badge--pet {
+
+/* Mobile bottom bar: inline indicator as the first flex item */
+.mobile-dev-indicator {
+  display: none; /* hidden on desktop, shown via media query */
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #000;
+  background: var(--ts-warning, #fbbf24);
+  border-radius: 4px;
+  padding: 2px 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+@media (max-width: 640px) {
+  .nav-dev-badge { display: none; } /* sidebar hidden on mobile */
+  .mobile-dev-indicator { display: flex; }
+}
+
+/* Pet mode: inline top-left inside the pet-mode-wrapper */
+.pet-mode-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.pet-dev-badge {
+  position: absolute;
   top: 4px;
-  right: 4px;
+  left: 4px;
+  z-index: 10;
+  font-size: 0.6rem;
   background: rgba(251, 191, 36, 0.85);
   backdrop-filter: blur(4px);
   border: 1px solid rgba(0, 0, 0, 0.2);

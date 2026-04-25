@@ -21,9 +21,9 @@ export const useWindowStore = defineStore('window', () => {
       isDevBuild.value = dev;
       return dev;
     } catch {
-      // Tauri unavailable (browser/test) — assume dev in that case
-      isDevBuild.value = true;
-      return true;
+      // Tauri unavailable (browser/test) — not a Tauri dev build
+      isDevBuild.value = false;
+      return false;
     }
   }
 
@@ -170,6 +170,28 @@ export const useWindowStore = defineStore('window', () => {
     }
   }
 
+  /** Open a panel as a separate floating window (pet mode). */
+  async function openPanelWindow(panel: string): Promise<boolean> {
+    try {
+      await invoke('open_panel_window', { panel });
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
+  /** Close a panel window opened via openPanelWindow. */
+  async function closePanelWindow(panel: string): Promise<boolean> {
+    try {
+      await invoke('close_panel_window', { panel });
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
   return {
     mode,
     monitors,
@@ -187,6 +209,8 @@ export const useWindowStore = defineStore('window', () => {
     setPetWindowSize,
     startPetCursorPoll,
     stopPetCursorPoll,
+    openPanelWindow,
+    closePanelWindow,
     clearError,
   };
 });

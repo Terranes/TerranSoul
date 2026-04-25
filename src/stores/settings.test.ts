@@ -18,7 +18,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 const SCHEMA_V1_SETTINGS: AppSettings = {
   version: 2,
-  selected_model_id: 'karina',
+  selected_model_id: 'komori',
   camera_azimuth: 0.5,
   camera_distance: 3.2,
   bgm_enabled: false,
@@ -37,7 +37,7 @@ describe('useSettingsStore', () => {
 
   it('starts with default settings', () => {
     const store = useSettingsStore();
-    expect(store.settings.selected_model_id).toBe('ao');
+    expect(store.settings.selected_model_id).toBe('shinra');
     expect(store.settings.camera_azimuth).toBe(0);
     expect(store.settings.camera_distance).toBeCloseTo(2.8);
     expect(store.settings.version).toBe(2);
@@ -50,7 +50,7 @@ describe('useSettingsStore', () => {
     mockInvoke.mockResolvedValue(SCHEMA_V1_SETTINGS);
     const store = useSettingsStore();
     await store.loadSettings();
-    expect(store.settings.selected_model_id).toBe('karina');
+    expect(store.settings.selected_model_id).toBe('komori');
     expect(store.settings.camera_azimuth).toBeCloseTo(0.5);
     expect(store.settings.camera_distance).toBeCloseTo(3.2);
   });
@@ -60,7 +60,7 @@ describe('useSettingsStore', () => {
     const store = useSettingsStore();
     await store.loadSettings();
     // Should still have defaults
-    expect(store.settings.selected_model_id).toBe('ao');
+    expect(store.settings.selected_model_id).toBe('shinra');
     expect(store.error).toBeNull();
   });
 
@@ -76,27 +76,27 @@ describe('useSettingsStore', () => {
   it('saveSettings patches and calls invoke', async () => {
     mockInvoke.mockResolvedValue({});
     const store = useSettingsStore();
-    await store.saveSettings({ selected_model_id: 'karina' });
-    expect(store.settings.selected_model_id).toBe('karina');
+    await store.saveSettings({ selected_model_id: 'komori' });
+    expect(store.settings.selected_model_id).toBe('komori');
     expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
-      settings: expect.objectContaining({ selected_model_id: 'karina' }),
+      settings: expect.objectContaining({ selected_model_id: 'komori' }),
     });
   });
 
   it('saveSettings updates in-memory even when Tauri unavailable', async () => {
     mockInvoke.mockRejectedValue(new Error('no Tauri'));
     const store = useSettingsStore();
-    await store.saveSettings({ selected_model_id: 'karina' });
-    expect(store.settings.selected_model_id).toBe('karina');
+    await store.saveSettings({ selected_model_id: 'komori' });
+    expect(store.settings.selected_model_id).toBe('komori');
   });
 
   it('saveModelId persists model selection', async () => {
     mockInvoke.mockResolvedValue({});
     const store = useSettingsStore();
-    await store.saveModelId('karina');
-    expect(store.settings.selected_model_id).toBe('karina');
+    await store.saveModelId('komori');
+    expect(store.settings.selected_model_id).toBe('komori');
     expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
-      settings: expect.objectContaining({ selected_model_id: 'karina' }),
+      settings: expect.objectContaining({ selected_model_id: 'komori' }),
     });
   });
 
@@ -117,7 +117,7 @@ describe('useSettingsStore', () => {
     await store.loadSettings();
     // Patch only azimuth
     await store.saveSettings({ camera_azimuth: 2.0 });
-    expect(store.settings.selected_model_id).toBe('karina'); // preserved
+    expect(store.settings.selected_model_id).toBe('komori'); // preserved
     expect(store.settings.camera_azimuth).toBeCloseTo(2.0); // patched
   });
 

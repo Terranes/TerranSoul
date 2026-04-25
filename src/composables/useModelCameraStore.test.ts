@@ -27,14 +27,14 @@ describe('useModelCameraStore', () => {
 
   it('getCameraForModel returns null when no position saved', () => {
     const store = useModelCameraStore();
-    expect(store.getCameraForModel('ao')).toBeNull();
+    expect(store.getCameraForModel('shinra')).toBeNull();
   });
 
   it('saveCameraForModel stores position in memory', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useModelCameraStore();
-    await store.saveCameraForModel('ao', 1.5, 3.0);
-    const pos = store.getCameraForModel('ao');
+    await store.saveCameraForModel('shinra', 1.5, 3.0);
+    const pos = store.getCameraForModel('shinra');
     expect(pos).not.toBeNull();
     expect(pos!.azimuth).toBeCloseTo(1.5);
     expect(pos!.distance).toBeCloseTo(3.0);
@@ -43,9 +43,9 @@ describe('useModelCameraStore', () => {
   it('saveCameraForModel calls invoke with correct arguments', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useModelCameraStore();
-    await store.saveCameraForModel('karina', 0.8, 2.5);
+    await store.saveCameraForModel('komori', 0.8, 2.5);
     expect(mockInvoke).toHaveBeenCalledWith('save_model_camera_position', {
-      modelId: 'karina',
+      modelId: 'komori',
       azimuth: 0.8,
       distance: 2.5,
     });
@@ -54,11 +54,11 @@ describe('useModelCameraStore', () => {
   it('different models have independent positions', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useModelCameraStore();
-    await store.saveCameraForModel('ao', 1.0, 3.0);
-    await store.saveCameraForModel('karina', 2.0, 4.0);
+    await store.saveCameraForModel('shinra', 1.0, 3.0);
+    await store.saveCameraForModel('komori', 2.0, 4.0);
 
-    const ao = store.getCameraForModel('ao');
-    const karina = store.getCameraForModel('karina');
+    const ao = store.getCameraForModel('shinra');
+    const karina = store.getCameraForModel('komori');
     expect(ao!.azimuth).toBeCloseTo(1.0);
     expect(karina!.azimuth).toBeCloseTo(2.0);
     expect(ao!.distance).toBeCloseTo(3.0);
@@ -68,27 +68,27 @@ describe('useModelCameraStore', () => {
   it('overwriting a position replaces previous values', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useModelCameraStore();
-    await store.saveCameraForModel('ao', 1.0, 3.0);
-    await store.saveCameraForModel('ao', 2.5, 4.5);
+    await store.saveCameraForModel('shinra', 1.0, 3.0);
+    await store.saveCameraForModel('shinra', 2.5, 4.5);
 
-    const pos = store.getCameraForModel('ao');
+    const pos = store.getCameraForModel('shinra');
     expect(pos!.azimuth).toBeCloseTo(2.5);
     expect(pos!.distance).toBeCloseTo(4.5);
   });
 
   it('loadAll populates positions from Tauri IPC', async () => {
     mockInvoke.mockResolvedValue({
-      ao: { azimuth: 0.5, distance: 3.2 },
-      karina: { azimuth: 1.2, distance: 2.0 },
+      shinra: { azimuth: 0.5, distance: 3.2 },
+      komori: { azimuth: 1.2, distance: 2.0 },
     });
     const store = useModelCameraStore();
     await store.loadAll();
 
-    expect(store.getCameraForModel('ao')).toEqual({
+    expect(store.getCameraForModel('shinra')).toEqual({
       azimuth: 0.5,
       distance: 3.2,
     });
-    expect(store.getCameraForModel('karina')).toEqual({
+    expect(store.getCameraForModel('komori')).toEqual({
       azimuth: 1.2,
       distance: 2.0,
     });
@@ -106,11 +106,11 @@ describe('useModelCameraStore', () => {
     const store = useModelCameraStore();
     // Pre-populate a position
     store.positions.value = new Map([
-      ['ao', { azimuth: 0.5, distance: 3.0 }],
+      ['shinra', { azimuth: 0.5, distance: 3.0 }],
     ]);
     await store.loadAll();
     // Should still have the pre-existing position
-    expect(store.getCameraForModel('ao')).toEqual({
+    expect(store.getCameraForModel('shinra')).toEqual({
       azimuth: 0.5,
       distance: 3.0,
     });
@@ -119,8 +119,8 @@ describe('useModelCameraStore', () => {
   it('saveCameraForModel updates memory even when Tauri is unavailable', async () => {
     mockInvoke.mockRejectedValue(new Error('no Tauri'));
     const store = useModelCameraStore();
-    await store.saveCameraForModel('ao', 1.0, 3.0);
-    const pos = store.getCameraForModel('ao');
+    await store.saveCameraForModel('shinra', 1.0, 3.0);
+    const pos = store.getCameraForModel('shinra');
     expect(pos).not.toBeNull();
     expect(pos!.azimuth).toBeCloseTo(1.0);
   });
@@ -142,13 +142,13 @@ describe('useModelCameraStore', () => {
     ]);
 
     mockInvoke.mockResolvedValue({
-      ao: { azimuth: 0.5, distance: 3.0 },
+      shinra: { azimuth: 0.5, distance: 3.0 },
     });
     await store.loadAll();
 
     // Old data replaced
     expect(store.getCameraForModel('old-model')).toBeNull();
-    expect(store.getCameraForModel('ao')).not.toBeNull();
+    expect(store.getCameraForModel('shinra')).not.toBeNull();
   });
 });
 
@@ -162,9 +162,9 @@ describe('useModelCameraStore — IPC contract', () => {
   it('save sends modelId (camelCase)', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useModelCameraStore();
-    await store.saveCameraForModel('ao', 0.5, 3.0);
+    await store.saveCameraForModel('shinra', 0.5, 3.0);
     expect(mockInvoke).toHaveBeenCalledWith('save_model_camera_position', {
-      modelId: 'ao',
+      modelId: 'shinra',
       azimuth: 0.5,
       distance: 3.0,
     });

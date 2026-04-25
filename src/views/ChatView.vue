@@ -142,14 +142,15 @@
     </Transition>
 
     <!-- AI state indicator pill (3D mode only — chatbox has it in header) -->
-    <div
+    <FloatingChip
       v-if="!props.chatboxMode"
       class="ai-state-pill"
+      readonly
       :class="characterStore.state"
     >
       <span class="ai-state-dot" />
       <span class="ai-state-label">{{ stateLabel }}</span>
-    </div>
+    </FloatingChip>
 
     <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
@@ -468,6 +469,7 @@ import TaskControls from '../components/TaskControls.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
+import FloatingChip from '../components/ui/FloatingChip.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -1419,12 +1421,12 @@ onUnmounted(() => {
   z-index: 0;
 }
 
-/* Portal for the music bar — top-left, directly below the settings button
-   (which was shifted right to clear the floating mode-toggle pill). */
+/* Portal for the music bar — top-left, below the character name row.
+   Positioned after the mode-toggle pill zone. */
 .music-bar-portal {
   position: absolute;
   top: 56px;
-  left: 150px;
+  left: 12px;
   z-index: 16;
   pointer-events: none;
 }
@@ -1433,27 +1435,20 @@ onUnmounted(() => {
 }
 
 /* ── AI State Indicator — animated pill ── */
+/* Sits below the settings gear (top: 12px, ~36px tall) to avoid overlap. */
 .ai-state-pill {
   position: absolute;
-  top: 14px;
+  top: 56px;
   right: 16px;
   z-index: 20;
-  display: flex;
-  align-items: center;
   gap: 7px;
   padding: 6px 16px;
-  border-radius: var(--ts-radius-pill);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  background: rgba(11, 17, 32, 0.78);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.88);
   transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
-  pointer-events: none;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .ai-state-dot {
   width: 7px;
@@ -1937,7 +1932,7 @@ onUnmounted(() => {
   .bottom-panel { max-height: 50vh; }
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
-  /* AI state pill: compact, tucked below the top-right settings gear */
+  /* AI state pill: compact, tucked below the top-right settings gear (top:6 + 32px height + 6px gap) */
   .ai-state-pill {
     top: 44px;
     right: 10px;

@@ -271,7 +271,7 @@ onUnmounted(() => {
 .quest-reward-ceremony {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 1100;
   background: radial-gradient(ellipse at center, rgba(20, 18, 50, 0.85), rgba(4, 4, 14, 0.96));
   display: flex;
   align-items: center;

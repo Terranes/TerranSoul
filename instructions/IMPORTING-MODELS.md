@@ -18,13 +18,12 @@ This guide explains how to import VRM models into TerranSoul for use as your AI 
 
 ## Built-in Default Models
 
-TerranSoul ships with three bundled VRM models that are available out of the box:
+TerranSoul ships with two bundled VRM models that are available out of the box:
 
 | Model | File | Description |
 |-------|------|-------------|
-| Ao | `public/models/default/Ao.vrm` | Default character (loaded on startup) |
-| Karina | `public/models/default/Karina.vrm` | Additional bundled character |
-| Ki | `public/models/default/Ki.vrm` | Additional bundled character |
+| Shinra | `public/models/default/Shinra.vrm` | Default character (loaded on startup) |
+| Komori | `public/models/default/Komori.vrm` | Additional bundled character |
 
 You can switch between default models using the **dropdown** in the Model Panel, or by clicking the corresponding model card.
 
