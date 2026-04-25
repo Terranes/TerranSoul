@@ -673,45 +673,44 @@ describe('conversation store — Learn-with-docs flow', () => {
     expect(values[2]).toBe('dismiss');
   });
 
-  it('install-all routes to the auto/manual sub-prompt', async () => {
-    const { handleLearnDocsChoice } = await import('./conversation');
-    const store = useConversationStore();
-    await handleLearnDocsChoice(`learn-docs:install-all:${encodeURIComponent('Vietnamese laws')}`);
-
-    expect(store.messages).toHaveLength(1);
-    const prompt = store.messages[0];
-    expect(prompt.questId).toBe('learn-docs-install-mode');
-    const values = prompt.questChoices!.map((c) => c.value);
-    expect(values[0]).toMatch(/^learn-docs:install-auto:/);
-    expect(values[1]).toMatch(/^learn-docs:install-manual:/);
-    expect(values[2]).toMatch(/^learn-docs:install-back:/);
-  });
-
-  it('install-auto auto-triggers the missing quests and ends with the Scholar\'s Quest invitation', async () => {
+  it('install-all runs auto-install and reports installed quests', async () => {
     const { handleLearnDocsChoice } = await import('./conversation');
     const { useSkillTreeStore } = await import('./skill-tree');
     const skillTree = useSkillTreeStore();
     const store = useConversationStore();
 
-    // Spy on the quest engine — we want to verify the auto-install path
-    // delegates to it instead of implementing anything from scratch.
-    const triggerSpy = vi.spyOn(skillTree, 'triggerQuestEvent').mockImplementation(() => {});
-    const acceptSpy = vi.spyOn(skillTree, 'handleQuestChoice').mockResolvedValue();
+    // markComplete is called for scholar-quest
+    const markSpy = vi.spyOn(skillTree, 'markComplete').mockImplementation(() => {});
+
+    await handleLearnDocsChoice(`learn-docs:install-all:${encodeURIComponent('Vietnamese laws')}`);
+
+    // Should have auto-install messages including installed list
+    expect(store.messages.length).toBeGreaterThanOrEqual(2);
+    // The auto-install message
+    expect(store.messages[0].content).toMatch(/Auto-installing/);
+    // Should have an installed summary or followup
+    const last = store.messages[store.messages.length - 1];
+    expect(last.questId === 'scholar-quest' || last.questId === 'learn-docs-followup' || last.content.includes('Installed')).toBe(true);
+
+    markSpy.mockRestore();
+  });
+
+  it('install-auto legacy route still works', async () => {
+    const { handleLearnDocsChoice } = await import('./conversation');
+    const { useSkillTreeStore } = await import('./skill-tree');
+    const skillTree = useSkillTreeStore();
+    const store = useConversationStore();
+
+    const markSpy = vi.spyOn(skillTree, 'markComplete').mockImplementation(() => {});
 
     await handleLearnDocsChoice(`learn-docs:install-auto:${encodeURIComponent('Vietnamese laws')}`);
 
-    // At least one quest in the Scholar's Quest prereq chain must have been
-    // triggered + accepted automatically.
-    expect(triggerSpy).toHaveBeenCalled();
-    expect(acceptSpy).toHaveBeenCalled();
-    for (const call of acceptSpy.mock.calls) {
-      expect(call[1]).toBe('accept');
-    }
-
-    // Last assistant message should either be the Scholar's Quest invite
-    // (when everything finished) or the follow-up listing leftovers.
+    // Should produce auto-install messages
+    expect(store.messages.length).toBeGreaterThanOrEqual(1);
     const last = store.messages[store.messages.length - 1];
-    expect(['scholar-quest', 'learn-docs-followup']).toContain(last.questId);
+    expect(last.questId === 'scholar-quest' || last.questId === 'learn-docs-followup' || last.content.includes('Installed')).toBe(true);
+
+    markSpy.mockRestore();
   });
 
   it('install-each (one by one) renders one button per missing quest', async () => {
@@ -883,5 +882,119 @@ describe('conversation store — long-running task controls', () => {
 
     // Should have only the user message — partial output discarded
     expect(store.isThinking).toBe(false);
+  });
+});
+
+describe('conversation store — stream queue concurrency', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('auto-queues messages sent while a generation is active', async () => {
+    const store = useConversationStore();
+
+    // Start first message (persona fallback — takes 500ms)
+    const first = store.sendMessage('first');
+
+    // While first is still running, send a second message
+    // generationActive should be true, so this gets queued
+    await store.sendMessage('second');
+
+    // The second call should have returned immediately (queued)
+    expect(store.messageQueue).toContain('second');
+
+    // Wait for first to complete + drain
+    await first;
+    await new Promise((r) => setTimeout(r, 600));
+
+    // Both messages should have been processed sequentially
+    const userMsgs = store.messages.filter(m => m.role === 'user');
+    expect(userMsgs.some(m => m.content === 'first')).toBe(true);
+    expect(userMsgs.some(m => m.content === 'second')).toBe(true);
+  });
+
+  it('generationActive is false after sendMessage completes', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('hello');
+    expect(store.generationActive).toBe(false);
+  });
+
+  it('generationActive is true during generation', async () => {
+    const store = useConversationStore();
+    const promise = store.sendMessage('hello');
+    expect(store.generationActive).toBe(true);
+    await promise;
+    expect(store.generationActive).toBe(false);
+  });
+
+  it('rapid-fire messages are serialized, not interleaved', async () => {
+    const store = useConversationStore();
+
+    // Fire 3 messages rapidly
+    const p1 = store.sendMessage('msg-1');
+    store.sendMessage('msg-2');
+    store.sendMessage('msg-3');
+
+    // msg-2 and msg-3 should be queued
+    expect(store.messageQueue).toEqual(['msg-2', 'msg-3']);
+
+    // Wait for all to drain
+    await p1;
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // All 3 user messages should appear in order
+    const userMsgs = store.messages
+      .filter(m => m.role === 'user')
+      .map(m => m.content);
+    expect(userMsgs).toEqual(['msg-1', 'msg-2', 'msg-3']);
+
+    // Each user message should be followed by an assistant reply
+    for (let i = 0; i < store.messages.length - 1; i += 2) {
+      expect(store.messages[i].role).toBe('user');
+      expect(store.messages[i + 1].role).toBe('assistant');
+    }
+  });
+
+  it('queue drains correctly after browser-side streaming completes', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
+        callbacks.onDone('Response!');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    const p1 = store.sendMessage('first');
+
+    // Queue a second while first is active
+    store.sendMessage('second');
+
+    await p1;
+    await new Promise((r) => setTimeout(r, 100));
+
+    const userMsgs = store.messages
+      .filter(m => m.role === 'user')
+      .map(m => m.content);
+    expect(userMsgs).toContain('first');
+    expect(userMsgs).toContain('second');
+    expect(store.generationActive).toBe(false);
+    expect(store.messageQueue).toHaveLength(0);
+  });
+
+  it('generationActive resets on early-return paths (LLM commands)', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockResolvedValue(undefined);
+
+    const store = useConversationStore();
+    await store.sendMessage('switch to pollinations');
+
+    // LLM command path should still reset generationActive
+    expect(store.generationActive).toBe(false);
   });
 });

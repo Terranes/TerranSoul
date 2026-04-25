@@ -130,11 +130,11 @@ describe('character store — IPC integration', () => {
     expect(store.currentGender()).toBe('female');
   });
 
-  it('currentGender returns female for komori', async () => {
+  it('currentGender returns male for komori', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useCharacterStore();
     await store.selectModel('komori');
-    expect(store.currentGender()).toBe('female');
+    expect(store.currentGender()).toBe('male');
   });
 
   it('currentGender returns female for unknown / removed model', () => {
@@ -163,8 +163,8 @@ describe('character store — IPC integration', () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useCharacterStore();
     await store.selectModel('komori');
-    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AnaNeural' });
-    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: 50, rate: 15 });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AndrewNeural' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: -10, rate: 0 });
   });
 
   it('setLoadError stores and clears error message', () => {

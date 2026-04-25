@@ -13,9 +13,9 @@ describe('default-models — gender configuration', () => {
     expect(model?.gender).toBe('female');
   });
 
-  it('komori is female', () => {
+  it('komori is male', () => {
     const model = DEFAULT_MODELS.find(m => m.id === 'komori');
-    expect(model?.gender).toBe('female');
+    expect(model?.gender).toBe('male');
   });
 
   it('bundled defaults are shinra and komori', () => {

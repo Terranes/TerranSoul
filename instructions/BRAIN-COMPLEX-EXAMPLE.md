@@ -88,8 +88,8 @@ shows a System message with **three inline buttons**:
 
 | Button | Action |
 |---|---|
-| ⚡ **Install all** | Auto-activate every missing quest in dependency order |
-| 📋 **Install one by one** | Show individual buttons per quest (manual) |
+| ⚡ **Auto install all** | Auto-activate every missing quest in dependency order (configures brain, seeds memory, marks completion) |
+| 📋 **Start chain quest** | Show individual buttons per quest (manual) |
 | ❌ **Cancel** | Dismiss the prompt |
 
 ---
@@ -98,14 +98,16 @@ shows a System message with **three inline buttons**:
 
 ![Auto-install activating all 4 quests in order](screenshots/04-auto-install.png)
 
-Clicking **⚡ Install all** runs `runAutoInstall()` which activates
-every missing quest in dependency order:
+Clicking **⚡ Auto install all** runs `runAutoInstall()` which activates
+every missing quest in dependency order by directly configuring the
+underlying stores:
 
 ```ts
-for (const id of missing) {
-  skillTree.triggerQuestEvent(id);
-  await skillTree.handleQuestChoice(id, 'accept');
-}
+// For each missing quest, runAutoInstall configures the actual system:
+// free-brain  → brain.autoConfigureForDesktop() / brain.autoConfigureFreeApi()
+// memory      → ensures brainMode is set (already done by free-brain)
+// rag-knowledge → memStore.addMemory() seeds a bootstrap memory entry
+// scholar-quest → skillTree.markComplete('scholar-quest')
 ```
 
 **Install order (from `brain-advanced-design.md`):**

@@ -437,7 +437,7 @@ import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
-import { VrmaManager, getAnimationForMood, getAnimationForMotion } from '../renderer/vrma-manager';
+import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender } from '../renderer/vrma-manager';
 import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
@@ -987,6 +987,17 @@ watch(
     animator.setState(newState);
     // Skip mood auto-play when an explicit motion is active (e.g. LLM said "clapping")
     if (vrmaManager.isMoodSuppressed) return;
+    // Idle special-case: use character-gender weighted loop selection.
+    if (newState === 'idle') {
+      const idleEntry = getIdleAnimationForGender(characterStore.currentGender());
+      if (idleEntry) {
+        // Keep looping until mood/state changes away from idle.
+        vrmaManager.play(idleEntry.path, true, 0.4);
+      } else {
+        vrmaManager.stop(0.4);
+      }
+      return;
+    }
     // Try to play a VRMA animation mapped to this mood (one-shot, then return to procedural)
     const entry = getAnimationForMood(newState);
     if (entry) {
@@ -1123,6 +1134,17 @@ async function loadModelIntoScene(newPath: string | undefined) {
 
         // Now reveal the fully-posed model and dismiss the loading overlay
         result.vrm.scene.visible = true;
+
+        // Kick off the initial idle animation — the state watcher only fires
+        // on *changes*, but the character is already in 'idle' state at load
+        // time, so we need an explicit trigger here.
+        if (characterStore.state === 'idle') {
+          const idleEntry = getIdleAnimationForGender(characterStore.currentGender());
+          if (idleEntry) {
+            vrmaManager.play(idleEntry.path, true, 0.4);
+          }
+        }
+
         characterStore.setLoaded();
       } else {
         // Show a placeholder character so the scene isn't empty (load failed or timed out)

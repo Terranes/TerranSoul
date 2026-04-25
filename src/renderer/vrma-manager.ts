@@ -17,6 +17,7 @@ import {
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
 import type { CharacterState } from '../types';
+import type { ModelGender } from '../config/default-models';
 
 // ── Animation registry: maps keys to VRMA file paths ─────────────────────────
 
@@ -40,6 +41,7 @@ export interface VrmaAnimationEntry {
 export const VRMA_ANIMATIONS: VrmaAnimationEntry[] = [
   // Idle/general
   { label: 'Idle',        path: '/animations/idle.vrma',        loop: true,  mood: undefined,     motionKey: 'idle' },
+  { label: 'Ladylike',    path: '/animations/ladylike.vrma',    loop: true,                       motionKey: 'ladylike' },
   { label: 'Walk',        path: '/animations/walk.vrma',        loop: true,                       motionKey: 'walk' },
   { label: 'Greeting',    path: '/animations/greeting.vrma',    loop: false, mood: 'happy',       motionKey: 'greeting' },
   { label: 'Peace Sign',  path: '/animations/peace-sign.vrma',  loop: false,                      motionKey: 'peace' },
@@ -75,10 +77,30 @@ export function getAnimationForMood(mood: CharacterState): VrmaAnimationEntry | 
 }
 
 /**
+ * Pick the idle loop animation based on model gender.
+ * Female models prefer `ladylike.vrma` most of the time; male models default
+ * to the standard `idle.vrma` loop.
+ */
+export function getIdleAnimationForGender(
+  gender: ModelGender,
+  random: () => number = Math.random,
+): VrmaAnimationEntry | undefined {
+  const idle = VRMA_ANIMATIONS.find(a => a.motionKey === 'idle');
+  const ladylike = VRMA_ANIMATIONS.find(a => a.motionKey === 'ladylike');
+
+  if (gender === 'female' && ladylike) {
+    // 75% chance ladylike, 25% standard idle for variety
+    if (random() < 0.75) return ladylike;
+  }
+  return idle ?? ladylike;
+}
+
+/**
  * Aliases so the LLM can use natural words instead of exact motion keys.
  * Maps common synonyms → canonical motionKey used in VRMA_ANIMATIONS.
  */
 const MOTION_ALIASES: Record<string, string> = {
+  lady:      'ladylike',
   clap:      'clapping',
   applause:  'clapping',
   applaud:   'clapping',

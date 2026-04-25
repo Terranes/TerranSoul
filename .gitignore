@@ -1,5 +1,6 @@
 node_modules/
 dist/
+qa-screenshots/
 .DS_Store
 *.local
 src-tauri/target/

@@ -38,7 +38,7 @@ export const DEFAULT_MODELS: DefaultModel[] = [
     id: 'komori',
     name: 'Komori',
     path: '/models/default/Komori.vrm',
-    gender: 'female',
+    gender: 'male',
   },
 ];
 
