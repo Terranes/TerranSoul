@@ -99,6 +99,8 @@ watch(
   () => skillTree.activeCombos,
   (combos) => {
     if (!combos || combos.length === 0) return;
+    // Suppressed during first-launch wizard / batch init.
+    if (skillTree.notificationsSuppressed) return;
     const seen = new Set(skillTree.tracker.seenComboKeys);
     const newKeys: string[] = [];
     const queued: ComboToastItem[] = [];

@@ -21,6 +21,7 @@ pub mod messaging;
 pub mod orchestrator;
 pub mod package_manager;
 pub mod persona;
+pub mod plugins;
 pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
@@ -108,7 +109,7 @@ use commands::{
     window::{
         get_all_monitors, get_window_mode, set_cursor_passthrough, set_pet_mode_bounds,
         set_window_mode, start_window_drag, set_pet_window_size, toggle_window_mode,
-        start_pet_cursor_poll, stop_pet_cursor_poll, exit_app,
+        start_pet_cursor_poll, stop_pet_cursor_poll, exit_app, is_dev_build,
     },
     streaming::send_message_stream,
     translation::{list_languages, translate_text, detect_language},
@@ -127,10 +128,30 @@ use commands::{
     quest::{
         get_quest_tracker, save_quest_tracker,
     },
+    mcp::{
+        mcp_server_start, mcp_server_stop, mcp_server_status, mcp_regenerate_token,
+    },
+    auto_setup::{
+        setup_vscode_mcp, setup_claude_mcp, setup_codex_mcp,
+        remove_vscode_mcp, remove_claude_mcp, remove_codex_mcp,
+        list_mcp_clients,
+    },
+    consolidation::{
+        run_sleep_consolidation, touch_activity, get_idle_status,
+    },
+    plugins::{
+        plugin_install, plugin_activate, plugin_deactivate, plugin_uninstall,
+        plugin_list, plugin_get, plugin_list_commands, plugin_list_slash_commands,
+        plugin_list_themes, plugin_get_setting, plugin_set_setting,
+        plugin_host_status, plugin_parse_manifest,
+    },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
 
-pub struct AppState {
+/// Inner application state. All fields are public so Tauri commands can
+/// access them through [`AppState`]'s `Deref` impl — no existing code
+/// needs to change.
+pub struct AppStateInner {
     pub conversation: Mutex<Vec<commands::chat::Message>>,
     pub vrm_path: Mutex<Option<String>>,
     pub device_identity: Mutex<Option<identity::DeviceIdentity>>,
@@ -189,6 +210,27 @@ pub struct AppState {
     /// spawns the child process and caches the bridge here; subsequent calls
     /// reuse it. Dropped (and the child reaped) on `configure_gitnexus_sidecar`.
     pub gitnexus_sidecar: TokioMutex<Option<Arc<agent::gitnexus_sidecar::GitNexusSidecar>>>,
+    /// Running MCP server handle (Chunk 15.1). `None` when the server is
+    /// stopped. Start/stop via `mcp_server_start` / `mcp_server_stop`.
+    pub mcp_server: TokioMutex<Option<ai_integrations::mcp::McpServerHandle>>,
+    /// Plugin system host — manages plugin lifecycle, contributions, and activation.
+    pub plugin_host: plugins::PluginHost,
+    /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
+    pub activity_tracker: memory::consolidation::ActivityTracker,
+}
+
+/// Cheaply clonable handle to the shared application state. Wraps
+/// `Arc<AppStateInner>` so background servers (MCP, gRPC) can hold a
+/// reference without lifetime issues. Existing Tauri commands continue
+/// to access fields via auto-`Deref` — no signature changes needed.
+#[derive(Clone)]
+pub struct AppState(Arc<AppStateInner>);
+
+impl std::ops::Deref for AppState {
+    type Target = AppStateInner;
+    fn deref(&self) -> &AppStateInner {
+        &self.0
+    }
 }
 
 impl AppState {
@@ -199,7 +241,7 @@ impl AppState {
     fn new(data_dir: &std::path::Path) -> Self {
         let active_brain = brain::load_brain(data_dir);
         let brain_mode = brain::brain_config::load(data_dir);
-        AppState {
+        Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
             device_identity: Mutex::new(None),
@@ -239,13 +281,16 @@ impl AppState {
             persona_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
-        }
+            mcp_server: TokioMutex::new(None),
+            plugin_host: plugins::PluginHost::new(data_dir),
+            activity_tracker: memory::consolidation::ActivityTracker::new(),
+        }))
     }
 
     /// Convenience constructor for unit tests.
     #[cfg(test)]
     pub fn for_test() -> Self {
-        AppState {
+        Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
             device_identity: Mutex::new(None),
@@ -283,7 +328,10 @@ impl AppState {
             persona_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
-        }
+            mcp_server: TokioMutex::new(None),
+            plugin_host: plugins::PluginHost::in_memory(),
+            activity_tracker: memory::consolidation::ActivityTracker::new(),
+        }))
     }
 }
 
@@ -400,6 +448,7 @@ pub fn run() {
             start_pet_cursor_poll,
             stop_pet_cursor_poll,
             exit_app,
+            is_dev_build,
             send_message_stream,
             list_free_providers,
             get_brain_mode,
@@ -498,6 +547,37 @@ pub fn run() {
             gitnexus_sync,
             gitnexus_unmirror,
             gitnexus_list_mirrors,
+            // MCP server — Chunk 15.1 (Phase 15)
+            mcp_server_start,
+            mcp_server_stop,
+            mcp_server_status,
+            mcp_regenerate_token,
+            // Auto-setup writers — Chunk 15.6 (Phase 15)
+            setup_vscode_mcp,
+            setup_claude_mcp,
+            setup_codex_mcp,
+            remove_vscode_mcp,
+            remove_claude_mcp,
+            remove_codex_mcp,
+            list_mcp_clients,
+            // Consolidation (Chunk 16.7)
+            run_sleep_consolidation,
+            touch_activity,
+            get_idle_status,
+            // Plugin system
+            plugin_install,
+            plugin_activate,
+            plugin_deactivate,
+            plugin_uninstall,
+            plugin_list,
+            plugin_get,
+            plugin_list_commands,
+            plugin_list_slash_commands,
+            plugin_list_themes,
+            plugin_get_setting,
+            plugin_set_setting,
+            plugin_host_status,
+            plugin_parse_manifest,
         ])
         .setup(|app| {
             let data_dir = app

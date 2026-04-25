@@ -67,7 +67,7 @@ describe('character store — IPC integration', () => {
     expect(store.vrmMetadata).toBeUndefined();
     expect(store.loadError).toBeUndefined();
     expect(store.isLoading).toBe(false);
-    expect(store.selectedModelId).toBe('annabelle');
+    expect(store.selectedModelId).toBe('ao');
   });
 
   it('loadVrm sets isLoading and setLoaded clears it', async () => {
@@ -90,11 +90,11 @@ describe('character store — IPC integration', () => {
     mockInvoke.mockResolvedValueOnce(undefined);
 
     const store = useCharacterStore();
-    await store.selectModel('annabelle');
+    await store.selectModel('ao');
 
-    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Annabelle the Sorcerer.vrm' });
-    expect(store.vrmPath).toBe('/models/default/Annabelle the Sorcerer.vrm');
-    expect(store.selectedModelId).toBe('annabelle');
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Ao.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Ao.vrm');
+    expect(store.selectedModelId).toBe('ao');
   });
 
   it('selectModel ignores unknown model ids', async () => {
@@ -105,36 +105,36 @@ describe('character store — IPC integration', () => {
     expect(store.vrmPath).toBeUndefined();
   });
 
-  it('loadDefaultModel loads annabelle by default', async () => {
+  it('loadDefaultModel loads ao by default', async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
 
     const store = useCharacterStore();
     await store.loadDefaultModel();
 
-    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Annabelle the Sorcerer.vrm' });
-    expect(store.vrmPath).toBe('/models/default/Annabelle the Sorcerer.vrm');
-    expect(store.selectedModelId).toBe('annabelle');
+    expect(mockInvoke).toHaveBeenCalledWith('load_vrm', { path: '/models/default/Ao.vrm' });
+    expect(store.vrmPath).toBe('/models/default/Ao.vrm');
+    expect(store.selectedModelId).toBe('ao');
   });
 
   it('defaultModels contains the bundled model list', () => {
     const store = useCharacterStore();
     expect(store.defaultModels.length).toBeGreaterThanOrEqual(2);
-    expect(store.defaultModels[0].id).toBe('annabelle');
-    expect(store.defaultModels[1].id).toBe('m58');
+    expect(store.defaultModels[0].id).toBe('ao');
+    expect(store.defaultModels[1].id).toBe('karina');
   });
 
-  it('currentGender returns female for annabelle', async () => {
+  it('currentGender returns female for ao', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useCharacterStore();
-    await store.selectModel('annabelle');
+    await store.selectModel('ao');
     expect(store.currentGender()).toBe('female');
   });
 
-  it('currentGender returns male for m58', async () => {
+  it('currentGender returns female for karina', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useCharacterStore();
-    await store.selectModel('m58');
-    expect(store.currentGender()).toBe('male');
+    await store.selectModel('karina');
+    expect(store.currentGender()).toBe('female');
   });
 
   it('currentGender returns female for unknown / removed model', () => {
@@ -154,17 +154,17 @@ describe('character store — IPC integration', () => {
   it('selectModel sets Edge TTS voice for female character', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useCharacterStore();
-    await store.selectModel('annabelle');
+    await store.selectModel('ao');
     expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AnaNeural' });
     expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: 50, rate: 15 });
   });
 
-  it('selectModel sets Edge TTS voice for male character', async () => {
+  it('selectModel sets Edge TTS voice for karina character', async () => {
     mockInvoke.mockResolvedValue(undefined);
     const store = useCharacterStore();
-    await store.selectModel('m58');
-    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AndrewNeural' });
-    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: -10, rate: 0 });
+    await store.selectModel('karina');
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-US-AnaNeural' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: 50, rate: 15 });
   });
 
   it('setLoadError stores and clears error message', () => {
@@ -278,7 +278,7 @@ describe('character store — user-imported models', () => {
     await store.deleteUserModel('u-4');
     expect(mockInvoke).toHaveBeenCalledWith('delete_user_model', { id: 'u-4' });
     expect(store.userModels).toEqual([]);
-    expect(store.selectedModelId).toBe('annabelle');
+    expect(store.selectedModelId).toBe('ao');
   });
 
   it('allModels concatenates defaults and user models', async () => {

@@ -21,6 +21,11 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Multi-Agent Resilience — Per-agent threads, workflow resilience, agent swap context](#multi-agent-resilience--per-agent-threads-workflow-resilience-agent-swap-context) | 2026-04-25 |
+| [Chunk 16.7 — Sleep-time consolidation](#chunk-167--sleep-time-consolidation) | 2026-04-25 |
+| [Chunk 15.6 — Auto-setup writers for Copilot, Claude Desktop, Codex](#chunk-156--auto-setup-writers-for-copilot-claude-desktop-codex) | 2026-04-25 |
+| [Chunks 10.1 / 10.2 / 10.3 — Copilot Autonomous Mode + Auto-Resume + Health Gate](#chunks-101--102--103--copilot-autonomous-mode--auto-resume--health-gate) | 2026-04-25 |
+| [Chunk 15.1 — MCP server](#chunk-151--mcp-server) | 2026-04-25 |
 | [Chunk 14.12 — Phoneme-aware viseme model](#chunk-1412--phoneme-aware-viseme-model) | 2026-04-25 |
 | [Chunks 14.9 / 14.10 / 14.11 — Learned asset persistence + player + bundle](#chunks-149--1410--1411--learned-asset-persistence--player--bundle) | 2026-04-25 |
 | [Chunk 14.5 — VRMA baking](#chunk-145--vrma-baking) | 2026-04-25 |
@@ -172,6 +177,185 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Multi-Agent Resilience — Per-agent threads, workflow resilience, agent swap context
+
+**Date.** 2026-04-25
+
+**Scope.** Three interconnected improvements for multi-agent reliability, resilience, and atomicity:
+
+### 1. Per-agent conversation threads
+- Added `agent_id: Option<String>` to Rust `Message` struct (`commands/chat.rs`) and all 6 construction sites (chat.rs ×2, streaming.rs ×3, ipc_contract_tests.rs ×1)
+- Added `agentId?: string` to TypeScript `Message` interface (`types/index.ts`)
+- Conversation store gains: `activeAgentId()`, `agentMessages` computed (filters by active agent), `agentSwitchHistory` ref, `setAgent()`, `stampAgent()` helper
+- All user/assistant messages stamped with the active agent ID via `stampAgent()`
+
+### 2. Workflow resilience (Temporal.io patterns via `backon` crate)
+- **New file:** `src-tauri/src/workflows/resilience.rs` (~480 LOC, 13 tests)
+- **`RetryPolicy`** — configurable max_attempts, exponential backoff (min/max interval, multiplier), non-retryable error filter. Uses `backon` crate for battle-tested retry-with-backoff.
+- **`TimeoutPolicy`** — workflow-level + activity-level + heartbeat timeouts via `tokio::time::timeout`
+- **`CircuitBreaker`** — 3-state FSM (Closed → Open → HalfOpen → Closed). Failure threshold, recovery timeout, probe-on-half-open, metrics snapshot.
+- **`HeartbeatWatchdog`** — tracks last-seen timestamps per workflow, detects stale workflows exceeding configurable threshold.
+- **`ResilientRunner`** — combined runner: circuit breaker → retry → timeout (outermost → innermost). Single entry point for resilient activity execution.
+- Added `backon = "1"` to Cargo.toml
+
+### 3. Agent swap with context summary
+- `switchAgent()` now accepts optional `conversationMessages` parameter
+- On agent switch, builds a plain-text handoff context from the outgoing agent's recent messages (up to 20)
+- `handoffContexts` map stores per-agent context summaries
+- `getHandoffContext(agentId)` retrieves the summary for injection into system prompts
+- Backward-compatible: existing callers without the second argument still work
+
+**Tests.** 1112+ Rust (13 new resilience tests), 1164 Vitest, clippy clean.
+
+---
+
+## Chunk 16.7 — Sleep-time consolidation
+
+**Date.** 2026-04-25
+
+**Goal.** Idle-triggered background workflow that consolidates memory:
+compress short→working, link related memories by embedding similarity,
+promote high-access working→long, apply decay + GC, adjust importance.
+
+**Architecture.**
+- 5-step pipeline: compress → link → promote → decay+GC → importance
+- `ActivityTracker` (AtomicI64) for idle detection
+- `ConsolidationConfig` + `ConsolidationResult` DTOs
+- `cosine_similarity()` helper for embedding-based linking
+- Each step is non-fatal — failures collected as warnings
+
+**Files created.**
+- `src-tauri/src/memory/consolidation.rs` (~340 LOC, 9 tests)
+- `src-tauri/src/commands/consolidation.rs` (~45 LOC, 3 commands)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod consolidation;`
+- `src-tauri/src/commands/mod.rs` — added `pub mod consolidation;`
+- `src-tauri/src/lib.rs` — added `activity_tracker` to `AppStateInner`, registered 3 Tauri commands
+
+**Tauri commands.**
+- `run_sleep_consolidation(session_ids, config?)` — trigger full consolidation
+- `touch_activity()` — reset idle timer
+- `get_idle_status(threshold_ms?)` — query idle state
+
+**Test count.** 9 tests (all pass). CI: 1090+ Rust tests.
+
+**Depends on.** 17.1 (auto-promote), 17.4 (importance adjustment), edges (V5 schema).
+
+---
+
+## Chunk 15.6 — Auto-setup writers for Copilot, Claude Desktop, Codex
+
+**Date.** 2026-04-25
+
+**Goal.** One-click setup of external AI coding assistant MCP integrations. TerranSoul writes the correct config file for each client, preserving existing entries.
+
+**Architecture.** Pure-function config writers in `src-tauri/src/ai_integrations/mcp/auto_setup.rs` + 7 Tauri commands in `src-tauri/src/commands/auto_setup.rs`.
+
+**Supported clients:**
+
+| Client | Config path | Key |
+|---|---|---|
+| VS Code / Copilot | `<workspace>/.vscode/mcp.json` | `servers.terransoul-brain` |
+| Claude Desktop | `%APPDATA%/Claude/claude_desktop_config.json` (Win) / `~/.config/Claude/` (Linux/macOS) | `mcpServers.terransoul-brain` |
+| Codex CLI | `~/.codex/config.json` | `mcpServers.terransoul-brain` |
+
+**Key features:**
+- **Preserve existing config** — reads file, merges, writes back. Never overwrites other servers.
+- **Idempotent** — calling setup twice updates (never duplicates) the entry.
+- **Atomic writes** — temp file + rename pattern.
+- **JSONC support** — strips `//` and `/* */` comments before parsing (VS Code uses JSONC).
+- **Undoable** — `remove_*_mcp` commands delete only the `terransoul-brain` entry.
+- **Status listing** — `list_mcp_clients` checks which clients are configured.
+
+**Files created:**
+- `src-tauri/src/ai_integrations/mcp/auto_setup.rs` (~350 LOC, 14 unit tests)
+- `src-tauri/src/commands/auto_setup.rs` (~90 LOC, 7 Tauri commands)
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — added `pub mod auto_setup`
+- `src-tauri/src/commands/mod.rs` — added `pub mod auto_setup`
+- `src-tauri/src/lib.rs` — registered 7 new commands in `invoke_handler`, added `use commands::auto_setup::*`
+- `src-tauri/Cargo.toml` — added `dirs = "6"` dependency
+
+**Tauri commands (7):**
+`setup_vscode_mcp`, `setup_claude_mcp`, `setup_codex_mcp`, `remove_vscode_mcp`, `remove_claude_mcp`, `remove_codex_mcp`, `list_mcp_clients`
+
+**Tests.** 14 unit tests: entry structure (3), write new (1), preserve existing (1), idempotent (1), remove (1), remove nonexistent (1), JSONC strip (2), atomic write parent dirs (1), client status detect (2), Claude write (1).
+
+**CI.** 1164 Vitest ✅ | 1089 Rust tests ✅ (14 new) | clippy clean
+
+**Note.** The stdio transport shim originally planned in this chunk was deferred — HTTP transport on `127.0.0.1:7421` is sufficient for all three clients today. Stdio can be added later if needed.
+
+---
+
+## Chunks 10.1 / 10.2 / 10.3 — Copilot Autonomous Mode + Auto-Resume + Health Gate
+
+**Date.** 2026-04-25
+
+**Goal.** Set up VS Code workspace for long-running autonomous Copilot agent sessions with auto-approve permissions, auto-resume tooling, service health gates, and MCP server integration.
+
+**Architecture.** Three chunks shipped together as a cohesive developer-experience package:
+
+- **10.1 (Autonomous Mode)** — `.vscode/settings.json` with `chat.permissions.default: "autopilot"`, 100-request budget, terminal auto-approve for safe build/test commands, file edit auto-approve for all workspace paths, conversation auto-summarization enabled.
+- **10.2 (Auto-Retrigger)** — `scripts/copilot-loop.mjs` parses `rules/milestones.md` and `rules/completion-log.md` to generate context-rich "Continue" prompts. Copies to clipboard for paste into new sessions. Tracks session progress in `.vscode/copilot-session.log` (git-ignored). Modes: `--status`, `--next`, `--log`.
+- **10.3 (Health Gate)** — `scripts/wait-for-service.mjs` polls any HTTP endpoint with configurable timeout. Supports dev server (`:1420`), Ollama (`:11434`), and MCP server (`:7421`). Wired into `.vscode/tasks.json` as pre-tasks.
+
+**Additional deliverables:**
+- `.vscode/tasks.json` — 9 tasks: Dev Server, Wait for Dev Server / Ollama / MCP Server, Run All Tests, Cargo Check + Clippy, Vue TypeScript Check, Full CI Gate, Copilot: Continue Session.
+- `.vscode/mcp.json` — MCP server config for VS Code Copilot (HTTP transport, `${env:TERRANSOUL_MCP_TOKEN}` auth).
+- `.github/copilot-instructions.md` — Added "Session Resumption & Progress Tracking" section with long-running session guidelines and MCP server reference.
+- Phase 10 chunks promoted from `rules/backlog.md` to `rules/milestones.md` then archived here.
+
+**Files created:**
+- `.vscode/settings.json` (~115 lines)
+- `.vscode/tasks.json` (~85 lines)
+- `.vscode/mcp.json` (~25 lines)
+- `scripts/wait-for-service.mjs` (~60 lines)
+- `scripts/copilot-loop.mjs` (~190 lines)
+
+**Files modified:**
+- `.github/copilot-instructions.md` — Session Resumption section added
+- `rules/milestones.md` — Phase 10 promoted from backlog, then all 3 chunks archived
+- `rules/backlog.md` — Phase 10 chunks replaced with "Promoted" note
+
+**Tests.** No new unit tests — these are config/script files. Manual verification: `copilot-loop.mjs --status` parses milestones correctly, `wait-for-service.mjs` times out on unreachable endpoint with exit code 1.
+
+**CI.** 1164 Vitest ✅ | 1075 Rust tests ✅ (1 known flaky: `hybrid_search_rrf_keyword_ranking`)
+
+---
+
+## Chunk 15.1 — MCP server
+
+**Date.** 2026-04-25
+
+**Goal.** Expose TerranSoul's brain to AI coding assistants (GitHub Copilot, Claude Desktop, Cursor, Codex) via an MCP-compatible HTTP server on `127.0.0.1:7421` with bearer-token auth and all 8 gateway ops.
+
+**Architecture.**
+- **Transport:** Streamable HTTP (POST `/mcp`) on axum — milestones-endorsed fallback since `rmcp`'s SSE transport API wasn't needed for request/response ops.
+- **Protocol:** JSON-RPC 2.0 per MCP 2024-11-05 spec. Handles `initialize`, `tools/list`, `tools/call`, `ping`, and notifications.
+- **Auth:** Bearer token from `<data_dir>/mcp-token.txt` (SHA-256 of UUID v4, `0600` permissions on Unix).
+- **Ops:** 8 tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`) routed to `BrainGateway` trait via `AppStateGateway`.
+- **AppState refactor:** Wrapped `AppState` as a newtype around `Arc<AppStateInner>` with `Deref` + `Clone`. Zero signature changes to existing 150+ Tauri commands — all auto-deref through the newtype. Enables cheap cloning for MCP server (and future gRPC server).
+
+**Files created.**
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — module entry, `McpServerHandle`, `start_server()` async function.
+- `src-tauri/src/ai_integrations/mcp/auth.rs` — token file CRUD (`load_or_create`, `regenerate`), SHA-256 generation.
+- `src-tauri/src/ai_integrations/mcp/router.rs` — axum JSON-RPC 2.0 handler, bearer auth validation, MCP protocol dispatch.
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — 8 tool definitions (JSON Schema) + `dispatch()` function routing to gateway.
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — 11 integration tests (full HTTP round-trips).
+- `src-tauri/src/commands/mcp.rs` — 4 Tauri commands (`mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`).
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — `AppState` newtype wrapper (`AppState(Arc<AppStateInner>)` + `Deref` + `Clone`), added `mcp_server: TokioMutex<Option<McpServerHandle>>` field, wired 4 MCP commands to invoke_handler.
+- `src-tauri/src/ai_integrations/gateway.rs` — `AppStateGateway` now takes `AppState` (cheaply clonable) instead of `Arc<AppState>`.
+- `src-tauri/src/ai_integrations/mod.rs` — added `pub mod mcp;`.
+- `src-tauri/src/commands/mod.rs` — added `pub mod mcp;`.
+
+**Tests.** 22 new Rust tests (4 auth, 6 router, 3 tools, 11 integration). Baseline: 1053 → 1075 total. Clippy clean. vue-tsc clean.
 
 ---
 

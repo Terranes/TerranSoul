@@ -53,7 +53,7 @@ pub async fn roster_list(state: State<'_, AppState>) -> Result<Vec<AgentProfile>
             .selected_model_id
             .clone();
         let default_vrm = if default_vrm.trim().is_empty() {
-            "annabelle".to_string()
+            "ao".to_string()
         } else {
             default_vrm
         };
@@ -440,7 +440,7 @@ mod tests {
     fn create_agent_request_round_trip() {
         let j = serde_json::json!({
             "display_name": "Coder",
-            "vrm_model_id": "m58",
+            "vrm_model_id": "karina",
             "brain_backend": {
                 "kind": "external_cli",
                 "data": {

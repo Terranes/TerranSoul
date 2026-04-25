@@ -78,7 +78,7 @@ function makeInvokeMock(opts: {
       });
       case 'get_short_term_memory': return Promise.resolve([]);
       case 'get_app_settings': return Promise.resolve({
-        version: 2, selected_model_id: 'annabelle', camera_azimuth: 0,
+        version: 2, selected_model_id: 'ao', camera_azimuth: 0,
         camera_distance: 2.8, bgm_enabled: false, bgm_volume: 0.15,
         bgm_track_id: 'prelude', bgm_custom_tracks: [], auto_tag: false,
         contextual_retrieval: false,

@@ -16,6 +16,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+dirs = "6"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
@@ -40,6 +41,7 @@ axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 thiserror = "2"
 text-splitter = { version = "0.30", features = ["markdown"] }
+backon = "1"
 rand = { version = "0.8", optional = true }
 
 # Distributed database backends (optional)

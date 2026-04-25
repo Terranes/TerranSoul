@@ -1291,6 +1291,10 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
   const activeQuestId = ref<string | null>(null);
   const tracker = ref<QuestTrackerData>(freshTracker());
   const isLoadingSuggestions = ref(false);
+  /** When true, QuestRewardCeremony and ComboToast skip showing notifications.
+   *  Set during first-launch setup and the FirstLaunchWizard to avoid spamming
+   *  the user with a stack of unlock popups for auto-detected features. */
+  const notificationsSuppressed = ref(false);
   
   // Filter nodes by current platform
   const nodes = ref<SkillNode[]>(getAvailableSkillsForPlatform(SKILL_NODES));
@@ -1969,10 +1973,43 @@ Respond with ONLY valid JSON (no markdown):
     });
   }
 
+  /** Suppress all quest-unlock and combo-unlock notifications.
+   *  Call before batch operations (wizard setup, first-launch init). */
+  function suppressNotifications(): void {
+    notificationsSuppressed.value = true;
+  }
+
+  /** Resume notifications and mark everything currently active as "already
+   *  seen" so no stale ceremonies or combo toasts fire. */
+  function resumeNotifications(): void {
+    const max = Math.max(0, ...Object.values(tracker.value.activationTimestamps));
+    if (max > tracker.value.lastSeenActivationTimestamp) {
+      tracker.value.lastSeenActivationTimestamp = max;
+    }
+    const keys = activeCombos.value.map(c => `${c.sourceSkill}::${c.combo.name}`);
+    if (keys.length > 0) {
+      tracker.value.seenComboKeys = [
+        ...new Set([...tracker.value.seenComboKeys, ...keys]),
+      ];
+    }
+    saveTracker();
+    notificationsSuppressed.value = false;
+  }
+
   /** Initialise tracker from persistent storage and refresh suggestions if needed. */
   async function initialise(): Promise<void> {
     await loadTracker();
+
+    // On first run (empty tracker), suppress notifications so auto-detected
+    // skills don't blast the user with a stack of unlock ceremonies.
+    const isFirstRun = Object.keys(tracker.value.activationTimestamps).length === 0
+                        && tracker.value.lastSeenActivationTimestamp === 0;
+    if (isFirstRun) suppressNotifications();
+
     recordActivations();
+
+    if (isFirstRun) resumeNotifications();
+
     installSaveGuard();
 
     // Watch for feature state changes and record activations in real-time
@@ -2009,6 +2046,7 @@ Respond with ONLY valid JSON (no markdown):
     // Tracker state
     tracker,
     isLoadingSuggestions,
+    notificationsSuppressed,
     // Aggregates
     totalNodes,
     activeCount,
@@ -2037,6 +2075,8 @@ Respond with ONLY valid JSON (no markdown):
     loadTracker,
     saveTracker,
     initialise,
+    suppressNotifications,
+    resumeNotifications,
     // Random quest event
     questEventActive,
     questEventNode,

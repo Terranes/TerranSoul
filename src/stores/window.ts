@@ -11,6 +11,21 @@ export const useWindowStore = defineStore('window', () => {
   const monitors = ref<MonitorInfo[]>([]);
   const error = ref<string | null>(null);
   const isLoading = ref(false);
+  /** True when running a dev/debug build (separate MCP port, DEV badge). */
+  const isDevBuild = ref(false);
+
+  /** Query the backend for the build profile (dev vs release). */
+  async function loadDevBuildFlag(): Promise<boolean> {
+    try {
+      const dev = await invoke<boolean>('is_dev_build');
+      isDevBuild.value = dev;
+      return dev;
+    } catch {
+      // Tauri unavailable (browser/test) — assume dev in that case
+      isDevBuild.value = true;
+      return true;
+    }
+  }
 
   async function loadMode(): Promise<WindowMode> {
     error.value = null;
@@ -160,7 +175,9 @@ export const useWindowStore = defineStore('window', () => {
     monitors,
     error,
     isLoading,
+    isDevBuild,
     loadMode,
+    loadDevBuildFlag,
     setMode,
     toggleMode,
     setCursorPassthrough,

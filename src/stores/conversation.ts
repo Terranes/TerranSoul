@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Message } from '../types';
 import { useBrainStore } from './brain';
@@ -884,6 +884,106 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Maximum total size of all message content in bytes (~1MB). */
   const MAX_HISTORY_BYTES = 1_000_000;
 
+  // ── Per-agent conversation threading ────────────────────────────────────
+
+  /** The effective agent ID, or `undefined` when `currentAgent` is 'auto'. */
+  function activeAgentId(): string | undefined {
+    return currentAgent.value === 'auto' ? undefined : currentAgent.value;
+  }
+
+  /** Messages belonging to the currently selected agent.
+   *  When agent is 'auto', all messages are returned (unfiltered). */
+  const agentMessages = computed<Message[]>(() => {
+    const aid = activeAgentId();
+    if (!aid) return messages.value;
+    return messages.value.filter(
+      (m) => !m.agentId || m.agentId === aid,
+    );
+  });
+
+  /** History of agent IDs that have been active in this session.
+   *  Used by the UI to show agent switch markers. */
+  const agentSwitchHistory = ref<{ agentId: string; timestamp: number }[]>([]);
+
+  /** Switch to a different agent, recording the transition. */
+  function setAgent(agentId: string): void {
+    const prev = currentAgent.value;
+    currentAgent.value = agentId;
+    if (prev !== agentId && agentId !== 'auto') {
+      agentSwitchHistory.value.push({ agentId, timestamp: Date.now() });
+    }
+  }
+
+  /** Stamp a message with the current agent ID (mutates in place). */
+  function stampAgent(msg: Message): Message {
+    const aid = activeAgentId();
+    if (aid) msg.agentId = aid;
+    return msg;
+  }
+
+  // ── Long-running task controls (VS Code Copilot-style) ────────────────
+  //
+  // When the LLM is streaming/thinking, the user can:
+  //   • Stop — cancel generation, discard partial output
+  //   • Stop & Send — cancel generation, keep partial output as the response
+  //   • Add to Queue — queue a follow-up message to send after current finishes
+  //   • Steer — inject a message that redirects the current generation
+  //
+  // These mirror VS Code Copilot's agent-mode controls.
+
+  /** Abort controller for the current generation. Set before each send,
+   *  checked during streaming sync intervals. */
+  let activeAbortController: AbortController | null = null;
+
+  /** Whether a "stop and send" was requested (keep partial text). */
+  const stopAndSendRequested = ref(false);
+
+  /** Queued messages to send after the current generation completes. */
+  const messageQueue = ref<string[]>([]);
+
+  /** Stop the current generation and discard partial output. */
+  function stopGeneration(): void {
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    stopAndSendRequested.value = false;
+  }
+
+  /** Stop generation but keep partial output as the assistant response. */
+  function stopAndSend(): void {
+    stopAndSendRequested.value = true;
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+  }
+
+  /** Add a message to the queue — it will be sent after the current
+   *  generation completes (FIFO order). */
+  function addToQueue(message: string): void {
+    if (message.trim()) {
+      messageQueue.value.push(message.trim());
+    }
+  }
+
+  /** Send a steering message that redirects the current generation.
+   *  Stops the current stream, keeps partial text, then sends the
+   *  steering message as a new user turn. */
+  function steerWithMessage(message: string): void {
+    if (!message.trim()) return;
+    // Stop current generation, keep what we have
+    stopAndSend();
+    // Queue the steering message as the next thing to send
+    messageQueue.value.unshift(message.trim());
+  }
+
+  /** Drain and send the next queued message (called after generation ends). */
+  async function drainQueue(): Promise<void> {
+    if (messageQueue.value.length > 0) {
+      const next = messageQueue.value.shift()!;
+      await sendMessage(next);
+    }
+  }
+
   // ── Auto-learn (daily-conversation → brain write-back loop) ─────────────
   //
   // After every assistant turn we ask the Rust-side `evaluate_auto_learn`
@@ -991,6 +1091,10 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
+    // Set up abort controller for this generation
+    activeAbortController = new AbortController();
+    stopAndSendRequested.value = false;
+
     // Check if agent is busy with a background task
     try {
       const taskStore = useTaskStore();
@@ -1021,6 +1125,7 @@ export const useConversationStore = defineStore('conversation', () => {
       content,
       timestamp: Date.now(),
     };
+    stampAgent(userMsg);
     messages.value.push(userMsg);
     trimHistory();
     isThinking.value = true;
@@ -1076,6 +1181,8 @@ export const useConversationStore = defineStore('conversation', () => {
 
         // While `invoke` blocks, mirror `streaming.streamText` into this
         // store's `streamingText` at ~50ms intervals so reactive UI stays live.
+        // Also checks the abort signal for user-initiated stop.
+        const abortSignal = activeAbortController?.signal;
         const syncInterval = setInterval(() => {
           streamingText.value = streaming.streamText;
           // Sync isStreaming state with the streaming store
@@ -1088,15 +1195,60 @@ export const useConversationStore = defineStore('conversation', () => {
 
         const TAURI_STREAM_TIMEOUT_MS = 60_000; // 60s timeout
         let sendOk = false;
+        let wasAborted = false;
         try {
           sendOk = await Promise.race([
             streaming.sendStreaming(content),
             new Promise<boolean>((_, reject) =>
               setTimeout(() => reject(new Error('Tauri streaming timeout')), TAURI_STREAM_TIMEOUT_MS),
             ),
+            new Promise<boolean>((_, reject) => {
+              if (abortSignal) {
+                if (abortSignal.aborted) { reject(new Error('AbortError')); return; }
+                abortSignal.addEventListener('abort', () => reject(new Error('AbortError')), { once: true });
+              }
+            }),
           ]);
+        } catch (e) {
+          if (String(e).includes('AbortError')) {
+            wasAborted = true;
+            sendOk = false;
+          } else {
+            throw e;
+          }
         } finally {
           clearInterval(syncInterval);
+        }
+
+        // Handle user-initiated stop
+        if (wasAborted) {
+          const partialText = streaming.streamText;
+          streaming.reset();
+          isStreaming.value = false;
+          streamingText.value = '';
+
+          if (stopAndSendRequested.value && partialText) {
+            // Stop & Send: keep partial output as the response
+            const parsed = parseTags(partialText);
+            const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
+            const assistantMsg: Message = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: parsed.text + '\n\n*[Generation stopped by user]*',
+              agentName: 'TerranSoul',
+              sentiment: sentiment as Message['sentiment'],
+              timestamp: Date.now(),
+            };
+            stampAgent(assistantMsg);
+            messages.value.push(assistantMsg);
+          }
+          // else: pure Stop — discard partial output
+
+          isThinking.value = false;
+          stopAndSendRequested.value = false;
+          activeAbortController = null;
+          void drainQueue();
+          return;
         }
 
         if (!sendOk) throw new Error(streaming.error ?? 'Streaming failed');
@@ -1134,6 +1286,7 @@ export const useConversationStore = defineStore('conversation', () => {
             emoji: parsed.emoji ?? undefined,
             motion,
           };
+          stampAgent(assistantMsg);
           if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
           maybeShowQuestFromResponse(clean || cleanText, content);
@@ -1169,6 +1322,8 @@ export const useConversationStore = defineStore('conversation', () => {
         isThinking.value = false;
         isStreaming.value = false;
         streamingText.value = '';
+        activeAbortController = null;
+        void drainQueue();
       }
       return;
     }
@@ -1243,6 +1398,21 @@ export const useConversationStore = defineStore('conversation', () => {
                 },
                 getSystemPrompt(useEnhanced) + usePersonaStore().personaBlock + memoryBlock,
               );
+              // User-initiated abort
+              if (activeAbortController) {
+                activeAbortController.signal.addEventListener('abort', () => {
+                  if (!settled) {
+                    settled = true;
+                    clearTimeout(timeout);
+                    abortController.abort();
+                    if (stopAndSendRequested.value) {
+                      resolve(streamingText.value);
+                    } else {
+                      reject(new Error('AbortError'));
+                    }
+                  }
+                }, { once: true });
+              }
               timeout = setTimeout(() => {
                 if (!settled) { settled = true; abortController.abort(); reject(new Error('Stream timeout: no response within 60s')); }
               }, STREAM_TIMEOUT_MS);
@@ -1265,6 +1435,7 @@ export const useConversationStore = defineStore('conversation', () => {
               emoji: parsed.emoji ?? undefined,
               motion: parsed.motion ?? undefined,
             };
+            stampAgent(assistantMsg);
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
             maybeShowQuestFromResponse(clean || parsed.text, content);
@@ -1298,6 +1469,8 @@ export const useConversationStore = defineStore('conversation', () => {
           isThinking.value = false;
           isStreaming.value = false;
           streamingText.value = '';
+          activeAbortController = null;
+          void drainQueue();
         }
         return;
       }
@@ -1307,6 +1480,8 @@ export const useConversationStore = defineStore('conversation', () => {
     await new Promise((r) => setTimeout(r, 500));
     messages.value.push(createPersonaResponse(content));
     isThinking.value = false;
+    activeAbortController = null;
+    void drainQueue();
   }
 
   /** Push a warning message with upgrade quest when all providers are exhausted. */
@@ -1373,6 +1548,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
   /** Add a message directly to the conversation without AI processing. */
   function addMessage(message: Message): void {
+    stampAgent(message);
     messages.value.push(message);
     trimHistory();
   }
@@ -1380,6 +1556,9 @@ export const useConversationStore = defineStore('conversation', () => {
   return {
     messages,
     currentAgent,
+    agentMessages,
+    agentSwitchHistory,
+    setAgent,
     isThinking,
     streamingText,
     isStreaming,
@@ -1387,6 +1566,12 @@ export const useConversationStore = defineStore('conversation', () => {
     getConversation,
     addMessage,
     pushProviderWarning,
+    // Long-running task controls (VS Code Copilot-style)
+    messageQueue,
+    stopGeneration,
+    stopAndSend,
+    addToQueue,
+    steerWithMessage,
     // Auto-learn surface (see docs/brain-advanced-design.md § 21)
     totalAssistantTurns,
     lastAutoLearnTurn,

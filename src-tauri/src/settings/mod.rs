@@ -1,7 +1,7 @@
 //! Application settings — persistence, schema validation, and env overrides.
 //!
 //! Settings that are persisted between sessions:
-//!   - `selected_model_id` — active 3D character model (e.g. "annabelle")
+//!   - `selected_model_id` — active 3D character model (e.g. "ao")
 //!   - `camera_azimuth`    — horizontal orbit angle (radians)
 //!   - `camera_distance`   — zoom / distance from origin
 //!   - `bgm_enabled`       — whether background music is playing
@@ -59,7 +59,7 @@ fn default_user_model_gender() -> String {
 }
 
 /// Default character model ID (must match `DEFAULT_MODEL_ID` in frontend).
-pub const DEFAULT_MODEL_ID: &str = "annabelle";
+pub const DEFAULT_MODEL_ID: &str = "ao";
 
 /// Default BGM volume (0.0–1.0).
 pub const DEFAULT_BGM_VOLUME: f32 = 0.15;
@@ -160,6 +160,14 @@ pub struct AppSettings {
     /// show the welcome wizard on startup.
     #[serde(default)]
     pub first_launch_complete: bool,
+
+    /// When `true`, the 3D character viewport is hidden and the UI
+    /// switches to a clean chatbox-only layout — full-height message
+    /// list, no Three.js rendering, lower resource usage.  Users who
+    /// prefer a text-only experience toggle this from the mode-switch
+    /// pill or the Brain settings hub.
+    #[serde(default)]
+    pub chatbox_mode: bool,
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -209,6 +217,7 @@ impl Default for AppSettings {
             auto_tag: false,
             contextual_retrieval: false,
             first_launch_complete: false,
+            chatbox_mode: false,
         }
     }
 }
@@ -266,11 +275,11 @@ mod tests {
     #[test]
     fn apply_env_overrides_sets_model_id() {
         let _lock = super::ENV_MUTEX.lock().unwrap();
-        std::env::set_var("TERRANSOUL_MODEL_ID", "m58");
+        std::env::set_var("TERRANSOUL_MODEL_ID", "karina");
         let mut s = AppSettings::default();
         s.apply_env_overrides();
         std::env::remove_var("TERRANSOUL_MODEL_ID");
-        assert_eq!(s.selected_model_id, "m58");
+        assert_eq!(s.selected_model_id, "karina");
     }
 
     #[test]
@@ -295,10 +304,10 @@ mod tests {
     #[test]
     fn roundtrip_serde() {
         let mut positions = HashMap::new();
-        positions.insert("annabelle".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        positions.insert("ao".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "m58".into(),
+            selected_model_id: "karina".into(),
             camera_azimuth: 1.57,
             camera_distance: 3.2,
             bgm_enabled: true,
@@ -312,6 +321,7 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             first_launch_complete: false,
+            chatbox_mode: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -329,7 +339,7 @@ mod tests {
     #[test]
     fn serde_fills_bgm_defaults_when_missing() {
         // Simulate a JSON blob without the new BGM fields (forward compat)
-        let json = r#"{"version":2,"selected_model_id":"annabelle","camera_azimuth":0,"camera_distance":2.8}"#;
+        let json = r#"{"version":2,"selected_model_id":"ao","camera_azimuth":0,"camera_distance":2.8}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(!parsed.bgm_enabled);
         assert!((parsed.bgm_volume - DEFAULT_BGM_VOLUME).abs() < 0.001);
@@ -353,18 +363,18 @@ mod tests {
     #[test]
     fn model_camera_positions_independent_per_model() {
         let mut s = AppSettings::default();
-        s.model_camera_positions.insert("annabelle".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
-        s.model_camera_positions.insert("m58".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
+        s.model_camera_positions.insert("ao".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        s.model_camera_positions.insert("karina".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
 
         assert_eq!(s.model_camera_positions.len(), 2);
-        assert!((s.model_camera_positions["annabelle"].azimuth - 0.5).abs() < 0.001);
-        assert!((s.model_camera_positions["m58"].distance - 2.0).abs() < 0.001);
+        assert!((s.model_camera_positions["ao"].azimuth - 0.5).abs() < 0.001);
+        assert!((s.model_camera_positions["karina"].distance - 2.0).abs() < 0.001);
     }
 
     #[test]
     fn serde_fills_model_camera_positions_default_when_missing() {
         // JSON without model_camera_positions field — should default to empty map
-        let json = r#"{"version":2,"selected_model_id":"annabelle","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
+        let json = r#"{"version":2,"selected_model_id":"ao","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(parsed.model_camera_positions.is_empty());
     }

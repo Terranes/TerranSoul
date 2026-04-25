@@ -1,7 +1,7 @@
 # Brain & Memory — Advanced Architecture Design
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
-> Last updated: 2026-04-22  
+> Last updated: 2026-04-25  
 > **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
 
 ---
@@ -50,6 +50,9 @@
 19. [April 2026 Research Survey — Modern RAG & Agent-Memory Techniques](#april-2026-research-survey--modern-rag--agent-memory-techniques)
 20. [Brain Component Selection & Routing — How the LLM Knows What to Use](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
 21. [How Daily Conversation Updates the Brain — Write-Back / Learning Loop](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
+22. [Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
+23. [Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#code-rag-fusion-in-rerank_search_memories-phase-13-tier-2)
+24. [MCP Server — External AI Coding Assistant Integration (Phase 15)](#mcp-server--external-ai-coding-assistant-integration-phase-15)
 
 ---
 
@@ -592,6 +595,23 @@ final_score =
 
 ### RAG Injection Flow
 
+> **Note (2026-04-25):** The diagram below shows the foundational 4-step flow
+> that is still the backbone of every retrieval. Since this was first drawn,
+> the pipeline has been extended with:
+> - **ANN index** (usearch HNSW, Chunk 16.10) — O(log n) vector search replaces brute-force scan
+> - **Cloud embedding API** (Chunk 16.9) — vector RAG works in free/paid modes too
+> - **RRF fusion** (Chunk 1.8) — multiple retrieval signals fused via Reciprocal Rank Fusion (k=60)
+> - **HyDE** (Chunk 1.9) — LLM-hypothetical-document embedding for cold/abstract queries
+> - **Cross-encoder rerank** (Chunk 1.10) — LLM-as-judge scores (query, doc) pairs 0–10
+> - **Relevance threshold** (Chunk 16.1) — only entries above a configurable score are injected
+> - **Semantic chunking** (Chunk 16.11) — `text-splitter` crate replaces naive word-count splitter
+> - **Contextual Retrieval** (Chunk 16.2) — Anthropic 2024 approach prepends doc context to chunks
+> - **Contradiction resolution** (Chunk 17.2) — LLM-powered conflict detection + soft-closure
+> - **Temporal reasoning** (Chunk 17.3) — natural-language time-range queries
+> - **Memory versioning** (Chunk 16.12) — non-destructive V8 edit history
+>
+> See the § 19.2 research survey rows and `rules/completion-log.md` for as-built details.
+
 ```
 User types: "What are the filing deadlines?"
                 │
@@ -661,15 +681,20 @@ User types: "What are the filing deadlines?"
 │                    EMBEDDING ARCHITECTURE                         │
 │                                                                   │
 │  Model:     nomic-embed-text (768-dimensional)                   │
-│  Provider:  Ollama (localhost:11434/api/embed)                   │
+│  Providers:                                                       │
+│    Local:   Ollama (localhost:11434/api/embed)                   │
+│    Cloud:   OpenAI-compatible /v1/embeddings (paid/free modes)   │
+│             Dispatched by cloud_embeddings::embed_for_mode()     │
 │  Fallback:  Active chat model (lower quality but works)          │
 │  Storage:   BLOB column in SQLite (768 × 4 bytes = 3 KB each)   │
+│  ANN:       usearch HNSW index (vectors.usearch file)            │
+│             O(log n) search — scales to 1M+ entries              │
 │                                                                   │
 │  Memory budget:                                                   │
 │    1,000 memories   ×  3 KB  =    3 MB                           │
 │   10,000 memories   ×  3 KB  =   30 MB                           │
 │  100,000 memories   ×  3 KB  =  300 MB                           │
-│  1,000,000 memories ×  3 KB  = 3,000 MB (needs ANN index)       │
+│  1,000,000 memories ×  3 KB  = 3,000 MB (ANN index: ~100 MB)    │
 │                                                                   │
 │  Cosine Similarity:                                               │
 │  sim(A, B) = (A · B) / (||A|| × ||B||)                          │
@@ -1254,16 +1279,20 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 │  ┌──────────────┬──────────┬──────────┬──────────────────────┐     │
 │  │ Signal       │ Free API │ Paid API │ Local Ollama         │     │
 │  ├──────────────┼──────────┼──────────┼──────────────────────┤     │
-│  │ Vector (40%) │    ✗     │    ✗     │ ✓ (nomic-embed-text)│     │
+│  │ Vector (40%) │    ◐*    │    ✓**   │ ✓ (nomic-embed-text)│     │
 │  │ Keyword(20%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Recency(15%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Import.(10%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Decay  (10%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Tier    (5%) │    ✓     │    ✓     │ ✓                    │     │
 │  ├──────────────┼──────────┼──────────┼──────────────────────┤     │
-│  │ Effective    │ 60%      │ 60%      │ 100%                 │     │
-│  │ RAG quality  │ (no vec) │ (no vec) │ (full hybrid)        │     │
+│  │ Effective    │ 60–100%  │ 100%     │ 100%                 │     │
+│  │ RAG quality  │ (varies) │ (full)   │ (full hybrid)        │     │
 │  └──────────────┴──────────┴──────────┴──────────────────────┘     │
+│                                                                     │
+│  * Free API vector: depends on provider (Mistral/GitHub Models     │
+│    yes via cloud_embeddings; Pollinations/Groq no). Chunk 16.9.    │
+│  ** Paid API: OpenAI-compatible /v1/embeddings via Chunk 16.9.     │
 │                                                                     │
 │  Model selection:                                                   │
 │  • model_recommender.rs — RAM-based catalogue                      │
@@ -2538,8 +2567,78 @@ component is unreachable.
 
 ---
 
+## 24. MCP Server — External AI Coding Assistant Integration (Phase 15)
+
+> **Shipped as Chunk 15.1 (2026-04-25).** See `rules/completion-log.md`
+> and `docs/AI-coding-integrations.md` for full details.
+
+TerranSoul exposes its brain to **external AI coding assistants**
+(Copilot, Cursor, Windsurf, Continue, etc.) via the
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+The server runs as an in-process axum HTTP service on
+`127.0.0.1:7421` — no sidecar, no external binary.
+
+### 24.1 Architecture
+
+```
+External AI assistant
+      │  HTTP POST (JSON-RPC 2.0, Bearer token)
+      ▼
+┌───────────────────────────────────────────┐
+│  MCP Server (axum, 127.0.0.1:7421)       │
+│  src-tauri/src/ai_integrations/mcp/      │
+│  ├── mod.rs      — start/stop, McpServerHandle
+│  ├── auth.rs     — SHA-256 bearer token (mcp-token.txt)
+│  ├── router.rs   — JSON-RPC dispatch + auth middleware
+│  └── tools.rs    — 8 tool definitions + dispatch
+└──────────────────┬────────────────────────┘
+                   │ dyn BrainGateway (8 ops)
+                   ▼
+┌───────────────────────────────────────────┐
+│  BrainGateway trait                       │
+│  src-tauri/src/ai_integrations/gateway.rs │
+│  AppStateGateway adapter (holds AppState) │
+└───────────────────────────────────────────┘
+```
+
+**`AppState(Arc<AppStateInner>)`** — The cheaply-clonable Arc newtype
+lets the MCP server hold a reference without lifetime issues. Background
+axum task receives `AppState` directly.
+
+### 24.2 Exposed MCP tools
+
+| Tool | BrainGateway op | Description |
+|---|---|---|
+| `brain_health` | `health()` | Provider status + model info |
+| `brain_search` | `search()` | Semantic memory search |
+| `brain_ingest` | `ingest()` | Store a new memory |
+| `brain_ask` | `ask()` | One-shot LLM question |
+| `brain_summarize` | `summarize()` | Summarize text |
+| `brain_extract` | `extract()` | Extract structured entities |
+| `brain_list_memories` | `list_memories()` | List recent memories |
+| `brain_stats` | `stats()` | Memory store statistics |
+
+### 24.3 Security
+
+- **Bearer-token auth** — SHA-256 hash of a UUID v4 stored in
+  `$APP_DATA/mcp-token.txt` with `0600` permissions on Unix.
+- **Localhost-only** — binds to `127.0.0.1`, never `0.0.0.0`.
+- **Regeneratable** — `mcp_regenerate_token` Tauri command.
+
+### 24.4 Tauri commands
+
+- `mcp_server_start` / `mcp_server_stop` / `mcp_server_status` / `mcp_regenerate_token`
+- Lifecycle managed through `AppStateInner.mcp_server: TokioMutex<Option<McpServerHandle>>`
+
+### 24.5 Test coverage
+
+22 Rust tests: 4 auth, 6 router, 3 tools, 11 integration (ephemeral ports via `portpicker`).
+
+---
+
 ## Related Documents
 
+- [AI-coding-integrations.md](../docs/AI-coding-integrations.md) — Full MCP / gRPC / A2A integration design
 - [BRAIN-COMPLEX-EXAMPLE.md](../instructions/BRAIN-COMPLEX-EXAMPLE.md) — Quest-guided setup walkthrough
 - [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) — Technical reference (schema, RAG pipeline, comparisons)
 - [architecture-rules.md](../rules/architecture-rules.md) — Project architecture constraints

@@ -203,19 +203,21 @@ Default models shipped with TerranSoul are stored in the `public/models/default/
 public/
   models/
     default/
-      Annabelle the Sorcerer.vrm   # Default character (loaded on startup)
-      M58.vrm                      # Additional bundled character
+      Ao.vrm                       # Default character (loaded on startup)
+      Karina.vrm                   # Additional bundled character
+      Ki.vrm                       # Additional bundled character
 ```
 
 The model registry is defined in `src/config/default-models.ts`:
 
 ```ts
 export const DEFAULT_MODELS: DefaultModel[] = [
-  { id: 'annabelle', name: 'Annabelle the Sorcerer', path: '/models/default/Annabelle the Sorcerer.vrm' },
-  { id: 'm58', name: 'M58', path: '/models/default/M58.vrm' },
+  { id: 'ao', name: 'Ao', path: '/models/default/Ao.vrm' },
+  { id: 'karina', name: 'Karina', path: '/models/default/Karina.vrm' },
+  { id: 'ki', name: 'Ki', path: '/models/default/Ki.vrm' },
 ];
 
-export const DEFAULT_MODEL_ID = 'annabelle';
+export const DEFAULT_MODEL_ID = 'ao';
 ```
 
 **To add a new default model:**

@@ -217,6 +217,8 @@ watch(
   () => skillTree.tracker.activationTimestamps,
   (next) => {
     if (!next) return;
+    // Suppressed during first-launch wizard / batch init.
+    if (skillTree.notificationsSuppressed) return;
     const lastSeen = skillTree.tracker.lastSeenActivationTimestamp ?? 0;
     // First-launch grace: if there's no high-water mark yet, treat the current
     // active set as "already seen" so we don't blast the user with a stack of

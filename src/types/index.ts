@@ -3,6 +3,9 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   agentName?: string;
+  /** The agent profile ID that produced this message. Enables per-agent
+   *  conversation filtering and context isolation on agent swap. */
+  agentId?: string;
   sentiment?: 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral';
   timestamp: number;
   /** RPG-style quest choices attached to this message. */

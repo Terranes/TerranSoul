@@ -413,14 +413,15 @@ pub trait BrainGateway: Send + Sync {
 
 // ─── AppState adapter ───────────────────────────────────────────────────────
 
-/// Production adapter: wraps an `Arc<AppState>` and delegates every op to
-/// the existing in-process surfaces ([`crate::memory::MemoryStore`],
-/// [`crate::brain::OllamaAgent`], [`IngestSink`]).
+/// Production adapter: wraps an [`AppState`] (cheaply clonable Arc
+/// newtype) and delegates every op to the existing in-process surfaces
+/// ([`crate::memory::MemoryStore`], [`crate::brain::OllamaAgent`],
+/// [`IngestSink`]).
 ///
 /// Holds `Arc<dyn IngestSink>` so transports can plug in either
 /// `AppHandleIngestSink` (production) or a test sink (unit tests).
 pub struct AppStateGateway {
-    state: Arc<AppState>,
+    state: AppState,
     ingest: Option<Arc<dyn IngestSink>>,
 }
 
@@ -428,14 +429,14 @@ impl AppStateGateway {
     /// Build a gateway with no ingest sink — `ingest_url` will fail with
     /// [`GatewayError::NotConfigured`]. Use this for read-only deployments
     /// or in unit tests where the ingest path isn't exercised.
-    pub fn new(state: Arc<AppState>) -> Self {
+    pub fn new(state: AppState) -> Self {
         Self { state, ingest: None }
     }
 
     /// Build a gateway with an ingest sink. The transport (15.1 / 15.2)
     /// constructs this with an `AppHandleIngestSink` once the Control
     /// Panel chunk lands.
-    pub fn with_ingest(state: Arc<AppState>, ingest: Arc<dyn IngestSink>) -> Self {
+    pub fn with_ingest(state: AppState, ingest: Arc<dyn IngestSink>) -> Self {
         Self { state, ingest: Some(ingest) }
     }
 
@@ -855,8 +856,8 @@ mod tests {
         }
     }
 
-    fn seed_state() -> Arc<AppState> {
-        let state = Arc::new(AppState::for_test());
+    fn seed_state() -> AppState {
+        let state = AppState::for_test();
         {
             let store = state.memory_store.lock().unwrap();
             store

@@ -1,9 +1,10 @@
 # TerranSoul — AI Coding Integrations
 
-> **Status — design / planning.** The code described here is being built in
-> Phase 15 of [`rules/milestones.md`](../rules/milestones.md). Sections marked
-> **Planned** are not yet wired up and will be filled in (with screenshots,
-> exact command names, and CLI samples) as each chunk lands.
+> **Status — Phase 15 partially shipped.** The `BrainGateway` trait (Chunk 15.3)
+> and MCP server (Chunk 15.1) are complete. gRPC (15.2) and the Control Panel
+> (15.4–15.8) are in progress. Sections marked **Planned** are not yet wired up
+> and will be filled in (with screenshots, exact command names, and CLI samples)
+> as each chunk lands.
 
 ## Why this exists
 
@@ -81,18 +82,21 @@ per-client switch in the Control Panel.
 
 ## Protocol details
 
-### MCP server (Planned — Chunk 15.1)
+### MCP server (✅ shipped 2026-04-25, Chunk 15.1)
 
 - Implementation: `src-tauri/src/ai_integrations/mcp/`.
-- Library: prefer the official Rust MCP SDK (`rmcp` crate) over hand-rolling
-  JSON-RPC. If the crate version that supports both stdio + HTTP/SSE is not
-  yet stable, fall back to a thin JSON-RPC 2.0 router built on `axum`
-  (already in the dep tree).
+- Library: thin JSON-RPC 2.0 router on `axum` (Streamable HTTP transport).
+  The `rmcp` crate was evaluated but the hand-rolled axum approach is simpler
+  for the request/response ops surface and avoids pulling in an extra SDK.
 - Bind: `127.0.0.1:7421` (configurable). Loopback only by default.
-- Auth: bearer token, generated on first start, persisted to
-  `${app_config}/ai-integrations/mcp-token.txt` with mode `0600`.
-- Transports: **both** stdio (for `npx` / desktop-launched clients) and
-  HTTP/SSE (for editors that prefer URL-based connect).
+- Auth: bearer token, generated on first start (SHA-256 of UUID v4), persisted
+  to `${app_data}/mcp-token.txt` with mode `0600`.
+- Transport: **HTTP** (POST `/mcp` — JSON-RPC 2.0). stdio planned in Chunk 15.6.
+- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`,
+  `mcp_regenerate_token`.
+- **AppState refactor**: `AppState` is now a newtype around `Arc<AppStateInner>`
+  with `Deref + Clone`, enabling cheap cloning for the MCP server (and future
+  gRPC server) without changing any of the 150+ existing Tauri commands.
 
 ### gRPC server (Planned — Chunk 15.2)
 
@@ -138,10 +142,11 @@ As-built specifics (`src-tauri/src/ai_integrations/gateway.rs`):
 - **Errors** — typed `GatewayError` (`PermissionDenied / NotConfigured /
   InvalidArgument / NotFound / Storage / Internal`); transports map this
   cleanly to MCP `is_error` codes and gRPC `tonic::Status`.
-- **Adapter** — `AppStateGateway::new(Arc<AppState>)` for read-only
+- **Adapter** — `AppStateGateway::new(state: AppState)` for read-only
   deployments (`ingest_url` returns `NotConfigured`), or
   `AppStateGateway::with_ingest(state, Arc<dyn IngestSink>)` for full
-  read+write. The `IngestSink` trait keeps the gateway free of any
+  read+write. `AppState` is a cheaply clonable `Arc` newtype (Chunk 15.1
+  refactor). The `IngestSink` trait keeps the gateway free of any
   Tauri `AppHandle` dependency, so it remains unit-testable without a
   real Tauri runtime — production constructs an `AppHandleIngestSink`
   in the transport layer (15.1 / 15.2) that delegates to the existing
@@ -295,7 +300,7 @@ See **Phase 15** in [`rules/milestones.md`](../rules/milestones.md).
 
 | Chunk | Status | Title |
 |---|---|---|
-| 15.1 | not-started | MCP server (stdio + HTTP/SSE) + bearer-token auth |
+| 15.1 | ✅ shipped 2026-04-25 | MCP server (HTTP/JSON-RPC on 7421) + bearer-token auth + AppState Arc newtype |
 | 15.2 | not-started | gRPC server (`tonic`) with mTLS — recommended transport |
 | 15.3 | ✅ shipped 2026-04-24 | `BrainGateway` trait + shared op surface |
 | 15.4 | not-started | Control Panel sub-view under Brain tab |

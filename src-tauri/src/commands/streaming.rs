@@ -200,6 +200,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         role: "user".to_string(),
         content: message.clone(),
         agent_name: None,
+        agent_id: None,
         sentiment: None,
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -566,6 +567,7 @@ fn emit_stub_response<R: tauri::Runtime>(
         role: "assistant".to_string(),
         content: stub_text,
         agent_name: Some("TerranSoul".to_string()),
+        agent_id: None,
         sentiment: Some("neutral".to_string()),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -594,6 +596,7 @@ fn store_assistant_message(
         role: "assistant".to_string(),
         content: full_response.to_string(),
         agent_name: Some(model.to_string()),
+        agent_id: None,
         sentiment: Some(sentiment_label.to_string()),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

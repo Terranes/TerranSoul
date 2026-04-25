@@ -383,6 +383,15 @@ pub async fn exit_app(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns `true` when running a dev/debug build, `false` for release.
+///
+/// The frontend uses this to display a "DEV" badge and connect to the
+/// correct MCP port (7422 for dev, 7421 for release).
+#[tauri::command]
+pub fn is_dev_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

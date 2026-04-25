@@ -15,6 +15,16 @@
     class="app-shell"
     :class="{ 'pet-mode': isPetMode }"
   >
+    <!-- DEV badge — shown in both desktop and pet modes when running a debug build -->
+    <div
+      v-if="windowStore.isDevBuild"
+      class="dev-badge"
+      :class="{ 'dev-badge--pet': isPetMode }"
+      title="Development build — MCP on port 7422"
+    >
+      DEV
+    </div>
+
     <!-- Floating mode-toggle pill — visible on the Chat tab (but not while the
          quest constellation panel is open) and always in pet mode (where it's
          the only way back to desktop mode).  Hidden on all other tabs so it
@@ -22,20 +32,30 @@
     <div
       v-if="!appLoading && activeTab === 'chat' && !questConstellationOpen && !isPetMode"
       class="mode-toggle-pill"
-      :class="{ 'is-pet': isPetMode }"
     >
-      <button
-        class="mode-toggle-btn"
-        role="switch"
-        :aria-checked="isPetMode"
-        :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
-        @click="togglePetMode"
-      >
-        <span class="mode-toggle-track">
-          <span class="mode-toggle-thumb">{{ isPetMode ? '🐾' : '🖥' }}</span>
-        </span>
-        <span class="mode-toggle-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
-      </button>
+      <div class="mode-segmented">
+        <button
+          :class="['mode-seg-btn', { active: !isChatboxMode }]"
+          title="3D character mode"
+          @click="setDisplayMode('desktop')"
+        >
+          🖥 <span class="mode-seg-label">3D</span>
+        </button>
+        <button
+          :class="['mode-seg-btn', { active: isChatboxMode }]"
+          title="Chat-only mode (no 3D character)"
+          @click="setDisplayMode('chatbox')"
+        >
+          💬 <span class="mode-seg-label">Chat</span>
+        </button>
+        <button
+          class="mode-seg-btn"
+          title="Switch to pet mode"
+          @click="togglePetMode"
+        >
+          🐾 <span class="mode-seg-label">Pet</span>
+        </button>
+      </div>
     </div>
 
     <!-- Pet overlay mode: transparent character + floating chat -->
@@ -105,6 +125,7 @@
         <main class="app-main">
           <ChatView
             v-show="activeTab === 'chat'"
+            :chatbox-mode="isChatboxMode"
             @navigate="handleSkillNavigate"
           />
           <SkillTreeView
@@ -180,6 +201,7 @@ const showFirstLaunchWizard = ref(false);
 
 const hasBrain = computed(() => brain.hasBrain);
 const isPetMode = computed(() => windowStore.mode === 'pet');
+const isChatboxMode = computed(() => settingsStore.settings.chatbox_mode === true);
 const appIconUrl = '/icon.png';
 
 const tabs = [
@@ -207,6 +229,10 @@ function onFirstLaunchDone() {
 
 async function togglePetMode() {
   await windowStore.toggleMode();
+}
+
+async function setDisplayMode(mode: 'desktop' | 'chatbox') {
+  await settingsStore.setChatboxMode(mode === 'chatbox');
 }
 
 
@@ -268,6 +294,8 @@ onMounted(async () => {
 
     // Load current window mode from Rust backend
     await windowStore.loadMode();
+    // Load dev/release build flag for DEV badge
+    await windowStore.loadDevBuildFlag();
   } catch {
     // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
     brain.autoConfigureFreeApi();
@@ -456,86 +484,47 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
     top: 6px;
     left: 10px;
   }
-  .mode-toggle-btn {
-    padding: 3px 8px 3px 4px;
-    font-size: 0.65rem;
-    gap: 4px;
-  }
-  .mode-toggle-track {
-    width: 26px;
-    height: 13px;
-  }
-  .mode-toggle-thumb {
-    width: 9px;
-    height: 9px;
-    font-size: 0.38rem;
-  }
-  .mode-toggle-pill.is-pet .mode-toggle-thumb {
-    left: calc(100% - 11px);
-  }
 }
-.mode-toggle-btn {
+
+/* ── 3-way segmented mode toggle ── */
+.mode-segmented {
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px 6px 6px;
   border-radius: 20px;
   border: 1px solid rgba(108, 99, 255, 0.35);
   background: rgba(15, 23, 42, 0.82);
-  color: #e2e8f0;
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
   backdrop-filter: blur(10px);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  transition: background 0.15s, transform 0.15s, border-color 0.15s;
+  overflow: hidden;
 }
-.mode-toggle-btn:hover {
-  background: rgba(108, 99, 255, 0.25);
-  transform: translateY(-1px);
-}
-.mode-toggle-pill.is-pet .mode-toggle-btn {
-  border-color: rgba(108, 99, 255, 0.7);
-  background: rgba(40, 30, 80, 0.8);
-}
-.mode-toggle-track {
-  position: relative;
-  width: 36px;
-  height: 18px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  display: inline-flex;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s;
-}
-.mode-toggle-pill.is-pet .mode-toggle-track {
-  background: rgba(108, 99, 255, 0.45);
-  border-color: rgba(108, 99, 255, 0.6);
-}
-.mode-toggle-thumb {
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #0b1120;
+.mode-seg-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 0.55rem;
-  line-height: 1;
-  transform: translateY(-50%);
-  transition: left 0.18s ease, background 0.15s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
 }
-.mode-toggle-pill.is-pet .mode-toggle-thumb {
-  left: calc(100% - 16px);
-  background: #fff;
+.mode-seg-btn:hover {
+  background: rgba(108, 99, 255, 0.2);
+  color: #e2e8f0;
 }
-.mode-toggle-label { white-space: nowrap; }
+.mode-seg-btn.active {
+  background: rgba(108, 99, 255, 0.5);
+  color: #fff;
+}
+.mode-seg-btn + .mode-seg-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mode-seg-label {
+  display: inline;
+}
 .app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* ── Mobile bottom tab bar ── */
@@ -599,5 +588,33 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   .desktop-nav { display: none; }
   .mobile-bottom-nav { display: flex; }
   .app-main { flex: 1; min-height: 0; padding-bottom: 56px; }
+}
+
+/* ── DEV badge ── */
+.dev-badge {
+  position: fixed;
+  top: 6px;
+  right: 6px;
+  z-index: 9999;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #0f172a;
+  background: var(--ts-warning, #fbbf24);
+  border-radius: var(--ts-radius-sm, 4px);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.9;
+  line-height: 16px;
+}
+/* Pet mode: position near the top-right of the transparent overlay,
+   with a darker background so it's visible against any desktop wallpaper */
+.dev-badge--pet {
+  top: 4px;
+  right: 4px;
+  background: rgba(251, 191, 36, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 0, 0, 0.2);
 }
 </style>

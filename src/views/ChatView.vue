@@ -1,10 +1,14 @@
 <template>
   <div
     class="chat-view"
+    :class="{ 'chatbox-only': props.chatboxMode }"
     :style="{ '--keyboard-offset': keyboardHeight + 'px' }"
   >
-    <!-- Full-screen character viewport — the star of the show -->
-    <div class="viewport-layer">
+    <!-- Full-screen character viewport — hidden in chatbox mode -->
+    <div
+      v-if="!props.chatboxMode"
+      class="viewport-layer"
+    >
       <CharacterViewport
         ref="viewportRef"
         @request-add-music="handleAddMusicRequest"
@@ -23,7 +27,7 @@
     <!-- Brain setup card (shown when no brain is configured) -->
     <Transition name="fade-up">
       <div
-        v-if="!brain.hasBrain"
+        v-if="!brain.hasBrain && !props.chatboxMode"
         class="brain-overlay"
       >
         <div class="brain-card">
@@ -113,7 +117,7 @@
       mode="out-in"
     >
       <div
-        v-if="subtitleVisible"
+        v-if="subtitleVisible && !props.chatboxMode"
         :key="subtitleKey"
         class="subtitle-overlay"
         :style="{ bottom: subtitleBottom }"
@@ -129,7 +133,7 @@
     <!-- Floating emoji popup above character head -->
     <Transition name="emoji-pop">
       <div
-        v-if="emojiPopupVisible"
+        v-if="emojiPopupVisible && !props.chatboxMode"
         :key="emojiPopupKey"
         class="emoji-popup"
       >
@@ -137,8 +141,9 @@
       </div>
     </Transition>
 
-    <!-- AI state indicator pill -->
+    <!-- AI state indicator pill (3D mode only — chatbox has it in header) -->
     <div
+      v-if="!props.chatboxMode"
       class="ai-state-pill"
       :class="characterStore.state"
     >
@@ -146,16 +151,130 @@
       <span class="ai-state-label">{{ stateLabel }}</span>
     </div>
 
-    <!-- Brain status (shows active provider/model) -->
+    <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
       <div
-        v-if="brain.hasBrain"
+        v-if="brain.hasBrain && !props.chatboxMode"
         class="brain-status-pill"
       >
         <span class="brain-pill-dot" />
         <span>{{ activeProviderName }}</span>
       </div>
     </Transition>
+
+    <!-- ═══ CHATBOX-ONLY LAYOUT ═══ -->
+    <!-- Clean full-height chat when 3D viewport is hidden -->
+    <div
+      v-if="props.chatboxMode"
+      class="chatbox-layout"
+    >
+      <!-- Chatbox header bar -->
+      <div class="chatbox-header">
+        <div class="chatbox-header-left">
+          <div
+            v-if="!brain.hasBrain"
+            class="chatbox-brain-setup"
+          >
+            <span>🧠</span>
+            <button
+              class="chatbox-brain-btn"
+              @click="activateFreeApi"
+            >
+              Set up Brain — Use Free Cloud API
+            </button>
+          </div>
+          <div
+            v-else
+            class="chatbox-provider"
+          >
+            <span class="brain-pill-dot" />
+            <span>{{ activeProviderName }}</span>
+          </div>
+        </div>
+        <div class="chatbox-header-right">
+          <div
+            class="chatbox-state-pill"
+            :class="characterStore.state"
+          >
+            <span class="ai-state-dot" />
+            <span>{{ stateLabel }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full-height message list -->
+      <div class="chatbox-messages">
+        <TaskProgressBar />
+        <ChatMessageList
+          :messages="conversationStore.messages"
+          :is-thinking="conversationStore.isThinking"
+          :streaming-text="conversationStore.streamingText"
+          :is-streaming="conversationStore.isStreaming"
+          @suggest="handleSend"
+          @start-quest="handleStartQuest"
+          @navigate="(target: string) => emit('navigate', target)"
+        />
+      </div>
+
+      <!-- Input footer -->
+      <div class="chatbox-footer">
+        <QuestChoiceOverlay
+          :choices="activeQuestChoices"
+          :quest-id="activeQuestId"
+          :question-text="activeQuestQuestion"
+          @pick="handleQuestChoice"
+          @dismiss="dismissHotseat"
+        />
+        <TaskControls
+          :visible="conversationStore.isThinking || conversationStore.isStreaming"
+          :queue-count="conversationStore.messageQueue.length"
+          @stop="conversationStore.stopGeneration()"
+          @stop-and-send="conversationStore.stopAndSend()"
+          @add-to-queue="(msg: string) => conversationStore.addToQueue(msg)"
+          @steer="(msg: string) => conversationStore.steerWithMessage(msg)"
+        />
+        <div class="input-row">
+          <button
+            v-if="voice.config.asr_provider"
+            class="mic-btn"
+            :class="{ listening: asr.isListening.value }"
+            :aria-label="asr.isListening.value ? 'Stop listening' : 'Start voice input'"
+            @click="toggleMic"
+          >
+            <svg
+              v-if="!asr.isListening.value"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z" />
+            </svg>
+            <svg
+              v-else
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <rect
+                x="6"
+                y="6"
+                width="12"
+                height="12"
+                rx="2"
+              />
+            </svg>
+          </button>
+          <ChatInput
+            :disabled="conversationStore.isThinking"
+            @submit="handleSend"
+            @focus="onInputFocused"
+            @blur="onInputBlurred"
+          />
+        </div>
+      </div>
+    </div>
 
     <!-- Game-dialog upgrade prompt -->
     <UpgradeDialog
@@ -177,8 +296,9 @@
       @finish="handleKnowledgeQuestFinish"
     />
 
-    <!-- Bottom chat panel — input always visible, history toggles via button -->
+    <!-- Bottom chat panel — input always visible, history toggles via button (3D mode only) -->
     <div
+      v-if="!props.chatboxMode"
       class="bottom-panel"
       :class="{ expanded: chatDrawerExpanded }"
     >
@@ -244,6 +364,15 @@
           :question-text="activeQuestQuestion"
           @pick="handleQuestChoice"
           @dismiss="dismissHotseat"
+        />
+        <!-- Long-running task controls — shown while AI is thinking/streaming -->
+        <TaskControls
+          :visible="conversationStore.isThinking || conversationStore.isStreaming"
+          :queue-count="conversationStore.messageQueue.length"
+          @stop="conversationStore.stopGeneration()"
+          @stop-and-send="conversationStore.stopAndSend()"
+          @add-to-queue="(msg: string) => conversationStore.addToQueue(msg)"
+          @steer="(msg: string) => conversationStore.steerWithMessage(msg)"
         />
         <div class="input-row">
           <button
@@ -335,6 +464,7 @@ import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
+import TaskControls from '../components/TaskControls.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
@@ -909,6 +1039,11 @@ async function handleUpgradeAccept(optionId: string) {
 }
 
 const emit = defineEmits<{ navigate: [target: string] }>();
+
+const props = defineProps<{
+  /** When true, hide the 3D character and show a clean chat-only layout. */
+  chatboxMode?: boolean;
+}>();
 
 /**
  * Speak quest/non-streamed text via TTS.
@@ -1675,6 +1810,129 @@ onUnmounted(() => {
 .brain-local-section { border-top: 1px solid var(--ts-border-subtle); padding-top: 6px; margin-top: 2px; }
 
 /* ── Mobile adjustments ── */
+/* ═══ CHATBOX-ONLY MODE ═══
+ * When chatbox_mode is active, the entire layout changes from the
+ * 3D-overlay approach to a clean, traditional chat interface:
+ * - No Three.js canvas (zero GPU cost)
+ * - Full-height message list with dark-themed background
+ * - Compact header bar with brain status and AI state
+ * - Input pinned to the bottom
+ * Designed for users who prefer a text-focused experience. */
+
+.chat-view.chatbox-only {
+  background: var(--ts-bg-base, #0f172a);
+}
+
+.chatbox-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ── Chatbox header bar ── */
+.chatbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--ts-bg-nav, #0b1120);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.chatbox-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chatbox-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chatbox-provider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #86efac;
+  font-weight: 600;
+}
+.chatbox-brain-setup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+}
+.chatbox-brain-btn {
+  border: 1px solid rgba(124, 111, 255, 0.4);
+  background: rgba(124, 111, 255, 0.15);
+  color: var(--ts-accent, #7c6fff);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: var(--ts-radius-pill, 999px);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.chatbox-brain-btn:hover {
+  background: rgba(124, 111, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* AI state pill in chatbox header — smaller inline variant */
+.chatbox-state-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--ts-radius-pill, 999px);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+  border: 1px solid rgba(147, 197, 253, 0.2);
+  transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.25); color: #fcd34d; border-color: rgba(253, 230, 138, 0.3); }
+.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.2); color: #86efac; border-color: rgba(134, 239, 172, 0.25); }
+.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.2); color: #67e8f9; border-color: rgba(103, 232, 249, 0.25); }
+.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.2); color: #d8b4fe; border-color: rgba(216, 180, 254, 0.25); }
+.chatbox-state-pill.angry    { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(252, 165, 165, 0.25); }
+.chatbox-state-pill.thinking .ai-state-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+
+/* ── Full-height message area ── */
+.chatbox-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+/* ── Chatbox input footer ── */
+.chatbox-footer {
+  flex-shrink: 0;
+  background: var(--ts-bg-nav, #0b1120);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 16px 12px;
+}
+.chatbox-footer .input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Mobile responsive for chatbox mode ── */
+@media (max-width: 640px) {
+  .chatbox-header { padding: 8px 10px; }
+  .chatbox-footer { padding: 8px 10px 10px; }
+  .chatbox-state-pill { padding: 2px 8px; font-size: 0.6rem; }
+}
+
 @media (max-width: 640px) {
   .bottom-panel { max-height: 50vh; }
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }

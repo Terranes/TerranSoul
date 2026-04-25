@@ -19,6 +19,7 @@
 //! Chunk reference: **15.3** in `rules/milestones.md`.
 
 pub mod gateway;
+pub mod mcp;
 
 pub use gateway::{
     AppStateGateway, BrainGateway, GatewayCaps, GatewayError, HealthResponse, IngestSink,

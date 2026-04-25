@@ -37,6 +37,9 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub agent_name: Option<String>,
+    /// The agent profile ID that produced this message. `None` for
+    /// messages created before per-agent threading was added.
+    pub agent_id: Option<String>,
     pub sentiment: Option<String>,
     pub timestamp: u64,
 }
@@ -70,6 +73,7 @@ pub async fn process_message(
         role: "user".to_string(),
         content: message.to_string(),
         agent_name: None,
+        agent_id: None,
         sentiment: None,
         timestamp: now_ms(),
     };
@@ -208,6 +212,7 @@ pub async fn process_message(
         role: "assistant".to_string(),
         content,
         agent_name: Some(agent_name),
+        agent_id: None,
         sentiment: Some(sentiment_str(&sentiment).to_string()),
         timestamp: now_ms(),
     };

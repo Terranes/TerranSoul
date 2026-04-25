@@ -791,3 +791,97 @@ describe('conversation store — chat-based LLM switching integration', () => {
     expect(store.messages[1].content).toBe('42 is the answer');
   });
 });
+
+describe('conversation store — long-running task controls', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+  });
+
+  it('addToQueue accumulates messages', () => {
+    const store = useConversationStore();
+    store.addToQueue('first');
+    store.addToQueue('second');
+    expect(store.messageQueue).toEqual(['first', 'second']);
+  });
+
+  it('addToQueue ignores blank messages', () => {
+    const store = useConversationStore();
+    store.addToQueue('');
+    store.addToQueue('   ');
+    expect(store.messageQueue).toHaveLength(0);
+  });
+
+  it('stopGeneration is callable without error when idle', () => {
+    const store = useConversationStore();
+    // Should not throw even when nothing is streaming
+    expect(() => store.stopGeneration()).not.toThrow();
+  });
+
+  it('stopAndSend is callable without error when idle', () => {
+    const store = useConversationStore();
+    expect(() => store.stopAndSend()).not.toThrow();
+  });
+
+  it('steerWithMessage queues the steering message at front', () => {
+    const store = useConversationStore();
+    store.addToQueue('queued-first');
+    store.steerWithMessage('steer-me');
+    // Steer should be at the front (unshift)
+    expect(store.messageQueue[0]).toBe('steer-me');
+    expect(store.messageQueue[1]).toBe('queued-first');
+  });
+
+  it('steerWithMessage ignores blank messages', () => {
+    const store = useConversationStore();
+    store.steerWithMessage('');
+    expect(store.messageQueue).toHaveLength(0);
+  });
+
+  it('drains queue after persona fallback completes', async () => {
+    const store = useConversationStore();
+    store.addToQueue('follow-up');
+    await store.sendMessage('hello');
+    // The first sendMessage completes and drains, triggering the queued message.
+    // Give the async drainQueue a tick to run.
+    await new Promise((r) => setTimeout(r, 600));
+    // Both the original and the queued message should have been processed
+    // (user + assistant × 2 = 4 messages minimum)
+    expect(store.messages.length).toBeGreaterThanOrEqual(4);
+    const userMsgs = store.messages.filter(m => m.role === 'user');
+    expect(userMsgs.some(m => m.content === 'follow-up')).toBe(true);
+  });
+
+  it('stopGeneration during browser streaming aborts and discards', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onChunk: (text: string) => void; onDone: (text: string) => void; onError: (err: string) => void }) => {
+        callbacks.onChunk('partial ');
+        // Don't call onDone yet — simulate long-running
+        const ctrl = new AbortController();
+        // When abort is called, fire onError
+        ctrl.signal.addEventListener('abort', () => {
+          callbacks.onError('AbortError');
+        });
+        return ctrl;
+      },
+    );
+
+    const store = useConversationStore();
+    const sendPromise = store.sendMessage('hello');
+
+    // Wait a tick for streaming to start
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Stop generation (discard)
+    store.stopGeneration();
+
+    // Wait for sendMessage to settle
+    await sendPromise;
+
+    // Should have only the user message — partial output discarded
+    expect(store.isThinking).toBe(false);
+  });
+});

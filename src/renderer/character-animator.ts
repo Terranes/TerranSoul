@@ -296,7 +296,7 @@ const BONE_LAMBDA = 6;
 const BONE_STRIDE = 3;
 
 // ── Dress-aware arm clamp boundaries ──────────────────────────────────
-// For characters wearing flared dresses (e.g. Annabelle), the arms must
+// For characters wearing flared dresses, the arms must
 // not rotate too tightly against the body or the hands/forearms clip
 // through the dress volume.
 //

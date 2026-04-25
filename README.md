@@ -147,7 +147,7 @@ TerranSoul includes a **TerranSoul Link** layer that securely connects all your 
 
 ## What's Implemented
 
-TerranSoul has completed **12 phases of development**. Here's what's working today:
+TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 15–18). Here's what's working today:
 
 ### � Skill Tree / Quest System (RPG Brain Configuration)
 - **Constellation map** — full-screen radial cluster layout with pan/zoom and minimap
@@ -165,7 +165,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 
 ### 🎭 3D Character System
 - **VRM 1.0 & 0.x** model support via Three.js + `@pixiv/three-vrm`
-- 2 bundled default models (Annabelle, M58) + persistent custom VRM import
+- 3 bundled default models (Ao, Karina, Ki) + persistent custom VRM import
 - Natural relaxed pose (not T-pose), spring bone warmup, frustum culling disabled
 - **AvatarStateMachine** — 5 body states (idle, thinking, talking, happy, sad) with expression-driven animation
 - **Exponential damping** for smooth bone/expression transitions
@@ -238,7 +238,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 > Architectural reference: **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)** — full schema, RAG pipeline, decay model, knowledge graph, and April 2026 research survey.
 
 **Core modules** (`src-tauri/src/memory/`)
-- `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V7**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal weighted-sum scoring), `hybrid_search_rrf` (RRF-fused vector + keyword + freshness retrievers), `apply_decay`, `promote`
+- `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V8**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal weighted-sum scoring), `hybrid_search_rrf` (RRF-fused vector + keyword + freshness retrievers), `apply_decay`, `promote`
 - `backend.rs` — `StorageBackend` trait + `StorageConfig` + `StorageError` (the seam every backend implements)
 - `migrations.rs` — auto-applied schema migrations through V8 (`memories` + `memory_edges` with temporal `valid_from` / `valid_to` columns + V7 `edge_source` external-KG provenance + V8 `memory_versions` edit history table, `PRAGMA foreign_keys=ON`)
 - `edges.rs` — `MemoryEdge`, `NewMemoryEdge` (with V7 `edge_source: Option<String>`), `EdgeDirection`, `EdgeSource`, `EdgeStats`, `COMMON_RELATION_TYPES` (17-type taxonomy), `normalise_rel_type`, `parse_llm_edges`, `format_memories_for_extraction`, `delete_edges_by_edge_source`
@@ -322,6 +322,16 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - Local Ollama models surface as marketplace agents — install & activate from the same UI
 - WASM sandbox for agent isolation
 - See [`instructions/OPENCLAW-EXAMPLE.md`](./instructions/OPENCLAW-EXAMPLE.md) for an end-to-end walkthrough using the OpenClaw bridge agent
+
+### 🤖 AI Coding Integrations (Brain Gateway)
+
+> Architectural reference: **[docs/AI-coding-integrations.md](docs/AI-coding-integrations.md)** — full protocol details, security model, auto-setup writers, and the VS Code Copilot incremental-indexing pact.
+
+- **MCP server** (Chunk 15.1) — HTTP/JSON-RPC 2.0 on `127.0.0.1:7421` via axum Streamable HTTP transport. Bearer-token auth (`mcp-token.txt`). 8 brain tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`).
+- **BrainGateway trait** (Chunk 15.3) — single typed op surface shared by MCP and future gRPC transports. `AppStateGateway` adapter, capability gating (`GatewayCaps`), typed errors, delta-stable fingerprint for VS Code Copilot cache.
+- **AppState Arc newtype** — `AppState(Arc<AppStateInner>)` with `Deref + Clone`. Enables cheap sharing with background servers without changing any of the 150+ existing Tauri commands.
+- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`
+- gRPC server (Chunk 15.2), Control Panel (15.4), auto-setup writers (15.6) — planned
 
 ### 🖥️ Window Modes
 - Standard desktop window
@@ -442,9 +452,9 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 ## Development Status
 
-**Completed phases:** 18 (Phases 0–11 foundation, 12 docs, 13 code-RAG, 14 partial, 18 categorisation)
-**Test suite:** 1164 frontend (Vitest) + 1053 backend (cargo) + 4 E2E (Playwright) — all passing
-**Current focus:** Phases 14–17 — Persona refinement, AI Coding Integrations, Modern RAG, Brain Intelligence
+**Completed phases:** 0–14 foundation/partial, Phase 15 partially shipped (15.1 MCP server, 15.3 BrainGateway), Phases 16–18 partially shipped (RAG, memory intelligence, categorisation)
+**Test suite:** 1164 frontend (Vitest) + 1075 backend (cargo) + 4 E2E (Playwright) — all passing
+**Current focus:** Phase 15 AI Coding Integrations (gRPC, Control Panel), Phase 16 Modern RAG, Phase 17 Brain Intelligence
 **See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 
 See [rules/milestones.md](rules/milestones.md) for upcoming work and [rules/completion-log.md](rules/completion-log.md) for the detailed record of all completed work.

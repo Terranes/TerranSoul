@@ -82,22 +82,22 @@ mod tests {
     fn app_settings_roundtrip_with_camera_positions() {
         let payload = json!({
             "version": 2,
-            "selected_model_id": "annabelle",
+            "selected_model_id": "ao",
             "camera_azimuth": 0.5,
             "camera_distance": 3.0,
             "bgm_enabled": true,
             "bgm_volume": 0.25,
             "bgm_track_id": "prelude",
             "model_camera_positions": {
-                "annabelle": { "azimuth": 0.5, "distance": 3.0 }
+                "ao": { "azimuth": 0.5, "distance": 3.0 }
             }
         });
         let settings: crate::settings::AppSettings =
             serde_json::from_value(payload).unwrap();
-        assert_eq!(settings.selected_model_id, "annabelle");
+        assert_eq!(settings.selected_model_id, "ao");
         assert!(settings.bgm_enabled);
         assert_eq!(settings.model_camera_positions.len(), 1);
-        let cam = &settings.model_camera_positions["annabelle"];
+        let cam = &settings.model_camera_positions["ao"];
         assert!((cam.azimuth - 0.5).abs() < 0.001);
     }
 
@@ -170,6 +170,7 @@ mod tests {
             role: "assistant".into(),
             content: "Hello!".into(),
             agent_name: Some("TerranSoul".into()),
+            agent_id: None,
             sentiment: Some("happy".into()),
             timestamp: 1713312000000,
         };

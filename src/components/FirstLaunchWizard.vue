@@ -211,6 +211,10 @@ async function chooseOneByOne() {
 async function runRecommendedSetup(autoAcceptAll: boolean) {
   const items: { icon: string; label: string }[] = [];
 
+  // Suppress quest-unlock / combo-unlock notifications during batch setup
+  // so the user isn't blasted with popups for every auto-detected feature.
+  skillTree.suppressNotifications();
+
   // ── Phase 1: Brain (Free API) ───────────────────────────────────────
   setupMessage.value = 'Configuring AI brain (Pollinations AI)...';
   setupProgress.value = 10;
@@ -256,6 +260,10 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
     items.push({ icon: '📜', label: 'Quests ready — accept them one by one from the Quest tab' });
   }
   setupProgress.value = 90;
+
+  // Resume notifications — marks all current activations + combos as "seen"
+  // so only future user-driven unlocks trigger ceremonies.
+  skillTree.resumeNotifications();
 
   // ── Phase 5: Persist ────────────────────────────────────────────────
   setupMessage.value = 'Saving configuration...';

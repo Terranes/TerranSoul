@@ -6,8 +6,6 @@ export interface DefaultModel {
   path: string;
   /** Character gender — determines TTS voice. Defaults to 'female'. */
   gender: ModelGender;
-  /** Optional thumbnail image path shown in the model selector dropdown. */
-  thumbnail?: string;
   /** Y-axis rotation to face camera. VRM standard faces +Z; models authored
    *  facing -Z need Math.PI to turn toward the camera at +Z. Default: 0. */
   rotationY?: number;
@@ -31,19 +29,23 @@ export const GENDER_VOICES: Record<ModelGender, {
 
 export const DEFAULT_MODELS: DefaultModel[] = [
   {
-    id: 'annabelle',
-    name: 'Annabelle the Sorcerer',
-    path: '/models/default/Annabelle the Sorcerer.vrm',
-    thumbnail: '/models/default/Annabelle the Sorcerer.png',
+    id: 'ao',
+    name: 'Ao',
+    path: '/models/default/Ao.vrm',
     gender: 'female',
   },
   {
-    id: 'm58',
-    name: 'M58',
-    path: '/models/default/M58.vrm',
-    thumbnail: '/models/default/M58.png',
-    gender: 'male',
+    id: 'karina',
+    name: 'Karina',
+    path: '/models/default/Karina.vrm',
+    gender: 'female',
+  },
+  {
+    id: 'ki',
+    name: 'Ki',
+    path: '/models/default/Ki.vrm',
+    gender: 'female',
   },
 ];
 
-export const DEFAULT_MODEL_ID = 'annabelle';
+export const DEFAULT_MODEL_ID = 'ao';
