@@ -1675,8 +1675,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(11, 17, 32, 0.78);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-overlay);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1685,10 +1685,10 @@ async function loadModelIntoScene(newPath: string | undefined) {
   transition: background 0.2s, transform 0.15s;
   flex-shrink: 0;
   z-index: 2;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--ts-shadow-md);
 }
 .music-bar-toggle:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--ts-bg-hover);
   transform: scale(1.1);
 }
 .music-bar-toggle-icon {
@@ -1711,10 +1711,10 @@ async function loadModelIntoScene(newPath: string | undefined) {
   margin-left: 6px;
   padding: 6px 10px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(11, 17, 32, 0.92);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-overlay);
   backdrop-filter: blur(16px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--ts-shadow-lg);
 }
 
 .music-btn {
@@ -1722,8 +1722,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   height: 30px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
+  background: var(--ts-bg-input);
+  color: var(--ts-viewport-text);
   font-size: 0.85rem;
   cursor: pointer;
   display: flex;
@@ -1733,16 +1733,16 @@ async function loadModelIntoScene(newPath: string | undefined) {
   flex-shrink: 0;
 }
 .music-btn:hover {
-  background: rgba(56, 189, 248, 0.3);
+  background: var(--ts-accent-glow);
   transform: scale(1.1);
 }
 .music-btn.play-btn {
-  background: rgba(56, 189, 248, 0.25);
+  background: var(--ts-accent-glow);
   width: 34px;
   height: 34px;
 }
 .music-btn.play-btn:hover {
-  background: rgba(56, 189, 248, 0.45);
+  background: color-mix(in srgb, var(--ts-accent-blue) 35%, transparent);
 }
 .music-btn.add-btn {
   font-size: 0.9rem;
@@ -1769,7 +1769,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   height: 3px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ts-border-strong);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -1779,14 +1779,14 @@ async function loadModelIntoScene(newPath: string | undefined) {
   -webkit-appearance: none;
   width: 12px;
   height: 12px;
-  background: rgba(56, 189, 248, 0.95);
+  background: var(--ts-accent-blue);
   border-radius: 50%;
   cursor: pointer;
 }
 .music-vol-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  background: rgba(56, 189, 248, 0.95);
+  background: var(--ts-accent-blue);
   border-radius: 50%;
   cursor: pointer;
   border: none;

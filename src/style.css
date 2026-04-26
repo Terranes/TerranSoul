@@ -74,6 +74,9 @@
   --ts-border-focus: var(--ts-accent);
   --ts-border-strong: rgba(255, 255, 255, 0.16);
 
+  /* ── Body gradient — auto-applied by App.vue on theme change ── */
+  --ts-bg-gradient: linear-gradient(135deg, #060c18 0%, #0f172a 55%, #1a2540 100%);
+
   /* ── Backdrop ── */
   --ts-bg-backdrop: rgba(0, 0, 0, 0.6);
 
@@ -207,6 +210,7 @@ html[data-theme="corporate"] {
   --ts-quest-muted:  #616161;
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.32);
+  --ts-bg-gradient: linear-gradient(135deg, #eef0f8 0%, #f5f5f5 55%, #ece8f5 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -281,6 +285,7 @@ html[data-theme="cat"] {
   --ts-quest-muted:  rgba(200, 184, 154, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  --ts-bg-gradient: linear-gradient(135deg, #0e0a06 0%, #1a1410 55%, #261c12 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   14px;
@@ -348,6 +353,7 @@ html[data-theme="sakura"] {
   --ts-quest-muted:  rgba(212, 160, 185, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  --ts-bg-gradient: linear-gradient(135deg, #160f18 0%, #1e1520 55%, #24102a 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;
@@ -417,6 +423,7 @@ html[data-theme="kids"] {
   --ts-quest-muted:  rgba(165, 180, 252, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  --ts-bg-gradient: linear-gradient(135deg, #0e0b1e 0%, #1a1638 55%, #221c50 100%);
 
   --ts-radius-sm:   10px;
   --ts-radius-md:   16px;
@@ -491,6 +498,7 @@ html[data-theme="brain"] {
   --ts-quest-muted:  rgba(110, 184, 160, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.70);
+  --ts-bg-gradient: linear-gradient(135deg, #060a0e 0%, #0a0f14 55%, #0c1a1e 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -558,6 +566,7 @@ html[data-theme="midnight"] {
   --ts-quest-muted:  rgba(121, 130, 169, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.80);
+  --ts-bg-gradient: linear-gradient(135deg, #000000 0%, #050505 55%, #0d0d14 100%);
 }
 
 /* ── Aurora ───────────────────────────────────────────────────────────────── */
@@ -621,6 +630,7 @@ html[data-theme="aurora"] {
   --ts-quest-muted:  rgba(128, 203, 196, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  --ts-bg-gradient: linear-gradient(135deg, #061014 0%, #0c1a1e 55%, #102830 100%);
 }
 
 /* ── Pastel (light) ───────────────────────────────────────────────────────── */
@@ -684,6 +694,7 @@ html[data-theme="pastel"] {
   --ts-quest-muted:  #71717a;
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.35);
+  --ts-bg-gradient: linear-gradient(135deg, #f5f0fa 0%, #faf8f5 55%, #f0ebe8 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;

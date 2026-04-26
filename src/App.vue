@@ -315,15 +315,15 @@ function handleQuestBubble() {
 function applyBodyBackground(mode: 'window' | 'pet') {
   if (typeof document === 'undefined') return;
   // In pet mode the body must be transparent so the desktop shows through.
-  // In window mode, read the current theme's base color from the resolved
-  // CSS variable so every theme is honoured without hardcoded hex values.
+  // In window mode, read the current theme's gradient token so every theme
+  // gets its own thematic background without hardcoded hex values.
   if (mode === 'pet') {
     document.body.style.background = 'transparent';
   } else {
-    const base = getComputedStyle(document.documentElement)
-      .getPropertyValue('--ts-bg-base')
-      .trim();
-    document.body.style.background = base || '#0f172a';
+    const styles = getComputedStyle(document.documentElement);
+    const gradient = styles.getPropertyValue('--ts-bg-gradient').trim();
+    const base = styles.getPropertyValue('--ts-bg-base').trim();
+    document.body.style.background = gradient || base || '#0f172a';
   }
 }
 
