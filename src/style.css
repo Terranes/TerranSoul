@@ -760,23 +760,11 @@ html[data-theme="pastel"] {
 }
 
 /* ═════════════════════════════════════════════════════════════════════════════
-   Tailwind Variants — theme-aware selectors for component scoped CSS.
-   Usage: @variant light { & { color: var(--ts-text-primary); } }
+   Tailwind Custom Variants — theme-aware selectors for component scoped CSS.
+   Usage in scoped style: @variant light { & { color: var(--ts-text-primary); } }
    ═════════════════════════════════════════════════════════════════════════════ */
-@variant light {
-  html[data-theme="corporate"] &,
-  html[data-theme="pastel"] &
-}
-
-@variant theme-dark {
-  html[data-theme="midnight"] &,
-  html[data-theme="cat"] &,
-  html[data-theme="brain"] &,
-  html[data-theme="aurora"] &,
-  html[data-theme="sakura"] &,
-  html[data-theme="kids"] &,
-  html[data-theme="default"] &
-}
+@custom-variant light (:is(html[data-theme="corporate"], html[data-theme="pastel"]) &);
+@custom-variant theme-dark (:is(html[data-theme="default"], html[data-theme="midnight"], html[data-theme="cat"], html[data-theme="brain"], html[data-theme="aurora"], html[data-theme="sakura"], html[data-theme="kids"]) &);
 
 /* ═════════════════════════════════════════════════════════════════════════════
    Base Styles
