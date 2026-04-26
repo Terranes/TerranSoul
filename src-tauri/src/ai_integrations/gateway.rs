@@ -763,6 +763,7 @@ impl BrainGateway for AppStateGateway {
             (Some(crate::brain::BrainMode::FreeApi { .. }), _) => "free",
             (Some(crate::brain::BrainMode::PaidApi { .. }), _) => "openai",
             (Some(crate::brain::BrainMode::LocalOllama { .. }), _) => "ollama",
+            (Some(crate::brain::BrainMode::LocalLmStudio { .. }), _) => "lmstudio",
             (None, Some(_)) => "ollama",
             (None, None) => "none",
         };

@@ -177,6 +177,25 @@ async fn complete_via_mode(
             let (reply, _) = agent.call(msgs).await;
             Ok(reply)
         }
+        BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            ..
+        } => {
+            let client = OpenAiClient::new(base_url, model, api_key.as_deref());
+            let msgs = vec![
+                OpenAiMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                OpenAiMessage {
+                    role: "user".to_string(),
+                    content: user_prompt.to_string(),
+                },
+            ];
+            client.chat(msgs).await
+        }
     }
 }
 

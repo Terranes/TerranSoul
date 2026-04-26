@@ -151,6 +151,48 @@ export interface OllamaModelEntry {
   size: number;
 }
 
+export interface LmStudioStatus {
+  running: boolean;
+  model_count: number;
+  loaded_count: number;
+}
+
+export interface LmStudioLoadedInstance {
+  id: string;
+}
+
+export interface LmStudioModelEntry {
+  key: string;
+  display_name: string;
+  type: 'llm' | 'embedding' | string;
+  publisher?: string | null;
+  architecture?: string | null;
+  size_bytes: number;
+  params_string?: string | null;
+  loaded_instances: LmStudioLoadedInstance[];
+}
+
+export interface LmStudioDownloadStatus {
+  status: string;
+  job_id?: string | null;
+  total_size_bytes?: number | null;
+  downloaded_size_bytes?: number | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+}
+
+export interface LmStudioLoadResult {
+  type: 'llm' | 'embedding' | string;
+  instance_id: string;
+  status: string;
+  load_time_seconds?: number | null;
+}
+
+export interface LmStudioUnloadResult {
+  instance_id: string;
+}
+
 // ── Memory ────────────────────────────────────────────────────────────────────
 
 export type MemoryType = 'fact' | 'preference' | 'context' | 'summary';
@@ -318,7 +360,14 @@ export interface FreeProvider {
 export type BrainMode =
   | { mode: 'free_api'; provider_id: string; api_key: string | null }
   | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string }
-  | { mode: 'local_ollama'; model: string };
+  | { mode: 'local_ollama'; model: string }
+  | {
+      mode: 'local_lm_studio';
+      model: string;
+      base_url: string;
+      api_key: string | null;
+      embedding_model: string | null;
+    };
 
 // ── Voice ──────────────────────────────────────────────────────────────────────
 

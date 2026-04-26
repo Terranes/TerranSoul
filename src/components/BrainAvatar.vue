@@ -363,7 +363,9 @@ const mood = computed<'none' | 'free' | 'paid' | 'local'>(() => {
   switch (props.mode.mode) {
     case 'free_api': return 'free';
     case 'paid_api': return 'paid';
-    case 'local_ollama': return 'local';
+    case 'local_ollama':
+    case 'local_lm_studio':
+      return 'local';
     default: return 'none';
   }
 });

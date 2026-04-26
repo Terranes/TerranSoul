@@ -370,6 +370,12 @@
               >
                 🖥 Local Ollama
               </button>
+              <button
+                :class="['llm-tier-tab', { active: llmTier === 'lm_studio' }]"
+                @click="llmTier = 'lm_studio'"
+              >
+                LM Studio
+              </button>
             </div>
 
             <!-- Free provider selection -->
@@ -514,6 +520,114 @@
               >
                 Install & Activate {{ llmLocalModel || '…' }}
               </button>
+            </div>
+
+            <!-- Local LM Studio configuration -->
+            <div
+              v-if="llmTier === 'lm_studio'"
+              class="llm-local-form"
+            >
+              <div class="llm-field">
+                <label>Base URL:</label>
+                <input
+                  v-model="llmLmStudioBaseUrl"
+                  type="url"
+                  placeholder="http://127.0.0.1:1234"
+                  class="llm-input"
+                >
+              </div>
+              <div class="llm-field">
+                <label>API token (optional):</label>
+                <input
+                  v-model="llmLmStudioApiKey"
+                  type="password"
+                  placeholder="Optional"
+                  class="llm-input"
+                >
+              </div>
+              <div :class="['bs-status-indicator', brainStore.lmStudioStatus?.running ? 'ok' : 'error']">
+                {{ brainStore.lmStudioStatus?.running ? `✅ LM Studio is running (${brainStore.lmStudioStatus.model_count} models)` : '❌ LM Studio is not running — start its local server' }}
+              </div>
+              <button
+                class="btn-secondary btn-sm"
+                @click="refreshLmStudioRuntime"
+              >
+                Refresh LM Studio
+              </button>
+              <div class="llm-field">
+                <label>Model:</label>
+                <input
+                  v-model="llmLmStudioModel"
+                  type="text"
+                  placeholder="qwen/qwen3-4b or Hugging Face URL"
+                  class="llm-input"
+                >
+              </div>
+              <div class="llm-field">
+                <label>Embedding model (optional):</label>
+                <input
+                  v-model="llmLmStudioEmbeddingModel"
+                  type="text"
+                  placeholder="text-embedding-nomic-embed-text-v1.5"
+                  class="llm-input"
+                >
+              </div>
+              <div
+                v-if="brainStore.lmStudioModels?.length"
+                class="llm-local-models"
+              >
+                <div
+                  v-for="m in brainStore.lmStudioModels"
+                  :key="m.key"
+                  :class="['llm-provider-card', { active: llmLmStudioModel === m.key }]"
+                  @click="llmLmStudioModel = m.key"
+                >
+                  <div class="llm-provider-row">
+                    <strong>{{ m.display_name || m.key }}</strong>
+                    <span
+                      v-if="m.loaded_instances.length"
+                      class="llm-current-badge"
+                    >loaded</span>
+                  </div>
+                  <small>{{ m.publisher || 'Local model' }} · {{ m.type }} · {{ formatBytes(m.size_bytes) }}</small>
+                  <small class="llm-provider-model"><code>{{ m.key }}</code></small>
+                </div>
+              </div>
+              <div
+                v-if="brainStore.lmStudioDownload"
+                class="bs-status-indicator ok"
+              >
+                Download status: {{ brainStore.lmStudioDownload.status }}
+              </div>
+              <div
+                v-if="brainStore.lmStudioError"
+                class="bs-status-indicator error"
+              >
+                {{ brainStore.lmStudioError }}
+              </div>
+              <div class="llm-lmstudio-actions">
+                <button
+                  class="btn-secondary btn-sm"
+                  :disabled="!llmLmStudioModel"
+                  @click="downloadLmStudioModel"
+                >
+                  Download
+                </button>
+                <button
+                  class="btn-secondary btn-sm"
+                  :disabled="!llmLmStudioModel"
+                  @click="loadLmStudioModel"
+                >
+                  Load
+                </button>
+                <button
+                  class="btn-primary btn-sm llm-apply-btn"
+                  :disabled="!brainStore.lmStudioStatus?.running || !llmLmStudioModel"
+                  @click="applyLmStudioModel"
+                >
+                  Activate {{ llmLmStudioModel || '…' }}
+                </button>
+              </div>
             </div>
 
             <!-- Confirmation after switching -->
@@ -858,14 +972,24 @@ const activeBrainBadge = computed(() => {
   if (!mode) return '';
   if (mode.mode === 'free_api') return '☁️ ' + activeProviderName.value;
   if (mode.mode === 'paid_api') return '💳 ' + (mode as { model?: string }).model;
-  return '🖥 Local';
+  if (mode.mode === 'local_ollama') return '🖥 Ollama';
+  if (mode.mode === 'local_lm_studio') return 'LM Studio';
+  return 'Local';
 });
 
 const showDetails = ref(false);
 
 // ── LLM configuration state ──────────────────────────────────────────────────
 const showLlmConfig = ref(false);
-const llmTier = ref<'free' | 'paid' | 'local'>('free');
+const llmTier = ref<'free' | 'paid' | 'local' | 'lm_studio'>(
+  brainStore.brainMode?.mode === 'paid_api'
+    ? 'paid'
+    : brainStore.brainMode?.mode === 'local_ollama'
+      ? 'local'
+      : brainStore.brainMode?.mode === 'local_lm_studio'
+        ? 'lm_studio'
+        : 'free',
+);
 const llmSelectedProvider = ref(
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
 );
@@ -880,6 +1004,28 @@ const llmPaidBaseUrl = ref('');
 
 // Local Ollama fields
 const llmLocalModel = ref(brainStore.topRecommendation?.model_tag ?? '');
+
+// Local LM Studio fields
+const llmLmStudioBaseUrl = ref(
+  brainStore.brainMode?.mode === 'local_lm_studio'
+    ? brainStore.brainMode.base_url
+    : 'http://127.0.0.1:1234',
+);
+const llmLmStudioApiKey = ref(
+  brainStore.brainMode?.mode === 'local_lm_studio'
+    ? brainStore.brainMode.api_key ?? ''
+    : '',
+);
+const llmLmStudioModel = ref(
+  brainStore.brainMode?.mode === 'local_lm_studio'
+    ? brainStore.brainMode.model
+    : '',
+);
+const llmLmStudioEmbeddingModel = ref(
+  brainStore.brainMode?.mode === 'local_lm_studio'
+    ? brainStore.brainMode.embedding_model ?? ''
+    : '',
+);
 
 const currentFreeProviderId = computed(() =>
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : null,
@@ -955,6 +1101,69 @@ async function applyLocalModel() {
   llmConfirmation.value = {
     name: rec?.display_name ?? model,
     url: '',
+  };
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return 'unknown size';
+  const gb = bytes / 1024 / 1024 / 1024;
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+}
+
+async function refreshLmStudioRuntime() {
+  await brainStore.checkLmStudioStatus(
+    llmLmStudioBaseUrl.value,
+    llmLmStudioApiKey.value || null,
+  );
+  if (brainStore.lmStudioStatus?.running) {
+    await brainStore.fetchLmStudioModels(
+      llmLmStudioBaseUrl.value,
+      llmLmStudioApiKey.value || null,
+    );
+    if (!llmLmStudioModel.value && brainStore.lmStudioModels.length > 0) {
+      const firstLlm = brainStore.lmStudioModels.find((m) => m.type === 'llm') ?? brainStore.lmStudioModels[0];
+      llmLmStudioModel.value = firstLlm.key;
+    }
+  }
+}
+
+async function downloadLmStudioModel() {
+  if (!llmLmStudioModel.value) return;
+  await brainStore.downloadLmStudioModel({
+    model: llmLmStudioModel.value,
+    baseUrl: llmLmStudioBaseUrl.value,
+    apiKey: llmLmStudioApiKey.value || null,
+    quantization: null,
+  });
+  await refreshLmStudioRuntime();
+}
+
+async function loadLmStudioModel() {
+  if (!llmLmStudioModel.value) return;
+  await brainStore.loadLmStudioModel({
+    model: llmLmStudioModel.value,
+    baseUrl: llmLmStudioBaseUrl.value,
+    apiKey: llmLmStudioApiKey.value || null,
+    contextLength: null,
+  });
+  await refreshLmStudioRuntime();
+}
+
+async function applyLmStudioModel() {
+  if (!llmLmStudioModel.value) return;
+  const mode = {
+    mode: 'local_lm_studio' as const,
+    model: llmLmStudioModel.value,
+    base_url: llmLmStudioBaseUrl.value,
+    api_key: llmLmStudioApiKey.value || null,
+    embedding_model: llmLmStudioEmbeddingModel.value || null,
+  };
+  brainStore.brainMode = mode;
+  await brainStore.setBrainMode(mode);
+  llmConfirmation.value = {
+    name: `LM Studio / ${llmLmStudioModel.value}`,
+    url: llmLmStudioBaseUrl.value,
   };
 }
 
@@ -1067,6 +1276,8 @@ async function refreshAll() {
   await Promise.allSettled([
     brainStore.checkOllamaStatus(),
     brainStore.fetchInstalledModels(),
+    brainStore.checkLmStudioStatus(),
+    brainStore.fetchLmStudioModels(),
     brainStore.loadActiveBrain(),
     brainStore.loadBrainMode(),
     brainStore.fetchRecommendations(),
@@ -1401,6 +1612,7 @@ onMounted(async () => {
 .bs-status-indicator.error { background: var(--ts-error-bg); color: var(--ts-error); }
 .llm-local-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .llm-local-models { display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto; }
+.llm-lmstudio-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ── Responsive: Tablet ── */
 @media (max-width: 840px) {

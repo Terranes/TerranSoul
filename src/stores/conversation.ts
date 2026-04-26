@@ -875,7 +875,8 @@ async function executeLlmCommand(
 
 /**
  * Resolve the provider details (base_url, model, api_key) from the brain store
- * for browser-side streaming.  Supports free_api, paid_api, and local_ollama modes.
+ * for browser-side streaming. Supports free_api, paid_api, local_ollama,
+ * and local_lm_studio modes.
  */
 function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
   baseUrl: string;
@@ -909,6 +910,14 @@ function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
       baseUrl: 'http://localhost:11434',
       model: mode.model,
       apiKey: null,
+    };
+  }
+
+  if (mode.mode === 'local_lm_studio') {
+    return {
+      baseUrl: mode.base_url,
+      model: mode.model,
+      apiKey: mode.api_key,
     };
   }
 

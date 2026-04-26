@@ -786,6 +786,9 @@ const activeProviderName = computed(() => {
   if (mode.mode === 'local_ollama') {
     return `Ollama · ${mode.model}`;
   }
+  if (mode.mode === 'local_lm_studio') {
+    return `LM Studio · ${mode.model}`;
+  }
   if (mode.mode === 'paid_api') {
     return `${mode.provider} · ${mode.model}`;
   }

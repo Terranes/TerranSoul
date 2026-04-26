@@ -520,7 +520,7 @@ const moodKey = computed<'none' | 'free' | 'paid' | 'local'>(() => {
   if (!m) return 'none';
   if (m.mode === 'free_api') return 'free';
   if (m.mode === 'paid_api') return 'paid';
-  if (m.mode === 'local_ollama') return 'local';
+  if (m.mode === 'local_ollama' || m.mode === 'local_lm_studio') return 'local';
   return 'none';
 });
 
@@ -612,7 +612,7 @@ const ragSignals = computed<RagSignal[]>(() => {
     {
       key: 'vector', label: 'Vector', weight: '40%',
       available: isLocal,
-      unavailableReason: 'Switch to Local Ollama to enable embeddings',
+      unavailableReason: 'Switch to Local Ollama or Local LM Studio to enable embeddings',
     },
     {
       key: 'keyword', label: 'Keyword', weight: '20%',
@@ -670,6 +670,7 @@ const providerName = computed(() => {
   }
   if (m.mode === 'paid_api') return m.base_url;
   if (m.mode === 'local_ollama') return 'Ollama';
+  if (m.mode === 'local_lm_studio') return 'LM Studio';
   return null;
 });
 
@@ -701,6 +702,14 @@ const configRows = computed(() => {
       provider: 'localhost',
       model: m.model,
       endpoint: 'http://localhost:11434',
+    };
+  }
+  if (m.mode === 'local_lm_studio') {
+    return {
+      mode: 'Local LM Studio',
+      provider: 'localhost',
+      model: m.model,
+      endpoint: m.base_url,
     };
   }
   return { mode: 'Unknown', provider: '—', model: '—', endpoint: '' };
@@ -745,7 +754,7 @@ const ramTier = computed(() => {
 // ── Quick mode switcher ────────────────────────────────────────────────────
 
 interface ModeOption {
-  key: 'free' | 'paid' | 'local';
+  key: 'free' | 'paid' | 'local' | 'lm_studio';
   label: string;
   emoji: string;
   detail: string;
@@ -787,6 +796,18 @@ const modeOptions = computed<ModeOption[]>(() => [
     disabled: !brain.ollamaStatus.running,
     disabledReason: 'Ollama is not running — start it with `ollama serve`',
     action: () => emitNavigate('marketplace'),
+  },
+  {
+    key: 'lm_studio',
+    label: 'Local LM Studio',
+    emoji: 'LM',
+    detail: brain.lmStudioStatus?.running
+      ? `${(brain.lmStudioModels ?? []).length} model${(brain.lmStudioModels ?? []).length === 1 ? '' : 's'} available`
+      : 'Requires LM Studio server',
+    description: 'Open the wizard to configure an LM Studio local model',
+    disabled: !brain.lmStudioStatus?.running,
+    disabledReason: 'LM Studio is not running - start its local server on port 1234',
+    action: () => emitNavigate('brain-setup'),
   },
 ]);
 
@@ -855,6 +876,7 @@ const selectionProviderLine = computed(() => {
     }
     case 'paid_api': return `Paid API → ${p.provider} · ${p.model} @ ${p.base_url}`;
     case 'local_ollama': return `Local Ollama → ${p.model}`;
+    case 'local_lm_studio': return `Local LM Studio → ${p.model} @ ${p.base_url}`;
     default: return p.kind;
   }
 });
@@ -966,6 +988,8 @@ async function refresh() {
       brain.fetchSystemInfo(),
       brain.checkOllamaStatus(),
       brain.fetchInstalledModels(),
+      brain.checkLmStudioStatus(),
+      brain.fetchLmStudioModels(),
       memory.fetchAll(),
       memory.getStats(),
       memory.fetchEdges(),

@@ -42,6 +42,35 @@ mod tests {
     }
 
     #[test]
+    fn brain_mode_local_lm_studio_deserializes() {
+        let payload = json!({
+            "mode": "local_lm_studio",
+            "model": "qwen/qwen3-4b",
+            "base_url": "http://127.0.0.1:1234",
+            "api_key": null,
+            "embedding_model": "text-embedding-nomic-embed-text-v1.5"
+        });
+        let mode: crate::brain::BrainMode = serde_json::from_value(payload).unwrap();
+        match mode {
+            crate::brain::BrainMode::LocalLmStudio {
+                model,
+                base_url,
+                api_key,
+                embedding_model,
+            } => {
+                assert_eq!(model, "qwen/qwen3-4b");
+                assert_eq!(base_url, "http://127.0.0.1:1234");
+                assert!(api_key.is_none());
+                assert_eq!(
+                    embedding_model.as_deref(),
+                    Some("text-embedding-nomic-embed-text-v1.5")
+                );
+            }
+            _ => panic!("Expected LocalLmStudio variant"),
+        }
+    }
+
+    #[test]
     fn brain_mode_paid_api_deserializes() {
         let payload = json!({
             "mode": "paid_api",

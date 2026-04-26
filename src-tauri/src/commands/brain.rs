@@ -58,6 +58,78 @@ pub async fn pull_ollama_model(
     brain::pull_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await
 }
 
+/// Check whether the local LM Studio service is running.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn check_lm_studio_status(
+    base_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<brain::LmStudioStatus, String> {
+    Ok(brain::lm_studio::check_status(base_url.as_deref(), api_key.as_deref()).await)
+}
+
+/// List all LM Studio models available to the local server.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_lm_studio_models(
+    base_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<Vec<brain::LmStudioModelEntry>, String> {
+    brain::lm_studio::list_models(base_url.as_deref(), api_key.as_deref()).await
+}
+
+/// Download a model through LM Studio's native runtime API.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn download_lm_studio_model(
+    model: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    quantization: Option<String>,
+) -> Result<brain::LmStudioDownloadStatus, String> {
+    brain::lm_studio::download_model(
+        base_url.as_deref(),
+        api_key.as_deref(),
+        &model,
+        quantization.as_deref(),
+    )
+    .await
+}
+
+/// Get download progress for a previously started LM Studio download.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_lm_studio_download_status(
+    job_id: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<brain::LmStudioDownloadStatus, String> {
+    brain::lm_studio::download_status(base_url.as_deref(), api_key.as_deref(), &job_id).await
+}
+
+/// Explicitly load a downloaded LM Studio model into memory.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_lm_studio_model(
+    model: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    context_length: Option<u32>,
+) -> Result<brain::LmStudioLoadResult, String> {
+    brain::lm_studio::load_model(
+        base_url.as_deref(),
+        api_key.as_deref(),
+        &model,
+        context_length,
+    )
+    .await
+}
+
+/// Unload one LM Studio model instance by instance id.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn unload_lm_studio_model(
+    instance_id: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<brain::LmStudioUnloadResult, String> {
+    brain::lm_studio::unload_model(base_url.as_deref(), api_key.as_deref(), &instance_id).await
+}
+
 /// Set the active brain model. Persists the choice to disk.
 /// After calling this, subsequent chat messages will be routed through Ollama.
 #[tauri::command(rename_all = "camelCase")]
@@ -117,6 +189,10 @@ pub async fn set_brain_mode(
         BrainMode::LocalOllama { model } => {
             let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
             *brain = Some(model.clone());
+        }
+        BrainMode::LocalLmStudio { .. } => {
+            let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
+            *brain = None;
         }
         _ => {
             // For free/paid API modes, clear the Ollama active brain
