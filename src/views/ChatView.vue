@@ -1815,7 +1815,7 @@ onUnmounted(() => {
  * Designed for users who prefer a text-focused experience. */
 
 .chat-view.chatbox-only {
-  background: var(--ts-bg-base, #0f172a);
+  background: transparent;
 }
 
 .chatbox-layout {

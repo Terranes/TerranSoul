@@ -236,7 +236,7 @@ const windowStore = useWindowStore();
 const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
 const settingsStore = useSettingsStore();
-const { themeId } = useTheme();
+useTheme(); // applies saved theme to html[data-theme] at startup
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain'>('chat');
 const appLoading = ref(true);
 const skipSetup = ref(false);
@@ -314,17 +314,11 @@ function handleQuestBubble() {
 
 function applyBodyBackground(mode: 'window' | 'pet') {
   if (typeof document === 'undefined') return;
-  // In pet mode the body must be transparent so the desktop shows through.
-  // In window mode, read the current theme's gradient token so every theme
-  // gets its own thematic background without hardcoded hex values.
-  if (mode === 'pet') {
-    document.body.style.background = 'transparent';
-  } else {
-    const styles = getComputedStyle(document.documentElement);
-    const gradient = styles.getPropertyValue('--ts-bg-gradient').trim();
-    const base = styles.getPropertyValue('--ts-bg-base').trim();
-    document.body.style.background = gradient || base || '#0f172a';
-  }
+  // Pet mode: body must be transparent so the desktop shows through the
+  // Tauri transparent window. Window mode: clear the inline style so the
+  // CSS-driven var(--ts-bg-gradient) on body takes over automatically —
+  // theme switching is handled entirely by CSS variable cascade.
+  document.body.style.background = mode === 'pet' ? 'transparent' : '';
 }
 
 // Watch for window mode changes (e.g. from tray icon toggle)
@@ -335,12 +329,6 @@ watch(
   },
   { immediate: true },
 );
-
-// Re-apply body background when the theme changes (so the base color updates).
-watch(themeId, () => {
-  // Give the DOM one tick so the CSS variables are already written.
-  requestAnimationFrame(() => applyBodyBackground(windowStore.mode));
-});
 
 // Safety escape hatch: pressing Escape while in pet mode returns to desktop
 // mode.  Guards against any scenario where the toggle pill might be
@@ -469,7 +457,7 @@ onUnmounted(() => {
 
 <style>
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-font-family, system-ui, sans-serif); }
+body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-font-family, system-ui, sans-serif); }
 </style>
 
 <style scoped>
@@ -486,8 +474,10 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 .app-nav {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 12px 6px;
-  background: var(--ts-bg-nav);
+  background: color-mix(in srgb, var(--ts-bg-nav) 82%, transparent);
   border-right: 1px solid var(--ts-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   width: var(--ts-nav-width); flex-shrink: 0;
   position: relative;
 }
@@ -604,8 +594,9 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   right: 0;
   z-index: var(--ts-z-dropdown);
   height: var(--ts-mobile-nav-height);
-  background: var(--ts-bg-panel);
-  backdrop-filter: blur(20px);
+  background: color-mix(in srgb, var(--ts-bg-panel) 82%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-top: 1px solid var(--ts-border);
   padding: 0 4px;
   flex-direction: row;

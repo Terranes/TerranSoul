@@ -74,8 +74,12 @@
   --ts-border-focus: var(--ts-accent);
   --ts-border-strong: rgba(255, 255, 255, 0.16);
 
-  /* ── Body gradient — auto-applied by App.vue on theme change ── */
-  --ts-bg-gradient: linear-gradient(135deg, #060c18 0%, #0f172a 55%, #1a2540 100%);
+  /* ── Body gradient — applied via body { background: var(--ts-bg-gradient) }
+     in style.css; updates automatically when html[data-theme] changes. ── */
+  --ts-bg-gradient:
+    radial-gradient(ellipse 70% 45% at 15% 5%, rgba(124, 111, 255, 0.10), transparent),
+    radial-gradient(ellipse 50% 55% at 88% 95%, rgba(96, 165, 250, 0.08), transparent),
+    linear-gradient(160deg, #04091a 0%, #0f172a 52%, #141c38 100%);
 
   /* ── Backdrop ── */
   --ts-bg-backdrop: rgba(0, 0, 0, 0.6);
@@ -210,7 +214,10 @@ html[data-theme="corporate"] {
   --ts-quest-muted:  #616161;
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.32);
-  --ts-bg-gradient: linear-gradient(135deg, #eef0f8 0%, #f5f5f5 55%, #ece8f5 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 80% 50% at 70% 0%, rgba(91, 95, 199, 0.07), transparent),
+    radial-gradient(ellipse 60% 40% at 10% 100%, rgba(91, 95, 199, 0.04), transparent),
+    linear-gradient(160deg, #f0f2fc 0%, #f5f5f5 52%, #eeeaf8 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -285,7 +292,10 @@ html[data-theme="cat"] {
   --ts-quest-muted:  rgba(200, 184, 154, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
-  --ts-bg-gradient: linear-gradient(135deg, #0e0a06 0%, #1a1410 55%, #261c12 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 65% 45% at 20% 0%, rgba(245, 158, 11, 0.13), transparent),
+    radial-gradient(ellipse 50% 60% at 85% 100%, rgba(232, 168, 124, 0.10), transparent),
+    linear-gradient(160deg, #090603 0%, #1a1410 52%, #221810 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   14px;
@@ -353,7 +363,10 @@ html[data-theme="sakura"] {
   --ts-quest-muted:  rgba(212, 160, 185, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
-  --ts-bg-gradient: linear-gradient(135deg, #160f18 0%, #1e1520 55%, #24102a 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 60% 45% at 25% 5%, rgba(244, 114, 182, 0.13), transparent),
+    radial-gradient(ellipse 50% 50% at 80% 95%, rgba(232, 121, 249, 0.09), transparent),
+    linear-gradient(160deg, #0d0a12 0%, #1e1520 52%, #1c1228 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;
@@ -423,7 +436,10 @@ html[data-theme="kids"] {
   --ts-quest-muted:  rgba(165, 180, 252, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
-  --ts-bg-gradient: linear-gradient(135deg, #0e0b1e 0%, #1a1638 55%, #221c50 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 65% 45% at 70% 0%, rgba(129, 140, 248, 0.14), transparent),
+    radial-gradient(ellipse 55% 55% at 15% 100%, rgba(192, 132, 252, 0.12), transparent),
+    linear-gradient(160deg, #0a0820 0%, #1a1638 52%, #1e1846 100%);
 
   --ts-radius-sm:   10px;
   --ts-radius-md:   16px;
@@ -498,7 +514,10 @@ html[data-theme="brain"] {
   --ts-quest-muted:  rgba(110, 184, 160, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.70);
-  --ts-bg-gradient: linear-gradient(135deg, #060a0e 0%, #0a0f14 55%, #0c1a1e 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 60% 45% at 80% 10%, rgba(0, 230, 180, 0.11), transparent),
+    radial-gradient(ellipse 45% 55% at 20% 90%, rgba(34, 211, 238, 0.07), transparent),
+    linear-gradient(160deg, #020507 0%, #0a0f14 52%, #0c1620 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -566,7 +585,10 @@ html[data-theme="midnight"] {
   --ts-quest-muted:  rgba(121, 130, 169, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.80);
-  --ts-bg-gradient: linear-gradient(135deg, #000000 0%, #050505 55%, #0d0d14 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 55% 40% at 60% 0%, rgba(147, 130, 255, 0.09), transparent),
+    radial-gradient(ellipse 40% 50% at 30% 100%, rgba(122, 162, 247, 0.07), transparent),
+    linear-gradient(160deg, #000000 0%, #050505 52%, #06060e 100%);
 }
 
 /* ── Aurora ───────────────────────────────────────────────────────────────── */
@@ -630,7 +652,10 @@ html[data-theme="aurora"] {
   --ts-quest-muted:  rgba(128, 203, 196, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
-  --ts-bg-gradient: linear-gradient(135deg, #061014 0%, #0c1a1e 55%, #102830 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 65% 45% at 15% 0%, rgba(52, 211, 153, 0.12), transparent),
+    radial-gradient(ellipse 50% 55% at 85% 100%, rgba(34, 211, 238, 0.08), transparent),
+    linear-gradient(160deg, #040c0e 0%, #0c1a1e 52%, #0c2028 100%);
 }
 
 /* ── Pastel (light) ───────────────────────────────────────────────────────── */
@@ -694,7 +719,10 @@ html[data-theme="pastel"] {
   --ts-quest-muted:  #71717a;
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.35);
-  --ts-bg-gradient: linear-gradient(135deg, #f5f0fa 0%, #faf8f5 55%, #f0ebe8 100%);
+  --ts-bg-gradient:
+    radial-gradient(ellipse 70% 50% at 80% 0%, rgba(168, 139, 250, 0.10), transparent),
+    radial-gradient(ellipse 60% 45% at 20% 100%, rgba(147, 197, 253, 0.08), transparent),
+    linear-gradient(160deg, #f5f0fa 0%, #faf8f5 52%, #f0ecf8 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;
@@ -811,7 +839,11 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background: transparent;
+  /* Auto background: uses the theme's --ts-bg-gradient token which updates
+     automatically when html[data-theme] changes. Pet mode overrides this
+     with an inline transparent style via applyBodyBackground() in App.vue. */
+  background: var(--ts-bg-gradient, var(--ts-bg-base, #0f172a));
+  transition: background 0.4s ease;
 }
 
 #app {
