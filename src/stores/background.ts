@@ -4,79 +4,44 @@ import { defineStore } from 'pinia';
 export interface BackgroundOption {
   id: string;
   name: string;
+  /** Empty string for the auto option — body CSS gradient is used instead. */
   url: string;
-  kind: 'preset' | 'local';
+  kind: 'auto' | 'local';
 }
 
 const STORAGE_KEY = 'terransoul_background_id';
 
-const PRESET_BACKGROUNDS: BackgroundOption[] = [
-  {
-    id: 'studio-soft',
-    name: 'Studio Soft',
-    url: '/backgrounds/studio-soft.svg',
-    kind: 'preset',
-  },
-  {
-    id: 'studio-night',
-    name: 'Studio Night',
-    url: '/backgrounds/studio-night.svg',
-    kind: 'preset',
-  },
-  {
-    id: 'sunset-glow',
-    name: 'Sunset Glow',
-    url: '/backgrounds/sunset-glow.svg',
-    kind: 'preset',
-  },
-  {
-    id: 'cyberpunk-city',
-    name: 'Cyberpunk City',
-    url: '/backgrounds/cyberpunk-city.svg',
-    kind: 'preset',
-  },
-  {
-    id: 'enchanted-forest',
-    name: 'Enchanted Forest',
-    url: '/backgrounds/enchanted-forest.svg',
-    kind: 'preset',
-  },
-  {
-    id: 'deep-ocean',
-    name: 'Deep Ocean',
-    url: '/backgrounds/deep-ocean.svg',
-    kind: 'preset',
-  },
-  {
-    id: 'cosmic-nebula',
-    name: 'Cosmic Nebula',
-    url: '/backgrounds/cosmic-nebula.svg',
-    kind: 'preset',
-  },
-];
+/** The single built-in option: delegates to the CSS theme gradient. */
+const AUTO_BACKGROUND: BackgroundOption = {
+  id: 'auto',
+  name: 'Auto',
+  url: '',
+  kind: 'auto',
+};
 
-function loadStoredBackgroundId() {
-  if (typeof localStorage === 'undefined') {
-    return PRESET_BACKGROUNDS[0].id;
+function loadStoredBackgroundId(): string {
+  if (typeof localStorage === 'undefined') return AUTO_BACKGROUND.id;
+  const stored = localStorage.getItem(STORAGE_KEY);
+  // Migrate away from old preset ids that no longer exist.
+  if (!stored || stored !== 'auto' && !stored.startsWith('local-')) {
+    return AUTO_BACKGROUND.id;
   }
-
-  return localStorage.getItem(STORAGE_KEY) ?? PRESET_BACKGROUNDS[0].id;
+  return stored;
 }
 
 export const useBackgroundStore = defineStore('background', () => {
-  const presetBackgrounds = ref<BackgroundOption[]>(PRESET_BACKGROUNDS);
   const localBackgrounds = ref<BackgroundOption[]>([]);
   const selectedBackgroundId = ref(loadStoredBackgroundId());
   const importError = ref<string | undefined>(undefined);
 
-  const allBackgrounds = computed(() => [
-    ...presetBackgrounds.value,
+  const allBackgrounds = computed<BackgroundOption[]>(() => [
+    AUTO_BACKGROUND,
     ...localBackgrounds.value,
   ]);
 
-  const currentBackground = computed(() => {
+  const currentBackground = computed<BackgroundOption>(() => {
     return allBackgrounds.value.find((bg) => bg.id === selectedBackgroundId.value)
-      ?? presetBackgrounds.value[0];
+      ?? AUTO_BACKGROUND;
   });
 
   function persistSelection() {
@@ -92,7 +57,7 @@ export const useBackgroundStore = defineStore('background', () => {
 
   function ensureValidSelection() {
     if (!allBackgrounds.value.some((bg) => bg.id === selectedBackgroundId.value)) {
-      selectedBackgroundId.value = presetBackgrounds.value[0].id;
+      selectedBackgroundId.value = AUTO_BACKGROUND.id;
       persistSelection();
     }
   }
@@ -119,7 +84,6 @@ export const useBackgroundStore = defineStore('background', () => {
   }
 
   return {
-    presetBackgrounds,
     localBackgrounds,
     selectedBackgroundId,
     currentBackground,

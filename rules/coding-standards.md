@@ -11,6 +11,8 @@
 | Desktop/Mobile shell | Tauri | 2.x |
 | Backend | Rust | stable (MSRV 1.80+) |
 | Frontend | Vue 3 + TypeScript | Vue 3.5 / TS 5.x |
+| **UI components** | **PrimeVue** (MIT, Vue 3 native) | **4.x** |
+| Utility CSS | Tailwind CSS v4 | 4.x |
 | 3D rendering | Three.js | 0.175+ |
 | VRM loading | @pixiv/three-vrm | 3.x |
 | State management | Pinia | 2.x |
@@ -194,6 +196,78 @@ regressions are caught at the threshold.
 - Single-file components only (template + script + style in one `.vue` file)
 - `scoped` styles on all components unless explicitly overriding global styles
 - CSS custom properties (`--var-name`) for all theme colors and spacings
+
+---
+
+## UI Framework — No CSS Hacking
+
+> **PrimeVue v4 is the project-mandated Vue 3 component framework.** All new
+> UI surfaces — buttons, menus, dropdowns, popovers, dialogs, drawers,
+> toolbars, toasts, tags/chips, tooltips, form inputs, data tables, file
+> uploaders — must be built from PrimeVue components, not from hand-rolled
+> `<button>` + bespoke CSS.
+
+### Why this rule exists
+
+Hand-rolled UI primitives (custom dropdown, custom popover, custom dialog,
+custom positioning) cause recurring problems we have shipped multiple times:
+
+- **Overlap from stacked absolute siblings.** Two independently positioned
+  elements with hand-tuned `top: 12px` / `top: 56px` overlap as soon as a
+  sibling resizes, the viewport shrinks, or padding/font changes.
+- **Broken keyboard navigation, focus traps, and ARIA roles.** Real component
+  libraries solve these once; our home-grown ones forget them.
+- **Inconsistent spacing, motion, and elevation.** Each ad-hoc component
+  picks its own paddings and shadows, drifting the design system over time.
+
+PrimeVue solves all of these out of the box: accessible focus management,
+collision-aware popovers, real focus trapping in dialogs, consistent design
+tokens, and Tailwind-friendly unstyled mode that composes with our
+`--ts-*` design tokens.
+
+### What to use instead of CSS hacking
+
+| Instead of … | Use PrimeVue |
+|---|---|
+| `<button>` + custom hover/focus CSS | `<Button>` |
+| Hand-rolled dropdown anchored with `top: 42px; right: 0` | `<Popover>` or `<Menu>` |
+| Two stacked absolutely-positioned siblings with `top: 12px` / `top: 56px` | A single positioned wrapper with `display: flex; flex-direction: column; gap` (or `<Toolbar>` for horizontal groups) |
+| Hand-rolled modal with backdrop + Esc handling | `<Dialog>` |
+| Hand-rolled slide-out panel | `<Drawer>` |
+| Bespoke chip/badge with custom CSS variants | `<Tag>` or `<Chip>` |
+| `setTimeout`-based toast notifications | `<Toast>` + `useToast()` |
+| Custom `<input>` with manual validation styling | `<InputText>`, `<Select>`, `<Checkbox>`, etc. |
+| Custom file picker `<input type="file">` styling | `<FileUpload>` |
+| Hand-rolled tooltip on `mouseenter` | `v-tooltip` directive |
+
+### Allowed exceptions
+
+These domains are genuinely outside PrimeVue's scope and may continue to
+use bespoke Vue components and CSS:
+
+- **3D viewport overlays** — `CharacterViewport.vue`, VRM controls, subtitle
+  overlays anchored to character coordinates.
+- **Animated 3D background scene** — `BackgroundScene.vue` and its per-theme
+  decoration in `style.css`.
+- **Quest / RPG-specific surfaces with bespoke gamification visuals** —
+  `QuestRewardCeremony.vue`, skill-tree constellation, etc., where the
+  visual design *is* the product.
+- **Tauri-window-specific chrome** — pet mode overlay, drag regions.
+
+For everything else, **search PrimeVue's component catalogue first** and
+only fall back to a custom component when no PrimeVue primitive fits.
+
+### Stacking layout — never hand-tune `top` / `right`
+
+If two elements must sit in the same screen corner, they go in the
+**same flex/grid container**:
+
+- ✅ One absolutely-positioned wrapper with `display: flex; flex-direction:
+  column; gap: 8px; align-items: flex-end` containing both children.
+- ❌ Two siblings each `position: absolute; top: 12px / 56px`.
+
+Hand-tuned `top: 56px` / `right: 130px` magic numbers are a code-review
+blocker — they break the moment a font or padding changes.
 
 ---
 

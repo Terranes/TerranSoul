@@ -3,10 +3,10 @@
     class="viewport-wrapper"
     :class="{ 'viewport-wrapper--pet': isPetMode }"
   >
-    <!-- Background layers: scenic background + tint.  Hidden in pet mode so
-         only the character floats above the desktop. -->
+    <!-- Background layer: only shown when a user-imported local image is active.
+         In Auto mode the body CSS gradient (--ts-bg-gradient) shows through. -->
     <div
-      v-if="!isPetMode"
+      v-if="!isPetMode && backgroundStore.currentBackground.kind !== 'auto'"
       class="background-layer"
       :style="backgroundStyle"
     />
@@ -51,258 +51,287 @@
         {{ characterName }}
       </div>
       <div
-        v-if="characterStore.vrmMetadata"
+        v-if="characterMetaText"
         class="character-meta-overlay"
       >
-        <span>by {{ characterStore.vrmMetadata.author }}</span>
+        <span>{{ characterMetaText }}</span>
       </div>
     </template>
 
-    <!-- ── Corner settings button — hidden in pet mode (the PetContextMenu
-         exposes pet-specific options instead) ── -->
+    <!-- ── Corner cluster — Settings + AI state pill stacked via flex ──
+         Single absolutely-positioned wrapper containing both the Settings
+         trigger and the AI state pill.  Flex column + gap handles spacing
+         (no hand-tuned `top` values on individual children — see
+         `rules/coding-standards.md` § "UI Framework — No CSS Hacking"). ── -->
     <div
       v-if="!isPetMode"
       ref="settingsRef"
-      class="settings-corner"
+      class="corner-cluster"
     >
-      <FloatingChip
-        as="button"
-        class="settings-toggle"
-        interactive
-        type="button"
-        aria-label="Settings"
-        @click.stop="settingsOpen = !settingsOpen"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="currentColor"
+      <!-- Settings host: own positioned wrapper so the dropdown anchors to
+           the trigger, not to the whole cluster. -->
+      <div class="settings-host">
+        <FloatingChip
+          as="button"
+          class="settings-toggle"
+          interactive
+          type="button"
+          aria-label="Settings"
+          @click.stop="settingsOpen = !settingsOpen"
         >
-          <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
-        </svg>
-        <span class="settings-label">Settings</span>
-      </FloatingChip>
-      <Transition name="dropdown">
-        <FloatingMenu
-          v-if="settingsOpen"
-          class="settings-dropdown"
-          @click.stop
-        >
-          <div class="settings-header">
-            <span class="settings-header-title">Settings</span>
-            <button
-              class="settings-close-btn"
-              aria-label="Close settings"
-              @click="settingsOpen = false"
-            >
-              &times;
-            </button>
-          </div>
-          <!-- Model selector -->
-          <div class="dropdown-section">
-            <label class="dropdown-label">Character</label>
-            <select
-              class="model-selector"
-              :value="characterStore.selectedModelId"
-              @change="handleModelChange"
-            >
-              <option
-                v-for="model in characterStore.defaultModels"
-                :key="model.id"
-                :value="model.id"
-              >
-                {{ model.name }}
-              </option>
-            </select>
-            <button
-              class="dropdown-btn"
-              @click="openVrmPicker"
-            >
-              📁 Import VRM
-            </button>
-            <input
-              ref="vrmInputRef"
-              class="hidden-file-input"
-              type="file"
-              accept=".vrm"
-              @change="handleVrmImport"
-            >
-          </div>
-          <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
-               so desktop and pet modes offer the same configurable states. -->
-          <div class="dropdown-section">
-            <label class="dropdown-label">Mood / Pose</label>
-            <div
-              class="mood-grid"
-              role="radiogroup"
-              aria-label="Character mood"
-            >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
+          </svg>
+          <span class="settings-label">Settings</span>
+        </FloatingChip>
+        <Transition name="dropdown">
+          <FloatingMenu
+            v-if="settingsOpen"
+            class="settings-dropdown"
+            @click.stop
+          >
+            <div class="settings-header">
+              <span class="settings-header-title">Settings</span>
               <button
-                v-for="mood in MOOD_ENTRIES"
-                :key="mood.key"
-                class="mood-chip"
-                :class="{ active: isMoodActive(mood, characterStore) }"
-                role="radio"
-                :aria-checked="isMoodActive(mood, characterStore)"
-                :title="mood.label"
-                @click="handleMoodPick(mood)"
+                class="settings-close-btn"
+                aria-label="Close settings"
+                @click="settingsOpen = false"
               >
-                <span class="mood-chip-emoji">{{ mood.emoji }}</span>
-                <span class="mood-chip-label">{{ mood.label }}</span>
+                &times;
               </button>
             </div>
-          </div>
-          <!-- Background selector -->
-          <div class="dropdown-section">
-            <label class="dropdown-label">Background</label>
-            <div class="bg-chips">
-              <button
-                v-for="background in backgroundStore.allBackgrounds"
-                :key="background.id"
-                class="background-chip"
-                :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
-                @click="backgroundStore.selectBackground(background.id)"
+            <!-- Model selector -->
+            <div class="dropdown-section">
+              <label class="dropdown-label">Character</label>
+              <select
+                class="model-selector"
+                :value="characterStore.selectedModelId"
+                @change="handleModelChange"
               >
-                {{ background.name }}
-              </button>
-            </div>
-            <button
-              class="dropdown-btn"
-              @click="openBackgroundPicker"
-            >
-              🖼 Import BG
-            </button>
-            <input
-              ref="backgroundInputRef"
-              class="hidden-file-input"
-              type="file"
-              accept="image/*"
-              @change="handleBackgroundImport"
-            >
-          </div>
-          <!-- Background music -->
-          <div class="dropdown-section">
-            <label class="dropdown-label">Music</label>
-            <div class="bgm-toggle-row">
-              <label class="bgm-switch">
-                <input
-                  type="checkbox"
-                  :checked="bgmEnabled"
-                  @change="handleBgmToggle"
+                <option
+                  v-for="model in characterStore.defaultModels"
+                  :key="model.id"
+                  :value="model.id"
                 >
-                <span class="bgm-slider" />
-              </label>
-              <span class="bgm-status">{{ bgmEnabled ? 'On' : 'Off' }}</span>
-            </div>
-            <select
-              v-if="bgmEnabled"
-              class="model-selector"
-              :value="bgmTrackId"
-              @change="handleBgmTrackChange"
-            >
-              <option
-                v-for="track in bgm.allTracks.value"
-                :key="track.id"
-                :value="track.id"
-              >
-                {{ track.name }}
-              </option>
-            </select>
-            <div
-              v-if="bgmEnabled"
-              class="bgm-track-actions"
-            >
+                  {{ model.name }}
+                </option>
+              </select>
               <button
                 class="dropdown-btn"
-                @click="requestAddMusic"
+                @click="openVrmPicker"
               >
-                🎵 Add File
-              </button>
-              <button
-                class="dropdown-btn"
-                @click="openUrlDialog"
-              >
-                🔗 Add URL
+                📁 Import VRM
               </button>
               <input
-                ref="bgmFileInputRef"
+                ref="vrmInputRef"
                 class="hidden-file-input"
                 type="file"
-                accept="audio/*,video/*"
-                @change="handleBgmFileImport"
+                accept=".vrm"
+                @change="handleVrmImport"
               >
             </div>
-            <!-- Custom track list with delete -->
-            <div
-              v-if="bgmEnabled && bgm.customTracks.value.length"
-              class="bgm-custom-list"
-            >
+            <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
+               so desktop and pet modes offer the same configurable states. -->
+            <div class="dropdown-section">
+              <label class="dropdown-label">Mood / Pose</label>
               <div
-                v-for="track in bgm.customTracks.value"
-                :key="track.id"
-                class="bgm-custom-item"
+                class="mood-grid"
+                role="radiogroup"
+                aria-label="Character mood"
               >
-                <span class="bgm-custom-name">{{ track.name }}</span>
                 <button
-                  class="bgm-remove-btn"
-                  title="Remove track"
-                  @click="handleRemoveTrack(track.id)"
+                  v-for="mood in MOOD_ENTRIES"
+                  :key="mood.key"
+                  class="mood-chip"
+                  :class="{ active: isMoodActive(mood, characterStore) }"
+                  role="radio"
+                  :aria-checked="isMoodActive(mood, characterStore)"
+                  :title="mood.label"
+                  @click="handleMoodPick(mood)"
                 >
-                  ✕
+                  <span class="mood-chip-emoji">{{ mood.emoji }}</span>
+                  <span class="mood-chip-label">{{ mood.label }}</span>
                 </button>
               </div>
             </div>
-            <div
-              v-if="bgmEnabled"
-              class="bgm-volume-row"
-            >
-              <span class="bgm-vol-icon">🔈</span>
-              <input
-                type="range"
-                class="bgm-volume-slider"
-                min="0"
-                max="100"
-                :value="Math.round(bgmVolume * 100)"
-                @input="handleBgmVolumeChange"
+            <!-- Background selector -->
+            <div class="dropdown-section">
+              <label class="dropdown-label">Background</label>
+              <div class="bg-chips">
+                <button
+                  v-for="background in backgroundStore.allBackgrounds"
+                  :key="background.id"
+                  class="background-chip"
+                  :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
+                  @click="backgroundStore.selectBackground(background.id)"
+                >
+                  {{ background.name }}
+                </button>
+              </div>
+              <button
+                class="dropdown-btn"
+                @click="openBackgroundPicker"
               >
-              <span class="bgm-vol-icon">🔊</span>
+                🖼 Import BG
+              </button>
+              <input
+                ref="backgroundInputRef"
+                class="hidden-file-input"
+                type="file"
+                accept="image/*"
+                @change="handleBackgroundImport"
+              >
             </div>
-          </div>
+            <!-- Background music -->
+            <div class="dropdown-section">
+              <label class="dropdown-label">Music</label>
+              <div class="bgm-toggle-row">
+                <label class="bgm-switch">
+                  <input
+                    type="checkbox"
+                    :checked="bgmEnabled"
+                    @change="handleBgmToggle"
+                  >
+                  <span class="bgm-slider" />
+                </label>
+                <span class="bgm-status">{{ bgmEnabled ? 'On' : 'Off' }}</span>
+              </div>
+              <select
+                v-if="bgmEnabled"
+                class="model-selector"
+                :value="bgmTrackId"
+                @change="handleBgmTrackChange"
+              >
+                <option
+                  v-for="track in bgm.allTracks.value"
+                  :key="track.id"
+                  :value="track.id"
+                >
+                  {{ track.name }}
+                </option>
+              </select>
+              <div
+                v-if="bgmEnabled"
+                class="bgm-track-actions"
+              >
+                <button
+                  class="dropdown-btn"
+                  @click="requestAddMusic"
+                >
+                  🎵 Add File
+                </button>
+                <button
+                  class="dropdown-btn"
+                  @click="openUrlDialog"
+                >
+                  🔗 Add URL
+                </button>
+                <input
+                  ref="bgmFileInputRef"
+                  class="hidden-file-input"
+                  type="file"
+                  accept="audio/*,video/*"
+                  @change="handleBgmFileImport"
+                >
+              </div>
+              <!-- Custom track list with delete -->
+              <div
+                v-if="bgmEnabled && bgm.customTracks.value.length"
+                class="bgm-custom-list"
+              >
+                <div
+                  v-for="track in bgm.customTracks.value"
+                  :key="track.id"
+                  class="bgm-custom-item"
+                >
+                  <span class="bgm-custom-name">{{ track.name }}</span>
+                  <button
+                    class="bgm-remove-btn"
+                    title="Remove track"
+                    @click="handleRemoveTrack(track.id)"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div
+                v-if="bgmEnabled"
+                class="bgm-volume-row"
+              >
+                <span class="bgm-vol-icon">🔈</span>
+                <input
+                  type="range"
+                  class="bgm-volume-slider"
+                  min="0"
+                  max="100"
+                  :value="Math.round(bgmVolume * 100)"
+                  @input="handleBgmVolumeChange"
+                >
+                <span class="bgm-vol-icon">🔊</span>
+              </div>
+            </div>
           
-          <!-- Appearance / Theme picker -->
-          <div class="dropdown-section">
-            <ThemePicker />
-          </div>
+            <!-- Appearance / Theme picker -->
+            <div class="dropdown-section">
+              <ThemePicker />
+            </div>
 
-          <!-- Toggle buttons for full-screen panels -->
-          <div class="dropdown-section">
-            <button
-              class="dropdown-btn"
-              @click="showSystemInfo = !showSystemInfo"
-            >
-              📊 System Information
-            </button>
-            <button
-              class="dropdown-btn"
-              @click="showAudioControls = !showAudioControls"
-            >
-              🎛️ Audio Controls
-            </button>
-          </div>
-        </FloatingMenu>
-      </Transition>
+            <!-- Toggle buttons for full-screen panels -->
+            <div class="dropdown-section">
+              <button
+                class="dropdown-btn"
+                @click="showSystemInfo = !showSystemInfo"
+              >
+                📊 System Information
+              </button>
+              <button
+                class="dropdown-btn"
+                @click="showAudioControls = !showAudioControls"
+              >
+                🎛️ Audio Controls
+              </button>
+            </div>
+          </FloatingMenu>
+        </Transition>
 
-      <!-- Full-screen overlays (rendered outside the dropdown to avoid z-index issues) -->
-      <SystemInfoPanel
-        v-if="showSystemInfo"
-        @close="showSystemInfo = false"
-      />
-      <AudioControlsPanel
-        v-if="showAudioControls"
-        @close="showAudioControls = false"
-        @update:bgm-volume="handleAudioBgmVolumeChange"
-        @update:bgm-track-id="handleAudioBgmTrackChange"
+        <!-- Full-screen overlays (rendered outside the dropdown to avoid z-index issues) -->
+        <SystemInfoPanel
+          v-if="showSystemInfo"
+          @close="showSystemInfo = false"
+        />
+        <AudioControlsPanel
+          v-if="showAudioControls"
+          @close="showAudioControls = false"
+          @update:bgm-volume="handleAudioBgmVolumeChange"
+          @update:bgm-track-id="handleAudioBgmTrackChange"
+        />
+      </div> <!-- /.settings-host -->
+
+      <!-- AI state pill — flex-stacked beneath the Settings button, no
+           hand-tuned `top` magic numbers. -->
+      <FloatingChip
+        class="ai-state-pill"
+        readonly
+        :class="characterStore.state"
+      >
+        <span class="ai-state-dot" />
+        <span class="ai-state-label">{{ stateLabel }}</span>
+      </FloatingChip>
+
+      <!-- Portal target for the floating QuestBubble orb (and any future
+           corner widgets).  Using Vue's built-in `<Teleport>` API to attach
+           extras here keeps the corner stack a single flex container so
+           nothing overlaps — no hand-tuned `top: 44px` magic numbers
+           anywhere.  See `rules/coding-standards.md` § "UI Framework — No
+           CSS Hacking". -->
+      <div
+        id="corner-cluster-portal"
+        class="corner-cluster-portal"
       />
     </div>
 
@@ -434,6 +463,7 @@
 import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
+import type { CharacterState } from '../types';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
 import { useWindowStore } from '../stores/window';
@@ -465,6 +495,59 @@ const personaStore = usePersonaStore();
 /** Viewport behaves differently in pet mode: no background, no chrome,
  *  transparent clear colour, and pedestal hidden in the 3D scene. */
 const isPetMode = computed(() => windowStoreLocal.mode === 'pet');
+
+/** Human-readable labels for the AI state pill rendered in the corner cluster. */
+const STATE_LABELS: Record<CharacterState, string> = {
+  idle: 'Idle',
+  thinking: 'Thinking…',
+  talking: 'Talking',
+  happy: 'Happy',
+  sad: 'Sad',
+  angry: 'Angry',
+  relaxed: 'Relaxed',
+  surprised: 'Surprised',
+};
+const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
+
+/**
+ * Returns true when a string from VRM metadata is informative enough to
+ * surface to the user.  VRM files frequently contain placeholder values
+ * like `"Unknown"`, empty strings, or terse numeric strings such as
+ * `"1"` (these come from authors who never filled in the real metadata
+ * and previously rendered as the meaningless "by 1" overlay).
+ */
+function isMeaningfulMetaValue(raw: string | undefined | null): boolean {
+  if (!raw) return false;
+  const trimmed = raw.trim();
+  if (trimmed.length < 2) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'unknown' || lower === 'n/a' || lower === 'none' || lower === 'null') {
+    return false;
+  }
+  // Pure-numeric strings up to 3 digits are almost always placeholders.
+  if (/^\d{1,3}$/.test(trimmed)) return false;
+  return true;
+}
+
+/**
+ * Composes the secondary character overlay (under the title) from VRM
+ * metadata.  Only includes meaningful parts — never renders "by 1" or
+ * "by Unknown".  Returns an empty string when nothing meaningful exists,
+ * which causes the overlay to be hidden entirely via `v-if`.
+ */
+const characterMetaText = computed(() => {
+  const meta = characterStore.vrmMetadata;
+  if (!meta) return '';
+  const parts: string[] = [];
+  if (isMeaningfulMetaValue(meta.author)) {
+    parts.push(`by ${meta.author.trim()}`);
+  }
+  if (isMeaningfulMetaValue(meta.license)) {
+    parts.push(meta.license.trim());
+  }
+  return parts.join(' · ');
+});
+
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
 const backgroundInputRef = ref<HTMLInputElement | null>(null);
@@ -677,9 +760,12 @@ const characterName = computed(() => {
   return characterStore.vrmMetadata?.title ?? 'TerranSoul';
 });
 
-const backgroundStyle = computed(() => ({
-  backgroundImage: `url("${backgroundStore.currentBackground.url}")`,
-}));
+const backgroundStyle = computed(() => {
+  const bg = backgroundStore.currentBackground;
+  // Auto: no inline style — body CSS gradient (via --ts-bg-gradient) shows through.
+  if (bg.kind === 'auto') return {};
+  return { backgroundImage: `url("${bg.url}")` };
+});
 
 let animFrameId = 0;
 let disposeScene: (() => void) | null = null;
@@ -1216,10 +1302,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   left: 280px;
   font-size: var(--ts-text-lg);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--ts-viewport-text);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   letter-spacing: 0.05em;
+  background: var(--ts-viewport-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .character-meta-overlay {
@@ -1227,20 +1316,44 @@ async function loadModelIntoScene(newPath: string | undefined) {
   top: 34px;
   left: 280px;
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--ts-viewport-text-dim);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   letter-spacing: 0.02em;
+  background: var(--ts-viewport-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-/* ── Corner settings button ── */
-/* Placed top-right on all viewports to avoid colliding with the
-   App.vue mode-toggle pill that occupies the top-left zone. */
-.settings-corner {
+/* ── Corner cluster — Settings + AI state pill stacked via flex ──
+   A SINGLE absolutely-positioned wrapper owns the top-right corner.  Its
+   children flow naturally as flex column items with an explicit gap — no
+   hand-tuned `top: 56px` magic numbers on individual children, no risk of
+   overlap when font/padding/viewport changes.  See
+   `rules/coding-standards.md` § "UI Framework — No CSS Hacking". */
+.corner-cluster {
   position: absolute;
   top: 12px;
   right: 16px;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+/* Settings host — own positioned wrapper so the dropdown anchors to the
+   trigger button, not to the whole flex cluster. */
+.settings-host {
+  position: relative;
+  display: flex;
+}
+
+/* Portal target for QuestBubble (and any future corner widgets).  Uses
+   `display: contents` so the wrapper itself is invisible to layout — the
+   teleported children become direct flex items of `.corner-cluster`. */
+.corner-cluster-portal {
+  display: contents;
 }
 
 .settings-toggle {
@@ -1265,6 +1378,46 @@ async function loadModelIntoScene(newPath: string | undefined) {
   flex-direction: column;
   gap: 14px;
   z-index: 30;
+}
+
+/* ── AI state pill — flex child of `.corner-cluster`, no absolute positioning ── */
+.ai-state-pill {
+  gap: 7px;
+  padding: 6px 16px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ts-text-primary);
+  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+}
+.ai-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  transition: background 0.4s ease;
+}
+.ai-state-pill.idle { background: rgba(37, 99, 235, 0.25); color: #93c5fd; border-color: rgba(147, 197, 253, 0.3); }
+.ai-state-pill.idle .ai-state-dot { background: #3b82f6; }
+.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.35); }
+.ai-state-pill.thinking .ai-state-dot { background: #f59e0b; animation: pulse-dot 1.2s ease-in-out infinite; }
+.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.3); }
+.ai-state-pill.talking .ai-state-dot { background: #22c55e; }
+.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.3); }
+.ai-state-pill.happy .ai-state-dot { background: #06b6d4; }
+.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.3); }
+.ai-state-pill.sad .ai-state-dot { background: #a855f7; }
+.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.3); }
+.ai-state-pill.angry .ai-state-dot { background: #ef4444; }
+.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: var(--ts-success-dim); border-color: rgba(94, 234, 212, 0.25); }
+.ai-state-pill.relaxed .ai-state-dot { background: #14b8a6; }
+.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: var(--ts-warning); border-color: rgba(253, 230, 138, 0.3); }
+.ai-state-pill.surprised .ai-state-dot { background: #f59e0b; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
 }
 
 .settings-header {
@@ -1313,8 +1466,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   padding: 6px 10px;
   border-radius: var(--ts-radius-sm);
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.75);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-secondary);
   font-size: var(--ts-text-sm);
   cursor: pointer;
   transition: background var(--ts-transition-fast);
@@ -1344,8 +1497,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   padding: 6px 4px;
   border-radius: var(--ts-radius-sm);
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.82);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-secondary);
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1388,7 +1541,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   border-radius: var(--ts-radius-md);
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--ts-viewport-text);
   font-size: 0.82rem;
   cursor: pointer;
   outline: none;
@@ -1414,8 +1567,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   padding: 5px 10px;
   border-radius: var(--ts-radius-pill);
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
@@ -1483,9 +1636,10 @@ async function loadModelIntoScene(newPath: string | undefined) {
     justify-content: center;
   }
   .settings-label { display: none; }
-  .settings-corner {
+  .corner-cluster {
     top: 6px;
     right: 10px;
+    gap: 6px;
   }
   /* Dropdown: narrower on mobile, already right-aligned */
   .settings-dropdown {
@@ -1493,6 +1647,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
     padding: 10px;
     gap: 10px;
   }
+  /* Compact AI state pill on small screens. */
+  .ai-state-pill {
+    padding: 2px 8px;
+    font-size: 0.58rem;
+    gap: 3px;
+  }
+  .ai-state-dot { width: 4px; height: 4px; }
 }
 .loading-overlay {
   position: absolute;
@@ -1524,7 +1685,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .loading-text {
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ts-viewport-text-med);
   letter-spacing: 0.05em;
 }
 
@@ -1570,7 +1731,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 
 .bgm-status {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ts-viewport-text-med);
   font-weight: 600;
 }
 
@@ -1669,8 +1830,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(11, 17, 32, 0.78);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-overlay);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1679,10 +1840,10 @@ async function loadModelIntoScene(newPath: string | undefined) {
   transition: background 0.2s, transform 0.15s;
   flex-shrink: 0;
   z-index: 2;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--ts-shadow-md);
 }
 .music-bar-toggle:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--ts-bg-hover);
   transform: scale(1.1);
 }
 .music-bar-toggle-icon {
@@ -1705,10 +1866,10 @@ async function loadModelIntoScene(newPath: string | undefined) {
   margin-left: 6px;
   padding: 6px 10px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(11, 17, 32, 0.92);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-overlay);
   backdrop-filter: blur(16px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--ts-shadow-lg);
 }
 
 .music-btn {
@@ -1716,8 +1877,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   height: 30px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
+  background: var(--ts-bg-input);
+  color: var(--ts-viewport-text);
   font-size: 0.85rem;
   cursor: pointer;
   display: flex;
@@ -1727,16 +1888,16 @@ async function loadModelIntoScene(newPath: string | undefined) {
   flex-shrink: 0;
 }
 .music-btn:hover {
-  background: rgba(56, 189, 248, 0.3);
+  background: var(--ts-accent-glow);
   transform: scale(1.1);
 }
 .music-btn.play-btn {
-  background: rgba(56, 189, 248, 0.25);
+  background: var(--ts-accent-glow);
   width: 34px;
   height: 34px;
 }
 .music-btn.play-btn:hover {
-  background: rgba(56, 189, 248, 0.45);
+  background: color-mix(in srgb, var(--ts-accent-blue) 35%, transparent);
 }
 .music-btn.add-btn {
   font-size: 0.9rem;
@@ -1751,7 +1912,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .music-track-name {
   font-size: 0.72rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--ts-viewport-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1763,7 +1924,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   height: 3px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ts-border-strong);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -1773,14 +1934,14 @@ async function loadModelIntoScene(newPath: string | undefined) {
   -webkit-appearance: none;
   width: 12px;
   height: 12px;
-  background: rgba(56, 189, 248, 0.95);
+  background: var(--ts-accent-blue);
   border-radius: 50%;
   cursor: pointer;
 }
 .music-vol-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  background: rgba(56, 189, 248, 0.95);
+  background: var(--ts-accent-blue);
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -1830,7 +1991,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 .bgm-custom-name {
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--ts-viewport-text-med);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1881,7 +2042,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--ts-viewport-text);
   margin-bottom: 10px;
 }
 .url-dialog-input {
@@ -1890,7 +2051,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--ts-viewport-text);
   font-size: 0.8rem;
   outline: none;
   box-sizing: border-box;
@@ -1915,7 +2076,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 .url-dialog-btn.cancel {
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--ts-viewport-text-dim);
 }
 .url-dialog-btn.cancel:hover {
   background: rgba(255, 255, 255, 0.15);

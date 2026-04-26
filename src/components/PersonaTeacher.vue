@@ -638,20 +638,20 @@ onUnmounted(stopCamera);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: #ef4444;
+  color: var(--ts-error);
   text-transform: uppercase;
 }
 .pt-live-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ef4444;
+  background: var(--ts-error);
   animation: pt-pulse 1.2s infinite;
 }
 .pt-rec-badge {
   margin-left: 0.5rem;
   font-size: 0.7rem;
-  color: #ef4444;
+  color: var(--ts-error);
   font-weight: 700;
 }
 .pt-saved-dur {
@@ -707,7 +707,7 @@ onUnmounted(stopCamera);
   font-size: 0.85rem;
 }
 .pt-error {
-  color: #ef4444;
+  color: var(--ts-error);
   font-size: 0.75rem;
   margin: 0;
 }

@@ -43,22 +43,24 @@ describe('useTheme', () => {
     expect(themeId.value).toBe('default');
   });
 
-  it('applies CSS custom properties to document.documentElement', () => {
+  it('applies data-theme attribute instead of CSS custom properties', () => {
     const { setTheme } = useTheme();
     setTheme('corporate');
     const root = document.documentElement;
-    expect(root.style.getPropertyValue('--ts-bg-base')).toBe('#f5f5f5');
-    expect(root.style.getPropertyValue('--ts-accent')).toBe('#5b5fc7');
+    // CSS-first: tokens are in the stylesheet, not inline styles.
+    // The composable sets data-theme; the cascade handles the rest.
+    expect(root.dataset.theme).toBe('corporate');
+    expect(root.style.getPropertyValue('--ts-bg-base')).toBe('');
   });
 
   it('clears previous tokens when switching themes', () => {
     const { setTheme } = useTheme();
     setTheme('corporate');
-    expect(document.documentElement.style.getPropertyValue('--ts-bg-base')).toBe('#f5f5f5');
+    // CSS-first: tokens are not written to inline styles.
+    expect(document.documentElement.dataset.theme).toBe('corporate');
 
     setTheme('default');
-    // Default theme has empty tokens — the property should be removed
-    expect(document.documentElement.style.getPropertyValue('--ts-bg-base')).toBe('');
+    expect(document.documentElement.dataset.theme).toBe('default');
   });
 
   it('sets data-theme attribute on root', () => {
@@ -120,11 +122,13 @@ describe('useTheme', () => {
     expect(b.activeTheme.value.id).toBe('cat');
   });
 
-  it('applies font overrides when theme specifies them', () => {
+  it('applies font overrides when theme specifies them via CSS cascade', () => {
     const { setTheme } = useTheme();
     setTheme('kids');
     const root = document.documentElement;
-    // Kids theme has a fontFamily override
-    expect(root.style.getPropertyValue('--ts-font-family')).toContain('Nunito');
+    // CSS-first: font overrides live in html[data-theme="kids"] in style.css.
+    // The composable only sets the data-theme attribute; no inline style.
+    expect(root.dataset.theme).toBe('kids');
+    expect(root.style.getPropertyValue('--ts-font-family')).toBe('');
   });
 });

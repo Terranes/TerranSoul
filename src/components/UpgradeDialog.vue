@@ -272,7 +272,7 @@ function handleAccept() {
 .btn-upgrade {
   padding: 0.5rem 1.25rem;
   background: linear-gradient(135deg, #3b82f6, #6366f1);
-  color: #fff;
+  color: var(--ts-text-on-accent);
   border: none;
   border-radius: 8px;
   cursor: pointer;

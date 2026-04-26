@@ -117,7 +117,7 @@ function statusLabel(status: string): string {
   padding: 2px 8px;
   border-radius: var(--ts-radius-pill, 100px);
   background: var(--ts-accent, #7c3aed);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
 
 .task-status.paused {
@@ -191,12 +191,12 @@ function statusLabel(status: string): string {
 
 .task-btn.cancel {
   background: var(--ts-accent-error, #e53e3e);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
 
 .task-btn.resume {
   background: var(--ts-accent, #7c3aed);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
 
 .task-error {
