@@ -17,6 +17,7 @@ import {
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
 import type { CharacterState } from '../types';
+import type { ModelGender } from '../config/default-models';
 
 // ── Animation registry: maps keys to VRMA file paths ─────────────────────────
 
@@ -40,6 +41,7 @@ export interface VrmaAnimationEntry {
 export const VRMA_ANIMATIONS: VrmaAnimationEntry[] = [
   // Idle/general
   { label: 'Idle',        path: '/animations/idle.vrma',        loop: true,  mood: undefined,     motionKey: 'idle' },
+  { label: 'Ladylike',    path: '/animations/ladylike.vrma',    loop: true,                       motionKey: 'ladylike' },
   { label: 'Walk',        path: '/animations/walk.vrma',        loop: true,                       motionKey: 'walk' },
   { label: 'Greeting',    path: '/animations/greeting.vrma',    loop: false, mood: 'happy',       motionKey: 'greeting' },
   { label: 'Peace Sign',  path: '/animations/peace-sign.vrma',  loop: false,                      motionKey: 'peace' },
@@ -55,6 +57,10 @@ export const VRMA_ANIMATIONS: VrmaAnimationEntry[] = [
   { label: 'Sleepy',      path: '/animations/sleepy.vrma',      loop: true,                       motionKey: 'sleepy' },
   { label: 'Clapping',    path: '/animations/clapping.vrma',    loop: false,                      motionKey: 'clapping' },
   { label: 'Jump',        path: '/animations/jump.vrma',        loop: false,                      motionKey: 'jump' },
+  // Additional
+  { label: 'Waiting',     path: '/animations/waiting.vrma',     loop: true,                       motionKey: 'waiting' },
+  { label: 'Appearing',   path: '/animations/appearing.vrma',   loop: false,                      motionKey: 'appearing' },
+  { label: 'Liked',       path: '/animations/liked.vrma',       loop: false,                      motionKey: 'liked' },
 ];
 
 /** All valid motion keys the LLM can emit. Used for prompt and validation. */
@@ -71,10 +77,30 @@ export function getAnimationForMood(mood: CharacterState): VrmaAnimationEntry | 
 }
 
 /**
+ * Pick the idle loop animation based on model gender.
+ * Female models prefer `ladylike.vrma` most of the time; male models default
+ * to the standard `idle.vrma` loop.
+ */
+export function getIdleAnimationForGender(
+  gender: ModelGender,
+  random: () => number = Math.random,
+): VrmaAnimationEntry | undefined {
+  const idle = VRMA_ANIMATIONS.find(a => a.motionKey === 'idle');
+  const ladylike = VRMA_ANIMATIONS.find(a => a.motionKey === 'ladylike');
+
+  if (gender === 'female' && ladylike) {
+    // 75% chance ladylike, 25% standard idle for variety
+    if (random() < 0.75) return ladylike;
+  }
+  return idle ?? ladylike;
+}
+
+/**
  * Aliases so the LLM can use natural words instead of exact motion keys.
  * Maps common synonyms → canonical motionKey used in VRMA_ANIMATIONS.
  */
 const MOTION_ALIASES: Record<string, string> = {
+  lady:      'ladylike',
   clap:      'clapping',
   applause:  'clapping',
   applaud:   'clapping',
@@ -106,6 +132,15 @@ const MOTION_ALIASES: Record<string, string> = {
   crouch:    'squat',
   victory:   'peace',
   stroll:    'walk',
+  wait:      'waiting',
+  patient:   'waiting',
+  appear:    'appearing',
+  entrance:  'appearing',
+  arrive:    'appearing',
+  like:      'liked',
+  love:      'liked',
+  heart:     'liked',
+  adore:     'liked',
 };
 
 /**
@@ -155,6 +190,11 @@ export class VrmaManager {
   /** Whether mood-mapped auto-play should be suppressed (explicit motion active). */
   get isMoodSuppressed(): boolean {
     return this._suppressMoodAnimation;
+  }
+
+  /** The currently bound VRM model (null until setVRM is called). */
+  get vrm(): VRM | null {
+    return this.currentVrm;
   }
 
   /** Mark that an explicit motion is playing — mood watcher should not override. */
@@ -231,6 +271,19 @@ export class VrmaManager {
 
     const clip = await this.loadClip(path);
     if (!clip) return false;
+
+    return this.playClip(clip, loop, fadeIn);
+  }
+
+  /**
+   * Play a pre-built AnimationClip (e.g. from vrma-baker.ts bakeMotionToClip).
+   * Stops any current animation first with crossfade.
+   * @param clip The AnimationClip to play.
+   * @param loop Whether to loop the animation.
+   * @param fadeIn Crossfade duration in seconds (default 0.3s).
+   */
+  playClip(clip: THREE.AnimationClip, loop = false, fadeIn = 0.3): boolean {
+    if (!this.mixer) return false;
 
     // Stop previous action with fadeout
     if (this.currentAction) {

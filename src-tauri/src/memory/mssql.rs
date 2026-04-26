@@ -101,6 +101,7 @@ impl MssqlBackend {
             source_url: row.get::<&str, _>("source_url").map(|s| s.to_string()),
             source_hash: row.get::<&str, _>("source_hash").map(|s| s.to_string()),
             expires_at: row.get::<i64, _>("expires_at"),
+            valid_to: None,
         }
     }
 }

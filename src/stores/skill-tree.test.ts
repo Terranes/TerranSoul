@@ -497,6 +497,34 @@ describe('useSkillTreeStore — initialise', () => {
     // Daily suggestions should have been generated (local fallback)
     expect(store.tracker.dailySuggestionIds.length).toBeGreaterThan(0);
   });
+
+  it('first-run initialise sets lastSeenActivationTimestamp to suppress notifications', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    const store = useSkillTreeStore();
+    await store.initialise();
+    // Avatar activates automatically, so timestamps are non-empty
+    const maxTs = Math.max(0, ...Object.values(store.tracker.activationTimestamps));
+    expect(maxTs).toBeGreaterThan(0);
+    // The high-water mark should be >= max so QRC doesn't fire for initial skills
+    expect(store.tracker.lastSeenActivationTimestamp).toBeGreaterThanOrEqual(maxTs);
+  });
+
+  it('notificationsSuppressed is false after initialise completes', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    const store = useSkillTreeStore();
+    await store.initialise();
+    expect(store.notificationsSuppressed).toBe(false);
+  });
+
+  it('suppressNotifications / resumeNotifications round-trip', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    const store = useSkillTreeStore();
+    await store.initialise();
+    store.suppressNotifications();
+    expect(store.notificationsSuppressed).toBe(true);
+    store.resumeNotifications();
+    expect(store.notificationsSuppressed).toBe(false);
+  });
 });
 
 describe('useSkillTreeStore — quest event system', () => {

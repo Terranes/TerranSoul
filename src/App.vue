@@ -1,41 +1,59 @@
 <template>
-  <Analytics />
-  <SpeedInsights />
+  <!-- Panel-only window: opened from pet mode context menu -->
+  <div
+    v-if="panelOnly"
+    class="app-shell panel-window"
+  >
+    <main class="app-main panel-main">
+      <SkillTreeView
+        v-if="panelOnly === 'skills'"
+        @navigate="handleSkillNavigate"
+      />
+      <BrainView
+        v-if="panelOnly === 'brain'"
+        @navigate="handleSkillNavigate"
+      />
+      <MemoryView v-if="panelOnly === 'memory'" />
+      <MarketplaceView v-if="panelOnly === 'marketplace'" />
+      <VoiceSetupView
+        v-if="panelOnly === 'voice'"
+        @done="() => {}"
+      />
+    </main>
+  </div>
+
+  <template v-else>
   <!-- Loading splash shown during app initialization -->
   <Transition name="splash-fade">
     <SplashScreen v-if="appLoading" />
   </Transition>
+
+  <!-- First-launch wizard (shown once, before the main app) -->
+  <FirstLaunchWizard
+    :visible="showFirstLaunchWizard"
+    @done="onFirstLaunchDone"
+  />
 
   <div
     v-show="!appLoading"
     class="app-shell"
     :class="{ 'pet-mode': isPetMode }"
   >
-    <!-- Floating mode-toggle pill — visible on the Chat tab (but not while the
-         quest constellation panel is open) and always in pet mode (where it's
-         the only way back to desktop mode).  Hidden on all other tabs so it
-         doesn't overlap Memory, Marketplace, Voice, or the Skill tree. -->
-    <div
-      v-if="!appLoading && activeTab === 'chat' && !questConstellationOpen && !isPetMode"
-      class="mode-toggle-pill"
-      :class="{ 'is-pet': isPetMode }"
-    >
-      <button
-        class="mode-toggle-btn"
-        role="switch"
-        :aria-checked="isPetMode"
-        :title="isPetMode ? 'Switch to desktop mode' : 'Switch to pet mode'"
-        @click="togglePetMode"
-      >
-        <span class="mode-toggle-track">
-          <span class="mode-toggle-thumb">{{ isPetMode ? '🐾' : '🖥' }}</span>
-        </span>
-        <span class="mode-toggle-label">{{ isPetMode ? 'Pet' : 'Desktop' }}</span>
-      </button>
-    </div>
 
     <!-- Pet overlay mode: transparent character + floating chat -->
-    <PetOverlayView v-if="isPetMode" />
+    <div v-if="isPetMode" class="pet-mode-wrapper">
+      <!-- DEV badge — inline in the pet mode layout, top-left -->
+      <FloatingBadge
+        v-if="windowStore.isDevBuild"
+        class="pet-dev-badge"
+        tone="warning"
+        readonly
+        title="Development build — MCP on port 7422"
+      >
+        DEV
+      </FloatingBadge>
+      <PetOverlayView />
+    </div>
 
     <!-- Normal mode: Brain onboarding or tabbed UI -->
     <template v-else>
@@ -79,10 +97,27 @@
             <span class="nav-icon">⚠</span>
             <span class="nav-label">Brain</span>
           </button>
+
+          <!-- DEV badge — inline in the sidebar, below spacer -->
+          <FloatingBadge
+            v-if="windowStore.isDevBuild"
+            class="nav-dev-badge"
+            tone="warning"
+            readonly
+            title="Development build — MCP on port 7422"
+          >
+            DEV
+          </FloatingBadge>
         </nav>
 
         <!-- Mobile bottom tab bar (replaces hamburger menu) -->
         <nav class="mobile-bottom-nav">
+          <!-- DEV indicator — sits as first item in the tab row -->
+          <span
+            v-if="windowStore.isDevBuild"
+            class="mobile-dev-indicator"
+            title="Development build"
+          >DEV</span>
           <button
             v-for="tab in tabs"
             :key="tab.id"
@@ -99,8 +134,40 @@
 
         <!-- Main area -->
         <main class="app-main">
+          <!-- Mode toggle toolbar — sits in the layout flow above ChatView.
+               Hidden on non-chat tabs and when quest constellation is open. -->
+          <div
+            v-if="activeTab === 'chat' && !questConstellationOpen"
+            class="mode-toggle-toolbar"
+          >
+            <div class="mode-segmented">
+              <button
+                :class="['mode-seg-btn', { active: !isChatboxMode }]"
+                title="3D character mode"
+                @click="setDisplayMode('desktop')"
+              >
+                🖥 <span class="mode-seg-label">3D</span>
+              </button>
+              <button
+                :class="['mode-seg-btn', { active: isChatboxMode }]"
+                title="Chat-only mode (no 3D character)"
+                @click="setDisplayMode('chatbox')"
+              >
+                💬 <span class="mode-seg-label">Chat</span>
+              </button>
+              <button
+                class="mode-seg-btn"
+                title="Switch to pet mode"
+                @click="togglePetMode"
+              >
+                🐾 <span class="mode-seg-label">Pet</span>
+              </button>
+            </div>
+          </div>
+
           <ChatView
             v-show="activeTab === 'chat'"
+            :chatbox-mode="isChatboxMode"
             @navigate="handleSkillNavigate"
           />
           <SkillTreeView
@@ -136,6 +203,7 @@
       </template>
     </template>
   </div>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -145,6 +213,7 @@ import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
 import { useSkillTreeStore } from './stores/skill-tree';
 import { usePersonaStore } from './stores/persona';
+import { useSettingsStore } from './stores/settings';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
@@ -157,24 +226,33 @@ import QuestBubble from './components/QuestBubble.vue';
 import ComboToast from './components/ComboToast.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
-import { Analytics } from '@vercel/analytics/vue';
-import { SpeedInsights } from '@vercel/speed-insights/vue';
+import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
+import FloatingBadge from './components/ui/FloatingBadge.vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();
 const windowStore = useWindowStore();
 const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
+const settingsStore = useSettingsStore();
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain'>('chat');
 const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
 const questConstellationOpen = ref(false);
+const showFirstLaunchWizard = ref(false);
 
 
 const hasBrain = computed(() => brain.hasBrain);
 const isPetMode = computed(() => windowStore.mode === 'pet');
+const isChatboxMode = computed(() => settingsStore.settings.chatbox_mode === true);
 const appIconUrl = '/icon.png';
+
+/** Panel-only window mode: when opened from pet mode context menu with ?panel=<id>. */
+const panelParam = new URLSearchParams(window.location.search).get('panel');
+const VALID_PANELS = ['brain', 'memory', 'skills', 'marketplace', 'voice'] as const;
+type PanelId = typeof VALID_PANELS[number];
+const panelOnly = VALID_PANELS.includes(panelParam as PanelId) ? (panelParam as PanelId) : null;
 
 const tabs = [
   { id: 'chat' as const, label: 'Chat', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
@@ -189,8 +267,22 @@ async function onBrainDone() {
   skipSetup.value = true;
 }
 
+function onFirstLaunchDone() {
+  showFirstLaunchWizard.value = false;
+  // The wizard already configured brain + voice + quests.
+  // If the manual path was chosen and brain is still not set,
+  // show the BrainSetupView.
+  if (!brain.hasBrain) {
+    skipSetup.value = false;
+  }
+}
+
 async function togglePetMode() {
   await windowStore.toggleMode();
+}
+
+async function setDisplayMode(mode: 'desktop' | 'chatbox') {
+  await settingsStore.setChatboxMode(mode === 'chatbox');
 }
 
 
@@ -242,6 +334,22 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  // Panel-only windows (opened from pet mode) skip the full init sequence.
+  // They share the same Pinia stores via the same origin, and the main
+  // window already initialised the brain/voice/settings.
+  if (panelOnly) {
+    try {
+      await brain.loadActiveBrain();
+    } catch {
+      brain.autoConfigureFreeApi();
+    }
+    try {
+      await settingsStore.loadSettings();
+    } catch { /* best-effort */ }
+    await skillTree.initialise();
+    return;
+  }
+
   // Register the Escape-to-exit-pet-mode safety net first so the listener
   // is attached whether we take the Tauri path or the browser fallback.
   window.addEventListener('keydown', onKeyDown);
@@ -252,6 +360,8 @@ onMounted(async () => {
 
     // Load current window mode from Rust backend
     await windowStore.loadMode();
+    // Load dev/release build flag for DEV badge
+    await windowStore.loadDevBuildFlag();
   } catch {
     // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
     brain.autoConfigureFreeApi();
@@ -286,18 +396,26 @@ onMounted(async () => {
     // Persona unavailable — keep default in-memory traits.
   }
 
+  // Load settings to check first-launch flag
+  await settingsStore.loadSettings();
+
   // If brain is already set (either legacy or new mode), skip the onboarding.
   if (brain.hasBrain) {
     skipSetup.value = true;
-  } else {
-    // Desktop first launch: auto-configure free API (same as browser) and persist
-    // to the Tauri backend so `send_message_stream` knows the brain mode.
+  } else if (settingsStore.settings.first_launch_complete) {
+    // Settings say we completed first launch before but brain is gone —
+    // re-configure silently (the user already chose their path).
     await brain.autoConfigureForDesktop();
     skipSetup.value = true;
+  } else {
+    // True first launch: show the wizard and let the user choose.
+    showFirstLaunchWizard.value = true;
+    skipSetup.value = true; // hide BrainSetupView while wizard is open
   }
 
   // If voice is not configured, auto-enable Web Speech API + Edge TTS
-  if (!voice.hasVoice) {
+  // (skipped when the wizard is showing — the wizard handles this)
+  if (!voice.hasVoice && !showFirstLaunchWizard.value) {
     await voice.autoConfigureVoice();
   }
 
@@ -343,6 +461,8 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 
 .app-shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 .app-shell.pet-mode { background: transparent; }
+.app-shell.panel-window { display: block; }
+.panel-main { height: 100vh; height: 100dvh; overflow-y: auto; }
 
 /* ── Desktop sidebar navigation ── */
 .app-nav {
@@ -350,7 +470,7 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   padding: 12px 6px;
   background: var(--ts-bg-nav);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
-  width: 72px; flex-shrink: 0;
+  width: var(--ts-nav-width); flex-shrink: 0;
   position: relative;
 }
 .nav-logo {
@@ -407,112 +527,55 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 }
 .nav-spacer { flex: 1; }
 .nav-brain-warn { color: var(--ts-warning); }
-/* ── Floating Desktop/Pet mode-toggle pill ──
- * Always-visible, fixed-position toggle — lives outside the sidebar so it
- * remains reachable in pet mode (where the sidebar disappears).
- *
- * Position is mode-aware so the pill never covers the character's status:
- *  - Desktop mode: anchored just right of the sidebar at the top so it sits
- *    clear of the IDLE state pill and other chat-header chrome.
- *  - Pet mode: top-right corner (the only decoration there). */
-.mode-toggle-pill {
-  position: fixed;
-  top: 12px;
-  left: 82px;
-  z-index: 1000;
+/* ── Mode toggle toolbar (in-flow, inside .app-main) ── */
+.mode-toggle-toolbar {
+  position: absolute;
+  top: var(--ts-space-sm);
+  left: var(--ts-space-sm);
+  z-index: var(--ts-z-sticky);
   pointer-events: auto;
 }
-.mode-toggle-pill.is-pet {
-  left: auto;
-  right: 14px;
-}
-@media (max-width: 640px) {
-  /* No sidebar on mobile; pin to top-left with a small gutter. */
-  .mode-toggle-pill {
-    top: 6px;
-    left: 10px;
-  }
-  .mode-toggle-btn {
-    padding: 3px 8px 3px 4px;
-    font-size: 0.65rem;
-    gap: 4px;
-  }
-  .mode-toggle-track {
-    width: 26px;
-    height: 13px;
-  }
-  .mode-toggle-thumb {
-    width: 9px;
-    height: 9px;
-    font-size: 0.38rem;
-  }
-  .mode-toggle-pill.is-pet .mode-toggle-thumb {
-    left: calc(100% - 11px);
-  }
-}
-.mode-toggle-btn {
+
+/* ── 3-way segmented mode toggle ── */
+.mode-segmented {
   display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px 6px 6px;
   border-radius: 20px;
   border: 1px solid rgba(108, 99, 255, 0.35);
   background: rgba(15, 23, 42, 0.82);
-  color: #e2e8f0;
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
   backdrop-filter: blur(10px);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  transition: background 0.15s, transform 0.15s, border-color 0.15s;
+  overflow: hidden;
 }
-.mode-toggle-btn:hover {
-  background: rgba(108, 99, 255, 0.25);
-  transform: translateY(-1px);
-}
-.mode-toggle-pill.is-pet .mode-toggle-btn {
-  border-color: rgba(108, 99, 255, 0.7);
-  background: rgba(40, 30, 80, 0.8);
-}
-.mode-toggle-track {
-  position: relative;
-  width: 36px;
-  height: 18px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  display: inline-flex;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s;
-}
-.mode-toggle-pill.is-pet .mode-toggle-track {
-  background: rgba(108, 99, 255, 0.45);
-  border-color: rgba(108, 99, 255, 0.6);
-}
-.mode-toggle-thumb {
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #0b1120;
+.mode-seg-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 0.55rem;
-  line-height: 1;
-  transform: translateY(-50%);
-  transition: left 0.18s ease, background 0.15s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
 }
-.mode-toggle-pill.is-pet .mode-toggle-thumb {
-  left: calc(100% - 16px);
-  background: #fff;
+.mode-seg-btn:hover {
+  background: rgba(108, 99, 255, 0.2);
+  color: #e2e8f0;
 }
-.mode-toggle-label { white-space: nowrap; }
-.app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.mode-seg-btn.active {
+  background: rgba(108, 99, 255, 0.5);
+  color: #fff;
+}
+.mode-seg-btn + .mode-seg-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+.mode-seg-label {
+  display: inline;
+}
+.app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 
 /* ── Mobile bottom tab bar ── */
 .mobile-bottom-nav {
@@ -521,8 +584,8 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 50;
-  height: 56px;
+  z-index: var(--ts-z-dropdown);
+  height: var(--ts-mobile-nav-height);
   background: rgba(9, 14, 28, 0.95);
   backdrop-filter: blur(20px);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -574,6 +637,54 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   .app-shell { flex-direction: column; }
   .desktop-nav { display: none; }
   .mobile-bottom-nav { display: flex; }
-  .app-main { flex: 1; min-height: 0; padding-bottom: 56px; }
+  .app-main { flex: 1; min-height: 0; padding-bottom: var(--ts-mobile-nav-height); }
+}
+
+/* ── DEV badge (layout-aware, no fixed positioning) ── */
+
+/* Desktop sidebar: sits at the bottom of the flex column, after nav-spacer */
+.nav-dev-badge {
+  margin-top: 4px;
+  margin-bottom: 4px;
+  font-size: 0.6rem;
+  flex-shrink: 0;
+}
+
+/* Mobile bottom bar: inline indicator as the first flex item */
+.mobile-dev-indicator {
+  display: none; /* hidden on desktop, shown via media query */
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #000;
+  background: var(--ts-warning, #fbbf24);
+  border-radius: 4px;
+  padding: 2px 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+@media (max-width: 640px) {
+  .nav-dev-badge { display: none; } /* sidebar hidden on mobile */
+  .mobile-dev-indicator { display: flex; }
+}
+
+/* Pet mode: inline top-left inside the pet-mode-wrapper */
+.pet-mode-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.pet-dev-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 10;
+  font-size: 0.6rem;
+  background: rgba(251, 191, 36, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(0, 0, 0, 0.2);
 }
 </style>

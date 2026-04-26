@@ -115,3 +115,19 @@ export function migratePersonaTraits(raw: unknown): PersonaTraits {
   if (typeof r.updatedAt === 'number') out.updatedAt = r.updatedAt;
   return out;
 }
+
+// ── Persona drift detection (Chunk 14.8) ────────────────────────────────────
+
+/** A single suggested trait update surfaced by the drift detector. */
+export interface DriftSuggestion {
+  field: string;
+  current: string;
+  proposed: string;
+}
+
+/** Result of a persona drift check from the backend. */
+export interface DriftReport {
+  drift_detected: boolean;
+  summary: string;
+  suggested_changes: DriftSuggestion[];
+}

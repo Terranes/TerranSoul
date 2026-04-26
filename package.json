@@ -16,19 +16,17 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.34",
     "@pixiv/three-vrm": "^3.4.0",
     "@pixiv/three-vrm-animation": "^3.5.2",
     "@ricky0123/vad-web": "^0.0.30",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "@types/cytoscape": "^3.21.9",
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
     "cytoscape": "^3.33.2",
     "pinia": "^2.3.1",
     "three": "^0.175.0",
-    "vue": "^3.5.13",
-    "vue-router": "^4.6.4"
+    "vue": "^3.5.13"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

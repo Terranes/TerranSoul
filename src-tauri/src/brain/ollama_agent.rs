@@ -164,7 +164,7 @@ impl OllamaAgent {
     }
 
     /// Send `messages` to Ollama and decode the assistant reply.
-    async fn call(&self, messages: Vec<ChatMessage>) -> (String, Sentiment) {
+    pub(crate) async fn call(&self, messages: Vec<ChatMessage>) -> (String, Sentiment) {
         let body = ChatRequest {
             model: self.model.clone(),
             messages,
@@ -360,6 +360,88 @@ impl OllamaAgent {
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::reranker::parse_rerank_score(&reply)
+    }
+
+    /// Master-Echo persona suggestion (Chunk 14.2 of `docs/persona-design.md`).
+    ///
+    /// Reads the rendered `(system, user)` pair from
+    /// [`crate::persona::extract::build_persona_prompt`], asks the active
+    /// brain for a one-shot reply, then parses it via
+    /// [`crate::persona::extract::parse_persona_reply`]. Returns `None`
+    /// when the brain is unreachable, the reply is empty, or the parsed
+    /// candidate is missing required fields — in every failure mode the
+    /// caller surfaces a "couldn't suggest a persona right now" message
+    /// rather than silently writing garbage.
+    ///
+    /// Prompt construction + reply parsing live in
+    /// [`crate::persona::extract`] so they can be unit-tested without
+    /// the network — same shape as `hyde` and `reranker`.
+    pub async fn propose_persona(
+        &self,
+        snippets: &[crate::persona::extract::PromptSnippet],
+    ) -> Option<crate::persona::extract::PersonaCandidate> {
+        self.propose_persona_with_hints(snippets, None).await
+    }
+
+    /// Hint-aware variant of [`Self::propose_persona`] (Chunk 14.6).
+    /// `prosody_hints` is an already-rendered single-line block from
+    /// [`crate::persona::prosody::render_prosody_block`]. Pass `None`
+    /// when ASR is not configured or no signal was strong enough.
+    pub async fn propose_persona_with_hints(
+        &self,
+        snippets: &[crate::persona::extract::PromptSnippet],
+        prosody_hints: Option<&str>,
+    ) -> Option<crate::persona::extract::PersonaCandidate> {
+        let (system, user) = crate::persona::extract::build_persona_prompt_with_hints(
+            snippets,
+            prosody_hints,
+        );
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::persona::extract::parse_persona_reply(&reply)
+    }
+
+    // ── Persona drift detection (Chunk 14.8) ─────────────────────────────
+
+    /// Check whether the user's `personal:*` memories still align with the
+    /// active persona traits. Returns `None` when the brain reply can't be
+    /// parsed (caller should treat this as "no drift detected").
+    pub async fn check_persona_drift(
+        &self,
+        persona_json: &str,
+        personal_memories: &[(String, String)],
+    ) -> Option<crate::persona::drift::DriftReport> {
+        let (system, user) =
+            crate::persona::drift::build_drift_prompt(persona_json, personal_memories);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::persona::drift::parse_drift_reply(&reply)
+    }
+
+    // ── Contradiction detection (Chunk 17.2) ───────────────────────────────
+
+    /// Ask the LLM whether two memory statements contradict each other.
+    /// Returns `None` when the brain reply can't be parsed (caller should
+    /// treat this as "no contradiction detected").
+    pub async fn check_contradiction(
+        &self,
+        content_a: &str,
+        content_b: &str,
+    ) -> Option<crate::memory::conflicts::ContradictionResult> {
+        let (system, user) =
+            crate::memory::conflicts::build_contradiction_prompt(content_a, content_b);
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system },
+            ChatMessage { role: "user".to_string(),   content: user },
+        ];
+        let (reply, _) = self.call(msgs).await;
+        crate::memory::conflicts::parse_contradiction_reply(&reply)
     }
 
     // ── Embedding ──────────────────────────────────────────────────────────
@@ -851,8 +933,14 @@ mod tests {
 
     // ── Embedding cache resilience tests ─────────────────────────────
 
+    /// Serialization guard for tests that mutate the shared embed caches.
+    /// All cache-related tests must hold this lock to avoid cross-test
+    /// races (the caches are process-global statics).
+    static EMBED_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn embed_text_short_circuits_on_empty_input() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         // No HTTP request should be made for empty input — proves that
         // empty messages can't accidentally hammer /api/embed.
         clear_embed_caches().await;
@@ -862,6 +950,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_model_is_remembered_and_short_circuits() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         clear_embed_caches().await;
         // Mark a fake model as unsupported.
         mark_unsupported("fake-model:1b", 501).await;
@@ -884,6 +973,8 @@ mod tests {
 
     #[tokio::test]
     async fn clear_embed_caches_forgets_unsupported_models() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
         mark_unsupported("forget-me:7b", 400).await;
         assert!(is_known_unsupported("forget-me:7b").await);
 
@@ -897,6 +988,7 @@ mod tests {
 
     #[tokio::test]
     async fn embed_text_returns_none_when_daemon_unreachable() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         // No Ollama running on this port — must return None gracefully
         // rather than panic or hang. The 15-s client timeout protects us.
         clear_embed_caches().await;
@@ -908,6 +1000,7 @@ mod tests {
 
     #[tokio::test]
     async fn embed_cache_snapshot_serializable() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
         clear_embed_caches().await;
         mark_unsupported("snap-test:3b", 501).await;
         let snap = embed_cache_snapshot().await;

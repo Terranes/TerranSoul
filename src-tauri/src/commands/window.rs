@@ -272,7 +272,7 @@ pub async fn set_pet_mode_bounds(
 
 // ── Pet-mode cursor tracking (Windows) ────────────────────────────────────────
 // Replicates Electron's `setIgnoreMouseEvents(true, { forward: true })` pattern
-// used by Open-LLM-VTuber.  A background task polls the OS cursor position and
+// A background task polls the OS cursor position and
 // emits `pet-cursor-pos` events so the frontend can toggle `set_ignore_cursor_events`
 // based on whether the cursor is over an opaque canvas pixel or a transparent area.
 
@@ -383,6 +383,89 @@ pub async fn exit_app(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns `true` when running a dev/debug build, `false` for release.
+///
+/// The frontend uses this to display a "DEV" badge and connect to the
+/// correct MCP port (7422 for dev, 7421 for release).
+#[tauri::command]
+pub fn is_dev_build() -> bool {
+    cfg!(debug_assertions)
+}
+
+// ── Pet-mode panel windows ───────────────────────────────────────────────────
+// In pet mode, each tab (Brain, Memory, Quests, Market, Voice) opens as its
+// own floating window instead of being part of the single app shell.
+
+/// Allowed panel identifiers for pet-mode child windows.
+const ALLOWED_PANELS: &[&str] = &["brain", "memory", "skills", "marketplace", "voice"];
+
+/// Open a panel as a separate floating window in pet mode.
+/// The window loads the same frontend URL with `?panel=<id>` so the
+/// frontend can render only that panel without the navigation shell.
+#[tauri::command]
+pub async fn open_panel_window(
+    panel: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    if !ALLOWED_PANELS.contains(&panel.as_str()) {
+        return Err(format!("Unknown panel: {panel}"));
+    }
+
+    let label = format!("panel-{panel}");
+
+    // If this panel window already exists, just focus it.
+    if let Some(existing) = app_handle.get_webview_window(&label) {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    // Resolve the frontend URL from the running app.
+    let base_url = if cfg!(debug_assertions) {
+        "http://localhost:1420".to_string()
+    } else {
+        // In production, Tauri serves from tauri://localhost
+        "tauri://localhost".to_string()
+    };
+    let url = format!("{base_url}?panel={panel}");
+
+    let title = match panel.as_str() {
+        "brain" => "TerranSoul — Brain",
+        "memory" => "TerranSoul — Memory",
+        "skills" => "TerranSoul — Quests",
+        "marketplace" => "TerranSoul — Marketplace",
+        "voice" => "TerranSoul — Voice",
+        _ => "TerranSoul",
+    };
+
+    tauri::WebviewWindowBuilder::new(
+        &app_handle,
+        &label,
+        tauri::WebviewUrl::External(url.parse().map_err(|e: url::ParseError| e.to_string())?),
+    )
+    .title(title)
+    .inner_size(480.0, 640.0)
+    .resizable(true)
+    .decorations(true)
+    .always_on_top(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Close a panel window that was opened via `open_panel_window`.
+#[tauri::command]
+pub async fn close_panel_window(
+    panel: String,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let label = format!("panel-{panel}");
+    if let Some(window) = app_handle.get_webview_window(&label) {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +498,22 @@ mod tests {
             let parsed: WindowMode = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed, mode);
         }
+    }
+
+    #[test]
+    fn allowed_panels_contains_expected_ids() {
+        for id in &["brain", "memory", "skills", "marketplace", "voice"] {
+            assert!(
+                ALLOWED_PANELS.contains(id),
+                "Missing panel: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn allowed_panels_rejects_unknown() {
+        assert!(!ALLOWED_PANELS.contains(&"chat"));
+        assert!(!ALLOWED_PANELS.contains(&"unknown"));
+        assert!(!ALLOWED_PANELS.contains(&""));
     }
 }

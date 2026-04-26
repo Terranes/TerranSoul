@@ -200,6 +200,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         role: "user".to_string(),
         content: message.clone(),
         agent_name: None,
+        agent_id: None,
         sentiment: None,
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -293,11 +294,29 @@ async fn stream_openai_api<R: tauri::Runtime>(
         .map(|(_, content)| content.as_str())
         .unwrap_or(_message);
 
-    // Hybrid search: combines keyword + recency + importance + decay scoring
+    // Hybrid search: combines keyword + recency + importance + decay scoring.
+    // Chunk 16.9: use cloud embedding for the vector component so cloud modes
+    // get real vector RAG instead of keyword-only retrieval.
+    // Memories below the user-tunable relevance threshold are skipped
+    // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
+    let query_emb = crate::brain::embed_for_mode(
+        user_query,
+        brain_mode.as_ref(),
+        active_brain.as_deref(),
+    )
+    .await;
+
+    let threshold = state
+        .app_settings
+        .lock()
+        .map(|s| s.relevance_threshold)
+        .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
     let relevant: Vec<crate::memory::MemoryEntry> = {
         match state.memory_store.lock() {
             Ok(store) => {
-                store.hybrid_search(user_query, None, 5).unwrap_or_default()
+                store.hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold).unwrap_or_default()
             }
             Err(_) => vec![],
         }
@@ -413,11 +432,18 @@ async fn stream_ollama<R: tauri::Runtime>(
     // Hybrid search: vector similarity + keywords + recency + importance + decay.
     // When embeddings exist, vector component dominates (weight 0.40).
     // Falls back gracefully to keyword-only when no embeddings available.
+    // Memories below the user-tunable relevance threshold are skipped
+    // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
     let query_emb = crate::brain::OllamaAgent::embed_text(user_query, model).await;
 
+    let threshold = state
+        .app_settings
+        .lock()
+        .map(|s| s.relevance_threshold)
+        .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
     let relevant: Vec<crate::memory::MemoryEntry> = {
         match state.memory_store.lock() {
-            Ok(store) => store.hybrid_search(user_query, query_emb.as_deref(), 5).unwrap_or_default(),
+            Ok(store) => store.hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold).unwrap_or_default(),
             Err(_) => vec![],
         }
     };
@@ -541,6 +567,7 @@ fn emit_stub_response<R: tauri::Runtime>(
         role: "assistant".to_string(),
         content: stub_text,
         agent_name: Some("TerranSoul".to_string()),
+        agent_id: None,
         sentiment: Some("neutral".to_string()),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -569,6 +596,7 @@ fn store_assistant_message(
         role: "assistant".to_string(),
         content: full_response.to_string(),
         agent_name: Some(model.to_string()),
+        agent_id: None,
         sentiment: Some(sentiment_label.to_string()),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

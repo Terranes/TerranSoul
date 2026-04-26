@@ -8,19 +8,19 @@ describe('default-models — gender configuration', () => {
     }
   });
 
-  it('annabelle is female', () => {
-    const model = DEFAULT_MODELS.find(m => m.id === 'annabelle');
+  it('shinra is female', () => {
+    const model = DEFAULT_MODELS.find(m => m.id === 'shinra');
     expect(model?.gender).toBe('female');
   });
 
-  it('m58 is male', () => {
-    const model = DEFAULT_MODELS.find(m => m.id === 'm58');
+  it('komori is male', () => {
+    const model = DEFAULT_MODELS.find(m => m.id === 'komori');
     expect(model?.gender).toBe('male');
   });
 
-  it('only annabelle and m58 are bundled defaults', () => {
+  it('bundled defaults are shinra and komori', () => {
     const ids = DEFAULT_MODELS.map(m => m.id).sort();
-    expect(ids).toEqual(['annabelle', 'm58']);
+    expect(ids).toEqual(['komori', 'shinra']);
   });
 
   it('GENDER_VOICES has entries for both genders', () => {

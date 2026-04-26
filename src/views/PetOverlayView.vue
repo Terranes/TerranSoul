@@ -102,17 +102,27 @@
               <span class="pet-msg-text">{{ conversationStore.streamingText }}</span>
             </div>
           </div>
+          <QuestChoiceOverlay
+            :choices="activeQuestChoices"
+            :quest-id="activeQuestId"
+            :question-text="activeQuestQuestion"
+            @pick="handleQuestChoice"
+            @dismiss="dismissHotseat"
+          />
           <form
             class="pet-chat-input"
             @submit.prevent="handleSend"
           >
-            <input
+            <textarea
+              ref="inputRef"
               v-model="inputText"
-              type="text"
               placeholder="Say something…"
               :disabled="conversationStore.isThinking"
               autocomplete="off"
-            >
+              rows="1"
+              @input="autoResize"
+              @keydown.enter.exact.prevent="handleSend"
+            />
             <button
               type="submit"
               :disabled="conversationStore.isThinking || !inputText.trim()"
@@ -215,9 +225,12 @@ import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
+import { handleLearnDocsChoice } from '../stores/conversation';
+import { useSkillTreeStore } from '../stores/skill-tree';
 import * as THREE from 'three';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import PetContextMenu from '../components/PetContextMenu.vue';
+import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -226,6 +239,69 @@ const windowStore = useWindowStore();
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const { petChatExpanded, setPetChatExpanded, togglePetChat } = useChatExpansion();
+const skillTree = useSkillTreeStore();
+
+// ── Millionaire Hot-Seat overlay — quest choices on-screen ────────
+const hotseatDismissed = ref(false);
+const lastPickedMessageId = ref<string | null>(null);
+
+const activeQuestMessage = computed(() => {
+  if (hotseatDismissed.value) return null;
+  const msgs = conversationStore.messages;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].questChoices?.length) return msgs[i];
+  }
+  return null;
+});
+const activeQuestChoices = computed(() => activeQuestMessage.value?.questChoices ?? []);
+const activeQuestId = computed(() => activeQuestMessage.value?.questId ?? '');
+const activeQuestQuestion = computed(() => {
+  const msg = activeQuestMessage.value;
+  if (!msg) return '';
+  const first = msg.content.replace(/\*\*/g, '').split(/[.\n]/)[0].trim();
+  return first || 'What would you like to do?';
+});
+
+function dismissHotseat() {
+  hotseatDismissed.value = true;
+}
+
+// Reset dismissed flag when a new quest message with choices arrives.
+watch(() => conversationStore.messages.length, () => {
+  const msgs = conversationStore.messages;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].questChoices?.length) {
+      if (msgs[i].id !== lastPickedMessageId.value) {
+        hotseatDismissed.value = false;
+      }
+      return;
+    }
+  }
+});
+
+async function handleQuestChoice(questId: string, choiceValue: string) {
+  lastPickedMessageId.value = activeQuestMessage.value?.id ?? null;
+  hotseatDismissed.value = true;
+
+  if (choiceValue === 'knowledge-quest-start') {
+    // For pet mode, just accept the quest
+    await skillTree.handleQuestChoice(questId, 'accept');
+    return;
+  }
+  if (choiceValue.startsWith('navigate:')) {
+    await skillTree.handleQuestChoice(questId, choiceValue);
+    return;
+  }
+  if (choiceValue.startsWith('learn-docs:')) {
+    await handleLearnDocsChoice(choiceValue);
+    return;
+  }
+  if (choiceValue === 'dismiss') {
+    return;
+  }
+  await skillTree.handleQuestChoice(questId, choiceValue);
+  nextTick(() => scrollToBottom());
+}
 
 // ── TTS + LipSync (same pipeline as ChatView) ────────────────────────────────
 const tts = useTtsPlayback({
@@ -274,6 +350,7 @@ function setAvatarState(charState: CharacterState): void {
 
 // ── UI state ──────────────────────────────────────────────────────────────────
 const inputText = ref('');
+const inputRef = ref<HTMLTextAreaElement | null>(null);
 const showBubble = ref(false);
 const showOnboarding = ref(false);
 const messagesRef = ref<HTMLElement | null>(null);
@@ -470,7 +547,7 @@ function onCharacterWheel(e: WheelEvent) {
   ctx.controls.update();
 }
 
-// ── Cursor tracking + click-through (Open-LLM-VTuber pattern) ─────────────────
+// ── Cursor tracking + click-through ─────────────────
 // Rust polls OS cursor position (~33 Hz) and emits `pet-cursor-pos` events.
 // We check if the cursor is inside any interactive element (character, menu,
 // chat panel).  If yes → passthrough OFF (accept clicks).  If no → passthrough
@@ -824,6 +901,7 @@ async function handleSend() {
   const text = inputText.value.trim();
   if (!text || conversationStore.isThinking) return;
   inputText.value = '';
+  autoResize();
 
   // Stop any ongoing TTS before sending a new message
   tts.stop();
@@ -883,11 +961,19 @@ async function copyChatHistoryToClipboard() {
   }
 }
 
+function autoResize() {
+  const el = inputRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
 async function pasteClipboardToInput() {
   try {
     const text = (await readClipboardText()).trim();
     if (!text) return;
     inputText.value = text;
+    nextTick(() => autoResize());
   } catch {
     // Clipboard unavailable
   }
@@ -985,7 +1071,7 @@ onMounted(async () => {
 
   // Span the window across all monitors so the character can be dragged
   // anywhere and the context menu can appear without clipping.
-  // This is the Open-LLM-VTuber approach: full-screen transparent window
+  // full-screen transparent window
   // with cursor-tracking for click-through on blank areas.
   windowStore.spanAllMonitors();
   // Load monitor info so the context menu and emotion bubble can detect
@@ -1112,6 +1198,10 @@ onUnmounted(() => {
   overflow: visible;
   /* Re-enable pointer events on the character container itself */
   pointer-events: auto;
+}
+/* Allow text selection inside the chat panel */
+.pet-chat {
+  user-select: text;
 }
 .pet-character:active {
   cursor: grabbing;
@@ -1298,21 +1388,28 @@ onUnmounted(() => {
 
 .pet-chat-input {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
-.pet-chat-input input {
+.pet-chat-input textarea {
   flex: 1;
   padding: 8px 14px;
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.07);
   color: #e2e8f0;
   font-size: 0.82rem;
+  font-family: inherit;
   outline: none;
+  resize: none;
+  overflow-y: auto;
+  min-height: 34px;
+  max-height: 120px;
+  line-height: 1.4;
 }
-.pet-chat-input input:focus { border-color: #6c63ff; }
+.pet-chat-input textarea:focus { border-color: #6c63ff; }
 .pet-chat-input button {
   width: 34px;
   height: 34px;

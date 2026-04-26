@@ -21,6 +21,41 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Multi-Agent Resilience — Per-agent threads, workflow resilience, agent swap context](#multi-agent-resilience--per-agent-threads-workflow-resilience-agent-swap-context) | 2026-04-25 |
+| [Chunk 16.7 — Sleep-time consolidation](#chunk-167--sleep-time-consolidation) | 2026-04-25 |
+| [Chunk 15.6 — Auto-setup writers for Copilot, Claude Desktop, Codex](#chunk-156--auto-setup-writers-for-copilot-claude-desktop-codex) | 2026-04-25 |
+| [Chunks 10.1 / 10.2 / 10.3 — Copilot Autonomous Mode + Auto-Resume + Health Gate](#chunks-101--102--103--copilot-autonomous-mode--auto-resume--health-gate) | 2026-04-25 |
+| [Chunk 15.1 — MCP server](#chunk-151--mcp-server) | 2026-04-25 |
+| [Chunk 14.12 — Phoneme-aware viseme model](#chunk-1412--phoneme-aware-viseme-model) | 2026-04-25 |
+| [Chunks 14.9 / 14.10 / 14.11 — Learned asset persistence + player + bundle](#chunks-149--1410--1411--learned-asset-persistence--player--bundle) | 2026-04-25 |
+| [Chunk 14.5 — VRMA baking](#chunk-145--vrma-baking) | 2026-04-25 |
+| [Chunk 14.4 — Motion-capture camera quest](#chunk-144--motion-capture-camera-quest) | 2026-04-25 |
+| [Chunk 14.3 — Expressions-pack camera quest](#chunk-143--expressions-pack-camera-quest) | 2026-04-25 |
+| [Chunk 16.10 — ANN index (usearch)](#chunk-1610--ann-index-usearch) | 2026-04-25 |
+| [Chunk 17.6 — Edge conflict detection](#chunk-176--edge-conflict-detection) | 2026-04-26 |
+| [Chunk 16.9 — Cloud embedding API for free / paid modes](#chunk-169--cloud-embedding-api-for-free--paid-modes) | 2026-04-26 |
+| [Chunk 17.2 — Contradiction resolution (LLM picks winner)](#chunk-172--contradiction-resolution-llm-picks-winner) | 2026-04-26 |
+| [Chunk 16.11 — Semantic chunking pipeline](#chunk-1611--semantic-chunking-pipeline) | 2026-04-26 |
+| [Chunk 17.4 — Memory importance auto-adjustment](#chunk-174--memory-importance-auto-adjustment) | 2026-04-26 |
+| [Chunk 16.12 — Memory versioning (V8 schema)](#chunk-1612--memory-versioning-v8-schema) | 2026-04-25 |
+| [Chunk 16.2 — Contextual Retrieval (Anthropic 2024)](#chunk-162--contextual-retrieval-anthropic-2024) | 2026-04-25 |
+| [Chunk 17.3 — Temporal reasoning queries](#chunk-173--temporal-reasoning-queries) | 2026-04-25 |
+| [Chunk 18.5 — Obsidian vault export (one-way)](#chunk-185--obsidian-vault-export-one-way) | 2026-04-25 |
+| [Chunk 18.3 — Category filters in Memory View](#chunk-183--category-filters-in-memory-view) | 2026-04-24 |
+| [Chunk 18.1 — Auto-categorise via LLM on insert](#chunk-181--auto-categorise-via-llm-on-insert) | 2026-04-24 |
+| [CI Fix — Embed cache test race condition](#ci-fix--embed-cache-test-race-condition) | 2026-04-24 |
+| [Chunk 18.2 — Category-aware decay rates](#chunk-182--category-aware-decay-rates) | 2026-04-24 |
+| [Chunk 18.4 — Tag-prefix convention vocabulary + audit (Phase 18 first chunk)](#chunk-184--tag-prefix-convention-vocabulary--audit) | 2026-04-24 |
+| [Chunk 17.1 — Auto-promotion based on access patterns (Phase 17 first chunk)](#chunk-171--auto-promotion-based-on-access-patterns) | 2026-04-24 |
+| [Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection (Phase 16 first chunk)](#chunk-161--relevance-threshold-for-long-term-memory-injection) | 2026-04-24 |
+| [Chunk 15.3 — `BrainGateway` trait + shared op surface (Phase 15 foundation)](#chunk-153--braingateway-trait--shared-op-surface) | 2026-04-24 |
+| [Milestones audit — Phase 14.8–14.15 + Phase 16 + Phase 17 + Phase 18 added](#milestones-audit) | 2026-04-24 |
+| [Commercial-Licence Audit & Cleanup (msedge-tts + @vercel/* removed)](#commercial-licence-audit--cleanup) | 2026-04-24 |
+| [Chunk 14.6 — Audio-Prosody Persona Hints (Camera-Free)](#chunk-146--audio-prosody-persona-hints-camera-free) | 2026-04-24 |
+| [Chunk 14.7 — Persona Pack Export / Import](#chunk-147--persona-pack-export--import) | 2026-04-24 |
+| [Chunk 14.2 — Master-Echo Brain-Extraction Loop (Persona Suggestion)](#chunk-142--master-echo-brain-extraction-loop-persona-suggestion) | 2026-04-24 |
+| [Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)](#chunk-24--brainview-code-knowledge-panel-phase-13-tier-4) | 2026-04-24 |
+| [Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)](#chunk-23--knowledge-graph-mirror-v7-edge_source-column-phase-13-tier-3) | 2026-04-24 |
 | [Repo Tooling — File-Size Quality Check (Rust 1000 / Vue 800 lines)](#repo-tooling--file-size-quality-check) | 2026-04-24 |
 | [Chunk 2.2 — Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#chunk-22--code-rag-fusion-in-rerank_search_memories-phase-13-tier-2) | 2026-04-24 |
 | [Chunk 2.1 — GitNexus Sidecar Agent (Phase 13 Tier 1)](#chunk-21--gitnexus-sidecar-agent-phase-13-tier-1) | 2026-04-24 |
@@ -105,6 +140,1380 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection
+
+**Date.** 2026-04-24
+**Phase.** 16 (Modern RAG) — first chunk; cheapest impact-rich win.
+**Goal.** Stop diluting the brain's context window with weakly-matching memories. Until now `commands::streaming` always injected the top-5 hybrid-search results regardless of how poorly they matched the user's query.
+
+**Architecture.**
+- New `MemoryStore::hybrid_search_with_threshold(query, query_embedding, limit, min_score)` returns the same shape as `hybrid_search` but filters out entries whose final hybrid score is below `min_score` *before* truncating to `limit`.
+- Internal helper `MemoryStore::hybrid_search_scored` factors out the scoring loop so the legacy `hybrid_search` and the new threshold variant share a single source of truth.
+- Crucial side-effect tweak: filtered (below-threshold) rows are **not** counted as accesses. The legacy method touched every returned row's `access_count` + `last_accessed`; the new method only touches *survivors*. This keeps the decay signal honest — irrelevant rows continue ageing out of relevance instead of being kept artificially fresh by retrieval misses.
+- New `AppSettings.relevance_threshold: f64` field with `#[serde(default = "default_relevance_threshold")]` (default `0.30`) for back-compat with persisted settings files. Constant `crate::settings::DEFAULT_RELEVANCE_THRESHOLD = 0.30` is the single source of truth.
+- Both `commands::streaming` call sites (cloud OpenAI-compatible path + local Ollama path) now read the threshold from `AppSettings` and pass it into the new method. `lock` errors degrade to the documented default — no panics.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — added `hybrid_search_with_threshold` + `hybrid_search_scored` helper + 5 new unit tests.
+- `src-tauri/src/settings/mod.rs` — added `relevance_threshold` field, `DEFAULT_RELEVANCE_THRESHOLD` constant, `default_relevance_threshold` serde fallback.
+- `src-tauri/src/settings/config_store.rs` — propagated the new field through every `AppSettings { … }` literal in tests.
+- `src-tauri/src/commands/settings.rs` — propagated the new field through every `AppSettings { … }` literal in tests.
+- `src-tauri/src/commands/streaming.rs` — both RAG retrieval blocks (cloud + local) call `hybrid_search_with_threshold` with the user-tunable threshold.
+- `docs/brain-advanced-design.md` § 16 Phase 4 — flipped the row from `○` to `✓` with module + setting pointers.
+- `rules/milestones.md` — Phase 16 row 16.1 removed (per the "completed chunks belong in completion-log only" rule).
+
+**Tests.** 5 new unit tests in `memory::store::tests`, plus 909 existing tests still passing — total **914 passing**:
+1. `hybrid_search_with_threshold_zero_matches_legacy_top_k` — back-compat invariant: `min_score = 0.0` reproduces the legacy `hybrid_search` top-k exactly (same ids, same order). Critical because every existing call site that hasn't been migrated yet must keep working.
+2. `hybrid_search_with_threshold_filters_below_score` — high threshold drops weakly-matching rows.
+3. `hybrid_search_with_threshold_keeps_strong_matches` — low threshold + strong keyword + freshness combo retains the matching row.
+4. `hybrid_search_with_threshold_does_not_increment_access_for_filtered` — decay-signal-honesty invariant: filtered rows' `access_count` is **not** bumped.
+5. `hybrid_search_with_threshold_respects_limit` — `limit` cap still applies even when many rows survive the threshold.
+
+**Validation.** `cargo test --lib` (914 pass, 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
+- 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Multi-Agent Resilience — Per-agent threads, workflow resilience, agent swap context
+
+**Date.** 2026-04-25
+
+**Scope.** Three interconnected improvements for multi-agent reliability, resilience, and atomicity:
+
+### 1. Per-agent conversation threads
+- Added `agent_id: Option<String>` to Rust `Message` struct (`commands/chat.rs`) and all 6 construction sites (chat.rs ×2, streaming.rs ×3, ipc_contract_tests.rs ×1)
+- Added `agentId?: string` to TypeScript `Message` interface (`types/index.ts`)
+- Conversation store gains: `activeAgentId()`, `agentMessages` computed (filters by active agent), `agentSwitchHistory` ref, `setAgent()`, `stampAgent()` helper
+- All user/assistant messages stamped with the active agent ID via `stampAgent()`
+
+### 2. Workflow resilience (Temporal.io patterns via `backon` crate)
+- **New file:** `src-tauri/src/workflows/resilience.rs` (~480 LOC, 13 tests)
+- **`RetryPolicy`** — configurable max_attempts, exponential backoff (min/max interval, multiplier), non-retryable error filter. Uses `backon` crate for battle-tested retry-with-backoff.
+- **`TimeoutPolicy`** — workflow-level + activity-level + heartbeat timeouts via `tokio::time::timeout`
+- **`CircuitBreaker`** — 3-state FSM (Closed → Open → HalfOpen → Closed). Failure threshold, recovery timeout, probe-on-half-open, metrics snapshot.
+- **`HeartbeatWatchdog`** — tracks last-seen timestamps per workflow, detects stale workflows exceeding configurable threshold.
+- **`ResilientRunner`** — combined runner: circuit breaker → retry → timeout (outermost → innermost). Single entry point for resilient activity execution.
+- Added `backon = "1"` to Cargo.toml
+
+### 3. Agent swap with context summary
+- `switchAgent()` now accepts optional `conversationMessages` parameter
+- On agent switch, builds a plain-text handoff context from the outgoing agent's recent messages (up to 20)
+- `handoffContexts` map stores per-agent context summaries
+- `getHandoffContext(agentId)` retrieves the summary for injection into system prompts
+- Backward-compatible: existing callers without the second argument still work
+
+**Tests.** 1112+ Rust (13 new resilience tests), 1164 Vitest, clippy clean.
+
+---
+
+## Chunk 16.7 — Sleep-time consolidation
+
+**Date.** 2026-04-25
+
+**Goal.** Idle-triggered background workflow that consolidates memory:
+compress short→working, link related memories by embedding similarity,
+promote high-access working→long, apply decay + GC, adjust importance.
+
+**Architecture.**
+- 5-step pipeline: compress → link → promote → decay+GC → importance
+- `ActivityTracker` (AtomicI64) for idle detection
+- `ConsolidationConfig` + `ConsolidationResult` DTOs
+- `cosine_similarity()` helper for embedding-based linking
+- Each step is non-fatal — failures collected as warnings
+
+**Files created.**
+- `src-tauri/src/memory/consolidation.rs` (~340 LOC, 9 tests)
+- `src-tauri/src/commands/consolidation.rs` (~45 LOC, 3 commands)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod consolidation;`
+- `src-tauri/src/commands/mod.rs` — added `pub mod consolidation;`
+- `src-tauri/src/lib.rs` — added `activity_tracker` to `AppStateInner`, registered 3 Tauri commands
+
+**Tauri commands.**
+- `run_sleep_consolidation(session_ids, config?)` — trigger full consolidation
+- `touch_activity()` — reset idle timer
+- `get_idle_status(threshold_ms?)` — query idle state
+
+**Test count.** 9 tests (all pass). CI: 1090+ Rust tests.
+
+**Depends on.** 17.1 (auto-promote), 17.4 (importance adjustment), edges (V5 schema).
+
+---
+
+## Chunk 15.6 — Auto-setup writers for Copilot, Claude Desktop, Codex
+
+**Date.** 2026-04-25
+
+**Goal.** One-click setup of external AI coding assistant MCP integrations. TerranSoul writes the correct config file for each client, preserving existing entries.
+
+**Architecture.** Pure-function config writers in `src-tauri/src/ai_integrations/mcp/auto_setup.rs` + 7 Tauri commands in `src-tauri/src/commands/auto_setup.rs`.
+
+**Supported clients:**
+
+| Client | Config path | Key |
+|---|---|---|
+| VS Code / Copilot | `<workspace>/.vscode/mcp.json` | `servers.terransoul-brain` |
+| Claude Desktop | `%APPDATA%/Claude/claude_desktop_config.json` (Win) / `~/.config/Claude/` (Linux/macOS) | `mcpServers.terransoul-brain` |
+| Codex CLI | `~/.codex/config.json` | `mcpServers.terransoul-brain` |
+
+**Key features:**
+- **Preserve existing config** — reads file, merges, writes back. Never overwrites other servers.
+- **Idempotent** — calling setup twice updates (never duplicates) the entry.
+- **Atomic writes** — temp file + rename pattern.
+- **JSONC support** — strips `//` and `/* */` comments before parsing (VS Code uses JSONC).
+- **Undoable** — `remove_*_mcp` commands delete only the `terransoul-brain` entry.
+- **Status listing** — `list_mcp_clients` checks which clients are configured.
+
+**Files created:**
+- `src-tauri/src/ai_integrations/mcp/auto_setup.rs` (~350 LOC, 14 unit tests)
+- `src-tauri/src/commands/auto_setup.rs` (~90 LOC, 7 Tauri commands)
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — added `pub mod auto_setup`
+- `src-tauri/src/commands/mod.rs` — added `pub mod auto_setup`
+- `src-tauri/src/lib.rs` — registered 7 new commands in `invoke_handler`, added `use commands::auto_setup::*`
+- `src-tauri/Cargo.toml` — added `dirs = "6"` dependency
+
+**Tauri commands (7):**
+`setup_vscode_mcp`, `setup_claude_mcp`, `setup_codex_mcp`, `remove_vscode_mcp`, `remove_claude_mcp`, `remove_codex_mcp`, `list_mcp_clients`
+
+**Tests.** 14 unit tests: entry structure (3), write new (1), preserve existing (1), idempotent (1), remove (1), remove nonexistent (1), JSONC strip (2), atomic write parent dirs (1), client status detect (2), Claude write (1).
+
+**CI.** 1164 Vitest ✅ | 1089 Rust tests ✅ (14 new) | clippy clean
+
+**Note.** The stdio transport shim originally planned in this chunk was deferred — HTTP transport on `127.0.0.1:7421` is sufficient for all three clients today. Stdio can be added later if needed.
+
+---
+
+## Chunks 10.1 / 10.2 / 10.3 — Copilot Autonomous Mode + Auto-Resume + Health Gate
+
+**Date.** 2026-04-25
+
+**Goal.** Set up VS Code workspace for long-running autonomous Copilot agent sessions with auto-approve permissions, auto-resume tooling, service health gates, and MCP server integration.
+
+**Architecture.** Three chunks shipped together as a cohesive developer-experience package:
+
+- **10.1 (Autonomous Mode)** — `.vscode/settings.json` with `chat.permissions.default: "autopilot"`, 100-request budget, terminal auto-approve for safe build/test commands, file edit auto-approve for all workspace paths, conversation auto-summarization enabled.
+- **10.2 (Auto-Retrigger)** — `scripts/copilot-loop.mjs` parses `rules/milestones.md` and `rules/completion-log.md` to generate context-rich "Continue" prompts. Copies to clipboard for paste into new sessions. Tracks session progress in `.vscode/copilot-session.log` (git-ignored). Modes: `--status`, `--next`, `--log`.
+- **10.3 (Health Gate)** — `scripts/wait-for-service.mjs` polls any HTTP endpoint with configurable timeout. Supports dev server (`:1420`), Ollama (`:11434`), and MCP server (`:7421`). Wired into `.vscode/tasks.json` as pre-tasks.
+
+**Additional deliverables:**
+- `.vscode/tasks.json` — 9 tasks: Dev Server, Wait for Dev Server / Ollama / MCP Server, Run All Tests, Cargo Check + Clippy, Vue TypeScript Check, Full CI Gate, Copilot: Continue Session.
+- `.vscode/mcp.json` — MCP server config for VS Code Copilot (HTTP transport, `${env:TERRANSOUL_MCP_TOKEN}` auth).
+- `.github/copilot-instructions.md` — Added "Session Resumption & Progress Tracking" section with long-running session guidelines and MCP server reference.
+- Phase 10 chunks promoted from `rules/backlog.md` to `rules/milestones.md` then archived here.
+
+**Files created:**
+- `.vscode/settings.json` (~115 lines)
+- `.vscode/tasks.json` (~85 lines)
+- `.vscode/mcp.json` (~25 lines)
+- `scripts/wait-for-service.mjs` (~60 lines)
+- `scripts/copilot-loop.mjs` (~190 lines)
+
+**Files modified:**
+- `.github/copilot-instructions.md` — Session Resumption section added
+- `rules/milestones.md` — Phase 10 promoted from backlog, then all 3 chunks archived
+- `rules/backlog.md` — Phase 10 chunks replaced with "Promoted" note
+
+**Tests.** No new unit tests — these are config/script files. Manual verification: `copilot-loop.mjs --status` parses milestones correctly, `wait-for-service.mjs` times out on unreachable endpoint with exit code 1.
+
+**CI.** 1164 Vitest ✅ | 1075 Rust tests ✅ (1 known flaky: `hybrid_search_rrf_keyword_ranking`)
+
+---
+
+## Chunk 15.1 — MCP server
+
+**Date.** 2026-04-25
+
+**Goal.** Expose TerranSoul's brain to AI coding assistants (GitHub Copilot, Claude Desktop, Cursor, Codex) via an MCP-compatible HTTP server on `127.0.0.1:7421` with bearer-token auth and all 8 gateway ops.
+
+**Architecture.**
+- **Transport:** Streamable HTTP (POST `/mcp`) on axum — milestones-endorsed fallback since `rmcp`'s SSE transport API wasn't needed for request/response ops.
+- **Protocol:** JSON-RPC 2.0 per MCP 2024-11-05 spec. Handles `initialize`, `tools/list`, `tools/call`, `ping`, and notifications.
+- **Auth:** Bearer token from `<data_dir>/mcp-token.txt` (SHA-256 of UUID v4, `0600` permissions on Unix).
+- **Ops:** 8 tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`) routed to `BrainGateway` trait via `AppStateGateway`.
+- **AppState refactor:** Wrapped `AppState` as a newtype around `Arc<AppStateInner>` with `Deref` + `Clone`. Zero signature changes to existing 150+ Tauri commands — all auto-deref through the newtype. Enables cheap cloning for MCP server (and future gRPC server).
+
+**Files created.**
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — module entry, `McpServerHandle`, `start_server()` async function.
+- `src-tauri/src/ai_integrations/mcp/auth.rs` — token file CRUD (`load_or_create`, `regenerate`), SHA-256 generation.
+- `src-tauri/src/ai_integrations/mcp/router.rs` — axum JSON-RPC 2.0 handler, bearer auth validation, MCP protocol dispatch.
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — 8 tool definitions (JSON Schema) + `dispatch()` function routing to gateway.
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — 11 integration tests (full HTTP round-trips).
+- `src-tauri/src/commands/mcp.rs` — 4 Tauri commands (`mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`).
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — `AppState` newtype wrapper (`AppState(Arc<AppStateInner>)` + `Deref` + `Clone`), added `mcp_server: TokioMutex<Option<McpServerHandle>>` field, wired 4 MCP commands to invoke_handler.
+- `src-tauri/src/ai_integrations/gateway.rs` — `AppStateGateway` now takes `AppState` (cheaply clonable) instead of `Arc<AppState>`.
+- `src-tauri/src/ai_integrations/mod.rs` — added `pub mod mcp;`.
+- `src-tauri/src/commands/mod.rs` — added `pub mod mcp;`.
+
+**Tests.** 22 new Rust tests (4 auth, 6 router, 3 tools, 11 integration). Baseline: 1053 → 1075 total. Clippy clean. vue-tsc clean.
+
+---
+
+## Chunk 14.12 — Phoneme-aware viseme model
+
+**Date.** 2026-04-25
+
+**Summary.** Replaced the FFT band-energy lip-sync fallback with a deterministic text-driven phoneme-to-viseme mapper. English graphemes (including 15 digraphs/trigraphs) are tokenized into the existing 5-channel viseme space (`aa`, `ih`, `ou`, `ee`, `oh`), then distributed proportionally across the audio duration to produce a frame-accurate timeline. The `VisemeScheduler` class samples interpolated weights per animation frame. Integrated into `useLipSyncBridge` — phoneme-driven visemes take priority when text + duration are available; FFT analysis remains as automatic fallback for external audio sources.
+
+**Architecture.**
+- `phoneme-viseme.ts`: `tokenizeToVisemes()` — grapheme tokenizer with digraph-first matching (th, sh, ch, oo, ee, etc.). `buildVisemeTimeline()` — proportional keyframe builder. `VisemeScheduler` — frame-accurate sampler with lerp between keyframes.
+- `useLipSyncBridge.ts`: dual-mode tick loop — `phonemeScheduler.sample()` preferred, `lipSync.getVisemeValues()` fallback. Auto-schedule on `onAudioStart` using `tts.currentSentence` + `audio.duration`.
+
+**Files created.**
+- `src/renderer/phoneme-viseme.ts` — tokenizer + timeline builder + scheduler (~230 LOC)
+- `src/renderer/phoneme-viseme.test.ts` — 22 unit tests (tokenizer, timeline, scheduler)
+
+**Files modified.**
+- `src/composables/useLipSyncBridge.ts` — added `VisemeScheduler` integration, `schedulePhonemes()` API, dual-mode tick
+
+**Test count after.** 1164 Vitest (22 new); 1053 Rust (unchanged).
+
+---
+
+## Chunks 14.9 / 14.10 / 14.11 — Learned asset persistence + player + bundle
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped the learned-asset persistence + playback trifecta. Chunk 14.9 (expression presets) and 14.11 (persona side-chain bundle) were already fully implemented in prior chunks — the backend CRUD commands, frontend store wiring, and persona pack export/import all existed. Chunk 14.10's new deliverable is `LearnedMotionPlayer` + expression preview helper, wired into CharacterViewport with a cross-view Pinia bridge so PersonaPanel's "Play" / "Preview" buttons work from BrainView.
+
+**Architecture.**
+- `learned-motion-player.ts`: `LearnedMotionPlayer` class wraps `bakeMotionToClip()` (14.5) + `VrmaManager.playClip()`. `applyLearnedExpression()` + `clearExpressionPreview()` static helpers set/reset VRM expression manager weights for timed previews.
+- `VrmaManager.vrm` getter: exposes the bound VRM model for expression preview access.
+- Persona store bridge: `previewExpressionRequest` / `previewMotionRequest` refs + `requestExpressionPreview()` / `requestMotionPreview()` actions. PersonaPanel writes, CharacterViewport watches and consumes.
+- PersonaPanel: "▶ Preview" buttons for expressions, "▶ Play" buttons for motions.
+
+**Files created.**
+- `src/renderer/learned-motion-player.ts` — player + expression preview helpers (~80 LOC)
+- `src/renderer/learned-motion-player.test.ts` — 10 unit tests
+
+**Files modified.**
+- `src/renderer/vrma-manager.ts` — added `vrm` getter
+- `src/stores/persona.ts` — added preview request refs + actions
+- `src/components/CharacterViewport.vue` — wired `LearnedMotionPlayer`, persona preview watchers
+- `src/components/PersonaPanel.vue` — added Preview/Play buttons for expressions and motions
+
+**Test count after.** 1142 Vitest (10 new); 1053 Rust (unchanged).
+
+---
+
+## Chunk 14.5 — VRMA baking
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped `vrma-baker.ts` — bakes recorded `LearnedMotion` JSON frame timelines into `THREE.AnimationClip` objects with quaternion keyframe tracks, so the avatar can replay learned motions through the existing `VrmaManager` instead of streaming landmarks per-frame. Added `playClip()` to `VrmaManager` for playing pre-built clips without loading from file.
+
+**Architecture.**
+- `vrma-baker.ts`: Pure `bakeMotionToClip()` converts per-bone Euler triples to `QuaternionKeyframeTrack[]` → `AnimationClip`. `bakeAllMotions()` batch-bakes to a trigger-keyed Map.
+- `VrmaManager.playClip()`: Accepts a pre-built `AnimationClip`, reuses the same fadeOut/fadeIn/action pipeline as `play()`. Refactored `play()` to delegate to `playClip()` after loading.
+
+**Files created.**
+- `src/renderer/vrma-baker.ts` — pure baker (~100 LOC)
+- `src/renderer/vrma-baker.test.ts` — 12 unit tests (empty frames, quaternion validity, batch bake, etc.)
+
+**Files modified.**
+- `src/renderer/vrma-manager.ts` — added `playClip()`, refactored `play()` to delegate
+
+**Test count after.** 1132 Vitest (12 new); 1053 Rust (unchanged).
+
+---
+
+## Chunk 14.4 — Motion-capture camera quest
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped the `motion-capture` quest — PoseLandmarker (33 keypoints) → VRM humanoid bone retargeting via inverse trig, with real-time EMA smoothing and fixed-FPS recording (30 fps, max 10s). Reuses the same per-session camera consent from 14.3. PersonaTeacher.vue gained a mode toggle (Expression / Motion tabs), record/stop/save flow, and saved motions list.
+
+**Architecture.**
+- `pose-mirror.ts`: Pure `retargetPoseToVRM()` function (unit-testable seam) maps 33 MediaPipe landmarks → 11 VRM humanoid bones via atan2-based joint angle extraction with per-bone clamping. `PoseMirror` class wraps lazy-loaded PoseLandmarker. `smoothBonePose()` applies EMA with graceful decay when landmarks are lost.
+- `PersonaTeacher.vue`: Expression/Motion tab toggle, motion recording at 30 fps with auto-stop at 10s, save via `save_learned_motion` Tauri command, saved motions list with duration display.
+
+**Files created.**
+- `src/renderer/pose-mirror.ts` — pure retargeter + PoseMirror class (~260 LOC)
+- `src/renderer/pose-mirror.test.ts` — 11 unit tests on the pure retargeter
+
+**Files modified.**
+- `src/components/PersonaTeacher.vue` — added Motion tab, recording flow, saved motions list
+- `src/components/PersonaTeacher.test.ts` — updated for new tab layout
+
+**Test count after.** 1120 Vitest (11 new); 1053 Rust (unchanged).
+
+**Activation gate.** `motion-capture` quest auto-activates when `persona.learnedMotions.length > 0` — already wired in skill-tree.ts.
+
+---
+
+## Chunk 14.3 — Expressions-pack camera quest
+
+**Date.** 2026-04-25
+
+**Summary.** Shipped the `expressions-pack` camera quest — per-session webcam capture with MediaPipe FaceLandmarker (52 ARKit blendshapes) mapped to TerranSoul's 12+2 VRM expression channels. Includes a pure ARKit→VRM mapper (`face-mirror.ts`), per-session consent composable (`useCameraCapture.ts`), "Teach an Expression" panel (`PersonaTeacher.vue`), idle-timeout auto-stop (5 min), and camera live badge. The `@mediapipe/tasks-vision` dependency is lazy-imported to avoid bundle bloat until the quest is used.
+
+**Architecture.**
+- `face-mirror.ts`: Pure `mapBlendshapesToVRM()` function (unit-testable seam) maps 52 ARKit blendshape coefficients → happy/sad/angry/relaxed/surprised/neutral + 5 visemes + blink + lookAt, following the `docs/persona-design.md` § 6.1 mapping table. `FaceMirror` class wraps MediaPipe FaceLandmarker with lazy WASM init and EMA smoothing.
+- `useCameraCapture.ts`: Per-session getUserMedia + FaceMirror lifecycle. Camera consent is in-memory only (no on-disk flag). Auto-stops on unmount, idle timeout, or explicit stop.
+- `PersonaTeacher.vue`: 4-step UI flow — consent dialog → live camera preview with CAMERA LIVE badge → capture pose → name + trigger word → save to Tauri backend via `save_learned_expression` command.
+
+**Files created.**
+- `src/renderer/face-mirror.ts` — pure mapper + FaceMirror class (~200 LOC)
+- `src/renderer/face-mirror.test.ts` — 16 unit tests on the pure mapper
+- `src/composables/useCameraCapture.ts` — camera session composable (~130 LOC)
+- `src/components/PersonaTeacher.vue` — teach expression panel (~310 LOC)
+- `src/components/PersonaTeacher.test.ts` — 5 component tests
+
+**Dependencies added.**
+- `@mediapipe/tasks-vision` (Apache-2.0, ~3 MB, lazy-loaded)
+
+**Test count after.** 1109 Vitest (21 new); 1053 Rust (unchanged).
+
+**Activation gate.** `expressions-pack` quest auto-activates when `persona.learnedExpressions.length > 0` — already wired in skill-tree.ts.
+
+---
+
+## Chunk 16.10 — ANN index (usearch)
+
+**Date.** 2026-04-25
+
+**Summary.** Replace brute-force O(n) cosine scan in `vector_search` and `find_duplicate` with an HNSW ANN index via the `usearch` crate (v2.25). Index is lazily initialized on first vector operation, auto-rebuilt from DB embeddings when missing, and periodically persisted to `vectors.usearch` alongside `memory.db`. Falls back to brute-force when the index is unavailable (dimension mismatch, empty DB, corrupt file).
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/ann_index.rs` | **NEW** — `AnnIndex` wrapper (HNSW via usearch), `detect_dimensions()`, save/load/rebuild, 8 tests. |
+| `src-tauri/src/memory/mod.rs` | Added `pub mod ann_index;` |
+| `src-tauri/src/memory/store.rs` | Added `ann: OnceCell<AnnIndex>` + `data_dir` fields; `ann_index()` lazy init; `ensure_ann_for_dim()`; `vector_search` ANN fast-path; `find_duplicate` ANN fast-path; `set_embedding` updates index; `delete` removes from index |
+| `src-tauri/Cargo.toml` | Added `usearch = "2"` dependency |
+
+**Test counts.** 1053 Rust (+8 new), 1083 Vitest (unchanged).
+
+---
+
+## Chunk 17.6 — Edge conflict detection
+
+**Date.** 2026-04-26
+
+**Summary.** Scheduled LLM-as-judge scan over `memory_edges` with positive relation types (supports, implies, related_to, derived_from, cites, part_of). When the LLM says two connected memories actually contradict, a `"contradicts"` edge is inserted and a `MemoryConflict` row is opened for the user to resolve. Lock-safe three-phase pattern: collect candidates → async LLM calls → write results.
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/edge_conflict_scan.rs` | **NEW** — `collect_scan_candidates()`, `record_contradiction()`, `has_contradicts_edge()`, `has_open_conflict()`, `ScanCandidates`, `EdgeConflictScanResult`. 6 tests. |
+| `src-tauri/src/memory/mod.rs` | Added `pub mod edge_conflict_scan;` |
+| `src-tauri/src/commands/memory.rs` | `scan_edge_conflicts` Tauri command — 3-phase lock-safe pattern |
+| `src-tauri/src/lib.rs` | Registered `scan_edge_conflicts` in imports + handler list |
+
+**Test counts.** 1045 Rust (6 new), 1083 Vitest (unchanged).
+
+---
+
+## Chunk 16.9 — Cloud embedding API for free / paid modes
+
+**Date.** 2026-04-26
+
+**What.** Extended the embedding pipeline to dispatch to OpenAI-compatible `/v1/embeddings` when the brain mode is `FreeApi` or `PaidApi`, so cloud users get real vector RAG quality without requiring local Ollama. Previously, all embedding calls went through `OllamaAgent::embed_text` which only talks to `127.0.0.1:11434` — when the brain mode was cloud, embeddings were skipped entirely and RAG degraded to keyword-only retrieval.
+
+**Architecture.** New unified `embed_for_mode(text, brain_mode, active_brain)` dispatcher:
+- `LocalOllama` → delegates to existing `OllamaAgent::embed_text`
+- `PaidApi` → calls provider's `/v1/embeddings` with default model (e.g. `text-embedding-3-small` for OpenAI)
+- `FreeApi` → calls free provider's embed endpoint where supported (Mistral, GitHub Models, SiliconFlow, NVIDIA NIM); returns `None` for providers without embed API (Pollinations, Groq, Cerebras)
+- `None` → legacy fallback to Ollama
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/brain/cloud_embeddings.rs` (NEW) | `embed_text_openai` (OpenAI-compat `/v1/embeddings` caller), `embed_for_mode` (unified dispatcher), unsupported-provider cache, default model mappings. 8 unit tests. |
+| `src-tauri/src/brain/mod.rs` | `pub mod cloud_embeddings; pub use cloud_embeddings::embed_for_mode;` |
+| `src-tauri/src/commands/memory.rs` | `embed()` helper + all 8 embed call sites switched from `OllamaAgent::embed_text` to `embed_for_mode`. |
+| `src-tauri/src/commands/streaming.rs` | `stream_openai_api` now calls `embed_for_mode` for vector RAG (was `None` before). |
+| `src-tauri/src/commands/ingest.rs` | Ingest pipeline embed loop switched to `embed_for_mode`. |
+| `src-tauri/src/commands/brain.rs` | `set_brain_mode` + `reset_embed_cache` now also clear cloud embed cache. |
+
+**Test count.** 1039 Rust (+8), 1083 Vitest (unchanged). Clippy + vue-tsc clean.
+
+---
+
+## Chunk 17.2 — Contradiction resolution (LLM picks winner)
+
+**Date.** 2026-04-26
+
+**What.** When `add_memory` detects a near-duplicate (cosine ≥ 0.85) whose content semantically contradicts the new entry, an LLM "do these contradict?" check runs and opens a `MemoryConflict` row. The user can resolve (pick winner → loser soft-closed via `valid_to`) or dismiss the conflict. Maps to §16 Phase 5 of `brain-advanced-design.md`.
+
+**Schema.** V9 migration adds `valid_to INTEGER` to `memories` and creates `memory_conflicts` table (id, entry_a_id, entry_b_id, status, winner_id, created_at, resolved_at, reason).
+
+**Files changed.**
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/conflicts.rs` (NEW) | `ConflictStatus` enum, `MemoryConflict` struct, `ContradictionResult` struct, `build_contradiction_prompt`, `parse_contradiction_reply`, `strip_fences`, `MemoryStore` impl: `add_conflict`, `list_conflicts`, `resolve_conflict`, `dismiss_conflict`, `count_open_conflicts`. 12 unit tests. |
+| `src-tauri/src/memory/migrations.rs` | V9 migration (up + down), `TARGET_VERSION` → 9, sentinel test updated. |
+| `src-tauri/src/memory/store.rs` | `valid_to: Option<i64>` on `MemoryEntry`, `close_memory(id, valid_to_ms)` method, all SELECT queries updated to include `valid_to`. |
+| `src-tauri/src/memory/mod.rs` | `pub mod conflicts;` |
+| `src-tauri/src/brain/ollama_agent.rs` | `check_contradiction(content_a, content_b)` method. |
+| `src-tauri/src/commands/memory.rs` | `add_memory` wired with contradiction detection (lock-safe), 4 new commands: `list_memory_conflicts`, `resolve_memory_conflict`, `dismiss_memory_conflict`, `count_memory_conflicts`. |
+| `src-tauri/src/lib.rs` | Registered 4 new conflict commands. |
+| `src-tauri/src/memory/code_rag.rs` | `valid_to: None` in `MemoryEntry` constructors. |
+| `src-tauri/src/memory/obsidian_export.rs` | `valid_to: None` in test helper. |
+| `src-tauri/src/memory/reranker.rs` | `valid_to: None` in test helper. |
+| `src-tauri/src/memory/cassandra.rs` | `valid_to: None` in `row_to_entry` + `add`. |
+| `src-tauri/src/memory/mssql.rs` | `valid_to: None` in `row_to_entry`. |
+| `src-tauri/src/memory/postgres.rs` | `valid_to: None` in `row_to_entry`. |
+
+**Test count.** 1031 Rust (was 1019), 1083 Vitest (unchanged). Clippy + vue-tsc clean.
+
+---
+
+## Chunk 16.11 — Semantic chunking pipeline
+
+**Date.** 2026-04-26
+**Phase.** 16 (Modern RAG). Maps to `docs/brain-advanced-design.md` §16 Phase 4.
+
+**Goal.** Replace the naive word-count splitter in `commands::ingest` with
+semantic-boundary-aware chunking via the `text-splitter` crate (MIT, 1.2M+
+downloads). Markdown documents are split at heading / paragraph / sentence
+boundaries; plain text uses Unicode sentence boundary detection.
+Deduplication by SHA-256 hash and Markdown heading metadata propagation.
+
+**Architecture.**
+- New `memory::chunking` module with `split_markdown()`, `split_text()`,
+  `dedup_chunks()`, `Chunk` struct (index, text, hash, heading).
+- `MarkdownSplitter` (from `text-splitter` crate with `markdown` feature)
+  for `.md` files and HTML-sourced content; `TextSplitter` for everything
+  else.
+- Default chunk capacity: 1024 chars (≈256 tokens at ~4 chars/token).
+- Heading metadata propagated as `section:<slug>` tags on each chunk.
+- Old `chunk_text()` function kept (dead code) for resume-from-checkpoint
+  path.
+
+**Files created.**
+- `src-tauri/src/memory/chunking.rs` — new module (~165 LOC)
+
+**Files modified.**
+- `src-tauri/Cargo.toml` — added `text-splitter = { version = "0.30", features = ["markdown"] }`
+- `src-tauri/src/memory/mod.rs` — registered `pub mod chunking`
+- `src-tauri/src/commands/ingest.rs` — replaced `chunk_text(&text, 800, 100)` with
+  `split_markdown` / `split_text` + `dedup_chunks`; heading metadata propagated as
+  `section:*` tags; old `chunk_text` marked `#[allow(dead_code)]` with deprecation note
+
+**Tests.** 8 new Rust unit tests in `memory::chunking::tests`:
+short_text_single_chunk, long_text_produces_multiple_chunks,
+markdown_heading_extraction, markdown_splits_at_heading_boundaries,
+dedup_removes_duplicates, sha256_hex_deterministic,
+empty_text_produces_no_chunks, min_chunk_chars_enforced.
+
+**Totals.** 1005 Rust tests, 1083 Vitest, clippy clean.
+
+---
+
+## Chunk 14.8 — Persona drift detection
+
+**Date.** 2026-04-26
+**Phase.** 14 (Persona self-learning). Maps to `docs/persona-design.md` § 15.1 row 143.
+
+**Goal.** Periodically compare the user's active `PersonaTraits` against their
+accumulated `personal:*` memories. When the auto-learn loop has extracted 25+
+new facts since the last drift check, fire a lightweight LLM comparison prompt.
+If drift is detected, surface a `DriftReport` with a summary and suggested
+changes so the frontend can show "Echo noticed you've shifted toward …".
+
+**Architecture.**
+- `persona::drift` module (`drift.rs`) — pure prompt construction + reply
+  parsing, 14 unit tests. `DriftReport` struct with `drift_detected`,
+  `summary`, and `suggested_changes` (field/current/proposed triples).
+- `OllamaAgent::check_persona_drift()` — sends the drift prompt to the LLM.
+- `check_persona_drift` Tauri command — reads persona from disk, filters
+  `personal:*` long-tier memories, calls brain, returns `DriftReport`.
+- Frontend wiring in `conversation.ts` — `factsSinceDriftCheck` counter
+  accumulates after each `extract_memories_from_session`; at threshold 25,
+  fires `check_persona_drift` and exposes `lastDriftReport` for UI.
+
+**Files created.**
+- `src-tauri/src/persona/drift.rs` — ~280 LOC, 14 unit tests
+
+**Files modified.**
+- `src-tauri/src/persona/mod.rs` — added `pub mod drift`
+- `src-tauri/src/brain/ollama_agent.rs` — added `check_persona_drift` method
+- `src-tauri/src/commands/persona.rs` — added `check_persona_drift` Tauri command
+- `src-tauri/src/lib.rs` — registered import + handler invocation
+- `src/stores/persona-types.ts` — added `DriftReport` + `DriftSuggestion` types
+- `src/stores/conversation.ts` — drift state refs + `maybeAutoLearn` integration
+
+**Tests.** 14 new Rust unit tests in `persona::drift::tests`:
+build_drift_prompt_includes_persona_and_memories, build_drift_prompt_empty_memories,
+build_drift_prompt_respects_char_budget, parse_drift_reply_clean_json,
+parse_drift_reply_no_drift, parse_drift_reply_with_fences,
+parse_drift_reply_with_leading_prose, parse_drift_reply_missing_optional_fields,
+parse_drift_reply_garbage_returns_none, parse_drift_reply_missing_drift_detected_returns_none,
+strip_fences_removes_json_fences, strip_fences_removes_plain_fences,
+strip_fences_passthrough_no_fences, drift_report_serde_round_trip.
+
+**Totals.** 1019 Rust tests, 1083 Vitest, clippy clean, vue-tsc clean.
+
+---
+
+## Chunk 17.4 — Memory importance auto-adjustment
+
+**Date.** 2026-04-26
+**Phase.** 17 (Brain Phase-5 Intelligence). Maps to `docs/brain-advanced-design.md` §16 Phase 5.
+
+**Goal.** Periodic job that nudges memory `importance` based on access
+patterns: hot entries (access_count ≥ 10) gain +1 (capped at 5); cold
+entries (access_count = 0 for 30+ days) lose −1 (floored at 1). Each
+adjustment is audited via the `memory_versions` table (V8 schema from
+chunk 16.12). Access counts are reset after boosting to prevent re-boost.
+
+**Architecture.**
+- `MemoryStore::adjust_importance_by_access(hot_threshold, cold_days)`
+  method on `store.rs`. Pure SQL + version audit trail.
+- `adjust_memory_importance` Tauri command (wraps store method with defaults
+  hot=10, cold=30). Returns `{ boosted, demoted }`.
+- `adjustImportance()` action on `src/stores/memory.ts`.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — new `adjust_importance_by_access` method (~80 LOC) + 8 tests
+- `src-tauri/src/commands/memory.rs` — new `adjust_memory_importance` Tauri command + `ImportanceAdjustResult` struct
+- `src-tauri/src/lib.rs` — registered import + handler invocation
+- `src/stores/memory.ts` — new `adjustImportance()` action + exposed in store return
+
+**Tests.** 8 new Rust unit tests in `memory::store::tests`:
+adjust_boosts_hot_entries, adjust_caps_at_5, adjust_demotes_cold_entries,
+adjust_floors_at_1, adjust_resets_access_count_after_boost,
+adjust_leaves_middling_entries_alone, adjust_mixed_hot_and_cold,
+adjust_creates_version_audit_trail.
+
+**Totals.** 1005 Rust tests, 1083 Vitest, clippy clean.
+
+---
+
+## Chunk 16.12 — Memory versioning (V8 schema)
+
+**Date.** 2026-04-25
+**Phase.** 16 (Modern RAG). Maps to `docs/brain-advanced-design.md` §16 Phase 4.
+
+**Goal.** Track edits to memory entries as immutable version snapshots so
+`update_memory` no longer destroys history. New `memory_versions` V8 SQLite
+table + `get_memory_history` Tauri command.
+
+**Files created.**
+- `src-tauri/src/memory/versioning.rs` — `save_version(conn, memory_id)`,
+  `get_history(conn, memory_id)`, `version_count(conn, memory_id)`.
+  `MemoryVersion` struct with `id`, `memory_id`, `version_num`, `content`,
+  `tags`, `importance`, `memory_type`, `created_at`.
+
+**Files modified.**
+- `src-tauri/src/memory/migrations.rs` — V8 migration: `CREATE TABLE memory_versions` (FK cascade, `UNIQUE(memory_id, version_num)`, index on `memory_id`). Sentinel test updated to V8.
+- `src-tauri/src/memory/mod.rs` — added `pub mod versioning`.
+- `src-tauri/src/memory/store.rs` — `update()` now calls `versioning::save_version()` before applying changes (best-effort; silent fallback on pre-V8 schema).
+- `src-tauri/src/commands/memory.rs` — added `get_memory_history` command.
+- `src-tauri/src/lib.rs` — registered `get_memory_history` in imports + handler list.
+- `src/stores/memory.ts` — added `getMemoryHistory(memoryId)` action.
+- `rules/milestones.md` — removed 16.12 row, updated Next Chunk.
+- `docs/brain-advanced-design.md` — marked Memory versioning ✓, updated §16 tree.
+- `README.md` — added `versioning.rs` module listing, `get_memory_history` command, updated V7→V8 references, test count 989.
+
+**Test counts.** 7 new Rust tests (versioning module) + 12 migration tests pass.
+
+---
+
+## Chunk 16.2 — Contextual Retrieval (Anthropic 2024)
+
+**Date.** 2026-04-25
+**Phase.** 16 (Modern RAG). Maps to `docs/brain-advanced-design.md` §19.2 row 3.
+
+**Goal.** At ingest time, LLM prepends a 50–100 token document-level context
+to each chunk *before* embedding. Opt-in via `AppSettings.contextual_retrieval`.
+Anthropic reports ~49 % reduction in failed retrievals.
+
+**Files created.**
+- `src-tauri/src/memory/contextualize.rs` — `generate_doc_summary(text, brain_mode)`,
+  `contextualise_chunk(doc_summary, chunk, brain_mode)`, `prepend_context(ctx, chunk)`.
+  Brain-mode agnostic (dispatches to Ollama / FreeApi / PaidApi via `call_llm` helper).
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod contextualize`.
+- `src-tauri/src/settings/mod.rs` — added `contextual_retrieval: bool` to `AppSettings` (default `false`, `#[serde(default)]`).
+- `src-tauri/src/commands/ingest.rs` — `run_ingest_task` now reads `contextual_retrieval` from settings; generates a doc summary once; prepends context to each chunk.
+- `src-tauri/src/settings/config_store.rs` — added `contextual_retrieval` to 3 test struct literals.
+- `src-tauri/src/commands/settings.rs` — added `contextual_retrieval` to 2 test struct literals.
+- `src/stores/settings.ts` — added `contextual_retrieval` field + default.
+- `src/views/BrainView.test.ts` — added `contextual_retrieval: false` to mock.
+- `rules/milestones.md` — removed 16.2 row, updated Next Chunk.
+- `docs/brain-advanced-design.md` — flipped §19.2 row 3 from 🔵 to ✅, updated §16 tree.
+- `README.md` — added `contextualize.rs` module listing.
+
+**Test counts.** 6 new Rust tests (contextualize module) + all settings tests green.
+
+---
+
+## Chunk 17.3 — Temporal reasoning queries
+
+**Date.** 2026-04-25
+**Phase.** 17 (Brain Phase-5 Intelligence). Maps to `docs/brain-advanced-design.md` §16 Phase 5.
+**Goal.** Extend `commands::memory` with `temporal_query(question)` that
+parses natural-language time expressions and returns memories whose
+`created_at` falls within the resolved range.
+
+**Architecture.**
+- New `src-tauri/src/memory/temporal.rs` module (~300 LOC):
+  - `TimeRange { start_ms, end_ms }` — resolved interval in Unix ms.
+  - `parse_time_range(question, now_ms) -> Option<TimeRange>` — parses:
+    `last N days/weeks/months/hours`, `last day/week/month/year`,
+    `today`, `yesterday`, `since YYYY-MM-DD`, `since <month-name>`,
+    `before YYYY-MM-DD`, `between YYYY-MM-DD and YYYY-MM-DD`.
+  - Pure-std calendar helpers: `ymd_to_ms`, `ms_to_ymd` (Howard Hinnant
+    civil-from-days algorithm), `midnight_utc`, `strip_punct`.
+  - No external crate — all date math is pure `std::time`.
+- New Tauri command `temporal_query(question)`:
+  - Parses time range from question.
+  - Filters `get_all()` by `created_at ∈ [start_ms, end_ms)`.
+  - Falls back to keyword `search()` when no time expression detected.
+  - Returns `TemporalQueryResult { time_range, memories }`.
+- 20 unit tests (calendar roundtrips, all parse patterns, edge cases).
+
+**Files created.**
+- `src-tauri/src/memory/temporal.rs` — **new** (20 tests)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod temporal`
+- `src-tauri/src/commands/memory.rs` — added `temporal_query` command + `TemporalQueryResult`
+- `src-tauri/src/lib.rs` — registered `temporal_query` in import + handler
+
+**Test counts.** Backend: 976 cargo tests; Frontend: 1083 Vitest tests.
+
+---
+
+## Chunk 18.5 — Obsidian vault export (one-way)
+
+**Date.** 2026-04-25
+**Phase.** 18 (Categorisation & Taxonomy — final chunk). Maps to §16 Phase 2 + Phase 4.
+**Goal.** New Tauri command `export_to_obsidian(vault_dir)` that writes one
+Markdown file per long-tier memory under `<vault_dir>/TerranSoul/<id>-<slug>.md`
+with YAML frontmatter. Idempotent: file mtime drives "should I rewrite?"
+decision. Completes Phase 18.
+
+**Architecture.**
+- New `src-tauri/src/memory/obsidian_export.rs` module (~280 LOC):
+  - `slugify(content)` — filesystem-safe slug (≤60 bytes).
+  - `filename_for(entry)` — `<id>-<slug>.md`.
+  - `format_iso(ms)` — pure Unix-ms → ISO 8601 UTC (Howard Hinnant).
+  - `render_markdown(entry)` — YAML frontmatter (id, created_at,
+    importance, memory_type, tier, tags as list, source_url, source_hash)
+    + body.
+  - `export_to_vault(vault_dir, entries) -> ExportReport` — creates
+    `TerranSoul/` dir, writes only long-tier entries, skips unchanged
+    files (mtime >= memory's `last_accessed`).
+- New Tauri command `export_to_obsidian(vault_dir)`.
+- Frontend: `MemoryView.vue` gains "📓 Export to Obsidian" button +
+  modal with vault-path input and result feedback.
+- `memory.ts` Pinia store: `exportToObsidian(vaultDir)` action.
+- 14 Rust unit tests (slugify, filename, ISO, frontmatter, export
+  idempotency, tier filtering).
+
+**Files created.**
+- `src-tauri/src/memory/obsidian_export.rs` — **new** (14 tests)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod obsidian_export`
+- `src-tauri/src/commands/memory.rs` — added `export_to_obsidian` command
+- `src-tauri/src/lib.rs` — registered `export_to_obsidian` in import + handler
+- `src/stores/memory.ts` — added `exportToObsidian` action
+- `src/views/MemoryView.vue` — added export button + modal + handler
+
+**Test counts.** Backend: 976 cargo tests; Frontend: 1083 Vitest tests.
+
+---
+
+## Chunk 18.3 — Category filters in Memory View
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy). Builds on 18.4 (tag vocabulary) and 18.1 (auto-tag).
+**Goal.** Add a tag-prefix multi-select chip row to Memory View so users
+can filter memories by curated category (`personal`, `domain`, `project`,
+`tool`, `code`, `external`, `session`, `quest`).
+
+**Architecture.**
+- `MemoryView.vue` gains a `tagPrefixCounts` computed that scans all displayed
+  memories and counts occurrences per curated prefix. A `tagPrefixFilter` ref
+  toggles prefix filtering that composes with the existing type/tier/search
+  filters.
+- Chips show count badges; disabled when count = 0; active = purple accent.
+- New `MemoryView.test.ts` (10 tests) exercises the tag-prefix counting and
+  filtering logic as pure functions.
+
+**Files modified.**
+- `src/views/MemoryView.vue` — added tag-prefix filter row + CSS
+- `src/views/MemoryView.test.ts` — **new** (10 tests)
+
+**Test counts.** Frontend: 1083 Vitest tests (67 files); Backend: 943 cargo tests.
+
+---
+
+## Chunk 18.1 — Auto-categorise via LLM on insert
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy). Uses 18.4 tag-prefix vocabulary for validation.
+**Goal.** When `AppSettings.auto_tag = true` (default off), every
+`add_memory` call runs a fast LLM pass that classifies the content into
+≤ 4 tags drawn from the curated prefix vocabulary and merges them with
+user-supplied tags.
+
+**Architecture.**
+- New `src-tauri/src/memory/auto_tag.rs` module (~140 LOC):
+  - `system_prompt()` / `user_prompt()` — prompt builders
+  - `parse_tag_response()` — parses LLM comma-separated tag response,
+    validates each against `validate_csv()`, keeps only `Curated` verdicts,
+    caps at 4 tags
+  - `merge_tags()` — deduplicates auto-tags against user tags (case-insensitive)
+  - `auto_tag_content()` — dispatches to Ollama / FreeApi / PaidApi based on
+    active `BrainMode`
+- `AppSettings.auto_tag: bool` (default `false`) persisted to disk
+- `commands::memory::add_memory` — after insert + embedding, checks
+  `auto_tag` setting and brain_mode; if both present, runs auto-tagger and
+  updates the entry's tags via `store.update()`
+- `OllamaAgent::call()` promoted to `pub(crate)` for internal use
+- Frontend: `AppSettings` interface gains `auto_tag?: boolean`; BrainView
+  gains an "Auto-Tag" toggle section with checkbox + description
+
+**Files created.**
+- `src-tauri/src/memory/auto_tag.rs` (10 unit tests)
+
+**Files modified.**
+- `src-tauri/src/memory/mod.rs` — added `pub mod auto_tag`
+- `src-tauri/src/brain/ollama_agent.rs` — `call()` → `pub(crate)`
+- `src-tauri/src/settings/mod.rs` — added `auto_tag` field to `AppSettings`
+- `src-tauri/src/settings/config_store.rs` — updated test initializers
+- `src-tauri/src/commands/memory.rs` — auto-tag logic in `add_memory`
+- `src-tauri/src/commands/settings.rs` — updated test initializers
+- `src/stores/settings.ts` — added `auto_tag` to `AppSettings` interface
+- `src/views/BrainView.vue` — auto-tag toggle UI section
+- `src/views/BrainView.test.ts` — added `get_app_settings` to mock
+
+**Test counts.** Backend: 943 cargo tests (10 new in auto_tag); Frontend: 1083 Vitest.
+
+---
+
+## CI Fix — Embed cache test race condition
+
+**Date.** 2026-04-24
+**Goal.** Fix flaky `clear_embed_caches_forgets_unsupported_models` test
+that failed in CI due to parallel test interference on shared global
+embed cache statics.
+
+**Root cause.** Five `#[tokio::test]` tests in `ollama_agent::tests` share
+process-global `OnceLock<Mutex<…>>` statics for the embed model cache
+and unsupported-models set. Running in parallel, one test's
+`clear_embed_caches()` call could race against another test's
+`mark_unsupported()` + `assert!()` sequence.
+
+**Fix.** Added `EMBED_TEST_LOCK: tokio::sync::Mutex<()>` static — all
+five cache tests acquire the lock before running, serialising access to
+the shared statics. Also added an initial `clear_embed_caches()` to the
+`clear_embed_caches_forgets_unsupported_models` test for a clean baseline.
+
+**Files modified.**
+- `src-tauri/src/brain/ollama_agent.rs` — added `EMBED_TEST_LOCK` + guard
+  acquisition in 5 tests
+
+---
+
+## Chunk 18.2 — Category-aware decay rates
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy). Composes directly on top of 18.4 (tag-prefix vocabulary).
+**Goal.** Stop decaying every long-term memory at the same uniform rate. A `personal:*` fact about the user (precious) should outlive a `tool:*` flag (rots quarterly when product UI changes).
+
+**Architecture.**
+- New `memory::tag_vocabulary::category_decay_multiplier(tags_csv: &str) -> f64`. Pure — no I/O. Returns the **lowest** (slowest-decaying) multiplier among all curated prefixes present on the entry; legacy / non-conforming tags collapse to the baseline `1.0`.
+- Per-prefix multipliers (calibrated against §16 Phase 2 design intent):
+  - `personal` → **0.5** (2× slower — precious)
+  - `domain`, `code` → **0.7** (~1.4× slower — reference material)
+  - `project`, `external` → **1.0** (baseline)
+  - `tool` → **1.5** (1.5× faster — flags / UI change)
+  - `session`, `quest` → **2.0** (2× faster — short-lived)
+- "Slowest wins" rule: a single `personal:*` tag protects a row even if it also carries `tool:*` — matches the design principle that downgrading a precious memory is the costliest mistake.
+- `MemoryStore::apply_decay` SELECT extended with `tags`; computes `0.95 ^ ((hours_since / 168) * multiplier)` instead of the previous prefix-blind formula. Clamp to `>= 0.01` and the `> 0.001` change-threshold are unchanged so the call remains idempotent on already-decayed-flat rows.
+
+**Files modified.**
+- `src-tauri/src/memory/tag_vocabulary.rs` — added `category_decay_multiplier` + 4 unit tests.
+- `src-tauri/src/memory/store.rs` — `apply_decay` now passes the entry's `tags` through `category_decay_multiplier`; added 2 integration tests.
+
+**Tests.** 6 new tests, all passing alongside 930 existing tests (total **936 passing**):
+1. `decay_multiplier_baseline_for_no_curated_tags` — empty / legacy / non-conforming → 1.0.
+2. `decay_multiplier_per_prefix` — every curated prefix returns its expected multiplier.
+3. `decay_multiplier_picks_slowest_when_multiple_prefixes` — `personal` (0.5) beats `tool` (1.5); `domain` (0.7) beats `project` (1.0); `session` (2.0) loses to `project` (1.0).
+4. `decay_multiplier_ignores_legacy_and_non_conforming_when_curated_present` — `fact` + `personal:*` + `randomtag` → 0.5.
+5. `apply_decay_personal_decays_slower_than_tool` — store integration: forced `last_accessed = -30 days`, `personal:*` row ends up with strictly higher `decay_score` than `tool:*` row after one `apply_decay()`.
+6. `apply_decay_baseline_for_legacy_or_non_conforming_tags` — `fact` (legacy) and `project:*` (curated 1.0) decay identically (within float tolerance).
+
+**Validation.** `cargo test --lib` (936 pass / 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- BrainView: per-user multiplier tuning UI (the chunk description mentions this; deferred — defaults are calibrated and shipping the multiplier engine first lets later UI just edit them).
+- 18.3 (Memory View filter chips) — frontend chunk that surfaces the same prefix taxonomy.
+
+---
+
+## Chunk 18.4 — Tag-prefix convention vocabulary + audit
+
+**Date.** 2026-04-24
+**Phase.** 18 (Categorisation & Taxonomy) — first chunk; pure-Rust foundation that 18.1 (auto-categorise), 18.2 (category-aware decay), and 18.3 (Memory View filters) all consume.
+**Goal.** Make the long-implicit `<prefix>:<value>` tag convention explicit and auditable, without breaking the write path. Existing free-form tags continue to work; non-conforming tags surface as a soft "review tag" warning in BrainView instead of being rejected.
+
+**Architecture.**
+- New `src-tauri/src/memory/tag_vocabulary.rs` (~230 LOC + 10 unit tests). Pure — no I/O.
+- `CURATED_PREFIXES: &[&str]` lists the 8 sanctioned prefixes (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`) with a docblock describing each one's intent. Adding a new prefix is a small design decision documented in the source.
+- `LEGACY_ALLOW_LIST: &[&str]` covers the seed-fixture / pre-convention tags (`user`, `assistant`, `system`, `fact`, `preference`, `todo`, `summary`) — short by design, every entry is debt to be migrated.
+- `validate(tag: &str) -> TagValidation` returns one of:
+  - `Curated { prefix }` — canonical-cased prefix from `CURATED_PREFIXES` (so callers can pattern-match safely against `&'static str`).
+  - `Legacy` — case-insensitive whole-tag match against the allow-list.
+  - `NonConforming { reason: NonConformingReason }` — `UnknownPrefix(String)`, `MissingPrefix`, `EmptyValue { prefix }`, or `Empty`.
+- `validate_csv(tags_csv: &str) -> Vec<TagValidation>` matches the on-disk shape stored in `MemoryEntry.tags` (comma-separated). Empty entries from a trailing comma are dropped.
+- Case-insensitive prefix matching (`Personal:Foo` and `personal:foo` both validate as `Curated { prefix: "personal" }`).
+- Values are not interpreted — `personal:🍕` and `external:https://foo.bar:8080/x` both pass cleanly because `split_once(':')` only splits on the first colon.
+- New Tauri command `audit_memory_tags` in `commands/memory.rs` — walks every memory, returns only the rows with at least one non-conforming tag, paired with a human-readable reason. Read-only; ingest still accepts everything.
+- New types `MemoryTagAudit { memory_id, flagged: Vec<TagAuditFlag> }` and `TagAuditFlag { tag, reason }` for the BrainView surface.
+
+**Files modified / created.**
+- `src-tauri/src/memory/tag_vocabulary.rs` (new, 230 LOC + 10 tests).
+- `src-tauri/src/memory/mod.rs` — added `pub mod tag_vocabulary;`.
+- `src-tauri/src/commands/memory.rs` — added `audit_memory_tags` Tauri command + `MemoryTagAudit` / `TagAuditFlag` serde types.
+- `src-tauri/src/lib.rs` — wired into `commands::memory::*` import + invoke handler list.
+- `rules/milestones.md` — Phase 18 row 18.4 removed.
+
+**Tests.** 10 new unit tests, all passing alongside 920 existing tests (total **930 passing**):
+1. `curated_prefixes_validate` — happy path for several prefixes.
+2. `case_insensitive_prefix_match` — `Personal:Foo` and `DOMAIN:law` accepted.
+3. `legacy_allow_list_passes` — case-insensitive whole-tag match.
+4. `unknown_prefix_is_non_conforming` — `color:blue` flagged with `UnknownPrefix("color")`.
+5. `no_separator_and_not_in_allow_list_is_non_conforming` — `randomtag` flagged with `MissingPrefix`.
+6. `empty_value_is_non_conforming` — `personal:` and `personal:   ` both flagged with `EmptyValue`.
+7. `empty_or_whitespace_tag_is_non_conforming` — `""` and `"   "` flagged with `Empty`.
+8. `validate_csv_parses_each_tag_in_order` — 5-tag CSV with one empty entry collapses to 4 results in input order.
+9. `is_acceptable_only_curated_or_legacy` — convenience predicate.
+10. `value_can_contain_colons_and_unicode` — URL-as-value and emoji-as-value edge cases.
+
+**Validation.** `cargo test --lib` (930 pass / 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- 18.1 (auto-categorise via LLM) — will write tags using `CURATED_PREFIXES` as the LLM's allowed-prefix prompt.
+- 18.2 (category-aware decay) — will look up per-prefix multipliers keyed off `Curated { prefix }`.
+- 18.3 (Memory View filter chips) — frontend chunk that calls `audit_memory_tags` for the warning badge + filters by prefix.
+- BrainView "review tags" warning panel that consumes `audit_memory_tags`.
+
+---
+
+## Chunk 17.1 — Auto-promotion based on access patterns
+
+**Date.** 2026-04-24
+**Phase.** 17 (Brain Phase-5 Intelligence) — first chunk; pure-Rust foundation that the rest of Phase 17 composes onto.
+**Goal.** Stop forcing the user to manually promote frequently-revisited working-tier memories. When a working-tier entry is accessed often enough recently, it earns long-tier status automatically — and the heuristic is honest enough to be a no-op on stale or never-touched rows.
+
+**Architecture.**
+- New `MemoryStore::auto_promote_to_long(min_access_count: i64, window_days: i64) -> SqlResult<Vec<i64>>`. Pure SQL — selects every `tier = 'working'` row where `access_count >= min_access_count` AND `last_accessed IS NOT NULL` AND `last_accessed >= now - window_days * 86_400_000`, then `UPDATE`s their tier to `'long'`. Returns the IDs that were promoted in ascending order so callers (BrainView, future workflow jobs) can audit / display them.
+- The `last_accessed IS NOT NULL` guard is load-bearing: a working entry that was inserted but never accessed has `last_accessed = NULL` even if its `access_count` happens to be high (e.g. set by a backfill job). Treating NULL as "not recent" prevents accidental promotion of cold rows.
+- Defensive math: `window_days <= 0` collapses to "no recency requirement" (cutoff = 0), and `min_access_count` is floored at 0, so callers can't trip arithmetic underflow.
+- Idempotent by construction — a second call only sees `tier = 'working'` rows, so already-promoted entries stay put.
+- Stays off the `StorageBackend` trait (mirrors `apply_decay`'s scope) — this is a SQLite-only concern; Postgres / MSSQL / Cassandra backends ignore it. Avoids touching three backend impls for a feature the alternative backends don't need.
+- New `commands::memory::auto_promote_memories(min_access_count: Option<i64>, window_days: Option<i64>)` Tauri command with sensible defaults (5, 7). Registered in `lib.rs` invoke-handler list.
+
+**Files modified.**
+- `src-tauri/src/memory/store.rs` — new method + 6 new unit tests.
+- `src-tauri/src/commands/memory.rs` — new Tauri command.
+- `src-tauri/src/lib.rs` — wired into invoke handler + command imports.
+- `docs/brain-advanced-design.md` § 16 Phase 5 — flipped row from `○` to `✓` with module + command pointers.
+- `rules/milestones.md` — Phase 17 row 17.1 removed (per the "completed chunks belong in completion-log only" rule).
+
+**Tests.** 6 new unit tests in `memory::store::tests`, all passing alongside 914 existing tests (total **920 passing**):
+1. `auto_promote_promotes_when_both_thresholds_met` — happy path.
+2. `auto_promote_skips_when_access_count_below_threshold` — boundary: 4 vs threshold 5 stays working.
+3. `auto_promote_skips_when_outside_recency_window` — 30-day-old access doesn't promote at 7-day window.
+4. `auto_promote_ignores_long_and_short_tiers` — only working-tier is considered (idempotency-by-tier).
+5. `auto_promote_is_idempotent` — second call after a successful promotion is a no-op.
+6. `auto_promote_skips_rows_with_null_last_accessed` — the load-bearing NULL-guard invariant.
+
+**Validation.** `cargo test --lib` (920 pass / 0 fail) + `cargo clippy --lib --tests -- -D warnings` (clean).
+
+**Follow-ups (not in this chunk).**
+- Frontend: surface the promoted IDs in BrainView's "Active selection" panel so the user can see what just got promoted (deferred — pure Rust surface is in place).
+- Schedule: today the command is invoke-on-demand (frontend or background job's choice). Once the workflow engine grows a periodic-job slot (post-17.5), schedule this daily alongside `apply_memory_decay`.
+
+---
+
+## Chunk 15.3 — `BrainGateway` trait + shared op surface
+
+**Date.** 2026-04-24
+**Goal.** Define a single typed op surface (`BrainGateway`) that every transport (MCP, gRPC) routes through, so the eight ops in `docs/AI-coding-integrations.md § Surface` (`brain.search`, `get_entry`, `list_recent`, `kg_neighbors`, `summarize`, `suggest_context`, `ingest_url`, `health`) cannot drift between transports.
+
+**Architecture.**
+- `src-tauri/src/ai_integrations/mod.rs` — module root + re-exports.
+- `src-tauri/src/ai_integrations/gateway.rs` — typed request/response structs, `GatewayCaps`, `GatewayError` (`thiserror`), `BrainGateway` async trait, `IngestSink` trait, `AppStateGateway` adapter.
+- The adapter delegates straight to `MemoryStore` (for `search`, `get_entry`, `list_recent`, `kg_neighbors`), `OllamaAgent::summarize_conversation` / `embed_text` / `hyde_complete` (for `summarize`, HyDE search), and `IngestSink::start_ingest` (for `ingest_url`). **No new business logic** — the gateway is pure composition over existing `commands::memory` / `brain` surfaces.
+- `IngestSink` trait keeps the gateway free of any Tauri `AppHandle` dependency, so it remains unit-testable without a real Tauri runtime. Production constructs an `AppHandleIngestSink` in the transport layer (15.1 / 15.2) that wraps the existing `commands::ingest::ingest_document` flow.
+- **Capability gates** — every op takes `&GatewayCaps`. Reads require `brain_read`; writes require `brain_write`. `Default` is read-only. Convenience constants `GatewayCaps::NONE` and `GatewayCaps::READ_WRITE` for tests.
+- **Delta-stable `suggest_context`** — composes search (HyDE when a brain is configured, RRF otherwise) → KG one-hop around top hit → LLM summary. Returns a `SuggestContextPack { hits, kg, summary, fingerprint }` where `fingerprint` is a SHA-256 hex over the resolved hit ids + the active brain identifier. Identical inputs ⇒ identical fingerprints — the contract VS Code Copilot caches against in Chunk 15.7.
+- **Lock discipline** — `std::sync::Mutex` locks on `AppState` are scoped tightly and dropped before any `.await`, matching the convention used by the existing Tauri commands.
+
+**Files created.**
+- `src-tauri/src/ai_integrations/mod.rs` (1 module + re-exports, 31 lines).
+- `src-tauri/src/ai_integrations/gateway.rs` (1165 lines including 17 unit tests).
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — added `pub mod ai_integrations;`.
+- `docs/AI-coding-integrations.md` — flipped the Shared Surface section from "Planned" to "shipped 2026-04-24" with as-built specifics (trait shape, capability constants, error variants, IngestSink rationale, delta-stable fingerprint contract, test coverage).
+
+**Tests.** 17 new unit tests in `gateway::tests`, all passing. Coverage:
+1. `read_op_requires_brain_read_capability` — `search` rejects `GatewayCaps::NONE`.
+2. `write_op_requires_brain_write_capability` — `ingest_url` rejects default caps even when sink attached.
+3. `write_op_routes_through_sink_when_permitted` — call reaches `RecordingIngestSink` exactly once with the right args.
+4. `write_op_without_sink_reports_not_configured` — `NotConfigured` error, no panic.
+5. `search_rejects_empty_query` — `InvalidArgument`.
+6. `search_returns_descending_positional_scores` — score ordering invariant.
+7. `get_entry_returns_not_found_for_missing_id` — `NotFound` not `Storage`.
+8. `list_recent_filters_by_kind_and_tag` — kind + tag filters work; `since` is permissive.
+9. `kg_neighbors_reports_truncation_when_depth_above_one` — honest reporting, no silent capping.
+10. `summarize_requires_text_or_memory_ids` — `InvalidArgument` when both empty.
+11. `summarize_no_brain_returns_none_summary_with_resolution_count` — graceful degradation contract.
+12. `suggest_context_is_delta_stable_for_identical_input` — same input ⇒ same fingerprint + same hit order.
+13. `suggest_context_fingerprint_changes_when_brain_changes` — flipping `active_brain` invalidates the fingerprint.
+14. `health_reports_provider_and_memory_total` — counts + provider id correct.
+15. `fingerprint_is_deterministic_and_id_sensitive` — pure-function fingerprint contract.
+16. `default_caps_are_read_only` — security default invariant.
+17. `parse_memory_type_is_tolerant` — case-insensitive + permissive parser.
+
+**Validation.** `cargo build --lib` succeeds; `cargo test --lib` runs 909 tests (all passing); `cargo clippy --lib --tests -- -D warnings` clean.
+
+**Follow-ups (not in this chunk).**
+- 15.1 (MCP transport) wires the adapter behind `127.0.0.1:7421` with bearer-token auth.
+- 15.2 (gRPC transport) wires the adapter behind `127.0.0.1:7422` with mTLS.
+- 15.4–15.8 build the Control Panel, voice intents, auto-setup writers, and the e2e Copilot harness on top.
+
+---
+
+## Milestones audit
+
+**Date.** 2026-04-24
+**Goal.** Surface every chunk that's described in `docs/` but not yet enumerated in `rules/milestones.md`, design coherent phases for each, and make them pickable by future agent sessions.
+
+**Audit findings.** Three docs contained chunks not represented in milestones.md:
+
+1. `docs/persona-design.md` § 15 — eight side-chain rows (143, 147, 149, 151, 152, 153, 154, 155) and one main-chain row (143 drift detection).
+2. `docs/brain-advanced-design.md` § 16 Phase 6 + § 19.2 — eight 🔵 modern-RAG techniques (Contextual Retrieval, Late Chunking, GraphRAG/LightRAG, Self-RAG, CRAG, Sleep-time consolidation, Matryoshka, relevance threshold) plus four Phase-4 items (ANN index, cloud embeddings, chunking pipeline, memory versioning).
+3. `docs/brain-advanced-design.md` § 16 Phase 5 + Phase 2 leftovers — auto-promotion, contradiction resolution, temporal reasoning, importance auto-adjustment, CRDT memory merge, conflict detection, Obsidian sync (bidirectional), auto-categorise on insert, category-aware decay, category filters, tag-prefix enforcement, Obsidian one-way export.
+
+**Phases added to `rules/milestones.md`.**
+- **Phase 14 expansion** — added rows 14.8 (persona drift detection), 14.9 (save/load learned expression presets), 14.10 (save/load learned motion clips + `LearnedMotionPlayer`), 14.11 (side-chain bundle export — persona pack envelope v2), 14.12 (phoneme-aware viseme model), 14.13 (Hunyuan-Motion offline polish, opt-in), 14.14 (MoMask reconstruction), 14.15 (MotionGPT brain capability).
+- **Phase 16 — Modern RAG** (12 chunks): 16.1 relevance threshold, 16.2 contextual retrieval, 16.3 late chunking, 16.4 self-RAG, 16.5 CRAG, 16.6 GraphRAG community summaries, 16.7 sleep-time consolidation, 16.8 matryoshka embeddings, 16.9 cloud embedding API, 16.10 ANN index (`usearch`), 16.11 chunking pipeline, 16.12 memory versioning (V8 schema).
+- **Phase 17 — Brain Phase-5 Intelligence** (7 chunks): 17.1 auto-promotion, 17.2 contradiction resolution + `MemoryConflict`, 17.3 temporal reasoning, 17.4 importance auto-adjustment, 17.5 CRDT memory merge via Soul Link, 17.6 connected-memory conflict detection, 17.7 bidirectional Obsidian sync.
+- **Phase 18 — Categorisation & Taxonomy** (5 chunks): 18.1 auto-categorise on insert, 18.2 category-aware decay rates, 18.3 category filters in MemoryView, 18.4 tag-prefix enforcement lint, 18.5 Obsidian vault export (one-way).
+
+**Files modified.**
+- `rules/milestones.md` — `Next Chunk` summary refreshed; eight rows appended to Phase 14 table; three new phase sections (16 / 17 / 18) added.
+
+**Cross-doc invariants preserved.**
+- Each new chunk row carries an explicit "Maps to" pointer back to the originating doc section so the brain-doc-sync rule (architecture-rules.md rule 11) and persona-doc-sync rule (architecture-rules.md rule 12) keep working when chunks land.
+- No chunk numbering collisions; all rows still match the phase-prefix `<phase>.<n>` convention.
+
+---
+
+
+
+**Date:** 2026-04-24
+**Reference:** `docs/licensing-audit.md` (new); `rules/coding-standards.md` *"Use Existing Libraries First"*.
+
+**Trigger.** User requirement: *"check to make sure all package or
+integrations or libraries meet the commercial usage."*
+
+**Findings.** Every other dependency is permissively licensed
+(MIT / Apache-2.0 / BSD / ISC / MPL-2.0). Two integrations failed
+the strict commercial-use bar and were removed:
+
+- **`msedge-tts`** (Rust). Crate is MIT, but it calls Microsoft Edge's
+  undocumented `speech.platform.bing.com` *"Read Aloud"* WebSocket
+  endpoint. Microsoft directs commercial users to paid Azure
+  Cognitive Services — TTS; the unofficial endpoint is a ToS-violation
+  risk and historically rate-limited.
+- **`@vercel/analytics` + `@vercel/speed-insights`** (npm). Libraries
+  are MPL-2.0, but they phone home to Vercel servers without a
+  user-visible privacy contract; Vercel's free Web Analytics tier is
+  restricted to non-commercial projects; runtime telemetry from a
+  desktop binary conflicts with TerranSoul's local-first privacy
+  posture. `vue-router` was only included to satisfy these libraries'
+  unconditional `useRoute()` calls and was removed too.
+
+**Replacements.**
+
+- **TTS:** new `web-speech` provider id (browser `SpeechSynthesis`
+  API). The backend's `synthesize_tts` returns `Vec::new()` for
+  `web-speech` and the existing `useTtsPlayback` composable already
+  falls back to `speechSynthesis.speak()` when the WAV payload is
+  empty (≤44 bytes). Free, offline-capable, no telemetry, no
+  third-party ToS. Default `tts_provider` flips from `"edge-tts"` →
+  `"web-speech"`. Optional cloud upgrade remains available via the
+  user-supplied `openai-tts` provider with an explicit API key.
+- **Analytics:** none. A privacy-first desktop app should not phone
+  home for usage analytics.
+
+**Files touched.**
+
+- Deleted: `src-tauri/src/voice/edge_tts.rs`.
+- Removed deps: `msedge-tts` from `src-tauri/Cargo.toml`;
+  `@vercel/analytics`, `@vercel/speed-insights`, `vue-router` from
+  `package.json`.
+- Updated: `src-tauri/src/voice/mod.rs` (catalogue + default config +
+  tests), `src-tauri/src/voice/config_store.rs` (test fixture),
+  `src-tauri/src/commands/voice.rs` (`synthesize_tts` arm + tests),
+  `src-tauri/src/commands/ipc_contract_tests.rs` (test fixture),
+  `src/stores/voice.ts` (fallback provider + `autoConfigureVoice`),
+  `src/stores/voice.test.ts` (id sweep), `src/views/VoiceSetupView.vue`
+  (`activateBrowser`), `src/views/ChatView.vue` (`gift-of-speech`
+  quest auto-config), `src/App.vue` (drop Analytics / SpeedInsights
+  components + imports), `src/main.ts` (drop createRouter +
+  vue-router import), `README.md` (Voice System section).
+- Added: `docs/licensing-audit.md` capturing findings + process.
+
+**Validation.** `cargo test --lib` 892 passing (was 901; the deleted
+`edge_tts` module accounted for the delta, including its 6 routing
+tests). `npm test -- --run` 1073 passing. `npm run lint` 0 errors.
+`cargo clippy --lib --no-deps -- -D warnings` clean.
+
+**Privacy / commercial implications.** TerranSoul builds can now be
+distributed as part of a paid commercial product without requiring any
+extra third-party licence purchase, without violating any upstream ToS,
+and without any silent runtime telemetry to a third-party SaaS.
+
+---
+
+## Chunk 14.6 — Audio-Prosody Persona Hints (Camera-Free)
+
+**Date:** 2026-04-24
+**Reference:** `docs/persona-design.md` § 9.4 (new); `rules/milestones.md` Phase 14 row 14.6 (removed).
+
+**Goal.** When the user has an ASR provider configured, derive
+camera-free *prosody-style* hints (tone / pacing / quirks) from their
+typed turns — which mirror their spoken patterns — and fold them into
+the Master-Echo persona-extraction prompt so the suggested persona
+better matches how the user actually talks.
+
+**What shipped.**
+
+- New module `src-tauri/src/persona/prosody.rs` (≈490 lines, 23 unit
+  tests). Pure / I/O-free analyzer over user-role utterances →
+  `ProsodyHints { tone, pacing, quirks }`. Signals: avg sentence
+  length (concise / elaborate), exclamation density (energetic),
+  question density (inquisitive), ALLCAPS ratio gated by ≥50 alpha
+  letters (emphatic), filler-word density via whole-word matcher
+  (quirk: `um`, `uh`, `like`, `literally`, `you know`, `i mean`,
+  `kind of`, `sort of`, `actually`, `basically`, `er`, `hmm`), emoji
+  density via Unicode-block check (playful + quirk). Tone capped at
+  4, quirks at 3, both matching the persona-schema budget.
+  `MIN_UTTERANCES = 3` and `MAX_INPUT_BYTES = 1 MiB` short-circuit
+  thin or pathological corpora.
+- `render_prosody_block(&hints) -> Option<String>` emits a single
+  user-facing line and returns `None` for empty hints so the caller
+  skips the section entirely (no dead cue for the LLM to hallucinate
+  from).
+- New extract overload
+  `build_persona_prompt_with_hints(snippets, hints) -> (system, user)`.
+  When `hints == None`, the output is **byte-identical** to the
+  existing `build_persona_prompt`, so all prior tests stay green
+  (verified by a new equivalence test).
+- New agent surface
+  `OllamaAgent::propose_persona_with_hints(snippets, hints)`. Legacy
+  `propose_persona` delegates with `hints = None`.
+- Wired into `commands/persona::extract_persona_from_brain`: only
+  when `voice_config.asr_provider.is_some()` are user-role utterances
+  filtered out of the conversation snapshot, fed through
+  `analyze_user_utterances`, rendered, and passed to the agent.
+
+**Privacy contract.**
+
+- Raw audio is never read — by the time a turn reaches the message
+  log, the audio is already gone.
+- Hints are computed on demand at suggestion time and discarded once
+  the LLM reply is parsed; no on-disk artefact is ever produced.
+- Hints are deliberately coarse (single-word adjectives + at most
+  three quirk strings); they read as friendly tone guidance rather
+  than a forensic profile.
+- The hint block is inserted between the transcript and the
+  OUTPUT FORMAT instructions inside the user message, so positionally
+  the LLM treats it as supporting context, not content to echo.
+
+**Files touched.**
+
+- `src-tauri/src/persona/mod.rs` — register `prosody` module.
+- `src-tauri/src/persona/prosody.rs` — new (analyzer + 23 tests).
+- `src-tauri/src/persona/extract.rs` — `build_persona_prompt_with_hints`
+  + 4 new equivalence / integration tests.
+- `src-tauri/src/brain/ollama_agent.rs` — `propose_persona_with_hints`
+  surface.
+- `src-tauri/src/commands/persona.rs` — wiring (only when ASR is
+  configured).
+- `docs/persona-design.md` — new § 9.4 with full signal table and
+  privacy contract.
+- `README.md` — Voice System section.
+- `rules/milestones.md` — row 14.6 removed; Phase-14 summary updated.
+
+**Validation.** Persona test family grew from 47 → 70 (`cargo test
+--lib persona::`). Full lib suite: 892 passing. Clippy clean. No
+network or audio I/O introduced.
+
+---
+
+
+
+**Date:** 2026-04-24
+**Reference:** `docs/persona-design.md` § 11.3 + § 12 (both updated this PR); architectural rule "brain documentation sync" (architecture-rules.md § 11).
+
+**Goal.** Ship the camera-free persona pack so a user can back up an entire persona setup (active traits + every learned-expression + every learned-motion artifact) as a single self-describing JSON document — copyable to clipboard, savable as `.json`, ready to drop into Soul Link sync. Receiving side: dry-run preview before commit, atomic apply, per-entry skip report.
+
+**Architecture.**
+- New module **`src-tauri/src/persona/pack.rs`** — pure, I/O-free codec:
+  - `PersonaPack { packVersion, exportedAt, note?, traits, expressions[], motions[] }` envelope. Per-asset entries kept as opaque `serde_json::Value` so future trait / expression / motion fields round-trip even when this binary doesn't know about them.
+  - `build_pack` (constructor; trims+drops empty/whitespace `note`).
+  - `pack_to_string` (pretty-printed JSON).
+  - `parse_pack` — rejects empty input, oversize input (`PERSONA_PACK_MAX_BYTES = 1 MiB`), malformed JSON, missing required envelope fields, future `pack_version`, non-object `traits`.
+  - `validate_asset(value, expected_kind) -> Result<id>` — mirrors the existing `validate_id` rules (alphanumeric + `_-`, length 1..=128) so path-traversal is impossible regardless of caller behaviour.
+  - `ImportReport { traits_applied, expressions_accepted, motions_accepted, skipped[] }` + `note_skip` helper that caps the report at 32 entries plus a single truncation marker so a hostile pack cannot OOM the UI through skip messages.
+- Three new Tauri commands in **`commands/persona.rs`**:
+  - `export_persona_pack(note?)` — reads `persona.json` + `expressions/*.json` + `motions/*.json`, builds a `PersonaPack`, returns the pretty-printed string. Corrupt asset files are skipped silently (existing § 13 contract). `list_assets_as_values` preserves the on-disk `learnedAt` ordering for deterministic round-trips.
+  - `preview_persona_pack(json)` — dry-run validator returning the per-entry report **without writing anything**. Powers the "🔍 Preview" button.
+  - `import_persona_pack(json)` — replaces traits via the existing `atomic_write` helper; merges asset libraries (matching ids overwrite, others kept). Per-entry failures (wrong `kind`, illegal id, write failure) record a skip and continue, so a single bad asset doesn't lose the rest of the pack.
+- Frontend: new Pinia store actions **`exportPack` / `previewImportPack` / `importPack`** in `src/stores/persona.ts`. `importPack` chains a `load()` so all UI bindings reflect the merged state in a single round-trip.
+- New component **`src/components/PersonaPackPanel.vue`** (extracted from `PersonaPanel.vue` to keep both files under the 800-line Vue budget):
+  - Export: optional one-line note, "⬇ Export" button, "📋 Copy" (uses `navigator.clipboard`), "💾 Save .json" (uses `Blob` + `<a download>` — works inside Tauri's WebView without the `dialog` plugin).
+  - Import: collapsible textarea, "🔍 Preview" / "⤴ Apply import" / "Clear" buttons, inline error pane for parse failures, per-entry skip list. Uses `var(--ts-*)` design tokens throughout.
+- `PersonaPanel.vue` mounts the new component and exposes `onPackImported` to re-sync its local draft state after a successful apply.
+
+**Files created.**
+- `src-tauri/src/persona/pack.rs` (408 lines incl. 18 unit tests).
+- `src/components/PersonaPackPanel.vue` (326 lines incl. scoped styles).
+
+**Files modified.**
+- `src-tauri/src/persona/mod.rs` — added `pub mod pack`.
+- `src-tauri/src/commands/persona.rs` — three new commands + `list_assets_as_values` helper (653 lines, well under 1000-line cap).
+- `src-tauri/src/lib.rs` — register the three commands in the import + invoke-handler list.
+- `src/stores/persona.ts` — three new actions + `ImportReport` type (364 lines).
+- `src/stores/persona.test.ts` — 6 new tests (Tauri-unavailable export, success export, preview-throws-on-parse-error, preview-success, import-reloads-store, import-error).
+- `src/components/PersonaPanel.vue` — replaced inline pack UI with `<PersonaPackPanel>` mount + `onPackImported` handler (653 lines, back under budget).
+- `docs/persona-design.md` — new § 11.3 documents the envelope shape + size cap + merge semantics; § 12 lists the three new commands with ✅ shipped marker.
+- `README.md` — Persona System component listing updated: new pack module, new store actions, new UI component.
+- `rules/milestones.md` — chunk 14.7 row removed; Phase-14 footer + Next-Chunk pointer refreshed.
+- `.gitignore` — added agent-scratch patterns (`test-output.txt`, `*.log`, `*.tmp`, `.scratch/`, `/tmp-agent/`) following the new prompting rule.
+- `rules/prompting-rules.md` — new ENFORCEMENT RULE "Clean Up Temporary Files After Each Session".
+
+**Tests.**
+- Rust: 860 → **878** passing (18 new in `persona::pack` covering round-trip, missing/non-object/oversize/garbage envelope, future-version rejection, traits-only pack, all `validate_asset` rejection paths, and the `note_skip` 32+marker cap).
+- Frontend Vitest: 1067 → **1073** passing across 67 files (6 new in `persona.test.ts`, plus the new `PersonaPackPanel.vue` covered indirectly via the store action tests).
+- `vue-tsc --noEmit` clean.
+- `npm run lint` 0 errors (only pre-existing `v-html` warnings).
+- `cargo clippy --lib --no-deps -- -D warnings` clean.
+- File sizes within budget (PersonaPanel.vue 653/800, PersonaPackPanel.vue 326/800, persona.rs 653/1000, pack.rs 408/1000).
+
+**Privacy contract preserved.** This chunk is entirely camera-free. Persona packs only contain JSON artifacts (traits + landmark presets + retargeted-keypoint clips) — the same data already on disk under `<app_data_dir>/persona/`. No MediaStream is opened by either the export or the import flow; no webcam frames cross the IPC boundary.
+
+---
+
+## Chunk 14.2 — Master-Echo Brain-Extraction Loop (Persona Suggestion)
+
+**Date:** 2026-04-24
+**Reference:** `docs/persona-design.md` § 3 + § 9.3 + § 12 (all updated this PR); architectural rule "brain documentation sync".
+
+**Goal.** Close the camera-free leg of the Master-Mirror loop: when a brain is configured, let the user click "✨ Suggest a persona from my chats" and have the active LLM read recent conversation history + their long-tier `personal:*` memories, propose a `PersonaTraits` JSON, and surface it for review-before-apply. Nothing auto-saves; the candidate flows through the existing `save_persona` path only after the user clicks Apply.
+
+**Architecture.**
+- New module **`src-tauri/src/persona/extract.rs`** (pure, I/O-free — same testable-seam shape as `memory/hyde.rs` / `memory/reranker.rs`):
+  - `PromptSnippet` + `PersonaCandidate` types.
+  - `assemble_snippets(history, memories)` — takes the last 30 turns + up to 20 memories, preferring `personal:*`-tagged ones and falling back to plain long-tier rows when none are tagged.
+  - `build_persona_prompt(snippets) -> (system, user)` — explicit OUTPUT FORMAT block asking for ONLY a JSON object; honours a 12 KB char budget so the prompt never overflows small local models.
+  - `parse_persona_reply(raw) -> Option<PersonaCandidate>` — tolerant of markdown fences, leading prose, brace-balanced extraction (skips `{`/`}` inside string literals), drops non-string list entries, dedupes case-insensitively, caps lists at 6, caps bio at 500 chars, requires non-empty `name`/`role`/`bio`.
+- New brain method **`OllamaAgent::propose_persona(snippets)`** — three-line wrapper: build prompt → call → parse.
+- New Tauri command **`extract_persona_from_brain`** in `commands/persona.rs`:
+  - Snapshots `state.conversation` + `MemoryStore::get_by_tier(MemoryTier::Long)` *without* holding either lock across the await point (consistent with `extract_memories_from_session`).
+  - Returns the candidate as a JSON string, `""` when the reply could not be parsed (UI shows soft "try again" message), or an `Err(...)` when no brain is configured (UI disables button + tooltip).
+  - **Never** auto-saves.
+- Frontend persona store action **`suggestPersonaFromBrain()`** — invokes the command, parses the JSON, defensively coerces list fields, stamps `lastBrainExtractedAt` only on success.
+- Frontend UI in **`PersonaPanel.vue`** — "✨ Suggest from my chats" button next to the existing Save / Discard / Reset buttons + a green-bordered review card with three actions: **Apply** (routes through `saveTraits` so atomic-write + `set_persona_block` sync still happen), **Load into editor** (seeds the draft so the user can fine-tune before saving), **Discard**.
+
+**Files created.**
+- `src-tauri/src/persona/mod.rs` (10 lines, module doc)
+- `src-tauri/src/persona/extract.rs` (463 lines incl. 16 unit tests)
+
+**Files modified.**
+- `src-tauri/src/lib.rs` — register `pub mod persona`, import + invoke-handler-register `extract_persona_from_brain`.
+- `src-tauri/src/brain/ollama_agent.rs` — added `propose_persona` method.
+- `src-tauri/src/commands/persona.rs` — added `extract_persona_from_brain` command.
+- `src/stores/persona.ts` — added `suggestPersonaFromBrain` action.
+- `src/stores/persona.test.ts` — added 6 new tests covering Tauri-unavailable, empty reply, malformed JSON, missing required fields, success stamps timestamp, and non-string list coercion.
+- `src/components/PersonaPanel.vue` — new button + review card + scoped styles.
+- `docs/persona-design.md` — § 3 mentions the camera-free third loop; § 9.3 marked "✅ shipped 2026-04-24" with full implementation breadcrumbs; § 12 updated.
+- `README.md` — Persona System section: new module + new store action + new "✨ Suggest from my chats" UI flow listed.
+
+**Tests.**
+- Rust: 842 → **860** passing (16 new in `persona::extract` covering prompt construction, snippet assembly with personal-tag preference + fallback, char budget, all parser tolerances, and required-field rejection).
+- Frontend Vitest: 1061 → **1067** passing across 66 files (6 new in `persona.test.ts`).
+- `vue-tsc --noEmit` clean.
+- `npm run lint` 0 errors (only pre-existing v-html warnings).
+- `cargo clippy --lib --no-deps -- -D warnings` clean.
+- File sizes well within budget (PersonaPanel.vue 638/800, extract.rs 463/1000, persona.rs 458/1000).
+
+**Privacy contract preserved.** This loop is *entirely* camera-free. The persona-design § 5 invariants remain intact — no MediaStream is opened, no webcam frames cross any boundary, the per-session `cameraSession` state is untouched.
+
+---
+
+## Chunk 2.4 — BrainView "Code knowledge" panel (Phase 13 Tier 4)
+
+**Date:** 2026-04-24
+**Reference:** `docs/brain-advanced-design.md` Phase 13 row in §22; built directly on Chunks 2.1 / 2.3 shipped earlier today.
+
+**Goal.** Surface the GitNexus Tier 1 + Tier 3 plumbing in the Brain
+hub so a user can mirror an indexed repo's KG, see what's already
+mirrored, roll back a mirror, and run a blast-radius pre-flight on a
+symbol — all without touching the CLI or copy-pasting JSON.
+
+**Implementation.**
+- `src-tauri/src/memory/edges.rs` — new
+  `MemoryStore::list_external_mirrors(like_pattern)` aggregates
+  `memory_edges` by `edge_source` (filtered by SQL LIKE) into one row
+  per scope: `(edge_source, COUNT(*), MAX(created_at))`. Native edges
+  (NULL `edge_source`) are excluded. Three new unit tests (groups
+  correctly, empty store, scoped delete-by-edge-source).
+- `src-tauri/src/commands/gitnexus.rs` — new
+  `gitnexus_list_mirrors() -> Vec<GitNexusMirrorSummary>` Tauri
+  command. Strips the `gitnexus:` prefix into a separate `scope`
+  field so the frontend can pass it straight back to
+  `gitnexus_unmirror`.
+- `src-tauri/src/lib.rs` — command registered in `invoke_handler`.
+- `src/components/CodeKnowledgePanel.vue` (new, ~430 lines incl.
+  scoped CSS) — Vue 3 `<script setup lang="ts">` component:
+  * Sync form: text input for the `repo:owner/name@sha` scope +
+    "Sync KG" button → calls `gitnexus_sync` and renders an
+    inserted/reused/skipped report.
+  * Mirror list: rendered from `gitnexus_list_mirrors`, formats
+    `last_synced_at` via `Intl.DateTimeFormat` (no extra date lib),
+    per-row "Unmirror" button.
+  * Blast-radius pre-flight: text input for a symbol + "Probe impact"
+    button → calls `gitnexus_impact`; `summariseImpact` extracts a
+    one-line dependent count from the three known upstream response
+    shapes (`{symbol, dependents}`, `{items}`, `{count}`) and falls
+    back to a JSON snippet for unknown shapes (forward-compatible).
+  * All design tokens via `var(--ts-*)`; no hard-coded hex outside
+    the `…, fallback` arguments.
+  * Defensive: `mirrors.value` is always normalised to `[]` so that
+    other test files mounting `BrainView` (with a stub `invoke` that
+    returns `undefined`) don't crash.
+- `src/views/BrainView.vue` — three-line wiring: import +
+  `<section class="bv-code-knowledge-section"><CodeKnowledgePanel /></section>`
+  inserted between the stats sheet and the persona panel. No other
+  BrainView changes.
+
+**Tests.** 9 new Vitest unit tests (`CodeKnowledgePanel.test.ts`):
+empty state, disabled-when-empty sync button, ordered mirror render,
+sync round-trip with refresh, per-row unmirror, impact summary, error
+banner on capability denial, `summariseImpact` shape coverage,
+`formatTimestamp` defensive fallback. **Frontend suite: 1052 → 1061
+passing across 66 files.** Rust suite: 839 → 842 passing.
+`cargo clippy --lib --no-deps -- -D warnings` clean; `npm run lint`
+yields only the pre-existing `v-html` warnings (none on the new
+files); `npx vue-tsc --noEmit` clean.
+
+**Files changed.** 5 files (`memory/edges.rs`,
+`commands/gitnexus.rs`, `lib.rs`,
+`components/CodeKnowledgePanel.vue` [new],
+`components/CodeKnowledgePanel.test.ts` [new],
+`views/BrainView.vue`) + `docs/brain-advanced-design.md` +
+`rules/milestones.md` + `rules/completion-log.md`.
+
+---
+
+## Chunk 2.3 — Knowledge-Graph Mirror (V7 `edge_source` column, Phase 13 Tier 3)
+
+**Date:** 2026-04-24
+**Reference:** `docs/brain-advanced-design.md` §8 (V7 schema) + Phase 13 Tier 3 row in §22; `rules/milestones.md` Phase 13.
+
+**Goal.** Make GitNexus's structured knowledge graph durable inside
+the TerranSoul brain. Prior chunks made the sidecar (2.1) and ephemeral
+Code-RAG fusion (2.2) work; Tier 3 is the opt-in path that mirrors the
+KG into SQLite so the rest of the brain (multi-hop traversal, the
+BrainView graph panel) can reason over code structure alongside
+free-text memories.
+
+**Implementation.**
+- `src-tauri/src/memory/migrations.rs` — new V7 migration adds a
+  nullable `edge_source TEXT` column to `memory_edges` plus
+  `idx_edges_edge_source`. Distinct from the existing `source` column
+  (which records `user`/`llm`/`auto` provenance inside TerranSoul):
+  `edge_source` records which **external KG** the edge came from.
+  `NULL` is the default for every native edge. Up + down migrations
+  shipped; round-trip test rebuilt for V7.
+- `src-tauri/src/memory/edges.rs` — `MemoryEdge` and `NewMemoryEdge`
+  gain `edge_source: Option<String>`; every SELECT/INSERT touched.
+  New `MemoryStore::delete_edges_by_edge_source` for per-mirror
+  rollback. All 23 existing test literals updated.
+- `src-tauri/src/memory/gitnexus_mirror.rs` (new, ~440 lines incl.
+  tests) — pure mapper:
+  * `KgNode` / `KgEdge` / `KgPayload` deserialize-permissive structs
+    (the `rel_type` field accepts `type` / `rel_type` / `relation`
+    aliases for forward compatibility).
+  * `map_relation(label)` — case-insensitive mapping of GitNexus's
+    `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE`
+    into the existing 17-relation taxonomy (`contains`,
+    `depends_on`, `derived_from`, `governs`); unknown labels flow
+    through `normalise_rel_type` so future GitNexus versions don't
+    break the mirror.
+  * `mirror_kg(store, scope, payload)` — upserts one memory entry per
+    KG node (idempotent via `source_hash` dedup), then batch-inserts
+    every translated edge with `edge_source = "gitnexus:<scope>"`.
+    Self-loops and dangling references are silently skipped and
+    counted in the returned `MirrorReport`.
+  * `unmirror(store, scope)` — single SQL DELETE by `edge_source`;
+    leaves memory nodes intact (they may have accreted user-asserted
+    or LLM-extracted edges).
+- `src-tauri/src/agent/gitnexus_sidecar.rs` — new
+  `GitNexusSidecar::graph(repo_label)` bridge method calling the
+  upstream `graph` MCP tool.
+- `src-tauri/src/commands/gitnexus.rs` — two new Tauri commands
+  `gitnexus_sync(repoLabel, kgPayload?)` and
+  `gitnexus_unmirror(repoLabel)`, plus a shape-tolerant
+  `extract_kg_payload` that handles three known response shapes
+  (top-level, nested under `graph.*`, and the MCP-standard
+  `content[].text` envelope). Caller may bypass the sidecar by passing
+  a payload directly — useful for tests and for clients that fetched
+  the KG out-of-band.
+- `src-tauri/src/lib.rs` — both commands registered in
+  `invoke_handler`.
+- Documentation: `docs/brain-advanced-design.md` §8 V7 schema entry +
+  Phase 13 row marked done; README "Brain System" + "Memory System"
+  sections updated to mention the new module, the V7 schema, the two
+  new Tauri commands, and the `edge_source` column (per the brain-doc
+  sync rule in `rules/architecture-rules.md`).
+
+**Strictly opt-in.** No code in this module runs at startup. The
+frontend explicitly calls `gitnexus_sync` when the user asks (Chunk
+2.4 will add the BrainView panel that surfaces it).
+
+**Tests.** 11 new unit tests in `gitnexus_mirror` (relation mapping,
+case-insensitivity, normalised fall-through, scope formatting, full
+mirror round-trip, idempotency, scoped unmirror, no-op unmirror, empty
+scope rejection, alias parsing) + 4 extractor tests in
+`commands::gitnexus` (top-level / nested / MCP-content / unknown
+shapes) + 1 bridge test that the new `graph` method emits the right
+JSON-RPC tool call. **Full suite: 839 → 853 tests, all passing.**
+`cargo clippy --lib --no-deps -- -D warnings` clean.
+
+**Files changed.** 7 files (`migrations.rs`, `edges.rs`,
+`gitnexus_mirror.rs` [new], `gitnexus_sidecar.rs`, `commands/gitnexus.rs`,
+`commands/memory.rs`, `lib.rs`, `mod.rs`) + `docs/brain-advanced-design.md`
++ `README.md` + `rules/milestones.md` + `rules/completion-log.md`.
 
 ---
 

@@ -69,7 +69,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "m58".into(),
+            selected_model_id: "komori".into(),
             camera_azimuth: 0.78,
             camera_distance: 3.5,
             bgm_enabled: true,
@@ -79,10 +79,15 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
+            auto_tag: false,
+            contextual_retrieval: false,
+            first_launch_complete: false,
+            chatbox_mode: false,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
-        assert_eq!(loaded.selected_model_id, "m58");
+        assert_eq!(loaded.selected_model_id, "komori");
         assert!((loaded.camera_azimuth - 0.78).abs() < 0.001);
         assert!((loaded.camera_distance - 3.5).abs() < 0.001);
         assert!(loaded.bgm_enabled);
@@ -119,6 +124,11 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
+            auto_tag: false,
+            contextual_retrieval: false,
+            first_launch_complete: false,
+            chatbox_mode: false,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -134,7 +144,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
-            selected_model_id: "annabelle".into(),
+            selected_model_id: "shinra".into(),
             camera_azimuth: 0.0,
             camera_distance: 2.8,
             bgm_enabled: false,
@@ -144,14 +154,19 @@ mod tests {
             user_models: Vec::new(),
             preferred_container_runtime: crate::container::RuntimePreference::Auto,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
+            relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
+            auto_tag: false,
+            contextual_retrieval: false,
+            first_launch_complete: false,
+            chatbox_mode: false,
         };
         save(dir.path(), &s).unwrap();
 
-        std::env::set_var("TERRANSOUL_MODEL_ID", "m58");
+        std::env::set_var("TERRANSOUL_MODEL_ID", "komori");
         let loaded = load(dir.path());
         std::env::remove_var("TERRANSOUL_MODEL_ID");
 
-        assert_eq!(loaded.selected_model_id, "m58");
+        assert_eq!(loaded.selected_model_id, "komori");
     }
 
     #[test]
@@ -169,11 +184,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let mut positions = std::collections::HashMap::new();
         positions.insert(
-            "annabelle".to_string(),
+            "shinra".to_string(),
             super::super::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
         );
         positions.insert(
-            "m58".to_string(),
+            "komori".to_string(),
             super::super::ModelCameraPosition { azimuth: 1.2, distance: 2.5 },
         );
         let s = AppSettings {
@@ -185,11 +200,11 @@ mod tests {
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
         assert_eq!(loaded.model_camera_positions.len(), 2);
-        let anna = loaded.model_camera_positions.get("annabelle").unwrap();
-        assert!((anna.azimuth - 0.5).abs() < 0.001);
-        assert!((anna.distance - 3.0).abs() < 0.001);
-        let m58 = loaded.model_camera_positions.get("m58").unwrap();
-        assert!((m58.azimuth - 1.2).abs() < 0.001);
-        assert!((m58.distance - 2.5).abs() < 0.001);
+        let ao = loaded.model_camera_positions.get("shinra").unwrap();
+        assert!((ao.azimuth - 0.5).abs() < 0.001);
+        assert!((ao.distance - 3.0).abs() < 0.001);
+        let karina = loaded.model_camera_positions.get("komori").unwrap();
+        assert!((karina.azimuth - 1.2).abs() < 0.001);
+        assert!((karina.distance - 2.5).abs() < 0.001);
     }
 }

@@ -269,7 +269,7 @@ check(1, 'Nav labels', JSON.stringify(navLabels) === JSON.stringify(['Chat', 'Qu
 
 check(1, '.ai-state-pill visible', await vis(page, '.ai-state-pill'));
 check(1, '.ff-orb visible', await vis(page, '.ff-orb'));
-check(1, '.mode-toggle-pill visible', await vis(page, '.mode-toggle-pill'));
+check(1, '.mode-toggle-toolbar visible', await vis(page, '.mode-toggle-toolbar'));
 
 const toggleLabel = await txt(page, '.mode-toggle-label');
 check(1, 'Toggle label === "Desktop"', toggleLabel === 'Desktop', toggleLabel);
@@ -960,7 +960,7 @@ await navTo(page, 'Chat');
 await page.waitForTimeout(500);
 
 // Toggle pet mode
-await page.locator('.mode-toggle-pill').click();
+await page.locator('.mode-toggle-toolbar .mode-seg-btn').last().click();
 await page.waitForTimeout(2000);
 
 const petOverlay = await vis(page, '.pet-overlay', 5000);

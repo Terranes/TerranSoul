@@ -11,6 +11,21 @@ export const useWindowStore = defineStore('window', () => {
   const monitors = ref<MonitorInfo[]>([]);
   const error = ref<string | null>(null);
   const isLoading = ref(false);
+  /** True when running a dev/debug build (separate MCP port, DEV badge). */
+  const isDevBuild = ref(false);
+
+  /** Query the backend for the build profile (dev vs release). */
+  async function loadDevBuildFlag(): Promise<boolean> {
+    try {
+      const dev = await invoke<boolean>('is_dev_build');
+      isDevBuild.value = dev;
+      return dev;
+    } catch {
+      // Tauri unavailable (browser/test) — not a Tauri dev build
+      isDevBuild.value = false;
+      return false;
+    }
+  }
 
   async function loadMode(): Promise<WindowMode> {
     error.value = null;
@@ -155,12 +170,36 @@ export const useWindowStore = defineStore('window', () => {
     }
   }
 
+  /** Open a panel as a separate floating window (pet mode). */
+  async function openPanelWindow(panel: string): Promise<boolean> {
+    try {
+      await invoke('open_panel_window', { panel });
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
+  /** Close a panel window opened via openPanelWindow. */
+  async function closePanelWindow(panel: string): Promise<boolean> {
+    try {
+      await invoke('close_panel_window', { panel });
+      return true;
+    } catch (err) {
+      error.value = String(err);
+      return false;
+    }
+  }
+
   return {
     mode,
     monitors,
     error,
     isLoading,
+    isDevBuild,
     loadMode,
+    loadDevBuildFlag,
     setMode,
     toggleMode,
     setCursorPassthrough,
@@ -170,6 +209,8 @@ export const useWindowStore = defineStore('window', () => {
     setPetWindowSize,
     startPetCursorPoll,
     stopPetCursorPoll,
+    openPanelWindow,
+    closePanelWindow,
     clearError,
   };
 });

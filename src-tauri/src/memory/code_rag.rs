@@ -195,6 +195,7 @@ fn build_entry(snippet: Snippet, id: i64, now_ms: i64) -> MemoryEntry {
         source_url: snippet.path.clone(),
         source_hash: None,
         expires_at: None,
+        valid_to: None,
     }
 }
 
@@ -398,6 +399,7 @@ mod tests {
             source_url: None,
             source_hash: None,
             expires_at: None,
+            valid_to: None,
         };
         assert!(!is_code_rag_entry(&real));
 

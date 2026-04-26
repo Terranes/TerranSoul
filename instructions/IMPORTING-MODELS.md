@@ -22,8 +22,8 @@ TerranSoul ships with two bundled VRM models that are available out of the box:
 
 | Model | File | Description |
 |-------|------|-------------|
-| Annabelle the Sorcerer | `public/models/default/Annabelle the Sorcerer.vrm` | Default character (loaded on startup) |
-| M58 | `public/models/default/M58.vrm` | Additional bundled character |
+| Shinra | `public/models/default/Shinra.vrm` | Default character (loaded on startup) |
+| Komori | `public/models/default/Komori.vrm` | Additional bundled character |
 
 You can switch between default models using the **dropdown** in the Model Panel, or by clicking the corresponding model card.
 

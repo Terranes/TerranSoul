@@ -50,7 +50,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let cfg = VoiceConfig {
             asr_provider: Some("whisper-api".into()),
-            tts_provider: Some("edge-tts".into()),
+            tts_provider: Some("web-speech".into()),
             tts_voice: None,
             tts_pitch: 0,
             tts_rate: 0,

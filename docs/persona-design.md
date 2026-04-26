@@ -251,6 +251,21 @@ Three properties make this a **self-learning** loop and not just mocap:
    choice as the brain's SQLite-as-debug-store (see §14 of the brain doc,
    "Why SQLite?").
 
+There is a third, **camera-free** loop layered on top of the same data
+plane: the **Master-Echo brain-extraction loop** (Chunk 14.2, shipped
+2026-04-24). When a brain is configured the user can press
+**"✨ Suggest a persona from my chats"** in the Persona panel; the
+backend pulls the recent conversation history + every long-tier
+`personal:*` memory, asks the active brain to propose a `PersonaTraits`
+JSON, and surfaces the candidate in a review-before-apply card. Apply
+overwrites the persona via the existing save path; "Load into editor"
+seeds the draft so the user can fine-tune; Discard is a no-op. Nothing
+is auto-saved, mirroring the human-in-the-loop shape of the brain's
+`extract_memories_from_session` path
+(`brain-advanced-design.md` §11). Implementation: `src-tauri/src/persona/extract.rs`
+(pure prompt + parser) + `OllamaAgent::propose_persona` + the
+`extract_persona_from_brain` Tauri command. See § 9.3 + § 12.
+
 ---
 
 ## 4. Camera Pipeline — From Webcam to VRM Bones
@@ -675,7 +690,7 @@ sprinkles "indeed" occasionally. Avoid: medical / legal / financial advice.
 When you want to act out an emotion or motion, emit
 <anim>{"emotion":"happy","motion":"shrug"}</anim>. The available motion
 keys are: idle, walk, greeting, peace, spin, pose, squat, angry, sad,
-thinking, surprised, relax, sleepy, clapping, jump, shrug, headtilt.
+thinking, surprised, relax, sleepy, clapping, jump, waiting, appearing, liked, shrug, headtilt.
 (The last two are learned from the master and play their recorded gesture.)
 [/PERSONA]
 
@@ -699,21 +714,87 @@ unchanged. Net effect: the master's learned `shrug` shadows the bundled
 This is the same precedence shape as the brain's "user preference shadows
 default" pattern (memory: brain-selection snapshot).
 
-### 9.3 LLM-assisted persona authoring (optional)
+### 9.3 LLM-assisted persona authoring (✅ shipped 2026-04-24)
 
-When a brain is configured, the user can press **"Suggest a persona from
-my chats"** in the Persona panel. This calls `brain::extract_persona`
-(new Tauri command added to `commands/persona.rs`) which runs a one-shot
-prompt over the last N chat turns plus any `tier=long` memories tagged
-`personal:*` and proposes a `PersonaTraits` JSON. The user reviews and
-approves before it overwrites `persona.json` — same human-in-the-loop
-shape as the brain's `extract_memories_from_session` path
-(`brain-advanced-design.md` §11).
+When a brain is configured, the user can press **"✨ Suggest a persona
+from my chats"** in the Persona panel. This calls
+`extract_persona_from_brain` (Tauri command in `commands/persona.rs`)
+which snapshots the last 30 chat turns + up to 20 long-tier memories
+(preferring rows tagged `personal:*` and falling back to plain
+long-tier memories when none are tagged), folds them into a focused
+prompt via `crate::persona::extract::build_persona_prompt`, asks the
+active brain through `OllamaAgent::propose_persona`, and parses the
+reply through `crate::persona::extract::parse_persona_reply` (tolerant
+of markdown fences, leading prose, and non-string list entries). The
+resulting candidate is returned to the frontend as a JSON string for
+the user to **review** in a card with three explicit actions: **Apply**
+(routes through the existing `saveTraits` flow, same as a manual edit),
+**Load into editor** (seeds the draft so the user can fine-tune before
+saving), and **Discard**. Nothing is ever auto-saved — same
+human-in-the-loop shape as the brain's `extract_memories_from_session`
+path (`brain-advanced-design.md` §11).
 
 This makes persona discovery itself a brain-powered feature, closing the
 loop: the brain learns who the user is from chat (memory: auto-learn
 cadence), and proposes a persona that the avatar then *embodies* via the
 camera-learned expression library.
+
+### 9.4 Audio-prosody persona hints (✅ shipped 2026-04-24, Chunk 14.6)
+
+When the user has an ASR provider configured (Web Speech / Whisper /
+Groq), every text user-turn that reached the chat originally came
+through speech (or could have). Chunk 14.6 derives **camera-free**
+prosody-style hints from that text corpus and folds them into the same
+persona-extraction prompt as 9.3.
+
+The analyzer lives in `src-tauri/src/persona/prosody.rs` and is
+deliberately **pure** — no I/O, no time, no PRNG, no network, no audio
+access — so every signal is exhaustively unit-testable. The thin
+wiring in `commands/persona::extract_persona_from_brain` only invokes
+it when `voice_config.asr_provider.is_some()`.
+
+**Signals derived (per `analyze_user_utterances`):**
+
+| Signal                       | Source                                                         | Output tag    |
+|------------------------------|----------------------------------------------------------------|---------------|
+| Avg words / utterance ≤ 6    | concise speakers tend toward short utterances                  | `concise`     |
+| Avg words / utterance ≥ 25   | elaborate speakers favour long sentences                       | `elaborate`   |
+| Exclamation density ≥ 0.4    | energetic / enthusiastic delivery                              | `energetic`   |
+| Question density ≥ 0.3       | inquisitive conversational style                               | `inquisitive` |
+| ALLCAPS letter ratio ≥ 20 %  | emphatic delivery (gated to ≥50 alpha letters to avoid noise)  | `emphatic`    |
+| Emoji density ≥ 0.5 / utter. | playful tone                                                   | `playful`     |
+| Avg words ≤ 6                | pacing                                                         | `fast`        |
+| Avg words 7–18               | pacing                                                         | `measured`    |
+| Avg words ≥ 19               | pacing                                                         | `slow`        |
+| Filler ≥ 1/3 of utterances   | quirk (`um`, `uh`, `like`, `literally`, `you know`, …)         | quirk string  |
+| Emoji ≥ 1 per utterance      | quirk                                                          | `frequent emoji use` |
+
+Tone is hard-capped at 4 entries, quirks at 3, matching the persona
+schema's existing budget. The renderer (`render_prosody_block`) emits a
+single line shaped as:
+
+> `Voice-derived hints (the user has ASR configured, so their typed turns reflect spoken patterns): tone: <list> · pacing: <label> · quirks: <list>.`
+
+This block is inserted **between** the transcript and the OUTPUT FORMAT
+instructions inside the user message via
+`build_persona_prompt_with_hints`, so a model that respects positional
+cues treats the hints as supporting context rather than content to echo.
+`OllamaAgent::propose_persona_with_hints` is the matching agent surface;
+the legacy `propose_persona` delegates with `hints = None` so existing
+tests stay byte-identical.
+
+**Privacy contract:**
+
+- The analyzer never reads raw audio — by the time a turn reaches the
+  message log, the audio is already gone.
+- Hints are computed on demand at suggestion time and discarded once the
+  LLM reply is parsed; no on-disk artefact is ever produced.
+- Hints only fire when `MIN_UTTERANCES = 3` is reached, and an input
+  hard-cap of `MAX_INPUT_BYTES = 1 MiB` short-circuits pathological
+  payloads.
+- The hints read as friendly tone guidance (single-word adjectives + at
+  most three quirk strings); they are deliberately coarse, not a
+  forensic profile.
 
 ---
 
@@ -858,6 +939,32 @@ current schema, mirroring `skill-tree.ts::migrateTracker`. We do not yet
 have a V2 schema; this is forward-compatibility scaffolding identical to
 how `QuestTrackerData` is handled today.
 
+### 11.3 Persona pack envelope (✅ shipped 2026-04-24, Chunk 14.7)
+
+The export / import flow ships entire persona setups as a single
+self-describing JSON document, the **persona pack**:
+
+```jsonc
+{
+  "packVersion": 1,           // pack-format version (NOT the traits version)
+  "exportedAt": 1714000000000,
+  "note": "My library setup", // optional, free-form, shown on import
+  "traits":      { … },        // opaque persona traits object
+  "expressions": [ { … } ],    // opaque learned-expression artifacts
+  "motions":     [ { … } ]     // opaque learned-motion artifacts
+}
+```
+
+The codec lives in `src-tauri/src/persona/pack.rs` — pure, I/O-free,
+exhaustively unit-tested (18 tests). Hard cap **1 MiB** on input to
+block hostile clipboard payloads. Higher `packVersion` than the binary
+supports → `Err` (so the user knows to upgrade rather than silently
+losing fields). On import the **traits replace**, and the asset
+libraries **merge** (matching ids overwrite; pre-existing artifacts not
+in the pack are kept). A per-entry `ImportReport` is returned so the UI
+can surface "imported 3 expressions, skipped 1 (wrong kind)" in a
+single round-trip.
+
 ---
 
 ## 12. Tauri Command Surface
@@ -875,7 +982,10 @@ commands.** This is by design (§5).
 | `list_learned_motions` | FE → BE | — | Returns array of motion JSON objects, newest first. Frame arrays included (a motion clip is rarely >100 KB). |
 | `save_learned_motion` | FE → BE | `{ json: string }` | As above for motions. |
 | `delete_learned_motion` | FE → BE | `{ id: string }` | As above. |
-| `extract_persona_from_brain` | FE → BE | `{ chat_history: ChatTurn[] }` | Optional, brain-aware. Routes through the existing `BrainService` and returns a proposed `PersonaTraits` for the user to review. Only callable when a brain is configured. |
+| `extract_persona_from_brain` | FE → BE | — | ✅ Shipped 2026-04-24. Snapshots conversation history + long-tier `personal:*` memories, calls `OllamaAgent::propose_persona`, returns the parsed `PersonaCandidate` as a JSON string (or `""` when the brain reply could not be parsed; or an error string when no brain is configured). **Never** auto-saves — caller routes through `save_persona` after the user clicks Apply. Pure prompt construction + parsing live in `src-tauri/src/persona/extract.rs` for unit-testability. |
+| `export_persona_pack` | FE → BE | `{ note?: string }` | ✅ Shipped 2026-04-24. Reads `persona.json` + every `expressions/*.json` + `motions/*.json`, builds a `PersonaPack`, returns the pretty-printed JSON. Corrupt asset files are skipped silently per §13. |
+| `preview_persona_pack` | FE → BE | `{ json: string }` | ✅ Shipped 2026-04-24. Dry-run validator: parses the pack, validates every asset, returns the per-entry `ImportReport` **without writing anything**. Used by the "🔍 Preview" button. |
+| `import_persona_pack` | FE → BE | `{ json: string }` | ✅ Shipped 2026-04-24. Replaces traits (atomic write); merges asset libraries (matching ids overwrite, others kept). Returns the same `ImportReport` shape. Per-entry failures (wrong `kind`, illegal id, write failure) are recorded as skips so the rest of the pack still applies. |
 
 All commands return `Result<T, String>` per the codebase convention
 (memory: testing/coding standards). All file writes use atomic rename.
@@ -1003,7 +1113,7 @@ ships last per the user's explicit ordering). The split mirrors §10.
 | **140** | Persona MVP — `PersonaTraits` store + `persona-prompt.ts` injection + Persona panel + Soul Mirror quest activation | 13 | none |
 | **141** | My Persona quest — full editable traits UI + brain-aware combo | 13 | 140, brain configured |
 | **142** | Master's Echo (main-chain version) — `extract_persona_from_brain` LLM-assisted authoring from chat history + `personal:*` long-term memories | 13 | 141 + memory tier |
-| **143** | Persona drift detection (auto-correction prompt fired by `auto_learn`) | 14 | 142 |
+| **143** | Persona drift detection (auto-correction prompt fired by `auto_learn`) ✅ shipped 2026-04-26 | 14 | 142 |
 | **144** | Persona export / import as a `.terransoul-persona` JSON bundle (no camera assets in the main-chain bundle) | 15 | 140 |
 
 These five chunks deliver everything the user asked for in the main-chain

@@ -1,0 +1,320 @@
+//! Integration tests for the MCP server.
+//!
+//! These tests start a real HTTP server on an ephemeral port, make
+//! JSON-RPC requests via reqwest, and validate the MCP protocol flow.
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+
+    use crate::ai_integrations::mcp;
+    use crate::AppState;
+
+    /// Helper: start the MCP server on port 0 (OS-assigned) and return
+    /// (handle, base_url, token).
+    async fn start_test_server() -> (mcp::McpServerHandle, String, String) {
+        let state = AppState::for_test();
+        let token = "test-token-abc123".to_string();
+
+        // Use port 0 to let the OS pick an available port.
+        // Our start_server binds to a specific port, so use a high
+        // ephemeral port that's unlikely to conflict.
+        let port = portpicker();
+        let handle = mcp::start_server(state, port, token.clone())
+            .await
+            .expect("MCP server should start");
+
+        // Give the server a tick to start accepting connections.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let url = format!("http://127.0.0.1:{port}/mcp");
+        (handle, url, token)
+    }
+
+    /// Pick a random high port that's likely free.
+    fn portpicker() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
+    /// Send a JSON-RPC request to the MCP server.
+    async fn rpc(url: &str, token: &str, body: Value) -> (u16, Value) {
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .expect("request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn initialize_returns_server_info() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["jsonrpc"], "2.0");
+        assert_eq!(body["id"], 1);
+        // In debug/test builds the name is "terransoul-brain-dev",
+        // in release builds it's "terransoul-brain".
+        let name = body["result"]["serverInfo"]["name"].as_str().unwrap();
+        assert!(
+            name == "terransoul-brain" || name == "terransoul-brain-dev",
+            "unexpected server name: {name}"
+        );
+        assert!(body["result"]["capabilities"]["tools"].is_object());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn tools_list_returns_8_tools() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let tools = body["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 8);
+
+        // Verify the first tool has the expected structure.
+        assert_eq!(tools[0]["name"], "brain_search");
+        assert!(tools[0]["inputSchema"].is_object());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn tools_call_brain_health() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "brain_health",
+                    "arguments": {}
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let content = &body["result"]["content"][0];
+        assert_eq!(content["type"], "text");
+        // Parse the text as JSON and check health fields.
+        let health: Value =
+            serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
+        assert!(health["version"].is_string());
+        assert!(health["brain_provider"].is_string());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn tools_call_brain_search_empty_brain() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "brain_search",
+                    "arguments": { "query": "test" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let content = &body["result"]["content"][0];
+        assert_eq!(content["type"], "text");
+        // Empty brain returns empty array.
+        let results: Vec<Value> =
+            serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
+        assert!(results.is_empty());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn ping_returns_empty_result() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "ping"
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"], json!({}));
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn unauthorized_without_token() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            "wrong-token",
+            json!({
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "ping"
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 401);
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unauthorized"));
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn notification_returns_202() {
+        let (handle, url, token) = start_test_server().await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status().as_u16(), 202);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn unknown_method_returns_error() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "nonexistent/method"
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["error"]["code"], -32601);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn tools_call_unknown_tool() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {
+                    "name": "nonexistent_tool",
+                    "arguments": {}
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        // Unknown tool returns isError: true in tool result.
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn server_stop_is_graceful() {
+        let (handle, url, token) = start_test_server().await;
+
+        // Verify server is responding.
+        let (status, _) = rpc(
+            &url,
+            &token,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+        )
+        .await;
+        assert_eq!(status, 200);
+
+        // Stop the server.
+        handle.stop();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            handle.task,
+        )
+        .await;
+
+        // Server should no longer accept connections.
+        let client = reqwest::Client::new();
+        let result = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {token}"))
+            .json(&json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}))
+            .send()
+            .await;
+        assert!(result.is_err(), "server should be stopped");
+    }
+}

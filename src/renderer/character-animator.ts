@@ -296,7 +296,7 @@ const BONE_LAMBDA = 6;
 const BONE_STRIDE = 3;
 
 // ── Dress-aware arm clamp boundaries ──────────────────────────────────
-// For characters wearing flared dresses (e.g. Annabelle), the arms must
+// For characters wearing flared dresses, the arms must
 // not rotate too tightly against the body or the hands/forearms clip
 // through the dress volume.
 //
@@ -383,7 +383,7 @@ export class CharacterAnimator {
   // Mouth animation elapsed for talking state
   private mouthElapsed = 0;
 
-  // External lip-sync values (from LipSync class or Open-LLM-VTuber volumes)
+  // External lip-sync values (from LipSync class)
   private externalMouthAa = 0;
   private externalMouthOh = 0;
   private useExternalLipSync = false;

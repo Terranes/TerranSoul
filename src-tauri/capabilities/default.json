@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capability set for the main window",
-  "windows": ["main"],
+  "windows": ["main", "panel-*"],
   "permissions": [
     "core:default",
     "core:event:default",

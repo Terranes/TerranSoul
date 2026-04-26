@@ -17,10 +17,10 @@ const FALLBACK_ASR_PROVIDERS: VoiceProviderInfo[] = [
 
 const FALLBACK_TTS_PROVIDERS: VoiceProviderInfo[] = [
   {
-    id: 'edge-tts',
-    display_name: 'Edge TTS (free)',
-    description: 'Microsoft Edge neural voices. Free, high quality, many languages.',
-    kind: 'cloud',
+    id: 'web-speech',
+    display_name: 'Web Speech (browser, free)',
+    description: 'Browser-native SpeechSynthesis. Free, offline-capable, no telemetry.',
+    kind: 'local',
     requires_api_key: false,
   },
 ];
@@ -145,13 +145,14 @@ export const useVoiceStore = defineStore('voice', () => {
   }
 
   /**
-   * Auto-configure voice with free defaults (Web Speech API + Edge TTS).
+   * Auto-configure voice with free defaults (Web Speech API for both
+   * ASR and TTS — browser-native, no third-party endpoints, commercial-OK).
    * Called when the user hasn't explicitly configured voice yet so that
    * voice is enabled out of the box.
    */
   async function autoConfigureVoice(): Promise<void> {
     await setAsrProvider('web-speech');
-    await setTtsProvider('edge-tts');
+    await setTtsProvider('web-speech');
   }
 
   return {

@@ -285,6 +285,354 @@ pub async fn delete_learned_motion(
     delete_asset(&dir, &id)
 }
 
+// ── brain-extracted persona suggestion (Chunk 14.2 — Master-Echo loop) ──────
+
+/// Ask the active brain to propose a [`PersonaCandidate`] from the
+/// user's recent conversation history + their long-term `personal:*`
+/// memories. Returns the candidate as a JSON string the frontend
+/// presents in the review-before-apply card; **nothing is written to
+/// disk** in this command — application happens via the existing
+/// `save_persona` command after the user clicks Apply.
+///
+/// Returns an error string when no brain is configured (so the UI can
+/// disable the button + show a tooltip per `docs/persona-design.md`
+/// § 13). Returns `Ok("")` when a brain is configured but the reply
+/// could not be parsed — caller treats empty as "couldn't suggest right
+/// now, try again". Never auto-saves.
+#[tauri::command]
+pub async fn extract_persona_from_brain(state: State<'_, AppState>) -> Result<String, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    // Snapshot the conversation history without holding the lock across
+    // the await point.
+    let history: Vec<(String, String)> = {
+        let conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.iter()
+            .map(|m| (m.role.clone(), m.content.clone()))
+            .collect()
+    };
+
+    // Snapshot long-tier memories (the canonical "personal-tier" — see
+    // `docs/persona-design.md` § 9.3) likewise without holding the lock.
+    let memories: Vec<(String, String)> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_by_tier(&crate::memory::MemoryTier::Long)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| (m.content, m.tags))
+            .collect()
+    };
+
+    let snippets = crate::persona::extract::assemble_snippets(&history, &memories);
+
+    // Audio-prosody hints (Chunk 14.6) — only computed when the user has
+    // ASR configured, so their typed turns reflect spoken patterns. The
+    // analyzer is pure and I/O-free; we never read raw audio (it's gone
+    // by the time text reaches the message log) and we never persist
+    // the hints — they live only for the duration of this prompt.
+    let asr_configured = state
+        .voice_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .asr_provider
+        .is_some();
+    let prosody_block: Option<String> = if asr_configured {
+        let user_utterances: Vec<&str> = history
+            .iter()
+            .filter(|(role, _)| role.eq_ignore_ascii_case("user"))
+            .map(|(_, content)| content.as_str())
+            .collect();
+        let hints = crate::persona::prosody::analyze_user_utterances(&user_utterances);
+        crate::persona::prosody::render_prosody_block(&hints)
+    } else {
+        None
+    };
+
+    let agent = crate::brain::OllamaAgent::new(&model);
+    match agent
+        .propose_persona_with_hints(&snippets, prosody_block.as_deref())
+        .await
+    {
+        Some(candidate) => serde_json::to_string(&candidate)
+            .map_err(|e| format!("Failed to serialise persona candidate: {e}")),
+        // Empty string = "brain replied but couldn't be parsed". UI
+        // surfaces a soft "try again" message rather than a hard error.
+        None => Ok(String::new()),
+    }
+}
+
+// ── persona drift detection (Chunk 14.8) ────────────────────────────────────
+
+/// Compare the active persona traits against the user's `personal:*`
+/// memories and return a [`crate::persona::drift::DriftReport`] indicating
+/// whether the persona has drifted from the user's evolving interests.
+///
+/// This command is called by the frontend's auto-learn loop after a
+/// configurable number of facts have been accumulated (default 25).
+/// It is deliberately **not** a background loop — it piggybacks on the
+/// existing auto-learn cadence so the brain is only bothered when the
+/// user is actively chatting.
+///
+/// Returns an error string when no brain is configured. Returns a
+/// "no drift" report when the brain replies but can't be parsed.
+#[tauri::command]
+pub async fn check_persona_drift(
+    state: State<'_, AppState>,
+) -> Result<crate::persona::drift::DriftReport, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    // Read the active persona traits from disk.
+    let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
+    let persona_json = if traits_path.exists() {
+        std::fs::read_to_string(&traits_path)
+            .map_err(|e| format!("Failed to read persona: {e}"))?
+    } else {
+        default_persona_json().to_string()
+    };
+
+    // Snapshot `personal:*` long-tier memories without holding the lock
+    // across the await point.
+    let personal_memories: Vec<(String, String)> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_by_tier(&crate::memory::MemoryTier::Long)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| m.tags.to_lowercase().contains("personal:"))
+            .map(|m| (m.content, m.tags))
+            .collect()
+    };
+
+    // Short-circuit: no personal memories → nothing to drift against.
+    if personal_memories.is_empty() {
+        return Ok(crate::persona::drift::DriftReport {
+            drift_detected: false,
+            summary: String::new(),
+            suggested_changes: Vec::new(),
+        });
+    }
+
+    let agent = crate::brain::OllamaAgent::new(&model);
+    match agent
+        .check_persona_drift(&persona_json, &personal_memories)
+        .await
+    {
+        Some(report) => Ok(report),
+        // Brain replied but response couldn't be parsed → treat as no drift.
+        None => Ok(crate::persona::drift::DriftReport {
+            drift_detected: false,
+            summary: String::new(),
+            suggested_changes: Vec::new(),
+        }),
+    }
+}
+
+// ── persona pack export / import (Chunk 14.7) ───────────────────────────────
+
+/// Build a [`crate::persona::pack::PersonaPack`] from the on-disk
+/// persona artifacts and return it as a pretty-printed JSON string the
+/// frontend can copy to clipboard / save as a file / drop into Soul
+/// Link sync. `note` is an optional free-form one-liner shown in the
+/// import preview on the receiving side.
+///
+/// Reads through the same paths as `get_persona` / `list_learned_*`
+/// so the pack is always a faithful snapshot of what the avatar would
+/// load on next start. Corrupt asset files are silently skipped (same
+/// "non-blocking" contract documented in `docs/persona-design.md`
+/// § 13).
+#[tauri::command]
+pub async fn export_persona_pack(
+    note: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    use crate::persona::pack::{build_pack, pack_to_string};
+
+    // Traits → JSON value (preserves unknown fields for forward-compat).
+    let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
+    let traits_raw = if traits_path.exists() {
+        std::fs::read_to_string(&traits_path)
+            .map_err(|e| format!("Failed to read persona: {e}"))?
+    } else {
+        default_persona_json().to_string()
+    };
+    let traits: serde_json::Value = serde_json::from_str(&traits_raw)
+        .map_err(|e| format!("Persona file is not valid JSON: {e}"))?;
+
+    // Assets → opaque JSON values (per-entry shape may evolve).
+    let exp_dir = persona_subdir(&state.data_dir, EXPRESSIONS_DIR)?;
+    let mot_dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
+    let expressions = list_assets_as_values(&exp_dir);
+    let motions = list_assets_as_values(&mot_dir);
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let pack = build_pack(traits, expressions, motions, note, now_ms);
+    pack_to_string(&pack)
+}
+
+/// Like [`list_assets`] but returns each file as a raw JSON `Value` so
+/// the export pack preserves any extra fields the per-entry struct
+/// would otherwise drop. Corrupt files are skipped silently per the
+/// design doc § 13 contract.
+fn list_assets_as_values(dir: &Path) -> Vec<serde_json::Value> {
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return out,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(v) if v.is_object() => out.push(v),
+            _ => continue,
+        }
+    }
+    // Stable ordering for deterministic round-trips: by `learnedAt`
+    // ascending, which matches the on-disk creation order.
+    out.sort_by_key(|v| {
+        v.get("learnedAt")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0)
+    });
+    out
+}
+
+/// Apply a user-supplied [`crate::persona::pack::PersonaPack`] JSON
+/// string. **Replaces** the persona traits, **merges** the learned
+/// asset libraries (existing files with matching ids are overwritten;
+/// missing ones are added; pre-existing artifacts not in the pack are
+/// left untouched).
+///
+/// Returns an [`crate::persona::pack::ImportReport`] so the UI can
+/// surface "imported 3 expressions, 2 motions, skipped 1 (wrong
+/// kind)" in a single round-trip.
+#[tauri::command]
+pub async fn import_persona_pack(
+    json: String,
+    state: State<'_, AppState>,
+) -> Result<crate::persona::pack::ImportReport, String> {
+    use crate::persona::pack::{note_skip, parse_pack, validate_asset, ImportReport};
+
+    let pack = parse_pack(&json)?;
+    let mut report = ImportReport::default();
+
+    // ── Traits ──────────────────────────────────────────────────────────
+    // Re-serialise the traits value so we write a normalised document
+    // (object keys in deterministic-ish order, no leading whitespace
+    // / BOM). atomic_write guarantees no half-written state if rename
+    // fails — the previous persona.json stays intact.
+    let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
+    let traits_str = serde_json::to_string_pretty(&pack.traits)
+        .map_err(|e| format!("Failed to serialise traits: {e}"))?;
+    atomic_write(&traits_path, &traits_str)?;
+    report.traits_applied = true;
+
+    // ── Expressions ─────────────────────────────────────────────────────
+    let exp_dir = persona_subdir(&state.data_dir, EXPRESSIONS_DIR)?;
+    for (idx, asset) in pack.expressions.iter().enumerate() {
+        let id = match validate_asset(asset, "expression") {
+            Ok(id) => id,
+            Err(e) => {
+                note_skip(&mut report, format!("expression #{idx}: {e}"));
+                continue;
+            }
+        };
+        let path = exp_dir.join(format!("{id}.json"));
+        let body = match serde_json::to_string_pretty(asset) {
+            Ok(s) => s,
+            Err(e) => {
+                note_skip(&mut report, format!("expression {id}: serialise failed: {e}"));
+                continue;
+            }
+        };
+        if let Err(e) = atomic_write(&path, &body) {
+            note_skip(&mut report, format!("expression {id}: write failed: {e}"));
+            continue;
+        }
+        report.expressions_accepted += 1;
+    }
+
+    // ── Motions ─────────────────────────────────────────────────────────
+    let mot_dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
+    for (idx, asset) in pack.motions.iter().enumerate() {
+        let id = match validate_asset(asset, "motion") {
+            Ok(id) => id,
+            Err(e) => {
+                note_skip(&mut report, format!("motion #{idx}: {e}"));
+                continue;
+            }
+        };
+        let path = mot_dir.join(format!("{id}.json"));
+        let body = match serde_json::to_string_pretty(asset) {
+            Ok(s) => s,
+            Err(e) => {
+                note_skip(&mut report, format!("motion {id}: serialise failed: {e}"));
+                continue;
+            }
+        };
+        if let Err(e) = atomic_write(&path, &body) {
+            note_skip(&mut report, format!("motion {id}: write failed: {e}"));
+            continue;
+        }
+        report.motions_accepted += 1;
+    }
+
+    Ok(report)
+}
+
+/// Dry-run: parse the pack and return the per-asset acceptance report
+/// without writing anything. Used by the UI's "Preview" button so the
+/// user can see "this pack would import 3 expressions and skip 1"
+/// before committing.
+#[tauri::command]
+pub async fn preview_persona_pack(
+    json: String,
+) -> Result<crate::persona::pack::ImportReport, String> {
+    use crate::persona::pack::{note_skip, parse_pack, validate_asset, ImportReport};
+
+    let pack = parse_pack(&json)?;
+    let mut report = ImportReport {
+        traits_applied: pack.traits.is_object(),
+        ..Default::default()
+    };
+    for (idx, asset) in pack.expressions.iter().enumerate() {
+        match validate_asset(asset, "expression") {
+            Ok(_) => report.expressions_accepted += 1,
+            Err(e) => note_skip(&mut report, format!("expression #{idx}: {e}")),
+        }
+    }
+    for (idx, asset) in pack.motions.iter().enumerate() {
+        match validate_asset(asset, "motion") {
+            Ok(_) => report.motions_accepted += 1,
+            Err(e) => note_skip(&mut report, format!("motion #{idx}: {e}")),
+        }
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

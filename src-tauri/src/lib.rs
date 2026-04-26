@@ -10,6 +10,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
 pub mod agents;
+pub mod ai_integrations;
 pub mod brain;
 pub mod commands;
 pub mod container;
@@ -19,6 +20,8 @@ pub mod memory;
 pub mod messaging;
 pub mod orchestrator;
 pub mod package_manager;
+pub mod persona;
+pub mod plugins;
 pub mod registry_server;
 pub mod routing;
 pub mod sandbox;
@@ -52,7 +55,8 @@ use commands::{
     },
     gitnexus::{
         configure_gitnexus_sidecar, get_gitnexus_sidecar_config, gitnexus_context,
-        gitnexus_detect_changes, gitnexus_impact, gitnexus_query, gitnexus_sidecar_status,
+        gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
+        gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -61,15 +65,20 @@ use commands::{
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
     ingest::{ingest_document, cancel_ingest_task, resume_ingest_task, get_all_tasks},
     memory::{
-        add_memory, add_memory_edge, apply_memory_decay, backfill_embeddings, close_memory_edge,
-        delete_memory, delete_memory_edge, evaluate_auto_learn, extract_edges_via_brain,
-        extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
-        get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_stats,
-        get_relevant_memories, get_schema_info, get_short_term_memory, hybrid_search_memories,
-        hybrid_search_memories_rrf, hyde_search_memories, list_memory_edges, list_relation_types,
+        add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
+        audit_memory_tags, auto_promote_memories, backfill_embeddings, close_memory_edge,
+        count_memory_conflicts, delete_memory, delete_memory_edge, dismiss_memory_conflict,
+        evaluate_auto_learn, export_to_obsidian,
+        extract_edges_via_brain, extract_memories_from_session, gc_memories,
+        get_auto_learn_policy, get_edge_stats, get_edges_for_memory, get_memories,
+        get_memories_by_tier, get_memory_history, get_memory_stats, get_relevant_memories,
+        get_schema_info, get_short_term_memory, hybrid_search_memories,
+        hybrid_search_memories_rrf, hyde_search_memories,
+        list_memory_conflicts, list_memory_edges, list_relation_types,
         multi_hop_search_memories, promote_memory, rerank_search_memories,
-        search_memories, semantic_search_memories, set_auto_learn_policy, summarize_session,
-        update_memory,
+        resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
+        set_auto_learn_policy, summarize_session,
+        temporal_query, update_memory,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message,
@@ -80,9 +89,11 @@ use commands::{
         remove_agent, update_agent, validate_agent_manifest,
     },
     persona::{
-        delete_learned_expression, delete_learned_motion, get_persona, get_persona_block,
-        list_learned_expressions, list_learned_motions, save_learned_expression,
-        save_learned_motion, save_persona, set_persona_block,
+        check_persona_drift, delete_learned_expression, delete_learned_motion,
+        export_persona_pack, extract_persona_from_brain, get_persona, get_persona_block,
+        import_persona_pack, list_learned_expressions, list_learned_motions,
+        preview_persona_pack, save_learned_expression, save_learned_motion, save_persona,
+        set_persona_block,
     },
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
@@ -98,7 +109,8 @@ use commands::{
     window::{
         get_all_monitors, get_window_mode, set_cursor_passthrough, set_pet_mode_bounds,
         set_window_mode, start_window_drag, set_pet_window_size, toggle_window_mode,
-        start_pet_cursor_poll, stop_pet_cursor_poll, exit_app,
+        start_pet_cursor_poll, stop_pet_cursor_poll, exit_app, is_dev_build,
+        open_panel_window, close_panel_window,
     },
     streaming::send_message_stream,
     translation::{list_languages, translate_text, detect_language},
@@ -117,10 +129,30 @@ use commands::{
     quest::{
         get_quest_tracker, save_quest_tracker,
     },
+    mcp::{
+        mcp_server_start, mcp_server_stop, mcp_server_status, mcp_regenerate_token,
+    },
+    auto_setup::{
+        setup_vscode_mcp, setup_claude_mcp, setup_codex_mcp,
+        remove_vscode_mcp, remove_claude_mcp, remove_codex_mcp,
+        list_mcp_clients,
+    },
+    consolidation::{
+        run_sleep_consolidation, touch_activity, get_idle_status,
+    },
+    plugins::{
+        plugin_install, plugin_activate, plugin_deactivate, plugin_uninstall,
+        plugin_list, plugin_get, plugin_list_commands, plugin_list_slash_commands,
+        plugin_list_themes, plugin_get_setting, plugin_set_setting,
+        plugin_host_status, plugin_parse_manifest,
+    },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
 
-pub struct AppState {
+/// Inner application state. All fields are public so Tauri commands can
+/// access them through [`AppState`]'s `Deref` impl — no existing code
+/// needs to change.
+pub struct AppStateInner {
     pub conversation: Mutex<Vec<commands::chat::Message>>,
     pub vrm_path: Mutex<Option<String>>,
     pub device_identity: Mutex<Option<identity::DeviceIdentity>>,
@@ -179,6 +211,27 @@ pub struct AppState {
     /// spawns the child process and caches the bridge here; subsequent calls
     /// reuse it. Dropped (and the child reaped) on `configure_gitnexus_sidecar`.
     pub gitnexus_sidecar: TokioMutex<Option<Arc<agent::gitnexus_sidecar::GitNexusSidecar>>>,
+    /// Running MCP server handle (Chunk 15.1). `None` when the server is
+    /// stopped. Start/stop via `mcp_server_start` / `mcp_server_stop`.
+    pub mcp_server: TokioMutex<Option<ai_integrations::mcp::McpServerHandle>>,
+    /// Plugin system host — manages plugin lifecycle, contributions, and activation.
+    pub plugin_host: plugins::PluginHost,
+    /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
+    pub activity_tracker: memory::consolidation::ActivityTracker,
+}
+
+/// Cheaply clonable handle to the shared application state. Wraps
+/// `Arc<AppStateInner>` so background servers (MCP, gRPC) can hold a
+/// reference without lifetime issues. Existing Tauri commands continue
+/// to access fields via auto-`Deref` — no signature changes needed.
+#[derive(Clone)]
+pub struct AppState(Arc<AppStateInner>);
+
+impl std::ops::Deref for AppState {
+    type Target = AppStateInner;
+    fn deref(&self) -> &AppStateInner {
+        &self.0
+    }
 }
 
 impl AppState {
@@ -189,7 +242,7 @@ impl AppState {
     fn new(data_dir: &std::path::Path) -> Self {
         let active_brain = brain::load_brain(data_dir);
         let brain_mode = brain::brain_config::load(data_dir);
-        AppState {
+        Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
             device_identity: Mutex::new(None),
@@ -229,13 +282,16 @@ impl AppState {
             persona_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
-        }
+            mcp_server: TokioMutex::new(None),
+            plugin_host: plugins::PluginHost::new(data_dir),
+            activity_tracker: memory::consolidation::ActivityTracker::new(),
+        }))
     }
 
     /// Convenience constructor for unit tests.
     #[cfg(test)]
     pub fn for_test() -> Self {
-        AppState {
+        Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
             device_identity: Mutex::new(None),
@@ -273,7 +329,10 @@ impl AppState {
             persona_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
-        }
+            mcp_server: TokioMutex::new(None),
+            plugin_host: plugins::PluginHost::in_memory(),
+            activity_tracker: memory::consolidation::ActivityTracker::new(),
+        }))
     }
 }
 
@@ -334,6 +393,14 @@ pub fn run() {
             get_schema_info,
             get_memory_stats,
             apply_memory_decay,
+            auto_promote_memories,
+            adjust_memory_importance,
+            list_memory_conflicts,
+            resolve_memory_conflict,
+            dismiss_memory_conflict,
+            count_memory_conflicts,
+            scan_edge_conflicts,
+            audit_memory_tags,
             gc_memories,
             promote_memory,
             get_memories_by_tier,
@@ -351,6 +418,12 @@ pub fn run() {
             get_auto_learn_policy,
             set_auto_learn_policy,
             evaluate_auto_learn,
+            // Obsidian vault export (Chunk 18.5)
+            export_to_obsidian,
+            // Temporal reasoning queries (Chunk 17.3)
+            temporal_query,
+            // Memory versioning (Chunk 16.12)
+            get_memory_history,
             start_registry_server,
             stop_registry_server,
             get_registry_server_port,
@@ -376,6 +449,9 @@ pub fn run() {
             start_pet_cursor_poll,
             stop_pet_cursor_poll,
             exit_app,
+            is_dev_build,
+            open_panel_window,
+            close_panel_window,
             send_message_stream,
             list_free_providers,
             get_brain_mode,
@@ -431,6 +507,11 @@ pub fn run() {
             list_learned_motions,
             save_learned_motion,
             delete_learned_motion,
+            extract_persona_from_brain,
+            check_persona_drift,
+            export_persona_pack,
+            import_persona_pack,
+            preview_persona_pack,
             capture_screen,
             analyze_screen,
             list_languages,
@@ -465,6 +546,41 @@ pub fn run() {
             gitnexus_context,
             gitnexus_impact,
             gitnexus_detect_changes,
+            // GitNexus KG mirror — Chunk 2.3 (Phase 13 Tier 3)
+            gitnexus_sync,
+            gitnexus_unmirror,
+            gitnexus_list_mirrors,
+            // MCP server — Chunk 15.1 (Phase 15)
+            mcp_server_start,
+            mcp_server_stop,
+            mcp_server_status,
+            mcp_regenerate_token,
+            // Auto-setup writers — Chunk 15.6 (Phase 15)
+            setup_vscode_mcp,
+            setup_claude_mcp,
+            setup_codex_mcp,
+            remove_vscode_mcp,
+            remove_claude_mcp,
+            remove_codex_mcp,
+            list_mcp_clients,
+            // Consolidation (Chunk 16.7)
+            run_sleep_consolidation,
+            touch_activity,
+            get_idle_status,
+            // Plugin system
+            plugin_install,
+            plugin_activate,
+            plugin_deactivate,
+            plugin_uninstall,
+            plugin_list,
+            plugin_get,
+            plugin_list_commands,
+            plugin_list_slash_commands,
+            plugin_list_themes,
+            plugin_get_setting,
+            plugin_set_setting,
+            plugin_host_status,
+            plugin_parse_manifest,
         ])
         .setup(|app| {
             let data_dir = app

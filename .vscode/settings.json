@@ -1,0 +1,131 @@
+{
+  // ─── Copilot Autonomous Mode ───────────────────────────────────────
+  // These settings allow Copilot agent to run long sessions without
+  // stalling on permission prompts. Toggle per-session via the
+  // permissions picker if you want manual approval back.
+
+  // Default permission level: autopilot auto-approves all tool calls
+  // and continues until the task is done.
+  "chat.permissions.default": "autopilot",
+  "chat.autopilot.enabled": true,
+
+  // Agent request budget — raise for long multi-chunk sessions
+  "chat.agent.maxRequests": 100,
+
+  // Auto-summarize conversation history when context window fills up,
+  // enabling long-running sessions that exceed the context limit.
+  "github.copilot.chat.summarizeAgentConversationHistory.enabled": true,
+
+  // Auto-approve terminal commands (safe project commands).
+  // Destructive commands remain blocked by default deny-list.
+  "chat.tools.terminal.enableAutoApprove": true,
+  "chat.tools.terminal.autoApprove": {
+    // Build & test — safe, idempotent
+    "npm run build": true,
+    "npm run test": true,
+    "npm run lint": true,
+    "npx vitest": true,
+    "npx vitest run": true,
+    "npx playwright test": true,
+    "npx vue-tsc": true,
+    "cargo build": true,
+    "cargo test": true,
+    "cargo check": true,
+    "cargo clippy": true,
+    "cargo fmt": true,
+    // Dev server
+    "npm run dev": true,
+    "npm run tauri dev": true,
+    // Git read-only
+    "git status": true,
+    "git log": true,
+    "git diff": true,
+    "git branch": true,
+    // Package management
+    "npm install": true,
+    "npm ci": true,
+    // Project scripts
+    "node scripts/": true,
+    "/^npx\\b/": true,
+    // Deny destructive — keep defaults
+    "rm": false,
+    "rmdir": false,
+    "del": false,
+    "kill": false,
+    "chmod": false,
+    "chown": false,
+    "/^Remove-Item\\b/i": false,
+    "git push": false,
+    "git reset --hard": false,
+    "drop table": false
+  },
+  "chat.tools.terminal.autoReplyToPrompts": true,
+
+  // Auto-approve file edits within the workspace
+  "chat.tools.edits.autoApprove": {
+    "src/**": true,
+    "src-tauri/**": true,
+    "rules/**": true,
+    "docs/**": true,
+    "scripts/**": true,
+    "e2e/**": true,
+    "instructions/**": true,
+    ".github/**": true,
+    ".vscode/**": true,
+    "*.md": true,
+    "*.json": true,
+    "*.toml": true,
+    "*.ts": true,
+    "*.vue": true,
+    "*.rs": true,
+    "*.css": true,
+    "*.html": true
+  },
+
+  // Auto-fix generated code issues
+  "github.copilot.chat.agent.autoFix": true,
+
+  // ─── MCP Integration ──────────────────────────────────────────────
+  // Auto-discover and start MCP servers from mcp.json
+  "chat.mcp.discovery.enabled": true,
+  "chat.mcp.autoStart": "newAndOutdated",
+
+  // ─── Custom Instructions & Memory ─────────────────────────────────
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true,
+  "chat.includeApplyingInstructions": true,
+  "chat.useAgentsMdFile": true,
+  "github.copilot.chat.tools.memory.enabled": true,
+
+  // ─── Session Management ───────────────────────────────────────────
+  // Show session status indicator for tracking long-running tasks
+  "chat.agentsControl.enabled": true,
+  "chat.viewSessions.enabled": true,
+  "chat.checkpoints.enabled": true,
+
+  // Notify when agent needs input (even if window is not focused)
+  "chat.notifyWindowOnConfirmation": "always",
+  "chat.notifyWindowOnResponseReceived": "windowNotFocused",
+
+  // ─── Project-Specific ─────────────────────────────────────────────
+  // Rust
+  "rust-analyzer.cargo.features": "all",
+  "rust-analyzer.check.command": "clippy",
+
+  // TypeScript
+  "typescript.tsdk": "node_modules/typescript/lib",
+
+  // Files
+  "files.exclude": {
+    "src-tauri/target": true,
+    "node_modules": true,
+    "test-results": true
+  },
+
+  // Search
+  "search.exclude": {
+    "src-tauri/target": true,
+    "node_modules": true,
+    "test-results": true,
+    "*.lock": true
+  }
+}

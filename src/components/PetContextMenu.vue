@@ -108,6 +108,42 @@
             <span class="ctx-label">Toggle chat</span>
           </div>
 
+          <!-- Panel windows — each opens as a separate floating window -->
+          <div
+            class="ctx-item"
+            role="menuitem"
+            :aria-expanded="panelsOpen"
+            @click="panelsOpen = !panelsOpen"
+          >
+            <span class="ctx-icon">📋</span>
+            <span class="ctx-label">Panels</span>
+            <span
+              class="ctx-chev"
+              :class="{ 'ctx-chev--open': panelsOpen }"
+            >▸</span>
+          </div>
+
+          <Transition name="ctx-sub-fade">
+            <div
+              v-if="panelsOpen"
+              class="pet-ctx-inline-sub"
+              role="menu"
+            >
+              <div
+                v-for="p in PANEL_ENTRIES"
+                :key="p.id"
+                class="ctx-item ctx-item--sub"
+                role="menuitem"
+                @click="onOpenPanel(p.id)"
+              >
+                <span class="ctx-icon">{{ p.icon }}</span>
+                <span class="ctx-label">{{ p.label }}</span>
+              </div>
+            </div>
+          </Transition>
+
+          <div class="ctx-separator" />
+
           <div
             class="ctx-item"
             role="menuitem"
@@ -176,6 +212,15 @@ const { togglePetChat } = useChatExpansion();
 const menuRef = ref<HTMLElement | null>(null);
 const moodOpen = ref(false);
 const modelOpen = ref(false);
+const panelsOpen = ref(false);
+
+const PANEL_ENTRIES = [
+  { id: 'brain', icon: '🧠', label: 'Brain' },
+  { id: 'memory', icon: '💡', label: 'Memory' },
+  { id: 'skills', icon: '⭐', label: 'Quests' },
+  { id: 'marketplace', icon: '🏪', label: 'Marketplace' },
+  { id: 'voice', icon: '🎙', label: 'Voice' },
+] as const;
 
 // Measured menu dimensions for viewport-clamping.
 const measuredWidth = ref(220);
@@ -263,6 +308,11 @@ function onToggleChat() {
   close();
 }
 
+function onOpenPanel(panel: string) {
+  windowStore.openPanelWindow(panel);
+  close();
+}
+
 async function onToggleMode() {
   close();
   await windowStore.toggleMode();
@@ -291,6 +341,7 @@ async function onExit() {
 function close() {
   moodOpen.value = false;
   modelOpen.value = false;
+  panelsOpen.value = false;
   emit('close');
 }
 
@@ -305,6 +356,7 @@ watch(
     if (visible) {
       moodOpen.value = false;
       modelOpen.value = false;
+      panelsOpen.value = false;
       window.addEventListener('keydown', onKeydown);
       await nextTick();
       if (menuRef.value) {
@@ -319,7 +371,7 @@ watch(
 );
 
 // Re-measure when mood or model submenu opens/closes so positioning re-computes
-watch([moodOpen, modelOpen], async () => {
+watch([moodOpen, modelOpen, panelsOpen], async () => {
   await nextTick();
   if (menuRef.value) {
     const rect = menuRef.value.getBoundingClientRect();

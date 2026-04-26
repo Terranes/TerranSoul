@@ -1,14 +1,26 @@
 pub mod backend;
 pub mod brain_memory;
+pub mod ann_index;
 pub mod auto_learn;
+pub mod auto_tag;
+pub mod chunking;
 pub mod code_rag;
 pub mod cognitive_kind;
+pub mod conflicts;
+pub mod consolidation;
+pub mod contextualize;
+pub mod edge_conflict_scan;
 pub mod edges;
 pub mod fusion;
+pub mod gitnexus_mirror;
 pub mod hyde;
 pub mod migrations;
+pub mod obsidian_export;
 pub mod reranker;
 pub mod store;
+pub mod tag_vocabulary;
+pub mod temporal;
+pub mod versioning;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

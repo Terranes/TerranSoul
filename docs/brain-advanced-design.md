@@ -1,7 +1,7 @@
 # Brain & Memory — Advanced Architecture Design
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
-> Last updated: 2026-04-22  
+> Last updated: 2026-04-25  
 > **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
 
 ---
@@ -50,6 +50,9 @@
 19. [April 2026 Research Survey — Modern RAG & Agent-Memory Techniques](#april-2026-research-survey--modern-rag--agent-memory-techniques)
 20. [Brain Component Selection & Routing — How the LLM Knows What to Use](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
 21. [How Daily Conversation Updates the Brain — Write-Back / Learning Loop](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
+22. [Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
+23. [Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#code-rag-fusion-in-rerank_search_memories-phase-13-tier-2)
+24. [MCP Server — External AI Coding Assistant Integration (Phase 15)](#mcp-server--external-ai-coding-assistant-integration-phase-15)
 
 ---
 
@@ -343,6 +346,13 @@ Not all categories belong in all tiers:
 
 **Implementation path**: Add a `category` column in a V5 migration, or use structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) to avoid schema changes. Tag prefixes are recommended first — they work with the existing search infrastructure and don't require a migration.
 
+> **As-built (2026-04-24).** Tag-prefix approach implemented:
+> - **Chunk 18.4** — `memory::tag_vocabulary` with `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`.
+> - **Chunk 18.2** — `category_decay_multiplier()` per-prefix decay rates (personal 0.5×, session/quest 2×).
+> - **Chunk 18.1** — `memory::auto_tag` LLM auto-tagger: opt-in via `AppSettings.auto_tag`; dispatches to Ollama/FreeApi/PaidApi; merges ≤ 4 curated tags with user tags on `add_memory`.
+> - **Chunk 18.3** — `MemoryView.vue` tag-prefix filter chip row with per-prefix counts.
+> - **Chunk 18.5** (planned) — Obsidian vault export with tag metadata.
+
 ---
 
 ## 3.5 Cognitive Memory Axes (Episodic / Semantic / Procedural)
@@ -585,6 +595,23 @@ final_score =
 
 ### RAG Injection Flow
 
+> **Note (2026-04-25):** The diagram below shows the foundational 4-step flow
+> that is still the backbone of every retrieval. Since this was first drawn,
+> the pipeline has been extended with:
+> - **ANN index** (usearch HNSW, Chunk 16.10) — O(log n) vector search replaces brute-force scan
+> - **Cloud embedding API** (Chunk 16.9) — vector RAG works in free/paid modes too
+> - **RRF fusion** (Chunk 1.8) — multiple retrieval signals fused via Reciprocal Rank Fusion (k=60)
+> - **HyDE** (Chunk 1.9) — LLM-hypothetical-document embedding for cold/abstract queries
+> - **Cross-encoder rerank** (Chunk 1.10) — LLM-as-judge scores (query, doc) pairs 0–10
+> - **Relevance threshold** (Chunk 16.1) — only entries above a configurable score are injected
+> - **Semantic chunking** (Chunk 16.11) — `text-splitter` crate replaces naive word-count splitter
+> - **Contextual Retrieval** (Chunk 16.2) — Anthropic 2024 approach prepends doc context to chunks
+> - **Contradiction resolution** (Chunk 17.2) — LLM-powered conflict detection + soft-closure
+> - **Temporal reasoning** (Chunk 17.3) — natural-language time-range queries
+> - **Memory versioning** (Chunk 16.12) — non-destructive V8 edit history
+>
+> See the § 19.2 research survey rows and `rules/completion-log.md` for as-built details.
+
 ```
 User types: "What are the filing deadlines?"
                 │
@@ -654,15 +681,20 @@ User types: "What are the filing deadlines?"
 │                    EMBEDDING ARCHITECTURE                         │
 │                                                                   │
 │  Model:     nomic-embed-text (768-dimensional)                   │
-│  Provider:  Ollama (localhost:11434/api/embed)                   │
+│  Providers:                                                       │
+│    Local:   Ollama (localhost:11434/api/embed)                   │
+│    Cloud:   OpenAI-compatible /v1/embeddings (paid/free modes)   │
+│             Dispatched by cloud_embeddings::embed_for_mode()     │
 │  Fallback:  Active chat model (lower quality but works)          │
 │  Storage:   BLOB column in SQLite (768 × 4 bytes = 3 KB each)   │
+│  ANN:       usearch HNSW index (vectors.usearch file)            │
+│             O(log n) search — scales to 1M+ entries              │
 │                                                                   │
 │  Memory budget:                                                   │
 │    1,000 memories   ×  3 KB  =    3 MB                           │
 │   10,000 memories   ×  3 KB  =   30 MB                           │
 │  100,000 memories   ×  3 KB  =  300 MB                           │
-│  1,000,000 memories ×  3 KB  = 3,000 MB (needs ANN index)       │
+│  1,000,000 memories ×  3 KB  = 3,000 MB (ANN index: ~100 MB)    │
 │                                                                   │
 │  Cosine Similarity:                                               │
 │  sim(A, B) = (A · B) / (||A|| × ||B||)                          │
@@ -1142,7 +1174,20 @@ CREATE INDEX idx_edges_type ON memory_edges(rel_type);
 -- PRAGMA foreign_keys=ON enforced at connection open.
 ```
 
-**V7 — Obsidian sync metadata (proposed):**
+**V7 — External KG mirror provenance (shipped 2026-04-24):**
+```sql
+ALTER TABLE memory_edges ADD COLUMN edge_source TEXT;          -- e.g. 'gitnexus:repo:owner/name@sha'
+CREATE INDEX idx_edges_edge_source ON memory_edges(edge_source);
+```
+Distinct from the existing `source` column (which records who *asserted*
+an edge: `user` / `llm` / `auto`), `edge_source` records which **external
+knowledge graph** the edge was mirrored from. `NULL` is the default for
+every native edge. The Phase 13 Tier 3 `gitnexus_sync` Tauri command
+populates this with `gitnexus:<scope>` strings so `gitnexus_unmirror`
+can roll back exactly one sync without touching native or LLM-extracted
+edges. See `src-tauri/src/memory/gitnexus_mirror.rs`.
+
+**V8 — Obsidian sync metadata (proposed):**
 ```sql
 ALTER TABLE memories ADD COLUMN obsidian_path TEXT;      -- vault-relative .md path
 ALTER TABLE memories ADD COLUMN last_exported INTEGER;   -- Unix timestamp
@@ -1234,16 +1279,20 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 │  ┌──────────────┬──────────┬──────────┬──────────────────────┐     │
 │  │ Signal       │ Free API │ Paid API │ Local Ollama         │     │
 │  ├──────────────┼──────────┼──────────┼──────────────────────┤     │
-│  │ Vector (40%) │    ✗     │    ✗     │ ✓ (nomic-embed-text)│     │
+│  │ Vector (40%) │    ◐*    │    ✓**   │ ✓ (nomic-embed-text)│     │
 │  │ Keyword(20%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Recency(15%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Import.(10%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Decay  (10%) │    ✓     │    ✓     │ ✓                    │     │
 │  │ Tier    (5%) │    ✓     │    ✓     │ ✓                    │     │
 │  ├──────────────┼──────────┼──────────┼──────────────────────┤     │
-│  │ Effective    │ 60%      │ 60%      │ 100%                 │     │
-│  │ RAG quality  │ (no vec) │ (no vec) │ (full hybrid)        │     │
+│  │ Effective    │ 60–100%  │ 100%     │ 100%                 │     │
+│  │ RAG quality  │ (varies) │ (full)   │ (full hybrid)        │     │
 │  └──────────────┴──────────┴──────────┴──────────────────────┘     │
+│                                                                     │
+│  * Free API vector: depends on provider (Mistral/GitHub Models     │
+│    yes via cloud_embeddings; Pollinations/Groq no). Chunk 16.9.    │
+│  ** Paid API: OpenAI-compatible /v1/embeddings via Chunk 16.9.     │
 │                                                                     │
 │  Model selection:                                                   │
 │  • model_recommender.rs — RAM-based catalogue                      │
@@ -1814,21 +1863,45 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Relationship type taxonomy (17 curated types + free-form)   │
 │  ├── ✓ Multi-hop RAG via graph traversal (hybrid_search_with_graph)│
 │  ├── ✓ Graph-enhanced Cytoscape visualization (typed/directional)  │
-│  └── ○ Conflict detection between connected memories               │
+│  └── ✓ Conflict detection between connected memories               │
+│        (`memory::edge_conflict_scan` — collect_scan_candidates +    │
+│         record_contradiction, LLM-as-judge over positive-relation   │
+│         edges, 3-phase lock-safe pattern) — Chunk 17.6              │
 │                                                                     │
 │  PHASE 4 — Scale                                                    │
-│  ├── ○ ANN index (usearch crate) for >1M memories                 │
-│  ├── ○ Cloud embedding API for free/paid modes                     │
-│  ├── ○ Chunking pipeline for large documents                       │
-│  ├── ○ Relevance threshold (skip injection if score < 0.3)        │
-│  ├── ○ Bidirectional Obsidian sync                                 │
-│  └── ○ Memory versioning (track edits, not just overwrites)        │
+│  ├── ✓ ANN index (usearch crate) for >1M memories                 │
+│  │     (`memory::ann_index::AnnIndex` — HNSW via usearch 2.x,       │
+│  │      lazy OnceCell init, auto-rebuild, periodic save)             │
+│  │     — Chunk 16.10                                                │
+│  ├── ✓ Cloud embedding API for free/paid modes                     │
+│  │     (`brain::cloud_embeddings::embed_for_mode` dispatcher,       │
+│  │      OpenAI-compat `/v1/embeddings`) — Chunk 16.9                │
+│  ├── ✓ Chunking pipeline for large documents                       │
+│  │     (`memory::chunking`, `text-splitter` crate, semantic         │
+│  │      Markdown/text splitting, dedup, heading metadata)           │
+│  │     — Chunk 16.11                                                │
+│  │  ├── ✓ Relevance threshold (skip injection if score < 0.3,         │
+│  │  │     user-tunable via `AppSettings.relevance_threshold`,         │
+│  │  │     `MemoryStore::hybrid_search_with_threshold`) — Chunk 16.1   │
+│  ├── ✓ One-way Obsidian vault export (`export_to_obsidian` command,  │
+│  │     `memory::obsidian_export`) — Chunk 18.5                      │
+│  ├── ○ Bidirectional Obsidian sync (extends 18.5)                  │
+│  └── ✓ Memory versioning (`memory::versioning`, V8 schema,         │
+│        `memory_versions` table, `get_memory_history` command)       │
+│        — Chunk 16.12                                                │
 │                                                                     │
 │  PHASE 5 — Intelligence                                             │
-│  ├── ○ Auto-promotion based on access patterns                     │
-│  ├── ○ Contradiction resolution (LLM picks winner)                 │
-│  ├── ○ Temporal reasoning ("last month you said...")               │
-│  ├── ○ Memory importance auto-adjustment from access_count         │
+│  ├── ✓ Auto-promotion based on access patterns                     │
+│  │     (`MemoryStore::auto_promote_to_long`,                        │
+│  │      command `auto_promote_memories`) — Chunk 17.1               │
+│  ├── ✓ Contradiction resolution (LLM picks winner)                 │
+│  │     (`memory::conflicts` — V9 schema, `MemoryConflict` CRUD,    │
+│  │      losers soft-closed via `valid_to`) — Chunk 17.2             │
+│  ├── ✓ Temporal reasoning (`memory::temporal::parse_time_range` +   │
+│  │     `temporal_query` command) — Chunk 17.3                       │
+│  ├── ✓ Memory importance auto-adjustment from access_count         │
+│  │     (`MemoryStore::adjust_importance_by_access`,                  │
+│  │      command `adjust_memory_importance`) — Chunk 17.4            │
 │  └── ○ Cross-device memory merge via CRDT sync                    │
 │                                                                     │
 │  PHASE 6 — Modern RAG (April 2026 research absorption — see §19)   │
@@ -1839,8 +1912,9 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  │     (`memory/hyde.rs` + `hyde_search_memories` Tauri command)   │
 │  ├── ✓ Cross-encoder reranking pass (LLM-as-judge style;           │
 │  │     `memory/reranker.rs` + `rerank_search_memories` command)    │
-│  ├── ○ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
-│  │     context before embedding                                    │
+│  ├── ✓ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
+│  │     context before embedding (`memory::contextualize`,          │
+│  │     `AppSettings.contextual_retrieval`) — Chunk 16.2            │
 │  ├── ○ Late chunking (embed full doc, pool per-chunk windows)      │
 │  ├── ○ GraphRAG / LightRAG-style community summaries over          │
 │  │     memory_edges (multi-hop + LLM cluster summary)              │
@@ -1977,7 +2051,7 @@ Quick reference for all diagrams in this document:
 |---|---|---|---|---|
 | 1 | **Hybrid dense + sparse retrieval** (BM25 + vector, established) | Combine lexical and semantic signals | ✅ | §4 — 6-signal hybrid scoring |
 | 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wired into `hybrid_search_rrf` (`memory/store.rs`) — fuses vector + keyword + freshness rankings with `k = 60`; exposed as `hybrid_search_memories_rrf` Tauri command. |
-| 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | 🔵 | Phase 6 — chunking pipeline (§16) |
+| 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | ✅ | `src-tauri/src/memory/contextualize.rs` — `contextualise_chunk(doc_summary, chunk, brain_mode)` + `generate_doc_summary()`. Opt-in via `AppSettings.contextual_retrieval`. Integrated into `run_ingest_task`. Chunk 16.2. |
 | 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | ✅ | `src-tauri/src/memory/hyde.rs` (prompt + reply cleaner, 10 unit tests) + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command. Falls back to embedding the raw query if the brain is unreachable. |
 | 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | 🔵 | Phase 6 — orchestrator-level loop (`src-tauri/src/orchestrator/`) |
 | 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | 🔵 | Phase 6 — pairs naturally with our `relevance_threshold` Phase 4 item |
@@ -2258,14 +2332,30 @@ Even with auto-learn on, the following commands are always available from the Me
 
 This guarantees the user is never locked out of any maintenance step the auto-learner would have done.
 
-### 21.6 Roadmap gaps (already tracked in §16)
+### 21.6 Persona drift detection (Chunk 14.8) ✅
+
+After every auto-learn extraction, the frontend accumulates a running count of saved facts. When the count crosses a configurable threshold (default **25 facts**), the `check_persona_drift` Tauri command fires — comparing the active `PersonaTraits` JSON against the latest `personal:*` long-tier memories via a lightweight LLM prompt. The result is a `DriftReport`:
+
+| Field | Type | Description |
+|---|---|---|
+| `drift_detected` | `bool` | Whether a meaningful shift was found |
+| `summary` | `String` | 1–2 sentence description of the shift (empty if none) |
+| `suggested_changes` | `Vec<DriftSuggestion>` | 0–3 field/current/proposed triples |
+
+**Design decisions:**
+- **Piggybacks on auto-learn** — no new background loop or scheduler; fires only when the user is actively chatting and facts are accumulating.
+- **Pure prompt + parse** — `persona::drift::build_drift_prompt` and `parse_drift_reply` are I/O-free and exhaustively unit-tested (14 tests).
+- **Non-blocking** — drift check failure never breaks chat. If the brain can't parse a reply, a "no drift" report is returned.
+- **Fact-count-based** — uses accumulated facts (not turns) as the trigger, so quiet sessions with few extractable facts don't waste LLM calls.
+
+### 21.7 Roadmap gaps (already tracked in §16)
 
 - **Background scheduler** — Step 5 maintenance jobs are currently user-triggered. A daily background scheduler (`tasks::manager::TaskManager`) is on the Phase 4 roadmap.
 - **Conversation-aware extraction** — today extraction sees the whole session as one blob. The Phase 5 roadmap adds *segmented* extraction (e.g. one extraction per topic shift detected by embedding-distance peak).
 - **Edge auto-extraction** — `extract_edges_via_brain` is manual; auto-firing it after each successful `extract_facts` is the next iteration of this loop.
 - **Replay-from-history rebuild** — re-run extraction over old chat logs to backfill memories created before auto-learn existed (planned for Phase 5 alongside the export/import work).
 
-### 21.7 Adding a new write path — required steps
+### 21.8 Adding a new write path — required steps
 
 When a contributor adds a new way for conversation to update the brain (new extractor, new edge proposer, new background job), they **must**:
 
@@ -2298,7 +2388,7 @@ when the user grants the `code_intelligence` capability to the
 ### 22.1 Wire diagram
 
 ```
-Frontend (BrainView · Code knowledge panel — Chunk 2.4 will surface this)
+Frontend (BrainView · Code knowledge panel — `src/components/CodeKnowledgePanel.vue`, shipped 2026-04-24)
    │
    │  invoke('gitnexusQuery', { prompt })
    ▼
@@ -2368,8 +2458,8 @@ its own subprocess address space.
 |---|---|---|---|
 | 1 | 2.1 | ✅ done (2026-04-24) | Sidecar bridge + four read-only Tauri commands behind `code_intelligence` capability |
 | 2 | 2.2 | ✅ done (2026-04-24) | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
-| 3 | 2.3 | not-started | Mirror GitNexus's KG into TerranSoul's memory graph via a new V7 `edge_source` column; map `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` to the existing 17-relation taxonomy |
-| 4 | 2.4 | not-started | BrainView "Code knowledge" panel — list indexed repos, last-sync time, blast-radius pre-flight indicator |
+| 3 | 2.3 | ✅ done (2026-04-24) | V7 SQLite migration adds `edge_source` column to `memory_edges` (+ index). New `memory::gitnexus_mirror` module maps `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` into the existing 17-relation taxonomy and writes mirrored edges with `edge_source = 'gitnexus:<scope>'`. Tauri commands `gitnexus_sync` (opt-in; calls the sidecar's `graph` MCP tool) and `gitnexus_unmirror` (single-scope rollback). 11 unit tests + 4 extractor tests. |
+| 4 | 2.4 | ✅ done (2026-04-24) | New `src/components/CodeKnowledgePanel.vue` (sync form + mirror list with last-sync time + edge counts + per-row Unmirror + blast-radius `gitnexus_impact` probe) wired into `BrainView.vue`. New Tauri command `gitnexus_list_mirrors` (powered by `MemoryStore::list_external_mirrors("gitnexus:%")`) returns one row per mirrored scope ordered by most-recent-sync first. 9 Vitest unit tests + 3 new Rust unit tests. |
 
 ---
 
@@ -2462,9 +2552,9 @@ component is unreachable.
 ### 23.4 What this does NOT do (scope guard)
 
 - Does **not** mutate the SQLite store. Code-RAG entries are ephemeral.
-- Does **not** persist GitNexus snippets — Tier 3 (Chunk 2.3) is the
-  opt-in path that mirrors the GitNexus knowledge graph into the
-  memory-graph V7 schema with an `edge_source` column.
+- Does **not** persist GitNexus snippets — Tier 3 (Chunk 2.3, shipped
+  2026-04-24) is the opt-in path that mirrors the GitNexus knowledge
+  graph into the memory-graph V7 schema with an `edge_source` column.
 - Does **not** rerank GitNexus snippets via the LLM-as-judge
   *separately* — they enter Stage 2 through the same `rerank_score`
   call as DB entries, so the rerank stage's existing `Option<u8>`
@@ -2477,8 +2567,78 @@ component is unreachable.
 
 ---
 
+## 24. MCP Server — External AI Coding Assistant Integration (Phase 15)
+
+> **Shipped as Chunk 15.1 (2026-04-25).** See `rules/completion-log.md`
+> and `docs/AI-coding-integrations.md` for full details.
+
+TerranSoul exposes its brain to **external AI coding assistants**
+(Copilot, Cursor, Windsurf, Continue, etc.) via the
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+The server runs as an in-process axum HTTP service on
+`127.0.0.1:7421` — no sidecar, no external binary.
+
+### 24.1 Architecture
+
+```
+External AI assistant
+      │  HTTP POST (JSON-RPC 2.0, Bearer token)
+      ▼
+┌───────────────────────────────────────────┐
+│  MCP Server (axum, 127.0.0.1:7421)       │
+│  src-tauri/src/ai_integrations/mcp/      │
+│  ├── mod.rs      — start/stop, McpServerHandle
+│  ├── auth.rs     — SHA-256 bearer token (mcp-token.txt)
+│  ├── router.rs   — JSON-RPC dispatch + auth middleware
+│  └── tools.rs    — 8 tool definitions + dispatch
+└──────────────────┬────────────────────────┘
+                   │ dyn BrainGateway (8 ops)
+                   ▼
+┌───────────────────────────────────────────┐
+│  BrainGateway trait                       │
+│  src-tauri/src/ai_integrations/gateway.rs │
+│  AppStateGateway adapter (holds AppState) │
+└───────────────────────────────────────────┘
+```
+
+**`AppState(Arc<AppStateInner>)`** — The cheaply-clonable Arc newtype
+lets the MCP server hold a reference without lifetime issues. Background
+axum task receives `AppState` directly.
+
+### 24.2 Exposed MCP tools
+
+| Tool | BrainGateway op | Description |
+|---|---|---|
+| `brain_health` | `health()` | Provider status + model info |
+| `brain_search` | `search()` | Semantic memory search |
+| `brain_ingest` | `ingest()` | Store a new memory |
+| `brain_ask` | `ask()` | One-shot LLM question |
+| `brain_summarize` | `summarize()` | Summarize text |
+| `brain_extract` | `extract()` | Extract structured entities |
+| `brain_list_memories` | `list_memories()` | List recent memories |
+| `brain_stats` | `stats()` | Memory store statistics |
+
+### 24.3 Security
+
+- **Bearer-token auth** — SHA-256 hash of a UUID v4 stored in
+  `$APP_DATA/mcp-token.txt` with `0600` permissions on Unix.
+- **Localhost-only** — binds to `127.0.0.1`, never `0.0.0.0`.
+- **Regeneratable** — `mcp_regenerate_token` Tauri command.
+
+### 24.4 Tauri commands
+
+- `mcp_server_start` / `mcp_server_stop` / `mcp_server_status` / `mcp_regenerate_token`
+- Lifecycle managed through `AppStateInner.mcp_server: TokioMutex<Option<McpServerHandle>>`
+
+### 24.5 Test coverage
+
+22 Rust tests: 4 auth, 6 router, 3 tools, 11 integration (ephemeral ports via `portpicker`).
+
+---
+
 ## Related Documents
 
+- [AI-coding-integrations.md](../docs/AI-coding-integrations.md) — Full MCP / gRPC / A2A integration design
 - [BRAIN-COMPLEX-EXAMPLE.md](../instructions/BRAIN-COMPLEX-EXAMPLE.md) — Quest-guided setup walkthrough
 - [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) — Technical reference (schema, RAG pipeline, comparisons)
 - [architecture-rules.md](../rules/architecture-rules.md) — Project architecture constraints

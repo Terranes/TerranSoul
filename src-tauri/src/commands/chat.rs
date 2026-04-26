@@ -24,7 +24,7 @@ Animation: When expressing an emotion or gesture, output a JSON block on its own
 <anim>{"emotion":"happy"}</anim>
 <anim>{"emotion":"happy","motion":"clap"}</anim>
 Valid emotions: happy, sad, angry, relaxed, surprised, neutral.
-Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump.
+Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
 Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
 Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
 Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
@@ -37,6 +37,9 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub agent_name: Option<String>,
+    /// The agent profile ID that produced this message. `None` for
+    /// messages created before per-agent threading was added.
+    pub agent_id: Option<String>,
     pub sentiment: Option<String>,
     pub timestamp: u64,
 }
@@ -70,6 +73,7 @@ pub async fn process_message(
         role: "user".to_string(),
         content: message.to_string(),
         agent_name: None,
+        agent_id: None,
         sentiment: None,
         timestamp: now_ms(),
     };
@@ -208,6 +212,7 @@ pub async fn process_message(
         role: "assistant".to_string(),
         content,
         agent_name: Some(agent_name),
+        agent_id: None,
         sentiment: Some(sentiment_str(&sentiment).to_string()),
         timestamp: now_ms(),
     };

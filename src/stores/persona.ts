@@ -58,6 +58,14 @@ export const usePersonaStore = defineStore('persona', () => {
   // ── Ephemeral, session-only state (NOT persisted, see § 5) ──────────
   const cameraSession = ref<CameraSessionState>(freshSession());
 
+  /**
+   * Preview requests — set by PersonaPanel, consumed by CharacterViewport.
+   * Cross-view bridge since the two live in different routes.
+   * Cleared by the consumer after handling.
+   */
+  const previewExpressionRequest = ref<LearnedExpression | null>(null);
+  const previewMotionRequest = ref<LearnedMotion | null>(null);
+
   // ── Computed ────────────────────────────────────────────────────────
 
   /**
@@ -195,6 +203,124 @@ export const usePersonaStore = defineStore('persona', () => {
     lastBrainExtractedAt.value = Date.now();
   }
 
+  /**
+   * Ask the active brain (via `extract_persona_from_brain`) to propose
+   * a persona based on recent chat history + long-term `personal:*`
+   * memories. Returns `null` when no brain is configured, the brain
+   * could not be reached, or the reply could not be parsed — caller is
+   * responsible for surfacing a "try again" message.
+   *
+   * **Does not auto-apply.** The caller wires the candidate into the
+   * draft state of `PersonaPanel.vue` and the user clicks Apply (which
+   * routes through the existing `saveTraits` flow). This matches the
+   * human-in-the-loop contract documented in `docs/persona-design.md`
+   * § 9.3.
+   */
+  async function suggestPersonaFromBrain(): Promise<Partial<PersonaTraits> | null> {
+    let raw: string;
+    try {
+      raw = await invoke<string>('extract_persona_from_brain');
+    } catch {
+      // No brain configured / Tauri unavailable — UI surfaces this as
+      // a disabled-button tooltip; nothing to do here.
+      return null;
+    }
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      // Brain reachable but reply not parseable.
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const p = parsed as Record<string, unknown>;
+    const name = typeof p.name === 'string' ? p.name : '';
+    const role = typeof p.role === 'string' ? p.role : '';
+    const bio = typeof p.bio === 'string' ? p.bio : '';
+    if (!name.trim() || !role.trim() || !bio.trim()) return null;
+    const candidate: Partial<PersonaTraits> = {
+      name,
+      role,
+      bio,
+      tone: Array.isArray(p.tone) ? p.tone.filter((x): x is string => typeof x === 'string') : [],
+      quirks: Array.isArray(p.quirks)
+        ? p.quirks.filter((x): x is string => typeof x === 'string')
+        : [],
+      avoid: Array.isArray(p.avoid)
+        ? p.avoid.filter((x): x is string => typeof x === 'string')
+        : [],
+    };
+    recordBrainExtraction();
+    return candidate;
+  }
+
+  // ── Persona pack export / import (Chunk 14.7) ──────────────────────
+
+  /**
+   * Shape of the per-import / per-preview report returned by the
+   * backend. Mirrors `crate::persona::pack::ImportReport`.
+   */
+  interface ImportReport {
+    traits_applied: boolean;
+    expressions_accepted: number;
+    motions_accepted: number;
+    skipped: string[];
+  }
+
+  /**
+   * Build a self-describing JSON pack containing the active traits + every
+   * learned expression / motion artifact and return the pretty-printed
+   * string. Caller is responsible for surfacing the result (clipboard,
+   * file download, share sheet…).
+   *
+   * `note` is an optional one-liner shown in the import preview on the
+   * receiving side. Empty / whitespace-only is dropped.
+   *
+   * Returns `null` when Tauri is unavailable (browser-only / offline test
+   * harness) so the UI can disable the button gracefully.
+   */
+  async function exportPack(note?: string): Promise<string | null> {
+    try {
+      const json = await invoke<string>('export_persona_pack', { note: note ?? null });
+      return typeof json === 'string' && json.length > 0 ? json : null;
+    } catch (e) {
+      console.warn('[persona] export pack failed:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Dry-run a persona pack import: parse + validate every asset and
+   * return the per-entry report **without writing anything**. Used by
+   * the "Preview" button so the user can see what would change before
+   * committing.
+   *
+   * Throws an Error with the human-readable parse failure when the
+   * input is not a valid pack — callers route that into the inline
+   * error message in the import card.
+   */
+  async function previewImportPack(json: string): Promise<ImportReport> {
+    return await invoke<ImportReport>('preview_persona_pack', { json });
+  }
+
+  /**
+   * Apply a persona pack: replace the active traits and merge the
+   * learned-asset libraries (matching ids overwrite; others are kept).
+   * After a successful import the in-memory store reloads from disk so
+   * UI bindings reflect the new state.
+   *
+   * Throws on parse failure (matches `previewImportPack`).
+   */
+  async function importPack(json: string): Promise<ImportReport> {
+    const report = await invoke<ImportReport>('import_persona_pack', { json });
+    // Reload everything so UI reflects the merged state.
+    await load();
+    return report;
+  }
+
   // ── Per-session camera consent (§ 5) ────────────────────────────────
 
   /**
@@ -219,6 +345,16 @@ export const usePersonaStore = defineStore('persona', () => {
     cameraSession.value = freshSession();
   }
 
+  /** Request the avatar preview an expression (consumed by CharacterViewport). */
+  function requestExpressionPreview(expr: LearnedExpression): void {
+    previewExpressionRequest.value = expr;
+  }
+
+  /** Request the avatar play a learned motion (consumed by CharacterViewport). */
+  function requestMotionPreview(motion: LearnedMotion): void {
+    previewMotionRequest.value = motion;
+  }
+
   return {
     // state
     traits,
@@ -227,6 +363,8 @@ export const usePersonaStore = defineStore('persona', () => {
     learnedMotions,
     lastBrainExtractedAt,
     cameraSession,
+    previewExpressionRequest,
+    previewMotionRequest,
     // computed
     personaBlock,
     learnedMotionRefs,
@@ -236,7 +374,13 @@ export const usePersonaStore = defineStore('persona', () => {
     saveTraits,
     resetToDefault,
     recordBrainExtraction,
+    suggestPersonaFromBrain,
+    exportPack,
+    previewImportPack,
+    importPack,
     startCameraSession,
     stopCameraSession,
+    requestExpressionPreview,
+    requestMotionPreview,
   };
 });

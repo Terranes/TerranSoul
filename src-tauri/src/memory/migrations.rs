@@ -195,6 +195,109 @@ ALTER TABLE memory_edges DROP COLUMN valid_to;
 ALTER TABLE memory_edges DROP COLUMN valid_from;
 "#,
     },
+    // ── V7: External knowledge-graph mirror provenance ─────────────────
+    //
+    // Adds a single nullable `edge_source` TEXT column to `memory_edges`.
+    //
+    // Distinct from the existing `source` column (which records who
+    // *asserted* the edge inside TerranSoul: `user` / `llm` / `auto`),
+    // `edge_source` records which **external knowledge graph** the edge
+    // was mirrored from. The convention is `<system>:<scope>` — for
+    // example `gitnexus:repo:owner/name@sha`. `NULL` means the edge is
+    // native to TerranSoul (the default for every existing row).
+    //
+    // The companion index `idx_edges_edge_source` makes
+    // `gitnexus_unmirror` (which deletes every edge for one mirror
+    // scope) a single B-tree range scan instead of a full table scan.
+    //
+    // See `docs/brain-advanced-design.md` § 13 (GitNexus integration,
+    // Tier 3 — Knowledge-graph mirror).
+    Migration {
+        version: 7,
+        description: "external KG mirror provenance: edge_source column on memory_edges",
+        up: r#"
+ALTER TABLE memory_edges ADD COLUMN edge_source TEXT;
+CREATE INDEX IF NOT EXISTS idx_edges_edge_source ON memory_edges(edge_source);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_edges_edge_source;
+ALTER TABLE memory_edges DROP COLUMN edge_source;
+"#,
+    },
+    // ── V8: Memory versioning — edit history for memories ──────────────
+    //
+    // Tracks every edit to a memory entry as an immutable snapshot.
+    // When `update_memory` changes `content`, `tags`, `importance`, or
+    // `memory_type`, the *previous* state is saved to `memory_versions`
+    // before the update is applied. This makes edits non-destructive and
+    // enables a "view history" panel in BrainView.
+    //
+    // The `version_num` column starts at 1 for the first edit and auto-
+    // increments per-memory via `MAX(version_num) + 1` at insert time.
+    //
+    // FK cascade ensures that deleting a memory also deletes its version
+    // history (no orphan rows).
+    //
+    // See `docs/brain-advanced-design.md` §16 Phase 4 (chunk 16.12).
+    Migration {
+        version: 8,
+        description: "memory versioning: edit history for memories",
+        up: r#"
+CREATE TABLE IF NOT EXISTS memory_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id   INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    version_num INTEGER NOT NULL,
+    content     TEXT    NOT NULL,
+    tags        TEXT    NOT NULL DEFAULT '',
+    importance  INTEGER NOT NULL DEFAULT 3,
+    memory_type TEXT    NOT NULL DEFAULT 'fact',
+    created_at  INTEGER NOT NULL,
+    UNIQUE(memory_id, version_num)
+);
+CREATE INDEX IF NOT EXISTS idx_versions_memory ON memory_versions(memory_id);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_versions_memory;
+DROP TABLE IF EXISTS memory_versions;
+"#,
+    },
+    // ── V9: Contradiction resolution — valid_to on memories + memory_conflicts ─
+    //
+    // `valid_to` is a nullable Unix-ms timestamp on `memories`. A NULL value
+    // means the entry is still valid / active. When a contradiction is resolved,
+    // the losing entry's `valid_to` is set to the resolution timestamp — it is
+    // **never deleted**, preserving audit trail and enabling undo.
+    //
+    // `memory_conflicts` records detected semantic contradictions between two
+    // memories. Status flows: open → resolved (winner picks one side) or
+    // open → dismissed (user says "not a real conflict"). The loser_id is set
+    // only on resolution.
+    //
+    // See `docs/brain-advanced-design.md` §16 Phase 5 (chunk 17.2).
+    Migration {
+        version: 9,
+        description: "contradiction resolution: valid_to on memories + memory_conflicts table",
+        up: r#"
+ALTER TABLE memories ADD COLUMN valid_to INTEGER;
+
+CREATE TABLE IF NOT EXISTS memory_conflicts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_a_id  INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    entry_b_id  INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    status      TEXT    NOT NULL DEFAULT 'open',
+    winner_id   INTEGER,
+    created_at  INTEGER NOT NULL,
+    resolved_at INTEGER,
+    reason      TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_conflicts_status ON memory_conflicts(status);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_conflicts_status;
+DROP TABLE IF EXISTS memory_conflicts;
+ALTER TABLE memories DROP COLUMN valid_to;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -479,11 +582,69 @@ mod tests {
     }
 
     #[test]
-    fn target_version_is_v6() {
+    fn target_version_is_v9() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
-        assert_eq!(TARGET_VERSION, 6, "V6 is the current temporal-KG schema");
+        assert_eq!(TARGET_VERSION, 9, "V9 is the current contradiction-resolution schema");
+    }
+
+    #[test]
+    fn v7_round_trip_preserves_edge_source() {
+        // Insert an edge with a non-NULL `edge_source` at V7, downgrade
+        // to V6 (which must drop the column and the index without
+        // touching the parent row), and re-upgrade — the existing row
+        // must come back with `edge_source = NULL` (ALTER ADD COLUMN
+        // semantics).
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        // Downgrade to V7 first — the test operates at V7 level.
+        downgrade_to(&conn, 7).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 7);
+
+        conn.execute_batch(
+            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_edges
+                (src_id, dst_id, rel_type, confidence, source, created_at,
+                 valid_from, valid_to, edge_source)
+             VALUES (1, 2, 'rel', 1.0, 'auto', 0, NULL, NULL, 'gitnexus:repo:foo/bar@abc');",
+            [],
+        )
+        .unwrap();
+        let es: Option<String> = conn
+            .query_row(
+                "SELECT edge_source FROM memory_edges WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(es.as_deref(), Some("gitnexus:repo:foo/bar@abc"));
+
+        downgrade_to(&conn, 6).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 6);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "edge row must survive V7→V6 downgrade");
+
+        migrate_to_latest(&conn).unwrap();
+        // V8 adds memory_versions; the edge_source column round-trips fine.
+        assert_eq!(get_version(&conn).unwrap(), TARGET_VERSION);
+        let es2: Option<String> = conn
+            .query_row(
+                "SELECT edge_source FROM memory_edges WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(es2, None, "ALTER ADD COLUMN should default to NULL");
     }
 
     #[test]
@@ -494,6 +655,9 @@ mod tests {
         // affecting the parent edge row.
         let conn = fresh_conn();
         migrate_to_latest(&conn).unwrap();
+        // Schema is at TARGET_VERSION (V7+); the previous V5/V6 round-trip
+        // logic still applies as long as we start the test at V6.
+        downgrade_to(&conn, 6).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 6);
 
         // Need two memories first (FK).
@@ -527,7 +691,7 @@ mod tests {
         // Re-upgrade: V6 columns return as NULL on the existing row
         // (default for ALTER TABLE … ADD COLUMN with no default).
         migrate_to_latest(&conn).unwrap();
-        assert_eq!(get_version(&conn).unwrap(), 6);
+        assert_eq!(get_version(&conn).unwrap(), TARGET_VERSION);
         let (vf2, vt2): (Option<i64>, Option<i64>) = conn.query_row(
             "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
             [],

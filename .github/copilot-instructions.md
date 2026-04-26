@@ -1,7 +1,7 @@
 # TerranSoul — Copilot Instructions
 
 > This file is auto-loaded by GitHub Copilot on every request.
-> Last updated: 2026-04-22
+> Last updated: 2026-04-25
 
 ## What is TerranSoul?
 
@@ -28,23 +28,35 @@ Frontend (WebView — Vue 3 + TS)
   │   ├── brain.ts — LLM provider management
   │   ├── conversation.ts — chat history + streaming
   │   ├── memory.ts — persistent memory CRUD
+  │   ├── persona.ts — persona traits + learned expressions/motions
   │   ├── skill-tree.ts — gamified quest system (1500+ lines)
   │   ├── voice.ts — TTS/ASR configuration
   │   └── settings.ts — app preferences
   └── Design system: CSS custom properties (--ts-* tokens in style.css)
       ↕ Tauri IPC (invoke / emit)
 Rust Core Engine (src-tauri/src/)
-  ├── commands/ — 60+ Tauri commands (chat, streaming, memory, brain, voice, window, etc.)
+  ├── commands/ — 150+ Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
   ├── brain/ — LLM providers: OllamaAgent, OpenAiClient, FreeProvider, ProviderRotator
   │   ├── model_recommender.rs — RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6 cloud)
-  │   └── ollama_agent.rs — semantic_relevant_ids() for RAG ranking
+  │   ├── ollama_agent.rs — embed_text(), hyde_complete(), rerank_score()
+  │   └── cloud_embeddings.rs — unified embed_for_mode() for paid/free cloud modes
   ├── memory/ — StorageBackend trait + SQLite/Postgres/MSSQL/Cassandra backends
-  │   ├── backend.rs — StorageBackend trait, StorageConfig, StorageError
-  │   ├── store.rs — SQLite MemoryStore (default, implements StorageBackend)
-  │   ├── postgres.rs — PostgreSQL backend (feature: postgres, uses sqlx)
-  │   ├── mssql.rs — SQL Server backend (feature: mssql, uses tiberius)
-  │   ├── cassandra.rs — CassandraDB backend (feature: cassandra, uses scylla)
+  │   ├── store.rs — SQLite MemoryStore (hybrid_search, hybrid_search_rrf, ANN index)
+  │   ├── ann_index.rs — HNSW approximate nearest neighbor via usearch 2.x
+  │   ├── fusion.rs — Reciprocal Rank Fusion (RRF, k=60)
+  │   ├── hyde.rs — HyDE (Hypothetical Document Embeddings)
+  │   ├── reranker.rs — LLM-as-judge cross-encoder reranker
+  │   ├── chunking.rs — semantic chunking (text-splitter crate)
+  │   ├── contextualize.rs — Contextual Retrieval (Anthropic 2024)
+  │   ├── conflicts.rs — LLM-powered contradiction resolution
+  │   ├── temporal.rs — natural-language time-range queries
+  │   ├── versioning.rs — non-destructive edit history (V8)
+  │   ├── obsidian_export.rs — one-way Obsidian vault export
   │   └── brain_memory.rs — LLM-powered extract/summarize/search
+  ├── ai_integrations/ — expose brain to external AI coding assistants
+  │   ├── gateway.rs — BrainGateway trait + AppStateGateway adapter (8 ops)
+  │   └── mcp/ — MCP server (HTTP on 127.0.0.1:7421, bearer-token auth)
+  ├── persona/ — persona traits, drift detection, pack export/import
   ├── identity/ — Ed25519 device identity for P2P linking
   ├── link/ — CRDT sync engine (QUIC/WebSocket)
   └── orchestrator/ — Agent routing with capability gates
@@ -69,12 +81,15 @@ Rust Core Engine (src-tauri/src/)
 ## RAG Pipeline (Current)
 
 Every chat message triggers:
-1. `get_all()` — load all memories from SQLite
-2. `semantic_search_entries()` — LLM ranks relevance (sends ALL entries in one prompt)
-3. Top 5 injected as `[LONG-TERM MEMORY]` block in system prompt
-4. Keyword fallback when Ollama is unreachable
+1. **Hybrid 6-signal search** — `vector_similarity` (40%) + `keyword_match` (20%) + `recency_bias` (15%) + `importance` (10%) + `decay_score` (10%) + `tier_priority` (5%)
+2. **RRF fusion** — vector + keyword + freshness retrievers fused via Reciprocal Rank Fusion (k=60)
+3. **Optional HyDE** — LLM writes a hypothetical answer, embeds *that* for retrieval (cold/abstract queries)
+4. **Optional cross-encoder rerank** — LLM-as-judge scores each (query, doc) pair 0–10
+5. **Relevance threshold** — only entries above a configurable score threshold are injected
+6. Top-k injected as `[LONG-TERM MEMORY]` block in system prompt
+7. Keyword fallback when Ollama is unreachable
 
-**Known limitation**: Brute-force LLM ranking — sends all memories in one prompt. Scales to ~500 entries. For 1000+ entries, needs vector embedding + ANN search upgrade.
+**Vector support:** Ollama `nomic-embed-text` (768-dim) locally, or cloud embedding API (`/v1/embeddings`) for paid/free modes. HNSW ANN index via `usearch` for O(log n) scaling to 1M+ entries.
 
 ## Skill Tree Quest System
 
@@ -83,10 +98,10 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 ## Key Patterns
 
 - **Tauri commands**: All `async fn`, return `Result<T, String>`, use `#[tauri::command]`
-- **State**: `AppState` holds `Mutex<MemoryStore>`, `Mutex<BrainStore>`, etc.
+- **State**: `AppState(Arc<AppStateInner>)` — cheaply clonable Arc newtype; all fields accessed via auto-`Deref`. Enables background servers (MCP, gRPC) to hold references without lifetime issues.
 - **Streaming**: SSE via Tauri events (`llm-chunk`), parsed by `StreamTagParser` state machine
 - **Error handling**: `?` operator, `thiserror` for typed errors, never `.unwrap()` in library code
-- **Testing**: Vitest for frontend (941+ tests), `cargo test` for Rust (514+ tests)
+- **Testing**: Vitest for frontend (1164 tests), `cargo test` for Rust (1075+ tests)
 - **CSS**: Use `var(--ts-*)` design tokens from `src/style.css`, never hardcode hex colors
 
 ## Coding Standards
@@ -170,3 +185,31 @@ Before writing any non-trivial functionality from scratch, **search for a well-m
 - History: `rules/completion-log.md` (130+ completed chunks)
 - Backlog: `rules/backlog.md`
 - Milestones: `rules/milestones.md`
+
+## Session Resumption & Progress Tracking
+
+When starting a new session or resuming after a context-limit break:
+
+1. **Read `rules/milestones.md`** — find the next `not-started` chunk.
+2. **Read `rules/completion-log.md`** (top 50 lines) — see what was recently done.
+3. **Check for in-progress work** — if a chunk is `in-progress`, resume it.
+4. **Track progress** — use the todo list tool to track multi-step chunks.
+5. **After completing a chunk** — archive it per the milestones enforcement rule:
+   log in `completion-log.md`, remove from `milestones.md`, update docs if brain-related.
+
+When the "Continue" prompt is received with no other context, follow steps 1–3 above.
+
+### Long-Running Session Guidelines
+
+- VS Code auto-summarizes conversation history when the context window fills up.
+- The `chat.agent.maxRequests` is set to 100 in workspace settings.
+- After each chunk, run the CI gate: `npx vitest run && cargo test && cargo clippy`.
+- If a service is needed (Ollama, dev server), use `scripts/wait-for-service.mjs`.
+- The `scripts/copilot-loop.mjs` script generates resume prompts with context.
+
+### MCP Server
+
+TerranSoul exposes its brain via MCP on `127.0.0.1:7421`. The `.vscode/mcp.json`
+configures it as `terransoul-brain`. Use the brain tools (`brain_search`,
+`brain_ingest`, `brain_health`, etc.) to access the companion's memory during
+coding sessions.

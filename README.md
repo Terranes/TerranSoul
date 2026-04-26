@@ -147,7 +147,7 @@ TerranSoul includes a **TerranSoul Link** layer that securely connects all your 
 
 ## What's Implemented
 
-TerranSoul has completed **12 phases of development**. Here's what's working today:
+TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 15–18). Here's what's working today:
 
 ### � Skill Tree / Quest System (RPG Brain Configuration)
 - **Constellation map** — full-screen radial cluster layout with pan/zoom and minimap
@@ -165,7 +165,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 
 ### 🎭 3D Character System
 - **VRM 1.0 & 0.x** model support via Three.js + `@pixiv/three-vrm`
-- 2 bundled default models (Annabelle, M58) + persistent custom VRM import
+- 2 bundled default models (Shinra, Komori) + persistent custom VRM import
 - Natural relaxed pose (not T-pose), spring bone warmup, frustum culling disabled
 - **AvatarStateMachine** — 5 body states (idle, thinking, talking, happy, sad) with expression-driven animation
 - **Exponential damping** for smooth bone/expression transitions
@@ -182,6 +182,7 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 **Providers & modes** (`src-tauri/src/brain/`)
 - **4 brain modes:** Free API (Pollinations, Groq), Paid API (OpenAI / Anthropic / Groq / OpenAI-compatible), Local Ollama, Stub fallback
 - Implementations: `OllamaAgent`, `OpenAiClient`, `FreeProvider`, `ProviderRotator`, `StubAgent`
+- Cloud embedding API (`cloud_embeddings.rs`) — unified `embed_for_mode` dispatcher routes to OpenAI-compatible `/v1/embeddings` for paid/free cloud modes, so vector RAG works without local Ollama
 - External CLI agents (Chunk 1.5): multi-agent **roster** + Temporal-style **durable workflow engine** (`src-tauri/src/agents/`, `src-tauri/src/workflows/`)
 - Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM
 - Zero-setup first launch — free brain auto-configures with no API keys
@@ -215,45 +216,64 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - **Daily-conversation write-back loop** — every chat turn lands instantly in short-term memory; the **`memory::auto_learn`** policy (default: every 10 turns, 3-turn cooldown) decides when to fire `extract_memories_from_session` automatically. Tunable per-user via `get_auto_learn_policy` / `set_auto_learn_policy` and previewed live via the pure `evaluate_auto_learn` decision query. Full loop documented in **[docs/brain-advanced-design.md § 21](docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop)**
 - **Code-intelligence bridge — GitNexus sidecar (Tier 1)** — out-of-process MCP/JSON-RPC bridge to the upstream `gitnexus` server (`abhigyanpatwari/GitNexus`, **PolyForm-Noncommercial-1.0.0** — never bundled). Exposes four read-only tools (`gitnexus_query`, `gitnexus_context`, `gitnexus_impact`, `gitnexus_detect_changes`) as Tauri commands gated by the new `code_intelligence` capability. Implementation: `src-tauri/src/agent/gitnexus_sidecar.rs` (transport-agnostic bridge with `tokio::process` stdio transport + in-memory mock for tests) and `src-tauri/src/commands/gitnexus.rs`. Documented in **[docs/brain-advanced-design.md § 22](docs/brain-advanced-design.md)**.
 - **Code-RAG fusion in `rerank_search_memories` (Tier 2)** — when the GitNexus sidecar is configured + the `code_intelligence` capability is granted, the recall stage of `rerank_search_memories` also dispatches the user query to GitNexus, normalises the JSON response into pseudo-`MemoryEntry` records (negative ids, tier=`Working`, type=`Context`, tag `code:gitnexus`), and RRF-fuses them with the SQLite candidate set via the existing `memory::fusion::reciprocal_rank_fuse` (k=60). Failures degrade silently to DB-only recall — code intelligence augments, never gates. Implementation: `src-tauri/src/memory/code_rag.rs` (pure shape-tolerant normaliser supporting 5 known GitNexus response shapes + 5 field aliases). Documented in **[docs/brain-advanced-design.md § 23](docs/brain-advanced-design.md)**.
+- **Code-knowledge-graph mirror (Tier 3, V7)** — opt-in `gitnexus_sync` Tauri command pulls the structured KG from the GitNexus `graph` MCP tool, maps the upstream `CONTAINS` / `CALLS` / `IMPORTS` / `EXTENDS` / `HANDLES_ROUTE` relations into the existing 17-relation taxonomy (`contains`, `depends_on`, `derived_from`, `governs`, …), and persists every edge with `edge_source = 'gitnexus:<scope>'` so the rest of the brain (`hybrid_search_with_graph`, BrainView graph panel, multi-hop RAG) can reason over code structure alongside free-text memories. Idempotent — re-running the same scope reuses memories via the existing `source_hash` dedup index. `gitnexus_unmirror` rolls back exactly one mirror without touching native or LLM-extracted edges. V7 SQLite migration adds the `edge_source` TEXT column + `idx_edges_edge_source` index. Implementation: `src-tauri/src/memory/gitnexus_mirror.rs`. Strictly opt-in: never runs at startup. Documented in **[docs/brain-advanced-design.md § 8 (V7)](docs/brain-advanced-design.md)**.
+- **BrainView "Code knowledge" panel (Tier 4)** — `src/components/CodeKnowledgePanel.vue` surfaces the GitNexus pipeline in the Brain hub: a sync form for `repo:owner/name@sha` scopes, a list of every mirrored repo (edge count + last-sync time, ordered most-recent-first) with a per-row "Unmirror" button, and a blast-radius pre-flight that runs `gitnexus_impact` on a symbol you're about to change. Powered by the new `gitnexus_list_mirrors` Tauri command (which aggregates `memory_edges` by `edge_source` LIKE `gitnexus:%`). Pure frontend wiring on top of Chunks 2.1 + 2.3.
 - Pinia stores: `brain.ts`, `conversation.ts`, `memory.ts`, `agent-roster.ts`, `skill-tree.ts`
 
 ### 🗣️ Voice System (The "Charisma" Stats)
-- **ASR:** Web Speech API, Whisper, Groq speech-to-text
-- **TTS:** Edge TTS with gender-matched voices (pitch/rate prosody per character)
+- **ASR:** Web Speech API (browser-native), Whisper, Groq speech-to-text
+- **TTS:** Web Speech (browser SpeechSynthesis — free, offline-capable, no third-party endpoint), OpenAI TTS (optional, requires API key)
 - **Hotword detection** for wake-word activation
 - **Speaker diarization** support
 - LipSync ↔ TTS audio pipeline for real-time mouth animation
+- **Audio-prosody persona hints** — when ASR is configured, the Master-Echo
+  persona suggester analyses the user's typed turns (which mirror their spoken
+  patterns) for tone (concise / elaborate / energetic / inquisitive / emphatic
+  / playful), pacing (fast / measured / slow), and quirks (filler words, emoji
+  use), and folds those hints into the persona-extraction prompt.
+  Camera-free; raw audio is never read; hints are never persisted.
 
 ### 💾 Memory System (The "Hippocampus")
 
 > Architectural reference: **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)** — full schema, RAG pipeline, decay model, knowledge graph, and April 2026 research survey.
 
 **Core modules** (`src-tauri/src/memory/`)
-- `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V6**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal weighted-sum scoring), `hybrid_search_rrf` (RRF-fused vector + keyword + freshness retrievers), `apply_decay`, `promote`
+- `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V8**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal weighted-sum scoring), `hybrid_search_rrf` (RRF-fused vector + keyword + freshness retrievers), `apply_decay`, `promote`
 - `backend.rs` — `StorageBackend` trait + `StorageConfig` + `StorageError` (the seam every backend implements)
-- `migrations.rs` — auto-applied schema migrations through V6 (`memories` + `memory_edges` with temporal `valid_from` / `valid_to` columns, `PRAGMA foreign_keys=ON`)
-- `edges.rs` — `MemoryEdge`, `NewMemoryEdge`, `EdgeDirection`, `EdgeSource`, `EdgeStats`, `COMMON_RELATION_TYPES` (17-type taxonomy), `normalise_rel_type`, `parse_llm_edges`, `format_memories_for_extraction`
+- `migrations.rs` — auto-applied schema migrations through V8 (`memories` + `memory_edges` with temporal `valid_from` / `valid_to` columns + V7 `edge_source` external-KG provenance + V8 `memory_versions` edit history table, `PRAGMA foreign_keys=ON`)
+- `edges.rs` — `MemoryEdge`, `NewMemoryEdge` (with V7 `edge_source: Option<String>`), `EdgeDirection`, `EdgeSource`, `EdgeStats`, `COMMON_RELATION_TYPES` (17-type taxonomy), `normalise_rel_type`, `parse_llm_edges`, `format_memories_for_extraction`, `delete_edges_by_edge_source`
+- `gitnexus_mirror.rs` — Phase 13 Tier 3 mapper: GitNexus `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` → 17-relation taxonomy; `mirror_kg(store, scope, payload)` / `unmirror(store, scope)` pure functions; idempotent across re-syncs (uses `source_hash` for node dedup)
 - `cognitive_kind.rs` — pure-function `classify(memory_type, tags, content) → CognitiveKind` (`Episodic` / `Semantic` / `Procedural`); mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`
 - `brain_memory.rs` — LLM-powered ops: `extract_facts`, `summarize`, `semantic_search_entries`, `extract_edges_via_brain`
 - `fusion.rs` — `reciprocal_rank_fuse(rankings, k)` (Cormack RRF, `k=60`); consumed by `MemoryStore::hybrid_search_rrf`
 - `hyde.rs` — pure HyDE prompt builder + reply cleaner (Gao et al., 2022); consumed by `OllamaAgent::hyde_complete` and the `hyde_search_memories` Tauri command
 - `reranker.rs` — pure cross-encoder rerank prompt builder + score parser + reorder logic; consumed by `OllamaAgent::rerank_score` and the two-stage `rerank_search_memories` Tauri command (recall via `hybrid_search_rrf`, precision via LLM-as-judge)
 - `auto_learn.rs` — `AutoLearnPolicy` + pure `evaluate(policy, total_turns, last_autolearn_turn) → AutoLearnDecision`; the cadence policy that turns daily conversation into long-term memory (default: every 10 turns, 3-turn cooldown). See **[docs/brain-advanced-design.md § 21](docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop)**.
+- `tag_vocabulary.rs` — curated `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`, `category_decay_multiplier()` per-prefix decay rates
+- `auto_tag.rs` — LLM auto-tagger: `auto_tag_content()` dispatches to Ollama/FreeApi/PaidApi; `parse_tag_response()` validates + caps at 4 curated-prefix tags; `merge_tags()` deduplicates with user tags. Opt-in via `AppSettings.auto_tag`
+- `obsidian_export.rs` — one-way Obsidian vault export: `export_to_vault(vault_dir, entries)` writes `<id>-<slug>.md` per long-tier memory with YAML frontmatter; idempotent (mtime-based skip); `slugify`, `format_iso`, `render_markdown` pure helpers
+- `temporal.rs` — natural-language time-range parser: `parse_time_range(question, now_ms)` resolves "last N days", "since April", "between X and Y", "today", "yesterday" into `TimeRange { start_ms, end_ms }`; pure std calendar math (Howard Hinnant algorithm), no external crate
+- `contextualize.rs` — Contextual Retrieval (Anthropic 2024): `generate_doc_summary()` + `contextualise_chunk(doc_summary, chunk, brain_mode)` + `prepend_context()`; opt-in via `AppSettings.contextual_retrieval`; adds document-level context to each chunk before embedding, reducing failed retrievals by ~49 %
+- `versioning.rs` — non-destructive edit history: `save_version(conn, memory_id)` snapshots the current state into `memory_versions` (V8 schema) before each update; `get_history()` returns all previous versions; FK cascade on delete
+- `chunking.rs` — semantic chunking pipeline: `split_markdown()` (heading/paragraph/sentence-aware via `text-splitter` crate), `split_text()` (Unicode sentence boundaries), `dedup_chunks()` (SHA-256 hash dedup), `Chunk` struct (index, text, hash, heading metadata); replaces naive word-count splitter
+- `conflicts.rs` — contradiction resolution (V9 schema): `build_contradiction_prompt` + `parse_contradiction_reply` for LLM-based contradiction check; `MemoryConflict` CRUD (`add_conflict`, `list_conflicts`, `resolve_conflict`, `dismiss_conflict`, `count_open_conflicts`); losers soft-closed via `valid_to` (never deleted)
+- `edge_conflict_scan.rs` — scheduled edge conflict detection: `collect_scan_candidates()` (lock-safe candidate collection), `record_contradiction()` (insert contradicts edge + open conflict), scans positive-relation edges for hidden contradictions via LLM-as-judge
+- `ann_index.rs` — HNSW approximate nearest neighbor index via `usearch` 2.x: `AnnIndex` (lazy OnceCell init, auto-rebuild from DB, periodic save to `vectors.usearch`), accelerates `vector_search` + `find_duplicate` from O(n) to O(log n)
 - Pluggable backends behind cargo features: `postgres.rs` (`sqlx`), `mssql.rs` (`tiberius`), `cassandra.rs` (`scylla`)
 
 **Tauri command surface** (`src-tauri/src/commands/memory.rs`)
-- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal weighted-sum), `hybrid_search_memories_rrf` (RRF-fused vector + keyword + freshness), `hyde_search_memories` (HyDE — embed an LLM-written hypothetical answer), `rerank_search_memories` (two-stage RRF-recall + LLM-as-judge cross-encoder rerank), `multi_hop_search_memories` (graph traversal), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge` (V6: optional `valid_from` / `valid_to`), `close_memory_edge` (V6: record supersession), `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`, `get_auto_learn_policy`, `set_auto_learn_policy`, `evaluate_auto_learn`
+- `add_memory`, `update_memory`, `delete_memory`, `get_memories`, `search_memories` (SQL `LIKE`), `semantic_search_memories` (cosine), `hybrid_search_memories` (6-signal weighted-sum), `hybrid_search_memories_rrf` (RRF-fused vector + keyword + freshness), `hyde_search_memories` (HyDE — embed an LLM-written hypothetical answer), `rerank_search_memories` (two-stage RRF-recall + LLM-as-judge cross-encoder rerank), `multi_hop_search_memories` (graph traversal), `temporal_query` (natural-language time-range filter: "last week", "since April", "between X and Y"), `get_relevant_memories`, `get_short_term_memory`, `extract_memories_from_session`, `summarize_session`, `backfill_embeddings`, `apply_memory_decay`, `gc_memories`, `promote_memory`, `get_memories_by_tier`, `get_schema_info`, `get_memory_stats`, `add_memory_edge` (V6: optional `valid_from` / `valid_to`), `close_memory_edge` (V6: record supersession), `delete_memory_edge`, `list_memory_edges`, `get_edges_for_memory`, `get_edge_stats`, `list_relation_types`, `extract_edges_via_brain`, `scan_edge_conflicts` (LLM-as-judge scan over positive-relation edges for hidden contradictions), `gitnexus_sync` (V7: opt-in code-KG mirror), `gitnexus_unmirror` (V7: per-scope rollback), `gitnexus_list_mirrors` (V7: BrainView panel), `get_auto_learn_policy`, `set_auto_learn_policy`, `evaluate_auto_learn`, `export_to_obsidian` (one-way vault export with YAML frontmatter), `get_memory_history` (V8: version history for a memory entry), `adjust_memory_importance` (access-pattern-driven ±1 nudge with version audit trail)
 
 **Storage & RAG**
 - **Three tiers** mirroring human cognition: short-term (in-memory `Vec<Message>`, last ~20 turns) → working (SQLite, session-scoped) → long-term (SQLite, vector-indexed, decay/GC managed)
-- **Knowledge graph (V6):** typed directional `memory_edges` table with FK cascade + temporal `valid_from` / `valid_to` validity intervals, 17-type relationship taxonomy, LLM edge extractor, multi-hop traversal
+- **Knowledge graph (V8):** typed directional `memory_edges` table with FK cascade + temporal `valid_from` / `valid_to` validity intervals + `edge_source` external-KG provenance (e.g. `gitnexus:<scope>` for the Phase 13 Tier 3 code-KG mirror), 17-type relationship taxonomy, LLM edge extractor, multi-hop traversal; `memory_versions` table for non-destructive edit history
 - **Embeddings:** Ollama `nomic-embed-text` (768-dim) stored as SQLite BLOB; chat-model fallback with process-lifetime "unsupported" cache + 60s `/api/tags` probe cache
 - **Hybrid 6-signal RAG search** — `vector_similarity` (40%) + `keyword_match` (20%) + `recency_bias` (15%) + `importance` (10%) + `decay_score` (10%) + `tier_priority` (5%)
 - **Decay & GC:** exponential decay (`decay_score *= 0.95^(hours/168)`), access-count tracking, periodic garbage collection
 - **Multi-source knowledge management:** source-hash change detection, TTL expiry, access-count decay, **LLM-powered conflict resolution**
 
 **Frontend**
-- `src/views/MemoryView.vue` — list / grid / graph view, tier chips, filters, decay viz
+- `src/views/MemoryView.vue` — list / grid / graph view, tier chips, tag-prefix category filter chips with counts, search + semantic + hybrid search
 - `src/components/MemoryGraph.vue` — Cytoscape.js semantic graph visualization with typed edges
 - `src/stores/memory.ts` — Pinia store (CRUD + search + streaming results)
 
@@ -262,21 +282,33 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 > Architectural reference: **[docs/persona-design.md](docs/persona-design.md)** — full traits schema, the master-mirror self-learning loop, ARKit-blendshape → VRM 1.0 expression mapping, MediaPipe FaceLandmarker / PoseLandmarker pipeline, the per-session camera consent contract, the persona quest chain, and the April 2026 research survey (Hunyuan Motion, MoCha, OmniHuman, ID-Patch, MotionAura).
 
 **Core modules**
-- `src-tauri/src/commands/persona.rs` — Tauri persistence: `get_persona`, `save_persona`, `set_persona_block` / `get_persona_block`, `list_/save_/delete_learned_expression`, `list_/save_/delete_learned_motion`. Atomic JSON-on-disk under `<app_data_dir>/persona/{persona.json, expressions/, motions/}`. Path-traversal-safe id validation. **No camera commands** — webcam frames never cross the IPC boundary; only user-confirmed JSON landmark artifacts ever reach Rust.
-- `src/stores/persona-types.ts` — `PersonaTraits` (name, role, bio, tone, quirks, avoid, active, version), `LearnedExpression`, `LearnedMotion`, `defaultPersona()`, forward-compatible `migratePersonaTraits()`.
-- `src/stores/persona.ts` — Pinia store for the active persona + learned libraries + ephemeral per-session camera consent state (never persisted). Tauri-persisted with localStorage fallback.
+- `src-tauri/src/commands/persona.rs` — Tauri persistence: `get_persona`, `save_persona`, `set_persona_block` / `get_persona_block`, `list_/save_/delete_learned_expression`, `list_/save_/delete_learned_motion`, `extract_persona_from_brain` (Master-Echo brain-extraction loop, shipped 2026-04-24), `check_persona_drift` (drift detection comparing active persona vs `personal:*` memories, shipped 2026-04-26), `export_persona_pack` / `preview_persona_pack` / `import_persona_pack` (persona pack export / import, shipped 2026-04-24). Atomic JSON-on-disk under `<app_data_dir>/persona/{persona.json, expressions/, motions/}`. Path-traversal-safe id validation. **No camera commands** — webcam frames never cross the IPC boundary; only user-confirmed JSON landmark artifacts ever reach Rust.
+- `src-tauri/src/persona/extract.rs` — pure prompt + parser for Master-Echo: `build_persona_prompt`, `assemble_snippets` (last 30 turns + up to 20 long-tier `personal:*` memories), `parse_persona_reply` (tolerant of markdown fences, leading prose, non-string list entries; bio capped at 500 chars; lists deduped + capped at 6). Same testable-seam shape as `memory/hyde.rs` and `memory/reranker.rs`.
+- `src-tauri/src/persona/drift.rs` — pure prompt + parser for persona drift detection: `build_drift_prompt` (persona JSON + personal memories → comparison prompt), `parse_drift_reply` (tolerant of fences/prose), `DriftReport` (detected, summary, suggested_changes), `DriftSuggestion` (field/current/proposed). 14 unit tests.
+- `src-tauri/src/persona/pack.rs` — pure pack codec: `PersonaPack` envelope (versioned, opaque per-asset), `build_pack`, `pack_to_string`, `parse_pack` (1 MiB hard cap, future-version rejection), `validate_asset` (mirrors `validate_id` for path-traversal safety), `ImportReport` (per-entry skip messages capped at 32 + truncation marker). 18 unit tests.
+- `src/stores/persona-types.ts` — `PersonaTraits` (name, role, bio, tone, quirks, avoid, active, version), `LearnedExpression`, `LearnedMotion`, `DriftReport`, `DriftSuggestion`, `defaultPersona()`, forward-compatible `migratePersonaTraits()`.
+- `src/stores/persona.ts` — Pinia store for the active persona + learned libraries + ephemeral per-session camera consent state (never persisted) + `suggestPersonaFromBrain()` action that wraps the Master-Echo Tauri command + `exportPack()` / `previewImportPack()` / `importPack()` actions for the persona pack. Tauri-persisted with localStorage fallback.
 - `src/utils/persona-prompt.ts` — pure `buildPersonaBlock(traits, learnedMotions)` that renders the `[PERSONA]` block injected into every chat's system prompt next to `[LONG-TERM MEMORY]` (browser path) or via `set_persona_block` (server path).
 
 **Persona ↔ Brain integration**
 - The rendered `[PERSONA]` block is spliced into the system prompt by both streaming pipelines (`stream_ollama` + `stream_openai_api` in `src-tauri/src/commands/streaming.rs`) alongside `[LONG-TERM MEMORY]`. Empty traits → no injection.
-- The "Master's Echo" quest asks the brain to read your conversations + personal memories and propose a persona that mirrors who you are — the master-mirror self-learning loop documented in [persona-design.md § 3](docs/persona-design.md#3-the-master-mirror-self-learning-loop).
+- The "Master's Echo" quest asks the brain to read your conversations + personal memories and propose a persona that mirrors who you are — the camera-free Master-Echo brain-extraction loop documented in [persona-design.md § 3](docs/persona-design.md#3-the-master-mirror-self-learning-loop) and [§ 9.3](docs/persona-design.md#93-llm-assisted-persona-authoring--shipped-2026-04-24). The Persona panel surfaces a "✨ Suggest from my chats" button + review-before-apply card with Apply / Load-into-editor / Discard actions; nothing is auto-saved.
+- **Persona drift detection** (Chunk 14.8) — piggybacks on the auto-learn loop. After every 25 accumulated auto-extracted facts, the brain compares the active `PersonaTraits` against the latest `personal:*` memory cluster and surfaces a `DriftReport` with a summary + suggested trait changes so the UI can prompt "Echo noticed you've shifted toward …; update persona?"
 
 **Persona quest chain (main + side)**
 - **Main chain (camera-free):** `soul-mirror` → `my-persona` → `master-echo` — every step works without ever turning on the camera.
-- **Side chain (camera-driven, ships after the main chain):** `expressions-pack` ("Mask of a Thousand Faces") + `motion-capture` ("Mirror Dance"). Privacy contract: **per-session/per-chat consent only**, never always-on. See [persona-design.md § 5](docs/persona-design.md#5-privacy--consent--the-per-session-camera-leash).
+- **Side chain (camera-driven):** `expressions-pack` ("Mask of a Thousand Faces") + `motion-capture` ("Mirror Dance"). Privacy contract: **per-session/per-chat consent only**, never always-on. See [persona-design.md § 5](docs/persona-design.md#5-privacy--consent--the-per-session-camera-leash).
+- `src/renderer/face-mirror.ts` — pure `mapBlendshapesToVRM()` ARKit→VRM mapper (52 blendshapes → 12+2 channels) + `FaceMirror` class wrapping lazy-loaded `@mediapipe/tasks-vision` FaceLandmarker with EMA smoothing. 16 unit tests.
+- `src/composables/useCameraCapture.ts` — per-session camera consent composable (getUserMedia + FaceMirror lifecycle, 5-min idle auto-stop, component-unmount cleanup).
+- `src/renderer/pose-mirror.ts` — pure `retargetPoseToVRM()` mapper (33 MediaPipe landmarks → 11 VRM humanoid bones via atan2 joint angles + clamping) + `PoseMirror` class wrapping lazy-loaded PoseLandmarker with EMA bone smoothing. 11 unit tests.
+- `src/renderer/vrma-baker.ts` — pure `bakeMotionToClip()` converts LearnedMotion JSON frames into `THREE.AnimationClip` with quaternion keyframe tracks. `bakeAllMotions()` batch-bakes. 12 unit tests.
+- `src/renderer/learned-motion-player.ts` — `LearnedMotionPlayer` class wraps bakeMotionToClip + VrmaManager.playClip for on-demand playback of learned motions. `applyLearnedExpression()` / `clearExpressionPreview()` helpers for timed expression preview on VRM. 10 unit tests.
+- `src/renderer/phoneme-viseme.ts` — text-driven phoneme-to-viseme mapper: English grapheme tokenizer (15 digraphs + single-char fallback) → 5-channel viseme timeline builder → `VisemeScheduler` with frame-accurate interpolation. Replaces FFT band-energy lip-sync when text + duration are available. 22 unit tests.
+- `src/components/PersonaTeacher.vue` — "Teach an Expression / Motion" panel: Expression/Motion tab toggle, consent dialog → live camera preview (CAMERA LIVE badge) → capture pose or record motion (30 fps, max 10s) → name + trigger → save. 5 component tests.
 
 **Frontend**
-- `src/components/PersonaPanel.vue` — full add / update / delete / review management UI mounted in the Brain hub (`BrainView.vue`); edits all traits, lists every learned-expression / learned-motion artifact with one-click delete, and live-previews the rendered `[PERSONA]` system-prompt block.
+- `src/components/PersonaPanel.vue` — full add / update / delete / review management UI mounted in the Brain hub (`BrainView.vue`); edits all traits, lists every learned-expression / learned-motion artifact with one-click delete, live-previews the rendered `[PERSONA]` system-prompt block, and includes the "✨ Suggest from my chats" Master-Echo button.
+- `src/components/PersonaPackPanel.vue` — sibling card for persona pack export / import (Chunk 14.7): export with optional note + clipboard copy + `.json` download (Blob + `<a download>` — no Tauri `dialog` plugin needed), import with **🔍 Preview** dry-run + **⤴ Apply** + per-entry skip report.
 - `src/components/PersonaListEditor.vue` — small chip-style list editor used by the persona panel for `tone` / `quirks` / `avoid` arrays.
 
 ### 🔗 TerranSoul Link
@@ -290,6 +322,16 @@ TerranSoul has completed **12 phases of development**. Here's what's working tod
 - Local Ollama models surface as marketplace agents — install & activate from the same UI
 - WASM sandbox for agent isolation
 - See [`instructions/OPENCLAW-EXAMPLE.md`](./instructions/OPENCLAW-EXAMPLE.md) for an end-to-end walkthrough using the OpenClaw bridge agent
+
+### 🤖 AI Coding Integrations (Brain Gateway)
+
+> Architectural reference: **[docs/AI-coding-integrations.md](docs/AI-coding-integrations.md)** — full protocol details, security model, auto-setup writers, and the VS Code Copilot incremental-indexing pact.
+
+- **MCP server** (Chunk 15.1) — HTTP/JSON-RPC 2.0 on `127.0.0.1:7421` via axum Streamable HTTP transport. Bearer-token auth (`mcp-token.txt`). 8 brain tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`).
+- **BrainGateway trait** (Chunk 15.3) — single typed op surface shared by MCP and future gRPC transports. `AppStateGateway` adapter, capability gating (`GatewayCaps`), typed errors, delta-stable fingerprint for VS Code Copilot cache.
+- **AppState Arc newtype** — `AppState(Arc<AppStateInner>)` with `Deref + Clone`. Enables cheap sharing with background servers without changing any of the 150+ existing Tauri commands.
+- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`
+- gRPC server (Chunk 15.2), Control Panel (15.4), auto-setup writers (15.6) — planned
 
 ### 🖥️ Window Modes
 - Standard desktop window
@@ -394,7 +436,7 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 │  ├── AI Package Manager                             │
 │  ├── Agent Orchestrator + Routing                   │
 │  ├── Memory (long-term + short-term)                │
-│  ├── TTS (Edge TTS)                                 │
+│  ├── TTS (Web Speech / OpenAI TTS)                  │
 │  ├── TerranSoul Link (cross-device sync + pairing)  │
 │  ├── Messaging (pub/sub IPC)                        │
 │  └── Sandbox (WASM agent isolation)                 │
@@ -410,9 +452,9 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 ## Development Status
 
-**Completed phases:** 12
-**Test suite:** 948 frontend (Vitest) + 583 backend (cargo) + 4 E2E (Playwright) — all passing
-**Current focus:** Phase 12 — Brain Advanced Design + per-user model persistence
+**Completed phases:** 0–14 foundation/partial, Phase 15 partially shipped (15.1 MCP server, 15.3 BrainGateway), Phases 16–18 partially shipped (RAG, memory intelligence, categorisation)
+**Test suite:** 1164 frontend (Vitest) + 1075 backend (cargo) + 4 E2E (Playwright) — all passing
+**Current focus:** Phase 15 AI Coding Integrations (gRPC, Control Panel), Phase 16 Modern RAG, Phase 17 Brain Intelligence
 **See:** `rules/milestones.md` for active chunks and `rules/backlog.md` for deferred work
 
 See [rules/milestones.md](rules/milestones.md) for upcoming work and [rules/completion-log.md](rules/completion-log.md) for the detailed record of all completed work.

@@ -35,17 +35,17 @@ describe('ModelPanel', () => {
     const select = wrapper.find('.model-select');
     expect(select.exists()).toBe(true);
     const options = select.findAll('option');
-    expect(options.length).toBeGreaterThanOrEqual(2);
-    expect(options[0].text()).toBe('Annabelle the Sorcerer');
-    expect(options[1].text()).toBe('M58');
+    expect(options.length).toBe(2);
+    expect(options[0].text()).toBe('Shinra');
+    expect(options[1].text()).toBe('Komori');
   });
 
   it('renders model cards for default models', () => {
     const wrapper = mount(ModelPanel);
     const cards = wrapper.findAll('.model-card');
-    expect(cards.length).toBeGreaterThanOrEqual(2);
-    expect(cards[0].text()).toContain('Annabelle the Sorcerer');
-    expect(cards[1].text()).toContain('M58');
+    expect(cards.length).toBe(2);
+    expect(cards[0].text()).toContain('Shinra');
+    expect(cards[1].text()).toContain('Komori');
   });
 
   it('emits close on overlay click', async () => {
@@ -70,15 +70,10 @@ describe('ModelPanel', () => {
     expect(wrapper.text()).toContain('instructions/');
   });
 
-  it('first model card is active by default (annabelle selected)', () => {
+  it('first model card is active by default (shinra selected)', () => {
     const wrapper = mount(ModelPanel);
     const cards = wrapper.findAll('.model-card');
     expect(cards[0].classes()).toContain('active');
   });
 
-  it('renders thumbnail images for models with thumbnails', () => {
-    const wrapper = mount(ModelPanel);
-    const thumbs = wrapper.findAll('.model-thumb');
-    expect(thumbs.length).toBeGreaterThanOrEqual(2);
-  });
 });

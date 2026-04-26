@@ -158,7 +158,7 @@ describe('loadVRM URL encoding', () => {
     const fakeScene = { add: vi.fn() } as any;
     // This will fail at the Three.js loader level (no WebGL), but the path
     // should be accepted (not rejected as invalid string)
-    await expect(loadVRM(fakeScene, '/models/default/Annabelle the Sorcerer.vrm'))
+    await expect(loadVRM(fakeScene, '/models/default/Shinra.vrm'))
       .rejects.toThrow(); // Will throw from GLTFLoader, not path validation
   });
 

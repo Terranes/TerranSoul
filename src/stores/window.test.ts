@@ -157,4 +157,36 @@ describe('window store — IPC integration', () => {
     expect(store.error).toBeNull();
     expect(store.isLoading).toBe(false);
   });
+
+  it('openPanelWindow invokes open_panel_window command', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useWindowStore();
+    const ok = await store.openPanelWindow('brain');
+    expect(mockInvoke).toHaveBeenCalledWith('open_panel_window', { panel: 'brain' });
+    expect(ok).toBe(true);
+  });
+
+  it('openPanelWindow handles failure', async () => {
+    mockInvoke.mockRejectedValue(new Error('Unknown panel: chat'));
+    const store = useWindowStore();
+    const ok = await store.openPanelWindow('chat');
+    expect(ok).toBe(false);
+    expect(store.error).toContain('Unknown panel');
+  });
+
+  it('closePanelWindow invokes close_panel_window command', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useWindowStore();
+    const ok = await store.closePanelWindow('memory');
+    expect(mockInvoke).toHaveBeenCalledWith('close_panel_window', { panel: 'memory' });
+    expect(ok).toBe(true);
+  });
+
+  it('closePanelWindow handles failure gracefully', async () => {
+    mockInvoke.mockRejectedValue(new Error('no such window'));
+    const store = useWindowStore();
+    const ok = await store.closePanelWindow('nonexistent');
+    expect(ok).toBe(false);
+    expect(store.error).toBeTruthy();
+  });
 });

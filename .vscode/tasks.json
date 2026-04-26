@@ -1,0 +1,80 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dev Server",
+      "type": "shell",
+      "command": "npm run dev",
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "." },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "ready in"
+        }
+      },
+      "presentation": { "reveal": "silent", "panel": "dedicated" }
+    },
+    {
+      "label": "Wait for Dev Server",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/wait-for-service.mjs", "http://localhost:1420", "30"],
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "Wait for Ollama",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/wait-for-service.mjs", "http://localhost:11434/api/version", "15"],
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "Wait for MCP Server",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/wait-for-service.mjs", "http://localhost:7421/mcp", "10"],
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "Run All Tests",
+      "type": "shell",
+      "command": "npx vitest run && cargo test",
+      "group": "test",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Cargo Check + Clippy",
+      "type": "shell",
+      "command": "cd src-tauri && cargo check && cargo clippy -- -D warnings",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Vue TypeScript Check",
+      "type": "shell",
+      "command": "npx vue-tsc --noEmit",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Full CI Gate",
+      "type": "shell",
+      "command": "npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test",
+      "group": "test",
+      "dependsOrder": "sequence",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Copilot: Continue Session",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/copilot-loop.mjs"],
+      "group": "none",
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    }
+  ]
+}

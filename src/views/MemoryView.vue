@@ -39,6 +39,14 @@
         >
           ＋ Add memory
         </button>
+        <button
+          class="btn-secondary"
+          data-testid="mv-obsidian-export"
+          :disabled="isActing"
+          @click="showObsidianExport = true"
+        >
+          📓 Export to Obsidian
+        </button>
       </div>
     </header>
 
@@ -243,6 +251,23 @@
         </button>
       </div>
 
+      <div
+        v-if="tagPrefixCounts.size > 0"
+        class="mv-filter-row"
+        data-testid="mv-tag-prefix-filter"
+      >
+        <span class="mv-filter-label">Tag:</span>
+        <button
+          v-for="prefix in TAG_PREFIXES"
+          :key="prefix"
+          :class="['mv-tag-chip', { active: tagPrefixFilter === prefix }]"
+          :disabled="!tagPrefixCounts.has(prefix)"
+          @click="tagPrefixFilter = tagPrefixFilter === prefix ? null : prefix"
+        >
+          {{ prefix }} ({{ tagPrefixCounts.get(prefix) ?? 0 }})
+        </button>
+      </div>
+
       <p
         v-if="store.isLoading"
         class="mv-status"
@@ -411,6 +436,42 @@
         </div>
       </div>
     </div>
+
+    <!-- Obsidian export modal -->
+    <div
+      v-if="showObsidianExport"
+      class="mv-modal-backdrop"
+      @click.self="showObsidianExport = false"
+    >
+      <div class="mv-modal" data-testid="mv-obsidian-dialog">
+        <h3>📓 Export to Obsidian</h3>
+        <p class="mv-desc">Export all long-tier memories as Markdown files with YAML frontmatter into your Obsidian vault.</p>
+        <label>Vault directory
+          <input
+            v-model="obsidianVaultDir"
+            placeholder="e.g. C:\Users\Me\Documents\MyVault"
+            data-testid="mv-obsidian-path"
+          >
+        </label>
+        <p v-if="obsidianResult" class="mv-feedback" data-testid="mv-obsidian-result">{{ obsidianResult }}</p>
+        <div class="mv-modal-btns">
+          <button
+            class="btn-primary"
+            :disabled="!obsidianVaultDir.trim() || isActing"
+            data-testid="mv-obsidian-run"
+            @click="handleObsidianExport"
+          >
+            {{ isActing ? 'Exporting…' : 'Export' }}
+          </button>
+          <button
+            class="btn-secondary"
+            @click="showObsidianExport = false"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -431,13 +492,47 @@ const allTiers: MemoryTier[] = ['short', 'working', 'long'];
 const searchQuery = ref('');
 const typeFilter = ref<MemoryType | null>(null);
 const tierFilter = ref<MemoryTier | null>(null);
+const tagPrefixFilter = ref<string | null>(null);
 const searchResults = ref<MemoryEntry[] | null>(null);
+
+/** Curated tag prefixes — must match Rust `CURATED_PREFIXES`. */
+const TAG_PREFIXES = ['personal', 'domain', 'project', 'tool', 'code', 'external', 'session', 'quest'] as const;
+
+/** Count memories per curated tag prefix. */
+const tagPrefixCounts = computed(() => {
+  const source = searchResults.value ?? store.memories;
+  const counts = new Map<string, number>();
+  for (const m of source) {
+    if (!m.tags) continue;
+    const seen = new Set<string>();
+    for (const tag of m.tags.split(',')) {
+      const trimmed = tag.trim();
+      const colonIdx = trimmed.indexOf(':');
+      if (colonIdx <= 0) continue;
+      const prefix = trimmed.slice(0, colonIdx).toLowerCase();
+      if (!seen.has(prefix) && (TAG_PREFIXES as readonly string[]).includes(prefix)) {
+        seen.add(prefix);
+        counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+      }
+    }
+  }
+  return counts;
+});
 
 const displayedMemories = computed(() => {
   const source = searchResults.value ?? store.memories;
   return source.filter((m) => {
     if (typeFilter.value && m.memory_type !== typeFilter.value) return false;
     if (tierFilter.value && m.tier !== tierFilter.value) return false;
+    if (tagPrefixFilter.value) {
+      if (!m.tags) return false;
+      const prefix = tagPrefixFilter.value;
+      const hasPrefix = m.tags.split(',').some((t) => {
+        const trimmed = t.trim().toLowerCase();
+        return trimmed.startsWith(prefix + ':');
+      });
+      if (!hasPrefix) return false;
+    }
     return true;
   });
 });
@@ -594,6 +689,23 @@ function formatTokens(n: number) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
 }
 
+// Obsidian export
+const showObsidianExport = ref(false);
+const obsidianVaultDir = ref('');
+const obsidianResult = ref('');
+
+async function handleObsidianExport() {
+  isActing.value = true;
+  obsidianResult.value = '';
+  try {
+    const report = await store.exportToObsidian(obsidianVaultDir.value.trim());
+    obsidianResult.value = `✅ Exported ${report.written} file${report.written === 1 ? '' : 's'}, skipped ${report.skipped} unchanged (${report.total} long-tier total).`;
+  } catch (e) {
+    obsidianResult.value = `❌ Export failed: ${String(e)}`;
+  }
+  isActing.value = false;
+}
+
 onMounted(async () => {
   await store.fetchAll();
   await Promise.all([loadShortTerm(), store.getStats(), store.fetchEdges(), store.getEdgeStats()]);
@@ -603,7 +715,7 @@ onMounted(async () => {
 <style scoped>
 .memory-view { display: flex; flex-direction: column; height: 100%; padding: 1rem; gap: 0.75rem; overflow: hidden; }
 .mv-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
-.mv-header h2 { margin: 0; font-size: 1.25rem; }
+.mv-header h2 { margin: 0; font-size: 1.25rem; white-space: nowrap; }
 .mv-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .mv-feedback { padding: 0.5rem 1rem; background: var(--ts-success-bg); color: var(--ts-success); border-radius: 6px; margin: 0; }
 
@@ -651,6 +763,12 @@ onMounted(async () => {
 .mv-type-chip { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--ts-border-medium); cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: 0.8rem; transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast); }
 .mv-type-chip:hover { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
 .mv-type-chip.active { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); border-color: var(--ts-accent-blue-hover); }
+
+/* ── Tag prefix chips (Chunk 18.3) ── */
+.mv-tag-chip { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--ts-border-medium); cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: 0.8rem; transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast); }
+.mv-tag-chip:hover:not(:disabled) { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
+.mv-tag-chip:disabled { opacity: 0.35; cursor: default; }
+.mv-tag-chip.active { background: var(--ts-accent-purple, #a78bfa); color: var(--ts-text-on-accent); border-color: var(--ts-accent-purple, #a78bfa); }
 
 /* ── Tier chips & badges ── */
 .mv-tier-chip { padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid var(--ts-border-medium); cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: 0.8rem; transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast); }
@@ -708,4 +826,37 @@ onMounted(async () => {
 .btn-icon:hover { color: var(--ts-text-primary); }
 .btn-icon.danger { color: var(--ts-error); }
 .btn-danger { padding: 0.35rem 0.75rem; background: var(--ts-error-bg); color: var(--ts-error); border: none; border-radius: 6px; cursor: pointer; }
+
+/* ── Responsive: Tablet ── */
+@media (max-width: 840px) {
+  .mv-header { flex-direction: column; align-items: stretch; }
+  .mv-header-actions { justify-content: flex-start; }
+  .mv-search-row { flex-wrap: wrap; }
+  .mv-search { min-width: 0; flex-basis: 100%; }
+  .mv-node-detail { width: 200px; }
+  .mv-graph-panel { flex-direction: column; }
+  .mv-node-detail { width: auto; max-height: 200px; }
+}
+
+/* ── Responsive: Mobile ── */
+@media (max-width: 640px) {
+  .memory-view { padding: 0.75rem 0.5rem; gap: 0.5rem; }
+  .mv-header h2 { font-size: 1.1rem; }
+  .mv-header-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+    width: 100%;
+  }
+  .mv-header-actions .btn-secondary,
+  .mv-header-actions .btn-primary { font-size: 0.75rem; padding: 0.35rem 0.5rem; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mv-stats { gap: 0.35rem; }
+  .mv-stat { padding: 0.3rem 0.5rem; min-width: 50px; }
+  .mv-stat-value { font-size: 0.95rem; }
+  .mv-search-row { flex-wrap: wrap; }
+  .mv-search { flex-basis: 100%; }
+  .mv-filter-row { gap: 0.25rem; }
+  .mv-type-chip, .mv-tier-chip, .mv-tag-chip { font-size: 0.7rem; padding: 0.2rem 0.5rem; }
+  .mv-modal { padding: 1rem; width: min(400px, 95vw); }
+}
 </style>

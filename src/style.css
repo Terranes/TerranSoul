@@ -68,6 +68,24 @@
   --ts-transition-normal: 0.2s ease;
   --ts-transition-slow: 0.3s ease;
 
+  /* ── Z-Index Scale ── */
+  --ts-z-base: 1;
+  --ts-z-dropdown: 100;
+  --ts-z-sticky: 200;
+  --ts-z-dialog: 300;
+  --ts-z-overlay: 500;
+  --ts-z-toast: 700;
+  --ts-z-splash: 900;
+  --ts-z-context-menu: 1000;
+
+  /* ── Breakpoints (documentation anchors — raw values in @media queries) ── */
+  --ts-bp-mobile: 640px;
+  --ts-bp-tablet: 840px;
+
+  /* ── Layout Constants ── */
+  --ts-nav-width: 72px;
+  --ts-mobile-nav-height: 56px;
+
   /* ── Typography ── */
   --ts-font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --ts-font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
@@ -131,6 +149,70 @@ body {
 }
 
 /* ── Global Utility Classes ── */
+
+/* Floating chrome primitives (top-row pills, badges, dropdown panels). */
+.ts-floating-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--ts-radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(11, 17, 32, 0.78);
+  color: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.ts-floating-chip--interactive {
+  cursor: pointer;
+  transition: background var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-normal), border-color var(--ts-transition-normal);
+}
+
+.ts-floating-chip--interactive:hover {
+  background: rgba(124, 111, 255, 0.55);
+  border-color: rgba(124, 111, 255, 0.6);
+  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
+}
+
+.ts-floating-chip--readonly {
+  pointer-events: none;
+  user-select: none;
+}
+
+.ts-floating-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: var(--ts-radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 16px;
+  border: 1px solid transparent;
+  opacity: 0.92;
+}
+
+.ts-floating-badge--warning {
+  color: #0f172a;
+  background: var(--ts-warning, #fbbf24);
+}
+
+.ts-floating-badge--readonly {
+  pointer-events: none;
+  user-select: none;
+}
+
+.ts-floating-menu {
+  border-radius: var(--ts-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(11, 17, 32, 0.94);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--ts-shadow-lg);
+}
 
 /* Primary action button */
 .ts-btn {

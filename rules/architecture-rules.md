@@ -91,11 +91,11 @@
 │  │  (chat,       │ │  (route tasks   │ │  (QUIC/WS sync,  │ │
 │  │  agent, char) │ │  to agents)     │ │  CRDT engine)    │ │
 │  └───────────────┘ └─────────────────┘ └──────────────────┘ │
-│  ┌───────────────┐ ┌─────────────────┐                       │
-│  │  AI Package   │ │  Plugin Loader  │                       │
-│  │  Manager      │ │  (WASM sandbox, │                       │
-│  │               │ │  Phase 3)       │                       │
-│  └───────────────┘ └─────────────────┘                       │
+│  ┌───────────────┐ ┌─────────────────┐ ┌──────────────────┐ │
+│  │  AI Package   │ │  Plugin Loader  │ │  AI Integrations │ │
+│  │  Manager      │ │  (WASM sandbox, │ │  (MCP server,    │ │
+│  │               │ │  Phase 3)       │ │  BrainGateway)   │ │
+│  └───────────────┘ └─────────────────┘ └──────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
 │  AI Agents (separate processes / services)                   │
 │  OpenClaw │ Claude Cowork │ local LLM │ stub agent           │
@@ -115,6 +115,8 @@
 - Rust `orchestrator/` — depends on `agent/` trait abstraction; never on concrete agent implementations directly
 - Rust `agent/` — each provider (stub, OpenClaw, etc.) implements the `AgentProvider` trait; no cross-provider dependencies
 - Rust `link/` — depends on `commands/` state types; never on `agent/` internals
+- Rust `ai_integrations/gateway.rs` — defines `BrainGateway` trait; `AppStateGateway` adapter holds `AppState` (cheaply-clonable Arc newtype)
+- Rust `ai_integrations/mcp/` — MCP server (axum HTTP, JSON-RPC 2.0); depends on `BrainGateway` trait only, never on `AppState` internals directly
 - Rust `memory/backend.rs` — defines `StorageBackend` trait; depends only on `memory/store.rs` types
 - Rust `memory/postgres.rs`, `memory/mssql.rs`, `memory/cassandra.rs` — feature-gated backends; implement `StorageBackend`
 - Rust `memory/cognitive_kind.rs` — pure-function classifier for the

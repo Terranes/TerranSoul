@@ -419,7 +419,7 @@ mod tests {
         AgentProfile {
             id: "alpha".into(),
             display_name: "Alpha".into(),
-            vrm_model_id: "annabelle".into(),
+            vrm_model_id: "shinra".into(),
             brain_backend: BrainBackend::Native { mode: None },
             working_folder: None,
             created_at: 1,
@@ -431,7 +431,7 @@ mod tests {
         AgentProfile {
             id: "beta".into(),
             display_name: "Beta Coder".into(),
-            vrm_model_id: "m58".into(),
+            vrm_model_id: "komori".into(),
             brain_backend: BrainBackend::ExternalCli {
                 kind: CliKind::Codex,
                 binary: "codex".into(),
@@ -573,7 +573,7 @@ mod tests {
 
     #[test]
     fn default_agent_validates() {
-        default_agent("annabelle").validate().unwrap();
+        default_agent("shinra").validate().unwrap();
     }
 
     #[test]

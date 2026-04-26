@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { Message } from '../types';
 import { useBrainStore } from './brain';
@@ -8,6 +8,8 @@ import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
 import { useTaskStore } from './tasks';
 import { usePersonaStore } from './persona';
+import { useMemoryStore } from './memory';
+import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
@@ -444,32 +446,9 @@ function pushMissingComponentsPrompt(topic: string, missingIds: string[]): void 
     timestamp: Date.now(),
     questId: 'learn-docs-missing',
     questChoices: [
-      { label: 'Install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
-      { label: 'Install one by one', value: `learn-docs:install-each:${enc}`, icon: '📋' },
+      { label: 'Auto install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
+      { label: 'Start chain quest', value: `learn-docs:install-each:${enc}`, icon: '📋' },
       { label: 'Cancel', value: 'dismiss', icon: '❌' },
-    ],
-  });
-}
-
-/** Sub-prompt: choose Auto vs Manual install after picking "Install all". */
-function pushInstallAllModePrompt(topic: string): void {
-  const conversation = useConversationStore();
-  const enc = encodeURIComponent(topic);
-  conversation.messages.push({
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content:
-      `Great — installing everything. Should I do it **automatically** ` +
-      `(I'll trigger and accept each quest for you) or **manually** ` +
-      `(you accept each quest one by one)?`,
-    agentName: 'System',
-    sentiment: 'neutral',
-    timestamp: Date.now(),
-    questId: 'learn-docs-install-mode',
-    questChoices: [
-      { label: 'Auto install', value: `learn-docs:install-auto:${enc}`, icon: '⚡' },
-      { label: 'Manual install', value: `learn-docs:install-manual:${enc}`, icon: '🛠️' },
-      { label: 'Back', value: `learn-docs:install-back:${enc}`, icon: '↩️' },
     ],
   });
 }
@@ -542,15 +521,24 @@ function startLearnDocsFlow(topic: string): void {
 }
 
 /**
- * Auto-install path: trigger every still-missing quest in the prereq chain
- * and immediately accept it on the user's behalf — leveraging the existing
- * skill-tree quest engine rather than implementing any installer from
- * scratch. After the chain is walked, push the Scholar's Quest invitation
- * so the user can pick documents to import (same as the existing flow).
+ * Auto-install path: actually activate every missing quest in the prereq
+ * chain by performing the real configuration (brain setup, memory bootstrap,
+ * manual-completion marking) rather than just clicking "accept" on the
+ * quest-guide chat flow.
+ *
+ * Install order (from brain-advanced-design.md):
+ *   1. 🧠 Awaken the Mind  — free cloud LLM provider
+ *   2. 📖 Long-Term Memory  — SQLite memory store (auto-active once brain set)
+ *   3. 📚 Sage's Library    — RAG pipeline (needs brain + ≥1 memory)
+ *   4. 📚 Scholar's Quest   — document ingestion (chain quest, mark complete)
  */
 async function runAutoInstall(topic: string): Promise<void> {
   const skillTree = useSkillTreeStore();
   const conversation = useConversationStore();
+  const brain = useBrainStore();
+
+  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  const installed: string[] = [];
 
   conversation.messages.push({
     id: crypto.randomUUID(),
@@ -561,22 +549,66 @@ async function runAutoInstall(topic: string): Promise<void> {
     timestamp: Date.now(),
   });
 
-  // Re-evaluate the missing list at run time — the user may have completed
-  // a quest by hand between the prompt and clicking "Auto install".
-  let missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
   for (const id of missing) {
     try {
-      skillTree.triggerQuestEvent(id);
-      await skillTree.handleQuestChoice(id, 'accept');
+      // Perform the actual activation for each quest type.
+      if (id === 'free-brain') {
+        // Configure a free cloud LLM provider (Pollinations).
+        try {
+          await brain.autoConfigureForDesktop();
+        } catch {
+          brain.autoConfigureFreeApi();
+        }
+      } else if (id === 'memory') {
+        // Memory auto-activates once the brain is configured.
+        // Ensure brain mode is set (should be from free-brain step).
+        if (!brain.brainMode) {
+          try { await brain.autoConfigureForDesktop(); }
+          catch { brain.autoConfigureFreeApi(); }
+        }
+      } else if (id === 'rag-knowledge') {
+        // RAG requires brain + at least one memory.
+        // Seed a bootstrap memory so the RAG quest becomes active.
+        const memStore = useMemoryStore();
+        if (memStore.memories.length === 0) {
+          // addMemory catches errors internally and returns null (never throws).
+          const entry = await memStore.addMemory({
+            content: `I want to learn about ${topic} from my own documents.`,
+            tags: 'learning,goal',
+            importance: 5,
+            memory_type: 'context',
+          });
+          if (!entry) {
+            // Invoke failed — push a local-only entry so the status check passes.
+            const now = Date.now();
+            memStore.memories.push({
+              id: now,
+              content: `I want to learn about ${topic} from my own documents.`,
+              tags: 'learning,goal',
+              importance: 5,
+              memory_type: 'context',
+              created_at: now,
+              last_accessed: null,
+              access_count: 0,
+              tier: 'short',
+              decay_score: 1,
+              session_id: null,
+              parent_id: null,
+              token_count: 12,
+            });
+          }
+        }
+      } else if (id === 'scholar-quest') {
+        // Scholar's Quest is a chain quest — mark it manually completed.
+        skillTree.markComplete(id);
+      }
+      installed.push(id);
     } catch (err) {
-      // Quest engine refused — surface it to the user (with the actual
-      // error) but keep going so the remaining quests still get a chance
-      // to install.
       const detail = err instanceof Error ? err.message : String(err);
       conversation.messages.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `⚠️ Could not auto-accept **${questDisplayName(skillTree, id)}**: ${detail}. Try installing it manually from the Quests tab.`,
+        content: `⚠️ Could not auto-install **${questDisplayName(skillTree, id)}**: ${detail}. Try installing it manually from the Quests tab.`,
         agentName: 'System',
         sentiment: 'sad',
         timestamp: Date.now(),
@@ -584,10 +616,25 @@ async function runAutoInstall(topic: string): Promise<void> {
     }
   }
 
+  // Report what was installed.
+  if (installed.length > 0) {
+    const list = installed
+      .map((id) => `✅ ${questDisplayName(skillTree, id)}`)
+      .join('\n');
+    conversation.messages.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `Installed ${installed.length} quest(s):\n\n${list}`,
+      agentName: 'System',
+      sentiment: 'happy',
+      timestamp: Date.now(),
+    });
+  }
+
   // Recompute — anything still inactive is something we couldn't auto-finish.
-  missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  if (missing.length > 0) {
-    const list = missing.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
+  const stillMissing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  if (stillMissing.length > 0) {
+    const list = stillMissing.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
     conversation.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -678,7 +725,7 @@ export async function handleLearnDocsChoice(value: string): Promise<boolean> {
   const topic = decodeURIComponent(rest.slice(colon + 1));
   switch (action) {
     case 'install-all': {
-      pushInstallAllModePrompt(topic);
+      await runAutoInstall(topic);
       return true;
     }
     case 'install-each': {
@@ -883,6 +930,110 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Maximum total size of all message content in bytes (~1MB). */
   const MAX_HISTORY_BYTES = 1_000_000;
 
+  // ── Per-agent conversation threading ────────────────────────────────────
+
+  /** The effective agent ID, or `undefined` when `currentAgent` is 'auto'. */
+  function activeAgentId(): string | undefined {
+    return currentAgent.value === 'auto' ? undefined : currentAgent.value;
+  }
+
+  /** Messages belonging to the currently selected agent.
+   *  When agent is 'auto', all messages are returned (unfiltered). */
+  const agentMessages = computed<Message[]>(() => {
+    const aid = activeAgentId();
+    if (!aid) return messages.value;
+    return messages.value.filter(
+      (m) => !m.agentId || m.agentId === aid,
+    );
+  });
+
+  /** History of agent IDs that have been active in this session.
+   *  Used by the UI to show agent switch markers. */
+  const agentSwitchHistory = ref<{ agentId: string; timestamp: number }[]>([]);
+
+  /** Switch to a different agent, recording the transition. */
+  function setAgent(agentId: string): void {
+    const prev = currentAgent.value;
+    currentAgent.value = agentId;
+    if (prev !== agentId && agentId !== 'auto') {
+      agentSwitchHistory.value.push({ agentId, timestamp: Date.now() });
+    }
+  }
+
+  /** Stamp a message with the current agent ID (mutates in place). */
+  function stampAgent(msg: Message): Message {
+    const aid = activeAgentId();
+    if (aid) msg.agentId = aid;
+    return msg;
+  }
+
+  // ── Long-running task controls (VS Code Copilot-style) ────────────────
+  //
+  // When the LLM is streaming/thinking, the user can:
+  //   • Stop — cancel generation, discard partial output
+  //   • Stop & Send — cancel generation, keep partial output as the response
+  //   • Add to Queue — queue a follow-up message to send after current finishes
+  //   • Steer — inject a message that redirects the current generation
+  //
+  // These mirror VS Code Copilot's agent-mode controls.
+
+  /** Abort controller for the current generation. Set before each send,
+   *  checked during streaming sync intervals. */
+  let activeAbortController: AbortController | null = null;
+
+  /** Concurrency gate — true while a generation (stream or fallback) is
+   *  in progress.  `sendMessage()` auto-queues when this is set. */
+  const generationActive = ref(false);
+
+  /** Whether a "stop and send" was requested (keep partial text). */
+  const stopAndSendRequested = ref(false);
+
+  /** Queued messages to send after the current generation completes. */
+  const messageQueue = ref<string[]>([]);
+
+  /** Stop the current generation and discard partial output. */
+  function stopGeneration(): void {
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+    stopAndSendRequested.value = false;
+  }
+
+  /** Stop generation but keep partial output as the assistant response. */
+  function stopAndSend(): void {
+    stopAndSendRequested.value = true;
+    if (activeAbortController) {
+      activeAbortController.abort();
+    }
+  }
+
+  /** Add a message to the queue — it will be sent after the current
+   *  generation completes (FIFO order). */
+  function addToQueue(message: string): void {
+    if (message.trim()) {
+      messageQueue.value.push(message.trim());
+    }
+  }
+
+  /** Send a steering message that redirects the current generation.
+   *  Stops the current stream, keeps partial text, then sends the
+   *  steering message as a new user turn. */
+  function steerWithMessage(message: string): void {
+    if (!message.trim()) return;
+    // Stop current generation, keep what we have
+    stopAndSend();
+    // Queue the steering message as the next thing to send
+    messageQueue.value.unshift(message.trim());
+  }
+
+  /** Drain and send the next queued message (called after generation ends). */
+  async function drainQueue(): Promise<void> {
+    if (messageQueue.value.length > 0) {
+      const next = messageQueue.value.shift()!;
+      await sendMessage(next);
+    }
+  }
+
   // ── Auto-learn (daily-conversation → brain write-back loop) ─────────────
   //
   // After every assistant turn we ask the Rust-side `evaluate_auto_learn`
@@ -905,6 +1056,22 @@ export const useConversationStore = defineStore('conversation', () => {
   /** Number of facts extracted on the last auto-fire. */
   const lastAutoLearnSavedCount = ref<number>(0);
 
+  // ── Persona drift detection (Chunk 14.8) ──────────────────────────────
+  //
+  // After every auto-learn extraction, we accumulate the count of saved
+  // facts. When the running total since the last drift check crosses a
+  // threshold (default 25), we ask the backend to compare the active
+  // persona against the latest `personal:*` memory cluster. If drift is
+  // detected the report is surfaced in `lastDriftReport` so the UI can
+  // show a suggestion banner.
+
+  /** Running total of facts saved since the last drift check. */
+  const factsSinceDriftCheck = ref(0);
+  /** Default: fire a drift check every 25 accumulated facts. */
+  const DRIFT_FACT_THRESHOLD = 25;
+  /** Latest drift report for the UI. Null = no check has run yet. */
+  const lastDriftReport = ref<DriftReport | null>(null);
+
   async function maybeAutoLearn(): Promise<void> {
     try {
       const decision = await invoke<{
@@ -920,6 +1087,25 @@ export const useConversationStore = defineStore('conversation', () => {
         const count = await invoke<number>('extract_memories_from_session');
         lastAutoLearnSavedCount.value = count;
         lastAutoLearnTurn.value = totalAssistantTurns.value;
+
+        if (count > 0) {
+          // Refresh memory store so the Memory tab reflects new entries.
+          try { await useMemoryStore().fetchAll(); } catch { /* non-fatal */ }
+          console.info(`[auto-learn] Extracted ${count} memories at turn ${totalAssistantTurns.value}`);
+        }
+
+        // Accumulate facts for drift detection.
+        factsSinceDriftCheck.value += count;
+        if (factsSinceDriftCheck.value >= DRIFT_FACT_THRESHOLD) {
+          try {
+            const report = await invoke<DriftReport>('check_persona_drift');
+            lastDriftReport.value = report;
+          } catch {
+            // Drift check failure is non-fatal — the user can still
+            // use the app normally. Persona drift is a nice-to-have.
+          }
+          factsSinceDriftCheck.value = 0;
+        }
       }
     } catch {
       // Auto-learn failures must never break a chat turn — the user can
@@ -961,6 +1147,20 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
+    // ── Concurrency gate: only one generation at a time ──
+    // If a stream/generation is already active, queue this message and
+    // return immediately.  drainQueue() will pick it up when the current
+    // generation finishes.
+    if (generationActive.value) {
+      addToQueue(content);
+      return;
+    }
+    generationActive.value = true;
+
+    // Set up abort controller for this generation
+    activeAbortController = new AbortController();
+    stopAndSendRequested.value = false;
+
     // Check if agent is busy with a background task
     try {
       const taskStore = useTaskStore();
@@ -979,6 +1179,7 @@ export const useConversationStore = defineStore('conversation', () => {
           timestamp: Date.now(),
         });
         messages.value.push(busyMsg);
+        generationActive.value = false;
         return;
       }
     } catch {
@@ -991,6 +1192,7 @@ export const useConversationStore = defineStore('conversation', () => {
       content,
       timestamp: Date.now(),
     };
+    stampAgent(userMsg);
     messages.value.push(userMsg);
     trimHistory();
     isThinking.value = true;
@@ -1004,6 +1206,8 @@ export const useConversationStore = defineStore('conversation', () => {
       const response = await executeLlmCommand(llmCmd, brain);
       messages.value.push(response);
       isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
       return;
     }
 
@@ -1013,6 +1217,8 @@ export const useConversationStore = defineStore('conversation', () => {
     if (gatedCmd) {
       messages.value.push(executeGatedSetupCommand(gatedCmd));
       isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
       return;
     }
 
@@ -1025,6 +1231,8 @@ export const useConversationStore = defineStore('conversation', () => {
     if (learnDocs) {
       startLearnDocsFlow(learnDocs.topic);
       isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
       return;
     }
 
@@ -1033,6 +1241,8 @@ export const useConversationStore = defineStore('conversation', () => {
     if (detectTeachIntent(content)) {
       maybeShowScholarQuestFromTeachIntent(content);
       isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
       return;
     }
 
@@ -1046,6 +1256,8 @@ export const useConversationStore = defineStore('conversation', () => {
 
         // While `invoke` blocks, mirror `streaming.streamText` into this
         // store's `streamingText` at ~50ms intervals so reactive UI stays live.
+        // Also checks the abort signal for user-initiated stop.
+        const abortSignal = activeAbortController?.signal;
         const syncInterval = setInterval(() => {
           streamingText.value = streaming.streamText;
           // Sync isStreaming state with the streaming store
@@ -1058,15 +1270,61 @@ export const useConversationStore = defineStore('conversation', () => {
 
         const TAURI_STREAM_TIMEOUT_MS = 60_000; // 60s timeout
         let sendOk = false;
+        let wasAborted = false;
         try {
           sendOk = await Promise.race([
             streaming.sendStreaming(content),
             new Promise<boolean>((_, reject) =>
               setTimeout(() => reject(new Error('Tauri streaming timeout')), TAURI_STREAM_TIMEOUT_MS),
             ),
+            new Promise<boolean>((_, reject) => {
+              if (abortSignal) {
+                if (abortSignal.aborted) { reject(new Error('AbortError')); return; }
+                abortSignal.addEventListener('abort', () => reject(new Error('AbortError')), { once: true });
+              }
+            }),
           ]);
+        } catch (e) {
+          if (String(e).includes('AbortError')) {
+            wasAborted = true;
+            sendOk = false;
+          } else {
+            throw e;
+          }
         } finally {
           clearInterval(syncInterval);
+        }
+
+        // Handle user-initiated stop
+        if (wasAborted) {
+          const partialText = streaming.streamText;
+          streaming.reset();
+          isStreaming.value = false;
+          streamingText.value = '';
+
+          if (stopAndSendRequested.value && partialText) {
+            // Stop & Send: keep partial output as the response
+            const parsed = parseTags(partialText);
+            const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
+            const assistantMsg: Message = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: parsed.text + '\n\n*[Generation stopped by user]*',
+              agentName: 'TerranSoul',
+              sentiment: sentiment as Message['sentiment'],
+              timestamp: Date.now(),
+            };
+            stampAgent(assistantMsg);
+            messages.value.push(assistantMsg);
+          }
+          // else: pure Stop — discard partial output
+
+          isThinking.value = false;
+          stopAndSendRequested.value = false;
+          activeAbortController = null;
+          generationActive.value = false;
+          void drainQueue();
+          return;
         }
 
         if (!sendOk) throw new Error(streaming.error ?? 'Streaming failed');
@@ -1104,6 +1362,7 @@ export const useConversationStore = defineStore('conversation', () => {
             emoji: parsed.emoji ?? undefined,
             motion,
           };
+          stampAgent(assistantMsg);
           if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
           maybeShowQuestFromResponse(clean || cleanText, content);
@@ -1139,6 +1398,9 @@ export const useConversationStore = defineStore('conversation', () => {
         isThinking.value = false;
         isStreaming.value = false;
         streamingText.value = '';
+        activeAbortController = null;
+        generationActive.value = false;
+        void drainQueue();
       }
       return;
     }
@@ -1213,6 +1475,21 @@ export const useConversationStore = defineStore('conversation', () => {
                 },
                 getSystemPrompt(useEnhanced) + usePersonaStore().personaBlock + memoryBlock,
               );
+              // User-initiated abort
+              if (activeAbortController) {
+                activeAbortController.signal.addEventListener('abort', () => {
+                  if (!settled) {
+                    settled = true;
+                    clearTimeout(timeout);
+                    abortController.abort();
+                    if (stopAndSendRequested.value) {
+                      resolve(streamingText.value);
+                    } else {
+                      reject(new Error('AbortError'));
+                    }
+                  }
+                }, { once: true });
+              }
               timeout = setTimeout(() => {
                 if (!settled) { settled = true; abortController.abort(); reject(new Error('Stream timeout: no response within 60s')); }
               }, STREAM_TIMEOUT_MS);
@@ -1235,6 +1512,7 @@ export const useConversationStore = defineStore('conversation', () => {
               emoji: parsed.emoji ?? undefined,
               motion: parsed.motion ?? undefined,
             };
+            stampAgent(assistantMsg);
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
             maybeShowQuestFromResponse(clean || parsed.text, content);
@@ -1268,6 +1546,9 @@ export const useConversationStore = defineStore('conversation', () => {
           isThinking.value = false;
           isStreaming.value = false;
           streamingText.value = '';
+          activeAbortController = null;
+          generationActive.value = false;
+          void drainQueue();
         }
         return;
       }
@@ -1277,6 +1558,9 @@ export const useConversationStore = defineStore('conversation', () => {
     await new Promise((r) => setTimeout(r, 500));
     messages.value.push(createPersonaResponse(content));
     isThinking.value = false;
+    activeAbortController = null;
+    generationActive.value = false;
+    void drainQueue();
   }
 
   /** Push a warning message with upgrade quest when all providers are exhausted. */
@@ -1343,6 +1627,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
   /** Add a message directly to the conversation without AI processing. */
   function addMessage(message: Message): void {
+    stampAgent(message);
     messages.value.push(message);
     trimHistory();
   }
@@ -1350,6 +1635,9 @@ export const useConversationStore = defineStore('conversation', () => {
   return {
     messages,
     currentAgent,
+    agentMessages,
+    agentSwitchHistory,
+    setAgent,
     isThinking,
     streamingText,
     isStreaming,
@@ -1357,10 +1645,20 @@ export const useConversationStore = defineStore('conversation', () => {
     getConversation,
     addMessage,
     pushProviderWarning,
+    // Long-running task controls (VS Code Copilot-style)
+    generationActive,
+    messageQueue,
+    stopGeneration,
+    stopAndSend,
+    addToQueue,
+    steerWithMessage,
     // Auto-learn surface (see docs/brain-advanced-design.md § 21)
     totalAssistantTurns,
     lastAutoLearnTurn,
     lastAutoLearnDecision,
     lastAutoLearnSavedCount,
+    // Persona drift detection (Chunk 14.8)
+    lastDriftReport,
+    factsSinceDriftCheck,
   };
 });

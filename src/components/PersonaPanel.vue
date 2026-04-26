@@ -111,11 +111,88 @@
         >
           Reset to default
         </button>
+        <button
+          class="pp-btn pp-btn-ghost"
+          :disabled="isSaving || isSuggesting"
+          data-testid="pp-suggest"
+          :title="suggestTooltip"
+          @click="suggestFromBrain"
+        >
+          {{ isSuggesting ? 'Asking the brain…' : '✨ Suggest from my chats' }}
+        </button>
         <span
           v-if="lastSavedAt"
           class="pp-saved"
         >Saved {{ relativeTime(lastSavedAt) }}</span>
       </div>
+
+      <!-- ── Brain-suggested persona review card (Chunk 14.2) ─────────── -->
+      <div
+        v-if="suggestion"
+        class="pp-suggestion"
+        data-testid="pp-suggestion"
+      >
+        <header class="pp-suggestion-header">
+          <h4>✨ Brain-suggested persona</h4>
+          <span class="pp-suggestion-note">
+            Review before applying — nothing is saved yet.
+          </span>
+        </header>
+        <dl class="pp-suggestion-fields">
+          <dt>Name</dt><dd data-testid="pp-suggestion-name">{{ suggestion.name }}</dd>
+          <dt>Role</dt><dd>{{ suggestion.role }}</dd>
+          <dt>Bio</dt><dd>{{ suggestion.bio }}</dd>
+          <dt v-if="suggestion.tone?.length">
+            Tone
+          </dt>
+          <dd v-if="suggestion.tone?.length">
+            {{ suggestion.tone.join(', ') }}
+          </dd>
+          <dt v-if="suggestion.quirks?.length">
+            Quirks
+          </dt>
+          <dd v-if="suggestion.quirks?.length">
+            {{ suggestion.quirks.join(', ') }}
+          </dd>
+          <dt v-if="suggestion.avoid?.length">
+            Avoid
+          </dt>
+          <dd v-if="suggestion.avoid?.length">
+            {{ suggestion.avoid.join(', ') }}
+          </dd>
+        </dl>
+        <div class="pp-suggestion-actions">
+          <button
+            class="pp-btn pp-btn-primary"
+            data-testid="pp-suggestion-apply"
+            @click="applySuggestion"
+          >
+            Apply
+          </button>
+          <button
+            class="pp-btn pp-btn-secondary"
+            data-testid="pp-suggestion-edit"
+            @click="loadSuggestionIntoDraft"
+          >
+            Load into editor
+          </button>
+          <button
+            class="pp-btn pp-btn-ghost"
+            data-testid="pp-suggestion-discard"
+            @click="discardSuggestion"
+          >
+            Discard
+          </button>
+        </div>
+      </div>
+      <p
+        v-else-if="suggestionError"
+        class="pp-suggestion-error"
+        data-testid="pp-suggestion-error"
+        role="alert"
+      >
+        {{ suggestionError }}
+      </p>
     </div>
 
     <!-- ── Live preview of the rendered [PERSONA] block ─────────────── -->
@@ -153,6 +230,13 @@
           <span class="pp-lib-name">{{ exp.name }}</span>
           <span class="pp-lib-trigger">trigger: <code>{{ exp.trigger }}</code></span>
           <span class="pp-lib-meta">{{ relativeTime(exp.learnedAt) }}</span>
+          <button
+            class="pp-btn pp-btn-secondary"
+            :data-testid="`pp-preview-exp-${exp.id}`"
+            @click="store.requestExpressionPreview(exp)"
+          >
+            ▶ Preview
+          </button>
           <button
             class="pp-btn pp-btn-danger"
             :data-testid="`pp-delete-exp-${exp.id}`"
@@ -193,6 +277,13 @@
           <span class="pp-lib-meta">{{ m.duration_s.toFixed(1) }}s · {{ m.fps }}fps</span>
           <span class="pp-lib-meta">{{ relativeTime(m.learnedAt) }}</span>
           <button
+            class="pp-btn pp-btn-secondary"
+            :data-testid="`pp-play-motion-${m.id}`"
+            @click="store.requestMotionPreview(m)"
+          >
+            ▶ Play
+          </button>
+          <button
             class="pp-btn pp-btn-danger"
             :data-testid="`pp-delete-motion-${m.id}`"
             @click="deleteMotion(m.id)"
@@ -210,6 +301,9 @@
       </p>
     </div>
 
+    <!-- ── Persona pack: export / import (Chunk 14.7) ─────────────────── -->
+    <PersonaPackPanel @imported="onPackImported" />
+
     <p class="pp-privacy">
       🔒 Camera capture is opt-in <strong>per chat session</strong>. There is no
       "always on" persistent camera flag. See the Persona design doc for details.
@@ -226,6 +320,7 @@ import {
 } from '../stores/persona-types';
 import { buildPersonaBlock } from '../utils/persona-prompt';
 import PersonaListEditor from './PersonaListEditor.vue';
+import PersonaPackPanel from './PersonaPackPanel.vue';
 
 const store = usePersonaStore();
 
@@ -286,6 +381,82 @@ async function resetToDefault(): Promise<void> {
   } finally {
     isSaving.value = false;
   }
+}
+
+// ── Brain-suggested persona (Chunk 14.2 — Master-Echo loop) ────────────
+const isSuggesting = ref(false);
+const suggestion = ref<Partial<PersonaTraits> | null>(null);
+const suggestionError = ref<string | null>(null);
+
+/**
+ * Tooltip wording for the suggest button — surfaces the "no brain
+ * configured" case so the user understands why the action might be
+ * inert (per `docs/persona-design.md` § 13).
+ */
+const suggestTooltip = computed(() =>
+  isSuggesting.value
+    ? 'Asking the brain to propose a persona…'
+    : 'Ask the configured brain to propose a persona based on recent chats and your personal memories.',
+);
+
+async function suggestFromBrain(): Promise<void> {
+  if (isSuggesting.value) return;
+  isSuggesting.value = true;
+  suggestion.value = null;
+  suggestionError.value = null;
+  try {
+    const candidate = await store.suggestPersonaFromBrain();
+    if (candidate) {
+      suggestion.value = candidate;
+    } else {
+      suggestionError.value =
+        'The brain could not propose a persona right now. Try again, or chat a bit more so it has more to go on.';
+    }
+  } catch (err) {
+    suggestionError.value =
+      err instanceof Error ? err.message : 'Failed to ask the brain for a persona.';
+  } finally {
+    isSuggesting.value = false;
+  }
+}
+
+/** Apply the suggestion straight to disk via the existing save path. */
+async function applySuggestion(): Promise<void> {
+  if (!suggestion.value || isSaving.value) return;
+  loadSuggestionIntoDraft();
+  await save();
+  suggestion.value = null;
+}
+
+/** Load the suggestion into the draft so the user can edit before saving. */
+function loadSuggestionIntoDraft(): void {
+  if (!suggestion.value) return;
+  draft.value = {
+    ...draft.value,
+    name: suggestion.value.name ?? draft.value.name,
+    role: suggestion.value.role ?? draft.value.role,
+    bio: suggestion.value.bio ?? draft.value.bio,
+    tone: suggestion.value.tone ? [...suggestion.value.tone] : draft.value.tone,
+    quirks: suggestion.value.quirks ? [...suggestion.value.quirks] : draft.value.quirks,
+    avoid: suggestion.value.avoid ? [...suggestion.value.avoid] : draft.value.avoid,
+  };
+  isDirty.value = true;
+}
+
+function discardSuggestion(): void {
+  suggestion.value = null;
+  suggestionError.value = null;
+}
+
+/**
+ * Sync the editor draft with the freshly-loaded persona after a pack
+ * import (the store's `importPack` calls `load()` which mutates
+ * `store.traits`).
+ */
+function onPackImported(): void {
+  draft.value = cloneTraits(store.traits);
+  isDirty.value = false;
+  lastSavedAt.value = Date.now();
 }
 
 async function deleteExpression(id: string): Promise<void> {
@@ -415,6 +586,38 @@ watch(
 }
 .pp-btn-danger:hover { background: var(--ts-danger, #c44); color: #fff; }
 .pp-saved { font-size: 0.8rem; color: var(--ts-text-muted, #aab); }
+.pp-suggestion {
+  margin-top: 0.5rem;
+  border: 1px solid var(--ts-accent, #4a7);
+  border-radius: var(--ts-radius-md, 12px);
+  padding: 0.75rem 0.9rem;
+  background: rgba(80, 200, 140, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.pp-suggestion-header { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.pp-suggestion-header h4 { margin: 0; font-size: 0.95rem; }
+.pp-suggestion-note { font-size: 0.75rem; color: var(--ts-text-muted, #aab); }
+.pp-suggestion-fields {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+}
+.pp-suggestion-fields dt { color: var(--ts-text-muted, #aab); }
+.pp-suggestion-fields dd { margin: 0; word-break: break-word; }
+.pp-suggestion-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.pp-suggestion-error {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.8rem;
+  color: var(--ts-warning, #c80);
+  background: rgba(255, 200, 80, 0.06);
+  border: 1px solid var(--ts-warning, rgba(255, 200, 80, 0.4));
+  border-radius: var(--ts-radius-sm, 6px);
+}
 .pp-preview pre {
   background: rgba(0, 0, 0, 0.4);
   border-radius: var(--ts-radius-sm, 6px);

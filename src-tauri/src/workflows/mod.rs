@@ -14,8 +14,13 @@
 //! happened and lets us re-spawn if we want to retry" is sufficient.
 
 pub mod engine;
+pub mod resilience;
 
 pub use engine::{
     WorkflowEngine, WorkflowEvent, WorkflowEventKind, WorkflowId, WorkflowStatus,
     WorkflowSummary,
+};
+
+pub use resilience::{
+    BreakerState, CircuitBreaker, HeartbeatWatchdog, ResilientRunner, RetryPolicy, TimeoutPolicy,
 };

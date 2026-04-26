@@ -3,8 +3,33 @@ use tauri::State;
 use crate::memory::{MemoryEntry, MemoryUpdate, NewMemory};
 use crate::AppState;
 
+/// Read brain_mode + active_brain from state for use by `embed_for_mode`.
+/// Returns `(Option<BrainMode>, Option<String>)`.
+fn read_embed_context(state: &AppState) -> (Option<crate::brain::BrainMode>, Option<String>) {
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+    let active_brain = state
+        .active_brain
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+    (brain_mode, active_brain)
+}
+
+/// Embed text using the current brain mode (cloud or local).
+async fn embed(state: &AppState, text: &str) -> Option<Vec<f32>> {
+    let (brain_mode, active_brain) = read_embed_context(state);
+    crate::brain::embed_for_mode(text, brain_mode.as_ref(), active_brain.as_deref()).await
+}
+
 /// Add a new long-term memory.
 /// Automatically generates a vector embedding when a brain is configured.
+/// When `AppSettings.auto_tag` is enabled and a brain is active, runs an
+/// LLM pass to classify the content into curated-prefix tags and merges
+/// them with the user-supplied tags (chunk 18.1).
 #[tauri::command]
 pub async fn add_memory(
     content: String,
@@ -16,12 +41,12 @@ pub async fn add_memory(
     let mt = serde_json::from_value(serde_json::Value::String(memory_type))
         .unwrap_or(crate::memory::MemoryType::Fact);
 
-    let entry = {
+    let mut entry = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         store
             .add(NewMemory {
                 content: content.clone(),
-                tags,
+                tags: tags.clone(),
                 importance,
                 memory_type: mt,
                 ..Default::default()
@@ -30,15 +55,72 @@ pub async fn add_memory(
     }; // lock released before await
 
     // Best-effort embedding — non-blocking, silently ignored on failure.
-    let model_opt = state
-        .active_brain
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
-    if let Some(model) = model_opt {
-        if let Some(emb) = crate::brain::OllamaAgent::embed_text(&content, &model).await {
+    // Chunk 16.9: uses cloud embedding API when brain mode is FreeApi/PaidApi.
+    if let Some(emb) = embed(&state, &content).await {
+        // Find near-duplicate while holding the lock, then release.
+        let dup_info: Option<(i64, String)> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             let _ = store.set_embedding(entry.id, &emb);
+
+            // Contradiction detection (Chunk 17.2): check for near-duplicate.
+            store
+                .find_duplicate(&emb, 0.85)
+                .ok()
+                .flatten()
+                .filter(|&dup_id| dup_id != entry.id)
+                .and_then(|dup_id| {
+                    store.get_by_id(dup_id).ok().map(|dup| (dup_id, dup.content))
+                })
+        }; // lock released here
+
+        // If a near-duplicate exists, ask the LLM whether the two
+        // statements contradict. If so, open a MemoryConflict row.
+        if let Some((dup_id, dup_content)) = dup_info {
+            let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+            if let Some(ref model) = model_opt {
+                let agent = crate::brain::OllamaAgent::new(model);
+                if let Some(result) = agent
+                    .check_contradiction(&dup_content, &content)
+                    .await
+                {
+                    if result.contradicts {
+                        let store = state
+                            .memory_store
+                            .lock()
+                            .map_err(|e| e.to_string())?;
+                        let _ = store.add_conflict(dup_id, entry.id, &result.reason);
+                    }
+                }
+            }
+        }
+    }
+
+    // Auto-tag via LLM when the setting is enabled and a brain is configured.
+    let auto_tag_enabled = state
+        .app_settings
+        .lock()
+        .map(|s| s.auto_tag)
+        .unwrap_or(false);
+    if auto_tag_enabled {
+        let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+        if let Some(mode) = brain_mode {
+            let auto_tags =
+                crate::memory::auto_tag::auto_tag_content(&content, &mode).await;
+            if !auto_tags.is_empty() {
+                let merged = crate::memory::auto_tag::merge_tags(&tags, &auto_tags);
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                if let Ok(updated) = store.update(
+                    entry.id,
+                    MemoryUpdate {
+                        tags: Some(merged),
+                        content: None,
+                        importance: None,
+                        memory_type: None,
+                    },
+                ) {
+                    entry = updated;
+                }
+            }
         }
     }
 
@@ -134,12 +216,12 @@ pub async fn get_short_term_memory(
 pub async fn extract_memories_from_session(
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
-    let model = state
-        .active_brain
+    // Read brain_mode first — works for Free/Paid/Local.
+    let brain_mode = state
+        .brain_mode
         .lock()
         .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        .clone();
 
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
@@ -148,7 +230,23 @@ pub async fn extract_memories_from_session(
             .collect()
     }; // lock released before await
 
-    let facts = crate::memory::brain_memory::extract_facts(&model, &history).await;
+    let facts = if let Some(mode) = brain_mode {
+        crate::memory::brain_memory::extract_facts_any_mode(
+            &mode,
+            &history,
+            &state.provider_rotator,
+        )
+        .await
+    } else {
+        // Legacy path: check active_brain for Ollama model name.
+        let model = state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        crate::memory::brain_memory::extract_facts(&model, &history).await
+    };
 
     let count = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -162,12 +260,11 @@ pub async fn extract_memories_from_session(
 pub async fn summarize_session(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let model = state
-        .active_brain
+    let brain_mode = state
+        .brain_mode
         .lock()
         .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        .clone();
 
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
@@ -176,9 +273,25 @@ pub async fn summarize_session(
             .collect()
     }; // lock released before await
 
-    let summary = crate::memory::brain_memory::summarize(&model, &history)
+    let summary = if let Some(mode) = brain_mode {
+        crate::memory::brain_memory::summarize_any_mode(
+            &mode,
+            &history,
+            &state.provider_rotator,
+        )
         .await
-        .ok_or_else(|| "Session is empty or brain is unreachable.".to_string())?;
+    } else {
+        let model = state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        crate::memory::brain_memory::summarize(&model, &history).await
+    };
+
+    let summary =
+        summary.ok_or_else(|| "Session is empty or brain is unreachable.".to_string())?;
 
     {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -197,23 +310,24 @@ pub async fn semantic_search_memories(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::memory::MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
+
+    // Fast path: embed query → cosine search (no LLM call needed).
+    // Chunk 16.9: uses cloud embedding when brain mode is FreeApi/PaidApi.
+    if let Some(query_emb) = embed(&state, &query).await {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let results = store.vector_search(&query_emb, limit).map_err(|e| e.to_string())?;
+        if !results.is_empty() {
+            return Ok(results);
+        }
+    }
+
+    // Fallback: brute-force LLM ranking (requires active_brain for Ollama).
     let model_opt = state
         .active_brain
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
-
     if let Some(model) = model_opt {
-        // Fast path: embed query → cosine search (no LLM call needed).
-        if let Some(query_emb) = crate::brain::OllamaAgent::embed_text(&query, &model).await {
-            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            let results = store.vector_search(&query_emb, limit).map_err(|e| e.to_string())?;
-            if !results.is_empty() {
-                return Ok(results);
-            }
-        }
-
-        // Fallback: brute-force LLM ranking.
         let entries: Vec<crate::memory::MemoryEntry> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.get_all().map_err(|e| e.to_string())?
@@ -244,12 +358,11 @@ pub async fn semantic_search_memories(
 pub async fn backfill_embeddings(
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
-    let model = state
-        .active_brain
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+    // Verify at least one embed source is available.
+    let (brain_mode, active_brain) = read_embed_context(&state);
+    if brain_mode.is_none() && active_brain.is_none() {
+        return Err("No brain configured. Set up a brain first.".to_string());
+    }
 
     let unembedded: Vec<(i64, String)> = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -258,7 +371,7 @@ pub async fn backfill_embeddings(
 
     let mut count = 0usize;
     for (id, content) in &unembedded {
-        if let Some(emb) = crate::brain::OllamaAgent::embed_text(content, &model).await {
+        if let Some(emb) = embed(&state, content).await {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             if store.set_embedding(*id, &emb).is_ok() {
                 count += 1;
@@ -319,13 +432,8 @@ pub async fn hybrid_search_memories(
 ) -> Result<Vec<MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
 
-    // Try to generate query embedding for vector component
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, &model).await
-    } else {
-        None
-    };
+    // Chunk 16.9: use cloud embedding when brain mode is FreeApi/PaidApi.
+    let query_emb = embed(&state, &query).await;
 
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.hybrid_search(&query, query_emb.as_deref(), limit).map_err(|e| e.to_string())
@@ -345,12 +453,7 @@ pub async fn hybrid_search_memories_rrf(
 ) -> Result<Vec<MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
 
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, &model).await
-    } else {
-        None
-    };
+    let query_emb = embed(&state, &query).await;
 
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store
@@ -395,9 +498,9 @@ pub async fn hyde_search_memories(
         let agent = crate::brain::OllamaAgent::new(&model);
         let hypothetical = agent.hyde_complete(&query).await;
         let text_to_embed = hypothetical.as_deref().unwrap_or(query.as_str());
-        crate::brain::OllamaAgent::embed_text(text_to_embed, &model).await
+        embed(&state, text_to_embed).await
     } else {
-        None
+        embed(&state, &query).await
     };
 
     // Step 3: RRF-fused retrieval with the (possibly hypothetical) embedding.
@@ -441,11 +544,7 @@ pub async fn rerank_search_memories(
 
     // Stage 1 — RRF-fused recall.
     let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(ref model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, model).await
-    } else {
-        None
-    };
+    let query_emb = embed(&state, &query).await;
 
     let candidates: Vec<MemoryEntry> = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -582,6 +681,222 @@ pub async fn apply_memory_decay(
     store.apply_decay().map_err(|e| e.to_string())
 }
 
+/// Auto-promote frequently accessed working-tier entries to long-tier.
+///
+/// Pure access-pattern heuristic — no LLM. An entry is promoted when both
+/// `access_count >= min_access_count` (default 5) and `last_accessed` is
+/// within the last `window_days` days (default 7). Returns the IDs that
+/// were promoted (in ascending order). Idempotent.
+///
+/// Maps to `docs/brain-advanced-design.md` § 16 Phase 5
+/// "Auto-promotion based on access patterns" (chunk 17.1).
+#[tauri::command]
+pub async fn auto_promote_memories(
+    min_access_count: Option<i64>,
+    window_days: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<Vec<i64>, String> {
+    let min = min_access_count.unwrap_or(5);
+    let win = window_days.unwrap_or(7);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.auto_promote_to_long(min, win).map_err(|e| e.to_string())
+}
+
+/// Auto-adjust memory importance based on access patterns (Chunk 17.4).
+///
+/// * Hot entries (`access_count >= hot_threshold`, default 10) get +1
+///   importance (capped at 5). Their access_count is then reset to 0.
+/// * Cold entries (`access_count == 0` for `cold_days`, default 30) get
+///   −1 importance (floored at 1).
+///
+/// Each adjustment is audited via `memory_versions` (V8 schema).
+/// Returns `{ boosted, demoted }`.
+///
+/// Maps to `docs/brain-advanced-design.md` §16 Phase 5 (chunk 17.4).
+#[tauri::command]
+pub async fn adjust_memory_importance(
+    hot_threshold: Option<i64>,
+    cold_days: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<ImportanceAdjustResult, String> {
+    let hot = hot_threshold.unwrap_or(10);
+    let cold = cold_days.unwrap_or(30);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let (boosted, demoted) = store
+        .adjust_importance_by_access(hot, cold)
+        .map_err(|e| e.to_string())?;
+    Ok(ImportanceAdjustResult { boosted, demoted })
+}
+
+/// Result of an importance auto-adjustment run.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImportanceAdjustResult {
+    pub boosted: usize,
+    pub demoted: usize,
+}
+
+/// Per-memory tag-validation report (chunk 18.4).
+///
+/// Returned by [`audit_memory_tags`] for BrainView's "review tags" panel.
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct MemoryTagAudit {
+    pub memory_id: i64,
+    /// `tag` text exactly as stored, paired with the human-readable
+    /// reason it was flagged. Acceptable tags are not included.
+    pub flagged: Vec<TagAuditFlag>,
+}
+
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct TagAuditFlag {
+    pub tag: String,
+    pub reason: String,
+}
+
+// ── Contradiction resolution (Chunk 17.2) ───────────────────────────────────
+
+/// List all memory conflicts, optionally filtered by status.
+/// Defaults to listing only "open" conflicts when no filter is provided.
+#[tauri::command]
+pub async fn list_memory_conflicts(
+    status: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::conflicts::MemoryConflict>, String> {
+    let filter = status.map(|s| crate::memory::conflicts::ConflictStatus::parse(&s));
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .list_conflicts(filter.as_ref())
+        .map_err(|e| e.to_string())
+}
+
+/// Resolve a memory conflict by picking a winner. The loser is soft-closed
+/// via `valid_to` — never deleted.
+#[tauri::command]
+pub async fn resolve_memory_conflict(
+    conflict_id: i64,
+    winner_id: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::conflicts::MemoryConflict, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .resolve_conflict(conflict_id, winner_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Dismiss a memory conflict (user says "not a real conflict").
+#[tauri::command]
+pub async fn dismiss_memory_conflict(
+    conflict_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .dismiss_conflict(conflict_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the number of open (unresolved) memory conflicts.
+#[tauri::command]
+pub async fn count_memory_conflicts(
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .count_open_conflicts()
+        .map_err(|e| e.to_string())
+}
+
+/// Scan connected memories for contradictions (Chunk 17.6).
+///
+/// Iterates edges with positive relation types (supports, implies,
+/// related_to, etc.) and asks the LLM whether the connected pair
+/// actually contradicts. When found, inserts a "contradicts" edge
+/// and opens a MemoryConflict row.
+///
+/// `max_pairs` caps the scan to avoid runaway LLM calls (default 50).
+/// Intended to be triggered on user idle from the frontend.
+#[tauri::command]
+pub async fn scan_edge_conflicts(
+    max_pairs: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::edge_conflict_scan::EdgeConflictScanResult, String> {
+    let model = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured — edge conflict scan requires an LLM.".to_string())?;
+
+    let max_pairs = max_pairs.unwrap_or(50).min(200);
+
+    // Phase 1: collect candidate pairs while holding the lock.
+    let candidates = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        crate::memory::edge_conflict_scan::collect_scan_candidates(&store, max_pairs)
+    };
+
+    // Phase 2: run LLM checks without holding the lock.
+    let agent = crate::brain::OllamaAgent::new(&model);
+    let mut result = crate::memory::edge_conflict_scan::EdgeConflictScanResult {
+        pairs_scanned: 0,
+        conflicts_found: 0,
+        pairs_skipped: candidates.skipped,
+    };
+
+    for (src_id, dst_id, content_a, content_b) in &candidates.pairs {
+        result.pairs_scanned += 1;
+        if let Some(cr) = agent.check_contradiction(content_a, content_b).await {
+            if cr.contradicts {
+                // Phase 3: write results, re-acquiring the lock per write.
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                crate::memory::edge_conflict_scan::record_contradiction(
+                    &store, *src_id, *dst_id, &cr.reason,
+                );
+                result.conflicts_found += 1;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Walk every memory, validate its `tags` against the curated vocabulary,
+/// and return only the rows that have at least one non-conforming tag.
+///
+/// This is the read-only surface BrainView calls to render its
+/// "review tags" warning. The write path is **not** affected — ingest
+/// always accepts tags, this is purely an audit lens.
+///
+/// Maps to `docs/brain-advanced-design.md` § 16 Phase 2 row "Tag-prefix
+/// convention enforcement" (chunk 18.4).
+#[tauri::command]
+pub async fn audit_memory_tags(
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryTagAudit>, String> {
+    use crate::memory::tag_vocabulary::{validate_csv, NonConformingReason, TagValidation};
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let entries = store.get_all().map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for entry in entries {
+        let mut flagged = Vec::new();
+        for (raw, verdict) in entry.tags.split(',').map(str::trim).filter(|t| !t.is_empty()).zip(validate_csv(&entry.tags)) {
+            if let TagValidation::NonConforming { reason } = verdict {
+                let reason_str = match reason {
+                    NonConformingReason::UnknownPrefix(p) => format!("Unknown prefix `{}` (use one of: personal, domain, project, tool, code, external, session, quest)", p),
+                    NonConformingReason::MissingPrefix => "Missing `<prefix>:<value>` shape — consider adding a curated prefix".to_string(),
+                    NonConformingReason::EmptyValue { prefix } => format!("Empty value after `{}:`", prefix),
+                    NonConformingReason::Empty => "Empty tag".to_string(),
+                };
+                flagged.push(TagAuditFlag { tag: raw.to_string(), reason: reason_str });
+            }
+        }
+        if !flagged.is_empty() {
+            out.push(MemoryTagAudit { memory_id: entry.id, flagged });
+        }
+    }
+    Ok(out)
+}
+
 /// Garbage-collect decayed low-importance memories. Returns count removed.
 #[tauri::command]
 pub async fn gc_memories(
@@ -647,6 +962,7 @@ pub async fn add_memory_edge(
         source: source.as_deref().map(EdgeSource::parse).unwrap_or_default(),
         valid_from,
         valid_to,
+        edge_source: None,
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.add_edge(edge).map_err(|e| e.to_string())
@@ -784,12 +1100,7 @@ pub async fn multi_hop_search_memories(
 ) -> Result<Vec<MemoryEntry>, String> {
     let limit = limit.unwrap_or(10);
     let hops = hops.unwrap_or(1).min(3); // hard cap to avoid runaway expansion
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    let query_emb = if let Some(model) = model_opt {
-        crate::brain::OllamaAgent::embed_text(&query, &model).await
-    } else {
-        None
-    };
+    let query_emb = embed(&state, &query).await;
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store
         .hybrid_search_with_graph(&query, query_emb.as_deref(), limit, hops)
@@ -844,4 +1155,93 @@ pub async fn evaluate_auto_learn(
     };
     let decision = crate::memory::evaluate_auto_learn(policy, total_turns, last_autolearn_turn);
     Ok(crate::memory::auto_learn::AutoLearnDecisionDto::from(decision))
+}
+
+// ── Obsidian vault export (Chunk 18.5) ───────────────────────────────
+
+/// Export all long-tier memories to an Obsidian vault directory.
+///
+/// Creates `<vault_dir>/TerranSoul/` and writes one `.md` file per long-tier
+/// memory with YAML frontmatter. Idempotent — skips files whose mtime is >=
+/// the memory's last modification.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn export_to_obsidian(
+    vault_dir: String,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::obsidian_export::ExportReport, String> {
+    let entries = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    let path = std::path::Path::new(&vault_dir);
+    if !path.exists() {
+        return Err(format!("Vault directory does not exist: {vault_dir}"));
+    }
+    crate::memory::obsidian_export::export_to_vault(path, &entries)
+}
+
+// ── Temporal reasoning queries (Chunk 17.3) ──────────────────────────
+
+/// Result of a temporal query: the parsed time range + matching memories.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TemporalQueryResult {
+    /// The resolved time range, or `None` if no time expression was detected.
+    pub time_range: Option<crate::memory::temporal::TimeRange>,
+    /// Memories whose `created_at` falls within the time range.
+    /// When no time range is detected, falls back to keyword search over all memories.
+    pub memories: Vec<crate::memory::MemoryEntry>,
+}
+
+/// Query memories within a natural-language time range.
+///
+/// Examples: *"what did I learn last month about X?"*, *"have my preferences
+/// shifted since April?"*, *"show yesterday's memories"*.
+///
+/// The `question` is parsed for time expressions (last N days, since date,
+/// between dates, today, yesterday, etc.). Memories within the range are
+/// returned, optionally keyword-filtered by any non-time-related terms.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn temporal_query(
+    question: String,
+    state: State<'_, AppState>,
+) -> Result<TemporalQueryResult, String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let time_range = crate::memory::temporal::parse_time_range(&question, now_ms);
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+    let memories = match time_range {
+        Some(range) => {
+            let all = store.get_all().map_err(|e| e.to_string())?;
+            all.into_iter()
+                .filter(|m| m.created_at >= range.start_ms && m.created_at < range.end_ms)
+                .collect()
+        }
+        None => {
+            // No time range detected — fall back to keyword search
+            store.search(&question).map_err(|e| e.to_string())?
+        }
+    };
+
+    Ok(TemporalQueryResult {
+        time_range,
+        memories,
+    })
+}
+
+/// Get the full version history for a memory entry (chunk 16.12).
+///
+/// Returns all previous snapshots ordered oldest-first. An empty list means
+/// the memory has never been edited (or the schema is pre-V8).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_memory_history(
+    memory_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::versioning::MemoryVersion>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    crate::memory::versioning::get_history(store.conn(), memory_id).map_err(|e| e.to_string())
 }

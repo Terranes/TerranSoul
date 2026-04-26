@@ -22,17 +22,29 @@ export interface AppSettings {
   bgm_track_id: string;
   /** User-added custom BGM tracks (file/URL). */
   bgm_custom_tracks: BgmTrack[];
+  /** When true, LLM auto-tags new memories with curated-prefix tags. */
+  auto_tag?: boolean;
+  /** When true, ingest prepends document-level context to each chunk before embedding (Anthropic 2024). */
+  contextual_retrieval?: boolean;
+  /** Set to true after the first-launch wizard completes (recommended or manual). */
+  first_launch_complete?: boolean;
+  /** When true, hide the 3D character and show a clean chatbox-only layout. */
+  chatbox_mode?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 2,
-  selected_model_id: 'annabelle',
+  selected_model_id: 'shinra',
   camera_azimuth: 0,
   camera_distance: 2.8,
   bgm_enabled: false,
   bgm_volume: 0.15,
   bgm_track_id: 'prelude',
   bgm_custom_tracks: [],
+  auto_tag: false,
+  contextual_retrieval: false,
+  first_launch_complete: false,
+  chatbox_mode: false,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -83,6 +95,11 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ bgm_enabled: enabled, bgm_volume: bgmVolume, bgm_track_id: trackId });
   }
 
+  /** Toggle chatbox-only mode (hides the 3D character). */
+  async function setChatboxMode(enabled: boolean): Promise<void> {
+    await saveSettings({ chatbox_mode: enabled });
+  }
+
   return {
     // state
     settings,
@@ -94,5 +111,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveModelId,
     saveCameraState,
     saveBgmState,
+    setChatboxMode,
   };
 });

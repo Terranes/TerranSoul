@@ -124,6 +124,35 @@ This rule is mandatory for every AI agent session.
 
 ---
 
+## ENFORCEMENT RULE — Clean Up Reverse-Engineering Research on Chunk Completion
+
+When a completed chunk was **derived from** or **inspired by** a section in
+`rules/research-reverse-engineering.md` (e.g. it implements a pattern from
+aituber-kit, Open-LLM-VTuber, VibeVoice, AI4Animation-js, or any other
+reverse-engineered project documented there):
+
+1. **Remove the corresponding section** from `rules/research-reverse-engineering.md`.
+   If the section is partially implemented (some bullets done, others not), remove
+   only the completed bullets and leave a note: `✅ Implemented in Chunk NNN`.
+   If the entire section is fully implemented, delete it and update the Table of
+   Contents.
+2. **Remove the corresponding row** from `rules/backlog.md` if one exists.
+   If the row was already promoted to `milestones.md`, it will be removed by the
+   normal "Completed Chunks Must Be Archived" rule above — no extra action needed.
+3. **Update the "What We Already Have" list** at the bottom of
+   `rules/research-reverse-engineering.md` § 9 to include the newly implemented
+   feature with a `✅` checkmark.
+
+**Why:** Research docs are living references, not archives. Once a pattern has
+been absorbed into TerranSoul's codebase, keeping it in the research doc adds
+noise and misleads future agents into thinking the work is still pending.
+The authoritative record of completed work lives in `rules/completion-log.md`.
+
+This rule is mandatory for every AI agent session that completes a
+reverse-engineering-derived chunk.
+
+---
+
 ## ENFORCEMENT RULE — Completion-Log File Size Cap
 
 > **`rules/completion-log.md` always contains the LATEST entries and must not exceed 10,000 lines.**
@@ -199,3 +228,42 @@ append exceed, **10,000 lines**:
 - Do **not** rename `rules/completion-log.md` itself — its filename is
   stable so external links and tooling never break. Older entries are
   what move out, not the active file.
+
+---
+
+## ENFORCEMENT RULE — Clean Up Temporary Files After Each Session
+
+> **The agent must leave the repository working tree free of any temporary
+> files it created (or inherited) before ending the session.**
+
+Temporary files are anything that is *not* part of the long-lived source
+tree, *not* part of the established build / test output already covered
+by `.gitignore`, and *not* a deliberate code change for the task. They
+include — but are not limited to:
+
+- ad-hoc test logs (`test-output.txt`, `*.log`, captured CI logs),
+- scratch JSON / dumps used during debugging,
+- one-off helper scripts written under the repo root,
+- editor backup files (`*.tmp`, `*~`, `*.bak`, `*.orig`),
+- any `/tmp-agent`, `.scratch`, or similar throwaway folders.
+
+### Required end-of-session checklist
+
+1. **Run `git status`** before reporting completion.
+2. For every untracked or modified file that is *not* part of the
+   actual code change, decide:
+   - **delete it** (preferred — `rm <file>`), or
+   - if it must stay, add an explicit gitignore entry **and** justify
+     it in the PR description.
+3. **Never commit** scratch logs or debug dumps. If one slips through,
+   remove it in the same PR with `git rm <file>` and add the pattern
+   to `.gitignore` so the mistake cannot recur.
+4. Prefer creating temporary work under `/tmp/` (outside the repo) so
+   it can never be staged by accident — see the existing
+   "tips_and_tricks" guidance in `.github/copilot-instructions.md`.
+
+### Patterns already pinned in `.gitignore`
+
+`test-output.txt`, `*.log`, `*.tmp`, `.scratch/`, `/tmp-agent/`. If a
+new class of temp file appears, add the pattern to `.gitignore` in the
+**same** PR that removes the file — never in a follow-up.

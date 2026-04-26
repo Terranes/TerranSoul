@@ -13,6 +13,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import type { Message } from '../types';
 
 function isTauriAvailable(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -86,6 +87,36 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
   const loading = ref(false);
   const lastError = ref<string | null>(null);
 
+  // ── Agent handoff context ──────────────────────────────────────────
+  //
+  // When switching agents, a summary of the outgoing agent's recent
+  // conversation is stored here keyed by agent ID. The new agent's
+  // system prompt can include this so it has context from the previous
+  // interaction (message-oriented handoff pattern).
+
+  /** Max recent messages to include in a handoff context window. */
+  const HANDOFF_WINDOW = 20;
+
+  /** Per-agent handoff context: agent_id → summary string. */
+  const handoffContexts = ref<Record<string, string>>({});
+
+  /** Build a plain-text context window from recent messages. */
+  function buildHandoffContext(msgs: Message[], agentId: string | undefined): string {
+    const relevant = agentId
+      ? msgs.filter((m) => !m.agentId || m.agentId === agentId)
+      : msgs;
+    const window = relevant.slice(-HANDOFF_WINDOW);
+    if (window.length === 0) return '';
+    return window
+      .map((m) => `[${m.role}] ${m.content.slice(0, 500)}`)
+      .join('\n');
+  }
+
+  /** Get the handoff context for an agent (e.g. to inject into system prompt). */
+  function getHandoffContext(agentId: string): string | null {
+    return handoffContexts.value[agentId] ?? null;
+  }
+
   const currentAgent = computed<AgentProfile | null>(() => {
     if (!currentAgentId.value) {
       return agents.value[0] ?? null;
@@ -114,7 +145,7 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
           {
             id: 'default',
             display_name: 'TerranSoul',
-            vrm_model_id: 'annabelle',
+            vrm_model_id: 'shinra',
             brain_backend: { kind: 'native', data: { mode: null } },
             working_folder: null,
             created_at: 0,
@@ -185,7 +216,15 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
     }
   }
 
-  async function switchAgent(id: string): Promise<boolean> {
+  async function switchAgent(id: string, conversationMessages?: Message[]): Promise<boolean> {
+    // Capture handoff context from the outgoing agent's conversation
+    if (conversationMessages && currentAgentId.value) {
+      const ctx = buildHandoffContext(conversationMessages, currentAgentId.value);
+      if (ctx) {
+        handoffContexts.value[id] = ctx;
+      }
+    }
+
     if (!isTauriAvailable()) {
       currentAgentId.value = id;
       return true;
@@ -276,5 +315,8 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
     setWorkingFolder,
     startCliWorkflow,
     cancelWorkflow,
+    // handoff context
+    handoffContexts,
+    getHandoffContext,
   };
 });

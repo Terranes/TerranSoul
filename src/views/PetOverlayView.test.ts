@@ -124,7 +124,7 @@ describe('PetOverlayView', () => {
     const wrapper = mount(PetOverlayView, {
       global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
     });
-    const input = wrapper.find('.pet-chat-input input');
+    const input = wrapper.find('.pet-chat-input textarea');
     expect(input.exists()).toBe(true);
   });
 
@@ -161,7 +161,7 @@ describe('PetOverlayView', () => {
     await wrapper.vm.$nextTick();
     await wrapper.findAll('.pet-chat-action-btn')[1].trigger('click');
     await new Promise((r) => setTimeout(r, 0));
-    expect((wrapper.find('.pet-chat-input input').element as HTMLInputElement).value).toBe('hello from clipboard');
+    expect((wrapper.find('.pet-chat-input textarea').element as HTMLTextAreaElement).value).toBe('hello from clipboard');
   });
 
   it('paste keeps input unchanged when clipboard is empty', async () => {
@@ -173,10 +173,10 @@ describe('PetOverlayView', () => {
     await character.trigger('mousedown', { button: 0, clientX: 100, clientY: 100 });
     document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100 }));
     await wrapper.vm.$nextTick();
-    const input = wrapper.find('.pet-chat-input input');
+    const input = wrapper.find('.pet-chat-input textarea');
     await input.setValue('existing');
     await wrapper.findAll('.pet-chat-action-btn')[1].trigger('click');
-    expect((input.element as HTMLInputElement).value).toBe('existing');
+    expect((input.element as HTMLTextAreaElement).value).toBe('existing');
   });
 
   it('skip button clears streaming state', async () => {

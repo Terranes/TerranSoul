@@ -1,0 +1,42 @@
+{
+  // TerranSoul MCP servers — connects VS Code Copilot to the brain.
+  //
+  // Two servers are configured so dev and release builds can run in
+  // parallel without stealing each other's port:
+  //   - terransoul-brain     → port 7421 (release build)
+  //   - terransoul-brain-dev → port 7422 (dev/debug build via `cargo tauri dev`)
+  //
+  // VS Code will connect to whichever server is actually running.
+  // If both are running, Copilot can use tools from either — the dev
+  // server is tagged with "(DEV)" in its name to distinguish them.
+  //
+  // Token setup:
+  //   1. Start TerranSoul → the MCP server auto-generates mcp-token.txt
+  //      in the Tauri app data dir.
+  //   2. Set env vars (one for each build profile):
+  //
+  //      Release (Windows):
+  //        $env:TERRANSOUL_MCP_TOKEN = Get-Content "$env:APPDATA/com.terranes.terransoul/mcp-token.txt"
+  //      Dev (Windows — uses a different data dir):
+  //        $env:TERRANSOUL_MCP_TOKEN_DEV = Get-Content "$env:APPDATA/com.terranes.terransoul/mcp-token.txt"
+  //
+  //      On Linux/macOS, replace $env:APPDATA with ~/.local/share.
+  //   3. Restart VS Code so the env vars are picked up.
+
+  "servers": {
+    "terransoul-brain": {
+      "type": "http",
+      "url": "http://127.0.0.1:7421/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN}"
+      }
+    },
+    "terransoul-brain-dev": {
+      "type": "http",
+      "url": "http://127.0.0.1:7422/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN_DEV}"
+      }
+    }
+  }
+}

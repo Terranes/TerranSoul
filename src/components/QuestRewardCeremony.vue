@@ -217,6 +217,8 @@ watch(
   () => skillTree.tracker.activationTimestamps,
   (next) => {
     if (!next) return;
+    // Suppressed during first-launch wizard / batch init.
+    if (skillTree.notificationsSuppressed) return;
     const lastSeen = skillTree.tracker.lastSeenActivationTimestamp ?? 0;
     // First-launch grace: if there's no high-water mark yet, treat the current
     // active set as "already seen" so we don't blast the user with a stack of
@@ -269,7 +271,7 @@ onUnmounted(() => {
 .quest-reward-ceremony {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 1100;
   background: radial-gradient(ellipse at center, rgba(20, 18, 50, 0.85), rgba(4, 4, 14, 0.96));
   display: flex;
   align-items: center;

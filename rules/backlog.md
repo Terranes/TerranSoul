@@ -11,19 +11,6 @@
 
 ---
 
-## Phase 7 — VRM Model Security (Anti-Exploit & Asset Protection)
-
-❌ **Removed (2026-04-24).** Encryption-based VRM asset protection is
-not feasible for an open-source Tauri desktop application: any
-decryption key compiled into the binary is extractable by anyone who
-downloads the app, reducing the scheme to obfuscation rather than real
-DRM. VRM creators rely on copyright and the model's accompanying ToS
-as their primary protection; TerranSoul will not pretend to offer
-technical DRM it cannot actually deliver. Chunks 100–105 are removed
-and will not be re-promoted.
-
----
-
 ## Phase 9 — Learned Features (From Reference Projects)
 
 > **Source repos:** Open-LLM-VTuber, AI4Animation-js, VibeVoice, aituber-kit
@@ -46,4 +33,12 @@ and will not be re-promoted.
 
 | Chunk | Description | Status | Notes |
 |-------|-------------|--------|-------|
-| 117 | **Docker Containerization** — Run TerranSoul in isolated containers for CI/testing and server deployment (Open-LLM-VTuber pattern). CPU/GPU variants. | `not-needed` | Re-analysis: TerranSoul is a Tauri desktop app — Docker is not applicable. If container orchestration for LLM inference servers is ever needed, use .NET Aspire to manage Docker instead of raw Dockerfiles. |
+
+---
+
+## Phase 10 — Developer Experience & Copilot Integration
+
+> **Goal:** Streamline the AI-assisted development loop so Copilot (and other
+> coding agents) can run long autonomous sessions without manual babysitting.
+
+📦 Promoted to `rules/milestones.md` — chunks 10.1–10.3.

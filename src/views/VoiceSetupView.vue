@@ -273,7 +273,7 @@ function goToConfig() {
 
 async function activateBrowser() {
   await voice.setAsrProvider('web-speech');
-  await voice.setTtsProvider('edge-tts');
+  await voice.setTtsProvider('web-speech');
   step.value = 99;
 }
 

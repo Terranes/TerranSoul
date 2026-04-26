@@ -404,10 +404,39 @@
       </template>
     </section>
 
+    <!-- ── Auto-tag toggle (Chunk 18.1) ────────────────────────────────────── -->
+    <section class="bv-autolearn-section">
+      <header class="bv-autolearn-header">
+        <span class="bv-section-title">🏷 Auto-Tag</span>
+      </header>
+      <label
+        class="bv-config-list"
+        style="display:flex;align-items:center;gap:8px;"
+      >
+        <input
+          type="checkbox"
+          :checked="appSettings.settings?.auto_tag ?? false"
+          data-testid="bv-autotag-toggle"
+          @change="onToggleAutoTag(($event.target as HTMLInputElement).checked)"
+        >
+        <span>Auto-classify new memories with LLM tags</span>
+      </label>
+      <p class="bv-cog-desc">
+        When enabled, each new memory is classified into curated prefix tags
+        (<code>personal:*</code>, <code>domain:*</code>, <code>code:*</code>, …)
+        via one LLM call. Tags are merged with any user-supplied tags.
+      </p>
+    </section>
+
 
     <!-- ── RPG stat sheet ──────────────────────────────────────────────────── -->
     <section class="bv-stats-section">
       <BrainStatSheet />
+    </section>
+
+    <!-- ── Code knowledge (GitNexus mirror) — Phase 13 Tier 4 ────────────── -->
+    <section class="bv-code-knowledge-section">
+      <CodeKnowledgePanel />
     </section>
 
     <!-- ── Persona panel (data storage & management) ──────────────────────── -->
@@ -460,8 +489,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
+import { useSettingsStore } from '../stores/settings';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
+import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import type { MemoryEntry } from '../types';
@@ -478,6 +509,7 @@ const emitNavigate = (target: 'chat' | 'memory' | 'marketplace' | 'voice' | 'ski
 
 const brain = useBrainStore();
 const memory = useMemoryStore();
+const appSettings = useSettingsStore();
 
 const isRefreshing = ref(false);
 
@@ -904,6 +936,15 @@ async function onToggleAutoLearn(enabled: boolean) {
     await loadAutoLearnPolicy();
   }
 }
+
+async function onToggleAutoTag(enabled: boolean) {
+  try {
+    await appSettings.saveSettings({ auto_tag: enabled });
+  } catch (err) {
+    console.warn('[BrainView] save auto_tag failed; reverting UI:', err);
+    await appSettings.loadSettings();
+  }
+}
 async function forceExtractNow() {
   try {
     const count = await invoke<number>('extract_memories_from_session');
@@ -931,6 +972,7 @@ async function refresh() {
       memory.getEdgeStats(),
       loadBrainSelection(),
       loadAutoLearnPolicy(),
+      appSettings.loadSettings(),
     ]);
   } finally {
     isRefreshing.value = false;
@@ -1291,10 +1333,20 @@ onMounted(async () => {
     flex-direction: row;
     flex-wrap: wrap;
   }
+  .bv-grid { grid-template-columns: 1fr 1fr; }
+  .bv-cognitive-bars { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .bv-hero { grid-template-columns: 1fr; text-align: center; }
   .bv-hero-avatar { justify-self: center; }
   .bv-hero-pills { justify-content: center; }
+  .bv-hero-actions { justify-content: center; }
+  .bv-grid { grid-template-columns: 1fr; }
+  .bv-mode-grid { grid-template-columns: 1fr 1fr; }
+  .bv-rag-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+  .brain-view { padding: 0.75rem 0.5rem; gap: 0.5rem; }
+  .bv-hero { padding: 0.85rem 0.75rem; gap: 0.75rem; }
+  .bv-hero-title { font-size: 1.2rem; }
+  .bv-section-title { font-size: 0.7rem; }
 }
 </style>

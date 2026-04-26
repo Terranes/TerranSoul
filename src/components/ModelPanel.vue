@@ -92,18 +92,11 @@
             :class="{ active: characterStore.selectedModelId === model.id }"
             @click="handleSelectModel(model.id)"
           >
-            <img
-              v-if="model.thumbnail"
-              :src="model.thumbnail"
+            <VrmThumbnail
+              :cache-key="model.id"
+              :model-path="model.path"
               :alt="model.name"
-              class="model-thumb"
-            >
-            <div
-              v-else
-              class="model-icon"
-            >
-              👤
-            </div>
+            />
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
               <span class="model-author">Bundled</span>
@@ -117,9 +110,11 @@
             :class="{ active: characterStore.selectedModelId === model.id }"
             @click="handleSelectModel(model.id)"
           >
-            <div class="model-icon">
-              📁
-            </div>
+            <VrmThumbnail
+              :cache-key="model.id"
+              :user-model-id="model.id"
+              :alt="model.name"
+            />
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
               <span class="model-author">Imported · {{ model.original_filename }}</span>
@@ -149,6 +144,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useCharacterStore } from '../stores/character';
+import VrmThumbnail from './VrmThumbnail.vue';
+import { preGenerateUserThumbnail } from '../composables/useVrmThumbnail';
 
 defineEmits<{ close: [] }>();
 
@@ -192,6 +189,8 @@ async function handleImport() {
   characterStore.setLoadError(undefined);
   try {
     const entry = await characterStore.importUserModel(path.trim());
+    // Pre-generate thumbnail in background so it's cached for next open
+    preGenerateUserThumbnail(entry.id).catch(() => { /* non-critical */ });
     await characterStore.selectModel(entry.id);
   } catch (err) {
     characterStore.setLoadError(`Import failed: ${err}`);
@@ -402,20 +401,6 @@ async function handleDelete(id: string) {
 .model-card.active {
   border-color: rgba(108, 99, 255, 0.5);
   background: rgba(108, 99, 255, 0.1);
-}
-
-.model-icon {
-  font-size: 1.5rem;
-  flex-shrink: 0;
-}
-
-.model-thumb {
-  width: 56px;
-  height: 56px;
-  border-radius: 6px;
-  object-fit: contain;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .model-info {

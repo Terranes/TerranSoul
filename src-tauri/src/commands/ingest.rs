@@ -259,16 +259,57 @@ async fn run_ingest_task(
     }
 
     let total_chars = text.len();
-    let chunks = chunk_text(&text, 800, 100);
-    let chunk_count = chunks.len();
+
+    // ── Semantic chunking (Chunk 16.11) ────────────────────────────────
+    // Use MarkdownSplitter for .md files and HTML-sourced content;
+    // TextSplitter for everything else.  Both respect sentence /
+    // paragraph / heading boundaries.
+    let is_markdown = source_url.ends_with(".md")
+        || source_url.ends_with(".markdown")
+        || text.starts_with("# ")
+        || text.contains("\n## ");
+    let raw_chunks = if is_markdown {
+        crate::memory::chunking::split_markdown(&text, crate::memory::chunking::DEFAULT_CHUNK_CHARS)
+    } else {
+        crate::memory::chunking::split_text(&text, crate::memory::chunking::DEFAULT_CHUNK_CHARS)
+    };
+    let semantic_chunks = crate::memory::chunking::dedup_chunks(raw_chunks);
+    let chunk_count = semantic_chunks.len();
+    // Flatten to (text, heading) pairs so the rest of the pipeline works.
+    let chunks: Vec<(String, Option<String>)> = semantic_chunks
+        .into_iter()
+        .map(|c| (c.text, c.heading))
+        .collect();
 
     emit_progress(app, task_id, 30, &format!("Chunked into {} pieces", chunk_count), 0, chunk_count);
 
+    // ── Contextual Retrieval (Anthropic 2024, Chunk 16.2) ──────────────
+    // When enabled, generate a document summary once, then prepend a
+    // 50–100 token context prefix to each chunk before storing.
+    let contextual_retrieval_enabled = state
+        .app_settings
+        .lock()
+        .map(|s| s.contextual_retrieval)
+        .unwrap_or(false);
+
+    let doc_summary = if contextual_retrieval_enabled {
+        let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+        if let Some(mode) = brain_mode {
+            emit_progress(app, task_id, 32, "Generating document summary for contextual retrieval…", 0, chunk_count);
+            crate::memory::contextualize::generate_doc_summary(&text, &mode).await
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Store chunks with progress
     let mut created = 0usize;
-    for (i, chunk) in chunks.iter().enumerate() {
+    for (i, (chunk_text, chunk_heading)) in chunks.iter().enumerate() {
         if cancel_flag.load(Ordering::Relaxed) {
-            save_ingest_checkpoint(state, task_id, source, tags, importance, &chunks, i).await;
+            let plain: Vec<String> = chunks.iter().map(|(t, _)| t.clone()).collect();
+            save_ingest_checkpoint(state, task_id, source, tags, importance, &plain, i).await;
             return Err("Task cancelled".to_string());
         }
 
@@ -278,23 +319,50 @@ async fn run_ingest_task(
             let progress = (30 + (i * 50 / chunk_count.max(1))) as u8;
             if let Some(task) = mgr.update_progress(task_id, progress, i, chunk_count) {
                 if task.status == TaskStatus::Paused {
-                    save_ingest_checkpoint(state, task_id, source, tags, importance, &chunks, i).await;
+                    let plain: Vec<String> = chunks.iter().map(|(t, _)| t.clone()).collect();
+                    save_ingest_checkpoint(state, task_id, source, tags, importance, &plain, i).await;
                     return Err("Auto-paused: exceeded 30-minute limit".to_string());
                 }
             }
         }
 
-        if chunk.trim().len() < 10 { continue; }
-        let chunk_tags = if chunk_count > 1 {
+        if chunk_text.trim().len() < 10 { continue; }
+        let mut chunk_tags = if chunk_count > 1 {
             format!("{},chunk-{}/{}", tags, i + 1, chunk_count)
         } else {
             tags.to_string()
+        };
+        // Propagate Markdown heading as a tag when available.
+        if let Some(heading) = chunk_heading {
+            let slug: String = heading.chars()
+                .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+                .collect::<String>();
+            let slug = slug.trim_matches('-');
+            if !slug.is_empty() {
+                chunk_tags = format!("{chunk_tags},section:{slug}");
+            }
+        }
+
+        // Contextual Retrieval: prepend document-level context to the chunk.
+        let final_content = if let Some(ref summary) = doc_summary {
+            let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+            if let Some(mode) = brain_mode {
+                if let Some(ctx) = crate::memory::contextualize::contextualise_chunk(summary, chunk_text, &mode).await {
+                    crate::memory::contextualize::prepend_context(&ctx, chunk_text)
+                } else {
+                    chunk_text.clone()
+                }
+            } else {
+                chunk_text.clone()
+            }
+        } else {
+            chunk_text.clone()
         };
 
         let result = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.add(NewMemory {
-                content: chunk.clone(), tags: chunk_tags,
+                content: final_content, tags: chunk_tags,
                 importance, memory_type: MemoryType::Fact,
                 source_url: Some(source_url.clone()),
                 source_hash: Some(source_hash.clone()),
@@ -310,15 +378,21 @@ async fn run_ingest_task(
     // Embed (best effort)
     emit_progress(app, task_id, 85, "Generating embeddings…", created, chunk_count);
 
-    let model_opt = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
-    if let Some(model) = model_opt {
+    // Chunk 16.9: use cloud embedding when brain mode is FreeApi/PaidApi.
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
+    if brain_mode.is_some() || active_brain.is_some() {
         let recent: Vec<crate::memory::MemoryEntry> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.get_all().unwrap_or_default().into_iter().take(created).collect()
         };
         for (i, entry) in recent.iter().enumerate() {
             if cancel_flag.load(Ordering::Relaxed) { break; }
-            if let Some(emb) = crate::brain::OllamaAgent::embed_text(&entry.content, &model).await {
+            if let Some(emb) = crate::brain::embed_for_mode(
+                &entry.content,
+                brain_mode.as_ref(),
+                active_brain.as_deref(),
+            ).await {
                 if let Ok(s) = state.memory_store.lock() {
                     let _ = s.set_embedding(entry.id, &emb);
                 }
@@ -599,8 +673,12 @@ fn validate_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-// ── Text chunking ──────────────────────────────────────────────────────────────
+// ── Text chunking (legacy — superseded by memory::chunking, Chunk 16.11) ───
 
+/// Naive word-count splitter.  Superseded by `memory::chunking::split_text`
+/// / `split_markdown` which use semantic boundary detection.  Kept for
+/// the resume-from-checkpoint path that stores pre-split `Vec<String>`.
+#[allow(dead_code)]
 fn chunk_text(text: &str, target_words: usize, overlap_words: usize) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.len() <= target_words { return vec![text.to_string()]; }

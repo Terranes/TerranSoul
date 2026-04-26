@@ -1,0 +1,152 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+
+/**
+ * Plugin manifest as returned by the Rust backend.
+ * Mirrors `plugins::manifest::PluginManifest`.
+ */
+export interface PluginManifest {
+  id: string
+  display_name: string
+  version: string
+  description: string
+  kind: string
+  install_method: string
+  capabilities: string[]
+  activation_events: unknown[]
+  contributes: {
+    commands: { id: string; title: string; icon?: string; keybinding?: string; category?: string }[]
+    views: { id: string; label: string; location: string; icon?: string }[]
+    settings: { key: string; label: string; description: string; default_value: unknown; value_type: string }[]
+    themes: { id: string; label: string; tokens: Record<string, string> }[]
+    slash_commands: { name: string; description: string; command_id: string }[]
+    memory_hooks: { id: string; stage: string; description: string }[]
+  }
+  system_requirements?: unknown
+  api_version: number
+  homepage?: string
+  license?: string
+  author?: string
+  icon?: string
+  publisher?: string
+  signature?: string
+  sha256?: string
+  dependencies: { plugin_id: string; version_req: string }[]
+}
+
+export interface InstalledPlugin {
+  manifest: PluginManifest
+  state: string | { Error: { message: string } }
+  installed_at: number
+  last_active_at: number | null
+}
+
+export interface CommandEntry {
+  plugin_id: string
+  command: { id: string; title: string; icon?: string; keybinding?: string; category?: string }
+}
+
+export interface SlashCommandEntry {
+  plugin_id: string
+  slash_command: { name: string; description: string; command_id: string }
+}
+
+export interface PluginHostStatus {
+  total_plugins: number
+  active_plugins: number
+  disabled_plugins: number
+  error_plugins: number
+  total_commands: number
+  total_slash_commands: number
+  total_themes: number
+}
+
+export const usePluginStore = defineStore('plugins', () => {
+  const plugins = ref<InstalledPlugin[]>([])
+  const commands = ref<CommandEntry[]>([])
+  const slashCommands = ref<SlashCommandEntry[]>([])
+  const themes = ref<{ id: string; label: string; tokens: Record<string, string> }[]>([])
+  const status = ref<PluginHostStatus | null>(null)
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+
+  const activePlugins = computed(() =>
+    plugins.value.filter((p) => p.state === 'Active'),
+  )
+
+  async function refresh() {
+    loading.value = true
+    error.value = null
+    try {
+      const [p, c, sc, th, st] = await Promise.all([
+        invoke<InstalledPlugin[]>('plugin_list'),
+        invoke<CommandEntry[]>('plugin_list_commands'),
+        invoke<SlashCommandEntry[]>('plugin_list_slash_commands'),
+        invoke<{ id: string; label: string; tokens: Record<string, string> }[]>('plugin_list_themes'),
+        invoke<PluginHostStatus>('plugin_host_status'),
+      ])
+      plugins.value = p
+      commands.value = c
+      slashCommands.value = sc
+      themes.value = th
+      status.value = st
+    } catch (e) {
+      error.value = String(e)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function install(manifestJson: string) {
+    const installed = await invoke<InstalledPlugin>('plugin_install', { json: manifestJson })
+    await refresh()
+    return installed
+  }
+
+  async function activate(pluginId: string) {
+    await invoke<void>('plugin_activate', { pluginId })
+    await refresh()
+  }
+
+  async function deactivate(pluginId: string) {
+    await invoke<void>('plugin_deactivate', { pluginId })
+    await refresh()
+  }
+
+  async function uninstall(pluginId: string) {
+    await invoke<void>('plugin_uninstall', { pluginId })
+    await refresh()
+  }
+
+  async function getSetting(key: string) {
+    return invoke<unknown | null>('plugin_get_setting', { key })
+  }
+
+  async function setSetting(key: string, value: unknown) {
+    await invoke<void>('plugin_set_setting', { key, value })
+  }
+
+  async function parseManifest(json: string) {
+    return invoke<PluginManifest>('plugin_parse_manifest', { json })
+  }
+
+  return {
+    plugins,
+    commands,
+    slashCommands,
+    themes,
+    status,
+    loading,
+    error,
+    activePlugins,
+    refresh,
+    install,
+    activate,
+    deactivate,
+    uninstall,
+    getSetting,
+    setSetting,
+    parseManifest,
+  }
+})

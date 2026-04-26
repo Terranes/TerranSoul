@@ -25,6 +25,7 @@ use tauri::State;
 use crate::agent::gitnexus_sidecar::{
     GitNexusError, GitNexusSidecar, SidecarConfig,
 };
+use crate::memory::gitnexus_mirror::{self, KgPayload, MirrorReport};
 use crate::sandbox::Capability;
 use crate::AppState;
 
@@ -192,6 +193,153 @@ fn stringify(e: GitNexusError) -> String {
     e.to_string()
 }
 
+/// `gitnexus_sync` — Tier 3: mirror GitNexus's structured knowledge
+/// graph into the SQLite memory store under the
+/// `gitnexus:<repo_label>` `edge_source` provenance.
+///
+/// Strictly opt-in: the frontend invokes this only when the user
+/// asks. Never runs at startup. Returns a [`MirrorReport`] with
+/// inserted-vs-reused counts so the UI can show meaningful feedback.
+///
+/// `kg_payload` is optional. When present, it bypasses the sidecar
+/// call entirely — useful for tests and for clients that fetched the
+/// KG out-of-band. When omitted, the command calls the sidecar's
+/// `graph` MCP tool and parses the response.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn gitnexus_sync(
+    repo_label: String,
+    kg_payload: Option<KgPayload>,
+    state: State<'_, AppState>,
+) -> Result<MirrorReport, String> {
+    if repo_label.trim().is_empty() {
+        return Err("gitnexus_sync: repoLabel must be non-empty".into());
+    }
+
+    // Resolve the KG payload — either from the caller or by talking
+    // to the sidecar.
+    let payload = match kg_payload {
+        Some(p) => p,
+        None => {
+            let bridge = ensure_bridge(&state).await.map_err(stringify)?;
+            let raw = bridge.graph(&repo_label).await.map_err(stringify)?;
+            extract_kg_payload(&raw).map_err(|e| {
+                format!("gitnexus_sync: could not parse `graph` response: {e}")
+            })?
+        }
+    };
+
+    let store = state
+        .memory_store
+        .lock()
+        .map_err(|e| format!("gitnexus_sync: memory store lock poisoned: {e}"))?;
+    gitnexus_mirror::mirror_kg(&store, &repo_label, &payload)
+}
+
+/// `gitnexus_unmirror` — remove every edge previously inserted by
+/// [`gitnexus_sync`] for the given `repo_label`. Memory nodes are
+/// preserved. Returns the number of edges deleted.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn gitnexus_unmirror(
+    repo_label: String,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    if repo_label.trim().is_empty() {
+        return Err("gitnexus_unmirror: repoLabel must be non-empty".into());
+    }
+    let store = state
+        .memory_store
+        .lock()
+        .map_err(|e| format!("gitnexus_unmirror: memory store lock poisoned: {e}"))?;
+    gitnexus_mirror::unmirror(&store, &repo_label)
+}
+
+/// One mirrored repo as surfaced by [`gitnexus_list_mirrors`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitNexusMirrorSummary {
+    /// Full `edge_source` value (e.g. `gitnexus:repo:foo/bar@abc`).
+    pub edge_source: String,
+    /// Caller-supplied scope without the `gitnexus:` prefix
+    /// (e.g. `repo:foo/bar@abc`). Pass this to `gitnexus_unmirror`.
+    pub scope: String,
+    /// Number of mirrored edges currently in the store.
+    pub edge_count: i64,
+    /// Wall-clock time (Unix-ms) of the most-recent edge insertion
+    /// for this scope — i.e. when the repo was last synced.
+    pub last_synced_at: i64,
+}
+
+/// `gitnexus_list_mirrors` — enumerate every repo currently mirrored
+/// from GitNexus, ordered by most-recent-sync first.
+///
+/// Powers the Phase 13 Tier 4 BrainView "Code knowledge" panel
+/// (Chunk 2.4): each row is a clickable mirror with edge count,
+/// last-sync timestamp, and a one-button rollback path.
+#[tauri::command]
+pub async fn gitnexus_list_mirrors(
+    state: State<'_, AppState>,
+) -> Result<Vec<GitNexusMirrorSummary>, String> {
+    let store = state
+        .memory_store
+        .lock()
+        .map_err(|e| format!("gitnexus_list_mirrors: memory store lock poisoned: {e}"))?;
+    let rows = store
+        .list_external_mirrors(&format!(
+            "{}%",
+            crate::memory::gitnexus_mirror::GITNEXUS_EDGE_SOURCE_PREFIX
+        ))
+        .map_err(|e| format!("gitnexus_list_mirrors: {e}"))?;
+    let prefix = crate::memory::gitnexus_mirror::GITNEXUS_EDGE_SOURCE_PREFIX;
+    Ok(rows
+        .into_iter()
+        .map(|(edge_source, edge_count, last_synced_at)| {
+            let scope = edge_source
+                .strip_prefix(prefix)
+                .unwrap_or(&edge_source)
+                .to_string();
+            GitNexusMirrorSummary {
+                edge_source,
+                scope,
+                edge_count,
+                last_synced_at,
+            }
+        })
+        .collect())
+}
+
+/// Pull a [`KgPayload`] out of the raw `graph` MCP response.
+///
+/// Tries three shapes in order:
+/// 1. Top-level `{ "nodes": [...], "edges": [...] }`.
+/// 2. Nested under `{ "graph": { "nodes": [...], "edges": [...] } }`.
+/// 3. MCP `tools/call` content envelope `{ "content": [{ "text": "<json>" }] }`
+///    where the embedded text is the JSON KG.
+fn extract_kg_payload(raw: &Value) -> Result<KgPayload, String> {
+    // Shape 1.
+    if raw.get("nodes").is_some() || raw.get("edges").is_some() {
+        return serde_json::from_value(raw.clone())
+            .map_err(|e| e.to_string());
+    }
+    // Shape 2.
+    if let Some(graph) = raw.get("graph") {
+        return serde_json::from_value(graph.clone())
+            .map_err(|e| e.to_string());
+    }
+    // Shape 3 — MCP-standard text content.
+    if let Some(arr) = raw.get("content").and_then(|c| c.as_array()) {
+        for item in arr {
+            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                if let Ok(p) = serde_json::from_str::<KgPayload>(text) {
+                    return Ok(p);
+                }
+            }
+        }
+    }
+    Err(format!(
+        "no recognised graph shape (nodes/edges, graph.*, or content[].text); got keys: {:?}",
+        raw.as_object().map(|o| o.keys().collect::<Vec<_>>())
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     //! These tests exercise the **bridge** behind the commands directly with
@@ -252,5 +400,69 @@ mod tests {
         bridge.set_capability(true).await;
         let err = bridge.impact("").await.unwrap_err();
         assert!(matches!(err, GitNexusError::Rpc { code: -32602, .. }));
+    }
+
+    // ── Chunk 2.3 — KG mirror response-extraction tests ──────────────
+
+    use super::extract_kg_payload;
+
+    #[test]
+    fn extract_kg_payload_top_level_shape() {
+        let raw = json!({
+            "nodes": [{"id": "n1", "label": "a", "kind": "module"}],
+            "edges": [{"src": "n1", "dst": "n1", "type": "CONTAINS"}]
+        });
+        let p = extract_kg_payload(&raw).unwrap();
+        assert_eq!(p.nodes.len(), 1);
+        assert_eq!(p.edges.len(), 1);
+        assert_eq!(p.edges[0].rel_type, "CONTAINS");
+    }
+
+    #[test]
+    fn extract_kg_payload_nested_under_graph() {
+        let raw = json!({
+            "graph": {
+                "nodes": [{"id": "n1"}],
+                "edges": []
+            }
+        });
+        let p = extract_kg_payload(&raw).unwrap();
+        assert_eq!(p.nodes.len(), 1);
+    }
+
+    #[test]
+    fn extract_kg_payload_mcp_content_envelope() {
+        let inner = r#"{"nodes":[{"id":"n1"}],"edges":[]}"#;
+        let raw = json!({
+            "content": [{"type": "text", "text": inner}]
+        });
+        let p = extract_kg_payload(&raw).unwrap();
+        assert_eq!(p.nodes.len(), 1);
+    }
+
+    #[test]
+    fn extract_kg_payload_rejects_unknown_shape() {
+        let raw = json!({ "stuff": 123 });
+        assert!(extract_kg_payload(&raw).is_err());
+    }
+
+    #[tokio::test]
+    async fn graph_method_calls_correct_tool() {
+        let mock = MockTransport::new();
+        let (sent, _) = mock.handles();
+        mock.push_response(
+            1,
+            json!({"protocolVersion": "2024-11-05", "serverInfo": {}}),
+        )
+        .await;
+        mock.push_response(2, json!({"nodes": [], "edges": []}))
+            .await;
+        let bridge = GitNexusSidecar::new(Box::new(mock));
+        bridge.set_capability(true).await;
+        let _ = bridge.graph("repo:foo/bar@abc").await.unwrap();
+        let sent = sent.lock().await;
+        let call: serde_json::Value = serde_json::from_str(&sent[2]).unwrap();
+        assert_eq!(call["params"]["name"], "graph");
+        assert_eq!(call["params"]["arguments"]["repo"], "repo:foo/bar@abc");
     }
 }
