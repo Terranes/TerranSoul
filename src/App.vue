@@ -316,9 +316,10 @@ function applyBodyBackground(mode: 'window' | 'pet') {
   if (typeof document === 'undefined') return;
   // Pet mode: body must be transparent so the desktop shows through the
   // Tauri transparent window. Window mode: clear the inline style so the
-  // CSS-driven var(--ts-bg-gradient) on body takes over automatically —
-  // theme switching is handled entirely by CSS variable cascade.
+  // CSS-driven var(--ts-bg-gradient) on body takes over automatically.
+  // data-ts-mode is read by CSS to suppress the animated aura orbs in pet mode.
   document.body.style.background = mode === 'pet' ? 'transparent' : '';
+  document.body.dataset.tsMode = mode;
 }
 
 // Watch for window mode changes (e.g. from tray icon toggle)

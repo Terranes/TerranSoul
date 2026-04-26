@@ -74,14 +74,12 @@
   --ts-border-focus: var(--ts-accent);
   --ts-border-strong: rgba(255, 255, 255, 0.16);
 
-  /* ── Body gradient — applied via body { background: var(--ts-bg-gradient) }
-     in style.css; updates automatically when html[data-theme] changes. ── */
+  /* ── Body gradient — static linear base; radial glow orbs are animated via
+     body::before / body::after using --ts-aura-c1 / --ts-aura-c2 below. ── */
   /* Adventurer (default): deep cosmic purple & blue nebula over dark navy */
-  --ts-bg-gradient:
-    radial-gradient(ellipse 80% 55% at 18% 0%,   rgba(124, 111, 255, 0.20), transparent),
-    radial-gradient(ellipse 60% 50% at 88% 85%,   rgba(96,  165, 250, 0.14), transparent),
-    radial-gradient(ellipse 40% 35% at 55% 50%,   rgba(124, 111, 255, 0.06), transparent),
-    linear-gradient(170deg, #03071a 0%, #0d1530 45%, #111e40 75%, #0a1228 100%);
+  --ts-aura-c1:    rgba(124, 111, 255, 0.22);
+  --ts-aura-c2:    rgba(96,  165, 250, 0.16);
+  --ts-bg-gradient: linear-gradient(170deg, #03071a 0%, #0d1530 45%, #111e40 75%, #0a1228 100%);
 
   /* ── Backdrop ── */
   --ts-bg-backdrop: rgba(0, 0, 0, 0.6);
@@ -217,11 +215,9 @@ html[data-theme="corporate"] {
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.32);
   /* Corporate: pristine office light with subtle indigo brand tint */
-  --ts-bg-gradient:
-    radial-gradient(ellipse 75% 50% at 100% 0%,   rgba(91,  95, 199, 0.09), transparent),
-    radial-gradient(ellipse 55% 45% at 0%   100%,  rgba(91,  95, 199, 0.05), transparent),
-    radial-gradient(ellipse 40% 30% at 50%  50%,   rgba(91,  95, 199, 0.03), transparent),
-    linear-gradient(160deg, #edf0ff 0%, #f5f5f5 40%, #f0f2fc 72%, #f8f5ff 100%);
+  --ts-aura-c1:    rgba(91, 95, 199, 0.08);
+  --ts-aura-c2:    rgba(91, 95, 199, 0.05);
+  --ts-bg-gradient: linear-gradient(160deg, #edf0ff 0%, #f5f5f5 42%, #f0f2fc 72%, #f8f5ff 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -297,11 +293,9 @@ html[data-theme="cat"] {
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
   /* Neko (Cat): warm candlelight amber glow over deep cocoa night */
-  --ts-bg-gradient:
-    radial-gradient(ellipse 70% 55% at 0%   30%,   rgba(245, 158, 11,  0.20), transparent),
-    radial-gradient(ellipse 55% 50% at 92%  80%,   rgba(232, 130, 60,  0.14), transparent),
-    radial-gradient(ellipse 38% 32% at 50%  0%,    rgba(251, 191, 36,  0.08), transparent),
-    linear-gradient(170deg, #050300 0%, #180f08 45%, #1e1409 75%, #120a05 100%);
+  --ts-aura-c1:    rgba(245, 158, 11,  0.24);
+  --ts-aura-c2:    rgba(232, 130, 60,  0.16);
+  --ts-bg-gradient: linear-gradient(170deg, #050300 0%, #180f08 45%, #1e1409 75%, #120a05 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   14px;
@@ -370,11 +364,9 @@ html[data-theme="sakura"] {
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
   /* Sakura: cherry-blossom midnight — magenta bloom & orchid haze */
-  --ts-bg-gradient:
-    radial-gradient(ellipse 70% 55% at 82%  0%,    rgba(244, 114, 182, 0.20), transparent),
-    radial-gradient(ellipse 58% 50% at 8%   70%,   rgba(232, 121, 249, 0.16), transparent),
-    radial-gradient(ellipse 42% 35% at 50%  100%,  rgba(244, 114, 182, 0.08), transparent),
-    linear-gradient(170deg, #0a0610 0%, #160f1a 45%, #1c1225 75%, #100a18 100%);
+  --ts-aura-c1:    rgba(244, 114, 182, 0.24);
+  --ts-aura-c2:    rgba(232, 121, 249, 0.18);
+  --ts-bg-gradient: linear-gradient(170deg, #0a0610 0%, #160f1a 45%, #1c1225 75%, #100a18 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;
@@ -445,11 +437,9 @@ html[data-theme="kids"] {
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
   /* Kids (Playground): electric indigo-violet cosmos with cyan spark */
-  --ts-bg-gradient:
-    radial-gradient(ellipse 68% 58% at 88%  5%,    rgba(129, 140, 248, 0.22), transparent),
-    radial-gradient(ellipse 58% 55% at 5%   88%,   rgba(192, 132, 252, 0.18), transparent),
-    radial-gradient(ellipse 45% 38% at 45%  50%,   rgba(56,  189, 248, 0.10), transparent),
-    linear-gradient(170deg, #060418 0%, #0f0c2a 45%, #161240 75%, #0c0a22 100%);
+  --ts-aura-c1:    rgba(129, 140, 248, 0.26);
+  --ts-aura-c2:    rgba(192, 132, 252, 0.22);
+  --ts-bg-gradient: linear-gradient(170deg, #060418 0%, #0f0c2a 45%, #161240 75%, #0c0a22 100%);
 
   --ts-radius-sm:   10px;
   --ts-radius-md:   16px;
@@ -525,11 +515,9 @@ html[data-theme="brain"] {
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.70);
   /* Brain (Neural): circuit-board teal pulse & cyan scan over deep black */
-  --ts-bg-gradient:
-    radial-gradient(ellipse 62% 52% at 92%  12%,   rgba(0,   230, 180, 0.16), transparent),
-    radial-gradient(ellipse 52% 52% at 8%   88%,   rgba(34,  211, 238, 0.12), transparent),
-    radial-gradient(ellipse 32% 28% at 50%  50%,   rgba(0,   230, 180, 0.05), transparent),
-    linear-gradient(170deg, #000304 0%, #06090f 45%, #091318 75%, #040b0e 100%);
+  --ts-aura-c1:    rgba(0,   230, 180, 0.20);
+  --ts-aura-c2:    rgba(34,  211, 238, 0.14);
+  --ts-bg-gradient: linear-gradient(170deg, #000304 0%, #06090f 45%, #091318 75%, #040b0e 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -597,10 +585,10 @@ html[data-theme="midnight"] {
   --ts-quest-muted:  rgba(121, 130, 169, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.80);
-  --ts-bg-gradient:
-    radial-gradient(ellipse 55% 40% at 60% 0%, rgba(147, 130, 255, 0.09), transparent),
-    radial-gradient(ellipse 40% 50% at 30% 100%, rgba(122, 162, 247, 0.07), transparent),
-    linear-gradient(160deg, #000000 0%, #050505 52%, #06060e 100%);
+  /* Midnight: Tokyo Night — periwinkle & blue city glow over pure black */
+  --ts-aura-c1:    rgba(147, 130, 255, 0.15);
+  --ts-aura-c2:    rgba(122, 162, 247, 0.11);
+  --ts-bg-gradient: linear-gradient(170deg, #000000 0%, #020204 48%, #04040a 75%, #020208 100%);
 }
 
 /* ── Aurora ───────────────────────────────────────────────────────────────── */
@@ -664,10 +652,10 @@ html[data-theme="aurora"] {
   --ts-quest-muted:  rgba(128, 203, 196, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
-  --ts-bg-gradient:
-    radial-gradient(ellipse 65% 45% at 15% 0%, rgba(52, 211, 153, 0.12), transparent),
-    radial-gradient(ellipse 50% 55% at 85% 100%, rgba(34, 211, 238, 0.08), transparent),
-    linear-gradient(160deg, #040c0e 0%, #0c1a1e 52%, #0c2028 100%);
+  /* Aurora: sweeping northern lights — emerald curtains & cyan glow */
+  --ts-aura-c1:    rgba(52,  211, 153, 0.22);
+  --ts-aura-c2:    rgba(34,  211, 238, 0.16);
+  --ts-bg-gradient: linear-gradient(170deg, #020808 0%, #060f12 45%, #091620 75%, #050c10 100%);
 }
 
 /* ── Pastel (light) ───────────────────────────────────────────────────────── */
@@ -731,10 +719,10 @@ html[data-theme="pastel"] {
   --ts-quest-muted:  #71717a;
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.35);
-  --ts-bg-gradient:
-    radial-gradient(ellipse 70% 50% at 80% 0%, rgba(168, 139, 250, 0.10), transparent),
-    radial-gradient(ellipse 60% 45% at 20% 100%, rgba(147, 197, 253, 0.08), transparent),
-    linear-gradient(160deg, #f5f0fa 0%, #faf8f5 52%, #f0ecf8 100%);
+  /* Pastel: dreamy sunrise — lavender & sky-blue blush over soft cream */
+  --ts-aura-c1:    rgba(167, 139, 250, 0.16);
+  --ts-aura-c2:    rgba(147, 197, 253, 0.12);
+  --ts-bg-gradient: linear-gradient(160deg, #f8f5ff 0%, #faf8f5 42%, #f5f0fe 72%, #fef0f7 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;
@@ -855,7 +843,79 @@ body {
      automatically when html[data-theme] changes. Pet mode overrides this
      with an inline transparent style via applyBodyBackground() in App.vue. */
   background: var(--ts-bg-gradient, var(--ts-bg-base, #0f172a));
-  transition: background 0.4s ease;
+  transition: background 0.5s ease;
+}
+
+/* ── Animated aura orbs ─────────────────────────────────────────────────────
+   Two blurred circular orbs rendered as body pseudo-elements.  They drift
+   slowly using GPU-accelerated transform animations (no paint invalidation).
+   Colors are set per-theme via --ts-aura-c1 / --ts-aura-c2.
+   Suppressed in pet mode (body[data-ts-mode="pet"]) and when the user
+   prefers reduced motion.
+   ──────────────────────────────────────────────────────────────────────── */
+body::before,
+body::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+  /* z-index: -1 sits between the body background and #app normal-flow content */
+  z-index: -1;
+}
+
+body::before {
+  /* Primary orb — large, slow */
+  width: 85vw;
+  height: 85vw;
+  max-width: 900px;
+  max-height: 900px;
+  top: -35vw;
+  left: -20vw;
+  background: radial-gradient(ellipse at center, var(--ts-aura-c1, rgba(124, 111, 255, 0.22)), transparent 70%);
+  filter: blur(72px);
+  animation: ts-aura-drift-1 30s ease-in-out infinite alternate;
+}
+
+body::after {
+  /* Secondary orb — slightly smaller, faster, opposite corner */
+  width: 70vw;
+  height: 70vw;
+  max-width: 740px;
+  max-height: 740px;
+  bottom: -28vw;
+  right: -18vw;
+  background: radial-gradient(ellipse at center, var(--ts-aura-c2, rgba(96, 165, 250, 0.16)), transparent 70%);
+  filter: blur(64px);
+  animation: ts-aura-drift-2 24s ease-in-out infinite alternate;
+}
+
+@keyframes ts-aura-drift-1 {
+  0%   { transform: translate(0vw,  0vh)   scale(1.00); }
+  30%  { transform: translate(10vw, 7vh)   scale(1.12); }
+  60%  { transform: translate(4vw,  -5vh)  scale(0.93); }
+  100% { transform: translate(16vw, 13vh)  scale(1.08); }
+}
+
+@keyframes ts-aura-drift-2 {
+  0%   { transform: translate(0vw,   0vh)   scale(1.00); }
+  30%  { transform: translate(-9vw,  -7vh)  scale(1.10); }
+  60%  { transform: translate(5vw,    6vh)  scale(0.95); }
+  100% { transform: translate(-14vw, -11vh) scale(1.07); }
+}
+
+/* Pet mode: Tauri transparent window — hide orbs so only the character floats */
+body[data-ts-mode="pet"]::before,
+body[data-ts-mode="pet"]::after {
+  display: none;
+}
+
+/* Respect the user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none;
+  }
 }
 
 #app {
