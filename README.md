@@ -14,7 +14,7 @@
 - **For non-technical users:** A 3D AI companion that helps with daily work on desktop and mobile, like drafting messages, organizing tasks, and managing reminders.
 
 Try to teach your AI with our software by configuring it, giving it tasks, and experimenting with its capabilities yourself.  
-If you need tailored support for personal, commercial, small business, or enterprise use, please contact: **Darren.bui@terransoul.com**
+If you have any personal enquiries, please contact the owner of this repo via: **darren.bui@terransoul.com**
 
 [![TerranSoul CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
 
