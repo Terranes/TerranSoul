@@ -4,8 +4,33 @@ on:
   push:
 
 jobs:
-  # ── Build + Lint + Test ─────────────────────────────────────────────────────
-  build-and-test:
+  # ── Frontend: type-check, build, unit tests ──────────────────────────────
+  frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type-check and build frontend
+        run: npm run build
+
+      - name: Run Vitest
+        run: npm run test
+
+  # ── Rust: clippy + tests (runs in parallel with frontend) ────────────────
+  rust:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -16,7 +41,6 @@ jobs:
 
       - name: Cache apt packages
         uses: actions/cache@v5
-        id: cache-apt
         with:
           path: ~/apt-cache
           key: apt-tauri-${{ runner.os }}-${{ hashFiles('.github/workflows/terransoul-ci.yml') }}
@@ -42,12 +66,6 @@ jobs:
           mkdir -p ~/apt-cache
           cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-          cache: 'npm'
-
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -61,12 +79,6 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Type-check and build frontend
-        run: npm run build
-
       - name: Run cargo clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
@@ -75,13 +87,10 @@ jobs:
         working-directory: src-tauri
         run: cargo test --all-targets
 
-      - name: Run Vitest
-        run: npm run test
-
-  # ── Playwright E2E ──────────────────────────────────────────────────────────
+  # ── Playwright E2E (starts as soon as frontend passes) ───────────────────
   playwright-e2e:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: frontend
     permissions:
       contents: read
 
@@ -97,6 +106,12 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
