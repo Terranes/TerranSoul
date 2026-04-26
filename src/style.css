@@ -958,7 +958,7 @@ body {
 
 .ts-btn-danger {
   background: var(--ts-error);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
 
 .ts-btn-danger:hover:not(:disabled) {
