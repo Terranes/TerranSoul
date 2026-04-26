@@ -76,10 +76,12 @@
 
   /* ── Body gradient — applied via body { background: var(--ts-bg-gradient) }
      in style.css; updates automatically when html[data-theme] changes. ── */
+  /* Adventurer (default): deep cosmic purple & blue nebula over dark navy */
   --ts-bg-gradient:
-    radial-gradient(ellipse 70% 45% at 15% 5%, rgba(124, 111, 255, 0.10), transparent),
-    radial-gradient(ellipse 50% 55% at 88% 95%, rgba(96, 165, 250, 0.08), transparent),
-    linear-gradient(160deg, #04091a 0%, #0f172a 52%, #141c38 100%);
+    radial-gradient(ellipse 80% 55% at 18% 0%,   rgba(124, 111, 255, 0.20), transparent),
+    radial-gradient(ellipse 60% 50% at 88% 85%,   rgba(96,  165, 250, 0.14), transparent),
+    radial-gradient(ellipse 40% 35% at 55% 50%,   rgba(124, 111, 255, 0.06), transparent),
+    linear-gradient(170deg, #03071a 0%, #0d1530 45%, #111e40 75%, #0a1228 100%);
 
   /* ── Backdrop ── */
   --ts-bg-backdrop: rgba(0, 0, 0, 0.6);
@@ -214,10 +216,12 @@ html[data-theme="corporate"] {
   --ts-quest-muted:  #616161;
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.32);
+  /* Corporate: pristine office light with subtle indigo brand tint */
   --ts-bg-gradient:
-    radial-gradient(ellipse 80% 50% at 70% 0%, rgba(91, 95, 199, 0.07), transparent),
-    radial-gradient(ellipse 60% 40% at 10% 100%, rgba(91, 95, 199, 0.04), transparent),
-    linear-gradient(160deg, #f0f2fc 0%, #f5f5f5 52%, #eeeaf8 100%);
+    radial-gradient(ellipse 75% 50% at 100% 0%,   rgba(91,  95, 199, 0.09), transparent),
+    radial-gradient(ellipse 55% 45% at 0%   100%,  rgba(91,  95, 199, 0.05), transparent),
+    radial-gradient(ellipse 40% 30% at 50%  50%,   rgba(91,  95, 199, 0.03), transparent),
+    linear-gradient(160deg, #edf0ff 0%, #f5f5f5 40%, #f0f2fc 72%, #f8f5ff 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
@@ -292,10 +296,12 @@ html[data-theme="cat"] {
   --ts-quest-muted:  rgba(200, 184, 154, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  /* Neko (Cat): warm candlelight amber glow over deep cocoa night */
   --ts-bg-gradient:
-    radial-gradient(ellipse 65% 45% at 20% 0%, rgba(245, 158, 11, 0.13), transparent),
-    radial-gradient(ellipse 50% 60% at 85% 100%, rgba(232, 168, 124, 0.10), transparent),
-    linear-gradient(160deg, #090603 0%, #1a1410 52%, #221810 100%);
+    radial-gradient(ellipse 70% 55% at 0%   30%,   rgba(245, 158, 11,  0.20), transparent),
+    radial-gradient(ellipse 55% 50% at 92%  80%,   rgba(232, 130, 60,  0.14), transparent),
+    radial-gradient(ellipse 38% 32% at 50%  0%,    rgba(251, 191, 36,  0.08), transparent),
+    linear-gradient(170deg, #050300 0%, #180f08 45%, #1e1409 75%, #120a05 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   14px;
@@ -363,10 +369,12 @@ html[data-theme="sakura"] {
   --ts-quest-muted:  rgba(212, 160, 185, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  /* Sakura: cherry-blossom midnight — magenta bloom & orchid haze */
   --ts-bg-gradient:
-    radial-gradient(ellipse 60% 45% at 25% 5%, rgba(244, 114, 182, 0.13), transparent),
-    radial-gradient(ellipse 50% 50% at 80% 95%, rgba(232, 121, 249, 0.09), transparent),
-    linear-gradient(160deg, #0d0a12 0%, #1e1520 52%, #1c1228 100%);
+    radial-gradient(ellipse 70% 55% at 82%  0%,    rgba(244, 114, 182, 0.20), transparent),
+    radial-gradient(ellipse 58% 50% at 8%   70%,   rgba(232, 121, 249, 0.16), transparent),
+    radial-gradient(ellipse 42% 35% at 50%  100%,  rgba(244, 114, 182, 0.08), transparent),
+    linear-gradient(170deg, #0a0610 0%, #160f1a 45%, #1c1225 75%, #100a18 100%);
 
   --ts-radius-sm:   8px;
   --ts-radius-md:   12px;
@@ -436,10 +444,12 @@ html[data-theme="kids"] {
   --ts-quest-muted:  rgba(165, 180, 252, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
+  /* Kids (Playground): electric indigo-violet cosmos with cyan spark */
   --ts-bg-gradient:
-    radial-gradient(ellipse 65% 45% at 70% 0%, rgba(129, 140, 248, 0.14), transparent),
-    radial-gradient(ellipse 55% 55% at 15% 100%, rgba(192, 132, 252, 0.12), transparent),
-    linear-gradient(160deg, #0a0820 0%, #1a1638 52%, #1e1846 100%);
+    radial-gradient(ellipse 68% 58% at 88%  5%,    rgba(129, 140, 248, 0.22), transparent),
+    radial-gradient(ellipse 58% 55% at 5%   88%,   rgba(192, 132, 252, 0.18), transparent),
+    radial-gradient(ellipse 45% 38% at 45%  50%,   rgba(56,  189, 248, 0.10), transparent),
+    linear-gradient(170deg, #060418 0%, #0f0c2a 45%, #161240 75%, #0c0a22 100%);
 
   --ts-radius-sm:   10px;
   --ts-radius-md:   16px;
@@ -514,10 +524,12 @@ html[data-theme="brain"] {
   --ts-quest-muted:  rgba(110, 184, 160, 0.55);
 
   --ts-bg-backdrop: rgba(0, 0, 0, 0.70);
+  /* Brain (Neural): circuit-board teal pulse & cyan scan over deep black */
   --ts-bg-gradient:
-    radial-gradient(ellipse 60% 45% at 80% 10%, rgba(0, 230, 180, 0.11), transparent),
-    radial-gradient(ellipse 45% 55% at 20% 90%, rgba(34, 211, 238, 0.07), transparent),
-    linear-gradient(160deg, #020507 0%, #0a0f14 52%, #0c1620 100%);
+    radial-gradient(ellipse 62% 52% at 92%  12%,   rgba(0,   230, 180, 0.16), transparent),
+    radial-gradient(ellipse 52% 52% at 8%   88%,   rgba(34,  211, 238, 0.12), transparent),
+    radial-gradient(ellipse 32% 28% at 50%  50%,   rgba(0,   230, 180, 0.05), transparent),
+    linear-gradient(170deg, #000304 0%, #06090f 45%, #091318 75%, #040b0e 100%);
 
   --ts-radius-sm:   4px;
   --ts-radius-md:   6px;
