@@ -166,6 +166,9 @@ async function renderVrmHeadshot(vrmPath: string): Promise<string> {
  *  concurrent renders for the same model. */
 const _inflight = new Map<string, Promise<string>>();
 
+/** Keys that already failed — avoids retrying on every component mount. */
+const _failed = new Set<string>();
+
 /**
  * Read user-model bytes from the Rust backend, wrap in a temporary blob URL,
  * render a headshot, cache the result, and revoke the blob URL.
@@ -208,7 +211,7 @@ export function useVrmThumbnail(
   const isGenerating = ref(false);
 
   async function generate(): Promise<void> {
-    if (thumbnailUrl.value || isGenerating.value) return;
+    if (thumbnailUrl.value || isGenerating.value || _failed.has(cacheKey)) return;
 
     // Try cache first
     const cached = await getCached(cacheKey);
@@ -246,7 +249,8 @@ export function useVrmThumbnail(
       await setCache(cacheKey, dataUrl);
       thumbnailUrl.value = dataUrl;
     } catch (err) {
-      console.warn(`[TerranSoul] VRM thumbnail generation failed for ${cacheKey}:`, err);
+      _failed.add(cacheKey);
+      console.error(`[TerranSoul] VRM thumbnail generation failed for ${cacheKey}:`, err);
     } finally {
       _inflight.delete(cacheKey);
       isGenerating.value = false;
@@ -269,7 +273,8 @@ export async function preGenerateUserThumbnail(userModelId: string): Promise<voi
     const dataUrl = await renderUserModelHeadshot(userModelId);
     await setCache(userModelId, dataUrl);
   } catch (err) {
-    console.warn(`[TerranSoul] Pre-generate thumbnail failed for ${userModelId}:`, err);
+    _failed.add(userModelId);
+    console.error(`[TerranSoul] Pre-generate thumbnail failed for ${userModelId}:`, err);
   }
 }
 
@@ -279,4 +284,9 @@ export function disposeVrmThumbnailRenderer(): void {
     _offRenderer.dispose();
     _offRenderer = null;
   }
+}
+
+/** Clear the failed-key cache (useful for tests or retry-after-fix scenarios). */
+export function resetFailedThumbnails(): void {
+  _failed.clear();
 }

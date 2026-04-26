@@ -1197,7 +1197,7 @@ onMounted(async () => {
 .btn-secondary:hover { background: var(--ts-bg-hover); }
 .btn-danger { padding: 0.35rem 0.75rem; background: var(--ts-error-bg); color: var(--ts-error); border: none; border-radius: 6px; cursor: pointer; }
 .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
-.mp-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+.mp-modal-backdrop { position: fixed; inset: 0; background: var(--ts-bg-backdrop); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .mp-modal { background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 12px; padding: 1.5rem; width: min(480px, 90vw); display: flex; flex-direction: column; gap: 0.75rem; box-shadow: var(--ts-shadow-lg); }
 .mp-cap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .mp-cap-row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: var(--ts-bg-base); border-radius: 6px; font-size: 0.85rem; }
@@ -1208,15 +1208,15 @@ onMounted(async () => {
 
 /* ── Tauri unavailable banner (inline in marketplace) ── */
 .tauri-banner {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.10), rgba(245, 158, 11, 0.06));
-  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: linear-gradient(135deg, var(--ts-warning-bg), rgba(245, 158, 11, 0.06));
+  border: 1px solid var(--ts-warning);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 0;
   overflow: hidden;
 }
-.tauri-banner-compact { border-color: rgba(100, 116, 139, 0.25); background: rgba(30, 41, 59, 0.6); }
+.tauri-banner-compact { border-color: var(--ts-border); background: var(--ts-bg-panel); }
 
 .tauri-banner-main {
   display: flex;
@@ -1238,7 +1238,7 @@ onMounted(async () => {
   gap: 0.5rem;
   padding: 6px 1rem;
   background: var(--ts-success-bg);
-  border-top: 1px solid rgba(34, 197, 94, 0.12);
+  border-top: 1px solid var(--ts-success);
   font-size: 0.78rem;
   color: var(--ts-success);
 }

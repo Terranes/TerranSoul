@@ -780,9 +780,9 @@ onMounted(async () => {
 .mv-tier-chip.active.tier-working { background: var(--ts-accent-blue); color: var(--ts-bg-base); }
 .mv-tier-chip.active.tier-long { background: var(--ts-success); color: var(--ts-bg-base); }
 .mv-tier-badge { font-size: 0.65rem; padding: 0.1rem 0.45rem; border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.mv-tier-badge.tier-short { background: rgba(251,191,36,0.15); color: var(--ts-warning); }
-.mv-tier-badge.tier-working { background: rgba(96,165,250,0.15); color: var(--ts-accent-blue); }
-.mv-tier-badge.tier-long { background: rgba(74,222,128,0.15); color: var(--ts-success); }
+.mv-tier-badge.tier-short { background: var(--ts-warning-bg); color: var(--ts-warning); }
+.mv-tier-badge.tier-working { background: var(--ts-info-bg, rgba(96,165,250,0.15)); color: var(--ts-accent-blue); }
+.mv-tier-badge.tier-long { background: var(--ts-success-bg); color: var(--ts-success); }
 
 .mv-status { color: var(--ts-text-muted); text-align: center; padding: 2rem; }
 .mv-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -811,7 +811,7 @@ onMounted(async () => {
 .mv-session-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; }
 .mv-session-msg { display: flex; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--ts-bg-surface); font-size: 0.85rem; color: var(--ts-text-primary); }
 .mv-session-msg.user { background: rgba(96, 165, 250, 0.10); }
-.mv-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+.mv-modal-backdrop { position: fixed; inset: 0; background: var(--ts-bg-backdrop); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .mv-modal { background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 12px; padding: 1.5rem; width: min(480px, 90vw); display: flex; flex-direction: column; gap: 0.75rem; box-shadow: var(--ts-shadow-lg); }
 .mv-modal h3 { color: var(--ts-text-primary); }
 .mv-modal label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--ts-text-secondary); }

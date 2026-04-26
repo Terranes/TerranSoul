@@ -223,7 +223,7 @@ async function handleDelete(id: string) {
   position: absolute;
   inset: 0;
   z-index: 20;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--ts-bg-backdrop);
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
@@ -247,7 +247,7 @@ async function handleDelete(id: string) {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--ts-border);
 }
 
 .panel-header h3 {
@@ -261,9 +261,9 @@ async function handleDelete(id: string) {
   width: 28px;
   height: 28px;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-hover);
   border-radius: 50%;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--ts-text-secondary);
   font-size: 1.1rem;
   cursor: pointer;
   display: flex;
@@ -273,8 +273,8 @@ async function handleDelete(id: string) {
 }
 
 .close-btn:hover {
-  background: rgba(255, 80, 80, 0.3);
-  color: #ff6b6b;
+  background: var(--ts-error-bg);
+  color: var(--ts-error);
 }
 
 .panel-body {
@@ -297,9 +297,9 @@ async function handleDelete(id: string) {
   justify-content: center;
   gap: 8px;
   padding: 10px 16px;
-  border: 1px dashed rgba(108, 99, 255, 0.5);
+  border: 1px dashed var(--ts-accent-glow);
   border-radius: 8px;
-  background: rgba(108, 99, 255, 0.1);
+  background: var(--ts-bg-input);
   color: var(--ts-accent-violet);
   font-size: 0.85rem;
   font-weight: 500;
@@ -308,8 +308,8 @@ async function handleDelete(id: string) {
 }
 
 .import-btn:hover:not(:disabled) {
-  background: rgba(108, 99, 255, 0.2);
-  border-color: #6c63ff;
+  background: var(--ts-accent-glow);
+  border-color: var(--ts-accent);
 }
 
 .import-btn:disabled {
@@ -340,7 +340,7 @@ async function handleDelete(id: string) {
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input);
   color: var(--ts-text-primary);
   font-size: 0.85rem;
   cursor: pointer;
@@ -354,7 +354,7 @@ async function handleDelete(id: string) {
 }
 
 .model-select:focus {
-  border-color: rgba(108, 99, 255, 0.6);
+  border-color: var(--ts-accent);
 }
 
 .model-select:disabled {
@@ -370,9 +370,9 @@ async function handleDelete(id: string) {
 .error-banner {
   padding: 8px 12px;
   border-radius: 6px;
-  background: rgba(255, 60, 60, 0.15);
+  background: var(--ts-error-bg);
   border: 1px solid rgba(255, 60, 60, 0.3);
-  color: #ff8888;
+  color: var(--ts-error);
   font-size: 0.78rem;
 }
 
@@ -388,19 +388,19 @@ async function handleDelete(id: string) {
   gap: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-input);
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
 }
 
 .model-card:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ts-bg-hover);
 }
 
 .model-card.active {
-  border-color: rgba(108, 99, 255, 0.5);
-  background: rgba(108, 99, 255, 0.1);
+  border-color: var(--ts-accent);
+  background: var(--ts-accent-glow);
 }
 
 .model-info {
@@ -430,8 +430,8 @@ async function handleDelete(id: string) {
   height: 24px;
   border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-secondary);
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
@@ -443,8 +443,8 @@ async function handleDelete(id: string) {
 }
 
 .delete-btn:hover:not(:disabled) {
-  background: rgba(255, 80, 80, 0.3);
-  color: #ff6b6b;
+  background: var(--ts-error-bg);
+  color: var(--ts-error);
 }
 
 .delete-btn:disabled {
@@ -453,7 +453,7 @@ async function handleDelete(id: string) {
 }
 
 .panel-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--ts-border-subtle);
   padding-top: 10px;
 }
 
@@ -465,7 +465,7 @@ async function handleDelete(id: string) {
 }
 
 .footer-note code {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ts-bg-hover);
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 0.68rem;

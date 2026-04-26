@@ -141,17 +141,10 @@
       </div>
     </Transition>
 
-    <!-- AI state indicator pill (3D mode only — chatbox has it in header) -->
-    <FloatingChip
-      v-if="!props.chatboxMode"
-      class="ai-state-pill"
-      readonly
-      :class="characterStore.state"
-    >
-      <span class="ai-state-dot" />
-      <span class="ai-state-label">{{ stateLabel }}</span>
-    </FloatingChip>
-
+    <!-- AI state pill is now rendered by CharacterViewport's corner cluster
+         (single flex stack with the Settings button — no overlap risk).
+         In chatbox mode the pill is rendered inline in the chatbox header
+         further down. -->
     <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
       <div
@@ -469,7 +462,6 @@ import TaskControls from '../components/TaskControls.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
-import FloatingChip from '../components/ui/FloatingChip.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -1434,22 +1426,9 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-/* ── AI State Indicator — animated pill ── */
-/* Sits below the settings gear (top: 12px, ~36px tall) to avoid overlap. */
-.ai-state-pill {
-  position: absolute;
-  top: 56px;
-  right: 16px;
-  z-index: 20;
-  gap: 7px;
-  padding: 6px 16px;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.88);
-  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
-}
+/* ── AI state pill colours — used by `.chatbox-state-pill` in chatbox header.
+   The free-floating 3D-mode pill now lives in CharacterViewport's corner
+   cluster (single flex stack alongside Settings — no overlap risk). ── */
 .ai-state-dot {
   width: 7px;
   height: 7px;
@@ -1457,22 +1436,6 @@ onUnmounted(() => {
   background: currentColor;
   transition: background 0.4s ease;
 }
-.ai-state-pill.idle { background: rgba(37, 99, 235, 0.25); color: #93c5fd; border-color: rgba(147, 197, 253, 0.3); }
-.ai-state-pill.idle .ai-state-dot { background: #3b82f6; }
-.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: #fcd34d; border-color: rgba(253, 230, 138, 0.35); }
-.ai-state-pill.thinking .ai-state-dot { background: #f59e0b; animation: pulse-dot 1.2s ease-in-out infinite; }
-.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: #86efac; border-color: rgba(134, 239, 172, 0.3); }
-.ai-state-pill.talking .ai-state-dot { background: #22c55e; }
-.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: #67e8f9; border-color: rgba(103, 232, 249, 0.3); }
-.ai-state-pill.happy .ai-state-dot { background: #06b6d4; }
-.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: #d8b4fe; border-color: rgba(216, 180, 254, 0.3); }
-.ai-state-pill.sad .ai-state-dot { background: #a855f7; }
-.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border-color: rgba(252, 165, 165, 0.3); }
-.ai-state-pill.angry .ai-state-dot { background: #ef4444; }
-.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: #5eead4; border-color: rgba(94, 234, 212, 0.25); }
-.ai-state-pill.relaxed .ai-state-dot { background: #14b8a6; }
-.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: #fde68a; border-color: rgba(253, 230, 138, 0.3); }
-.ai-state-pill.surprised .ai-state-dot { background: #f59e0b; }
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -1491,18 +1454,18 @@ onUnmounted(() => {
   gap: 6px;
   padding: 4px 14px;
   border-radius: var(--ts-radius-pill);
-  background: rgba(22, 163, 74, 0.15);
+  background: var(--ts-success-bg);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(34, 197, 94, 0.2);
   font-size: 0.7rem;
-  color: #86efac;
+  color: var(--ts-success);
   pointer-events: none;
 }
 .brain-pill-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--ts-success-dim);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -1521,11 +1484,11 @@ onUnmounted(() => {
 .subtitle-text {
   margin: 0;
   padding: 12px 20px;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--ts-bg-backdrop);
   backdrop-filter: blur(12px);
   border-radius: var(--ts-radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--ts-border);
+  color: var(--ts-text-primary);
   font-size: 0.92rem;
   line-height: 1.6;
   text-align: center;
@@ -1535,27 +1498,27 @@ onUnmounted(() => {
   scroll-behavior: smooth;
   pointer-events: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-color: var(--ts-text-dim) transparent;
 }
 .subtitle-text::-webkit-scrollbar { width: 4px; }
 .subtitle-text::-webkit-scrollbar-track { background: transparent; }
-.subtitle-text::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border-radius: 2px; }
+.subtitle-text::-webkit-scrollbar-thumb { background: var(--ts-text-dim); border-radius: 2px; }
 /* Spoken text — dimmed */
 :deep(.subtitle-spoken) {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ts-text-dim);
   transition: color 0.3s ease;
 }
 /* Currently speaking sentence — bright highlight */
 :deep(.subtitle-active) {
-  color: #fff;
-  background: rgba(124, 111, 255, 0.25);
+  color: var(--ts-text-on-accent);
+  background: var(--ts-accent-glow);
   border-radius: 3px;
   padding: 1px 2px;
   transition: color 0.2s ease, background 0.2s ease;
 }
 /* Upcoming text — normal but slightly dimmed */
 :deep(.subtitle-upcoming) {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--ts-text-secondary);
   transition: color 0.3s ease;
 }
 
@@ -1575,10 +1538,10 @@ onUnmounted(() => {
   font-size: 2.4rem;
   padding: 8px 14px;
   border-radius: 20px;
-  background: rgba(11, 17, 32, 0.7);
+  background: var(--ts-bg-panel);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--ts-border);
+  box-shadow: var(--ts-shadow-md);
   pointer-events: none;
   line-height: 1;
   animation: emoji-float 3.5s ease-in-out;
@@ -1619,11 +1582,11 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: rgba(11, 17, 32, 0.92);
+  background: var(--ts-bg-overlay);
   backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  border-top: 1px solid var(--ts-border);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.15) transparent;
+  scrollbar-color: var(--ts-text-dim) transparent;
   display: flex;
   flex-direction: column;
 }
@@ -1632,7 +1595,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--ts-border-subtle);
   flex-shrink: 0;
 }
 .chat-history-actions {
@@ -1641,8 +1604,8 @@ onUnmounted(() => {
   gap: 6px;
 }
 .chat-history-action-btn {
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ts-border-strong);
+  background: var(--ts-bg-input);
   color: var(--ts-text-primary);
   font-size: 0.68rem;
   font-weight: 700;
@@ -1651,11 +1614,11 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .chat-history-action-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ts-bg-hover);
 }
 .chat-history-action-btn.skip {
   border-color: rgba(239, 68, 68, 0.45);
-  color: #fca5a5;
+  color: var(--ts-error);
 }
 .chat-history-title {
   font-size: 0.72rem;
@@ -1677,7 +1640,7 @@ onUnmounted(() => {
 }
 .chat-history-close:hover {
   color: var(--ts-text-primary);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-hover);
 }
 
 /* Chat history slide transition */
@@ -1688,9 +1651,9 @@ onUnmounted(() => {
 
 /* Input footer — always visible at the very bottom */
 .input-footer {
-  background: rgba(11, 17, 32, 0.75);
+  background: var(--ts-bg-panel);
   backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--ts-border);
   padding: 8px 12px 10px;
 }
 .input-row {
@@ -1704,10 +1667,10 @@ onUnmounted(() => {
   height: 40px;
   padding: 0 14px;
   border-radius: var(--ts-radius-pill);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(11, 17, 32, 0.72);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-panel);
   backdrop-filter: blur(10px);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ts-text-primary);
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
@@ -1716,20 +1679,20 @@ onUnmounted(() => {
   gap: 6px;
   flex-shrink: 0;
   transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--ts-shadow-sm);
 }
 .toggle-label {
   letter-spacing: 0.03em;
 }
 .chat-drawer-toggle:hover {
-  background: rgba(124, 111, 255, 0.45);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.25);
+  background: var(--ts-accent);
+  color: var(--ts-text-on-accent);
+  box-shadow: 0 4px 16px var(--ts-accent-glow);
 }
 .chat-drawer-toggle.active {
-  background: rgba(124, 111, 255, 0.65);
-  border-color: rgba(124, 111, 255, 0.4);
-  color: #fff;
+  background: var(--ts-accent);
+  border-color: var(--ts-accent-hover);
+  color: var(--ts-text-on-accent);
 }
 
 /* ── Mic button — voice input toggle ── */
@@ -1737,10 +1700,10 @@ onUnmounted(() => {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(11, 17, 32, 0.72);
+  border: 1px solid var(--ts-border-strong);
+  background: var(--ts-bg-panel);
   backdrop-filter: blur(10px);
-  color: #fff;
+  color: var(--ts-text-on-accent);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1749,7 +1712,7 @@ onUnmounted(() => {
   transition: background var(--ts-transition-normal), border-color var(--ts-transition-normal), box-shadow var(--ts-transition-fast);
 }
 .mic-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ts-bg-hover);
 }
 .mic-btn.listening {
   background: rgba(230, 60, 80, 0.75);
@@ -1779,26 +1742,26 @@ onUnmounted(() => {
   width: 340px;
   max-width: 90vw;
 }
-.brain-card { background: rgba(11, 17, 32, 0.94); backdrop-filter: blur(20px); border-radius: var(--ts-radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(75, 142, 255, 0.3); box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6); }
+.brain-card { background: var(--ts-bg-overlay); backdrop-filter: blur(20px); border-radius: var(--ts-radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--ts-accent-glow); box-shadow: var(--ts-shadow-lg); }
 .brain-card-header { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-base); }
 .brain-hw { font-size: var(--ts-text-sm); color: var(--ts-text-secondary); margin: 0; }
-.brain-rec { font-size: 0.8rem; color: #cbd5e1; margin: 0; line-height: 1.4; }
+.brain-rec { font-size: 0.8rem; color: var(--ts-text-bright, var(--ts-text-primary)); margin: 0; line-height: 1.4; }
 .brain-rec small { color: var(--ts-text-muted); }
 .brain-models { display: flex; flex-wrap: wrap; gap: 4px; }
-.brain-model-btn { padding: 4px 10px; border-radius: var(--ts-radius-sm); border: 1px solid var(--ts-border); background: rgba(15, 23, 42, 0.8); color: var(--ts-text-secondary); font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all var(--ts-transition-fast); }
+.brain-model-btn { padding: 4px 10px; border-radius: var(--ts-radius-sm); border: 1px solid var(--ts-border); background: var(--ts-bg-panel); color: var(--ts-text-secondary); font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all var(--ts-transition-fast); }
 .brain-model-btn.top { border-color: rgba(59, 130, 246, 0.4); }
-.brain-model-btn.selected { border-color: var(--ts-success); background: rgba(26, 46, 26, 0.8); color: #86efac; }
-.brain-model-btn:hover { background: rgba(30, 41, 59, 0.8); }
+.brain-model-btn.selected { border-color: var(--ts-success); background: var(--ts-success-bg); color: var(--ts-success); }
+.brain-model-btn:hover { background: var(--ts-bg-surface); }
 .brain-star { font-size: 0.7rem; }
 .brain-warn { font-size: var(--ts-text-sm); color: var(--ts-warning-text); background: var(--ts-error-bg); padding: 6px 10px; border-radius: var(--ts-radius-sm); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.brain-warn code { background: rgba(30, 41, 59, 0.8); padding: 1px 4px; border-radius: 3px; font-size: 0.72rem; }
-.brain-retry-btn { padding: 2px 8px; border: none; background: rgba(59, 130, 246, 0.3); color: #93c5fd; border-radius: 4px; cursor: pointer; font-size: 0.72rem; }
+.brain-warn code { background: var(--ts-bg-surface); padding: 1px 4px; border-radius: 3px; font-size: 0.72rem; }
+.brain-retry-btn { padding: 2px 8px; border: none; background: var(--ts-accent-glow); color: var(--ts-accent-blue); border-radius: 4px; cursor: pointer; font-size: 0.72rem; }
 .brain-pulling { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
-.brain-spinner { width: 14px; height: 14px; border: 2px solid #334155; border-top-color: var(--ts-accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.brain-spinner { width: 14px; height: 14px; border: 2px solid var(--ts-border-medium); border-top-color: var(--ts-accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.brain-activate-btn { padding: 6px 14px; border: none; background: #16a34a; color: #fff; border-radius: var(--ts-radius-sm); cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background var(--ts-transition-fast); }
-.brain-activate-btn:hover { background: #15803d; }
-.brain-local-btn { padding: 6px 14px; border: none; background: var(--ts-accent-blue); color: #fff; border-radius: var(--ts-radius-sm); cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background var(--ts-transition-fast); }
+.brain-activate-btn { padding: 6px 14px; border: none; background: var(--ts-success-dim); color: var(--ts-text-on-accent); border-radius: var(--ts-radius-sm); cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background var(--ts-transition-fast); }
+.brain-activate-btn:hover { background: var(--ts-success); }
+.brain-local-btn { padding: 6px 14px; border: none; background: var(--ts-accent-blue); color: var(--ts-text-on-accent); border-radius: var(--ts-radius-sm); cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background var(--ts-transition-fast); }
 .brain-local-btn:hover { background: var(--ts-accent-blue-hover); }
 .brain-free-start { display: flex; flex-direction: column; gap: 4px; }
 .brain-free-start p { margin: 0; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
@@ -1815,7 +1778,7 @@ onUnmounted(() => {
  * Designed for users who prefer a text-focused experience. */
 
 .chat-view.chatbox-only {
-  background: var(--ts-bg-base, #0f172a);
+  background: transparent;
 }
 
 .chatbox-layout {
@@ -1831,8 +1794,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  background: var(--ts-bg-nav, #0b1120);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--ts-bg-nav);
+  border-bottom: 1px solid var(--ts-border);
   flex-shrink: 0;
 }
 .chatbox-header-left {
@@ -1850,7 +1813,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 0.75rem;
-  color: #86efac;
+  color: var(--ts-success);
   font-weight: 600;
 }
 .chatbox-brain-setup {
@@ -1860,18 +1823,18 @@ onUnmounted(() => {
   font-size: 0.78rem;
 }
 .chatbox-brain-btn {
-  border: 1px solid rgba(124, 111, 255, 0.4);
-  background: rgba(124, 111, 255, 0.15);
-  color: var(--ts-accent, #7c6fff);
+  border: 1px solid var(--ts-accent-glow);
+  background: var(--ts-accent-glow);
+  color: var(--ts-accent);
   font-size: 0.72rem;
   font-weight: 700;
   padding: 5px 14px;
-  border-radius: var(--ts-radius-pill, 999px);
+  border-radius: var(--ts-radius-pill);
   cursor: pointer;
   transition: background 0.15s, transform 0.15s;
 }
 .chatbox-brain-btn:hover {
-  background: rgba(124, 111, 255, 0.3);
+  background: var(--ts-accent);
   transform: translateY(-1px);
 }
 
@@ -1891,11 +1854,11 @@ onUnmounted(() => {
   border: 1px solid rgba(147, 197, 253, 0.2);
   transition: background 0.3s, color 0.3s, border-color 0.3s;
 }
-.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.25); color: #fcd34d; border-color: rgba(253, 230, 138, 0.3); }
-.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.2); color: #86efac; border-color: rgba(134, 239, 172, 0.25); }
-.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.2); color: #67e8f9; border-color: rgba(103, 232, 249, 0.25); }
-.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.2); color: #d8b4fe; border-color: rgba(216, 180, 254, 0.25); }
-.chatbox-state-pill.angry    { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(252, 165, 165, 0.25); }
+.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.25); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.3); }
+.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.2); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.25); }
+.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.2); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.25); }
+.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.2); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.25); }
+.chatbox-state-pill.angry    { background: rgba(239, 68, 68, 0.2); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.25); }
 .chatbox-state-pill.thinking .ai-state-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
 
 /* ── Full-height message area ── */
@@ -1905,14 +1868,14 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 0;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: var(--ts-text-dim) transparent;
 }
 
 /* ── Chatbox input footer ── */
 .chatbox-footer {
   flex-shrink: 0;
-  background: var(--ts-bg-nav, #0b1120);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--ts-bg-nav);
+  border-top: 1px solid var(--ts-border);
   padding: 10px 16px 12px;
 }
 .chatbox-footer .input-row {
@@ -1932,14 +1895,8 @@ onUnmounted(() => {
   .bottom-panel { max-height: 50vh; }
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
-  /* AI state pill: compact, tucked below the top-right settings gear (top:6 + 32px height + 6px gap) */
-  .ai-state-pill {
-    top: 44px;
-    right: 10px;
-    padding: 2px 8px;
-    font-size: 0.58rem;
-    gap: 3px;
-  }
+  /* AI state pill mobile sizing now lives in CharacterViewport.vue alongside
+     the corner cluster — keep brain-status / music-bar overrides here. */
   .ai-state-dot { width: 4px; height: 4px; }
   /* Brain status: below mode-toggle pill on the left */
   .brain-status-pill {

@@ -1,9 +1,20 @@
 <template>
-  <div
-    class="quest-hub"
-    :style="questHubPosition"
+  <!-- Floating crystal orb — teleported into CharacterViewport's
+       `.corner-cluster` so it joins the top-right flex stack alongside
+       the Settings button and AI-state pill.  Using Vue's built-in
+       `<Teleport>` API (with `defer` so it waits for the target to
+       mount) means there is **no** hand-tuned `top` / `right` magic
+       number anywhere — the flex column owns the spacing.
+
+       When the target is unavailable (tests, or non-chat tabs where
+       CharacterViewport isn't mounted), `<Teleport disabled>` falls
+       back to in-place rendering so the orb still exists in the DOM
+       (preserving test selectors like `.ff-orb`). -->
+  <Teleport
+    to="#corner-cluster-portal"
+    defer
+    :disabled="!portalReady"
   >
-    <!-- Floating crystal orb -->
     <button
       class="ff-orb"
       :class="{ 'ff-orb--open': constellationOpen }"
@@ -32,38 +43,38 @@
       <span class="ff-orb-crystal">✦</span>
       <span class="ff-orb-pct">{{ progressPercent }}%</span>
     </button>
+  </Teleport>
 
-    <!-- Full-screen constellation map -->
-    <SkillConstellation
-      :visible="constellationOpen"
-      @close="constellationOpen = false"
-      @navigate="onConstellationNavigate"
-      @begin="onConstellationBegin"
-    />
+  <!-- Full-screen constellation map -->
+  <SkillConstellation
+    :visible="constellationOpen"
+    @close="constellationOpen = false"
+    @navigate="onConstellationNavigate"
+    @begin="onConstellationBegin"
+  />
 
-    <!-- Quest Confirmation Dialog -->
-    <QuestConfirmationDialog
-      :visible="showConfirmDialog"
-      :quest="questToConfirm"
-      @accept="handleAcceptQuest"
-      @cancel="showConfirmDialog = false"
-    />
+  <!-- Quest Confirmation Dialog -->
+  <QuestConfirmationDialog
+    :visible="showConfirmDialog"
+    :quest="questToConfirm"
+    @accept="handleAcceptQuest"
+    @cancel="showConfirmDialog = false"
+  />
 
-    <!-- Quest Reward Panel -->
-    <QuestRewardPanel
-      :visible="showRewardPanel"
-      :quest="rewardPanelQuest"
-      :show-choices="showRewardChoices"
-      :choice-question="rewardChoiceQuestion"
-      :choices="rewardChoices"
-      @close="closeRewardPanel"
-      @choice="handleRewardChoice"
-    />
-  </div>
+  <!-- Quest Reward Panel -->
+  <QuestRewardPanel
+    :visible="showRewardPanel"
+    :quest="rewardPanelQuest"
+    :show-choices="showRewardChoices"
+    :choice-question="rewardChoiceQuestion"
+    :choices="rewardChoices"
+    @close="closeRewardPanel"
+    @choice="handleRewardChoice"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useBrainStore } from '../stores/brain';
 import { useConversationStore } from '../stores/conversation';
@@ -92,7 +103,15 @@ const conversationStore = useConversationStore();
 useChatExpansion();
 const constellationOpen = ref(false);
 watch(constellationOpen, (val) => emit('update:constellationOpen', val));
-const screenWidth = ref(window.innerWidth);
+/**
+ * Becomes true once the `#corner-cluster-portal` target (rendered by
+ * `CharacterViewport`) is present in the DOM.  We flip this in
+ * `onMounted` after a `nextTick` so the `<Teleport>` only activates once
+ * the target is guaranteed to exist.  When the target is missing
+ * (unit tests, or non-chat tabs), `:disabled="!portalReady"` falls back
+ * to in-place rendering so test selectors keep working.
+ */
+const portalReady = ref(false);
 // Reward panel state
 const showRewardPanel = ref(false);
 const rewardPanelQuest = ref<SkillNode | null>(null);
@@ -114,26 +133,18 @@ const availableQuests = computed(() => {
   );
 });
 
-// Dynamic positioning
-const questHubPosition = computed(() => {
-  const isMobile = screenWidth.value <= 640;
-  const baseTop = isMobile ? 6 : 44;
-  const baseRight = isMobile ? 52 : 16;
-  return {
-    top: `${baseTop}px`,
-    right: `${baseRight}px`,
-    position: 'fixed' as const,
-    zIndex: '19',
-  };
-});
+// Dynamic positioning is now owned by `CharacterViewport`'s
+// `.corner-cluster` (a flex column) — the orb teleports into it via
+// `<Teleport to="#corner-cluster-portal" defer>` in the template, so
+// there are no hand-tuned `top` / `right` magic numbers anywhere.
 
-onMounted(() => {
+onMounted(async () => {
   sortQuestsWithAI();
-  window.addEventListener('resize', handleResize);
-});
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize);
+  // Wait one tick so the corner cluster portal target is mounted before
+  // we activate the Teleport.  Keeps the orb from briefly flashing in
+  // its in-place fallback location during initial render.
+  await nextTick();
+  portalReady.value = !!document.getElementById('corner-cluster-portal');
 });
 
 watch(
@@ -151,10 +162,6 @@ watch(
     if (isThinking && showRewardChoices.value) closeRewardPanel();
   },
 );
-
-function handleResize() {
-  screenWidth.value = window.innerWidth;
-}
 
 function toggleConstellation() {
   constellationOpen.value = !constellationOpen.value;
@@ -274,8 +281,8 @@ function closeRewardPanel() {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 2px solid rgba(180, 160, 100, 0.5);
-  background: radial-gradient(ellipse at 40% 35%, rgba(30, 28, 50, 0.95), rgba(10, 8, 25, 0.98));
+  border: 2px solid var(--ts-quest-gold-glow);
+  background: var(--ts-quest-bg, radial-gradient(ellipse at 40% 35%, rgba(30, 28, 50, 0.95), rgba(10, 8, 25, 0.98)));
   backdrop-filter: blur(12px);
   cursor: pointer;
   display: flex;
@@ -283,8 +290,8 @@ function closeRewardPanel() {
   justify-content: center;
   position: relative;
   box-shadow:
-    0 0 16px rgba(180, 160, 100, 0.15),
-    inset 0 0 20px rgba(100, 140, 220, 0.08);
+    0 0 16px var(--ts-quest-gold-dim),
+    inset 0 0 20px var(--ts-accent-glow);
   transition: transform 0.2s ease, box-shadow 0.25s ease;
   flex-direction: column;
   gap: 0;
@@ -292,15 +299,15 @@ function closeRewardPanel() {
 .ff-orb:hover {
   transform: scale(1.1);
   box-shadow:
-    0 0 24px rgba(180, 160, 100, 0.3),
-    inset 0 0 24px rgba(100, 140, 220, 0.12);
+    0 0 24px var(--ts-quest-gold-glow),
+    inset 0 0 24px var(--ts-accent-glow);
 }
 .ff-orb:active { transform: scale(0.95); }
 .ff-orb--open {
-  border-color: rgba(220, 195, 110, 0.7);
+  border-color: var(--ts-quest-gold);
   box-shadow:
-    0 0 28px rgba(220, 195, 110, 0.35),
-    inset 0 0 20px rgba(100, 140, 220, 0.15);
+    0 0 28px var(--ts-quest-gold-glow),
+    inset 0 0 20px var(--ts-accent-glow);
 }
 
 .ff-orb-ring {
@@ -311,23 +318,23 @@ function closeRewardPanel() {
 }
 .ff-orb-ring-bg {
   fill: none;
-  stroke: rgba(180, 160, 100, 0.12);
+  stroke: var(--ts-quest-gold-dim);
   stroke-width: 2.5;
 }
 .ff-orb-ring-fill {
   fill: none;
-  stroke: #dcc36e;
+  stroke: var(--ts-quest-gold);
   stroke-width: 2.5;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.8s ease;
-  filter: drop-shadow(0 0 3px rgba(220, 195, 110, 0.4));
+  filter: drop-shadow(0 0 3px var(--ts-quest-gold-dim));
 }
 
 .ff-orb-crystal {
   font-size: 1rem;
-  color: #8ec8f6;
+  color: var(--ts-text-link, #8ec8f6);
   z-index: 1;
-  text-shadow: 0 0 8px rgba(142, 200, 246, 0.5);
+  text-shadow: 0 0 8px var(--ts-accent-glow);
   animation: crystal-pulse 3s ease-in-out infinite;
 }
 @keyframes crystal-pulse {
@@ -338,7 +345,7 @@ function closeRewardPanel() {
 .ff-orb-pct {
   font-size: 0.58rem;
   font-weight: 700;
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   z-index: 1;
   letter-spacing: 0.04em;
   margin-top: -2px;

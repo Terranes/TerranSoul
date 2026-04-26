@@ -576,22 +576,22 @@ watch(
 .pp-btn-primary {
   background: var(--ts-accent, #4a7);
   border-color: var(--ts-accent, #4a7);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
-.pp-btn-secondary { background: rgba(255, 255, 255, 0.04); }
+.pp-btn-secondary { background: var(--ts-bg-input); }
 .pp-btn-ghost { color: var(--ts-text-muted, #aab); }
 .pp-btn-danger {
   border-color: var(--ts-danger, #c44);
   color: var(--ts-danger, #c44);
 }
-.pp-btn-danger:hover { background: var(--ts-danger, #c44); color: #fff; }
+.pp-btn-danger:hover { background: var(--ts-danger, #c44); color: var(--ts-text-on-accent); }
 .pp-saved { font-size: 0.8rem; color: var(--ts-text-muted, #aab); }
 .pp-suggestion {
   margin-top: 0.5rem;
   border: 1px solid var(--ts-accent, #4a7);
   border-radius: var(--ts-radius-md, 12px);
   padding: 0.75rem 0.9rem;
-  background: rgba(80, 200, 140, 0.06);
+  background: var(--ts-success-bg, rgba(80, 200, 140, 0.06));
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -614,12 +614,12 @@ watch(
   padding: 0.5rem 0.7rem;
   font-size: 0.8rem;
   color: var(--ts-warning, #c80);
-  background: rgba(255, 200, 80, 0.06);
+  background: var(--ts-warning-bg, rgba(255, 200, 80, 0.06));
   border: 1px solid var(--ts-warning, rgba(255, 200, 80, 0.4));
   border-radius: var(--ts-radius-sm, 6px);
 }
 .pp-preview pre {
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--ts-bg-panel);
   border-radius: var(--ts-radius-sm, 6px);
   padding: 0.75rem;
   overflow-x: auto;
@@ -641,7 +641,7 @@ watch(
   gap: 0.5rem;
   align-items: center;
   padding: 0.4rem 0.6rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ts-bg-input);
   border-radius: var(--ts-radius-sm, 6px);
 }
 .pp-lib-name { font-weight: 600; }
@@ -658,8 +658,8 @@ watch(
 .pp-privacy {
   margin: 0;
   padding: 0.6rem 0.8rem;
-  background: rgba(255, 200, 80, 0.06);
-  border: 1px solid rgba(255, 200, 80, 0.25);
+  background: var(--ts-warning-bg, rgba(255, 200, 80, 0.06));
+  border: 1px solid var(--ts-warning-bg, rgba(255, 200, 80, 0.25));
   border-radius: var(--ts-radius-sm, 6px);
   font-size: 0.8rem;
   color: var(--ts-text, #eee);

@@ -282,17 +282,17 @@ watch(() => props.streamingText, scrollToBottom);
 }
 
 .message-row.user .bubble {
-  background: linear-gradient(135deg, var(--ts-accent) 0%, #5a52e0 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--ts-accent) 0%, var(--ts-accent-hover) 100%);
+  color: var(--ts-text-on-accent);
   border-bottom-right-radius: 4px;
-  box-shadow: 0 2px 8px rgba(124, 111, 255, 0.28);
+  box-shadow: 0 2px 8px var(--ts-accent-glow);
 }
 
 .message-row.assistant .bubble {
-  background: rgba(255, 255, 255, 0.10);
-  color: #eaecf4;
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-primary);
   border-bottom-left-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  border: 1px solid var(--ts-border);
 }
 
 .timestamp {
@@ -504,8 +504,8 @@ watch(() => props.streamingText, scrollToBottom);
 }
 .quick-reply-btn.yes {
   border-color: rgba(34, 197, 94, 0.4);
-  background: rgba(34, 197, 94, 0.10);
-  color: #86efac;
+  background: var(--ts-success-bg);
+  color: var(--ts-success);
 }
 .quick-reply-btn.yes:hover {
   background: rgba(34, 197, 94, 0.22);
@@ -514,8 +514,8 @@ watch(() => props.streamingText, scrollToBottom);
 }
 .quick-reply-btn.no {
   border-color: rgba(239, 68, 68, 0.3);
-  background: rgba(239, 68, 68, 0.08);
-  color: #fca5a5;
+  background: var(--ts-error-bg);
+  color: var(--ts-error);
 }
 .quick-reply-btn.no:hover {
   background: rgba(239, 68, 68, 0.18);

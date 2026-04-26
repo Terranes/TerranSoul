@@ -145,8 +145,8 @@ async function handleDrop(e: DragEvent) {
   display: flex;
   align-items: center;
   flex: 1;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border);
   border-radius: var(--ts-radius-pill);
   padding: 4px 4px 4px 8px;
   transition: border-color var(--ts-transition-normal), box-shadow var(--ts-transition-normal), background var(--ts-transition-normal);
@@ -155,12 +155,12 @@ async function handleDrop(e: DragEvent) {
 .input-wrapper:focus-within {
   border-color: var(--ts-accent);
   box-shadow: 0 0 0 3px var(--ts-accent-glow);
-  background: rgba(255, 255, 255, 0.10);
+  background: var(--ts-bg-hover);
 }
 
 .input-wrapper.drag-over {
   border-color: var(--ts-accent);
-  background: rgba(124, 111, 255, 0.12);
+  background: var(--ts-accent-glow);
   box-shadow: 0 0 0 3px var(--ts-accent-glow);
 }
 
@@ -181,7 +181,7 @@ async function handleDrop(e: DragEvent) {
 
 .attach-btn:hover:not(:disabled) {
   color: var(--ts-accent);
-  background: rgba(124, 111, 255, 0.1);
+  background: var(--ts-accent-glow);
 }
 
 .attach-btn:disabled {
@@ -219,20 +219,20 @@ async function handleDrop(e: DragEvent) {
   border-radius: 50%;
   border: none;
   background: var(--ts-accent);
-  color: #fff;
+  color: var(--ts-text-on-accent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   transition: background var(--ts-transition-normal), opacity var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-fast);
-  box-shadow: 0 2px 8px rgba(124, 111, 255, 0.3);
+  box-shadow: 0 2px 8px var(--ts-accent-glow);
 }
 
 .send-btn:hover:not(:disabled) {
   background: var(--ts-accent-hover);
   transform: scale(1.06);
-  box-shadow: 0 4px 14px rgba(124, 111, 255, 0.4);
+  box-shadow: 0 4px 14px var(--ts-accent-glow);
 }
 
 .send-btn:active:not(:disabled) {

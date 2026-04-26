@@ -155,12 +155,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 14px;
   padding: 12px 36px 12px 14px;
-  background: linear-gradient(135deg, rgba(220, 195, 110, 0.15), rgba(20, 18, 40, 0.95));
-  border: 1.5px solid rgba(220, 195, 110, 0.55);
+  background: linear-gradient(135deg, var(--ts-quest-gold-dim), var(--ts-bg-panel));
+  border: 1.5px solid var(--ts-quest-gold-glow);
   border-radius: 6px;
   box-shadow:
     0 8px 24px rgba(0, 0, 0, 0.45),
-    0 0 24px rgba(220, 195, 110, 0.25),
+    0 0 24px var(--ts-quest-gold-dim),
     inset 0 0 12px rgba(220, 195, 110, 0.05);
   cursor: pointer;
   overflow: hidden;
@@ -180,8 +180,8 @@ onUnmounted(() => {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #dcc36e;
-  box-shadow: 0 0 6px #dcc36e;
+  background: var(--ts-quest-gold);
+  box-shadow: 0 0 6px var(--ts-quest-gold);
   opacity: 0;
   animation: ct-burst 1.2s ease-out forwards;
   animation-delay: calc(var(--ct-i) * 0.04s);
@@ -207,7 +207,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  filter: drop-shadow(0 0 8px rgba(220, 195, 110, 0.6));
+  filter: drop-shadow(0 0 8px var(--ts-quest-gold-glow));
   z-index: 1;
 }
 .ct-body { flex: 1; min-width: 0; z-index: 1; }
@@ -215,28 +215,28 @@ onUnmounted(() => {
   font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   text-transform: uppercase;
-  text-shadow: 0 0 6px rgba(220, 195, 110, 0.4);
+  text-shadow: 0 0 6px var(--ts-quest-gold-dim);
 }
 .ct-name {
   font-size: 0.9rem;
   font-weight: 700;
-  color: #f0e8c8;
+  color: var(--ts-quest-text);
   margin-top: 1px;
 }
 .ct-desc {
   font-size: 0.7rem;
-  color: rgba(220, 220, 235, 0.78);
+  color: var(--ts-text-primary);
   margin-top: 2px;
   line-height: 1.4;
 }
 .ct-source {
   font-size: 0.62rem;
-  color: rgba(180, 180, 200, 0.55);
+  color: var(--ts-quest-muted);
   margin-top: 4px;
 }
-.ct-source strong { color: #8ec8f6; font-weight: 600; }
+.ct-source strong { color: var(--ts-text-link, #8ec8f6); font-weight: 600; }
 
 .ct-close {
   position: absolute;
@@ -252,7 +252,7 @@ onUnmounted(() => {
   border-radius: 2px;
   z-index: 2;
 }
-.ct-close:hover { color: #dcc36e; background: rgba(255, 255, 255, 0.05); }
+.ct-close:hover { color: var(--ts-quest-gold); background: var(--ts-bg-input); }
 
 /* Slide-in / out transitions */
 .combo-toast-enter-active { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease; }

@@ -94,7 +94,7 @@ function capabilityLabel(cap: string): string {
 </script>
 
 <style scoped>
-.consent-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+.consent-backdrop { position: fixed; inset: 0; background: var(--ts-bg-backdrop); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
 .consent-dialog { background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 12px; padding: 1.5rem; width: min(480px, 90vw); display: flex; flex-direction: column; gap: 0.75rem; box-shadow: var(--ts-shadow-lg); }
 .consent-desc { margin: 0; color: var(--ts-text-secondary); font-size: 0.9rem; }
 .consent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
