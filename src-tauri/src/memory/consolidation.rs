@@ -445,8 +445,8 @@ mod tests {
             .unwrap();
 
         let (decayed, gc) = step_decay_and_gc(&store, 0.05).unwrap();
-        // The very-low entry should be GC'd
-        assert!(gc >= 1 || decayed >= 0_usize); // at minimum, decay ran
+        // The very-low entry should be GC'd; at minimum decay ran on ≥0 entries
+        assert!(gc >= 1 || decayed >= 1);
     }
 
     #[test]
