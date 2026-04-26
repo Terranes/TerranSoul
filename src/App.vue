@@ -23,186 +23,191 @@
   </div>
 
   <template v-else>
-  <!-- Loading splash shown during app initialization -->
-  <Transition name="splash-fade">
-    <SplashScreen v-if="appLoading" />
-  </Transition>
+    <!-- Animated 3D background scene — themed via html[data-theme]; auto-hidden in pet mode -->
+    <BackgroundScene v-if="!isPetMode" />
 
-  <!-- First-launch wizard (shown once, before the main app) -->
-  <FirstLaunchWizard
-    :visible="showFirstLaunchWizard"
-    @done="onFirstLaunchDone"
-  />
+    <!-- Loading splash shown during app initialization -->
+    <Transition name="splash-fade">
+      <SplashScreen v-if="appLoading" />
+    </Transition>
 
-  <div
-    v-show="!appLoading"
-    class="app-shell"
-    :class="{ 'pet-mode': isPetMode }"
-  >
+    <!-- First-launch wizard (shown once, before the main app) -->
+    <FirstLaunchWizard
+      :visible="showFirstLaunchWizard"
+      @done="onFirstLaunchDone"
+    />
 
-    <!-- Pet overlay mode: transparent character + floating chat -->
-    <div v-if="isPetMode" class="pet-mode-wrapper">
-      <!-- DEV badge — inline in the pet mode layout, top-left -->
-      <FloatingBadge
-        v-if="windowStore.isDevBuild"
-        class="pet-dev-badge"
-        tone="warning"
-        readonly
-        title="Development build — MCP on port 7422"
+    <div
+      v-show="!appLoading"
+      class="app-shell"
+      :class="{ 'pet-mode': isPetMode }"
+    >
+      <!-- Pet overlay mode: transparent character + floating chat -->
+      <div
+        v-if="isPetMode"
+        class="pet-mode-wrapper"
       >
-        DEV
-      </FloatingBadge>
-      <PetOverlayView />
-    </div>
+        <!-- DEV badge — inline in the pet mode layout, top-left -->
+        <FloatingBadge
+          v-if="windowStore.isDevBuild"
+          class="pet-dev-badge"
+          tone="warning"
+          readonly
+          title="Development build — MCP on port 7422"
+        >
+          DEV
+        </FloatingBadge>
+        <PetOverlayView />
+      </div>
 
-    <!-- Normal mode: Brain onboarding or tabbed UI -->
-    <template v-else>
-      <!-- Brain onboarding: shown until a brain is configured -->
-      <BrainSetupView
-        v-if="!hasBrain && !skipSetup"
-        @done="onBrainDone"
-      />
-
+      <!-- Normal mode: Brain onboarding or tabbed UI -->
       <template v-else>
-        <!-- Desktop side navigation -->
-        <nav class="app-nav desktop-nav">
-          <div class="nav-logo">
-            <img
-              :src="appIconUrl"
-              alt="TerranSoul"
-              class="nav-logo-img"
-            >
-          </div>
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            :class="['nav-btn', { active: activeTab === tab.id }]"
-            @click="activeTab = tab.id"
-          >
-            <span
-              class="nav-icon"
-              v-html="tab.svg"
-            />
-            <span class="nav-label">{{ tab.label }}</span>
-          </button>
-
-          <div class="nav-spacer" />
-
-          <!-- "No brain" warning pill -->
-          <button
-            v-if="!hasBrain"
-            class="nav-btn nav-brain-warn"
-            @click="skipSetup = false"
-          >
-            <span class="nav-icon">⚠</span>
-            <span class="nav-label">Brain</span>
-          </button>
-
-          <!-- DEV badge — inline in the sidebar, below spacer -->
-          <FloatingBadge
-            v-if="windowStore.isDevBuild"
-            class="nav-dev-badge"
-            tone="warning"
-            readonly
-            title="Development build — MCP on port 7422"
-          >
-            DEV
-          </FloatingBadge>
-        </nav>
-
-        <!-- Mobile bottom tab bar (replaces hamburger menu) -->
-        <nav class="mobile-bottom-nav">
-          <!-- DEV indicator — sits as first item in the tab row -->
-          <span
-            v-if="windowStore.isDevBuild"
-            class="mobile-dev-indicator"
-            title="Development build"
-          >DEV</span>
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            :class="['mobile-tab', { active: activeTab === tab.id }]"
-            @click="activeTab = tab.id"
-          >
-            <span
-              class="mobile-tab-icon"
-              v-html="tab.svg"
-            />
-            <span class="mobile-tab-label">{{ tab.label }}</span>
-          </button>
-        </nav>
-
-        <!-- Main area -->
-        <main class="app-main">
-          <!-- Mode toggle toolbar — sits in the layout flow above ChatView.
-               Hidden on non-chat tabs and when quest constellation is open. -->
-          <div
-            v-if="activeTab === 'chat' && !questConstellationOpen"
-            class="mode-toggle-toolbar"
-          >
-            <div class="mode-segmented">
-              <button
-                :class="['mode-seg-btn', { active: !isChatboxMode }]"
-                title="3D character mode"
-                @click="setDisplayMode('desktop')"
-              >
-                🖥 <span class="mode-seg-label">3D</span>
-              </button>
-              <button
-                :class="['mode-seg-btn', { active: isChatboxMode }]"
-                title="Chat-only mode (no 3D character)"
-                @click="setDisplayMode('chatbox')"
-              >
-                💬 <span class="mode-seg-label">Chat</span>
-              </button>
-              <button
-                class="mode-seg-btn"
-                title="Switch to pet mode"
-                @click="togglePetMode"
-              >
-                🐾 <span class="mode-seg-label">Pet</span>
-              </button>
-            </div>
-          </div>
-
-          <ChatView
-            v-show="activeTab === 'chat'"
-            :chatbox-mode="isChatboxMode"
-            @navigate="handleSkillNavigate"
-          />
-          <SkillTreeView
-            v-if="activeTab === 'skills'"
-            @navigate="handleSkillNavigate"
-          />
-          <BrainView
-            v-if="activeTab === 'brain'"
-            @navigate="handleSkillNavigate"
-          />
-          <MemoryView v-if="activeTab === 'memory'" />
-          <MarketplaceView v-if="activeTab === 'marketplace'" />
-          <VoiceSetupView
-            v-if="activeTab === 'voice'"
-            @done="activeTab = 'chat'"
-          />
-        </main>
-
-        <!-- Floating quest progress bubble — chat tab only so it doesn't
-             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
-        <QuestBubble
-          v-if="activeTab === 'chat'"
-          @trigger="handleQuestBubble"
-          @navigate="handleSkillNavigate"
-          @update:constellation-open="questConstellationOpen = $event"
+        <!-- Brain onboarding: shown until a brain is configured -->
+        <BrainSetupView
+          v-if="!hasBrain && !skipSetup"
+          @done="onBrainDone"
         />
 
-        <!-- Combo unlock notifications (Chunk 131) -->
-        <ComboToast />
+        <template v-else>
+          <!-- Desktop side navigation -->
+          <nav class="app-nav desktop-nav">
+            <div class="nav-logo">
+              <img
+                :src="appIconUrl"
+                alt="TerranSoul"
+                class="nav-logo-img"
+              >
+            </div>
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              :class="['nav-btn', { active: activeTab === tab.id }]"
+              @click="activeTab = tab.id"
+            >
+              <span
+                class="nav-icon"
+                v-html="tab.svg"
+              />
+              <span class="nav-label">{{ tab.label }}</span>
+            </button>
 
-        <!-- Quest reward ceremony overlay (Chunk 132) -->
-        <QuestRewardCeremony />
+            <div class="nav-spacer" />
+
+            <!-- "No brain" warning pill -->
+            <button
+              v-if="!hasBrain"
+              class="nav-btn nav-brain-warn"
+              @click="skipSetup = false"
+            >
+              <span class="nav-icon">⚠</span>
+              <span class="nav-label">Brain</span>
+            </button>
+
+            <!-- DEV badge — inline in the sidebar, below spacer -->
+            <FloatingBadge
+              v-if="windowStore.isDevBuild"
+              class="nav-dev-badge"
+              tone="warning"
+              readonly
+              title="Development build — MCP on port 7422"
+            >
+              DEV
+            </FloatingBadge>
+          </nav>
+
+          <!-- Mobile bottom tab bar (replaces hamburger menu) -->
+          <nav class="mobile-bottom-nav">
+            <!-- DEV indicator — sits as first item in the tab row -->
+            <span
+              v-if="windowStore.isDevBuild"
+              class="mobile-dev-indicator"
+              title="Development build"
+            >DEV</span>
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              :class="['mobile-tab', { active: activeTab === tab.id }]"
+              @click="activeTab = tab.id"
+            >
+              <span
+                class="mobile-tab-icon"
+                v-html="tab.svg"
+              />
+              <span class="mobile-tab-label">{{ tab.label }}</span>
+            </button>
+          </nav>
+
+          <!-- Main area -->
+          <main class="app-main">
+            <!-- Mode toggle toolbar — sits in the layout flow above ChatView.
+               Hidden on non-chat tabs and when quest constellation is open. -->
+            <div
+              v-if="activeTab === 'chat' && !questConstellationOpen"
+              class="mode-toggle-toolbar"
+            >
+              <div class="mode-segmented">
+                <button
+                  :class="['mode-seg-btn', { active: !isChatboxMode }]"
+                  title="3D character mode"
+                  @click="setDisplayMode('desktop')"
+                >
+                  🖥 <span class="mode-seg-label">3D</span>
+                </button>
+                <button
+                  :class="['mode-seg-btn', { active: isChatboxMode }]"
+                  title="Chat-only mode (no 3D character)"
+                  @click="setDisplayMode('chatbox')"
+                >
+                  💬 <span class="mode-seg-label">Chat</span>
+                </button>
+                <button
+                  class="mode-seg-btn"
+                  title="Switch to pet mode"
+                  @click="togglePetMode"
+                >
+                  🐾 <span class="mode-seg-label">Pet</span>
+                </button>
+              </div>
+            </div>
+
+            <ChatView
+              v-show="activeTab === 'chat'"
+              :chatbox-mode="isChatboxMode"
+              @navigate="handleSkillNavigate"
+            />
+            <SkillTreeView
+              v-if="activeTab === 'skills'"
+              @navigate="handleSkillNavigate"
+            />
+            <BrainView
+              v-if="activeTab === 'brain'"
+              @navigate="handleSkillNavigate"
+            />
+            <MemoryView v-if="activeTab === 'memory'" />
+            <MarketplaceView v-if="activeTab === 'marketplace'" />
+            <VoiceSetupView
+              v-if="activeTab === 'voice'"
+              @done="activeTab = 'chat'"
+            />
+          </main>
+
+          <!-- Floating quest progress bubble — chat tab only so it doesn't
+             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
+          <QuestBubble
+            v-if="activeTab === 'chat'"
+            @trigger="handleQuestBubble"
+            @navigate="handleSkillNavigate"
+            @update:constellation-open="questConstellationOpen = $event"
+          />
+
+          <!-- Combo unlock notifications (Chunk 131) -->
+          <ComboToast />
+
+          <!-- Quest reward ceremony overlay (Chunk 132) -->
+          <QuestRewardCeremony />
+        </template>
       </template>
-    </template>
-  </div>
+    </div>
   </template>
 </template>
 
@@ -229,6 +234,7 @@ import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
 import FloatingBadge from './components/ui/FloatingBadge.vue';
+import BackgroundScene from './components/BackgroundScene.vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();

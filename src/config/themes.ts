@@ -49,6 +49,15 @@ export const THEME_CORPORATE: ThemeDefinition = {
   preview: { bg: '#f5f5f5', accent: '#5b5fc7', text: '#242424' },
 };
 
+export const THEME_CORPORATE_DARK: ThemeDefinition = {
+  id: 'corporate-dark',
+  label: 'Corporate Dark',
+  description: 'VS Code & Microsoft Teams dark — graphite surfaces, blue activity-bar accent, editor calm.',
+  icon: '🖥️',
+  category: 'dark',
+  preview: { bg: '#1f1f1f', accent: '#5b9bd5', text: '#cccccc' },
+};
+
 export const THEME_CAT: ThemeDefinition = {
   id: 'cat',
   label: 'Neko',
@@ -118,6 +127,7 @@ export const THEME_PASTEL: ThemeDefinition = {
 export const BUILTIN_THEMES: readonly ThemeDefinition[] = [
   THEME_DEFAULT,
   THEME_CORPORATE,
+  THEME_CORPORATE_DARK,
   THEME_MIDNIGHT,
   THEME_AURORA,
   THEME_BRAIN,

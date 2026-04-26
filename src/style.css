@@ -74,8 +74,11 @@
   --ts-border-focus: var(--ts-accent);
   --ts-border-strong: rgba(255, 255, 255, 0.16);
 
-  /* ── Body gradient — static linear base; radial glow orbs are animated via
-     body::before / body::after using --ts-aura-c1 / --ts-aura-c2 below. ── */
+  /* ── Body gradient — static linear base; the animated 3D scene layers
+     (gradients, particles, parallax) are rendered by BackgroundScene.vue
+     using per-theme rules in the "BackgroundScene" section below.  The
+     legacy --ts-aura-c1 / --ts-aura-c2 tokens below are kept for back-compat
+     with anything that still reads them, but the scene no longer uses them. ── */
   /* Adventurer (default): deep cosmic purple & blue nebula over dark navy */
   --ts-aura-c1:    rgba(124, 111, 255, 0.22);
   --ts-aura-c2:    rgba(96,  165, 250, 0.16);
@@ -229,6 +232,83 @@ html[data-theme="corporate"] {
   --ts-viewport-text:     rgba(255, 255, 255, 0.95);
   --ts-viewport-text-dim: rgba(255, 255, 255, 0.75);
   --ts-viewport-text-med: rgba(255, 255, 255, 0.88);
+}
+
+/* ── Corporate Dark (VS Code + Microsoft Teams dark) ─────────────────────────
+   Palette sourced from VS Code "Dark Modern" defaults and Teams dark surfaces:
+   editor #1f1f1f, panel #181818, sidebar #2b2b2b, activity-bar accent #007acc,
+   focus accent #5b9bd5, link #4ec9b0 (Teams cyan).  Optimised for long focus
+   sessions: low contrast neutrals, high-contrast text, single saturated accent. */
+html[data-theme="corporate-dark"] {
+  --ts-font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+
+  --ts-bg-base:     #1f1f1f;
+  --ts-bg-surface:  #252526;
+  --ts-bg-elevated: #2d2d2d;
+  --ts-bg-nav:      #181818;
+  --ts-bg-overlay:  rgba(30, 30, 30, 0.96);
+  --ts-bg-input:    #3c3c3c;
+  --ts-bg-hover:    rgba(255, 255, 255, 0.06);
+  --ts-bg-card:     #252526;
+  --ts-bg-panel:    #1e1e1e;
+  --ts-bg-selected: rgba(0, 122, 204, 0.18);
+
+  --ts-accent:              #5b9bd5;
+  --ts-accent-hover:        #3a86c8;
+  --ts-accent-glow:         rgba(91, 155, 213, 0.22);
+  --ts-accent-blue:         #007acc;
+  --ts-accent-blue-hover:   #1c8fd9;
+  --ts-accent-violet:       #c586c0;
+  --ts-accent-violet-hover: #b56eb0;
+
+  --ts-success:      #4ec9b0;
+  --ts-success-dim:  #3aa993;
+  --ts-success-bg:   rgba(78, 201, 176, 0.10);
+  --ts-warning:      #dcdcaa;
+  --ts-warning-bg:   rgba(220, 220, 170, 0.10);
+  --ts-warning-text: #dcdcaa;
+  --ts-error:        #f48771;
+  --ts-error-bg:     rgba(244, 135, 113, 0.10);
+  --ts-info:         #5b9bd5;
+  --ts-info-bg:      rgba(91, 155, 213, 0.10);
+
+  --ts-text-primary:   #cccccc;
+  --ts-text-secondary: #9d9d9d;
+  --ts-text-muted:     #6f6f6f;
+  --ts-text-dim:       rgba(204, 204, 204, 0.40);
+  --ts-text-on-accent: #ffffff;
+  --ts-text-bright:    #ffffff;
+  --ts-text-link:      #4ec9b0;
+
+  --ts-border:        #3c3c3c;
+  --ts-border-subtle: #2d2d2d;
+  --ts-border-medium: #464646;
+  --ts-border-focus:  #007acc;
+  --ts-border-strong: #5a5a5a;
+
+  --ts-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --ts-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.55);
+  --ts-shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.70);
+
+  --ts-quest-gold:        #5b9bd5;
+  --ts-quest-gold-bright: #6cb0e4;
+  --ts-quest-gold-dim:    rgba(91, 155, 213, 0.12);
+  --ts-quest-gold-glow:   rgba(91, 155, 213, 0.30);
+  --ts-quest-bg:     linear-gradient(135deg, rgba(37, 37, 38, 0.96), rgba(30, 30, 30, 0.98));
+  --ts-quest-border: rgba(91, 155, 213, 0.22);
+  --ts-quest-text:   #cccccc;
+  --ts-quest-muted:  rgba(157, 157, 157, 0.70);
+
+  --ts-bg-backdrop: rgba(0, 0, 0, 0.55);
+  /* Corporate Dark: VS Code editor — graphite base, restrained blue activity-bar glow */
+  --ts-aura-c1:    rgba(0,   122, 204, 0.16);
+  --ts-aura-c2:    rgba(91,  155, 213, 0.10);
+  --ts-bg-gradient: linear-gradient(170deg, #181818 0%, #1e1e1e 45%, #1f1f1f 75%, #1a1a1a 100%);
+
+  --ts-radius-sm:   4px;
+  --ts-radius-md:   6px;
+  --ts-radius-lg:   8px;
+  --ts-radius-xl:   12px;
 }
 
 /* ── Neko (Cat) ───────────────────────────────────────────────────────────── */
@@ -803,7 +883,7 @@ html[data-theme="pastel"] {
    Usage in scoped style: @variant light { & { color: var(--ts-text-primary); } }
    ═════════════════════════════════════════════════════════════════════════════ */
 @custom-variant light (:is(html[data-theme="corporate"], html[data-theme="pastel"]) &);
-@custom-variant theme-dark (:is(html[data-theme="default"], html[data-theme="midnight"], html[data-theme="cat"], html[data-theme="brain"], html[data-theme="aurora"], html[data-theme="sakura"], html[data-theme="kids"]) &);
+@custom-variant theme-dark (:is(html[data-theme="default"], html[data-theme="midnight"], html[data-theme="cat"], html[data-theme="brain"], html[data-theme="aurora"], html[data-theme="sakura"], html[data-theme="kids"], html[data-theme="corporate-dark"]) &);
 
 /* ═════════════════════════════════════════════════════════════════════════════
    Base Styles
@@ -846,77 +926,435 @@ body {
   transition: background 0.5s ease;
 }
 
-/* ── Animated aura orbs ─────────────────────────────────────────────────────
-   Two blurred circular orbs rendered as body pseudo-elements.  They drift
-   slowly using GPU-accelerated transform animations (no paint invalidation).
-   Colors are set per-theme via --ts-aura-c1 / --ts-aura-c2.
-   Suppressed in pet mode (body[data-ts-mode="pet"]) and when the user
-   prefers reduced motion.
-   ──────────────────────────────────────────────────────────────────────── */
-body::before,
-body::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  will-change: transform;
-  /* z-index: -1 sits between the body background and #app normal-flow content */
-  z-index: -1;
-}
+/* ═════════════════════════════════════════════════════════════════════════════
+   BackgroundScene — animated 3D background system
+   ────────────────────────────────────────────────────────────────────────────
+   Companion stylesheet for src/components/BackgroundScene.vue.  The component
+   provides a single fixed-position scene with 3 depth layers (.bs-back /
+   .bs-mid / .bs-near), 24 generic particle slots (.bs-p.p1 … p24) and a
+   vignette (.bs-vignette).  Each html[data-theme="*"] block below decorates
+   the scene with a unique animated composition (starfield, petals, code-lines,
+   aurora ribbons, …).  Pet mode and reduced-motion are honored at the bottom.
+   ═════════════════════════════════════════════════════════════════════════ */
 
-body::before {
-  /* Primary orb — large, slow */
-  width: 85vw;
-  height: 85vw;
-  max-width: 900px;
-  max-height: 900px;
-  top: -35vw;
-  left: -20vw;
-  background: radial-gradient(ellipse at center, var(--ts-aura-c1, rgba(124, 111, 255, 0.22)), transparent 70%);
-  filter: blur(72px);
-  animation: ts-aura-drift-1 30s ease-in-out infinite alternate;
-}
+/* Hide the entire scene in pet mode (Tauri transparent window). */
+body[data-ts-mode="pet"] .bs-root { display: none; }
 
-body::after {
-  /* Secondary orb — slightly smaller, faster, opposite corner */
-  width: 70vw;
-  height: 70vw;
-  max-width: 740px;
-  max-height: 740px;
-  bottom: -28vw;
-  right: -18vw;
-  background: radial-gradient(ellipse at center, var(--ts-aura-c2, rgba(96, 165, 250, 0.16)), transparent 70%);
-  filter: blur(64px);
-  animation: ts-aura-drift-2 24s ease-in-out infinite alternate;
-}
-
-@keyframes ts-aura-drift-1 {
-  0%   { transform: translate(0vw,  0vh)   scale(1.00); }
-  30%  { transform: translate(10vw, 7vh)   scale(1.12); }
-  60%  { transform: translate(4vw,  -5vh)  scale(0.93); }
-  100% { transform: translate(16vw, 13vh)  scale(1.08); }
-}
-
-@keyframes ts-aura-drift-2 {
-  0%   { transform: translate(0vw,   0vh)   scale(1.00); }
-  30%  { transform: translate(-9vw,  -7vh)  scale(1.10); }
-  60%  { transform: translate(5vw,    6vh)  scale(0.95); }
-  100% { transform: translate(-14vw, -11vh) scale(1.07); }
-}
-
-/* Pet mode: Tauri transparent window — hide orbs so only the character floats */
-body[data-ts-mode="pet"]::before,
-body[data-ts-mode="pet"]::after {
-  display: none;
-}
-
-/* Respect the user's motion preferences */
+/* Honor user preference: freeze every scene animation (depth layers + particles). */
 @media (prefers-reduced-motion: reduce) {
-  body::before,
-  body::after {
-    animation: none;
+  .bs-back, .bs-mid, .bs-near, .bs-vignette, .bs-p {
+    animation: none !important;
   }
 }
+
+/* ── Shared keyframes ─────────────────────────────────────────────────────── */
+@keyframes bs-drift-slow {
+  0%   { transform: translate3d(0,    0,    -600px) scale(1.50); }
+  50%  { transform: translate3d(4vw,  -3vh, -600px) scale(1.55); }
+  100% { transform: translate3d(-3vw, 4vh,  -600px) scale(1.48); }
+}
+@keyframes bs-drift-mid {
+  0%   { transform: translate3d(0,    0,    -250px) scale(1.20); }
+  50%  { transform: translate3d(-6vw, 5vh,  -250px) scale(1.25); }
+  100% { transform: translate3d(5vw,  -4vh, -250px) scale(1.18); }
+}
+@keyframes bs-drift-near {
+  0%   { transform: translate3d(0,    0,    -50px) scale(1.04); }
+  50%  { transform: translate3d(8vw,  -6vh, -50px) scale(1.08); }
+  100% { transform: translate3d(-7vw, 5vh,  -50px) scale(1.03); }
+}
+
+/* Twinkle / pulse — used by stars, dust, neural nodes, etc. */
+@keyframes bs-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+
+/* Fall — used by sakura petals, dust, snow. */
+@keyframes bs-fall {
+  0%   { transform: translate3d(0, -10vh, var(--bs-z, 0px)) rotate(0deg);   opacity: 0; }
+  10%  { opacity: var(--bs-op, 0.8); }
+  90%  { opacity: var(--bs-op, 0.8); }
+  100% { transform: translate3d(8vw, 110vh, var(--bs-z, 0px)) rotate(540deg); opacity: 0; }
+}
+
+/* Rise — embers / dust motes drifting upward. */
+@keyframes bs-rise {
+  0%   { transform: translate3d(0, 110vh, var(--bs-z, 0px)) scale(0.6); opacity: 0; }
+  15%  { opacity: var(--bs-op, 0.7); }
+  85%  { opacity: var(--bs-op, 0.7); }
+  100% { transform: translate3d(-6vw, -10vh, var(--bs-z, 0px)) scale(1.1); opacity: 0; }
+}
+
+/* Slow rotate — constellation rings, neural circuit loops. */
+@keyframes bs-spin {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes bs-spin-rev {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); }
+  100% { transform: translate(-50%, -50%) rotate(-360deg); }
+}
+
+/* Aurora ribbon shimmer — slow horizontal hue / position drift. */
+@keyframes bs-aurora-flow {
+  0%   { transform: translate3d(-15%, 0, var(--bs-z, 0px)) skewY(-6deg); opacity: 0.5; }
+  50%  { transform: translate3d(10%,  4vh, var(--bs-z, 0px)) skewY(-3deg); opacity: 0.85; }
+  100% { transform: translate3d(-15%, 0, var(--bs-z, 0px)) skewY(-6deg); opacity: 0.5; }
+}
+
+/* Code-line scroll — corporate-dark VS Code aesthetic. */
+@keyframes bs-codeline {
+  0%   { transform: translate3d(-30%, 0, var(--bs-z, 0px)); opacity: 0; }
+  10%  { opacity: var(--bs-op, 0.5); }
+  90%  { opacity: var(--bs-op, 0.5); }
+  100% { transform: translate3d(130%, 0, var(--bs-z, 0px)); opacity: 0; }
+}
+
+/* Bounce — kids 3D spheres. */
+@keyframes bs-bounce {
+  0%, 100% { transform: translate3d(0, 0, var(--bs-z, 0px)) scale(1); }
+  50%      { transform: translate3d(0, -12vh, var(--bs-z, 0px)) scale(1.08); }
+}
+
+/* Universal vignette: a soft inner-shadow falloff at the edges of the viewport. */
+.bs-vignette {
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Per-theme scenes
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Adventurer (default) — drifting starfield + slow constellation glow ──── */
+html[data-theme="default"] .bs-back {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 25%, rgba(124, 111, 255, 0.30), transparent 60%),
+    radial-gradient(ellipse 50% 45% at 85% 75%, rgba(96, 165, 250, 0.22), transparent 60%);
+  filter: blur(60px);
+  animation: bs-drift-slow 38s ease-in-out infinite alternate;
+}
+html[data-theme="default"] .bs-mid {
+  background:
+    radial-gradient(circle at 70% 30%, rgba(167, 139, 250, 0.18), transparent 50%);
+  filter: blur(40px);
+  animation: bs-drift-mid 28s ease-in-out infinite alternate;
+}
+html[data-theme="default"] .bs-near::before {
+  /* Constellation ring — slowly rotating thin gradient halo */
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 80vmin; height: 80vmin;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(124, 111, 255, 0.18) 90deg, transparent 180deg, rgba(96, 165, 250, 0.14) 270deg, transparent 360deg);
+  filter: blur(2px);
+  opacity: 0.6;
+  animation: bs-spin 120s linear infinite;
+}
+html[data-theme="default"] .bs-p {
+  /* Stars — small white dots that twinkle */
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  box-shadow: 0 0 4px rgba(241, 245, 249, 0.8);
+  animation: bs-twinkle 3.5s ease-in-out infinite;
+}
+html[data-theme="default"] .bs-p:nth-child(3n)   { width: 3px; height: 3px; }
+html[data-theme="default"] .bs-p:nth-child(7n)   { background: #c4b5fd; box-shadow: 0 0 6px rgba(196, 181, 253, 0.9); }
+
+/* ── Corporate (light) — drifting Fluent geometric shapes ─────────────────── */
+html[data-theme="corporate"] .bs-back {
+  background:
+    radial-gradient(ellipse 70% 55% at 80% 20%, rgba(91, 95, 199, 0.10), transparent 60%),
+    radial-gradient(ellipse 55% 50% at 15% 85%, rgba(0, 120, 212, 0.08),  transparent 60%);
+  filter: blur(40px);
+  animation: bs-drift-slow 50s ease-in-out infinite alternate;
+}
+html[data-theme="corporate"] .bs-mid {
+  background:
+    radial-gradient(circle at 35% 60%, rgba(91, 95, 199, 0.05), transparent 50%);
+  filter: blur(30px);
+  animation: bs-drift-mid 40s ease-in-out infinite alternate;
+}
+html[data-theme="corporate"] .bs-p {
+  /* Soft floating squares */
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(91, 95, 199, 0.10), rgba(0, 120, 212, 0.06));
+  border: 1px solid rgba(91, 95, 199, 0.12);
+  animation: bs-rise 32s linear infinite;
+  --bs-op: 0.55;
+}
+html[data-theme="corporate"] .bs-p:nth-child(3n)  { width: 18px; height: 18px; border-radius: 50%; }
+html[data-theme="corporate"] .bs-p:nth-child(5n)  { width: 40px; height: 40px; transform: rotate(45deg); }
+html[data-theme="corporate"] .bs-vignette        { display: none; }
+
+/* ── Corporate Dark (VS Code + Teams) — code-line scroll + activity-bar pulse ─ */
+html[data-theme="corporate-dark"] .bs-back {
+  background:
+    radial-gradient(ellipse 60% 50% at 0% 0%,    rgba(0, 122, 204, 0.16), transparent 55%),
+    radial-gradient(ellipse 55% 50% at 100% 100%, rgba(91, 155, 213, 0.10), transparent 60%);
+  filter: blur(70px);
+  animation: bs-drift-slow 48s ease-in-out infinite alternate;
+}
+html[data-theme="corporate-dark"] .bs-mid::before {
+  /* Activity-bar accent stripe (left edge, pulsing). */
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: linear-gradient(to bottom, transparent, rgba(0, 122, 204, 0.45), transparent);
+  filter: blur(1px);
+  animation: bs-twinkle 6s ease-in-out infinite;
+}
+html[data-theme="corporate-dark"] .bs-near {
+  background:
+    repeating-linear-gradient(0deg, transparent 0, transparent 38px, rgba(255, 255, 255, 0.012) 38px, rgba(255, 255, 255, 0.012) 39px);
+  animation: bs-drift-near 60s ease-in-out infinite alternate;
+}
+html[data-theme="corporate-dark"] .bs-p {
+  /* Drifting "code line" segments — thin horizontal bars in editor colors */
+  width: 12vw; height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(86, 156, 214, 0.30), transparent);
+  animation: bs-codeline 26s linear infinite;
+  --bs-op: 0.45;
+}
+html[data-theme="corporate-dark"] .bs-p:nth-child(2n) { background: linear-gradient(90deg, transparent, rgba(78, 201, 176, 0.28), transparent); }
+html[data-theme="corporate-dark"] .bs-p:nth-child(3n) { background: linear-gradient(90deg, transparent, rgba(220, 220, 170, 0.25), transparent); }
+html[data-theme="corporate-dark"] .bs-p:nth-child(5n) { background: linear-gradient(90deg, transparent, rgba(197, 134, 192, 0.25), transparent); width: 8vw; }
+html[data-theme="corporate-dark"] .bs-p:nth-child(7n) { width: 16vw; }
+
+/* ── Neko (Cat) — rising amber dust motes + flickering candle glow ────────── */
+html[data-theme="cat"] .bs-back {
+  background:
+    radial-gradient(ellipse 60% 55% at 0% 30%,  rgba(245, 158, 11, 0.32), transparent 60%),
+    radial-gradient(ellipse 50% 50% at 95% 75%, rgba(232, 130, 60, 0.20), transparent 60%);
+  filter: blur(70px);
+  animation: bs-drift-slow 36s ease-in-out infinite alternate;
+}
+html[data-theme="cat"] .bs-mid {
+  background: radial-gradient(circle at 50% 100%, rgba(251, 191, 36, 0.18), transparent 55%);
+  filter: blur(50px);
+  animation: bs-twinkle 4.5s ease-in-out infinite;
+}
+html[data-theme="cat"] .bs-p {
+  /* Glowing dust motes rising from below */
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.8), 0 0 20px rgba(245, 158, 11, 0.4);
+  animation: bs-rise 28s linear infinite;
+  --bs-op: 0.85;
+}
+html[data-theme="cat"] .bs-p:nth-child(3n) { width: 6px; height: 6px; }
+html[data-theme="cat"] .bs-p:nth-child(5n) { background: #f59e0b; }
+
+/* ── Sakura — falling petals at multiple Z depths ─────────────────────────── */
+html[data-theme="sakura"] .bs-back {
+  background:
+    radial-gradient(ellipse 65% 55% at 80% 0%, rgba(244, 114, 182, 0.28), transparent 60%),
+    radial-gradient(ellipse 55% 50% at 5% 70%, rgba(232, 121, 249, 0.22), transparent 60%);
+  filter: blur(65px);
+  animation: bs-drift-slow 42s ease-in-out infinite alternate;
+}
+html[data-theme="sakura"] .bs-mid {
+  background: radial-gradient(circle at 50% 50%, rgba(244, 114, 182, 0.10), transparent 60%);
+  filter: blur(40px);
+  animation: bs-drift-mid 32s ease-in-out infinite alternate;
+}
+html[data-theme="sakura"] .bs-p {
+  /* Cherry petals — small pink ovals that fall + spin */
+  width: 12px; height: 10px;
+  border-radius: 60% 40% 60% 40%;
+  background: radial-gradient(ellipse at 30% 30%, #fbcfe8, #f472b6);
+  box-shadow: 0 0 6px rgba(244, 114, 182, 0.45);
+  animation: bs-fall 14s linear infinite;
+  --bs-op: 0.85;
+}
+html[data-theme="sakura"] .bs-p:nth-child(2n) { background: radial-gradient(ellipse at 30% 30%, #fce7f3, #ec4899); }
+html[data-theme="sakura"] .bs-p:nth-child(3n) { width: 8px; height: 7px; }
+html[data-theme="sakura"] .bs-p:nth-child(5n) { width: 16px; height: 13px; }
+
+/* ── Kids (Playground) — bouncing primary 3D spheres ──────────────────────── */
+html[data-theme="kids"] .bs-back {
+  background:
+    radial-gradient(ellipse 65% 55% at 90% 10%, rgba(129, 140, 248, 0.32), transparent 60%),
+    radial-gradient(ellipse 60% 55% at 10% 90%, rgba(192, 132, 252, 0.28), transparent 60%);
+  filter: blur(60px);
+  animation: bs-drift-slow 30s ease-in-out infinite alternate;
+}
+html[data-theme="kids"] .bs-mid {
+  background: radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.16), transparent 60%);
+  filter: blur(45px);
+  animation: bs-drift-mid 22s ease-in-out infinite alternate;
+}
+html[data-theme="kids"] .bs-p {
+  /* Bouncing 3D spheres — radial gradient gives depth */
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #a5b4fc, #4f46e5);
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.6);
+  animation: bs-bounce 4.5s ease-in-out infinite;
+  --bs-op: 1;
+}
+html[data-theme="kids"] .bs-p:nth-child(2n) { background: radial-gradient(circle at 30% 30%, #f9a8d4, #db2777); box-shadow: 0 0 12px rgba(236, 72, 153, 0.6); }
+html[data-theme="kids"] .bs-p:nth-child(3n) { background: radial-gradient(circle at 30% 30%, #fde68a, #f59e0b); box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
+html[data-theme="kids"] .bs-p:nth-child(5n) { background: radial-gradient(circle at 30% 30%, #86efac, #16a34a); box-shadow: 0 0 12px rgba(34, 197, 94, 0.6); }
+html[data-theme="kids"] .bs-p:nth-child(7n) { width: 32px; height: 32px; }
+
+/* ── Brain (Neural) — concentric rotating rings + pulsing circuit nodes ───── */
+html[data-theme="brain"] .bs-back {
+  background:
+    radial-gradient(ellipse 60% 55% at 90% 10%, rgba(0, 230, 180, 0.20), transparent 60%),
+    radial-gradient(ellipse 55% 55% at 10% 90%, rgba(34, 211, 238, 0.16), transparent 60%);
+  filter: blur(75px);
+  animation: bs-drift-slow 44s ease-in-out infinite alternate;
+}
+html[data-theme="brain"] .bs-mid::before {
+  /* Outer neural ring */
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 90vmin; height: 90vmin;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 230, 180, 0.18);
+  box-shadow: 0 0 40px rgba(0, 230, 180, 0.15) inset, 0 0 30px rgba(0, 230, 180, 0.10);
+  animation: bs-spin 90s linear infinite;
+}
+html[data-theme="brain"] .bs-near::before {
+  /* Inner counter-rotating ring */
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 55vmin; height: 55vmin;
+  border-radius: 50%;
+  border: 1px dashed rgba(34, 211, 238, 0.22);
+  animation: bs-spin-rev 60s linear infinite;
+}
+html[data-theme="brain"] .bs-p {
+  /* Circuit nodes — small teal squares that pulse */
+  width: 5px; height: 5px;
+  border-radius: 1px;
+  background: #00e6b4;
+  box-shadow: 0 0 8px rgba(0, 230, 180, 0.9);
+  animation: bs-twinkle 2.8s ease-in-out infinite;
+}
+html[data-theme="brain"] .bs-p:nth-child(2n) { background: #22d3ee; box-shadow: 0 0 8px rgba(34, 211, 238, 0.9); }
+html[data-theme="brain"] .bs-p:nth-child(5n) { width: 7px; height: 7px; }
+
+/* ── Midnight — slow Tokyo-night skyline silhouette parallax ──────────────── */
+html[data-theme="midnight"] .bs-back {
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 0%, rgba(147, 130, 255, 0.16), transparent 60%),
+    radial-gradient(ellipse 55% 50% at 30% 100%, rgba(122, 162, 247, 0.12), transparent 60%);
+  filter: blur(80px);
+  animation: bs-drift-slow 60s ease-in-out infinite alternate;
+}
+html[data-theme="midnight"] .bs-mid {
+  /* Distant skyline silhouette: stepped horizontal bands at the bottom */
+  background:
+    linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.55) 12%, transparent 14%, transparent 18%, rgba(0, 0, 0, 0.45) 18%, rgba(0, 0, 0, 0.45) 22%, transparent 22%);
+  animation: bs-drift-mid 70s ease-in-out infinite alternate;
+}
+html[data-theme="midnight"] .bs-p {
+  /* City window lights — tiny warm dots that flicker */
+  width: 2px; height: 2px;
+  border-radius: 0;
+  background: #fbbf24;
+  box-shadow: 0 0 4px rgba(251, 191, 36, 0.7);
+  animation: bs-twinkle 5s ease-in-out infinite;
+}
+html[data-theme="midnight"] .bs-p:nth-child(3n) { background: #93c5fd; box-shadow: 0 0 4px rgba(147, 197, 253, 0.7); }
+
+/* ── Aurora — shifting aurora-curtain ribbons ─────────────────────────────── */
+html[data-theme="aurora"] .bs-back {
+  background:
+    radial-gradient(ellipse 70% 55% at 20% 30%, rgba(52, 211, 153, 0.28), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 70%, rgba(34, 211, 238, 0.20), transparent 60%);
+  filter: blur(70px);
+  animation: bs-drift-slow 36s ease-in-out infinite alternate;
+}
+html[data-theme="aurora"] .bs-mid {
+  /* Aurora curtain — wide angled gradient that flows */
+  background: linear-gradient(100deg, transparent 20%, rgba(52, 211, 153, 0.22) 40%, rgba(34, 211, 238, 0.18) 55%, rgba(167, 139, 250, 0.18) 70%, transparent 85%);
+  filter: blur(40px);
+  animation: bs-aurora-flow 18s ease-in-out infinite;
+}
+html[data-theme="aurora"] .bs-near {
+  background: linear-gradient(80deg, transparent 30%, rgba(52, 211, 153, 0.14) 50%, transparent 75%);
+  filter: blur(30px);
+  animation: bs-aurora-flow 26s ease-in-out infinite reverse;
+}
+html[data-theme="aurora"] .bs-p {
+  /* Sparse cold-white stars */
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: #e0f2f1;
+  box-shadow: 0 0 4px rgba(224, 242, 241, 0.7);
+  animation: bs-twinkle 4s ease-in-out infinite;
+}
+
+/* ── Pastel — drifting 3D cloud puffs ─────────────────────────────────────── */
+html[data-theme="pastel"] .bs-back {
+  background:
+    radial-gradient(ellipse 70% 55% at 15% 20%, rgba(167, 139, 250, 0.18), transparent 60%),
+    radial-gradient(ellipse 60% 55% at 85% 80%, rgba(147, 197, 253, 0.16), transparent 60%);
+  filter: blur(50px);
+  animation: bs-drift-slow 50s ease-in-out infinite alternate;
+}
+html[data-theme="pastel"] .bs-mid {
+  background: radial-gradient(circle at 50% 50%, rgba(252, 211, 222, 0.18), transparent 60%);
+  filter: blur(40px);
+  animation: bs-drift-mid 40s ease-in-out infinite alternate;
+}
+html[data-theme="pastel"] .bs-p {
+  /* Cloud puffs — soft white blobs */
+  width: 60px; height: 30px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 40% 50%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.25) 70%, transparent);
+  filter: blur(8px);
+  animation: bs-codeline 50s linear infinite;
+  --bs-op: 0.7;
+}
+html[data-theme="pastel"] .bs-p:nth-child(2n) { width: 90px; height: 40px; }
+html[data-theme="pastel"] .bs-p:nth-child(3n) { width: 45px; height: 22px; }
+html[data-theme="pastel"] .bs-vignette        { display: none; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Particle position grid
+   ────────────────────────────────────────────────────────────────────────────
+   The 24 particle slots are scattered across the viewport with varied depth
+   (translateZ) and animation delay, so a single set of theme rules above
+   produces a non-uniform composition.  Positions chosen by hand to avoid
+   visible grids while giving good coverage.
+   ───────────────────────────────────────────────────────────────────────── */
+.bs-p.p1  { top:  6%; left:  8%; --bs-z:  -80px; animation-delay:  -1.2s; }
+.bs-p.p2  { top: 12%; left: 22%; --bs-z: -180px; animation-delay:  -3.7s; }
+.bs-p.p3  { top:  4%; left: 38%; --bs-z:  -40px; animation-delay:  -6.1s; }
+.bs-p.p4  { top: 18%; left: 55%; --bs-z: -240px; animation-delay:  -2.4s; }
+.bs-p.p5  { top:  9%; left: 72%; --bs-z: -120px; animation-delay:  -8.5s; }
+.bs-p.p6  { top: 22%; left: 88%; --bs-z:  -60px; animation-delay:  -4.9s; }
+.bs-p.p7  { top: 34%; left:  4%; --bs-z: -200px; animation-delay: -10.2s; }
+.bs-p.p8  { top: 28%; left: 16%; --bs-z:  -90px; animation-delay:  -5.6s; }
+.bs-p.p9  { top: 38%; left: 32%; --bs-z: -150px; animation-delay:  -7.3s; }
+.bs-p.p10 { top: 44%; left: 48%; --bs-z:  -30px; animation-delay:  -1.8s; }
+.bs-p.p11 { top: 31%; left: 64%; --bs-z: -220px; animation-delay:  -9.4s; }
+.bs-p.p12 { top: 41%; left: 80%; --bs-z: -100px; animation-delay:  -3.1s; }
+.bs-p.p13 { top: 53%; left: 11%; --bs-z: -160px; animation-delay:  -6.8s; }
+.bs-p.p14 { top: 58%; left: 28%; --bs-z:  -70px; animation-delay: -11.5s; }
+.bs-p.p15 { top: 61%; left: 44%; --bs-z: -190px; animation-delay:  -2.0s; }
+.bs-p.p16 { top: 49%; left: 60%; --bs-z:  -50px; animation-delay:  -8.0s; }
+.bs-p.p17 { top: 56%; left: 76%; --bs-z: -130px; animation-delay:  -4.3s; }
+.bs-p.p18 { top: 64%; left: 92%; --bs-z: -210px; animation-delay:  -0.5s; }
+.bs-p.p19 { top: 76%; left:  6%; --bs-z: -110px; animation-delay:  -7.7s; }
+.bs-p.p20 { top: 82%; left: 24%; --bs-z: -170px; animation-delay:  -3.4s; }
+.bs-p.p21 { top: 71%; left: 40%; --bs-z:  -80px; animation-delay: -12.6s; }
+.bs-p.p22 { top: 86%; left: 58%; --bs-z: -230px; animation-delay:  -5.0s; }
+.bs-p.p23 { top: 79%; left: 74%; --bs-z: -140px; animation-delay:  -9.9s; }
+.bs-p.p24 { top: 88%; left: 90%; --bs-z:  -60px; animation-delay:  -2.7s; }
+
 
 #app {
   height: 100%;
