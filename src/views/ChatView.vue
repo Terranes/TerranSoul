@@ -141,17 +141,10 @@
       </div>
     </Transition>
 
-    <!-- AI state indicator pill (3D mode only — chatbox has it in header) -->
-    <FloatingChip
-      v-if="!props.chatboxMode"
-      class="ai-state-pill"
-      readonly
-      :class="characterStore.state"
-    >
-      <span class="ai-state-dot" />
-      <span class="ai-state-label">{{ stateLabel }}</span>
-    </FloatingChip>
-
+    <!-- AI state pill is now rendered by CharacterViewport's corner cluster
+         (single flex stack with the Settings button — no overlap risk).
+         In chatbox mode the pill is rendered inline in the chatbox header
+         further down. -->
     <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
       <div
@@ -469,7 +462,6 @@ import TaskControls from '../components/TaskControls.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
-import FloatingChip from '../components/ui/FloatingChip.vue';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -1434,22 +1426,9 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-/* ── AI State Indicator — animated pill ── */
-/* Sits below the settings gear (top: 12px, ~36px tall) to avoid overlap. */
-.ai-state-pill {
-  position: absolute;
-  top: 56px;
-  right: 16px;
-  z-index: 20;
-  gap: 7px;
-  padding: 6px 16px;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ts-text-primary);
-  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
-}
+/* ── AI state pill colours — used by `.chatbox-state-pill` in chatbox header.
+   The free-floating 3D-mode pill now lives in CharacterViewport's corner
+   cluster (single flex stack alongside Settings — no overlap risk). ── */
 .ai-state-dot {
   width: 7px;
   height: 7px;
@@ -1457,22 +1436,6 @@ onUnmounted(() => {
   background: currentColor;
   transition: background 0.4s ease;
 }
-.ai-state-pill.idle { background: rgba(37, 99, 235, 0.25); color: #93c5fd; border-color: rgba(147, 197, 253, 0.3); }
-.ai-state-pill.idle .ai-state-dot { background: #3b82f6; }
-.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.35); }
-.ai-state-pill.thinking .ai-state-dot { background: #f59e0b; animation: pulse-dot 1.2s ease-in-out infinite; }
-.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.3); }
-.ai-state-pill.talking .ai-state-dot { background: #22c55e; }
-.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.3); }
-.ai-state-pill.happy .ai-state-dot { background: #06b6d4; }
-.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.3); }
-.ai-state-pill.sad .ai-state-dot { background: #a855f7; }
-.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.3); }
-.ai-state-pill.angry .ai-state-dot { background: #ef4444; }
-.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: var(--ts-success-dim); border-color: rgba(94, 234, 212, 0.25); }
-.ai-state-pill.relaxed .ai-state-dot { background: #14b8a6; }
-.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: var(--ts-warning); border-color: rgba(253, 230, 138, 0.3); }
-.ai-state-pill.surprised .ai-state-dot { background: #f59e0b; }
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -1932,14 +1895,8 @@ onUnmounted(() => {
   .bottom-panel { max-height: 50vh; }
   .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
-  /* AI state pill: compact, tucked below the top-right settings gear (top:6 + 32px height + 6px gap) */
-  .ai-state-pill {
-    top: 44px;
-    right: 10px;
-    padding: 2px 8px;
-    font-size: 0.58rem;
-    gap: 3px;
-  }
+  /* AI state pill mobile sizing now lives in CharacterViewport.vue alongside
+     the corner cluster — keep brain-status / music-bar overrides here. */
   .ai-state-dot { width: 4px; height: 4px; }
   /* Brain status: below mode-toggle pill on the left */
   .brain-status-pill {
