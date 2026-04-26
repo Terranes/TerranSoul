@@ -42,6 +42,9 @@ export const FRAGMENT_SHADER = /* glsl */ `
   uniform int   uMode;
 
   // ── Hash & noise primitives ────────────────────────────────────────
+  // Classic GLSL value-hash (Quilez / ShaderToy idiom). The constants
+  // 123.34 / 456.21 / 45.32 are arbitrary irrationals chosen for good
+  // spatial decorrelation — any pair of large non-rational floats works.
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
     p += dot(p, p + 45.32);

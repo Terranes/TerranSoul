@@ -39,6 +39,12 @@ import { FRAGMENT_SHADER, VERTEX_SHADER } from './shader.glsl';
 const FRAME_INTERVAL_MS = 1000 / 30;       // ~30 FPS gate
 const MAX_DPR           = 1.5;
 const TWEEN_MS          = 600;             // palette transition duration
+/**
+ * Per-frame ease-out factor for the palette lerp: each frame closes
+ * 25 % of the remaining distance to the target palette, producing a
+ * smooth exponential decay rather than a linear ramp.  Lower = slower.
+ */
+const PALETTE_LERP_RATE = 0.25;
 const MIN_RENDERER_FACTORY = (canvas: HTMLCanvasElement): WebGLRenderer =>
   new WebGLRenderer({
     canvas,
@@ -253,7 +259,7 @@ export function createBackgroundScene(
     // Palette tween
     if (state.tweenStartMs > 0) {
       const tween = Math.min(1, (nowMs - state.tweenStartMs) / TWEEN_MS);
-      lerpPalette(state.current, state.target, tween * 0.25);
+      lerpPalette(state.current, state.target, tween * PALETTE_LERP_RATE);
       applyPaletteToUniforms(state);
       if (tween >= 1) state.tweenStartMs = 0;
     }
