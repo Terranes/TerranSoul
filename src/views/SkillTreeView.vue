@@ -310,7 +310,7 @@ function formatActivation(ts: number): string {
   overflow-y: auto;
   height: 100%;
   scrollbar-width: thin;
-  scrollbar-color: rgba(124, 111, 255, 0.3) transparent;
+  scrollbar-color: var(--ts-accent-glow) transparent;
 }
 
 /* ── Header ── */
@@ -339,7 +339,7 @@ function formatActivation(ts: number): string {
 /* ── Daily Quests ── */
 .st-daily-section {
   background: var(--ts-bg-card);
-  border: 1px solid rgba(124, 111, 255, 0.2);
+  border: 1px solid var(--ts-accent-glow);
   border-radius: var(--ts-radius-lg);
   padding: var(--ts-space-md);
 }
@@ -466,7 +466,7 @@ function formatActivation(ts: number): string {
 .st-node-check {
   position: absolute; bottom: -2px; right: -2px;
   width: 18px; height: 18px; border-radius: 50%;
-  background: var(--ts-success); color: #fff;
+  background: var(--ts-success); color: var(--ts-text-on-accent);
   font-size: 0.65rem; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
 }
@@ -484,7 +484,7 @@ function formatActivation(ts: number): string {
 /* ── Quest Tracker ── */
 .st-tracker-section {
   background: var(--ts-bg-card);
-  border: 1px solid rgba(124, 111, 255, 0.15);
+  border: 1px solid var(--ts-accent-glow);
   border-radius: var(--ts-radius-lg);
   padding: var(--ts-space-md);
 }

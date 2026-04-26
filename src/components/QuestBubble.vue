@@ -274,8 +274,8 @@ function closeRewardPanel() {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 2px solid rgba(180, 160, 100, 0.5);
-  background: radial-gradient(ellipse at 40% 35%, rgba(30, 28, 50, 0.95), rgba(10, 8, 25, 0.98));
+  border: 2px solid var(--ts-quest-gold-glow);
+  background: var(--ts-quest-bg, radial-gradient(ellipse at 40% 35%, rgba(30, 28, 50, 0.95), rgba(10, 8, 25, 0.98)));
   backdrop-filter: blur(12px);
   cursor: pointer;
   display: flex;
@@ -283,8 +283,8 @@ function closeRewardPanel() {
   justify-content: center;
   position: relative;
   box-shadow:
-    0 0 16px rgba(180, 160, 100, 0.15),
-    inset 0 0 20px rgba(100, 140, 220, 0.08);
+    0 0 16px var(--ts-quest-gold-dim),
+    inset 0 0 20px var(--ts-accent-glow);
   transition: transform 0.2s ease, box-shadow 0.25s ease;
   flex-direction: column;
   gap: 0;
@@ -292,15 +292,15 @@ function closeRewardPanel() {
 .ff-orb:hover {
   transform: scale(1.1);
   box-shadow:
-    0 0 24px rgba(180, 160, 100, 0.3),
-    inset 0 0 24px rgba(100, 140, 220, 0.12);
+    0 0 24px var(--ts-quest-gold-glow),
+    inset 0 0 24px var(--ts-accent-glow);
 }
 .ff-orb:active { transform: scale(0.95); }
 .ff-orb--open {
-  border-color: rgba(220, 195, 110, 0.7);
+  border-color: var(--ts-quest-gold);
   box-shadow:
-    0 0 28px rgba(220, 195, 110, 0.35),
-    inset 0 0 20px rgba(100, 140, 220, 0.15);
+    0 0 28px var(--ts-quest-gold-glow),
+    inset 0 0 20px var(--ts-accent-glow);
 }
 
 .ff-orb-ring {
@@ -311,23 +311,23 @@ function closeRewardPanel() {
 }
 .ff-orb-ring-bg {
   fill: none;
-  stroke: rgba(180, 160, 100, 0.12);
+  stroke: var(--ts-quest-gold-dim);
   stroke-width: 2.5;
 }
 .ff-orb-ring-fill {
   fill: none;
-  stroke: #dcc36e;
+  stroke: var(--ts-quest-gold);
   stroke-width: 2.5;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.8s ease;
-  filter: drop-shadow(0 0 3px rgba(220, 195, 110, 0.4));
+  filter: drop-shadow(0 0 3px var(--ts-quest-gold-dim));
 }
 
 .ff-orb-crystal {
   font-size: 1rem;
-  color: #8ec8f6;
+  color: var(--ts-text-link, #8ec8f6);
   z-index: 1;
-  text-shadow: 0 0 8px rgba(142, 200, 246, 0.5);
+  text-shadow: 0 0 8px var(--ts-accent-glow);
   animation: crystal-pulse 3s ease-in-out infinite;
 }
 @keyframes crystal-pulse {
@@ -338,7 +338,7 @@ function closeRewardPanel() {
 .ff-orb-pct {
   font-size: 0.58rem;
   font-weight: 700;
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   z-index: 1;
   letter-spacing: 0.04em;
   margin-top: -2px;

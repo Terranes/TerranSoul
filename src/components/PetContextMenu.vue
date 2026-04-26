@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
   padding: 6px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(14px);
-  color: #e2e8f0;
+  color: var(--ts-text-bright, var(--ts-text-primary));
   font-size: 0.85rem;
   user-select: none;
 }

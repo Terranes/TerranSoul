@@ -90,7 +90,7 @@ function remove(idx: number): void {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--ts-bg-input);
   border-radius: 999px;
   padding: 0.2rem 0.6rem 0.2rem 0.7rem;
   font-size: 0.85rem;
@@ -119,7 +119,7 @@ function remove(idx: number): void {
   padding: 0.35rem 0.7rem;
   border-radius: var(--ts-radius-sm, 6px);
   border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.15));
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ts-bg-input);
   color: var(--ts-text, #eee);
   cursor: pointer;
 }

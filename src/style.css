@@ -30,6 +30,18 @@
   --ts-warning-text: #fbbf24;
   --ts-error: #f87171;
   --ts-error-bg: rgba(248, 113, 113, 0.12);
+  --ts-info: #38bdf8;
+  --ts-info-bg: rgba(56, 189, 248, 0.12);
+
+  /* ── Quest / RPG Accents ── */
+  --ts-quest-gold: #dcc36e;
+  --ts-quest-gold-bright: #ffd700;
+  --ts-quest-gold-dim: rgba(220, 195, 110, 0.25);
+  --ts-quest-gold-glow: rgba(220, 195, 110, 0.55);
+  --ts-quest-bg: linear-gradient(135deg, rgba(20, 18, 40, 0.85), rgba(12, 10, 28, 0.92));
+  --ts-quest-border: rgba(180, 160, 100, 0.25);
+  --ts-quest-text: #f0e8c8;
+  --ts-quest-muted: rgba(180, 180, 200, 0.55);
 
   /* ── Text Hierarchy ── */
   --ts-text-primary: #f1f5f9;
@@ -37,12 +49,18 @@
   --ts-text-muted: #64748b;
   --ts-text-dim: rgba(255, 255, 255, 0.45);
   --ts-text-on-accent: #ffffff;
+  --ts-text-bright: #e2e8f0;
+  --ts-text-link: #8ec8f6;
 
   /* ── Border ── */
   --ts-border: rgba(255, 255, 255, 0.10);
   --ts-border-subtle: rgba(255, 255, 255, 0.06);
   --ts-border-medium: #334155;
   --ts-border-focus: var(--ts-accent);
+  --ts-border-strong: rgba(255, 255, 255, 0.16);
+
+  /* ── Backdrop ── */
+  --ts-bg-backdrop: rgba(0, 0, 0, 0.6);
 
   /* ── Radius ── */
   --ts-radius-sm: 6px;

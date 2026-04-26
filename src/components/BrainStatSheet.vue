@@ -144,11 +144,11 @@ function formatMultiplier(value: number): string {
 
 <style scoped>
 .brain-stat-sheet {
-  background: linear-gradient(160deg, rgba(20, 18, 40, 0.85) 0%, rgba(12, 10, 28, 0.92) 100%);
-  border: 1px solid rgba(180, 160, 100, 0.25);
+  background: var(--ts-quest-bg, linear-gradient(160deg, rgba(20, 18, 40, 0.85) 0%, rgba(12, 10, 28, 0.92) 100%));
+  border: 1px solid var(--ts-quest-border);
   border-radius: var(--ts-radius-lg, 8px);
   padding: var(--ts-space-md, 14px) var(--ts-space-lg, 18px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), inset 0 0 12px rgba(124, 111, 255, 0.04);
+  box-shadow: var(--ts-shadow-md);
 }
 
 .bss-header {
@@ -156,22 +156,22 @@ function formatMultiplier(value: number): string {
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: var(--ts-space-md, 12px);
-  border-bottom: 1px solid rgba(180, 160, 100, 0.15);
+  border-bottom: 1px solid var(--ts-quest-border);
   padding-bottom: var(--ts-space-sm, 8px);
 }
 .bss-title {
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   text-transform: uppercase;
-  text-shadow: 0 0 8px rgba(220, 195, 110, 0.25);
+  text-shadow: 0 0 8px var(--ts-quest-gold-dim);
 }
 .bss-level {
   font-size: 0.85rem;
   font-weight: 700;
-  color: #8ec8f6;
-  text-shadow: 0 0 6px rgba(142, 200, 246, 0.3);
+  color: var(--ts-text-link, #8ec8f6);
+  text-shadow: 0 0 6px var(--ts-accent-glow);
 }
 
 .bss-stats {
@@ -184,17 +184,17 @@ function formatMultiplier(value: number): string {
   position: relative;
   padding: 8px 10px;
   border-radius: 4px;
-  background: rgba(10, 8, 22, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-border-subtle);
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 .bss-stat--pulse {
   animation: bss-stat-pulse 1.5s ease-out;
-  border-color: rgba(220, 195, 110, 0.5);
+  border-color: var(--ts-quest-gold-glow);
 }
 @keyframes bss-stat-pulse {
   0% { transform: scale(1); box-shadow: 0 0 0 rgba(220, 195, 110, 0); }
-  30% { transform: scale(1.03); box-shadow: 0 0 16px rgba(220, 195, 110, 0.5); }
+  30% { transform: scale(1.03); box-shadow: 0 0 16px var(--ts-quest-gold-glow); }
   100% { transform: scale(1); box-shadow: 0 0 0 rgba(220, 195, 110, 0); }
 }
 
@@ -209,22 +209,22 @@ function formatMultiplier(value: number): string {
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #dcc36e;
-  background: rgba(220, 195, 110, 0.08);
-  border: 1px solid rgba(220, 195, 110, 0.2);
+  color: var(--ts-quest-gold);
+  background: var(--ts-quest-gold-dim);
+  border: 1px solid var(--ts-quest-gold-dim);
   padding: 1px 5px;
   border-radius: 2px;
 }
 .bss-stat-name {
   font-size: 0.78rem;
   font-weight: 600;
-  color: rgba(220, 220, 235, 0.85);
+  color: var(--ts-text-primary);
   flex: 1;
 }
 .bss-stat-value {
   font-size: 0.95rem;
   font-weight: 800;
-  color: #f0e8c8;
+  color: var(--ts-quest-text);
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
   font-variant-numeric: tabular-nums;
 }
@@ -232,7 +232,7 @@ function formatMultiplier(value: number): string {
 .bss-stat-bar {
   position: relative;
   height: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ts-bg-input);
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 4px;
@@ -259,14 +259,14 @@ function formatMultiplier(value: number): string {
 
 .bss-stat-desc {
   font-size: 0.65rem;
-  color: rgba(180, 180, 200, 0.5);
+  color: var(--ts-quest-muted);
   line-height: 1.4;
 }
 
 .bss-modifiers {
   margin-top: var(--ts-space-md, 14px);
   padding-top: var(--ts-space-sm, 10px);
-  border-top: 1px dashed rgba(180, 160, 100, 0.18);
+  border-top: 1px dashed var(--ts-quest-border);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 4px 16px;
@@ -276,7 +276,7 @@ function formatMultiplier(value: number): string {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   text-transform: uppercase;
   margin-bottom: 4px;
 }
@@ -286,8 +286,8 @@ function formatMultiplier(value: number): string {
   font-size: 0.7rem;
   padding: 2px 0;
 }
-.bss-modifier-label { color: rgba(200, 200, 220, 0.6); }
-.bss-modifier-value { color: #8ec8f6; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bss-modifier-label { color: var(--ts-text-secondary); }
+.bss-modifier-value { color: var(--ts-text-link, #8ec8f6); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
   .brain-stat-sheet { padding: 12px; }

@@ -281,7 +281,7 @@ function clearImport(): void {
 .pp-pack-textarea { width: 100%; resize: vertical; min-height: 4rem; font-family: var(--ts-mono, monospace); font-size: 0.8rem; }
 .pp-pack-details summary { cursor: pointer; font-size: 0.85rem; color: var(--ts-text-muted, #aab); }
 .pp-pack-details pre {
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--ts-bg-panel);
   border-radius: var(--ts-radius-sm, 6px);
   padding: 0.6rem;
   overflow: auto;
@@ -293,7 +293,7 @@ function clearImport(): void {
   padding: 0.5rem 0.7rem;
   font-size: 0.8rem;
   color: var(--ts-warning, #c80);
-  background: rgba(255, 200, 80, 0.06);
+  background: var(--ts-warning-bg, rgba(255, 200, 80, 0.06));
   border: 1px solid var(--ts-warning, rgba(255, 200, 80, 0.4));
   border-radius: var(--ts-radius-sm, 6px);
 }
@@ -301,7 +301,7 @@ function clearImport(): void {
   margin: 0;
   padding: 0.5rem 0.7rem;
   font-size: 0.85rem;
-  background: rgba(80, 200, 140, 0.06);
+  background: var(--ts-success-bg, rgba(80, 200, 140, 0.06));
   border: 1px solid var(--ts-accent, rgba(80, 200, 140, 0.4));
   border-radius: var(--ts-radius-sm, 6px);
 }
@@ -319,8 +319,8 @@ function clearImport(): void {
 .pp-btn-primary {
   background: var(--ts-accent, #4a7);
   border-color: var(--ts-accent, #4a7);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
-.pp-btn-secondary { background: rgba(255, 255, 255, 0.04); }
+.pp-btn-secondary { background: var(--ts-bg-input); }
 .pp-btn-ghost { color: var(--ts-text-muted, #aab); }
 </style>

@@ -270,6 +270,11 @@
             </div>
           </div>
           
+          <!-- Appearance / Theme picker -->
+          <div class="dropdown-section">
+            <ThemePicker />
+          </div>
+
           <!-- Toggle buttons for full-screen panels -->
           <div class="dropdown-section">
             <button
@@ -445,6 +450,7 @@ import SystemInfoPanel from './SystemInfoPanel.vue';
 import AudioControlsPanel from './AudioControlsPanel.vue';
 import FloatingChip from './ui/FloatingChip.vue';
 import FloatingMenu from './ui/FloatingMenu.vue';
+import ThemePicker from './ThemePicker.vue';
 
 const emit = defineEmits<{
   'request-add-music': [];

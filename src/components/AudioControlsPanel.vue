@@ -458,7 +458,7 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--ts-bg-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -469,7 +469,7 @@ onUnmounted(() => {
   width: min(520px, 90vw);
   max-height: 85vh;
   background: var(--ts-bg-panel);
-  border: 1px solid rgba(124, 111, 255, 0.3);
+  border: 1px solid var(--ts-accent-glow);
   border-radius: 12px;
   overflow: hidden;
   backdrop-filter: blur(20px);
@@ -481,7 +481,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(124, 111, 255, 0.2);
+  border-bottom: 1px solid var(--ts-accent-glow);
 }
 
 .panel-header h3 {
@@ -504,7 +504,7 @@ onUnmounted(() => {
 
 .close-btn:hover {
   color: var(--ts-text-primary);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-hover);
 }
 
 .panel-body {
@@ -537,7 +537,7 @@ onUnmounted(() => {
 
 .mute-btn {
   background: none;
-  border: 1px solid rgba(124, 111, 255, 0.3);
+  border: 1px solid var(--ts-accent-glow);
   border-radius: 8px;
   padding: 8px 12px;
   color: var(--ts-accent-violet);
@@ -547,14 +547,14 @@ onUnmounted(() => {
 }
 
 .mute-btn:hover {
-  background: rgba(124, 111, 255, 0.1);
-  border-color: rgba(124, 111, 255, 0.5);
+  background: var(--ts-accent-glow);
+  border-color: var(--ts-accent);
 }
 
 .mute-btn.muted {
-  background: rgba(239, 68, 68, 0.2);
+  background: var(--ts-error-bg);
   border-color: rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
+  color: var(--ts-error);
 }
 
 .volume-control {
@@ -573,7 +573,7 @@ onUnmounted(() => {
   height: 6px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ts-bg-hover);
   border-radius: 3px;
   outline: none;
   cursor: pointer;
@@ -581,7 +581,7 @@ onUnmounted(() => {
 }
 
 .volume-slider:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--ts-border-strong);
 }
 
 .volume-slider::-webkit-slider-thumb {
@@ -642,9 +642,9 @@ onUnmounted(() => {
 .device-select {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid rgba(124, 111, 255, 0.3);
+  border: 1px solid var(--ts-accent-glow);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ts-bg-input);
   color: var(--ts-text-primary);
   font-size: 0.8rem;
   cursor: pointer;
@@ -653,8 +653,8 @@ onUnmounted(() => {
 
 .track-select:hover,
 .device-select:hover {
-  border-color: rgba(124, 111, 255, 0.5);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--ts-accent);
+  background: var(--ts-bg-hover);
 }
 
 .track-select:focus,
@@ -679,7 +679,7 @@ onUnmounted(() => {
 .mic-level-bar {
   flex: 1;
   height: 8px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-hover);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -707,9 +707,9 @@ onUnmounted(() => {
 .test-btn {
   flex: 1;
   padding: 10px 16px;
-  border: 1px solid rgba(124, 111, 255, 0.3);
+  border: 1px solid var(--ts-accent-glow);
   border-radius: 8px;
-  background: rgba(124, 111, 255, 0.1);
+  background: var(--ts-bg-input);
   color: var(--ts-accent-violet);
   cursor: pointer;
   font-size: 0.8rem;
@@ -718,8 +718,8 @@ onUnmounted(() => {
 }
 
 .test-btn:hover:not(:disabled) {
-  background: rgba(124, 111, 255, 0.2);
-  border-color: rgba(124, 111, 255, 0.5);
+  background: var(--ts-accent-glow);
+  border-color: var(--ts-accent);
 }
 
 .test-btn:disabled {

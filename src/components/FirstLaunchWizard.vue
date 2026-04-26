@@ -286,7 +286,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--ts-bg-backdrop);
   backdrop-filter: blur(8px);
 }
 
@@ -294,11 +294,11 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   width: min(520px, 92vw);
   max-height: 90vh;
   overflow-y: auto;
-  background: var(--ts-bg-surface, #1a1d2e);
-  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.1));
+  background: var(--ts-bg-surface);
+  border: 1px solid var(--ts-border);
   border-radius: 16px;
   padding: 2rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(100, 120, 255, 0.1);
+  box-shadow: var(--ts-shadow-lg);
 }
 
 .flw-header {
@@ -324,13 +324,13 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 .flw-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--ts-text-primary, #e8eaf0);
+  color: var(--ts-text-primary);
   margin: 0 0 0.5rem;
 }
 
 .flw-subtitle {
   font-size: 0.95rem;
-  color: var(--ts-text-secondary, #8b8fa8);
+  color: var(--ts-text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -346,25 +346,25 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   align-items: center;
   gap: 1rem;
   padding: 1rem 1.25rem;
-  background: var(--ts-bg-card, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.08));
+  background: var(--ts-bg-card);
+  border: 1px solid var(--ts-border);
   border-radius: 12px;
   cursor: pointer;
   text-align: left;
-  color: var(--ts-text-primary, #e8eaf0);
+  color: var(--ts-text-primary);
   transition: all 0.2s ease;
   position: relative;
 }
 
 .flw-option:hover {
-  background: rgba(100, 120, 255, 0.08);
-  border-color: rgba(100, 120, 255, 0.3);
+  background: var(--ts-accent-glow);
+  border-color: var(--ts-accent);
   transform: translateY(-1px);
 }
 
 .flw-option--recommended {
-  border-color: rgba(100, 200, 120, 0.3);
-  background: rgba(100, 200, 120, 0.06);
+  border-color: var(--ts-success-bg);
+  background: var(--ts-success-bg);
 }
 
 .flw-option--recommended:hover {
@@ -390,7 +390,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
 .flw-option-desc {
   font-size: 0.85rem;
-  color: var(--ts-text-secondary, #8b8fa8);
+  color: var(--ts-text-secondary);
   line-height: 1.4;
 }
 
@@ -401,8 +401,8 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   letter-spacing: 0.05em;
   padding: 0.2rem 0.5rem;
   border-radius: 6px;
-  background: rgba(100, 200, 120, 0.2);
-  color: #7ddf8e;
+  background: var(--ts-success-bg);
+  color: var(--ts-success);
   flex-shrink: 0;
 }
 
@@ -412,18 +412,18 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   padding: 0.4rem 0.8rem;
   background: none;
   border: none;
-  color: var(--ts-text-secondary, #8b8fa8);
+  color: var(--ts-text-secondary);
   cursor: pointer;
   font-size: 0.85rem;
 }
 
 .flw-back:hover {
-  color: var(--ts-text-primary, #e8eaf0);
+  color: var(--ts-text-primary);
 }
 
 .flw-progress {
   height: 6px;
-  background: var(--ts-bg-card, rgba(255, 255, 255, 0.06));
+  background: var(--ts-bg-card);
   border-radius: 3px;
   overflow: hidden;
   margin-top: 1.5rem;
@@ -448,10 +448,10 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0.8rem;
-  background: rgba(100, 200, 120, 0.06);
+  background: var(--ts-success-bg);
   border-radius: 8px;
   font-size: 0.9rem;
-  color: var(--ts-text-primary, #e8eaf0);
+  color: var(--ts-text-primary);
 }
 
 .flw-summary-icon {

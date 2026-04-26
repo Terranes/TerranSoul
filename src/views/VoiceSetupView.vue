@@ -330,7 +330,7 @@ onMounted(async () => {
 .vs-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .vs-form label { font-size: 0.85rem; color: var(--ts-text-secondary); }
 .vs-input { padding: 0.5rem 0.75rem; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; color: var(--ts-text-primary); font-size: 0.85rem; outline: none; transition: border-color var(--ts-transition-fast); }
-.vs-input:focus { border-color: var(--ts-accent-violet-hover); box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15); }
+.vs-input:focus { border-color: var(--ts-accent-violet-hover); box-shadow: 0 0 0 3px var(--ts-accent-glow); }
 
 /* Checkboxes */
 .vs-checkboxes { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }

@@ -1001,8 +1001,8 @@ onMounted(async () => {
   gap: 1.25rem;
   align-items: center;
   padding: 1.25rem 1.5rem;
-  background: linear-gradient(160deg, rgba(20, 18, 40, 0.85) 0%, rgba(12, 10, 28, 0.92) 100%);
-  border: 1px solid var(--ts-border, rgba(255,255,255,0.08));
+  background: var(--ts-quest-bg, linear-gradient(160deg, rgba(20, 18, 40, 0.85) 0%, rgba(12, 10, 28, 0.92) 100%));
+  border: 1px solid var(--ts-border);
   border-radius: 12px;
 }
 .bv-hero-avatar {
@@ -1030,9 +1030,9 @@ onMounted(async () => {
   font-size: 0.75rem;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input);
   color: var(--ts-text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ts-border);
 }
 .bv-pill-mood.bv-pill-free { background: rgba(123, 224, 179, 0.18); color: #7be0b3; border-color: rgba(123, 224, 179, 0.4); }
 .bv-pill-mood.bv-pill-paid { background: rgba(124, 200, 255, 0.18); color: #7cc8ff; border-color: rgba(124, 200, 255, 0.4); }
@@ -1075,7 +1075,7 @@ onMounted(async () => {
 }
 .bv-mode-card:hover:not(:disabled) {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--ts-border-strong);
 }
 .bv-mode-card:disabled {
   opacity: 0.45;
@@ -1142,7 +1142,7 @@ onMounted(async () => {
 .bv-ram-bar {
   position: relative;
   height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1157,11 +1157,11 @@ onMounted(async () => {
   align-items: center;
   padding: 0.4rem 0;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--ts-bg-input);
 }
-.bv-mem-tier.tier-short { color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
-.bv-mem-tier.tier-working { color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); }
-.bv-mem-tier.tier-long { color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+.bv-mem-tier.tier-short { color: var(--ts-warning); border: 1px solid var(--ts-warning-bg); }
+.bv-mem-tier.tier-working { color: var(--ts-accent-blue); border: 1px solid var(--ts-accent-glow); }
+.bv-mem-tier.tier-long { color: var(--ts-success); border: 1px solid var(--ts-success-bg); }
 .bv-mem-num { font-size: 1.1rem; font-weight: 700; }
 .bv-mem-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; }
 
@@ -1169,13 +1169,13 @@ onMounted(async () => {
   display: inline-block;
   width: 60px;
   height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input);
   border-radius: 3px;
   overflow: hidden;
   vertical-align: middle;
   margin-right: 6px;
 }
-.bv-decay-fill { display: block; height: 100%; background: #34d399; }
+.bv-decay-fill { display: block; height: 100%; background: var(--ts-success); }
 .bv-decay-num { font-size: 0.75rem; color: var(--ts-text-secondary); }
 
 /* ── Stats section ─────────────────────────────────────────────────────── */
@@ -1238,8 +1238,8 @@ onMounted(async () => {
 .bv-cog-row {
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.06));
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border);
 }
 .bv-cog-head {
   display: flex;
@@ -1253,7 +1253,7 @@ onMounted(async () => {
 .bv-cog-count small { color: var(--ts-text-muted); margin-left: 0.2rem; font-size: 0.75rem; }
 .bv-cog-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ts-bg-input);
   border-radius: 3px;
   overflow: hidden;
   margin-bottom: 0.3rem;
@@ -1283,16 +1283,16 @@ onMounted(async () => {
   gap: 0.15rem;
   padding: 0.4rem 0.5rem;
   border-radius: 6px;
-  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--ts-border);
   font-size: 0.8rem;
 }
 .bv-rag-cell.is-on {
-  background: rgba(52, 211, 153, 0.10);
+  background: var(--ts-success-bg);
   border-color: rgba(52, 211, 153, 0.4);
-  color: #34d399;
+  color: var(--ts-success);
 }
 .bv-rag-cell.is-off {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ts-bg-input);
   color: var(--ts-text-muted);
 }
 .bv-rag-icon { font-size: 1rem; font-weight: 700; }

@@ -64,8 +64,8 @@ onMounted(() => generate());
 .vrm-thumb-spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  border-top-color: var(--ts-accent, #6c63ff);
+  border: 2px solid var(--ts-border);
+  border-top-color: var(--ts-accent);
   border-radius: 50%;
   animation: vrm-spin 0.8s linear infinite;
 }

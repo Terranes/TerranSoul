@@ -15,7 +15,7 @@ defineProps<{ name: string }>();
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #a89cff;
+  color: var(--ts-accent-violet);
   margin-bottom: 2px;
   padding-left: 4px;
 }

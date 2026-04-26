@@ -267,7 +267,7 @@ section h3 {
 
 .btn-remove {
   background: none;
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  border: 1px solid var(--ts-error);
   color: var(--ts-error);
   border-radius: 4px;
   padding: 0.25rem 0.5rem;

@@ -214,6 +214,7 @@ import { useWindowStore } from './stores/window';
 import { useSkillTreeStore } from './stores/skill-tree';
 import { usePersonaStore } from './stores/persona';
 import { useSettingsStore } from './stores/settings';
+import { useTheme } from './composables/useTheme';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
@@ -235,6 +236,7 @@ const windowStore = useWindowStore();
 const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
 const settingsStore = useSettingsStore();
+const { themeId } = useTheme();
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain'>('chat');
 const appLoading = ref(true);
 const skipSetup = ref(false);
@@ -312,7 +314,17 @@ function handleQuestBubble() {
 
 function applyBodyBackground(mode: 'window' | 'pet') {
   if (typeof document === 'undefined') return;
-  document.body.style.background = mode === 'pet' ? 'transparent' : '#0b1120';
+  // In pet mode the body must be transparent so the desktop shows through.
+  // In window mode, read the current theme's base color from the resolved
+  // CSS variable so every theme is honoured without hardcoded hex values.
+  if (mode === 'pet') {
+    document.body.style.background = 'transparent';
+  } else {
+    const base = getComputedStyle(document.documentElement)
+      .getPropertyValue('--ts-bg-base')
+      .trim();
+    document.body.style.background = base || '#0f172a';
+  }
 }
 
 // Watch for window mode changes (e.g. from tray icon toggle)
@@ -323,6 +335,12 @@ watch(
   },
   { immediate: true },
 );
+
+// Re-apply body background when the theme changes (so the base color updates).
+watch(themeId, () => {
+  // Give the DOM one tick so the CSS variables are already written.
+  requestAnimationFrame(() => applyBodyBackground(windowStore.mode));
+});
 
 // Safety escape hatch: pressing Escape while in pet mode returns to desktop
 // mode.  Guards against any scenario where the toggle pill might be
@@ -469,7 +487,7 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 12px 6px;
   background: var(--ts-bg-nav);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--ts-border);
   width: var(--ts-nav-width); flex-shrink: 0;
   position: relative;
 }
@@ -509,9 +527,9 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   line-height: 1;
   text-align: center;
 }
-.nav-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--ts-text-secondary); }
+.nav-btn:hover { background: var(--ts-bg-hover); color: var(--ts-text-secondary); }
 .nav-btn.active {
-  background: rgba(124, 111, 255, 0.15);
+  background: var(--ts-accent-glow);
   color: var(--ts-accent);
 }
 .nav-btn.active::before {
@@ -540,10 +558,10 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
 .mode-segmented {
   display: inline-flex;
   border-radius: 20px;
-  border: 1px solid rgba(108, 99, 255, 0.35);
-  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid var(--ts-accent-glow);
+  background: var(--ts-bg-panel);
   backdrop-filter: blur(10px);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--ts-shadow-md);
   overflow: hidden;
 }
 .mode-seg-btn {
@@ -553,7 +571,7 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   padding: 6px 12px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ts-text-dim);
   font-size: 0.74rem;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -562,15 +580,15 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   white-space: nowrap;
 }
 .mode-seg-btn:hover {
-  background: rgba(108, 99, 255, 0.2);
-  color: #e2e8f0;
+  background: var(--ts-accent-glow);
+  color: var(--ts-text-bright, var(--ts-text-primary));
 }
 .mode-seg-btn.active {
-  background: rgba(108, 99, 255, 0.5);
-  color: #fff;
+  background: var(--ts-accent);
+  color: var(--ts-text-on-accent);
 }
 .mode-seg-btn + .mode-seg-btn {
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid var(--ts-border);
 }
 .mode-seg-label {
   display: inline;
@@ -586,9 +604,9 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   right: 0;
   z-index: var(--ts-z-dropdown);
   height: var(--ts-mobile-nav-height);
-  background: rgba(9, 14, 28, 0.95);
+  background: var(--ts-bg-panel);
   backdrop-filter: blur(20px);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--ts-border);
   padding: 0 4px;
   flex-direction: row;
   align-items: center;
@@ -658,8 +676,8 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   font-size: 0.55rem;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: #000;
-  background: var(--ts-warning, #fbbf24);
+  color: var(--ts-bg-base);
+  background: var(--ts-warning);
   border-radius: 4px;
   padding: 2px 6px;
   line-height: 1;
@@ -683,8 +701,8 @@ body { margin: 0; background: var(--ts-bg-base, #0b1120); color: var(--ts-text-p
   left: 4px;
   z-index: 10;
   font-size: 0.6rem;
-  background: rgba(251, 191, 36, 0.85);
+  background: var(--ts-warning);
   backdrop-filter: blur(4px);
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--ts-border);
 }
 </style>
