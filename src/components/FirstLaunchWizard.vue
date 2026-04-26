@@ -466,7 +466,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   background: linear-gradient(135deg, #6478ff, #7ddf8e);
   border: none;
   border-radius: 10px;
-  color: #fff;
+  color: var(--ts-text-on-accent);
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;

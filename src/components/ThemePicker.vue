@@ -29,15 +29,15 @@ function pickTheme(theme: ThemeDefinition): void {
         <div class="tp-preview">
           <span
             class="tp-dot"
-            :style="{ background: theme.tokens['--ts-bg-base'] || '#0f172a' }"
+            :style="{ background: theme.preview.bg }"
           />
           <span
             class="tp-dot"
-            :style="{ background: theme.tokens['--ts-accent'] || '#7c6fff' }"
+            :style="{ background: theme.preview.accent }"
           />
           <span
             class="tp-dot"
-            :style="{ background: theme.tokens['--ts-text-primary'] || '#f1f5f9' }"
+            :style="{ background: theme.preview.text }"
           />
         </div>
 

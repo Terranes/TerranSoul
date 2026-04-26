@@ -350,9 +350,9 @@ onUnmounted(() => {
 }
 
 .rp-choice-btn.secondary {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-hover);
   color: var(--ts-text-secondary, #d1d5db);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--ts-border);
 }
 
 .rp-choice-btn.secondary:hover {

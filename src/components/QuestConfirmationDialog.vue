@@ -371,7 +371,7 @@ defineEmits<{
 
 .qcd-btn-primary {
   background: linear-gradient(135deg, var(--ts-accent, #7c6fff) 0%, var(--ts-accent-violet, #a78bfa) 100%);
-  color: #ffffff;
+  color: var(--ts-text-on-accent);
   border: 1px solid rgba(124, 111, 255, 0.3);
   box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
 }

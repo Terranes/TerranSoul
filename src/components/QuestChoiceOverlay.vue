@@ -89,14 +89,14 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
 .hotseat-dismiss {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ts-text-dim);
   font-size: 0.75rem;
   cursor: pointer;
   padding: 2px 4px;
   line-height: 1;
   flex-shrink: 0;
 }
-.hotseat-dismiss:hover { color: rgba(255, 255, 255, 0.8); }
+.hotseat-dismiss:hover { color: var(--ts-text-secondary); }
 
 /* ── Choice buttons row ── */
 .hotseat-choices {

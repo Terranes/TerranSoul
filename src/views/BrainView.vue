@@ -1037,7 +1037,7 @@ onMounted(async () => {
 .bv-pill-mood.bv-pill-free { background: rgba(123, 224, 179, 0.18); color: #7be0b3; border-color: rgba(123, 224, 179, 0.4); }
 .bv-pill-mood.bv-pill-paid { background: rgba(124, 200, 255, 0.18); color: #7cc8ff; border-color: rgba(124, 200, 255, 0.4); }
 .bv-pill-mood.bv-pill-local { background: rgba(200, 164, 255, 0.18); color: #c8a4ff; border-color: rgba(200, 164, 255, 0.4); }
-.bv-pill-mood.bv-pill-none { background: rgba(248, 113, 113, 0.18); color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
+.bv-pill-mood.bv-pill-none { background: rgba(248, 113, 113, 0.18); color: var(--ts-error); border-color: rgba(248, 113, 113, 0.4); }
 
 .bv-hero-actions {
   display: flex;

@@ -1216,10 +1216,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   left: 280px;
   font-size: var(--ts-text-lg);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--ts-viewport-text);
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   letter-spacing: 0.05em;
+  background: var(--ts-viewport-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .character-meta-overlay {
@@ -1227,10 +1230,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   top: 34px;
   left: 280px;
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--ts-viewport-text-dim);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   letter-spacing: 0.02em;
+  background: var(--ts-viewport-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 /* ── Corner settings button ── */
@@ -1313,8 +1319,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   padding: 6px 10px;
   border-radius: var(--ts-radius-sm);
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.75);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-secondary);
   font-size: var(--ts-text-sm);
   cursor: pointer;
   transition: background var(--ts-transition-fast);
@@ -1344,8 +1350,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   padding: 6px 4px;
   border-radius: var(--ts-radius-sm);
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.82);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-secondary);
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1388,7 +1394,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   border-radius: var(--ts-radius-md);
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--ts-viewport-text);
   font-size: 0.82rem;
   cursor: pointer;
   outline: none;
@@ -1414,8 +1420,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
   padding: 5px 10px;
   border-radius: var(--ts-radius-pill);
   border: 1px solid var(--ts-border);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
@@ -1524,7 +1530,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .loading-text {
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ts-viewport-text-med);
   letter-spacing: 0.05em;
 }
 
@@ -1570,7 +1576,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 
 .bgm-status {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ts-viewport-text-med);
   font-weight: 600;
 }
 
@@ -1751,7 +1757,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .music-track-name {
   font-size: 0.72rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--ts-viewport-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1830,7 +1836,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 .bgm-custom-name {
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--ts-viewport-text-med);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1881,7 +1887,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--ts-viewport-text);
   margin-bottom: 10px;
 }
 .url-dialog-input {
@@ -1890,7 +1896,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--ts-viewport-text);
   font-size: 0.8rem;
   outline: none;
   box-sizing: border-box;
@@ -1915,7 +1921,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 .url-dialog-btn.cancel {
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--ts-viewport-text-dim);
 }
 .url-dialog-btn.cancel:hover {
   background: rgba(255, 255, 255, 0.15);

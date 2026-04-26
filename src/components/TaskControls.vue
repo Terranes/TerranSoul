@@ -252,7 +252,7 @@ function handleSteer() {
   padding: 0 4px;
   border-radius: var(--ts-radius-pill);
   background: var(--ts-accent);
-  color: #fff;
+  color: var(--ts-text-on-accent);
   font-size: 10px;
   font-weight: 700;
   line-height: 1;

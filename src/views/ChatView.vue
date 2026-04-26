@@ -1459,19 +1459,19 @@ onUnmounted(() => {
 }
 .ai-state-pill.idle { background: rgba(37, 99, 235, 0.25); color: #93c5fd; border-color: rgba(147, 197, 253, 0.3); }
 .ai-state-pill.idle .ai-state-dot { background: #3b82f6; }
-.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: #fcd34d; border-color: rgba(253, 230, 138, 0.35); }
+.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.35); }
 .ai-state-pill.thinking .ai-state-dot { background: #f59e0b; animation: pulse-dot 1.2s ease-in-out infinite; }
-.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: #86efac; border-color: rgba(134, 239, 172, 0.3); }
+.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.3); }
 .ai-state-pill.talking .ai-state-dot { background: #22c55e; }
-.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: #67e8f9; border-color: rgba(103, 232, 249, 0.3); }
+.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.3); }
 .ai-state-pill.happy .ai-state-dot { background: #06b6d4; }
-.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: #d8b4fe; border-color: rgba(216, 180, 254, 0.3); }
+.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.3); }
 .ai-state-pill.sad .ai-state-dot { background: #a855f7; }
-.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border-color: rgba(252, 165, 165, 0.3); }
+.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.3); }
 .ai-state-pill.angry .ai-state-dot { background: #ef4444; }
-.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: #5eead4; border-color: rgba(94, 234, 212, 0.25); }
+.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: var(--ts-success-dim); border-color: rgba(94, 234, 212, 0.25); }
 .ai-state-pill.relaxed .ai-state-dot { background: #14b8a6; }
-.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: #fde68a; border-color: rgba(253, 230, 138, 0.3); }
+.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: var(--ts-warning); border-color: rgba(253, 230, 138, 0.3); }
 .ai-state-pill.surprised .ai-state-dot { background: #f59e0b; }
 
 @keyframes pulse-dot {
@@ -1891,11 +1891,11 @@ onUnmounted(() => {
   border: 1px solid rgba(147, 197, 253, 0.2);
   transition: background 0.3s, color 0.3s, border-color 0.3s;
 }
-.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.25); color: #fcd34d; border-color: rgba(253, 230, 138, 0.3); }
-.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.2); color: #86efac; border-color: rgba(134, 239, 172, 0.25); }
-.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.2); color: #67e8f9; border-color: rgba(103, 232, 249, 0.25); }
-.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.2); color: #d8b4fe; border-color: rgba(216, 180, 254, 0.25); }
-.chatbox-state-pill.angry    { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(252, 165, 165, 0.25); }
+.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.25); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.3); }
+.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.2); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.25); }
+.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.2); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.25); }
+.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.2); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.25); }
+.chatbox-state-pill.angry    { background: rgba(239, 68, 68, 0.2); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.25); }
 .chatbox-state-pill.thinking .ai-state-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
 
 /* ── Full-height message area ── */
