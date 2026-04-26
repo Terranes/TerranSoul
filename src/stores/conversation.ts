@@ -453,29 +453,6 @@ function pushMissingComponentsPrompt(topic: string, missingIds: string[]): void 
   });
 }
 
-/** Sub-prompt: choose Auto vs Manual install after picking "Install all". */
-function pushInstallAllModePrompt(topic: string): void {
-  const conversation = useConversationStore();
-  const enc = encodeURIComponent(topic);
-  conversation.messages.push({
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content:
-      `Great — installing everything. Should I do it **automatically** ` +
-      `(I'll trigger and accept each quest for you) or **manually** ` +
-      `(you accept each quest one by one)?`,
-    agentName: 'System',
-    sentiment: 'neutral',
-    timestamp: Date.now(),
-    questId: 'learn-docs-install-mode',
-    questChoices: [
-      { label: 'Auto install', value: `learn-docs:install-auto:${enc}`, icon: '⚡' },
-      { label: 'Manual install', value: `learn-docs:install-manual:${enc}`, icon: '🛠️' },
-      { label: 'Back', value: `learn-docs:install-back:${enc}`, icon: '↩️' },
-    ],
-  });
-}
-
 /** Sub-prompt for "Install one by one": one button per missing quest. */
 function pushInstallEachPrompt(topic: string, missingIds: string[]): void {
   if (missingIds.length === 0) {
@@ -597,22 +574,28 @@ async function runAutoInstall(topic: string): Promise<void> {
           // addMemory catches errors internally and returns null (never throws).
           const entry = await memStore.addMemory({
             content: `I want to learn about ${topic} from my own documents.`,
-            tags: ['learning', 'goal'],
+            tags: 'learning,goal',
             importance: 5,
             memory_type: 'context',
           });
           if (!entry) {
             // Invoke failed — push a local-only entry so the status check passes.
+            const now = Date.now();
             memStore.memories.push({
-              id: Date.now(),
+              id: now,
               content: `I want to learn about ${topic} from my own documents.`,
-              tags: ['learning', 'goal'],
+              tags: 'learning,goal',
               importance: 5,
               memory_type: 'context',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
+              created_at: now,
+              last_accessed: null,
               access_count: 0,
-            } as import('../types').MemoryEntry);
+              tier: 'short',
+              decay_score: 1,
+              session_id: null,
+              parent_id: null,
+              token_count: 12,
+            });
           }
         }
       } else if (id === 'scholar-quest') {

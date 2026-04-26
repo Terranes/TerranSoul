@@ -1003,8 +1003,8 @@ watch(
     if (entry) {
       vrmaManager.suppressMoodAnimation();
       vrmaManager.play(entry.path, false, 0.4);
-    } else if (newState === 'idle' || newState === 'talking') {
-      // Return to procedural animation for idle/talking
+    } else if (newState === 'talking') {
+      // Return to procedural animation for talking
       vrmaManager.stop(0.4);
     }
   },
