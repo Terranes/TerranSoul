@@ -26,7 +26,6 @@ function applyThemeToDOM(theme: ThemeDefinition): void {
   const root = document.documentElement;
   root.dataset.theme = theme.id;
   root.style.colorScheme = theme.category === 'light' ? 'light' : 'dark';
-  root.style.fontFamily = ''; // reset any stale override; CSS handles font via --ts-font-family
 }
 
 // ── Persistence ───────────────────────────────────────────────────────────────

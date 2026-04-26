@@ -153,7 +153,7 @@ html[data-theme="corporate"] {
   --ts-bg-elevated: #ffffff;
   --ts-bg-nav:      #ebebeb;
   --ts-bg-overlay:  rgba(255, 255, 255, 0.97);
-  /* #f0f0f0 instead of #ffffff so inputs are visible on white card surfaces */
+  /* #f0f0f0 instead of solid #ffffff — inputs stay visible on white card surfaces */
   --ts-bg-input:    #f0f0f0;
   --ts-bg-hover:    rgba(0, 0, 0, 0.04);
   --ts-bg-card:     #ffffff;
