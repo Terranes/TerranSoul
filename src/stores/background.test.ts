@@ -7,42 +7,36 @@ describe('BackgroundStore', () => {
     setActivePinia(createPinia());
   });
 
-  it('includes all 7 preset backgrounds', () => {
+  it('has exactly one built-in option: auto', () => {
     const store = useBackgroundStore();
-    expect(store.presetBackgrounds).toHaveLength(7);
+    expect(store.allBackgrounds).toHaveLength(1);
+    expect(store.allBackgrounds[0].id).toBe('auto');
+    expect(store.allBackgrounds[0].kind).toBe('auto');
   });
 
-  it('includes new backgrounds (cyberpunk, forest, ocean, nebula)', () => {
+  it('defaults to auto background', () => {
     const store = useBackgroundStore();
-    const ids = store.presetBackgrounds.map(bg => bg.id);
-    expect(ids).toContain('cyberpunk-city');
-    expect(ids).toContain('enchanted-forest');
-    expect(ids).toContain('deep-ocean');
-    expect(ids).toContain('cosmic-nebula');
+    expect(store.currentBackground.id).toBe('auto');
+    expect(store.currentBackground.url).toBe('');
   });
 
-  it('defaults to the first preset background', () => {
+  it('selects auto by id', () => {
     const store = useBackgroundStore();
-    expect(store.currentBackground.id).toBe('studio-soft');
+    store.selectBackground('auto');
+    expect(store.selectedBackgroundId).toBe('auto');
+    expect(store.currentBackground.id).toBe('auto');
   });
 
-  it('selects a background by id', () => {
-    const store = useBackgroundStore();
-    store.selectBackground('cosmic-nebula');
-    expect(store.selectedBackgroundId).toBe('cosmic-nebula');
-    expect(store.currentBackground.id).toBe('cosmic-nebula');
-  });
-
-  it('falls back to first preset when invalid id is selected', () => {
+  it('falls back to auto when invalid id is selected', () => {
     const store = useBackgroundStore();
     store.selectBackground('nonexistent');
     store.ensureValidSelection();
-    expect(store.currentBackground.id).toBe('studio-soft');
+    expect(store.currentBackground.id).toBe('auto');
   });
 
-  it('allBackgrounds includes presets and local backgrounds', () => {
+  it('allBackgrounds includes auto and local backgrounds', () => {
     const store = useBackgroundStore();
-    expect(store.allBackgrounds.length).toBe(7);
+    expect(store.allBackgrounds.length).toBe(1);
   });
 
   it('imports a local background', async () => {
@@ -50,7 +44,7 @@ describe('BackgroundStore', () => {
     const file = new File([''], 'test.png', { type: 'image/png' });
     const ok = await store.importLocalBackground(file);
     expect(ok).toBe(true);
-    expect(store.allBackgrounds.length).toBe(8);
+    expect(store.allBackgrounds.length).toBe(2);
     expect(store.currentBackground.kind).toBe('local');
   });
 
@@ -61,12 +55,5 @@ describe('BackgroundStore', () => {
     expect(ok).toBe(false);
     expect(store.importError).toBeTruthy();
   });
-
-  it('each preset has valid url path', () => {
-    const store = useBackgroundStore();
-    for (const bg of store.presetBackgrounds) {
-      expect(bg.url).toMatch(/^\/backgrounds\/.*\.svg$/);
-      expect(bg.kind).toBe('preset');
-    }
-  });
 });
+

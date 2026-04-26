@@ -3,10 +3,10 @@
     class="viewport-wrapper"
     :class="{ 'viewport-wrapper--pet': isPetMode }"
   >
-    <!-- Background layers: scenic background + tint.  Hidden in pet mode so
-         only the character floats above the desktop. -->
+    <!-- Background layer: only shown when a user-imported local image is active.
+         In Auto mode the body CSS gradient (--ts-bg-gradient) shows through. -->
     <div
-      v-if="!isPetMode"
+      v-if="!isPetMode && backgroundStore.currentBackground.kind !== 'auto'"
       class="background-layer"
       :style="backgroundStyle"
     />
@@ -677,9 +677,12 @@ const characterName = computed(() => {
   return characterStore.vrmMetadata?.title ?? 'TerranSoul';
 });
 
-const backgroundStyle = computed(() => ({
-  backgroundImage: `url("${backgroundStore.currentBackground.url}")`,
-}));
+const backgroundStyle = computed(() => {
+  const bg = backgroundStore.currentBackground;
+  // Auto: no inline style — body CSS gradient (via --ts-bg-gradient) shows through.
+  if (bg.kind === 'auto') return {};
+  return { backgroundImage: `url("${bg.url}")` };
+});
 
 let animFrameId = 0;
 let disposeScene: (() => void) | null = null;
