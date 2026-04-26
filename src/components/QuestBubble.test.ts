@@ -215,43 +215,28 @@ describe('QuestBubble', () => {
     expect(wrapper.find('.ff-orb').exists()).toBe(true);
   });
 
-  describe('dynamic positioning', () => {
-    beforeEach(() => {
-      mockChatExpansion.isChatExpanded = { value: false };
-      Object.defineProperty(window, 'innerWidth', {
-        writable: true,
-        configurable: true,
-        value: 1024,
-      });
+  describe('positioning (corner-cluster portal)', () => {
+    // The orb no longer has hand-tuned `top: 44px` / `right: 16px` magic
+    // numbers — it teleports into `CharacterViewport`'s `.corner-cluster`
+    // flex column via Vue's `<Teleport>` API.  See `rules/coding-standards.md`
+    // § "UI Framework — No CSS Hacking".
+
+    it('renders the orb without any inline `top` / `right` / `position` styles', () => {
+      const wrapper = mount(QuestBubble);
+      const orb = wrapper.find('.ff-orb').element as HTMLElement;
+      // The flex parent (.corner-cluster) owns the layout — the orb itself
+      // must NOT carry hand-tuned positioning.
+      expect(orb.style.top).toBe('');
+      expect(orb.style.right).toBe('');
+      expect(orb.style.position).toBe('');
     });
 
-    it('uses default desktop positioning', () => {
+    it('falls back to in-place rendering when the corner-cluster portal is missing', () => {
+      // In tests there is no `#corner-cluster-portal` target, so `<Teleport
+      // :disabled>` keeps the orb in the component's DOM where test
+      // selectors can still reach it.
       const wrapper = mount(QuestBubble);
-      const hub = wrapper.find('.quest-hub').element as HTMLElement;
-      expect(hub.style.top).toBe('44px');
-      expect(hub.style.right).toBe('16px');
-      expect(hub.style.position).toBe('fixed');
-    });
-
-    it('uses mobile positioning on small screens', async () => {
-      Object.defineProperty(window, 'innerWidth', {
-        writable: true,
-        configurable: true,
-        value: 600,
-      });
-      const wrapper = mount(QuestBubble);
-      (wrapper.vm as unknown as { screenWidth: number }).screenWidth = 600;
-      await nextTick();
-      const hub = wrapper.find('.quest-hub').element as HTMLElement;
-      expect(hub.style.top).toBe('6px');
-      expect(hub.style.right).toBe('52px');
-    });
-
-    it('uses fixed positioning with z-index 19', () => {
-      const wrapper = mount(QuestBubble);
-      const hub = wrapper.find('.quest-hub').element as HTMLElement;
-      expect(hub.style.position).toBe('fixed');
-      expect(hub.style.zIndex).toBe('19');
+      expect(wrapper.find('.ff-orb').exists()).toBe(true);
     });
   });
 });

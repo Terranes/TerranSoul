@@ -771,7 +771,7 @@ onUnmounted(() => {
   z-index: 50;
   overflow: hidden;
   background: radial-gradient(ellipse at 50% 30%, #0c1538 0%, #050818 55%, #02040d 100%);
-  color: #e8eaff;
+  color: var(--ts-text-bright);
   outline: none;
   user-select: none;
 }
@@ -850,14 +850,14 @@ onUnmounted(() => {
   padding: 2px 4px; font-size: inherit; letter-spacing: inherit;
   transition: color 0.15s ease;
 }
-.sc-crumb:hover { color: #dcc36e; }
-.sc-crumb--active { color: #dcc36e; font-weight: 700; cursor: default; }
+.sc-crumb:hover { color: var(--ts-quest-gold); }
+.sc-crumb--active { color: var(--ts-quest-gold); font-weight: 700; cursor: default; }
 .sc-crumb-sep { color: rgba(180, 160, 100, 0.4); }
 .sc-topbar-actions { display: flex; gap: 6px; }
 .sc-back-btn, .sc-close-btn {
   background: rgba(8, 12, 32, 0.7);
   border: 1px solid rgba(180, 160, 100, 0.22);
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   padding: 6px 12px;
   border-radius: 4px;
   cursor: pointer;
@@ -1018,7 +1018,7 @@ onUnmounted(() => {
 .sc-cluster-icon { font-size: 1.6rem; line-height: 1; }
 .sc-cluster-label {
   font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  color: #dcc36e; margin-top: 2px;
+  color: var(--ts-quest-gold); margin-top: 2px;
 }
 .sc-cluster-cost {
   font-size: 0.5rem; color: rgba(200, 200, 220, 0.55); letter-spacing: 0.05em;
@@ -1087,7 +1087,7 @@ onUnmounted(() => {
   border-radius: 50%;
   background: rgba(8, 12, 32, 0.8);
   border: 1px solid rgba(180, 160, 100, 0.25);
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   font-size: 1.1rem;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -1151,24 +1151,24 @@ onUnmounted(() => {
 .sc-detail-top { display: flex; align-items: flex-start; gap: 10px; }
 .sc-detail-gem { font-size: 1.6rem; flex-shrink: 0; }
 .sc-detail-title-area { flex: 1; }
-.sc-detail-name { font-size: 0.95rem; font-weight: 700; color: #dcc36e; letter-spacing: 0.04em; }
+.sc-detail-name { font-size: 0.95rem; font-weight: 700; color: var(--ts-quest-gold); letter-spacing: 0.04em; }
 .sc-detail-tagline { font-size: 0.72rem; color: rgba(180, 180, 200, 0.55); margin-top: 2px; }
 .sc-detail-close {
   background: none; border: 1px solid rgba(180, 160, 100, 0.2); color: rgba(200, 200, 220, 0.5);
   cursor: pointer; font-size: 0.75rem; padding: 2px 6px; border-radius: 2px;
 }
-.sc-detail-close:hover { border-color: rgba(180, 160, 100, 0.5); color: #dcc36e; }
+.sc-detail-close:hover { border-color: rgba(180, 160, 100, 0.5); color: var(--ts-quest-gold); }
 .sc-detail-desc { font-size: 0.78rem; color: rgba(200, 200, 220, 0.7); line-height: 1.55; margin: 12px 0; }
 .sc-detail-section { margin-top: 12px; }
 .sc-detail-section-label {
-  font-size: 0.65rem; font-weight: 700; color: #dcc36e;
+  font-size: 0.65rem; font-weight: 700; color: var(--ts-quest-gold);
   letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px;
 }
 .sc-step { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .sc-step-num { width: 18px; font-size: 0.65rem; font-weight: 700; color: rgba(180, 160, 100, 0.55); text-align: center; }
 .sc-step-text { font-size: 0.74rem; color: rgba(200, 200, 220, 0.75); flex: 1; }
 .sc-step-go {
-  font-size: 0.72rem; color: #dcc36e; background: none;
+  font-size: 0.72rem; color: var(--ts-quest-gold); background: none;
   border: 1px solid rgba(180, 160, 100, 0.25); border-radius: 2px;
   padding: 1px 8px; cursor: pointer;
 }
@@ -1176,7 +1176,7 @@ onUnmounted(() => {
 .sc-reward-list, .sc-prereq-list { display: flex; flex-wrap: wrap; gap: 4px; }
 .sc-reward {
   font-size: 0.7rem; padding: 3px 8px; border-radius: 2px;
-  background: rgba(180, 160, 100, 0.08); color: #dcc36e;
+  background: rgba(180, 160, 100, 0.08); color: var(--ts-quest-gold);
   border: 1px solid rgba(180, 160, 100, 0.18);
 }
 .sc-prereq {
@@ -1191,11 +1191,11 @@ onUnmounted(() => {
   transition: all 0.15s ease;
 }
 .sc-btn--secondary { background: transparent; border: 1px solid rgba(180, 160, 100, 0.25); color: rgba(200, 200, 220, 0.65); }
-.sc-btn--secondary:hover { border-color: rgba(180, 160, 100, 0.5); color: #dcc36e; }
+.sc-btn--secondary:hover { border-color: rgba(180, 160, 100, 0.5); color: var(--ts-quest-gold); }
 .sc-btn--primary {
   background: linear-gradient(180deg, rgba(180, 160, 100, 0.18), rgba(180, 160, 100, 0.06));
   border: 1px solid rgba(220, 195, 110, 0.45);
-  color: #dcc36e;
+  color: var(--ts-quest-gold);
   text-shadow: 0 0 8px rgba(220, 195, 110, 0.25);
 }
 .sc-btn--primary:hover {

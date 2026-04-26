@@ -1186,15 +1186,15 @@ const SKILL_NODES: SkillNode[] = [
     id: 'themes',
     name: 'Aetherweave',
     tagline: 'Pick your UI theme & accent',
-    description: 'Switch between Midnight, Aurora, Sakura and Forge themes — the companion\'s UI shifts color, blur, and glow to match.',
+    description: 'Switch between Adventurer, Corporate, Midnight, Aurora, Neural, Sakura, Neko, Playground, and Pastel themes — the companion\'s UI shifts color, blur, and glow to match.',
     icon: '🎨',
     tier: 'foundation',
     requires: [],
-    rewards: ['Multiple UI themes', 'Custom accent color', 'Glow & blur tuning'],
-    rewardIcons: ['🎨', '🌈', '✨'],
+    rewards: ['9 built-in UI themes', 'Light & dark modes', 'Instant hot-swap'],
+    rewardIcons: ['🎨', '☀️', '⚡'],
     questSteps: [
       { label: 'Open Settings (gear icon in chat view)', action: 'info' },
-      { label: 'Pick a theme from the Appearance section', action: 'configure', target: 'bgm_enabled' },
+      { label: 'Pick a theme from the Appearance section', action: 'configure', target: 'themes' },
     ],
     category: 'utility',
     combos: [],
@@ -1427,6 +1427,14 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         return (settings.settings?.bgm_custom_tracks?.length ?? 0) > 0;
       case 'bgm-video':
         return false; // Requires manual completion
+      case 'themes': {
+        // Auto-active once the user has picked any non-default theme.
+        try {
+          return (localStorage.getItem('ts-active-theme') ?? 'default') !== 'default';
+        } catch {
+          return false;
+        }
+      }
       case 'hotwords':
         return voice.config.asr_provider !== null;
       case 'memory':

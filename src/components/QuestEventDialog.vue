@@ -306,7 +306,7 @@ onMounted(() => {
 <style scoped>
 .qe-backdrop {
   position: fixed; inset: 0; z-index: 210;
-  background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px);
+  background: var(--ts-bg-backdrop); backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center;
   padding: var(--ts-space-lg);
   animation: qe-fade-in 0.3s ease;
@@ -320,7 +320,7 @@ onMounted(() => {
   border-radius: var(--ts-radius-xl);
   padding: var(--ts-space-xl);
   position: relative;
-  box-shadow: 0 0 40px rgba(251, 191, 36, 0.15), var(--ts-shadow-lg);
+  box-shadow: var(--ts-shadow-lg);
   scrollbar-width: thin;
 }
 .qe-close {
@@ -336,13 +336,13 @@ onMounted(() => {
 .qe-icon-wrap {
   width: 60px; height: 60px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(251, 191, 36, 0.1); border: 2px solid var(--ts-warning);
+  background: var(--ts-warning-bg); border: 2px solid var(--ts-warning);
   animation: qe-icon-pulse 2s ease-in-out infinite;
   flex-shrink: 0;
 }
 @keyframes qe-icon-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
-  50% { box-shadow: 0 0 16px 4px rgba(251, 191, 36, 0.25); }
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 16px 4px var(--ts-accent-glow); }
 }
 .qe-icon { font-size: 2rem; }
 .qe-header-text { display: flex; flex-direction: column; gap: 2px; }
@@ -369,7 +369,7 @@ onMounted(() => {
 }
 .qe-reward-card:hover {
   border-color: var(--ts-warning);
-  background: rgba(251, 191, 36, 0.05);
+  background: var(--ts-warning-bg);
 }
 .qe-reward-icon { font-size: 1.2rem; flex-shrink: 0; }
 .qe-reward-text { font-size: 0.78rem; color: var(--ts-text-secondary); line-height: 1.3; }
@@ -439,29 +439,29 @@ onMounted(() => {
 }
 .qe-btn:active { transform: scale(0.96); }
 .qe-btn-yes {
-  background: rgba(52, 211, 153, 0.15); border-color: var(--ts-success); color: var(--ts-success);
+  background: var(--ts-success-bg); border-color: var(--ts-success); color: var(--ts-success);
 }
-.qe-btn-yes:hover { background: rgba(52, 211, 153, 0.25); box-shadow: 0 0 12px rgba(52, 211, 153, 0.2); }
+.qe-btn-yes:hover { background: var(--ts-success-bg); box-shadow: 0 0 12px var(--ts-accent-glow); }
 .qe-btn-no {
-  background: rgba(239, 68, 68, 0.1); border-color: var(--ts-error, #ef4444); color: var(--ts-error, #ef4444);
+  background: var(--ts-error-bg); border-color: var(--ts-error, #ef4444); color: var(--ts-error, #ef4444);
 }
-.qe-btn-no:hover { background: rgba(239, 68, 68, 0.2); box-shadow: 0 0 12px rgba(239, 68, 68, 0.2); }
+.qe-btn-no:hover { background: var(--ts-error-bg); box-shadow: 0 0 12px var(--ts-accent-glow); }
 
 /* Done state */
 .qe-done {
   display: flex; flex-direction: column; align-items: center; gap: var(--ts-space-sm);
   margin-top: var(--ts-space-md);
   padding: var(--ts-space-md);
-  background: rgba(52, 211, 153, 0.05);
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  background: var(--ts-success-bg);
+  border: 1px solid var(--ts-success);
   border-radius: var(--ts-radius-md);
 }
 .qe-done-text { margin: 0; font-size: 0.88rem; color: var(--ts-text-secondary); font-weight: 600; }
 .qe-btn-start {
-  background: var(--ts-success); border-color: var(--ts-success); color: #fff;
+  background: var(--ts-success); border-color: var(--ts-success); color: var(--ts-text-on-accent);
   font-size: 0.9rem; padding: 10px 28px;
 }
-.qe-btn-start:hover { box-shadow: 0 0 16px rgba(52, 211, 153, 0.4); }
+.qe-btn-start:hover { box-shadow: var(--ts-shadow-md); }
 .qe-btn-pin {
   background: transparent; border-color: var(--ts-border); color: var(--ts-text-secondary);
 }

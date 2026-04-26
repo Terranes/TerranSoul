@@ -511,7 +511,7 @@ watch(() => props.visible, (v) => {
   position: fixed;
   inset: 0;
   z-index: 250;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--ts-bg-backdrop);
   backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
@@ -525,16 +525,13 @@ watch(() => props.visible, (v) => {
   max-width: 560px;
   max-height: 90vh;
   overflow-y: auto;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%);
-  border: 2px solid #ffd700;
+  background: var(--ts-quest-bg, linear-gradient(180deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%));
+  border: 2px solid var(--ts-quest-gold);
   border-radius: 16px;
   padding: 0;
-  box-shadow:
-    0 0 60px rgba(255, 215, 0, 0.15),
-    0 0 120px rgba(255, 215, 0, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: var(--ts-shadow-lg);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 215, 0, 0.3) transparent;
+  scrollbar-color: var(--ts-quest-gold-dim) transparent;
 }
 
 /* ═══ Header ═══ */
@@ -543,8 +540,8 @@ watch(() => props.visible, (v) => {
   align-items: center;
   gap: 12px;
   padding: 20px 24px 16px;
-  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
-  background: linear-gradient(180deg, rgba(255, 215, 0, 0.08) 0%, transparent 100%);
+  border-bottom: 1px solid var(--ts-quest-border);
+  background: linear-gradient(180deg, var(--ts-quest-gold-dim) 0%, transparent 100%);
 }
 .kq-header-icon {
   font-size: 2.2rem;
@@ -554,14 +551,14 @@ watch(() => props.visible, (v) => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 2px solid #ffd700;
-  background: rgba(255, 215, 0, 0.1);
+  border: 2px solid var(--ts-quest-gold);
+  background: var(--ts-quest-gold-dim);
   animation: kq-icon-glow 2.5s ease-in-out infinite;
   flex-shrink: 0;
 }
 @keyframes kq-icon-glow {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
-  50% { box-shadow: 0 0 20px 6px rgba(255, 215, 0, 0.25); }
+  50% { box-shadow: 0 0 20px 6px var(--ts-quest-gold-glow); }
 }
 .kq-header-text { flex: 1; }
 .kq-label {
@@ -569,20 +566,20 @@ watch(() => props.visible, (v) => {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 3px;
-  color: #ffd700;
+  color: var(--ts-quest-gold);
   font-weight: 700;
   margin-bottom: 2px;
 }
 .kq-title {
   margin: 0;
   font-size: 1.15rem;
-  color: #fff;
+  color: var(--ts-text-bright);
   font-weight: 600;
 }
 .kq-close {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ts-text-muted);
   font-size: 1.1rem;
   cursor: pointer;
   padding: 4px 8px;
@@ -590,8 +587,8 @@ watch(() => props.visible, (v) => {
   transition: color 0.2s, background 0.2s;
 }
 .kq-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--ts-text-bright);
+  background: var(--ts-bg-hover);
 }
 
 /* ═══ Step Tracker ═══ */
@@ -621,10 +618,10 @@ watch(() => props.visible, (v) => {
   right: -50%;
   width: 100%;
   height: 2px;
-  background: rgba(255, 215, 0, 0.15);
+  background: var(--ts-quest-gold-dim);
 }
 .kq-step:last-child::after { display: none; }
-.kq-step--done::after { background: #ffd700; }
+.kq-step--done::after { background: var(--ts-quest-gold); }
 .kq-step-num {
   width: 28px;
   height: 28px;
@@ -634,30 +631,30 @@ watch(() => props.visible, (v) => {
   justify-content: center;
   font-size: 0.75rem;
   font-weight: 700;
-  border: 2px solid rgba(255, 215, 0, 0.3);
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid var(--ts-quest-border);
+  color: var(--ts-text-secondary);
+  background: var(--ts-bg-panel);
   z-index: 1;
 }
 .kq-step--active .kq-step-num {
-  border-color: #ffd700;
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.15);
-  box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
+  border-color: var(--ts-quest-gold);
+  color: var(--ts-quest-gold);
+  background: var(--ts-quest-gold-dim);
+  box-shadow: 0 0 12px var(--ts-quest-gold-glow);
 }
 .kq-step--done .kq-step-num {
-  border-color: #4ade80;
-  color: #4ade80;
+  border-color: var(--ts-success);
+  color: var(--ts-success);
   background: rgba(74, 222, 128, 0.15);
 }
 .kq-step-icon { font-size: 0.9rem; }
 .kq-step-label {
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ts-text-secondary);
   text-align: center;
   white-space: nowrap;
 }
-.kq-step--active .kq-step-label { color: #ffd700; font-weight: 600; }
+.kq-step--active .kq-step-label { color: var(--ts-quest-gold); font-weight: 600; }
 
 /* ═══ Body ═══ */
 .kq-body {
@@ -673,12 +670,12 @@ watch(() => props.visible, (v) => {
 .kq-section-title {
   margin: 0 0 12px;
   font-size: 0.95rem;
-  color: #fff;
+  color: var(--ts-text-bright);
   font-weight: 600;
 }
 .kq-hint {
   font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ts-text-secondary);
   margin: 0 0 16px;
   line-height: 1.4;
 }
@@ -694,24 +691,24 @@ watch(() => props.visible, (v) => {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--ts-bg-panel);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ts-border-subtle);
 }
 .kq-check-icon { font-size: 1rem; flex-shrink: 0; }
-.kq-check-label { font-size: 0.82rem; color: #fff; flex: 1; }
-.kq-check-detail { font-size: 0.72rem; color: rgba(255, 255, 255, 0.45); }
+.kq-check-label { font-size: 0.82rem; color: var(--ts-text-bright); flex: 1; }
+.kq-check-detail { font-size: 0.72rem; color: var(--ts-text-muted); }
 
 .kq-success-text {
   margin: 14px 0 0;
   font-size: 0.85rem;
-  color: #4ade80;
+  color: var(--ts-success);
   font-weight: 600;
 }
 .kq-error-text {
   margin: 14px 0 0;
   font-size: 0.82rem;
-  color: #f87171;
+  color: var(--ts-error);
 }
 
 /* ── Source input ── */
@@ -727,52 +724,52 @@ watch(() => props.visible, (v) => {
 .kq-url-field {
   flex: 1;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 215, 0, 0.2);
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-quest-border);
   border-radius: 8px;
-  color: #fff;
+  color: var(--ts-text-bright);
   font-size: 0.82rem;
   outline: none;
   transition: border-color 0.2s;
 }
-.kq-url-field::placeholder { color: rgba(255, 255, 255, 0.3); }
-.kq-url-field:focus { border-color: #ffd700; }
+.kq-url-field::placeholder { color: var(--ts-text-muted); }
+.kq-url-field:focus { border-color: var(--ts-quest-gold); }
 .kq-url-add {
   padding: 10px 16px;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 165, 0, 0.15) 100%);
-  border: 1px solid rgba(255, 215, 0, 0.4);
+  background: linear-gradient(135deg, var(--ts-quest-gold-dim) 0%, rgba(255, 165, 0, 0.15) 100%);
+  border: 1px solid var(--ts-quest-gold);
   border-radius: 8px;
-  color: #ffd700;
+  color: var(--ts-quest-gold);
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.2s, background 0.2s;
 }
-.kq-url-add:hover:not(:disabled) { border-color: #ffd700; background: rgba(255, 215, 0, 0.25); }
+.kq-url-add:hover:not(:disabled) { border-color: var(--ts-quest-gold); background: var(--ts-quest-gold-dim); }
 .kq-url-add:disabled { opacity: 0.4; cursor: default; }
 .kq-file-row {
   display: flex;
 }
 .kq-file-btn {
   padding: 10px 16px;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: var(--ts-info-bg);
+  border: 1px solid var(--ts-info);
   border-radius: 8px;
-  color: #38bdf8;
+  color: var(--ts-info);
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
 }
-.kq-file-btn:hover { border-color: #38bdf8; background: rgba(56, 189, 248, 0.2); }
+.kq-file-btn:hover { border-color: var(--ts-info); background: var(--ts-info-bg); }
 .kq-file-hidden { display: none; }
 
 /* ── Source list ── */
 .kq-source-list { margin-top: 14px; }
 .kq-source-list-title {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ts-text-muted);
   text-transform: uppercase;
   letter-spacing: 1px;
   margin: 0 0 8px;
@@ -782,16 +779,16 @@ watch(() => props.visible, (v) => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--ts-bg-panel);
   border-radius: 6px;
   margin-bottom: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ts-border-subtle);
 }
 .kq-source-icon { font-size: 0.9rem; }
 .kq-source-name {
   flex: 1;
   font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ts-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -799,12 +796,12 @@ watch(() => props.visible, (v) => {
 .kq-source-remove {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--ts-text-muted);
   cursor: pointer;
   padding: 2px 6px;
   font-size: 0.75rem;
 }
-.kq-source-remove:hover { color: #f87171; }
+.kq-source-remove:hover { color: var(--ts-error); }
 
 /* ── Progress ── */
 .kq-progress-area {
@@ -814,9 +811,9 @@ watch(() => props.visible, (v) => {
 }
 .kq-task {
   padding: 12px 14px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--ts-bg-panel);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ts-border-subtle);
 }
 .kq-task-header {
   display: flex;
@@ -824,36 +821,36 @@ watch(() => props.visible, (v) => {
   align-items: center;
   margin-bottom: 8px;
 }
-.kq-task-desc { font-size: 0.8rem; color: rgba(255, 255, 255, 0.8); }
-.kq-task-pct { font-size: 0.85rem; color: #ffd700; font-weight: 700; }
+.kq-task-desc { font-size: 0.8rem; color: var(--ts-text-primary); }
+.kq-task-pct { font-size: 0.85rem; color: var(--ts-quest-gold); font-weight: 700; }
 .kq-progress-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ts-bg-input);
   border-radius: 3px;
   overflow: hidden;
 }
 .kq-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #ffd700, #ff8c00);
+  background: linear-gradient(90deg, var(--ts-quest-gold), var(--ts-quest-gold-bright));
   border-radius: 3px;
   transition: width 0.4s ease;
 }
 .kq-task-done {
   margin: 8px 0 0;
   font-size: 0.78rem;
-  color: #4ade80;
+  color: var(--ts-success);
 }
 .kq-task-fail {
   margin: 8px 0 0;
   font-size: 0.78rem;
-  color: #f87171;
+  color: var(--ts-error);
 }
 
 /* ── Complete ── */
 .kq-complete-card {
   text-align: center;
   padding: 24px 16px;
-  background: radial-gradient(ellipse at center, rgba(255, 215, 0, 0.08) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, var(--ts-quest-gold-dim) 0%, transparent 70%);
   border-radius: 12px;
   margin-bottom: 16px;
 }
@@ -869,7 +866,7 @@ watch(() => props.visible, (v) => {
 }
 .kq-complete-text {
   font-size: 0.88rem;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ts-text-primary);
   line-height: 1.5;
   margin: 0;
 }
@@ -883,18 +880,18 @@ watch(() => props.visible, (v) => {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(255, 215, 0, 0.05);
-  border: 1px solid rgba(255, 215, 0, 0.15);
+  background: var(--ts-quest-gold-dim);
+  border: 1px solid var(--ts-quest-border);
   border-radius: 8px;
   font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--ts-text-secondary);
 }
 .kq-reward-card span:first-child { font-size: 1.1rem; }
 
 /* ═══ Footer ═══ */
 .kq-footer {
   padding: 16px 24px 20px;
-  border-top: 1px solid rgba(255, 215, 0, 0.1);
+  border-top: 1px solid var(--ts-quest-border);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -910,20 +907,20 @@ watch(() => props.visible, (v) => {
 .kq-btn:hover { transform: scale(1.02); }
 .kq-btn:active { transform: scale(0.98); }
 .kq-btn-primary {
-  background: linear-gradient(135deg, #ffd700 0%, #ff8c00 100%);
+  background: linear-gradient(135deg, var(--ts-quest-gold) 0%, var(--ts-quest-gold-bright) 100%);
   border: none;
-  color: #1a1a2e;
-  box-shadow: 0 4px 16px rgba(255, 215, 0, 0.25);
+  color: var(--ts-bg-base);
+  box-shadow: 0 4px 16px var(--ts-quest-gold-glow);
 }
 .kq-btn-primary:hover {
-  box-shadow: 0 6px 24px rgba(255, 215, 0, 0.35);
+  box-shadow: 0 6px 24px var(--ts-quest-gold-glow);
 }
 .kq-btn-glow {
   animation: kq-btn-pulse 2s ease-in-out infinite;
 }
 @keyframes kq-btn-pulse {
-  0%, 100% { box-shadow: 0 4px 16px rgba(255, 215, 0, 0.25); }
-  50% { box-shadow: 0 4px 30px rgba(255, 215, 0, 0.5); }
+  0%, 100% { box-shadow: 0 4px 16px var(--ts-quest-gold-glow); }
+  50% { box-shadow: 0 4px 30px var(--ts-quest-gold-glow); }
 }
 
 /* ═══ Transitions ═══ */

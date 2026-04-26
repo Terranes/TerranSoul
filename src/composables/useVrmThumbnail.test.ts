@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useVrmThumbnail, preGenerateUserThumbnail } from './useVrmThumbnail';
+import { useVrmThumbnail, preGenerateUserThumbnail, resetFailedThumbnails } from './useVrmThumbnail';
 
 // Mock @tauri-apps/api/core
 vi.mock('@tauri-apps/api/core', () => ({
@@ -23,6 +23,7 @@ vi.mock('three', async () => {
 describe('useVrmThumbnail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetFailedThumbnails();
   });
 
   it('returns null thumbnailUrl initially', () => {
