@@ -1208,15 +1208,15 @@ onMounted(async () => {
 
 /* ── Tauri unavailable banner (inline in marketplace) ── */
 .tauri-banner {
-  background: linear-gradient(135deg, rgba(251, 191, 36, 0.10), rgba(245, 158, 11, 0.06));
-  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: linear-gradient(135deg, var(--ts-warning-bg), rgba(245, 158, 11, 0.06));
+  border: 1px solid var(--ts-warning);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 0;
   overflow: hidden;
 }
-.tauri-banner-compact { border-color: rgba(100, 116, 139, 0.25); background: rgba(30, 41, 59, 0.6); }
+.tauri-banner-compact { border-color: var(--ts-border); background: var(--ts-bg-panel); }
 
 .tauri-banner-main {
   display: flex;
@@ -1238,7 +1238,7 @@ onMounted(async () => {
   gap: 0.5rem;
   padding: 6px 1rem;
   background: var(--ts-success-bg);
-  border-top: 1px solid rgba(34, 197, 94, 0.12);
+  border-top: 1px solid var(--ts-success);
   font-size: 0.78rem;
   color: var(--ts-success);
 }

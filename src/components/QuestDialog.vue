@@ -265,7 +265,7 @@ function formatRelativeTime(ts: number): string {
 <style scoped>
 .quest-backdrop {
   position: fixed; inset: 0; z-index: 200;
-  background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(6px);
+  background: var(--ts-bg-backdrop); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: var(--ts-space-lg);
 }
@@ -279,8 +279,8 @@ function formatRelativeTime(ts: number): string {
   box-shadow: var(--ts-shadow-lg);
   scrollbar-width: thin;
 }
-.quest-dialog.quest-status-active { border-color: rgba(52, 211, 153, 0.3); }
-.quest-dialog.quest-status-available { border-color: rgba(251, 191, 36, 0.3); }
+.quest-dialog.quest-status-active { border-color: var(--ts-success); }
+.quest-dialog.quest-status-available { border-color: var(--ts-warning); }
 .quest-close {
   position: absolute; top: 12px; right: 12px;
   background: none; border: none; color: var(--ts-text-muted);
@@ -303,7 +303,7 @@ function formatRelativeTime(ts: number): string {
 .quest-icon-badge {
   position: absolute; bottom: -2px; right: -2px;
   width: 20px; height: 20px; border-radius: 50%;
-  background: var(--ts-success); color: #fff; font-size: 0.7rem;
+  background: var(--ts-success); color: var(--ts-text-on-accent); font-size: 0.7rem;
   display: flex; align-items: center; justify-content: center;
 }
 .quest-header-text { display: flex; flex-direction: column; gap: 4px; }
@@ -323,8 +323,8 @@ function formatRelativeTime(ts: number): string {
   display: flex; align-items: center; justify-content: space-between;
 }
 .quest-banner-active { background: var(--ts-success-bg); color: var(--ts-success); }
-.quest-banner-available { background: rgba(251, 191, 36, 0.1); color: var(--ts-warning); }
-.quest-banner-locked { background: rgba(255, 255, 255, 0.04); color: var(--ts-text-muted); }
+.quest-banner-available { background: var(--ts-warning-bg); color: var(--ts-warning); }
+.quest-banner-locked { background: var(--ts-bg-input); color: var(--ts-text-muted); }
 .quest-activation-time { font-size: 0.75rem; font-weight: 400; color: var(--ts-text-muted); }
 
 .quest-description { font-size: 0.88rem; color: var(--ts-text-secondary); line-height: 1.5; margin: 0 0 var(--ts-space-md); }
@@ -381,7 +381,7 @@ function formatRelativeTime(ts: number): string {
   display: flex; gap: var(--ts-space-sm); align-items: flex-start;
   padding: var(--ts-space-sm) var(--ts-space-md);
   border-radius: var(--ts-radius-md);
-  background: linear-gradient(135deg, rgba(124, 111, 255, 0.06), rgba(52, 211, 153, 0.06));
+  background: linear-gradient(135deg, var(--ts-accent-glow), var(--ts-success-bg));
   border: 1px solid var(--ts-border-subtle);
 }
 .quest-combo-icon { font-size: 1.2rem; flex-shrink: 0; }
@@ -405,8 +405,8 @@ function formatRelativeTime(ts: number): string {
 .quest-btn-dismiss:hover { background: var(--ts-bg-hover); }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
-  50% { box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.3); }
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 12px 2px var(--ts-accent-glow); }
 }
 
 @media (max-width: 640px) {

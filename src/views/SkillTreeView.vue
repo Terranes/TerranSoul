@@ -401,8 +401,8 @@ function formatActivation(ts: number): string {
   display: flex; align-items: center; gap: var(--ts-space-sm);
   padding: var(--ts-space-sm) var(--ts-space-md);
   border-radius: var(--ts-radius-md);
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.08), rgba(124, 111, 255, 0.08));
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  background: linear-gradient(135deg, var(--ts-success-bg), var(--ts-accent-glow));
+  border: 1px solid var(--ts-success);
 }
 .st-combo-icon { font-size: 1.2rem; }
 .st-combo-body { display: flex; flex-direction: column; }
@@ -441,7 +441,7 @@ function formatActivation(ts: number): string {
 /* Status styles */
 .st-status-active {
   border-color: var(--ts-success) !important;
-  background: linear-gradient(180deg, rgba(52, 211, 153, 0.06), var(--ts-bg-surface)) !important;
+  background: linear-gradient(180deg, var(--ts-success-bg), var(--ts-bg-surface)) !important;
 }
 .st-status-active .st-node-name { color: var(--ts-success); }
 .st-status-available {
@@ -452,8 +452,8 @@ function formatActivation(ts: number): string {
 .st-status-locked .st-node-icon { filter: grayscale(1); }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
-  50% { box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.3); }
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 12px 2px var(--ts-accent-glow); }
 }
 
 .st-node-icon-wrap {

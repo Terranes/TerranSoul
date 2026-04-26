@@ -47,14 +47,14 @@ describe('useTheme', () => {
     const { setTheme } = useTheme();
     setTheme('corporate');
     const root = document.documentElement;
-    expect(root.style.getPropertyValue('--ts-bg-base')).toBe('#f0f2f5');
-    expect(root.style.getPropertyValue('--ts-accent')).toBe('#2563eb');
+    expect(root.style.getPropertyValue('--ts-bg-base')).toBe('#f5f5f5');
+    expect(root.style.getPropertyValue('--ts-accent')).toBe('#5b5fc7');
   });
 
   it('clears previous tokens when switching themes', () => {
     const { setTheme } = useTheme();
     setTheme('corporate');
-    expect(document.documentElement.style.getPropertyValue('--ts-bg-base')).toBe('#f0f2f5');
+    expect(document.documentElement.style.getPropertyValue('--ts-bg-base')).toBe('#f5f5f5');
 
     setTheme('default');
     // Default theme has empty tokens — the property should be removed

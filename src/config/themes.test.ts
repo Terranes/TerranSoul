@@ -94,9 +94,9 @@ describe('theme definitions', () => {
     }
   });
 
-  it('corporate theme is professional with blue accent', () => {
+  it('corporate theme is professional with indigo accent', () => {
     expect(THEME_CORPORATE.category).toBe('light');
-    expect(THEME_CORPORATE.tokens['--ts-accent']).toMatch(/#[0-9a-f]{6}/i);
+    expect(THEME_CORPORATE.tokens['--ts-accent']).toBe('#5b5fc7');
   });
 
   it('cat theme has warm amber accent', () => {
