@@ -67,7 +67,7 @@ test('desktop: full end-to-end flow', async ({ page }) => {
   const voiceState = (await getPiniaState(page, 'voice')) as any;
   expect(voiceState).not.toBeNull();
   expect(voiceState.config?.asr_provider).toBe('web-speech');
-  expect(voiceState.config?.tts_provider).toBe('edge-tts');
+  expect(voiceState.config?.tts_provider).toBe('web-speech');
 
   // ── 4. Chat input is interactive ────────────────────────────────────────
   const input = page.locator('.chat-input');
