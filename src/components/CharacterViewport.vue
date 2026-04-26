@@ -51,10 +51,10 @@
         {{ characterName }}
       </div>
       <div
-        v-if="characterStore.vrmMetadata"
+        v-if="characterMetaText"
         class="character-meta-overlay"
       >
-        <span>by {{ characterStore.vrmMetadata.author }}</span>
+        <span>{{ characterMetaText }}</span>
       </div>
     </template>
 
@@ -322,6 +322,17 @@
         <span class="ai-state-dot" />
         <span class="ai-state-label">{{ stateLabel }}</span>
       </FloatingChip>
+
+      <!-- Portal target for the floating QuestBubble orb (and any future
+           corner widgets).  Using Vue's built-in `<Teleport>` API to attach
+           extras here keeps the corner stack a single flex container so
+           nothing overlaps — no hand-tuned `top: 44px` magic numbers
+           anywhere.  See `rules/coding-standards.md` § "UI Framework — No
+           CSS Hacking". -->
+      <div
+        id="corner-cluster-portal"
+        class="corner-cluster-portal"
+      />
     </div>
 
     <div
@@ -497,6 +508,45 @@ const STATE_LABELS: Record<CharacterState, string> = {
   surprised: 'Surprised',
 };
 const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
+
+/**
+ * Returns true when a string from VRM metadata is informative enough to
+ * surface to the user.  VRM files frequently contain placeholder values
+ * like `"Unknown"`, empty strings, or terse numeric strings such as
+ * `"1"` (these come from authors who never filled in the real metadata
+ * and previously rendered as the meaningless "by 1" overlay).
+ */
+function isMeaningfulMetaValue(raw: string | undefined | null): boolean {
+  if (!raw) return false;
+  const trimmed = raw.trim();
+  if (trimmed.length < 2) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'unknown' || lower === 'n/a' || lower === 'none' || lower === 'null') {
+    return false;
+  }
+  // Pure-numeric strings up to 3 digits are almost always placeholders.
+  if (/^\d{1,3}$/.test(trimmed)) return false;
+  return true;
+}
+
+/**
+ * Composes the secondary character overlay (under the title) from VRM
+ * metadata.  Only includes meaningful parts — never renders "by 1" or
+ * "by Unknown".  Returns an empty string when nothing meaningful exists,
+ * which causes the overlay to be hidden entirely via `v-if`.
+ */
+const characterMetaText = computed(() => {
+  const meta = characterStore.vrmMetadata;
+  if (!meta) return '';
+  const parts: string[] = [];
+  if (isMeaningfulMetaValue(meta.author)) {
+    parts.push(`by ${meta.author.trim()}`);
+  }
+  if (isMeaningfulMetaValue(meta.license)) {
+    parts.push(meta.license.trim());
+  }
+  return parts.join(' · ');
+});
 
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
@@ -1297,6 +1347,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .settings-host {
   position: relative;
   display: flex;
+}
+
+/* Portal target for QuestBubble (and any future corner widgets).  Uses
+   `display: contents` so the wrapper itself is invisible to layout — the
+   teleported children become direct flex items of `.corner-cluster`. */
+.corner-cluster-portal {
+  display: contents;
 }
 
 .settings-toggle {
