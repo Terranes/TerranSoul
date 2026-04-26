@@ -64,6 +64,8 @@ pub enum ProviderSelection {
     },
     /// Local Ollama instance.
     LocalOllama { model: String },
+    /// Local LM Studio server.
+    LocalLmStudio { model: String, base_url: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -250,6 +252,12 @@ fn resolve_provider(
         Some(BrainMode::LocalOllama { model }) => ProviderSelection::LocalOllama {
             model: model.clone(),
         },
+        Some(BrainMode::LocalLmStudio {
+            model, base_url, ..
+        }) => ProviderSelection::LocalLmStudio {
+            model: model.clone(),
+            base_url: base_url.clone(),
+        },
         None => match legacy_active_brain {
             Some(model) => ProviderSelection::LocalOllama {
                 model: model.to_string(),
@@ -275,6 +283,15 @@ fn compute_rag_quality(
         ProviderSelection::LocalOllama { .. } => (
             60,
             "Local chat works, but vector search is offline — pull `nomic-embed-text` to enable it."
+                .to_string(),
+        ),
+        ProviderSelection::LocalLmStudio { .. } if embedding.available => (
+            100,
+            "Full hybrid 6-signal RAG with LM Studio vector embeddings.".to_string(),
+        ),
+        ProviderSelection::LocalLmStudio { .. } => (
+            60,
+            "Local LM Studio chat works, but vector search is offline until an embedding model is available."
                 .to_string(),
         ),
         ProviderSelection::FreeApi { .. } | ProviderSelection::PaidApi { .. } => (
@@ -369,6 +386,36 @@ mod tests {
         assert!(!sel.embedding.available);
         assert_eq!(sel.rag_quality_percent, 60);
         assert!(sel.embedding.unavailable_reason.is_some());
+        assert_eq!(sel.search.default_method, SearchMethod::Keyword);
+    }
+
+    #[test]
+    fn local_lm_studio_without_embedding_drops_to_60() {
+        let mode = BrainMode::LocalLmStudio {
+            model: "qwen/qwen3-4b".to_string(),
+            base_url: "http://127.0.0.1:1234".to_string(),
+            api_key: None,
+            embedding_model: None,
+        };
+        let sel = BrainSelection::from_parts(
+            Some(&mode),
+            None,
+            None,
+            false,
+            "text-embedding-nomic-embed-text-v1.5",
+            dummy_memory(),
+            dummy_storage(),
+            dummy_agents(),
+        );
+        match &sel.provider {
+            ProviderSelection::LocalLmStudio { model, base_url } => {
+                assert_eq!(model, "qwen/qwen3-4b");
+                assert_eq!(base_url, "http://127.0.0.1:1234");
+            }
+            other => panic!("expected LocalLmStudio, got {other:?}"),
+        }
+        assert!(!sel.embedding.available);
+        assert_eq!(sel.rag_quality_percent, 60);
         assert_eq!(sel.search.default_method, SearchMethod::Keyword);
     }
 

@@ -183,6 +183,8 @@ function getBrainModeDisplay(): string {
       return 'Paid API';
     case 'local_ollama':
       return 'Local Ollama';
+    case 'local_lm_studio':
+      return 'Local LM Studio';
     default:
       return 'Unknown';
   }

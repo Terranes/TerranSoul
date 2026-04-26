@@ -146,6 +146,25 @@ async fn call_llm(system: &str, user: &str, brain_mode: &BrainMode) -> Option<St
             ];
             client.chat(msgs).await.ok()?
         }
+        BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            ..
+        } => {
+            let client = OpenAiClient::new(base_url, model, api_key.as_deref());
+            let msgs = vec![
+                OpenAiMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                OpenAiMessage {
+                    role: "user".to_string(),
+                    content: user.to_string(),
+                },
+            ];
+            client.chat(msgs).await.ok()?
+        }
     };
 
     let trimmed = reply.trim().to_string();

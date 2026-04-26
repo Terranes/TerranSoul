@@ -70,6 +70,17 @@ function setupMocks(opts: {
         return undefined;
       case 'clear_agent_capabilities':
         return undefined;
+      case 'check_lm_studio_status':
+        return { running: true, model_count: 1, loaded_count: 0 };
+      case 'get_lm_studio_models':
+        return [{
+          key: 'qwen/qwen3-4b',
+          display_name: 'Qwen 3 4B',
+          publisher: 'qwen',
+          type: 'llm',
+          size_bytes: 4_000_000_000,
+          loaded_instances: [],
+        }];
       default:
         throw new Error(`Unmocked command: ${cmd}`);
     }
@@ -225,5 +236,29 @@ describe('MarketplaceView', () => {
     expect(wrapper.text()).toContain('Paid API');
     expect(wrapper.text()).toContain('Pollinations AI');
     expect(wrapper.text()).toContain('ask TerranSoul in chat');
+  });
+
+  it('shows LM Studio as a distinct marketplace LLM runtime', async () => {
+    setupMocks();
+    const wrapper = mount(MarketplaceView);
+    await flushPromises();
+
+    const configHeader = wrapper.find('.llm-config-header');
+    await configHeader.trigger('click');
+    await flushPromises();
+
+    const lmStudioTab = wrapper.findAll('.llm-tier-tab').find((t) => t.text().includes('LM Studio'));
+    expect(lmStudioTab).toBeTruthy();
+    await lmStudioTab!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Refresh LM Studio');
+    expect(wrapper.text()).toContain('Qwen 3 4B');
+    const modelCard = wrapper.findAll('.llm-provider-card').find((c) => c.text().includes('Qwen 3 4B'));
+    expect(modelCard).toBeTruthy();
+    await modelCard!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Activate qwen/qwen3-4b');
   });
 });

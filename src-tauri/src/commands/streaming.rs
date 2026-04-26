@@ -250,6 +250,23 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         Some(BrainMode::LocalOllama { model }) => {
             stream_ollama(app_handle, state, &message, &history, &model).await
         }
+        Some(BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            ..
+        }) => {
+            stream_openai_api(
+                app_handle,
+                state,
+                &message,
+                &history,
+                "lm_studio",
+                api_key.as_deref(),
+                Some((&base_url, &model)),
+            )
+            .await
+        }
         None => {
             // Check legacy active_brain
             if let Some(model) = legacy_model {
@@ -683,6 +700,25 @@ mod tests {
         match &mode {
             BrainMode::LocalOllama { model } => assert_eq!(model, "gemma3:4b"),
             _ => panic!("expected LocalOllama"),
+        }
+    }
+
+    #[test]
+    fn brain_mode_routes_local_lm_studio() {
+        let mode = BrainMode::LocalLmStudio {
+            model: "qwen/qwen3-4b".to_string(),
+            base_url: "http://127.0.0.1:1234".to_string(),
+            api_key: None,
+            embedding_model: None,
+        };
+        match &mode {
+            BrainMode::LocalLmStudio {
+                model, base_url, ..
+            } => {
+                assert_eq!(model, "qwen/qwen3-4b");
+                assert_eq!(base_url, "http://127.0.0.1:1234");
+            }
+            _ => panic!("expected LocalLmStudio"),
         }
     }
 

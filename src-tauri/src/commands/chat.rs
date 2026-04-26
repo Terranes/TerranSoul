@@ -167,6 +167,59 @@ pub async fn process_message(
             let text = client.chat(msgs).await.map_err(|e| format!("Paid API error: {e}"))?;
             ("TerranSoul".to_string(), text, Sentiment::Neutral)
         }
+        Some(BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            embedding_model,
+        }) => {
+            let client = OpenAiClient::new(&base_url, &model, api_key.as_deref());
+
+            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
+            let query_emb = crate::brain::embed_for_mode(
+                message,
+                Some(&BrainMode::LocalLmStudio {
+                    model: model.clone(),
+                    base_url: base_url.clone(),
+                    api_key: api_key.clone(),
+                    embedding_model: embedding_model.clone(),
+                }),
+                None,
+            )
+            .await;
+            let relevant: Vec<crate::memory::MemoryEntry> = {
+                match app_state.memory_store.lock() {
+                    Ok(store) => store
+                        .hybrid_search(message, query_emb.as_deref(), 5)
+                        .unwrap_or_default(),
+                    Err(_) => vec![],
+                }
+            };
+            if !relevant.is_empty() {
+                let mem_block: String = relevant
+                    .iter()
+                    .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
+            }
+
+            let mut msgs = vec![OpenAiMessage {
+                role: "system".to_string(),
+                content: system,
+            }];
+            for (role, c) in &history {
+                msgs.push(OpenAiMessage {
+                    role: role.clone(),
+                    content: c.clone(),
+                });
+            }
+            let text = client
+                .chat(msgs)
+                .await
+                .map_err(|e| format!("LM Studio error: {e}"))?;
+            (model.clone(), text, Sentiment::Neutral)
+        }
         Some(BrainMode::LocalOllama { model }) => {
             let memory_entries: Vec<crate::memory::MemoryEntry> = {
                 let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
