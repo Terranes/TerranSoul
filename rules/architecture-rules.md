@@ -71,6 +71,17 @@
     A persona PR that updates code without updating these two documents
     is incomplete and must not be merged. Reviewers should reject such
     PRs.
+14. **No regex / keyword classifiers for AI behaviour (mandatory)** —
+    Any decision about *what the AI should do* (which agent to invoke,
+    which tool to call, which UX overlay to show, whether to inject RAG,
+    whether to switch models) **must** route through the configured brain
+    (the LLM-powered classifier or a dedicated brain command) and **must**
+    expose a user toggle in `src/stores/ai-decision-policy.ts` surfaced in
+    the `BrainView.vue` "🧭 AI decision-making" panel. Hand-rolled regex
+    / `.includes` / `.toLowerCase().includes` / keyword arrays driving AI
+    behaviour are banned. See `rules/llm-decision-rules.md` for the full
+    rule, the migration playbook, and the list of allowed exceptions
+    (parsing, error-code routing, sentiment fallback when brain offline).
 
 ---
 

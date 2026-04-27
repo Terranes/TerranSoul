@@ -126,6 +126,21 @@ import type { Message } from '../types';
 import AgentBadge from './AgentBadge.vue';
 import TypingIndicator from './TypingIndicator.vue';
 import { renderMarkdown } from '../utils/render-markdown';
+import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
+
+/**
+ * Read the live `quickRepliesEnabled` flag from the user-controllable
+ * AI-decision policy. Returns the documented default (`true`) when Pinia
+ * isn't active — this lets the component mount in legacy unit tests that
+ * don't install a Pinia instance.
+ */
+function isQuickRepliesEnabled(): boolean {
+  try {
+    return useAiDecisionPolicyStore().policy.quickRepliesEnabled;
+  } catch {
+    return true;
+  }
+}
 
 const props = defineProps<{
   messages: Message[];
@@ -147,6 +162,9 @@ const YES_NO_PATTERN = /(?:shall we|would you like|want me to|ready to|do you wa
 
 /** Whether the last assistant message asks a yes/no question (and it's the most recent message). */
 const showQuickReplies = computed(() => {
+  // Respects the "Quick-reply suggestions" toggle in the Brain panel — when
+  // off, never offer one-tap Yes/No buttons regardless of trailing phrasing.
+  if (!isQuickRepliesEnabled()) return false;
   if (props.isThinking || props.isStreaming) return false;
   const msgs = props.messages;
   if (msgs.length === 0) return false;

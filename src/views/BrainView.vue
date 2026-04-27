@@ -413,6 +413,65 @@
       </template>
     </section>
 
+    <!-- ── AI decision-making toggles ──────────────────────────────────────── -->
+    <section
+      class="bv-card"
+      data-testid="bv-ai-decisions"
+    >
+      <header class="bv-card-header">
+        <h3>🧭 AI decision-making</h3>
+        <span class="bv-card-subtle">
+          <a
+            class="bv-link"
+            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#25-intent-classification"
+            target="_blank"
+            rel="noopener"
+          >
+            How TerranSoul decides what to do →
+          </a>
+        </span>
+      </header>
+      <p class="bv-cog-desc">
+        TerranSoul makes a few opinionated routing decisions on your behalf — classifying intent, offering follow-up gates,
+        and suggesting quests. Toggle any of them off for a strictly-pass-through experience. Settings persist locally.
+      </p>
+      <div
+        class="bv-config-list"
+        data-testid="bv-ai-decisions-list"
+      >
+        <label
+          v-for="row in decisionToggleRows"
+          :key="row.key"
+          class="bv-aidp-row"
+          style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;"
+        >
+          <input
+            type="checkbox"
+            :checked="aiDecisionPolicy[row.key]"
+            :data-testid="row.testid"
+            style="margin-top:3px;flex:none;"
+            @change="onToggleDecision(row.key, ($event.target as HTMLInputElement).checked)"
+          >
+          <span style="display:flex;flex-direction:column;gap:2px;">
+            <span style="font-weight:600;">{{ row.label }}</span>
+            <span
+              class="bv-cog-desc"
+              style="font-size:0.85em;"
+            >{{ row.description }}</span>
+          </span>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button
+          class="bv-link"
+          data-testid="bv-aidp-reset"
+          @click="resetDecisionPolicy"
+        >
+          Reset to defaults →
+        </button>
+      </div>
+    </section>
+
     <!-- ── Auto-tag toggle (Chunk 18.1) ────────────────────────────────────── -->
     <section class="bv-autolearn-section">
       <header class="bv-autolearn-header">
@@ -498,6 +557,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
+import { useAiDecisionPolicyStore, type AiDecisionPolicy } from '../stores/ai-decision-policy';
 import { useSettingsStore } from '../stores/settings';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
@@ -863,6 +923,74 @@ const topEdges = computed(() => {
 // ── Refresh ────────────────────────────────────────────────────────────────
 
 const conversation = useConversationStore();
+const aiDecisionPolicyStore = useAiDecisionPolicyStore();
+const aiDecisionPolicy = aiDecisionPolicyStore.policy;
+
+interface DecisionToggleRow {
+  key: keyof AiDecisionPolicy;
+  label: string;
+  description: string;
+  testid: string;
+}
+const decisionToggleRows: DecisionToggleRow[] = [
+  {
+    key: 'intentClassifierEnabled',
+    label: 'LLM-powered intent classifier',
+    description:
+      'Run every chat turn through the brain to detect learn-with-docs / teach-ingest / gated-setup intents. Off = every message goes straight to streaming chat.',
+    testid: 'bv-aidp-intent',
+  },
+  {
+    key: 'unknownFallbackToInstall',
+    label: 'Auto-install fallback when classifier is unsure',
+    description:
+      'When the classifier returns Unknown (offline, timeout, malformed JSON), open the Auto-Install-All overlay so a local Ollama brain can take over. Off = silently fall through to streaming.',
+    testid: 'bv-aidp-unknown-fallback',
+  },
+  {
+    key: 'dontKnowGateEnabled',
+    label: 'Offer Gemini-search / context upload after "I don\'t know"',
+    description:
+      'Watch assistant replies for hedging language and push a System message offering the upgrade paths. Off = no follow-up prompt.',
+    testid: 'bv-aidp-dontknow',
+  },
+  {
+    key: 'questSuggestionsEnabled',
+    label: 'Auto-suggest quests after replies',
+    description:
+      'Open a quest overlay when the reply or your message mentions getting-started keywords. Off = quests only launch from the Skill Tree.',
+    testid: 'bv-aidp-quest',
+  },
+  {
+    key: 'chatBasedLlmSwitchEnabled',
+    label: 'Chat-based LLM switching commands',
+    description:
+      'Recognise "switch to groq", "use my openai api key sk-…" etc. and reconfigure the brain in-place. Off = those messages reach the LLM unchanged.',
+    testid: 'bv-aidp-llm-switch',
+  },
+  {
+    key: 'quickRepliesEnabled',
+    label: 'Yes/No quick-reply suggestions',
+    description:
+      'Show one-tap "Yes / No" buttons under the latest reply when it ends with a yes/no question pattern. Off = always type your full reply.',
+    testid: 'bv-aidp-quick-replies',
+  },
+  {
+    key: 'capacityDetectionEnabled',
+    label: 'Auto-suggest model upgrade when struggling',
+    description:
+      'Watch free-API replies for "I can\'t / cannot / am only an AI / beyond my capabilities" phrasings; after a few low-quality replies, pop the upgrade dialog. Off = no auto-prompts.',
+    testid: 'bv-aidp-capacity',
+  },
+];
+
+function onToggleDecision(key: keyof AiDecisionPolicy, enabled: boolean): void {
+  aiDecisionPolicy[key] = enabled;
+}
+
+function resetDecisionPolicy(): void {
+  aiDecisionPolicyStore.reset();
+}
 
 // Active selection snapshot (docs §20)
 interface BrainSelectionSnapshot {

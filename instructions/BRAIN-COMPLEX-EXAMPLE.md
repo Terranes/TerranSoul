@@ -59,10 +59,25 @@ Alice types into the chat input:
 
 > **Learn Vietnamese laws using my provided documents**
 
-`detectLearnWithDocsIntent()` in `conversation.ts` matches this phrase
-via regex and extracts the topic (*"Vietnamese laws"*). Instead of
-sending the message to the LLM, TerranSoul short-circuits and checks
-what brain components are needed.
+`conversation.ts` calls `classify_intent` (a Tauri command backed by
+`brain::intent_classifier::classify_user_intent`). The configured brain
+runs through the standard provider rotator (Free → Paid → Local Ollama
+→ Local LM Studio) with a tight 3-second timeout and replies with one
+of these JSON shapes: `{"kind":"chat"}`, `{"kind":"learn_with_docs",
+"topic":"…"}`, `{"kind":"teach_ingest","topic":"…"}`, or
+`{"kind":"gated_setup","setup":"upgrade_gemini" | "provide_context"}`.
+For Alice's input the classifier returns
+`{"kind":"learn_with_docs","topic":"Vietnamese laws"}`, so TerranSoul
+walks the Scholar's Quest prereq chain instead of streaming a chat
+reply. Paraphrases and multilingual phrasings (e.g.
+*"học luật Việt Nam từ tài liệu của tôi"*) work the same way because
+the LLM understands them — no English-only regex involved.
+
+If the free LLM can't decide (offline, rate-limited, malformed JSON,
+or 3s timeout) the classifier returns `{"kind":"unknown"}` and the
+frontend automatically falls back to the same install-all overlay shown
+below — installing a local Ollama brain so future turns have a working
+classifier offline forever after.
 
 ---
 
@@ -521,7 +536,7 @@ Auto-learn runs in the background for **all brain modes**:
 
 | Concern | File |
 |---|---|
-| Intent detection | `src/stores/conversation.ts` — `detectLearnWithDocsIntent()` |
+| Intent classification | `src-tauri/src/brain/intent_classifier.rs` — `classify_user_intent()` (Tauri command `classify_intent`); regex helpers `detectLearnWithDocsIntent` / `detectTeachIntent` / `detectGatedSetupCommand` are deprecated test fixtures only |
 | Prerequisite chain | `src/stores/conversation.ts` — `getMissingPrereqQuests()` |
 | Auto-install engine | `src/stores/conversation.ts` — `runAutoInstall()` |
 | Choice routing | `src/stores/conversation.ts` — `handleLearnDocsChoice()` |

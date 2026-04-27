@@ -62,10 +62,16 @@ Alice types into the chat input:
 
 > **Learn Vietnamese laws using my provided documents using Local LM**
 
-`detectLearnWithDocsIntent()` in `conversation.ts` matches this phrase
-via regex and extracts the topic (*"Vietnamese laws"*). Instead of
-sending the message to the LLM, TerranSoul short-circuits and checks
-what brain components are needed.
+`conversation.ts` calls `classify_intent` (a Tauri command backed by
+`brain::intent_classifier::classify_user_intent`). The configured brain
+— Free → Paid → Local Ollama → Local LM Studio, via the standard
+provider rotator — replies with a single JSON `IntentDecision`. For
+Alice's input the local model returns
+`{"kind":"learn_with_docs","topic":"Vietnamese laws"}`, so TerranSoul
+walks the Scholar's Quest prereq chain instead of streaming a chat
+reply. The same logic handles paraphrases, typos, and non-English
+phrasings (e.g. *"học luật Việt Nam từ tài liệu của tôi"*) because
+the brain understands them — no English-only regex involved.
 
 ---
 
