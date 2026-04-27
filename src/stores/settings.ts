@@ -30,6 +30,8 @@ export interface AppSettings {
   first_launch_complete?: boolean;
   /** When true, hide the 3D character and show a clean chatbox-only layout. */
   chatbox_mode?: boolean;
+  /** Components auto-configured by the first-launch wizard (e.g. "brain", "voice", "quests"). */
+  auto_configured?: string[];
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -45,6 +47,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   contextual_retrieval: false,
   first_launch_complete: false,
   chatbox_mode: false,
+  auto_configured: [],
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

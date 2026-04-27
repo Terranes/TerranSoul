@@ -40,10 +40,10 @@
             🔗 {{ edgeCount }} connections
           </span>
           <span
-            v-if="brain.ollamaStatus.running"
+            v-if="brain.ollamaStatus.running || brain.lmStudioStatus?.running"
             class="bv-pill bv-pill-ollama"
           >
-            🖥 Ollama running
+            🖥 {{ brain.ollamaStatus.running && brain.lmStudioStatus?.running ? 'Ollama + LM Studio' : brain.ollamaStatus.running ? 'Ollama running' : 'LM Studio running' }}
           </span>
         </div>
       </div>
@@ -129,6 +129,15 @@
               :title="configRows.endpoint"
             >
               {{ shortUrl(configRows.endpoint) }}
+            </dd>
+          </div>
+          <div
+            v-if="configRows.embeddingModel"
+            class="bv-dl-row"
+          >
+            <dt>Embedding</dt>
+            <dd class="bv-model">
+              <code>{{ configRows.embeddingModel }}</code>
             </dd>
           </div>
         </dl>
@@ -404,6 +413,65 @@
       </template>
     </section>
 
+    <!-- ── AI decision-making toggles ──────────────────────────────────────── -->
+    <section
+      class="bv-card"
+      data-testid="bv-ai-decisions"
+    >
+      <header class="bv-card-header">
+        <h3>🧭 AI decision-making</h3>
+        <span class="bv-card-subtle">
+          <a
+            class="bv-link"
+            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#25-intent-classification"
+            target="_blank"
+            rel="noopener"
+          >
+            How TerranSoul decides what to do →
+          </a>
+        </span>
+      </header>
+      <p class="bv-cog-desc">
+        TerranSoul makes a few opinionated routing decisions on your behalf — classifying intent, offering follow-up gates,
+        and suggesting quests. Toggle any of them off for a strictly-pass-through experience. Settings persist locally.
+      </p>
+      <div
+        class="bv-config-list"
+        data-testid="bv-ai-decisions-list"
+      >
+        <label
+          v-for="row in decisionToggleRows"
+          :key="row.key"
+          class="bv-aidp-row"
+          style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;"
+        >
+          <input
+            type="checkbox"
+            :checked="aiDecisionPolicy[row.key]"
+            :data-testid="row.testid"
+            style="margin-top:3px;flex:none;"
+            @change="onToggleDecision(row.key, ($event.target as HTMLInputElement).checked)"
+          >
+          <span style="display:flex;flex-direction:column;gap:2px;">
+            <span style="font-weight:600;">{{ row.label }}</span>
+            <span
+              class="bv-cog-desc"
+              style="font-size:0.85em;"
+            >{{ row.description }}</span>
+          </span>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button
+          class="bv-link"
+          data-testid="bv-aidp-reset"
+          @click="resetDecisionPolicy"
+        >
+          Reset to defaults →
+        </button>
+      </div>
+    </section>
+
     <!-- ── Auto-tag toggle (Chunk 18.1) ────────────────────────────────────── -->
     <section class="bv-autolearn-section">
       <header class="bv-autolearn-header">
@@ -480,6 +548,47 @@
         />
       </div>
     </section>
+
+    <!-- ── Danger zone ─────────────────────────────────────────────────────── -->
+    <section
+      class="bv-card bv-danger-zone"
+      data-testid="bv-danger-zone"
+    >
+      <header class="bv-card-header">
+        <h3>⚠️ Danger zone</h3>
+      </header>
+      <p class="bv-cog-desc">
+        These actions are irreversible. Proceed with caution.
+      </p>
+      <div class="bv-danger-actions">
+        <div class="bv-danger-row">
+          <div class="bv-danger-info">
+            <span class="bv-danger-label">Factory reset</span>
+            <span class="bv-cog-desc">Remove all auto-configured components (brain, voice, quests), clear all memories and conversation history. Reverts to first-launch state.</span>
+          </div>
+          <button
+            class="btn-danger"
+            data-testid="bv-factory-reset"
+            @click="confirmFactoryReset"
+          >
+            🔄 Factory reset
+          </button>
+        </div>
+        <div class="bv-danger-row">
+          <div class="bv-danger-info">
+            <span class="bv-danger-label">Clean all data</span>
+            <span class="bv-cog-desc">Permanently erase everything: memories, brain config, voice settings, persona, quests, app preferences. Returns to a fresh install.</span>
+          </div>
+          <button
+            class="btn-danger"
+            data-testid="bv-clear-all-data"
+            @click="confirmClearAllData"
+          >
+            🗑 Clean all data
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -489,6 +598,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
+import { useAiDecisionPolicyStore, type AiDecisionPolicy } from '../stores/ai-decision-policy';
 import { useSettingsStore } from '../stores/settings';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
@@ -520,7 +630,7 @@ const moodKey = computed<'none' | 'free' | 'paid' | 'local'>(() => {
   if (!m) return 'none';
   if (m.mode === 'free_api') return 'free';
   if (m.mode === 'paid_api') return 'paid';
-  if (m.mode === 'local_ollama') return 'local';
+  if (m.mode === 'local_ollama' || m.mode === 'local_lm_studio') return 'local';
   return 'none';
 });
 
@@ -539,6 +649,14 @@ const heroSubtitle = computed(() => {
   return provider
     ? `Powered by ${provider}. ${memoryCount.value} memories shape every reply.`
     : `${memoryCount.value} memories shape every reply.`;
+});
+
+const localProviderLabel = computed(() => {
+  const m = brain.brainMode;
+  if (!m) return '';
+  if (m.mode === 'local_ollama') return 'Ollama';
+  if (m.mode === 'local_lm_studio') return 'LM Studio';
+  return '';
 });
 
 const moodPillLabel = computed(() => ({
@@ -612,7 +730,7 @@ const ragSignals = computed<RagSignal[]>(() => {
     {
       key: 'vector', label: 'Vector', weight: '40%',
       available: isLocal,
-      unavailableReason: 'Switch to Local Ollama to enable embeddings',
+      unavailableReason: 'Switch to Local Ollama or Local LM Studio to enable embeddings',
     },
     {
       key: 'keyword', label: 'Keyword', weight: '20%',
@@ -669,7 +787,8 @@ const providerName = computed(() => {
     return p?.display_name ?? m.provider_id;
   }
   if (m.mode === 'paid_api') return m.base_url;
-  if (m.mode === 'local_ollama') return 'Ollama';
+  if (m.mode === 'local_ollama') return 'Ollama (Local LLM)';
+  if (m.mode === 'local_lm_studio') return 'LM Studio (Local LLM)';
   return null;
 });
 
@@ -697,10 +816,19 @@ const configRows = computed(() => {
   }
   if (m.mode === 'local_ollama') {
     return {
-      mode: 'Local Ollama',
-      provider: 'localhost',
+      mode: 'Local LLM',
+      provider: 'Ollama',
       model: m.model,
       endpoint: 'http://localhost:11434',
+    };
+  }
+  if (m.mode === 'local_lm_studio') {
+    return {
+      mode: 'Local LLM',
+      provider: 'LM Studio',
+      model: m.model,
+      endpoint: m.base_url,
+      embeddingModel: m.embedding_model ?? undefined,
     };
   }
   return { mode: 'Unknown', provider: '—', model: '—', endpoint: '' };
@@ -755,6 +883,19 @@ interface ModeOption {
   action: () => void | Promise<void>;
 }
 
+const localLlmDetail = computed(() => {
+  const ollamaUp = brain.ollamaStatus.running;
+  const lmUp = brain.lmStudioStatus?.running;
+  if (moodKey.value === 'local') {
+    // Show which provider is active
+    return `${localProviderLabel.value} · active`;
+  }
+  if (ollamaUp && lmUp) return 'Ollama + LM Studio available';
+  if (ollamaUp) return `Ollama · ${brain.installedModels.length} model${brain.installedModels.length === 1 ? '' : 's'} ready`;
+  if (lmUp) return `LM Studio · ${(brain.lmStudioModels ?? []).length} model${(brain.lmStudioModels ?? []).length === 1 ? '' : 's'} available`;
+  return 'No local provider running';
+});
+
 const modeOptions = computed<ModeOption[]>(() => [
   {
     key: 'free',
@@ -778,14 +919,12 @@ const modeOptions = computed<ModeOption[]>(() => [
   },
   {
     key: 'local',
-    label: 'Local Ollama',
+    label: 'Local LLM',
     emoji: '🖥',
-    detail: brain.ollamaStatus.running
-      ? `${brain.installedModels.length} model${brain.installedModels.length === 1 ? '' : 's'} ready`
-      : 'Requires Ollama running',
-    description: 'Pick a local Ollama model from the marketplace',
-    disabled: !brain.ollamaStatus.running,
-    disabledReason: 'Ollama is not running — start it with `ollama serve`',
+    detail: localLlmDetail.value,
+    description: 'Configure a local LLM provider (Ollama, LM Studio, or more)',
+    disabled: !brain.ollamaStatus.running && !brain.lmStudioStatus?.running,
+    disabledReason: 'No local provider running — start Ollama or LM Studio',
     action: () => emitNavigate('marketplace'),
   },
 ]);
@@ -825,6 +964,67 @@ const topEdges = computed(() => {
 // ── Refresh ────────────────────────────────────────────────────────────────
 
 const conversation = useConversationStore();
+const aiDecisionPolicyStore = useAiDecisionPolicyStore();
+const aiDecisionPolicy = aiDecisionPolicyStore.policy;
+
+interface DecisionToggleRow {
+  key: keyof AiDecisionPolicy;
+  label: string;
+  description: string;
+  testid: string;
+}
+const decisionToggleRows: DecisionToggleRow[] = [
+  {
+    key: 'intentClassifierEnabled',
+    label: 'LLM-powered intent classifier',
+    description:
+      'Run every chat turn through the brain to detect learn-with-docs / teach-ingest / gated-setup intents. Off = every message goes straight to streaming chat.',
+    testid: 'bv-aidp-intent',
+  },
+  {
+    key: 'dontKnowGateEnabled',
+    label: 'Offer Gemini-search / context upload after "I don\'t know"',
+    description:
+      'Watch assistant replies for hedging language and push a System message offering the upgrade paths. Off = no follow-up prompt.',
+    testid: 'bv-aidp-dontknow',
+  },
+  {
+    key: 'questSuggestionsEnabled',
+    label: 'Auto-suggest quests after replies',
+    description:
+      'Open a quest overlay when the reply or your message mentions getting-started keywords. Off = quests only launch from the Skill Tree.',
+    testid: 'bv-aidp-quest',
+  },
+  {
+    key: 'chatBasedLlmSwitchEnabled',
+    label: 'Chat-based LLM switching commands',
+    description:
+      'Recognise "switch to groq", "use my openai api key sk-…" etc. and reconfigure the brain in-place. Off = those messages reach the LLM unchanged.',
+    testid: 'bv-aidp-llm-switch',
+  },
+  {
+    key: 'quickRepliesEnabled',
+    label: 'Yes/No quick-reply suggestions',
+    description:
+      'Show one-tap "Yes / No" buttons under the latest reply when it ends with a yes/no question pattern. Off = always type your full reply.',
+    testid: 'bv-aidp-quick-replies',
+  },
+  {
+    key: 'capacityDetectionEnabled',
+    label: 'Auto-suggest model upgrade when struggling',
+    description:
+      'Watch free-API replies for "I can\'t / cannot / am only an AI / beyond my capabilities" phrasings; after a few low-quality replies, pop the upgrade dialog. Off = no auto-prompts.',
+    testid: 'bv-aidp-capacity',
+  },
+];
+
+function onToggleDecision(key: keyof AiDecisionPolicy, enabled: boolean): void {
+  aiDecisionPolicy[key] = enabled;
+}
+
+function resetDecisionPolicy(): void {
+  aiDecisionPolicyStore.reset();
+}
 
 // Active selection snapshot (docs §20)
 interface BrainSelectionSnapshot {
@@ -855,6 +1055,7 @@ const selectionProviderLine = computed(() => {
     }
     case 'paid_api': return `Paid API → ${p.provider} · ${p.model} @ ${p.base_url}`;
     case 'local_ollama': return `Local Ollama → ${p.model}`;
+    case 'local_lm_studio': return `Local LM Studio → ${p.model} @ ${p.base_url}`;
     default: return p.kind;
   }
 });
@@ -957,6 +1158,31 @@ async function forceExtractNow() {
   }
 }
 
+async function confirmFactoryReset() {
+  if (!confirm('Factory reset?\n\nThis will remove all auto-configured components (brain, voice, quests), erase all memories, and clear conversation history.\n\nYou will see the first-launch wizard again.\n\nThis cannot be undone.')) {
+    return;
+  }
+  try {
+    await brain.factoryReset();
+    await refresh();
+  } catch (err) {
+    console.warn('[BrainView] factory reset failed:', err);
+  }
+}
+
+async function confirmClearAllData() {
+  if (!confirm('Clean ALL data?\n\nThis will permanently erase everything:\n• All memories, connections, and version history\n• Brain configuration and provider settings\n• Voice settings\n• Persona traits, expressions, and motions\n• Quest progress\n• App preferences\n\nOnly device identity is preserved.\n\nThis cannot be undone.')) {
+    return;
+  }
+  try {
+    await memory.clearAllData();
+    await refresh();
+    await appSettings.loadSettings();
+  } catch (err) {
+    console.warn('[BrainView] clean all data failed:', err);
+  }
+}
+
 async function refresh() {
   isRefreshing.value = true;
   try {
@@ -966,6 +1192,8 @@ async function refresh() {
       brain.fetchSystemInfo(),
       brain.checkOllamaStatus(),
       brain.fetchInstalledModels(),
+      brain.checkLmStudioStatus(),
+      brain.fetchLmStudioModels(),
       memory.fetchAll(),
       memory.getStats(),
       memory.fetchEdges(),
@@ -1325,6 +1553,54 @@ onMounted(async () => {
   cursor: pointer;
 }
 .btn-secondary:hover:not(:disabled) { background: var(--ts-bg-hover, rgba(255,255,255,0.10)); }
+
+/* ── Danger zone ────────────────────────────────────────────────────────── */
+.bv-danger-zone {
+  border-color: var(--ts-error, #f87171);
+  background: rgba(248, 113, 113, 0.04);
+}
+.bv-danger-zone .bv-card-header h3 { color: var(--ts-error, #f87171); }
+.bv-danger-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.bv-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--ts-border);
+}
+.bv-danger-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.bv-danger-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ts-text-primary);
+}
+.btn-danger {
+  flex: none;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--ts-error, #f87171);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ts-error, #f87171);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-danger:hover {
+  background: var(--ts-error, #f87171);
+  color: #fff;
+}
 
 @media (max-width: 720px) {
   .bv-hero { grid-template-columns: auto 1fr; }

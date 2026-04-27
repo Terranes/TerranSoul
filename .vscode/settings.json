@@ -87,7 +87,12 @@
 
   // ─── MCP Integration ──────────────────────────────────────────────
   // Auto-discover and start MCP servers from mcp.json
-  "chat.mcp.discovery.enabled": true,
+  "chat.mcp.discovery.enabled": {
+    "claude-desktop": true,
+    "windsurf": true,
+    "cursor-global": true,
+    "cursor-workspace": true
+  },
   "chat.mcp.autoStart": "newAndOutdated",
 
   // ─── Custom Instructions & Memory ─────────────────────────────────

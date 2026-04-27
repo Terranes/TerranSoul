@@ -175,6 +175,8 @@ pub trait StorageBackend: Send {
     fn delete(&self, id: i64) -> StorageResult<()>;
     fn delete_by_source_url(&self, url: &str) -> StorageResult<usize>;
     fn delete_expired(&self) -> StorageResult<usize>;
+    /// Delete **all** memories, edges, and conflicts. Returns deleted memory count.
+    fn delete_all(&self) -> StorageResult<usize>;
 
     // ── Lifecycle ────────────────────────────────────────────────────────
     /// Apply time-based decay to long-term memories.

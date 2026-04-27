@@ -146,6 +146,28 @@ pub async fn auto_tag_content(content: &str, brain_mode: &BrainMode) -> Vec<Stri
                 Err(_) => return vec![],
             }
         }
+        BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            ..
+        } => {
+            let client = OpenAiClient::new(base_url, model, api_key.as_deref());
+            let msgs = vec![
+                OpenAiMessage {
+                    role: "system".to_string(),
+                    content: sys,
+                },
+                OpenAiMessage {
+                    role: "user".to_string(),
+                    content: user,
+                },
+            ];
+            match client.chat(msgs).await {
+                Ok(r) => r,
+                Err(_) => return vec![],
+            }
+        }
     };
 
     parse_tag_response(&reply)

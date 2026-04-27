@@ -438,6 +438,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useConversationStore, detectSentiment, handleLearnDocsChoice } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
+import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
 import { useStreamingStore } from '../stores/streaming';
 import { useVoiceStore } from '../stores/voice';
 import { useSettingsStore } from '../stores/settings';
@@ -466,6 +467,7 @@ import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
+const aiDecisionPolicy = useAiDecisionPolicyStore().policy;
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const settingsStore = useSettingsStore();
@@ -786,6 +788,9 @@ const activeProviderName = computed(() => {
   if (mode.mode === 'local_ollama') {
     return `Ollama · ${mode.model}`;
   }
+  if (mode.mode === 'local_lm_studio') {
+    return `LM Studio · ${mode.model}`;
+  }
   if (mode.mode === 'paid_api') {
     return `${mode.provider} · ${mode.model}`;
   }
@@ -891,8 +896,10 @@ async function handleSend(message: string) {
       showEmojiPopup(lastMsg.emoji);
     }
 
-    // Assess response quality — suggest upgrade if struggling
-    if (brain.isFreeApiMode && !upgradeAlreadySuggested) {
+    // Assess response quality — suggest upgrade if struggling. Respects the
+    // "Capacity-detection auto-upgrade" toggle in the Brain panel; when off,
+    // the user is never auto-prompted to upgrade based on phrasing heuristics.
+    if (brain.isFreeApiMode && !upgradeAlreadySuggested && aiDecisionPolicy.capacityDetectionEnabled) {
       const signal = assessCapacity(lastMsg.content, lastUserQuery);
       if (signal.shouldSuggestUpgrade) {
         showUpgradeDialog.value = true;

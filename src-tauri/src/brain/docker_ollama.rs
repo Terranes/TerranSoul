@@ -223,6 +223,37 @@ pub async fn check_ollama_container_for(runtime: ContainerRuntime) -> OllamaCont
     }
 }
 
+/// Stop and remove the Ollama container and its associated Docker volume.
+/// Best-effort: succeeds even if the container doesn't exist.
+pub async fn remove_ollama_container() -> Result<String, String> {
+    remove_ollama_container_for(ContainerRuntime::Docker).await
+}
+
+/// Variant of [`remove_ollama_container`] that targets a specific runtime.
+pub async fn remove_ollama_container_for(
+    runtime: ContainerRuntime,
+) -> Result<String, String> {
+    let bin = runtime.binary();
+    let mut steps: Vec<String> = Vec::new();
+
+    // Stop the container (ignore errors — may already be stopped or absent).
+    let _ = run_command(bin, &["stop", CONTAINER_NAME]).await;
+
+    // Remove the container.
+    match run_command(bin, &["rm", "-f", CONTAINER_NAME]).await {
+        Ok(_) => steps.push(format!("Removed container '{CONTAINER_NAME}'")),
+        Err(_) => steps.push(format!("Container '{CONTAINER_NAME}' not found (already removed)")),
+    }
+
+    // Remove the named volume.
+    match run_command(bin, &["volume", "rm", "ollama_data"]).await {
+        Ok(_) => steps.push("Removed volume 'ollama_data'".to_string()),
+        Err(_) => steps.push("Volume 'ollama_data' not found (already removed)".to_string()),
+    }
+
+    Ok(steps.join("\n"))
+}
+
 /// Ensure the Ollama container is running. Creates it if it doesn't exist,
 /// starts it if stopped.  Detects NVIDIA GPU and enables `--gpus all` when
 /// available.

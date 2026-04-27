@@ -210,6 +210,7 @@ async function chooseOneByOne() {
 
 async function runRecommendedSetup(autoAcceptAll: boolean) {
   const items: { icon: string; label: string }[] = [];
+  const autoConfigured: string[] = [];
 
   // Suppress quest-unlock / combo-unlock notifications during batch setup
   // so the user isn't blasted with popups for every auto-detected feature.
@@ -225,6 +226,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
     } catch {
       brain.autoConfigureFreeApi();
     }
+    autoConfigured.push('brain');
   }
   items.push({ icon: '🧠', label: 'Brain connected (Pollinations AI — free, no key needed)' });
   setupProgress.value = 30;
@@ -235,6 +237,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
   if (!voice.hasVoice) {
     await voice.autoConfigureVoice();
+    autoConfigured.push('voice');
   }
   items.push({ icon: '🗣️', label: 'Voice enabled (Edge TTS neural voices)' });
   setupProgress.value = 60;
@@ -256,6 +259,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
       skillTree.markComplete(questId);
     }
     items.push({ icon: '⚔️', label: `${allQuests.length} quests auto-activated` });
+    autoConfigured.push('quests');
   } else {
     items.push({ icon: '📜', label: 'Quests ready — accept them one by one from the Quest tab' });
   }
@@ -267,7 +271,10 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
   // ── Phase 5: Persist ────────────────────────────────────────────────
   setupMessage.value = 'Saving configuration...';
-  await settingsStore.saveSettings({ first_launch_complete: true });
+  await settingsStore.saveSettings({
+    first_launch_complete: true,
+    auto_configured: autoConfigured,
+  });
   setupProgress.value = 100;
 
   completedItems.value = items;

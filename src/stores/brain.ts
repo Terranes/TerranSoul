@@ -4,6 +4,11 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   BrainMode,
   FreeProvider,
+  LmStudioDownloadStatus,
+  LmStudioLoadResult,
+  LmStudioModelEntry,
+  LmStudioStatus,
+  LmStudioUnloadResult,
   ModelRecommendation,
   OllamaModelEntry,
   OllamaStatus,
@@ -50,6 +55,10 @@ export const useBrainStore = defineStore('brain', () => {
   const recommendations = ref<ModelRecommendation[]>([]);
   const ollamaStatus = ref<OllamaStatus>({ running: false, model_count: 0 });
   const installedModels = ref<OllamaModelEntry[]>([]);
+  const lmStudioStatus = ref<LmStudioStatus>({ running: false, model_count: 0, loaded_count: 0 });
+  const lmStudioModels = ref<LmStudioModelEntry[]>([]);
+  const lmStudioDownload = ref<LmStudioDownloadStatus | null>(null);
+  const lmStudioError = ref<string | null>(null);
   const isPulling = ref(false);
   const pullError = ref<string | null>(null);
   const isLoading = ref(false);
@@ -88,6 +97,20 @@ export const useBrainStore = defineStore('brain', () => {
     installedModels.value = await invoke<OllamaModelEntry[]>('get_ollama_models');
   }
 
+  async function checkLmStudioStatus(baseUrl?: string, apiKey?: string | null): Promise<void> {
+    lmStudioStatus.value = await invoke<LmStudioStatus>('check_lm_studio_status', {
+      baseUrl: baseUrl || null,
+      apiKey: apiKey || null,
+    });
+  }
+
+  async function fetchLmStudioModels(baseUrl?: string, apiKey?: string | null): Promise<void> {
+    lmStudioModels.value = await invoke<LmStudioModelEntry[]>('get_lm_studio_models', {
+      baseUrl: baseUrl || null,
+      apiKey: apiKey || null,
+    });
+  }
+
   async function pullModel(modelTag: string): Promise<boolean> {
     isPulling.value = true;
     pullError.value = null;
@@ -111,6 +134,97 @@ export const useBrainStore = defineStore('brain', () => {
   async function clearActiveBrain(): Promise<void> {
     await invoke('clear_active_brain');
     activeBrain.value = null;
+  }
+
+  /** Factory-reset: clear persisted brain config, caches, and revert to unconfigured state. */
+  async function factoryReset(): Promise<void> {
+    await invoke('factory_reset_brain');
+    activeBrain.value = null;
+    brainMode.value = null;
+  }
+
+  async function downloadLmStudioModel(args: {
+    model: string;
+    baseUrl?: string;
+    apiKey?: string | null;
+    quantization?: string | null;
+  }): Promise<LmStudioDownloadStatus | null> {
+    lmStudioError.value = null;
+    try {
+      const status = await invoke<LmStudioDownloadStatus>('download_lm_studio_model', {
+        model: args.model,
+        baseUrl: args.baseUrl || null,
+        apiKey: args.apiKey || null,
+        quantization: args.quantization || null,
+      });
+      lmStudioDownload.value = status;
+      return status;
+    } catch (e) {
+      lmStudioError.value = String(e);
+      return null;
+    }
+  }
+
+  async function getLmStudioDownloadStatus(
+    jobId: string,
+    baseUrl?: string,
+    apiKey?: string | null,
+  ): Promise<LmStudioDownloadStatus | null> {
+    lmStudioError.value = null;
+    try {
+      const status = await invoke<LmStudioDownloadStatus>('get_lm_studio_download_status', {
+        jobId,
+        baseUrl: baseUrl || null,
+        apiKey: apiKey || null,
+      });
+      lmStudioDownload.value = status;
+      return status;
+    } catch (e) {
+      lmStudioError.value = String(e);
+      return null;
+    }
+  }
+
+  async function loadLmStudioModel(args: {
+    model: string;
+    baseUrl?: string;
+    apiKey?: string | null;
+    contextLength?: number | null;
+  }): Promise<LmStudioLoadResult | null> {
+    lmStudioError.value = null;
+    try {
+      const result = await invoke<LmStudioLoadResult>('load_lm_studio_model', {
+        model: args.model,
+        baseUrl: args.baseUrl || null,
+        apiKey: args.apiKey || null,
+        contextLength: args.contextLength || null,
+      });
+      await fetchLmStudioModels(args.baseUrl, args.apiKey);
+      return result;
+    } catch (e) {
+      lmStudioError.value = String(e);
+      return null;
+    }
+  }
+
+  async function unloadLmStudioModel(
+    instanceId: string,
+    baseUrl?: string,
+    apiKey?: string | null,
+  ): Promise<LmStudioUnloadResult | null> {
+    lmStudioError.value = null;
+    try {
+      const result = await invoke<LmStudioUnloadResult>('unload_lm_studio_model', {
+        instanceId,
+        baseUrl: baseUrl || null,
+        apiKey: apiKey || null,
+      });
+      await fetchLmStudioModels(baseUrl, apiKey);
+      return result;
+    } catch (e) {
+      lmStudioError.value = String(e);
+      return null;
+    }
   }
 
   // ── Three-Tier Brain Methods ─────────────────────────────────────────────
@@ -191,6 +305,8 @@ export const useBrainStore = defineStore('brain', () => {
         fetchRecommendations(),
         checkOllamaStatus(),
         fetchInstalledModels(),
+        checkLmStudioStatus(),
+        fetchLmStudioModels(),
       ]);
     } catch {
       // Tauri backend unavailable — auto-default to free API
@@ -228,6 +344,10 @@ export const useBrainStore = defineStore('brain', () => {
       } else if (mode.mode === 'local_ollama') {
         baseUrl = 'http://localhost:11434';
         model = mode.model;
+      } else if (mode.mode === 'local_lm_studio') {
+        baseUrl = mode.base_url;
+        model = mode.model;
+        apiKey = mode.api_key;
       } else {
         return '';
       }
@@ -260,6 +380,10 @@ export const useBrainStore = defineStore('brain', () => {
     recommendations,
     ollamaStatus,
     installedModels,
+    lmStudioStatus,
+    lmStudioModels,
+    lmStudioDownload,
+    lmStudioError,
     isPulling,
     pullError,
     isLoading,
@@ -273,9 +397,16 @@ export const useBrainStore = defineStore('brain', () => {
     fetchRecommendations,
     checkOllamaStatus,
     fetchInstalledModels,
+    checkLmStudioStatus,
+    fetchLmStudioModels,
     pullModel,
     setActiveBrain,
     clearActiveBrain,
+    factoryReset,
+    downloadLmStudioModel,
+    getLmStudioDownloadStatus,
+    loadLmStudioModel,
+    unloadLmStudioModel,
     fetchFreeProviders,
     loadBrainMode,
     setBrainMode,

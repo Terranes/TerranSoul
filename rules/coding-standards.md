@@ -1,6 +1,10 @@
 # Coding Standards
 
 > All code must satisfy the Quality Pillars defined in `rules/quality-pillars.md`.
+> AI-routing logic must additionally satisfy `rules/llm-decision-rules.md`
+> (no regex / `.includes` / keyword arrays for LLM-routing decisions —
+> route through the brain classifier with a user toggle in
+> `src/stores/ai-decision-policy.ts`).
 
 ---
 

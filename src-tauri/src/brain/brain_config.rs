@@ -5,7 +5,7 @@ use std::path::Path;
 /// File name for the JSON brain configuration.
 const BRAIN_CONFIG_FILE: &str = "brain_config.json";
 
-/// The three-tier brain mode: Free cloud API, Paid cloud API, or Local Ollama.
+/// Brain mode: Free cloud API, Paid cloud API, Local Ollama, or Local LM Studio.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode")]
 pub enum BrainMode {
@@ -34,6 +34,18 @@ pub enum BrainMode {
     LocalOllama {
         /// Ollama model tag (e.g. "gemma3:4b").
         model: String,
+    },
+    /// Use a locally running LM Studio server.
+    #[serde(rename = "local_lm_studio")]
+    LocalLmStudio {
+        /// LM Studio model key (e.g. "qwen/qwen3-4b").
+        model: String,
+        /// LM Studio server base URL (default: http://127.0.0.1:1234).
+        base_url: String,
+        /// Optional LM Studio API token.
+        api_key: Option<String>,
+        /// Optional embedding model key for `/v1/embeddings`.
+        embedding_model: Option<String>,
     },
 }
 
@@ -157,6 +169,20 @@ mod tests {
     }
 
     #[test]
+    fn save_and_load_local_lm_studio() {
+        let dir = tempdir().unwrap();
+        let mode = BrainMode::LocalLmStudio {
+            model: "qwen/qwen3-4b".into(),
+            base_url: "http://127.0.0.1:1234".into(),
+            api_key: Some("lmstudio".into()),
+            embedding_model: Some("text-embedding-nomic-embed-text-v1.5".into()),
+        };
+        save(dir.path(), &mode).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, mode);
+    }
+
+    #[test]
     fn clear_removes_config() {
         let dir = tempdir().unwrap();
         let mode = BrainMode::FreeApi {
@@ -230,6 +256,12 @@ mod tests {
             },
             BrainMode::LocalOllama {
                 model: "phi-4:latest".into(),
+            },
+            BrainMode::LocalLmStudio {
+                model: "qwen/qwen3-4b".into(),
+                base_url: "http://127.0.0.1:1234".into(),
+                api_key: None,
+                embedding_model: None,
             },
         ];
         for v in variants {

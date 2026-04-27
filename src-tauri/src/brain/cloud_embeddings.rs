@@ -152,8 +152,15 @@ pub async fn embed_for_mode(
     active_brain: Option<&str>,
 ) -> Option<Vec<f32>> {
     match brain_mode {
-        Some(BrainMode::LocalOllama { model }) => {
-            super::OllamaAgent::embed_text(text, model).await
+        Some(BrainMode::LocalOllama { model }) => super::OllamaAgent::embed_text(text, model).await,
+        Some(BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            embedding_model,
+        }) => {
+            let embed_model = embedding_model.as_deref().unwrap_or(model);
+            embed_text_openai(text, base_url, embed_model, api_key.as_deref()).await
         }
         Some(BrainMode::PaidApi {
             base_url,

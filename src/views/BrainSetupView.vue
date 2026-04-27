@@ -48,10 +48,10 @@
           @click="selectedTier = 'local'"
         >
           <div class="bs-tier-header">
-            <strong>🖥 Local LLM (Ollama)</strong>
+            <strong>🖥 Local LLM</strong>
           </div>
-          <p>Run a model locally on your machine with Ollama. Fully private, no internet needed.</p>
-          <small>Requires Ollama installed · Best for privacy</small>
+          <p>Run a model locally on your machine. Fully private, no internet needed.</p>
+          <small>Supports Ollama, LM Studio, and more · Best for privacy</small>
         </div>
       </div>
       <button
@@ -191,12 +191,68 @@
       </div>
     </div>
 
-    <!-- ── Step 1C: Local Ollama setup — Hardware analysis ── -->
+    <!-- ── Step 1C: Local LLM setup — Provider selection ── -->
     <div
       v-else-if="step === 1 && selectedTier === 'local'"
       class="bs-card"
     >
-      <h2>🖥 Local LLM Setup</h2>
+      <h2>🖥 Choose Local Provider</h2>
+      <p class="bs-desc">
+        Which local runtime do you want to use? Each provides an OpenAI-compatible server.
+      </p>
+      <div class="bs-tiers">
+        <div
+          :class="['bs-tier', { selected: localRuntime === 'ollama' }]"
+          @click="localRuntime = 'ollama'"
+        >
+          <div class="bs-tier-header">
+            <strong>Ollama</strong>
+            <span
+              v-if="brain.ollamaStatus.running"
+              class="bs-badge-free"
+            >✅ Running</span>
+          </div>
+          <p>CLI-based, lightweight. Download models with <code>ollama pull</code>.</p>
+          <small>Best for: developers · CLI users · headless servers</small>
+        </div>
+        <div
+          :class="['bs-tier', { selected: localRuntime === 'lm_studio' }]"
+          @click="localRuntime = 'lm_studio'"
+        >
+          <div class="bs-tier-header">
+            <strong>LM Studio</strong>
+            <span
+              v-if="brain.lmStudioStatus?.running"
+              class="bs-badge-free"
+            >✅ Running</span>
+          </div>
+          <p>GUI app with model browser. Manage models visually.</p>
+          <small>Best for: visual management · model browsing · embedding models</small>
+        </div>
+      </div>
+      <div class="bs-nav">
+        <button
+          class="btn-secondary"
+          @click="step = 0"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!localRuntime"
+          @click="localRuntime === 'lm_studio' ? (step = 10) : (step = 2)"
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Step 1C-2: Local Ollama setup — Hardware analysis ── -->
+    <div
+      v-else-if="step === 2 && selectedTier === 'local'"
+      class="bs-card"
+    >
+      <h2>🖥 Local LLM Setup — Ollama</h2>
       <p class="bs-desc">
         We'll analyse your hardware and recommend the best model for your machine.
       </p>
@@ -226,23 +282,23 @@
       <div class="bs-nav">
         <button
           class="btn-secondary"
-          @click="step = 0"
+          @click="step = 1"
         >
           ← Back
         </button>
         <button
           class="btn-primary"
           :disabled="!brain.systemInfo"
-          @click="step = 2"
+          @click="step = 3"
         >
           Next →
         </button>
       </div>
     </div>
 
-    <!-- ── Step 2: Choose local model ── -->
+    <!-- ── Step 3: Choose local model ── -->
     <div
-      v-else-if="step === 2"
+      v-else-if="step === 3"
       class="bs-card"
     >
       <h2>Choose your Brain</h2>
@@ -275,23 +331,23 @@
       <div class="bs-nav">
         <button
           class="btn-secondary"
-          @click="step = 1"
+          @click="step = 2"
         >
           ← Back
         </button>
         <button
           class="btn-primary"
           :disabled="!selectedModel"
-          @click="step = 3"
+          @click="step = 4"
         >
           Next →
         </button>
       </div>
     </div>
 
-    <!-- ── Step 3: Check / install Ollama ── -->
+    <!-- ── Step 4: Check / install Ollama ── -->
     <div
-      v-else-if="step === 3"
+      v-else-if="step === 4"
       class="bs-card"
     >
       <h2>Check Ollama</h2>
@@ -324,7 +380,7 @@
       <div class="bs-nav">
         <button
           class="btn-secondary"
-          @click="step = 2"
+          @click="step = 3"
         >
           ← Back
         </button>
@@ -337,16 +393,16 @@
         <button
           class="btn-primary"
           :disabled="!brain.ollamaStatus.running"
-          @click="step = 4"
+          @click="step = 5"
         >
           Next →
         </button>
       </div>
     </div>
 
-    <!-- ── Step 4: Download model ── -->
+    <!-- ── Step 5: Download model ── -->
     <div
-      v-else-if="step === 4"
+      v-else-if="step === 5"
       class="bs-card"
     >
       <h2>Download {{ selectedModel }}</h2>
@@ -378,7 +434,7 @@
       <div class="bs-nav">
         <button
           class="btn-secondary"
-          @click="step = 3"
+          @click="step = 4"
         >
           ← Back
         </button>
@@ -399,9 +455,80 @@
       </div>
     </div>
 
-    <!-- ── Step 5 (or done): Brain connected ── -->
+    <!-- ── Step 10: LM Studio configuration ── -->
     <div
-      v-else-if="step === 5 || step === 99"
+      v-else-if="step === 10"
+      class="bs-card"
+    >
+      <h2>🖥 Local LLM Setup — LM Studio</h2>
+      <p class="bs-desc">
+        Configure your LM Studio local server connection.
+      </p>
+      <div class="bs-form">
+        <label for="lms-base-url">Base URL:</label>
+        <input
+          id="lms-base-url"
+          v-model="lmStudioBaseUrl"
+          type="url"
+          placeholder="http://127.0.0.1:1234"
+          class="bs-input"
+        >
+        <label for="lms-api-key">API token (optional):</label>
+        <input
+          id="lms-api-key"
+          v-model="lmStudioApiKey"
+          type="password"
+          placeholder="Optional"
+          class="bs-input"
+        >
+      </div>
+      <div :class="['bs-status-indicator', brain.lmStudioStatus?.running ? 'ok' : 'error']">
+        {{ brain.lmStudioStatus?.running ? `✅ LM Studio is running (${brain.lmStudioStatus.model_count} models)` : '❌ LM Studio is not running — start its local server' }}
+      </div>
+      <button
+        class="btn-secondary btn-sm"
+        @click="refreshLmStudioCheck"
+      >
+        🔄 Check connection
+      </button>
+      <div class="bs-form">
+        <label for="lms-model">Chat model:</label>
+        <input
+          id="lms-model"
+          v-model="lmStudioModel"
+          type="text"
+          placeholder="gemma-4-12b-it"
+          class="bs-input"
+        >
+        <label for="lms-embed-model">Embedding model (optional):</label>
+        <input
+          id="lms-embed-model"
+          v-model="lmStudioEmbeddingModel"
+          type="text"
+          placeholder="qwen3-embedding-0.6b"
+          class="bs-input"
+        >
+      </div>
+      <div class="bs-nav">
+        <button
+          class="btn-secondary"
+          @click="step = 1"
+        >
+          ← Back
+        </button>
+        <button
+          class="btn-primary"
+          :disabled="!brain.lmStudioStatus?.running || !lmStudioModel"
+          @click="finishLmStudio"
+        >
+          Activate →
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Step 6 (or done): Brain connected ── -->
+    <div
+      v-else-if="step === 6 || step === 99"
       class="bs-card bs-done"
     >
       <div class="bs-done-icon">
@@ -439,6 +566,7 @@ const emit = defineEmits<{ (e: 'done'): void }>();
 const brain = useBrainStore();
 const step = ref(0);
 const selectedTier = ref<'free' | 'paid' | 'local'>('free');
+const localRuntime = ref<'ollama' | 'lm_studio'>('ollama');
 const selectedModel = ref('');
 const selectedProvider = ref('pollinations');
 const freeApiKey = ref<string | null>(null);
@@ -451,10 +579,17 @@ const paidApiKey = ref('');
 const paidModel = ref('gpt-4o');
 const paidBaseUrl = ref('https://api.openai.com');
 
+// LM Studio fields
+const lmStudioBaseUrl = ref('http://127.0.0.1:1234');
+const lmStudioApiKey = ref('');
+const lmStudioModel = ref('');
+const lmStudioEmbeddingModel = ref('');
+
 const stepLabels = computed(() => {
   if (selectedTier.value === 'free') return ['Choose', 'Provider', 'Done'];
   if (selectedTier.value === 'paid') return ['Choose', 'API Key', 'Done'];
-  return ['Choose', 'Hardware', 'Model', 'Ollama', 'Download', 'Done'];
+  if (localRuntime.value === 'lm_studio') return ['Choose', 'Provider', 'Configure', 'Done'];
+  return ['Choose', 'Provider', 'Hardware', 'Model', 'Ollama', 'Download', 'Done'];
 });
 
 const modelAlreadyInstalled = computed(() =>
@@ -524,7 +659,7 @@ async function doPull() {
   const ok = await brain.pullModel(selectedModel.value);
   if (ok) {
     pullDone.value = true;
-    step.value = 5;
+    step.value = 6;
   }
 }
 
@@ -541,7 +676,30 @@ async function finishLocal() {
       model: selectedModel.value,
     };
   }
-  step.value = 5;
+  step.value = 6;
+}
+
+async function refreshLmStudioCheck() {
+  await brain.checkLmStudioStatus(
+    lmStudioBaseUrl.value,
+    lmStudioApiKey.value || null,
+  );
+}
+
+async function finishLmStudio() {
+  const mode = {
+    mode: 'local_lm_studio' as const,
+    model: lmStudioModel.value,
+    base_url: lmStudioBaseUrl.value,
+    api_key: lmStudioApiKey.value || null,
+    embedding_model: lmStudioEmbeddingModel.value || null,
+  };
+  try {
+    await brain.setBrainMode(mode);
+  } catch {
+    brain.brainMode = mode;
+  }
+  step.value = 99;
 }
 
 onMounted(async () => {

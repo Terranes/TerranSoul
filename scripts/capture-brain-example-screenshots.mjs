@@ -215,6 +215,21 @@ const MEMORY_STATE = {
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('01 — Fresh Launch');
 await setPinia({ settings: { firstLaunchDone: true, hasCompletedSetup: true }, ...BRAIN_FREE_STATE });
+// Switch to chatbox mode so messages are always visible
+const chatModeBtn = page.locator('.mode-seg-btn', { hasText: 'Chat' });
+if (await chatModeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+  await chatModeBtn.click();
+  await sleep(500);
+} else {
+  await page.evaluate(() => {
+    const app = document.querySelector('#app')?.__vue_app__;
+    const pinia = app?.config?.globalProperties?.$pinia;
+    if (!pinia) return;
+    const s = pinia._s.get('settings');
+    if (s) s.settings.chatbox_mode = true;
+  });
+  await sleep(500);
+}
 await navigateTo('Chat');
 await sleep(500);
 await assertSelector('.app-nav');
@@ -295,13 +310,28 @@ await assertVisible('Start Knowledge Quest');
 await screenshot('04-auto-install.png');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 05 — Brain tab fully configured
+// 05 — Brain tab fully configured (Local LLM — Gemma 4 + Qwen embedding)
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('05 — Brain tab fully configured');
 await navigateTo('Brain');
-// Ensure brain + memory state is set correctly
+// Set brain to Local LLM (LM Studio) with Gemma 4 chat + Qwen embedding
 await setPinia({
-  ...BRAIN_FREE_STATE,
+  brain: {
+    brainMode: {
+      mode: 'local_lm_studio',
+      model: 'gemma-4-12b-it',
+      base_url: 'http://localhost:1234/v1',
+      api_key: null,
+      embedding_model: 'qwen3-embedding-0.6b',
+    },
+    hasBrain: true,
+    activeBrain: null,
+    isLoading: false,
+    ollamaStatus: { running: false, model_count: 0 },
+    lmStudioStatus: { running: true, model_count: 2, loaded_count: 2 },
+    freeProviders: BRAIN_FREE_STATE.brain.freeProviders,
+    systemInfo: BRAIN_FREE_STATE.brain.systemInfo,
+  },
   ...MEMORY_STATE,
 });
 await sleep(1200);
@@ -314,8 +344,10 @@ await assertSelector('[data-testid="bv-card-hardware"]');
 await assertSelector('[data-testid="bv-card-memory"]');
 // Assert config card content
 await assertVisible('Configuration');
-await assertVisible('Free Cloud API');
-await assertVisible('Pollinations AI');
+await assertVisible('Local LLM');
+await assertVisible('LM Studio');
+await assertVisible('gemma-4-12b-it');
+await assertVisible('qwen3-embedding-0.6b');
 // Assert hardware card
 await assertVisible('Hardware');
 await assertVisible('Intel Core i7-12700K');

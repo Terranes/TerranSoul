@@ -109,6 +109,19 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /** Delete **all** persisted data: memories, brain, voice, persona, quests, settings. */
+  async function clearAllData(): Promise<void> {
+    try {
+      await invoke('clear_all_data');
+      memories.value = [];
+      stats.value = null;
+      edges.value = [];
+      edgeStats.value = null;
+    } catch (e) {
+      error.value = String(e);
+    }
+  }
+
   /** Ask the brain to extract memories from the current session. */
   async function extractFromSession(): Promise<number> {
     try {
@@ -374,6 +387,7 @@ export const useMemoryStore = defineStore('memory', () => {
     addMemory,
     updateMemory,
     deleteMemory,
+    clearAllData,
     extractFromSession,
     summarizeSession,
     getShortTermMemory,
