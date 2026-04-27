@@ -55,7 +55,17 @@ pub async fn pull_ollama_model(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let client = &state.ollama_client;
-    brain::pull_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await
+    brain::pull_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await?;
+
+    // Track the pulled model so factory reset can remove it.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        let tag = format!("ollama_model:{model_name}");
+        settings.track_auto_configured(&tag);
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(())
 }
 
 /// Check whether the local LM Studio service is running.
@@ -373,6 +383,125 @@ pub async fn classify_intent(
     let decision =
         brain::classify_user_intent(&text, brain_mode.as_ref(), &state.provider_rotator).await;
     Ok(decision)
+}
+
+/// Factory-reset the brain: undo auto-configured components (brain, voice,
+/// quests, Docker containers, Ollama models, MCP configs) based on the
+/// `auto_configured` list in AppSettings, clear all memories, and revert to
+/// the first-launch state.
+/// This is irreversible — the frontend must confirm with the user.
+#[tauri::command]
+pub async fn factory_reset_brain(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Read which components were auto-configured.
+    let auto_configured: Vec<String> = {
+        let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.auto_configured.clone()
+    };
+
+    // 1. Clear brain config (only if auto-configured by TerranSoul).
+    if auto_configured.contains(&"brain".to_string()) {
+        brain::brain_config::clear(&state.data_dir)?;
+        brain::clear_brain(&state.data_dir)?;
+        {
+            let mut mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+            *mode = None;
+        }
+        {
+            let mut ab = state.active_brain.lock().map_err(|e| e.to_string())?;
+            *ab = None;
+        }
+    }
+
+    // 2. Clear voice config (if auto-configured).
+    if auto_configured.contains(&"voice".to_string()) {
+        crate::voice::config_store::clear(&state.data_dir)?;
+        let mut vc = state.voice_config.lock().map_err(|e| e.to_string())?;
+        *vc = crate::voice::VoiceConfig::default();
+    }
+
+    // 3. Clear quest tracker (if auto-configured).
+    if auto_configured.contains(&"quests".to_string()) {
+        let path = state.data_dir.join("quest_tracker.json");
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| format!("clear quest tracker: {e}"))?;
+        }
+    }
+
+    // 4. Remove Docker container + volume (if auto-configured).
+    if auto_configured.contains(&"docker_container".to_string()) {
+        let preference = {
+            let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+            settings.preferred_container_runtime
+        };
+        // Best-effort: resolve runtime and remove container. Ignore errors
+        // (Docker may not be running or container may already be removed).
+        if let Ok(runtime) = crate::container::resolve_runtime(preference).await {
+            let _ = brain::docker_ollama::remove_ollama_container_for(runtime).await;
+        }
+    }
+
+    // 5. Delete auto-pulled Ollama models (best-effort, requires running Ollama).
+    {
+        let models_to_remove: Vec<String> = auto_configured
+            .iter()
+            .filter_map(|tag| tag.strip_prefix("ollama_model:").map(|m| m.to_string()))
+            .collect();
+        if !models_to_remove.is_empty() {
+            let client = &state.ollama_client;
+            for model in &models_to_remove {
+                let _ = brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, model).await;
+            }
+        }
+    }
+
+    // 6. Remove MCP config entries from external tools (best-effort).
+    if auto_configured.contains(&"mcp_vscode".to_string()) {
+        // VS Code config is workspace-relative; remove from the running directory.
+        if let Ok(cwd) = std::env::current_dir() {
+            let _ = crate::ai_integrations::mcp::auto_setup::remove_vscode_config(&cwd);
+        }
+    }
+    if auto_configured.contains(&"mcp_claude".to_string()) {
+        let _ = crate::ai_integrations::mcp::auto_setup::remove_claude_config();
+    }
+    if auto_configured.contains(&"mcp_codex".to_string()) {
+        let _ = crate::ai_integrations::mcp::auto_setup::remove_codex_config();
+    }
+
+    // 7. Clear ALL memories.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.delete_all().map_err(|e| e.to_string())?;
+    }
+
+    // 8. Clear embedding + intent caches.
+    brain::ollama_agent::clear_embed_caches().await;
+    crate::brain::cloud_embeddings::clear_cloud_embed_cache().await;
+    brain::intent_classifier::clear_cache();
+
+    // 9. Reset provider rotator health tracking.
+    {
+        let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+        *rotator = brain::ProviderRotator::new();
+    }
+
+    // 10. Reset conversation history.
+    {
+        let mut conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.clear();
+    }
+
+    // 11. Reset first_launch_complete and auto_configured in settings.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.first_launch_complete = false;
+        settings.auto_configured.clear();
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

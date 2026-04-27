@@ -23,7 +23,7 @@ pub use lm_studio::{
     LmStudioUnloadResult,
 };
 pub use model_recommender::{recommend, ModelRecommendation};
-pub use ollama_agent::{check_status, list_models, pull_model, OllamaAgent, OllamaStatus};
+pub use ollama_agent::{check_status, delete_model, list_models, pull_model, OllamaAgent, OllamaStatus};
 pub use openai_client::OpenAiClient;
 pub use provider_rotator::ProviderRotator;
 pub use selection::{

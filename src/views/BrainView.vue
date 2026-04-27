@@ -548,6 +548,47 @@
         />
       </div>
     </section>
+
+    <!-- ── Danger zone ─────────────────────────────────────────────────────── -->
+    <section
+      class="bv-card bv-danger-zone"
+      data-testid="bv-danger-zone"
+    >
+      <header class="bv-card-header">
+        <h3>⚠️ Danger zone</h3>
+      </header>
+      <p class="bv-cog-desc">
+        These actions are irreversible. Proceed with caution.
+      </p>
+      <div class="bv-danger-actions">
+        <div class="bv-danger-row">
+          <div class="bv-danger-info">
+            <span class="bv-danger-label">Factory reset</span>
+            <span class="bv-cog-desc">Remove all auto-configured components (brain, voice, quests), clear all memories and conversation history. Reverts to first-launch state.</span>
+          </div>
+          <button
+            class="btn-danger"
+            data-testid="bv-factory-reset"
+            @click="confirmFactoryReset"
+          >
+            🔄 Factory reset
+          </button>
+        </div>
+        <div class="bv-danger-row">
+          <div class="bv-danger-info">
+            <span class="bv-danger-label">Clean all data</span>
+            <span class="bv-cog-desc">Permanently erase everything: memories, brain config, voice settings, persona, quests, app preferences. Returns to a fresh install.</span>
+          </div>
+          <button
+            class="btn-danger"
+            data-testid="bv-clear-all-data"
+            @click="confirmClearAllData"
+          >
+            🗑 Clean all data
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -941,13 +982,6 @@ const decisionToggleRows: DecisionToggleRow[] = [
     testid: 'bv-aidp-intent',
   },
   {
-    key: 'unknownFallbackToInstall',
-    label: 'Auto-install fallback when classifier is unsure',
-    description:
-      'When the classifier returns Unknown (offline, timeout, malformed JSON), open the Auto-Install-All overlay so a local Ollama brain can take over. Off = silently fall through to streaming.',
-    testid: 'bv-aidp-unknown-fallback',
-  },
-  {
     key: 'dontKnowGateEnabled',
     label: 'Offer Gemini-search / context upload after "I don\'t know"',
     description:
@@ -1121,6 +1155,31 @@ async function forceExtractNow() {
     await memory.getStats();
   } catch (err) {
     console.warn('[BrainView] force extract_memories_from_session failed:', err);
+  }
+}
+
+async function confirmFactoryReset() {
+  if (!confirm('Factory reset?\n\nThis will remove all auto-configured components (brain, voice, quests), erase all memories, and clear conversation history.\n\nYou will see the first-launch wizard again.\n\nThis cannot be undone.')) {
+    return;
+  }
+  try {
+    await brain.factoryReset();
+    await refresh();
+  } catch (err) {
+    console.warn('[BrainView] factory reset failed:', err);
+  }
+}
+
+async function confirmClearAllData() {
+  if (!confirm('Clean ALL data?\n\nThis will permanently erase everything:\n• All memories, connections, and version history\n• Brain configuration and provider settings\n• Voice settings\n• Persona traits, expressions, and motions\n• Quest progress\n• App preferences\n\nOnly device identity is preserved.\n\nThis cannot be undone.')) {
+    return;
+  }
+  try {
+    await memory.clearAllData();
+    await refresh();
+    await appSettings.loadSettings();
+  } catch (err) {
+    console.warn('[BrainView] clean all data failed:', err);
   }
 }
 
@@ -1494,6 +1553,54 @@ onMounted(async () => {
   cursor: pointer;
 }
 .btn-secondary:hover:not(:disabled) { background: var(--ts-bg-hover, rgba(255,255,255,0.10)); }
+
+/* ── Danger zone ────────────────────────────────────────────────────────── */
+.bv-danger-zone {
+  border-color: var(--ts-error, #f87171);
+  background: rgba(248, 113, 113, 0.04);
+}
+.bv-danger-zone .bv-card-header h3 { color: var(--ts-error, #f87171); }
+.bv-danger-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.bv-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--ts-border);
+}
+.bv-danger-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.bv-danger-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ts-text-primary);
+}
+.btn-danger {
+  flex: none;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--ts-error, #f87171);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ts-error, #f87171);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-danger:hover {
+  background: var(--ts-error, #f87171);
+  color: #fff;
+}
 
 @media (max-width: 720px) {
   .bv-hero { grid-template-columns: auto 1fr; }

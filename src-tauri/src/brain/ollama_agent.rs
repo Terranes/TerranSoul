@@ -826,6 +826,31 @@ pub async fn pull_model(client: &Client, base_url: &str, model_name: &str) -> Re
     Ok(())
 }
 
+/// Delete an Ollama model from the local registry.
+pub async fn delete_model(client: &Client, base_url: &str, model_name: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct DeleteRequest<'a> {
+        name: &'a str,
+    }
+
+    let url = format!("{base_url}/api/delete");
+    let resp = client
+        .delete(&url)
+        .json(&DeleteRequest { name: model_name })
+        .send()
+        .await
+        .map_err(|e| format!("Ollama not reachable: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Ollama delete failed with status {}",
+            resp.status()
+        ));
+    }
+
+    Ok(())
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

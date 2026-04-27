@@ -574,6 +574,14 @@ impl StorageBackend for PostgresBackend {
         Ok(result.rows_affected() as usize)
     }
 
+    fn delete_all(&self) -> StorageResult<usize> {
+        // Edges/conflicts/versions cascade via FK.
+        let result = self.block_on(
+            sqlx::query("DELETE FROM memories").execute(&self.pool)
+        )?;
+        Ok(result.rows_affected() as usize)
+    }
+
     fn apply_decay(&self) -> StorageResult<usize> {
         let now = Self::now_ms();
         let result = self.block_on(

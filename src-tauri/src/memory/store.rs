@@ -1279,6 +1279,27 @@ impl MemoryStore {
         Ok(deleted)
     }
 
+    /// Delete **all** memories, edges, and conflicts. Returns the count of
+    /// deleted memory rows. The ANN index is rebuilt empty.
+    ///
+    /// This is an irreversible destructive operation — the frontend must
+    /// confirm with the user before calling.
+    pub fn delete_all(&self) -> SqlResult<usize> {
+        // Edges and conflicts cascade via FK, but be explicit for backends
+        // that may not enforce FK cascades.
+        self.conn.execute_batch(
+            "DELETE FROM memory_edges;
+             DELETE FROM memory_conflicts;
+             DELETE FROM memory_versions;"
+        ).ok(); // tables may not exist on older schemas — ignore errors
+        let deleted = self.conn.execute("DELETE FROM memories", [])?;
+        // Rebuild ANN index empty.
+        if let Some(idx) = self.ann.get() {
+            let _ = idx.rebuild(std::iter::empty());
+        }
+        Ok(deleted)
+    }
+
     /// Get memory statistics per tier.
     pub fn stats(&self) -> SqlResult<MemoryStats> {
         let total: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
@@ -1493,6 +1514,10 @@ impl StorageBackend for MemoryStore {
 
     fn delete_expired(&self) -> StorageResult<usize> {
         Ok(self.delete_expired()?)
+    }
+
+    fn delete_all(&self) -> StorageResult<usize> {
+        Ok(self.delete_all()?)
     }
 
     fn apply_decay(&self) -> StorageResult<usize> {

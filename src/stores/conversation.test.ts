@@ -665,30 +665,29 @@ describe('conversation store — new quest trigger behavior', () => {
     expect(store.messages[1].content).toMatch(/article 429/i);
   });
 
-  it('falls back to the install-all overlay when the classifier returns Unknown', async () => {
-    // Mirrors the design "free LLM couldn't decide → trigger local install"
-    // path in `docs/brain-advanced-design.md` § Intent Classification.
+  it('falls through to streaming chat when the classifier returns Unknown', async () => {
+    // When the classifier can't decide (timeout, no brain, malformed JSON),
+    // the safe default is to proceed with normal streaming chat — never
+    // assume the user wants to learn from documents.
     const brain = useBrainStore();
     brain.autoConfigureFreeApi();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') return { kind: 'unknown' };
       return undefined;
     });
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
+        callbacks.onDone('Hello! How can I help?');
+        return new AbortController();
+      },
+    );
 
     const store = useConversationStore();
-    const VIETNAMESE_INPUT = 'học luật Việt Nam từ tài liệu của tôi';
-    await store.sendMessage(VIETNAMESE_INPUT);
+    await store.sendMessage('hello there');
 
-    // user + the install-all missing-components prompt
-    expect(store.messages.length).toBeGreaterThanOrEqual(2);
-    const prompt = store.messages[store.messages.length - 1];
-    expect(prompt.questId).toBe('learn-docs-missing');
-    // The original user input is preserved as the topic in the install-all
-    // overlay (the prompt body and the choice values both encode it).
-    expect(prompt.content).toContain(VIETNAMESE_INPUT);
-    const installAll = prompt.questChoices!.find((c) => c.value.startsWith('learn-docs:install-all:'));
-    expect(installAll).toBeDefined();
-    expect(decodeURIComponent(installAll!.value.split(':').slice(2).join(':'))).toBe(VIETNAMESE_INPUT);
+    // No install-all overlay should be pushed — message proceeds normally.
+    expect(store.messages.find((m) => m.questId === 'learn-docs-missing')).toBeUndefined();
+    expect(mockStreamChat).toHaveBeenCalled();
   });
 });
 
@@ -1098,24 +1097,6 @@ describe('conversation store — AI decision-making policy gates', () => {
     const callTypes = mockInvoke.mock.calls.map((c) => c[0]);
     expect(callTypes).not.toContain('classify_intent');
     // No learn-docs overlay was pushed; the message reached the streaming path.
-    expect(store.messages.find((m) => m.questId === 'learn-docs-missing')).toBeUndefined();
-    expect(mockStreamChat).toHaveBeenCalled();
-  });
-
-  it('falls through to streaming when unknownFallbackToInstall=false', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
-    const policy = useAiDecisionPolicyStore();
-    policy.policy.unknownFallbackToInstall = false;
-    mockInvoke.mockImplementation(async (cmd: string) => {
-      if (cmd === 'classify_intent') return { kind: 'unknown' };
-      return undefined;
-    });
-
-    const store = useConversationStore();
-    await store.sendMessage('hello there');
-
-    // No install-all overlay should be pushed — message proceeds normally.
     expect(store.messages.find((m) => m.questId === 'learn-docs-missing')).toBeUndefined();
     expect(mockStreamChat).toHaveBeenCalled();
   });

@@ -136,6 +136,13 @@ export const useBrainStore = defineStore('brain', () => {
     activeBrain.value = null;
   }
 
+  /** Factory-reset: clear persisted brain config, caches, and revert to unconfigured state. */
+  async function factoryReset(): Promise<void> {
+    await invoke('factory_reset_brain');
+    activeBrain.value = null;
+    brainMode.value = null;
+  }
+
   async function downloadLmStudioModel(args: {
     model: string;
     baseUrl?: string;
@@ -395,6 +402,7 @@ export const useBrainStore = defineStore('brain', () => {
     pullModel,
     setActiveBrain,
     clearActiveBrain,
+    factoryReset,
     downloadLmStudioModel,
     getLmStudioDownloadStatus,
     loadLmStudioModel,

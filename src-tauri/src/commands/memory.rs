@@ -1245,3 +1245,92 @@ pub async fn get_memory_history(
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     crate::memory::versioning::get_history(store.conn(), memory_id).map_err(|e| e.to_string())
 }
+
+/// Delete **all** persisted data: memories, brain config, voice config,
+/// persona, quest tracker, conversation history, and app settings.
+/// Reverts the app to a fresh-install state. Only the device identity
+/// key is preserved (for P2P re-linking).
+/// This is irreversible — the frontend must confirm with the user.
+#[tauri::command]
+pub async fn clear_all_data(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // 1. Clear all memories, edges, conflicts, versions.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.delete_all().map_err(|e| e.to_string())?;
+    }
+
+    // 2. Clear brain configuration.
+    crate::brain::brain_config::clear(&state.data_dir)?;
+    crate::brain::clear_brain(&state.data_dir)?;
+    {
+        let mut mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+        *mode = None;
+    }
+    {
+        let mut ab = state.active_brain.lock().map_err(|e| e.to_string())?;
+        *ab = None;
+    }
+
+    // 3. Clear embedding + intent caches.
+    crate::brain::ollama_agent::clear_embed_caches().await;
+    crate::brain::cloud_embeddings::clear_cloud_embed_cache().await;
+    crate::brain::intent_classifier::clear_cache();
+
+    // 4. Reset provider rotator.
+    {
+        let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+        *rotator = crate::brain::ProviderRotator::new();
+    }
+
+    // 5. Clear voice configuration.
+    crate::voice::config_store::clear(&state.data_dir)?;
+    {
+        let mut vc = state.voice_config.lock().map_err(|e| e.to_string())?;
+        *vc = crate::voice::VoiceConfig::default();
+    }
+
+    // 6. Clear quest tracker.
+    let quest_path = state.data_dir.join("quest_tracker.json");
+    if quest_path.exists() {
+        let _ = std::fs::remove_file(&quest_path);
+    }
+
+    // 7. Clear persona (traits, expressions, motions).
+    let persona_dir = state.data_dir.join("persona");
+    if persona_dir.exists() {
+        let _ = std::fs::remove_dir_all(&persona_dir);
+    }
+    {
+        let mut pb = state.persona_block.lock().map_err(|e| e.to_string())?;
+        pb.clear();
+    }
+
+    // 8. Clear conversation history.
+    {
+        let mut conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.clear();
+    }
+
+    // 9. Reset app settings to defaults.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        *settings = crate::settings::AppSettings::default();
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    // 10. Delete ANN vector index file.
+    let ann_path = state.data_dir.join("vectors.usearch");
+    if ann_path.exists() {
+        let _ = std::fs::remove_file(&ann_path);
+    }
+
+    // 11. Delete MCP token.
+    let mcp_path = state.data_dir.join("mcp-token.txt");
+    if mcp_path.exists() {
+        let _ = std::fs::remove_file(&mcp_path);
+    }
+
+    Ok(())
+}

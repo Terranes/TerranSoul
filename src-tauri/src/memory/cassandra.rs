@@ -633,6 +633,15 @@ impl StorageBackend for CassandraBackend {
         Ok(count)
     }
 
+    fn delete_all(&self) -> StorageResult<usize> {
+        let all = self.get_all()?;
+        let count = all.len();
+        for entry in all {
+            self.delete(entry.id)?;
+        }
+        Ok(count)
+    }
+
     fn apply_decay(&self) -> StorageResult<usize> {
         // Application-side decay calculation
         let all = self.get_all()?;

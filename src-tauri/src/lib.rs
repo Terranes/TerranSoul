@@ -41,7 +41,8 @@ use commands::{
     },
     brain::{
         check_lm_studio_status, check_ollama_status, classify_intent, clear_active_brain,
-        download_lm_studio_model, get_active_brain, get_brain_mode, get_brain_selection,
+        download_lm_studio_model, factory_reset_brain, get_active_brain, get_brain_mode,
+        get_brain_selection,
         get_embed_cache_status, get_lm_studio_download_status, get_lm_studio_models,
         get_next_provider, get_ollama_models, get_system_info, health_check_providers,
         list_free_providers, load_lm_studio_model, pull_ollama_model, recommend_brain_models,
@@ -68,7 +69,8 @@ use commands::{
     ingest::{ingest_document, cancel_ingest_task, resume_ingest_task, get_all_tasks},
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
-        audit_memory_tags, auto_promote_memories, backfill_embeddings, close_memory_edge,
+        audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
+        close_memory_edge,
         count_memory_conflicts, delete_memory, delete_memory_edge, dismiss_memory_conflict,
         evaluate_auto_learn, export_to_obsidian,
         extract_edges_via_brain, extract_memories_from_session, gc_memories,
@@ -383,11 +385,13 @@ pub fn run() {
             set_active_brain,
             get_active_brain,
             clear_active_brain,
+            factory_reset_brain,
             add_memory,
             get_memories,
             search_memories,
             update_memory,
             delete_memory,
+            clear_all_data,
             get_relevant_memories,
             get_short_term_memory,
             extract_memories_from_session,
@@ -592,10 +596,25 @@ pub fn run() {
             plugin_parse_manifest,
         ])
         .setup(|app| {
-            let data_dir = app
+            let base_data_dir = app
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
+
+            // In dev builds, use a separate data directory so dev never
+            // touches release data.  Wipe it on every launch to guarantee
+            // a fresh-install experience.
+            let data_dir = if cfg!(debug_assertions) {
+                let dev_dir = base_data_dir.join("dev");
+                if dev_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&dev_dir);
+                }
+                std::fs::create_dir_all(&dev_dir)
+                    .expect("failed to create dev data directory");
+                dev_dir
+            } else {
+                base_data_dir
+            };
 
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();

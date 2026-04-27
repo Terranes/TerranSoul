@@ -30,11 +30,20 @@ pub async fn setup_vscode_mcp(
 ) -> Result<SetupResult, String> {
     let (token, port) = get_mcp_info(&state).await?;
     let url = mcp_url(port);
-    auto_setup::write_vscode_config(
+    let result = auto_setup::write_vscode_config(
         std::path::Path::new(&workspace_root),
         &url,
         &token,
-    )
+    )?;
+
+    // Track auto-configured MCP entry.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.track_auto_configured("mcp_vscode");
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(result)
 }
 
 /// Set up Claude Desktop MCP integration.
@@ -47,7 +56,15 @@ pub async fn setup_claude_mcp(
 ) -> Result<SetupResult, String> {
     let (token, port) = get_mcp_info(&state).await?;
     let url = mcp_url(port);
-    auto_setup::write_claude_config(&url, &token)
+    let result = auto_setup::write_claude_config(&url, &token)?;
+
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.track_auto_configured("mcp_claude");
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(result)
 }
 
 /// Set up Codex CLI MCP integration.
@@ -57,7 +74,15 @@ pub async fn setup_codex_mcp(
 ) -> Result<SetupResult, String> {
     let (token, port) = get_mcp_info(&state).await?;
     let url = mcp_url(port);
-    auto_setup::write_codex_config(&url, &token)
+    let result = auto_setup::write_codex_config(&url, &token)?;
+
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.track_auto_configured("mcp_codex");
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(result)
 }
 
 /// Remove the `terransoul-brain` entry from VS Code config.
