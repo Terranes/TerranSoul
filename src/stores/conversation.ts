@@ -13,6 +13,20 @@ import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 
+// ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
+// Mirrors the wire format emitted by the `classify_intent` Tauri command.
+// Replaces the three legacy regex detectors (`detectLearnWithDocsIntent`,
+// `detectTeachIntent`, `detectGatedSetupCommand`) on the live message path
+// — they are now only used as deterministic test fixtures.
+export type GatedSetupKind = 'upgrade_gemini' | 'provide_context';
+export type IntentDecision =
+  | { kind: 'chat' }
+  | { kind: 'learn_with_docs'; topic: string }
+  | { kind: 'teach_ingest'; topic: string }
+  | { kind: 'gated_setup'; setup: GatedSetupKind }
+  | { kind: 'unknown' };
+
+
 /**
  * Keyword-based sentiment detection from text content.
  * Used as a fallback when the LLM response doesn't include emotion tags.
@@ -115,6 +129,37 @@ function isTauriAvailable(): boolean {
 }
 
 /**
+ * Ask the Rust backend to classify a user message into a structured
+ * `IntentDecision` via the configured brain (Free → Paid → Local).
+ *
+ * Falls back to `{ kind: 'chat' }` when the Tauri backend is unavailable
+ * (browser-only mode / unit tests that don't mock the command). This keeps
+ * non-Tauri smoke tests working while still letting any test mock
+ * `invoke('classify_intent', …)` to exercise specific decisions.
+ *
+ * Any thrown error from the IPC call is also mapped to `chat` so a
+ * misbehaving classifier never blocks a user's turn — the live message
+ * path always proceeds to the streaming LLM response when classification
+ * doesn't decisively pick a side-channel intent.
+ */
+async function classifyIntent(text: string, hasBrain: boolean): Promise<IntentDecision> {
+  // No brain configured → classifier has no provider to ask. Skip the IPC
+  // call entirely so we don't make a no-op invoke and so existing
+  // persona-fallback / browser-only code paths behave exactly as before.
+  if (!hasBrain) return { kind: 'chat' };
+  try {
+    const decision = await invoke<IntentDecision>('classify_intent', { text });
+    if (decision && typeof decision === 'object' && 'kind' in decision) {
+      return decision;
+    }
+    return { kind: 'chat' };
+  } catch {
+    return { kind: 'chat' };
+  }
+}
+
+
+/**
  * After the LLM responds, check if the user should be shown a quest overlay.
  *
  * Uses a hybrid approach:
@@ -155,6 +200,38 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
 }
 
 /**
+ * Push the Scholar's Quest message for an explicit teach/ingest intent
+ * with the topic already extracted (by the LLM intent classifier).
+ *
+ * Kept separate from `maybeShowScholarQuestFromTeachIntent` (the legacy
+ * regex-driven entry point) so the new classifier-driven path doesn't
+ * need to re-run the brittle regex.
+ */
+function pushTeachScholarQuestForTopic(topic: string): void {
+  const conversation = useConversationStore();
+  conversation.messages.push({
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `Got it — let's ingest **${topic}** into my long-term memory. ` +
+      `I'll walk you through a **📚 Scholar's Quest** so we can add URLs and files ` +
+      `and I can give you source-grounded answers afterwards.`,
+    agentName: 'TerranSoul',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+    questId: 'scholar-quest',
+    questChoices: [
+      { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
+      { label: 'No thanks', value: 'dismiss', icon: '💤' },
+    ],
+  });
+}
+
+/**
+ * @deprecated The live message path now routes through the LLM-powered
+ * intent classifier (`brain::intent_classifier::classify_user_intent`).
+ * Kept as a deterministic test fixture for `conversation.test.ts`.
+ *
  * Detect an explicit "teach the AI" instruction from the user.
  *
  * We only fire Scholar's Quest on phrases that clearly request ingestion of
@@ -196,35 +273,6 @@ export function detectTeachIntent(userInput: string): { topic: string } | null {
     }
   }
   return null;
-}
-
-/**
- * When the user explicitly asks the AI to remember / ingest new content,
- * push a Scholar's Quest suggestion message (with overlay choices).  This is
- * the ONLY path that auto-triggers Scholar's Quest from chat — we never fire
- * it on plain questions about a topic.
- */
-function maybeShowScholarQuestFromTeachIntent(userInput: string): void {
-  const teach = detectTeachIntent(userInput);
-  if (!teach) return;
-
-  const conversation = useConversationStore();
-  conversation.messages.push({
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content:
-      `Got it — let's ingest **${teach.topic}** into my long-term memory. ` +
-      `I'll walk you through a **📚 Scholar's Quest** so we can add URLs and files ` +
-      `and I can give you source-grounded answers afterwards.`,
-    agentName: 'TerranSoul',
-    sentiment: 'happy',
-    timestamp: Date.now(),
-    questId: 'scholar-quest',
-    questChoices: [
-      { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
-      { label: 'No thanks', value: 'dismiss', icon: '💤' },
-    ],
-  });
 }
 
 /**
@@ -281,6 +329,10 @@ function maybeShowDontKnowPrompt(responseText: string): void {
 }
 
 /**
+ * @deprecated The live message path now routes through the LLM-powered
+ * intent classifier (`brain::intent_classifier::classify_user_intent`).
+ * Kept as a deterministic test fixture for `conversation.test.ts`.
+ *
  * Detect the two gated setup commands the user can type after a
  * "don't-know" prompt.  These are literal confirmations — we only fire the
  * matching setup flow when the user explicitly types one.
@@ -310,8 +362,15 @@ export function detectGatedSetupCommand(userInput: string):
  * Execute a gated setup command.  Returns the assistant message to push into
  * the conversation; the message carries quest choices that wire up into the
  * existing overlay so the user can proceed with a single click.
+ *
+ * The shape `{ type: 'upgrade_gemini' | 'provide_context' }` is shared by
+ * both the legacy `detectGatedSetupCommand()` regex (test-only) and the
+ * `IntentDecision::GatedSetup` branch returned by the LLM-powered
+ * classifier.
  */
-function executeGatedSetupCommand(cmd: NonNullable<ReturnType<typeof detectGatedSetupCommand>>): Message {
+function executeGatedSetupCommand(
+  cmd: { type: 'upgrade_gemini' } | { type: 'provide_context' },
+): Message {
   if (cmd.type === 'upgrade_gemini') {
     return {
       id: crypto.randomUUID(),
@@ -355,6 +414,10 @@ function executeGatedSetupCommand(cmd: NonNullable<ReturnType<typeof detectGated
 // ── "Learn X using my documents" flow ────────────────────────────────────────
 
 /**
+ * @deprecated The live message path now routes through the LLM-powered
+ * intent classifier (`brain::intent_classifier::classify_user_intent`).
+ * Kept as a deterministic test fixture for `conversation.test.ts`.
+ *
  * Detect an explicit "learn / study X using my documents" request.
  *
  * Examples that match:
@@ -1220,40 +1283,51 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
-    // Gated setup commands — user explicitly typed "upgrade to Gemini model"
-    // or "provide your own context" (usually after a don't-know prompt).
-    const gatedCmd = detectGatedSetupCommand(content);
-    if (gatedCmd) {
-      messages.value.push(executeGatedSetupCommand(gatedCmd));
-      isThinking.value = false;
-      generationActive.value = false;
-      void drainQueue();
-      return;
+    // ── LLM-powered intent classification ──────────────────────────────
+    // Replaces three regex detectors that used to short-circuit here.
+    // The configured brain (Free → Paid → Local) decides what to do;
+    // failure (no brain, timeout, malformed JSON) maps to `unknown` and
+    // falls back to the install-all path so future turns work offline.
+    const decision = await classifyIntent(content, brain.hasBrain);
+    switch (decision.kind) {
+      case 'gated_setup': {
+        messages.value.push(executeGatedSetupCommand({ type: decision.setup }));
+        isThinking.value = false;
+        generationActive.value = false;
+        void drainQueue();
+        return;
+      }
+      case 'learn_with_docs': {
+        startLearnDocsFlow(decision.topic);
+        isThinking.value = false;
+        generationActive.value = false;
+        void drainQueue();
+        return;
+      }
+      case 'teach_ingest': {
+        pushTeachScholarQuestForTopic(decision.topic);
+        isThinking.value = false;
+        generationActive.value = false;
+        void drainQueue();
+        return;
+      }
+      case 'unknown': {
+        // Free LLM couldn't decide (no brain, timeout, malformed JSON).
+        // Fall back to the universal install-all overlay so the user can
+        // install a local Ollama brain and have a guaranteed-working
+        // classifier on every subsequent turn.
+        startLearnDocsFlow(content);
+        isThinking.value = false;
+        generationActive.value = false;
+        void drainQueue();
+        return;
+      }
+      case 'chat':
+      default:
+        // Fall through to the normal streaming chat path below.
+        break;
     }
 
-    // Explicit "Learn X using my [provided] documents" intent — never calls
-    // the LLM. Walks the Scholar's Quest prerequisite chain, lists the
-    // quests that aren't active yet, and offers Install all / Install one
-    // by one / Cancel. The "Auto install all" path simply auto-triggers and
-    // accepts each missing quest via the existing skill-tree engine.
-    const learnDocs = detectLearnWithDocsIntent(content);
-    if (learnDocs) {
-      startLearnDocsFlow(learnDocs.topic);
-      isThinking.value = false;
-      generationActive.value = false;
-      void drainQueue();
-      return;
-    }
-
-    // Explicit "teach the AI" intent — triggers Scholar's Quest directly,
-    // without calling the LLM (the user wants to ingest, not ask).
-    if (detectTeachIntent(content)) {
-      maybeShowScholarQuestFromTeachIntent(content);
-      isThinking.value = false;
-      generationActive.value = false;
-      void drainQueue();
-      return;
-    }
 
     // Path 1: Tauri backend available → use streaming IPC command
     if (isTauriAvailable()) {

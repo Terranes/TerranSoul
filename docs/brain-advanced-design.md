@@ -53,6 +53,7 @@
 22. [Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
 23. [Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#code-rag-fusion-in-rerank_search_memories-phase-13-tier-2)
 24. [MCP Server — External AI Coding Assistant Integration (Phase 15)](#mcp-server--external-ai-coding-assistant-integration-phase-15)
+25. [Intent Classification](#25-intent-classification)
 
 ---
 
@@ -2633,6 +2634,103 @@ axum task receives `AppState` directly.
 ### 24.5 Test coverage
 
 22 Rust tests: 4 auth, 6 router, 3 tools, 11 integration (ephemeral ports via `portpicker`).
+
+---
+
+## 25. Intent Classification
+
+> Source: `src-tauri/src/brain/intent_classifier.rs` · Tauri command `classify_intent` · Frontend dispatch in `src/stores/conversation.ts` (`classifyIntent` + `sendMessage` switch)
+
+Every chat turn is routed through a structured **LLM-powered intent
+classifier** before being handed to the streaming chat path. This
+replaces three brittle regex detectors that used to live in
+`conversation.ts` (`detectLearnWithDocsIntent`, `detectTeachIntent`,
+`detectGatedSetupCommand`) and that only matched exact English
+phrasings — they're now kept as deprecated test fixtures only.
+
+### 25.1 Why an LLM, not regex?
+
+Regex routing is fundamentally English-only and brittle to typos,
+paraphrases, compound requests, and other languages. A user who types
+`học luật Việt Nam từ tài liệu của tôi`,
+`can you study these PDFs and tell me about contract law`, or
+`upgrde to gemni model` should reach the same destination as a user
+who types the canonical English phrase. The brain already understands
+all of these — so we let the brain decide.
+
+This also matches the project's "brain decides everything" posture
+(§ 10 Brain Modes, § 20 Brain Component Selection).
+
+### 25.2 JSON schema
+
+The classifier asks the LLM to reply with **exactly one** of:
+
+```json
+{ "kind": "chat" }
+{ "kind": "learn_with_docs", "topic": "<short topic phrase>" }
+{ "kind": "teach_ingest",   "topic": "<short topic phrase>" }
+{ "kind": "gated_setup",    "setup": "upgrade_gemini" | "provide_context" }
+```
+
+Any malformed reply, unknown `kind`, or unknown `setup` value is
+mapped to `IntentDecision::Unknown` and the frontend triggers the
+install-all fallback. The system prompt is ~150 tokens so the call is
+cheap on free providers (Pollinations / Groq).
+
+### 25.3 Provider rotation & timeouts
+
+The classifier reuses the same `ProviderRotator` the chat path uses
+(`src-tauri/src/brain/provider_rotator.rs`):
+
+1. **Free** provider first — cheapest, default.
+2. **Paid** provider when configured.
+3. **Local Ollama** when installed and reachable.
+4. **Local LM Studio** when configured.
+
+A hard **3-second timeout** (`CLASSIFY_TIMEOUT`) bounds the call so a
+slow free provider can never block the user's chat turn. Any timeout,
+network failure, HTTP non-2xx, or schema-violating reply maps to
+`IntentDecision::Unknown`.
+
+### 25.4 Caching
+
+Identical *trimmed lowercase* inputs hit a process-global LRU
+(`CACHE_MAX_ENTRIES = 256`, `CACHE_TTL = 30 s`). This stops the user
+double-classifying when they retry, and avoids re-asking the LLM if
+the conversation store is recreated mid-session. The cache is cleared
+automatically by `set_brain_mode` because a different model may
+classify differently.
+
+### 25.5 The "unknown ⇒ trigger local install" guarantee
+
+The frontend `sendMessage` switch maps `IntentDecision::Unknown` to
+`startLearnDocsFlow(content)` — the same install-all overlay the user
+gets when they type the canonical English phrase. Pressing "Auto
+install all" runs the existing prereq chain
+(`ollama-installed → free-llm → rag-knowledge → scholar-quest`),
+which installs a local Ollama brain. From that turn onward the
+classifier always has a working local provider, so it works offline
+forever.
+
+This means the worst case (no network, no local LLM, free LLM down)
+is **the same UX the user gets today** when they type the magic
+phrase — not a silent failure.
+
+### 25.6 Test surface
+
+- `intent_classifier.rs` — 19 Rust unit tests covering every
+  `IntentDecision` variant, malformed JSON, unknown kinds, prose /
+  markdown-fence tolerance, nested-brace JSON extraction, cache
+  round-trip + TTL eviction + capacity eviction, empty input, and
+  no-brain-mode short-circuit.
+- `conversation.test.ts` — every sendMessage flow that used to rely
+  on a regex detector now mocks `invoke('classify_intent', …)` to
+  return the intended decision; one new integration test verifies
+  that returning `{kind:'unknown'}` enters the install-all flow with
+  the original user input as the topic.
+- The three legacy `detect*Intent` helpers retain their unit tests
+  as deterministic golden cases; they are no longer called from the
+  live message path.
 
 ---
 

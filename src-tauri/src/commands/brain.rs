@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::brain::{
     self, ModelRecommendation, OllamaStatus, SystemInfo,
-    BrainMode, FreeProvider,
+    BrainMode, FreeProvider, IntentDecision,
 };
 use crate::AppState;
 
@@ -214,6 +214,9 @@ pub async fn set_brain_mode(
     // verdict across a brain switch.
     crate::brain::ollama_agent::clear_embed_caches().await;
     crate::brain::cloud_embeddings::clear_cloud_embed_cache().await;
+    // Mode change may pick a different model with different classification
+    // behaviour — drop cached intent decisions so the next turn re-asks.
+    crate::brain::intent_classifier::clear_cache();
 
     Ok(())
 }
@@ -346,6 +349,30 @@ pub async fn get_brain_selection(
         storage_snapshot,
         agents_snapshot,
     ))
+}
+
+// ── Intent Classification ────────────────────────────────────────────────────
+
+/// Classify a user message into a structured intent decision via the
+/// configured brain (Free → Paid → Local Ollama → Local LM Studio).
+///
+/// Replaces three brittle regex detectors that used to live in
+/// `src/stores/conversation.ts`. See the `brain::intent_classifier`
+/// module docs for the full rationale and JSON schema.
+///
+/// Returns `IntentDecision::Unknown` when no brain is configured, the
+/// classifier times out, or the LLM emits malformed JSON. The frontend
+/// is expected to fall back to the install-all path on `Unknown` so
+/// future turns have a working classifier.
+#[tauri::command]
+pub async fn classify_intent(
+    text: String,
+    state: State<'_, AppState>,
+) -> Result<IntentDecision, String> {
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+    let decision =
+        brain::classify_user_intent(&text, brain_mode.as_ref(), &state.provider_rotator).await;
+    Ok(decision)
 }
 
 #[cfg(test)]

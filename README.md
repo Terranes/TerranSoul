@@ -191,6 +191,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
 - Persona-based fallback when no LLM is configured
+- **LLM-powered intent classifier** (`src-tauri/src/brain/intent_classifier.rs` + `classify_intent` Tauri command) — every chat turn is classified by the configured brain (Free → Paid → Local) into a typed `IntentDecision` (`chat`, `learn_with_docs{topic}`, `teach_ingest{topic}`, `gated_setup{upgrade_gemini|provide_context}`, `unknown`). Replaces three brittle English-only regex detectors so paraphrases, typos and multilingual phrasings (`học luật Việt Nam từ tài liệu của tôi`) all route correctly. 3 s hard timeout + 30 s in-memory LRU cache; on `unknown` the frontend automatically triggers the install-all overlay so a local Ollama brain is set up — guaranteeing every future turn has a working classifier offline. See **[docs/brain-advanced-design.md § Intent Classification](docs/brain-advanced-design.md#intent-classification)**.
 - 60s streaming timeout + 30s fallback timeout to prevent stuck states
 
 **Three-tier memory + RAG** (`src-tauri/src/memory/`)

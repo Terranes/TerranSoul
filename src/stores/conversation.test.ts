@@ -606,7 +606,17 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('pushes Scholar\'s Quest when the user types "provide your own context"', async () => {
-    // No brain configured — but the gated command short-circuits before any LLM call.
+    // Configure a brain so the LLM intent classifier runs, then mock its
+    // decision via the `classify_intent` Tauri command.
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'gated_setup', setup: 'provide_context' };
+      }
+      return undefined;
+    });
+
     const store = useConversationStore();
     await store.sendMessage('provide your own context');
 
@@ -618,6 +628,15 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('offers the Gemini marketplace path when the user types "upgrade to Gemini model"', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'gated_setup', setup: 'upgrade_gemini' };
+      }
+      return undefined;
+    });
+
     const store = useConversationStore();
     await store.sendMessage('upgrade to Gemini model');
 
@@ -628,12 +647,40 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('pushes Scholar\'s Quest when the user explicitly says "remember the following law:"', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'teach_ingest', topic: 'Article 429 — claims expire after 3 years' };
+      }
+      return undefined;
+    });
+
     const store = useConversationStore();
     await store.sendMessage('Remember the following law: Article 429 — claims expire after 3 years.');
 
     expect(store.messages).toHaveLength(2);
     expect(store.messages[1].questId).toBe('scholar-quest');
     expect(store.messages[1].content).toMatch(/article 429/i);
+  });
+
+  it('falls back to the install-all overlay when the classifier returns Unknown', async () => {
+    // Mirrors the design "free LLM couldn't decide → trigger local install"
+    // path in `docs/brain-advanced-design.md` § Intent Classification.
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') return { kind: 'unknown' };
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('học luật Việt Nam từ tài liệu của tôi');
+
+    // user + the install-all missing-components prompt
+    expect(store.messages.length).toBeGreaterThanOrEqual(2);
+    const prompt = store.messages[store.messages.length - 1];
+    expect(prompt.questId).toBe('learn-docs-missing');
   });
 });
 
@@ -659,6 +706,15 @@ describe('conversation store — Learn-with-docs flow', () => {
   });
 
   it('pushes the missing-components prompt with three choices', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'learn_with_docs', topic: 'Vietnamese laws' };
+      }
+      return undefined;
+    });
+
     const store = useConversationStore();
     await store.sendMessage('Learn Vietnamese laws using my provided documents');
 
