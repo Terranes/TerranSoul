@@ -45,8 +45,11 @@ const sampleMemories: MemoryEntry[] = [
 function makeInvokeMock(opts: {
   brainMode?: unknown;
   memories?: MemoryEntry[];
+  lmStudioRunning?: boolean;
+  lmStudioModels?: unknown[];
 } = {}) {
   const memories = opts.memories ?? sampleMemories;
+  const lmStudioModels = opts.lmStudioModels ?? [];
   return (cmd: string) => {
     switch (cmd) {
       case 'get_brain_mode': return Promise.resolve(opts.brainMode ?? null);
@@ -60,6 +63,13 @@ function makeInvokeMock(opts: {
       });
       case 'check_ollama_status': return Promise.resolve({ running: false, model_count: 0 });
       case 'get_ollama_models': return Promise.resolve([]);
+      case 'check_lm_studio_status': return Promise.resolve({
+        running: opts.lmStudioRunning ?? false,
+        model_count: lmStudioModels.length,
+        loaded_count: lmStudioModels.filter((m: any) => m.loaded_instances?.length).length,
+      });
+      case 'get_lm_studio_models': return Promise.resolve(lmStudioModels);
+      case 'set_brain_mode': return Promise.resolve(undefined);
       case 'get_active_brain': return Promise.resolve(null);
       case 'recommend_brain_models': return Promise.resolve([]);
       case 'get_memories': return Promise.resolve(memories);
@@ -194,5 +204,77 @@ describe('BrainView', () => {
     const setupBtn = buttons.find((b) => b.text().includes('Brain setup'));
     await setupBtn?.trigger('click');
     expect(w.emitted('navigate')?.[0]).toEqual(['brain-setup']);
+  });
+
+  it('selects the first available LM Studio LLM from quick mode', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock({
+      lmStudioRunning: true,
+      lmStudioModels: [
+        {
+          key: 'text-embedding-nomic',
+          display_name: 'Nomic Embed',
+          type: 'embedding',
+          size_bytes: 100,
+          loaded_instances: [],
+        },
+        {
+          key: 'google/gemma-4-e4b',
+          display_name: 'Gemma 4 E4B',
+          type: 'llm',
+          size_bytes: 100,
+          loaded_instances: [{ id: 'loaded-1' }],
+        },
+      ],
+    }));
+    const w = mount(BrainView);
+    await flushPromises();
+
+    const lmStudio = w.findAll('.bv-mode-card').find((b) => b.text().includes('Local LM Studio'));
+    expect(lmStudio).toBeTruthy();
+    expect(lmStudio!.attributes('disabled')).toBeUndefined();
+
+    await lmStudio!.trigger('click');
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', {
+      mode: {
+        mode: 'local_lm_studio',
+        model: 'google/gemma-4-e4b',
+        base_url: 'http://127.0.0.1:1234',
+        api_key: null,
+        embedding_model: 'text-embedding-nomic',
+      },
+    });
+    expect(w.emitted('navigate')).toBeUndefined();
+  });
+
+  it('shows LM Studio as visibly selected when it is the active brain mode', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock({
+      brainMode: {
+        mode: 'local_lm_studio',
+        model: 'google/gemma-4-e4b',
+        base_url: 'http://127.0.0.1:1234',
+        api_key: null,
+        embedding_model: null,
+      },
+      lmStudioRunning: true,
+      lmStudioModels: [
+        {
+          key: 'google/gemma-4-e4b',
+          display_name: 'Gemma 4 E4B',
+          type: 'llm',
+          size_bytes: 100,
+          loaded_instances: [{ id: 'loaded-1' }],
+        },
+      ],
+    }));
+    const w = mount(BrainView);
+    await flushPromises();
+
+    const lmStudio = w.findAll('.bv-mode-card').find((b) => b.text().includes('Local LM Studio'));
+
+    expect(lmStudio).toBeTruthy();
+    expect(lmStudio!.classes()).toContain('active');
+    expect(lmStudio!.text()).toContain('Selected');
   });
 });

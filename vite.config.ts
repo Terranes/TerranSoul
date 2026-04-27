@@ -8,6 +8,18 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
+    proxy: {
+      "/__ollama": {
+        target: "http://localhost:11434",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/__ollama/, ""),
+      },
+      "/__lmstudio": {
+        target: "http://127.0.0.1:1234",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/__lmstudio/, ""),
+      },
+    },
     watch: {
       ignored: ["**/src-tauri/**"],
     },

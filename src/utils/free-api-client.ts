@@ -81,6 +81,56 @@ export interface StreamCallbacks {
   onError: (error: string) => void;
 }
 
+type ChatProtocol = 'openai' | 'ollama';
+
+interface ChatEndpoint {
+  url: string;
+  protocol: ChatProtocol;
+}
+
+function isLocalOllama(baseUrl: URL): boolean {
+  return (
+    (baseUrl.hostname === 'localhost' || baseUrl.hostname === '127.0.0.1') &&
+    baseUrl.port === '11434'
+  );
+}
+
+function isDefaultLmStudio(baseUrl: URL): boolean {
+  return (
+    (baseUrl.hostname === 'localhost' || baseUrl.hostname === '127.0.0.1') &&
+    baseUrl.port === '1234'
+  );
+}
+
+function shouldUseLocalDevProxy(baseUrl: URL, currentLocation: URL): boolean {
+  return currentLocation.hostname === 'localhost' &&
+    currentLocation.port === '1420' &&
+    currentLocation.origin !== baseUrl.origin;
+}
+
+export function resolveChatEndpoint(
+  baseUrl: string,
+  currentLocation?: URL,
+): ChatEndpoint {
+  const normalized = baseUrl.replace(/\/+$/, '');
+  const parsed = new URL(normalized);
+  const locationUrl = currentLocation ??
+    (typeof window !== 'undefined' ? new URL(window.location.href) : undefined);
+
+  if (isLocalOllama(parsed)) {
+    if (locationUrl && shouldUseLocalDevProxy(parsed, locationUrl)) {
+      return { url: '/__ollama/api/chat', protocol: 'ollama' };
+    }
+    return { url: `${normalized}/api/chat`, protocol: 'ollama' };
+  }
+
+  if (locationUrl && isDefaultLmStudio(parsed) && shouldUseLocalDevProxy(parsed, locationUrl)) {
+    return { url: '/__lmstudio/v1/chat/completions', protocol: 'openai' };
+  }
+
+  return { url: `${normalized}/v1/chat/completions`, protocol: 'openai' };
+}
+
 /**
  * Stream a chat completion from an OpenAI-compatible API provider.
  *
@@ -107,7 +157,7 @@ export function streamChatCompletion(
     ...history,
   ];
 
-  const url = `${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
+  const endpoint = resolveChatEndpoint(baseUrl);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -136,7 +186,7 @@ export function streamChatCompletion(
         : timeoutAbort.signal;
       controller.signal.addEventListener('abort', () => timeoutAbort.abort(), { once: true });
 
-      const resp = await fetch(url, {
+      const resp = await fetch(endpoint.url, {
         method: 'POST',
         headers,
         body,
@@ -159,6 +209,56 @@ export function streamChatCompletion(
       const decoder = new TextDecoder();
       let fullText = '';
       let buffer = '';
+
+      if (endpoint.protocol === 'ollama') {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            try {
+              const parsed = JSON.parse(trimmed) as {
+                message?: { content?: string };
+                done?: boolean;
+              };
+              const content = parsed.message?.content;
+              if (content) {
+                fullText += content;
+                callbacks.onChunk(content);
+              }
+              if (parsed.done) {
+                callbacks.onDone(fullText);
+                return;
+              }
+            } catch {
+              // Skip malformed Ollama chunks
+            }
+          }
+        }
+
+        const tail = buffer.trim();
+        if (tail) {
+          try {
+            const parsed = JSON.parse(tail) as { message?: { content?: string } };
+            const content = parsed.message?.content;
+            if (content) {
+              fullText += content;
+              callbacks.onChunk(content);
+            }
+          } catch {
+            // Skip malformed trailing chunks
+          }
+        }
+        callbacks.onDone(fullText);
+        return;
+      }
 
       while (true) {
         const { done, value } = await reader.read();

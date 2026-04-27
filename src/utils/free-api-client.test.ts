@@ -2,7 +2,7 @@
  * Unit tests for the browser-side free API client.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildHistory } from './free-api-client';
+import { buildHistory, resolveChatEndpoint } from './free-api-client';
 
 // We test buildHistory (pure function) and streamChatCompletion's structure.
 // Full SSE streaming tests are not practical without a mock HTTP server,
@@ -112,5 +112,68 @@ describe('free-api-client — streamChatCompletion', () => {
     expect(controller).toBeInstanceOf(AbortController);
 
     globalThis.fetch = originalFetch;
+  });
+
+  it('streams Ollama newline-delimited chat responses from /api/chat', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"message":{"content":"Hel"},"done":false}\n'));
+        controller.enqueue(encoder.encode('{"message":{"content":"lo"},"done":false}\n'));
+        controller.enqueue(encoder.encode('{"done":true}\n'));
+        controller.close();
+      },
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: stream,
+    }) as unknown as typeof fetch;
+
+    const { streamChatCompletion } = await import('./free-api-client');
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    streamChatCompletion(
+      'http://localhost:11434',
+      'gemma3:1b',
+      null,
+      [{ role: 'user', content: 'hi' }],
+      { onChunk, onDone, onError: vi.fn() },
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'http://localhost:11434/api/chat',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"model":"gemma3:1b"'),
+      }),
+    );
+    expect(onChunk).toHaveBeenNthCalledWith(1, 'Hel');
+    expect(onChunk).toHaveBeenNthCalledWith(2, 'lo');
+    expect(onDone).toHaveBeenCalledWith('Hello');
+
+    globalThis.fetch = originalFetch;
+  });
+});
+
+describe('free-api-client — resolveChatEndpoint', () => {
+  it('uses Ollama chat endpoint for local Ollama', () => {
+    expect(resolveChatEndpoint('http://localhost:11434')).toEqual({
+      url: 'http://localhost:11434/api/chat',
+      protocol: 'ollama',
+    });
+  });
+
+  it('uses the Vite proxy for default LM Studio during local development', () => {
+    expect(
+      resolveChatEndpoint(
+        'http://127.0.0.1:1234',
+        new URL('http://localhost:1420'),
+      ),
+    ).toEqual({
+      url: '/__lmstudio/v1/chat/completions',
+      protocol: 'openai',
+    });
   });
 });
