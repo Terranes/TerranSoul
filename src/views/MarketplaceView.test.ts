@@ -238,7 +238,7 @@ describe('MarketplaceView', () => {
     expect(wrapper.text()).toContain('ask TerranSoul in chat');
   });
 
-  it('shows LM Studio as a distinct marketplace LLM runtime', async () => {
+  it('shows LM Studio via Local LLM tab with provider pill switcher', async () => {
     setupMocks();
     const wrapper = mount(MarketplaceView);
     await flushPromises();
@@ -247,9 +247,16 @@ describe('MarketplaceView', () => {
     await configHeader.trigger('click');
     await flushPromises();
 
-    const lmStudioTab = wrapper.findAll('.llm-tier-tab').find((t) => t.text().includes('LM Studio'));
-    expect(lmStudioTab).toBeTruthy();
-    await lmStudioTab!.trigger('click');
+    // Click the unified "Local LLM" tab
+    const localTab = wrapper.findAll('.llm-tier-tab').find((t) => t.text().includes('Local LLM'));
+    expect(localTab).toBeTruthy();
+    await localTab!.trigger('click');
+    await flushPromises();
+
+    // Click the "LM Studio" provider pill
+    const lmPill = wrapper.findAll('.llm-provider-pill').find((t) => t.text().includes('LM Studio'));
+    expect(lmPill).toBeTruthy();
+    await lmPill!.trigger('click');
     await flushPromises();
 
     expect(wrapper.text()).toContain('Refresh LM Studio');

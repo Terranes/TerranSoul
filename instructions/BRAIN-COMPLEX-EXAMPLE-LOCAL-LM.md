@@ -1,24 +1,26 @@
-# Brain + Memory + RAG — Complete Walkthrough
+# Brain + Memory + RAG — Complete Walkthrough (Local LM Studio)
 
-> **TerranSoul v0.1** · Last updated: 2026-04-26
+> **TerranSoul v0.1** · Last updated: 2026-04-27
 >
+> Free Cloud version: [`BRAIN-COMPLEX-EXAMPLE.md`](BRAIN-COMPLEX-EXAMPLE.md) ·
 > Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
 > Architecture doc: [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)
 
 End-to-end walkthrough: Alice wants to learn Vietnamese law using her
-own documents. TerranSoul auto-installs all brain components, ingests
-the documents, stores them as long-term memories, and answers law
-questions with RAG-grounded citations.
+own documents **with Local LM Studio** for full privacy. TerranSoul
+connects to LM Studio, installs all brain components, ingests the
+documents, stores them as long-term memories, and answers law questions
+with RAG-grounded citations — all without data leaving her machine.
 
 ---
 
 ## Table of Contents
 
 1. [Fresh Launch](#1-fresh-launch)
-2. [Alice Asks to Learn Vietnamese](#2-alice-asks-to-learn-vietnamese)
+2. [Alice Asks to Learn Vietnamese with Local LM](#2-alice-asks-to-learn-vietnamese-with-local-lm)
 3. [Missing Prerequisites — Three Choices](#3-missing-prerequisites--three-choices)
 4. [Auto-Install Everything](#4-auto-install-everything)
-5. [Brain Fully Configured](#5-brain-fully-configured)
+5. [Brain Fully Configured — LM Studio](#5-brain-fully-configured--lm-studio)
 6. [Attach Documents](#6-attach-documents)
 7. [Ingestion Pipeline](#7-ingestion-pipeline)
 8. [Memory Tab — Visible Memories](#8-memory-tab--visible-memories)
@@ -32,32 +34,33 @@ questions with RAG-grounded citations.
 16. [Brain Dashboard with RAG Active](#16-brain-dashboard-with-rag-active)
 17. [Skill Tree — All Quests Activated](#17-skill-tree--all-quests-activated)
 18. [Final State — TerranSoul Remembers Everything](#18-final-state--terransoul-remembers-everything)
-19. [Pet Mode — Desktop Familiar](#19-pet-mode--desktop-familiar)
-20. [Architecture Reference](#20-architecture-reference)
+19. [Architecture Reference](#19-architecture-reference)
+20. [LM Studio Setup Guide](#20-lm-studio-setup-guide)
 21. [Troubleshooting](#21-troubleshooting)
 
 ---
 
 ## 1. Fresh Launch
 
-![Fresh launch — Chat tab with welcome screen](screenshots/01-fresh-launch.png)
+![Fresh launch — Chat tab with welcome screen](screenshots/local-lm/01-fresh-launch.png)
 
 On first launch TerranSoul shows the Chat tab with a welcome screen.
-The brain is already connected to a **Free cloud** provider (Pollinations
-AI / Groq) — zero configuration required.
+The brain is connected to **Local LM Studio** — running at
+`http://127.0.0.1:1234` with the `gemma-4-12b-it` chat model
+and `qwen3-embedding-0.6b` embedding model.
 
 The sidebar has six tabs: **Chat**, **Quests**, **Brain**, **Memory**,
 **Market**, **Voice**.
 
 ---
 
-## 2. Alice Asks to Learn Vietnamese
+## 2. Alice Asks to Learn Vietnamese with Local LM
 
-![Alice types "Learn Vietnamese laws using my provided documents"](screenshots/02-alice-learn-request.png)
+![Alice types "Learn Vietnamese laws using my provided documents using Local LM"](screenshots/local-lm/02-alice-learn-request.png)
 
 Alice types into the chat input:
 
-> **Learn Vietnamese laws using my provided documents**
+> **Learn Vietnamese laws using my provided documents using Local LM**
 
 `detectLearnWithDocsIntent()` in `conversation.ts` matches this phrase
 via regex and extracts the topic (*"Vietnamese laws"*). Instead of
@@ -68,7 +71,7 @@ what brain components are needed.
 
 ## 3. Missing Prerequisites — Three Choices
 
-![Missing prerequisites with Install all / Install one by one / Cancel buttons](screenshots/03-missing-prereqs.png)
+![Missing prerequisites with Install all / Install one by one / Cancel buttons](screenshots/local-lm/03-missing-prereqs.png)
 
 TerranSoul walks the **Scholar's Quest prerequisite chain** via
 `getMissingPrereqQuests()`:
@@ -80,7 +83,7 @@ rag-knowledge          ← Sage's Library (6-signal hybrid RAG)
   ↑ requires
 memory                 ← Long-Term Memory (SQLite store)
   ↑ requires
-free-brain             ← Awaken the Mind (Free cloud AI)
+free-brain             ← Awaken the Mind (LM Studio local AI)
 ```
 
 It lists every quest in that chain that isn't already `active`, and
@@ -88,7 +91,7 @@ shows a System message with **three inline buttons**:
 
 | Button | Action |
 |---|---|
-| ⚡ **Auto install all** | Auto-activate every missing quest in dependency order (configures brain, seeds memory, marks completion) |
+| ⚡ **Auto install all** | Auto-activate every missing quest in dependency order |
 | 📋 **Start chain quest** | Show individual buttons per quest (manual) |
 | ❌ **Cancel** | Dismiss the prompt |
 
@@ -96,27 +99,19 @@ shows a System message with **three inline buttons**:
 
 ## 4. Auto-Install Everything
 
-![Auto-install activating all 4 quests in order](screenshots/04-auto-install.png)
+![Auto-install activating all 4 quests in order with LM Studio](screenshots/local-lm/04-auto-install.png)
 
 Clicking **⚡ Auto install all** runs `runAutoInstall()` which activates
 every missing quest in dependency order by directly configuring the
 underlying stores:
 
-```ts
-// For each missing quest, runAutoInstall configures the actual system:
-// free-brain  → brain.autoConfigureForDesktop() / brain.autoConfigureFreeApi()
-// memory      → ensures brainMode is set (already done by free-brain)
-// rag-knowledge → memStore.addMemory() seeds a bootstrap memory entry
-// scholar-quest → skillTree.markComplete('scholar-quest')
-```
-
-**Install order (from `brain-advanced-design.md`):**
+**Install order:**
 
 | # | Quest | What Gets Installed |
 |---|---|---|
-| 1 | 🧠 **Awaken the Mind** | Free cloud LLM provider (Pollinations / Groq auto-rotation) |
+| 1 | 🧠 **Awaken the Mind** | Local LM Studio provider (gemma-4-12b-it @ http://127.0.0.1:1234) |
 | 2 | 📖 **Long-Term Memory** | SQLite memory store — persistent facts, preferences, context |
-| 3 | 📚 **Sage's Library** | Hybrid 6-signal RAG pipeline (vector + keyword + recency + importance + decay + tier) |
+| 3 | 📚 **Sage's Library** | Hybrid 6-signal RAG pipeline with qwen3-embedding-0.6b embeddings |
 | 4 | 📚 **Scholar's Quest** | Document ingestion pipeline (fetch → chunk → embed → store) |
 
 After all 4 quests activate, TerranSoul confirms:
@@ -127,31 +122,46 @@ And offers the **Start Knowledge Quest** button.
 
 ---
 
-## 5. Brain Fully Configured
+## 5. Brain Fully Configured — LM Studio
 
-![Brain tab showing Local LLM mode with Gemma 4 + Qwen embedding](screenshots/05-brain-configured.png)
+![Brain tab showing LM Studio mode with all components active](screenshots/local-lm/05-brain-configured.png)
 
 The **Brain** tab now shows the full configuration:
 
-- **Mode:** Local LLM (LM Studio)
-- **Model:** gemma-4-12b-it
-- **Embedding:** qwen3-embedding-0.6b
+- **Mode:** Local LLM
+- **Provider:** LM Studio
+- **Chat Model:** gemma-4-12b-it (Gemma 4 — Google's latest)
+- **Embedding Model:** qwen3-embedding-0.6b (Qwen — for RAG vector search)
 - **Memory:** SQLite long-term store, 3-tier model (short/working/long)
 - **RAG:** 6-signal hybrid search enabled
 
-### Brain Modes (from `brain-advanced-design.md`)
+### Brain Modes Comparison
 
-| Mode | Setup | Embedding | RAG Quality | Best For |
-|---|---|---|---|---|
-| ☁️ **Free Cloud** | Zero config | Cloud `/v1/embeddings` | 60–100% | Getting started |
-| 💎 **Paid Cloud** | API key + model | OpenAI-compat `/v1/embeddings` | 100% | Best quality |
-| 🖥 **Local LLM** | Ollama or LM Studio + model | `nomic-embed-text` / `qwen3-embedding-0.6b` | 100% | Full privacy |
+| Mode | Setup | Embedding | RAG Quality | Privacy | Best For |
+|---|---|---|---|---|---|
+| ☁️ **Free Cloud** | Zero config | Cloud `/v1/embeddings` | 60–100% | ❌ | Getting started |
+| 💎 **Paid Cloud** | API key + model | OpenAI-compat `/v1/embeddings` | 100% | ❌ | Best quality |
+| 🖥 **Local LLM** | Ollama or LM Studio + model | `nomic-embed-text` / `qwen3-embedding-0.6b` | 100% | ✅ | **Full privacy** |
+
+The Quick Mode switcher on the Brain tab shows three cards: Free cloud, Paid cloud,
+and **Local LLM**. The Local LLM card shows which provider (Ollama or LM Studio)
+is currently active. In the Marketplace, the “🖥 Local LLM” tab contains a
+**provider pill switcher** to toggle between Ollama, LM Studio, and future
+providers (HuggingFace, vLLM, etc.).
+
+### Why LM Studio?
+
+- **Visual model management** — Browse, download, and load models via a desktop GUI
+- **One-click model loading** — No CLI commands, just point and click
+- **OpenAI-compatible API** — Standard `/v1/chat/completions` and `/v1/embeddings` endpoints
+- **GPU acceleration** — Automatic CUDA/Metal detection for optimal performance
+- **Multiple models** — Load chat + embedding models simultaneously
 
 ---
 
 ## 6. Attach Documents
 
-![Scholar's Quest — Gather Sources with two documents attached](screenshots/06-attach-documents.png)
+![Scholar's Quest — Gather Sources with two documents attached](screenshots/local-lm/06-attach-documents.png)
 
 The **Scholar's Quest** dialog (Step 1: Gather Sources) lets Alice add
 URLs or local files. Supported formats: `.md`, `.txt`, `.csv`, `.json`,
@@ -170,10 +180,10 @@ These files are included in `public/demo/` for testing.
 
 ## 7. Ingestion Pipeline
 
-![Ingestion progress — both sources fully processed](screenshots/07-ingestion-progress.png)
+![Ingestion progress — both sources fully processed via LM Studio](screenshots/local-lm/07-ingestion-progress.png)
 
 Clicking **⚡ Start Learning** triggers the ingestion pipeline for each
-source (from `brain-advanced-design.md` §7):
+source:
 
 | Step | What Happens |
 |---|---|
@@ -181,7 +191,7 @@ source (from `brain-advanced-design.md` §7):
 | **Extract** | HTML → text via `scraper`, PDF → text, etc. |
 | **Chunk** | Semantic splitting (~500–800 tokens via `text-splitter` crate) |
 | **Dedup** | SHA-256 hash check + cosine similarity > 0.97 = skip |
-| **Embed** | Cloud `/v1/embeddings` or Ollama `nomic-embed-text` (768-dim) |
+| **Embed** | LM Studio `qwen3-embedding-0.6b` (local) |
 | **Store** | SQLite with `tier=long`, `importance=5`, source tags |
 
 **Result:**
@@ -192,11 +202,14 @@ source (from `brain-advanced-design.md` §7):
 | `article-429-commentary.txt` | 3 | `vietnamese-law,statute-of-limitations` |
 | **Total** | **15 memories** | **15 embedded, 0 duplicates** |
 
+> **Privacy:** All embedding happens locally via LM Studio — no data
+> leaves your machine.
+
 ---
 
 ## 8. Memory Tab — Visible Memories
 
-![Memory tab showing 15 long-term knowledge entries](screenshots/08-memory-tab.png)
+![Memory tab showing 15 long-term knowledge entries](screenshots/local-lm/08-memory-tab.png)
 
 Navigate to the **Memory** tab. All ingested chunks appear as long-term
 memories:
@@ -231,22 +244,22 @@ memories:
 
 ## 9. Ask About Laws — RAG-Grounded Answer
 
-![RAG answer with Article 429 details and source citations](screenshots/09-rag-answer.png)
+![RAG answer with Article 429 details and source citations](screenshots/local-lm/09-rag-answer.png)
 
 Now Alice asks a law question:
 
 > **What is the statute of limitations for contract disputes under
 > Vietnamese law?**
 
-The **hybrid RAG pipeline** triggers (from `brain-advanced-design.md` §4):
+The **hybrid RAG pipeline** triggers:
 
-1. **Embed** the query via cloud `/v1/embeddings`
+1. **Embed** the query via LM Studio `qwen3-embedding-0.6b` (local)
 2. **6-signal hybrid search** against all 15 memories:
 
 $$\text{score} = 0.40 \times \text{vector} + 0.20 \times \text{keyword} + 0.15 \times \text{recency} + 0.10 \times \text{importance} + 0.10 \times \text{decay} + 0.05 \times \text{tier}$$
 
 3. **Top-5** results injected as `[LONG-TERM MEMORY]` block in system prompt
-4. **LLM** generates answer grounded in the ingested sources
+4. **LLM** (gemma-4-12b-it via LM Studio) generates answer grounded in the ingested sources
 
 TerranSoul responds with a **correct, source-grounded answer**:
 
@@ -256,12 +269,13 @@ TerranSoul responds with a **correct, source-grounded answer**:
 >
 > 📚 Sources: `vietnamese-civil-code.html` (Articles 351, 429),
 > `article-429-commentary.txt`
+> 🧠 Provider: Local LM Studio (gemma-4-12b-it)
 
 ---
 
 ## 10. Follow-Up Questions — More Correct Answers
 
-![Follow-up answer about penalty clauses with source citations](screenshots/10-followup-answer.png)
+![Follow-up answer about penalty clauses with source citations](screenshots/local-lm/10-followup-answer.png)
 
 Alice follows up:
 
@@ -277,6 +291,7 @@ TerranSoul retrieves Article 420 from memory and responds correctly:
 > benefits.
 >
 > 📚 Sources: `vietnamese-civil-code.html` (Articles 419, 420)
+> 🧠 Provider: Local LM Studio (gemma-4-12b-it)
 
 Every follow-up hits the same RAG pipeline. Retrieval is O(log n) via
 HNSW ANN index (`usearch`), scaling to 1M+ entries at <50ms.
@@ -285,7 +300,7 @@ HNSW ANN index (`usearch`), scaling to 1M+ entries at <50ms.
 
 ## 11. Multilingual RAG — Vietnamese
 
-![Vietnamese Q&A — same question, same correct answer in Vietnamese](screenshots/11-vietnamese-answer.png)
+![Vietnamese Q&A — same question, same correct answer in Vietnamese](screenshots/local-lm/11-vietnamese-answer.png)
 
 Alice asks the same statute-of-limitations question in Vietnamese:
 
@@ -295,38 +310,34 @@ TerranSoul responds correctly in Vietnamese, citing **Điều 429** (Article
 429) with the same facts — three-year limitation period, "biết hoặc phải
 biết" (knew or should have known) standard, and source citations.
 
-The RAG pipeline retrieves the same English-language memories and the LLM
-translates the grounded answer into the query language.
-
 ---
 
 ## 12. Multilingual RAG — Chinese
 
-![Chinese Q&A — Article 429 answer in Simplified Chinese](screenshots/12-chinese-answer.png)
+![Chinese Q&A — Article 429 answer in Simplified Chinese](screenshots/local-lm/12-chinese-answer.png)
 
 > **越南法律中合同纠纷的诉讼时效是多长？**
 
 TerranSoul responds in Simplified Chinese: **第429条** — **三（3）年** from
-the date the claimant "知道或应当知道" (knew or should have known). Same
-sources, same accuracy.
+the date the claimant "知道或应当知道" (knew or should have known).
 
 ---
 
 ## 13. Multilingual RAG — Russian
 
-![Russian Q&A — Article 429 answer in Russian](screenshots/13-russian-answer.png)
+![Russian Q&A — Article 429 answer in Russian](screenshots/local-lm/13-russian-answer.png)
 
 > **Каков срок исковой давности по договорным спорам по вьетнамскому праву?**
 
 TerranSoul responds in Russian: **Статья 429** — **три (3) года** from
 the date the claimant "узнал или должен был узнать" (knew or should have
-known). Includes tolling provisions and force majeure exemption.
+known).
 
 ---
 
 ## 14. Multilingual RAG — Japanese
 
-![Japanese Q&A — Article 429 answer in Japanese](screenshots/14-japanese-answer.png)
+![Japanese Q&A — Article 429 answer in Japanese](screenshots/local-lm/14-japanese-answer.png)
 
 > **ベトナム法における契約紛争の出訴期限はどのくらいですか？**
 
@@ -337,7 +348,7 @@ the rights holder "知った、または知るべきであった" (knew or shoul
 
 ## 15. Multilingual RAG — Korean
 
-![Korean Q&A — Article 429 answer in Korean](screenshots/15-korean-answer.png)
+![Korean Q&A — Article 429 answer in Korean](screenshots/local-lm/15-korean-answer.png)
 
 > **베트남 법률에서 계약 분쟁의 소멸시효는 얼마입니까?**
 
@@ -347,12 +358,7 @@ rights holder "알았거나 알았어야 하는" (knew or should have known).
 ### Multilingual RAG Summary
 
 All five languages retrieve the **same source documents** and produce
-**factually identical answers** — only the output language changes. This
-works because:
-
-1. The cloud embedding model encodes semantic meaning across languages
-2. The 6-signal hybrid search matches on meaning, not surface tokens
-3. The LLM generates the response in the query language
+**factually identical answers** — only the output language changes.
 
 | Language | Article | Limitation Period | Source Match |
 |---|---|---|---|
@@ -367,19 +373,22 @@ works because:
 
 ## 16. Brain Dashboard with RAG Active
 
-![Brain tab with 15 memories, RAG pipeline active](screenshots/16-brain-rag-active.png)
+![Brain tab with 15 memories, RAG pipeline active](screenshots/local-lm/16-brain-rag-active.png)
 
 The **Brain** tab now shows:
+- **Mode:** Local LLM
+- **Provider:** LM Studio
+- **Model:** gemma-4-12b-it
+- **Embedding:** qwen3-embedding-0.6b
 - **Memory health:** 15 memories (all long-term)
-- **Cognitive kinds:** Breakdown by episodic/semantic/procedural
 - **RAG capability:** All 6 signals active
-- **Configuration:** Free Cloud mode with auto-rotation
+- **Privacy:** 100% offline
 
 ---
 
 ## 17. Skill Tree — All Quests Activated
 
-![Skill Tree with all brain quests completed](screenshots/17-skill-tree.png)
+![Skill Tree with all brain quests completed](screenshots/local-lm/17-skill-tree.png)
 
 The **Quests** tab shows all 4 brain-related quests as active/completed:
 - ✅ Awaken the Mind (free-brain)
@@ -387,13 +396,11 @@ The **Quests** tab shows all 4 brain-related quests as active/completed:
 - ✅ Sage's Library (rag-knowledge)
 - ✅ Scholar's Quest (scholar-quest)
 
-Combo unlocks may fire when multiple brain skills activate together.
-
 ---
 
 ## 18. Final State — TerranSoul Remembers Everything
 
-![Final state — TerranSoul summarizes everything it knows about Alice](screenshots/18-final.png)
+![Final state — TerranSoul summarizes everything it knows about Alice](screenshots/local-lm/18-final.png)
 
 Alice asks:
 
@@ -410,6 +417,12 @@ TerranSoul responds from its complete memory:
 > - 12 chunks from the Vietnamese Civil Code (Articles 351–468)
 > - 3 auto-extracted personal facts
 >
+> **Brain configuration:**
+> - Mode: Local LLM (LM Studio)
+> - Model: gemma-4-12b-it
+> - Embedding: qwen3-embedding-0.6b (local)
+> - Privacy: 100% offline — no data leaves your machine
+>
 > **Multilingual capability:**
 > - Verified in English, Vietnamese, Chinese, Russian, Japanese, and Korean
 > - Same RAG pipeline retrieves correct sources regardless of query language
@@ -418,45 +431,9 @@ TerranSoul responds from its complete memory:
 
 ---
 
-## 19. Pet Mode — Desktop Familiar
+## 19. Architecture Reference
 
-![Pet mode — VRM character floating on desktop with context menu showing Panels](screenshots/14-pet-mode.png)
-
-Alice clicks the **🐾 Pet** button in the mode toggle pill to enter
-**Pet Mode**. The app window becomes a transparent always-on-top overlay
-— the VRM character floats on the desktop, freed from the app frame.
-
-- **Click** the character to toggle the floating chat panel
-- **Drag** to reposition the character anywhere on screen
-- **Scroll wheel** to zoom in/out
-- **Right-click** for the context menu (mood, panels, settings, exit)
-
-### Multi-Window Panels
-
-Unlike desktop mode where all tabs share a single window, pet mode opens
-**each panel as its own separate floating window**. Right-click →
-**Panels** shows:
-
-| Panel | Opens |
-|---|---|
-| 🧠 **Brain** | Brain configuration + memory health |
-| 💡 **Memory** | Memory CRUD + search + visualization |
-| ⭐ **Quests** | Skill tree + quest progress |
-| 🏪 **Marketplace** | Agent marketplace + LLM configuration |
-| 🎙 **Voice** | TTS/ASR voice settings |
-
-Each panel window is always-on-top and shares the same brain, memory,
-and RAG pipeline as the main character. Alice can have the Memory panel
-open next to the chat while working in other applications.
-
-> **Quest unlock:** Pet Mode is the **Desktop Familiar** ultimate quest,
-> requiring the `avatar` and `tts` skills to be active first.
-
----
-
-## 20. Architecture Reference
-
-### Three-Tier Memory Model (from `brain-advanced-design.md` §2)
+### Three-Tier Memory Model
 
 ```
  CONVERSATION
@@ -489,56 +466,68 @@ open next to the chat while working in other applications.
 
 | Signal | Weight | Range | Source |
 |---|---|---|---|
-| **Vector similarity** | 40% | 0.0–1.0 | `nomic-embed-text` cosine or cloud embed |
+| **Vector similarity** | 40% | 0.0–1.0 | `qwen3-embedding-0.6b` cosine (LM Studio local) |
 | **Keyword match** | 20% | 0.0–1.0 | Content + tags (case-insensitive) |
 | **Recency bias** | 15% | 0.0–1.0 | $e^{(-\text{hours}/24)}$ |
 | **Importance** | 10% | 0.2–1.0 | User-assigned 1–5 normalized |
 | **Decay score** | 10% | 0.01–1.0 | Exponential forgetting curve |
 | **Tier priority** | 5% | 0.3–1.0 | Working (1.0) > Long (0.7) > Short (0.3) |
 
-### Advanced RAG Features
+### LM Studio Data Flow
 
-| Feature | Description | Status |
-|---|---|---|
-| **RRF fusion** | Vector + keyword + freshness fused via Reciprocal Rank Fusion (k=60) | ✅ |
-| **HyDE** | LLM writes hypothetical answer, embeds *that* for retrieval | ✅ Optional |
-| **Cross-encoder rerank** | LLM-as-judge scores each (query, doc) pair 0–10 | ✅ Optional |
-| **HNSW ANN index** | O(log n) via `usearch` — scales to 1M+ entries | ✅ |
-| **Multi-hop search** | Traverse entity-relationship graph edges | ✅ V5 |
+```
+Alice's question
+  │
+  ├── LM Studio: qwen3-embedding-0.6b → query embedding
+  │
+  ├── SQLite: hybrid_search(query_emb, keywords) → top-5 memories
+  │
+  ├── System prompt: [LONG-TERM MEMORY] block with retrieved context
+  │
+  └── LM Studio: gemma-4-12b-it → RAG-grounded response
+```
 
-### Auto-Learn (Write-Back Loop)
+All processing happens locally. The only network traffic is between
+TerranSoul and LM Studio at `127.0.0.1:1234`.
 
-Auto-learn runs in the background for **all brain modes**:
+---
 
-1. Every assistant message increments a turn counter
-2. Every **10 turns**, `extract_memories_from_session` asks the LLM to
-   extract up to 5 facts about the user
-3. Each fact is saved to SQLite with tag `auto-extracted`, importance 3,
-   tier `long`
-4. The Memory tab refreshes automatically
+## 20. LM Studio Setup Guide
 
-### Implementation Map
+### Prerequisites
 
-| Concern | File |
+1. Download **LM Studio** from [lmstudio.ai](https://lmstudio.ai/)
+2. Install and launch LM Studio
+3. Download required models:
+   - **Chat model:** `gemma-4-12b-it` (Gemma 4 — Google’s latest, excellent multilingual quality)
+   - **Embedding model:** `qwen3-embedding-0.6b` (Qwen 3 — compact, fast, required for RAG)
+
+### Configuration
+
+1. In LM Studio, load both models
+2. Start the local server (default: `http://127.0.0.1:1234`)
+3. In TerranSoul, go to **Market** → **LM Studio** tab
+4. Set the base URL to `http://127.0.0.1:1234`
+5. Select your chat model and embedding model
+6. Click **Save**
+
+### Recommended Models
+
+| Purpose | Model | VRAM | Notes |
+|---|---|---|---|
+| Chat (8GB) | `gemma-4-12b-it` | ~8 GB | Gemma 4 — best quality at this size |
+| Chat (16GB) | `gemma-4-27b-it` | ~18 GB | Larger Gemma 4, premium quality |
+| Chat (4GB) | `gemma-3-4b-it` | ~3 GB | Lighter, works on most GPUs |
+| Embeddings | `qwen3-embedding-0.6b` | ~0.4 GB | Qwen 3 — fast, compact RAG embedding |
+
+### Hardware Requirements
+
+| VRAM | Recommended Setup |
 |---|---|
-| Intent detection | `src/stores/conversation.ts` — `detectLearnWithDocsIntent()` |
-| Prerequisite chain | `src/stores/conversation.ts` — `getMissingPrereqQuests()` |
-| Auto-install engine | `src/stores/conversation.ts` — `runAutoInstall()` |
-| Choice routing | `src/stores/conversation.ts` — `handleLearnDocsChoice()` |
-| Skill-tree engine | `src/stores/skill-tree.ts` — `triggerQuestEvent()` / `handleQuestChoice()` |
-| Document import UI | `src/components/KnowledgeQuestDialog.vue` |
-| Auto-learn trigger | `src/stores/conversation.ts` — `maybeAutoLearn()` |
-| Memory extraction | `src-tauri/src/memory/brain_memory.rs` — `extract_facts_any_mode()` |
-| Mode-agnostic dispatch | `src-tauri/src/memory/brain_memory.rs` — `complete_via_mode()` |
-| Hybrid 6-signal search | `src-tauri/src/memory/store.rs` — `hybrid_search()` |
-| RRF fusion | `src-tauri/src/memory/fusion.rs` — Reciprocal Rank Fusion |
-| HNSW ANN index | `src-tauri/src/memory/ann_index.rs` — `usearch` wrapper |
-| Semantic chunking | `src-tauri/src/memory/chunking.rs` — `text-splitter` crate |
-| Decay & GC | `src-tauri/src/memory/store.rs` — `apply_memory_decay()`, `gc_memories()` |
-| Memory display | `src/views/MemoryView.vue` — loads via `fetchAll()` |
-| Brain mode config | `src-tauri/src/brain/brain_config.rs` — `BrainMode` enum |
-| Provider rotation | `src-tauri/src/brain/provider_rotator.rs` — `ProviderRotator` |
-| Brain component map | `docs/brain-advanced-design.md` |
+| **4 GB** | 3B chat model + embedding model |
+| **8 GB** | 7B chat model + embedding model |
+| **16 GB** | 14B chat model + embedding model |
+| **24 GB+** | 32B+ chat model + embedding model |
 
 ---
 
@@ -546,12 +535,13 @@ Auto-learn runs in the background for **all brain modes**:
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| "LM Studio not running" | LM Studio server not started | Open LM Studio → Start server |
+| No models listed | Models not downloaded | Download models in LM Studio GUI |
+| Embedding fails | Embedding model not loaded | Load `qwen3-embedding-0.6b` in LM Studio |
+| Slow responses | Model too large for GPU | Switch to a smaller model (7B → 3B) |
+| Connection refused | Wrong base URL | Verify LM Studio server URL (default: `http://127.0.0.1:1234`) |
 | Memory tab empty after chat | Haven't reached 10 turns yet | Keep chatting, or click "Extract from session" manually |
 | "Install all" doesn't activate quests | Quest state already active | Check Quests tab — they may already be green |
-| No RAG sources in answer | No embedding model available | Use Paid API for reliable embeddings, or install `nomic-embed-text` for Ollama |
-| Free API extraction fails | Provider rate-limited | Wait 30s and retry — `ProviderRotator` auto-fails over |
+| No RAG sources in answer | Embedding model not loaded | Load `qwen3-embedding-0.6b` in LM Studio |
 | Knowledge Quest "Brain not ready" | Running in browser mode | Run via `npm run tauri dev` for full Tauri IPC |
-| Ingested documents don't appear | Ingestion runs async | Wait for progress indicator, then check Memory tab |
-| Slow first chat | Provider latency not measured yet | Second message is faster (providers have latency data) |
-| Vector search returns nothing | Embedding model missing | Pull `nomic-embed-text` for Ollama, or use cloud mode |
-| Decay removed important memories | GC threshold too aggressive | Increase importance ≥ 3, or access memories to reset decay |
+| Vector search returns nothing | Embedding model not configured | Set embedding model in Market → LM Studio tab |

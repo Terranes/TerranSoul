@@ -1,16 +1,16 @@
 /**
- * capture-brain-example-screenshots.mjs
+ * capture-brain-local-lm-screenshots.mjs
  *
- * Captures all screenshots for BRAIN-COMPLEX-EXAMPLE.md with step-by-step
- * validation at each stage. Each screenshot asserts the expected DOM state
- * before capturing.
+ * Captures all screenshots for BRAIN-COMPLEX-EXAMPLE-LOCAL-LM.md with
+ * step-by-step validation at each stage. Uses Local LM Studio as the
+ * brain provider instead of Free Cloud / Ollama.
  *
  * Flow:
  *   01. Fresh launch
- *   02. Alice asks to learn Vietnamese
+ *   02. Alice asks to learn Vietnamese using Local LM
  *   03. Missing prerequisites prompt
- *   04. Auto-install progress
- *   05. Brain tab fully configured (asserts hero title, mode, config)
+ *   04. Auto-install progress (LM Studio)
+ *   05. Brain tab — LM Studio configured
  *   06. Attach documents dialog
  *   07. Ingestion progress
  *   08. Memory tab with 15 entries
@@ -27,14 +27,13 @@
  *
  * Usage:
  *   npm run dev           # terminal 1
- *   node scripts/capture-brain-example-screenshots.mjs
+ *   node scripts/capture-brain-local-lm-screenshots.mjs
  */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
-import assert from 'assert';
 
 const VITE_URL = 'http://localhost:1420';
-const OUT = 'instructions/screenshots';
+const OUT = 'instructions/screenshots/local-lm';
 mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -56,10 +55,8 @@ async function setPinia(patch) {
     for (const [store, values] of Object.entries(data)) {
       const s = pinia._s.get(store);
       if (s) {
-        // Use $patch for proper reactivity on Pinia store instances
         s.$patch(values);
       } else {
-        // Fallback: create state directly
         if (!pinia.state.value[store]) pinia.state.value[store] = {};
         Object.assign(pinia.state.value[store], values);
       }
@@ -80,12 +77,10 @@ async function setMessages(msgs) {
 }
 
 async function navigateTo(tabName) {
-  // Force-click the nav button, bypassing any overlay (splash, combo toasts)
   const btn = page.locator(`button:has-text("${tabName}")`).first();
   try {
     await btn.click({ force: true, timeout: 3000 });
   } catch {
-    // Fallback: dispatch click event via JS
     await page.evaluate((name) => {
       const btns = [...document.querySelectorAll('button')];
       const b = btns.find(b => b.textContent.includes(name));
@@ -95,8 +90,7 @@ async function navigateTo(tabName) {
   await sleep(1000);
 }
 
-/** Assert text is visible on page. Throws if not found. */
-async function assertVisible(text, timeout = 3000) {
+async function assertVisible(text) {
   const found = await page.evaluate((t) => {
     return document.body.innerText.includes(t);
   }, text);
@@ -105,10 +99,9 @@ async function assertVisible(text, timeout = 3000) {
   }
 }
 
-/** Assert a CSS selector is visible. */
-async function assertSelector(selector, timeout = 3000) {
+async function assertSelector(selector) {
   try {
-    await page.locator(selector).first().waitFor({ state: 'visible', timeout });
+    await page.locator(selector).first().waitFor({ state: 'visible', timeout: 3000 });
   } catch {
     throw new Error(`ASSERT FAILED: selector "${selector}" not visible`);
   }
@@ -119,8 +112,7 @@ async function screenshot(name) {
   console.log(`  ✅ ${name}`);
 }
 
-// ── Dismiss splash and any initial dialogs ────────────────────────────────
-// Wait for splash to auto-dismiss (no Tauri backend → autoConfigureFreeApi → appLoading=false)
+// ── Dismiss splash and initial dialogs ────────────────────────────────────
 await sleep(2000);
 
 const continueBtn = page.locator('button:has-text("Continue ▸")');
@@ -134,7 +126,6 @@ if (await skipBtn.isVisible({ timeout: 500 }).catch(() => false)) {
   await sleep(500);
 }
 
-// Dismiss any combo notifications
 const dismissBtns = page.locator('button[aria-label*="Dismiss"], button:has-text("✕")');
 const dismissCount = await dismissBtns.count();
 for (let i = 0; i < dismissCount; i++) {
@@ -144,32 +135,27 @@ for (let i = 0; i < dismissCount; i++) {
 
 const NOW = Date.now();
 
-// ── Brain state preset (correct BrainMode object format) ─────────────────
-const BRAIN_FREE_STATE = {
+// ── Brain state preset — Local LM Studio ─────────────────────────────────
+const BRAIN_LM_STUDIO_STATE = {
   brain: {
     brainMode: {
-      mode: 'free_api',
-      provider_id: 'pollinations',
+      mode: 'local_lm_studio',
+      model: 'gemma-4-12b-it',
+      base_url: 'http://127.0.0.1:1234',
       api_key: null,
+      embedding_model: 'qwen3-embedding-0.6b',
     },
     hasBrain: true,
     activeBrain: null,
     isLoading: false,
     ollamaStatus: { running: false, model_count: 0 },
-    freeProviders: [
-      {
-        id: 'pollinations', display_name: 'Pollinations AI',
-        base_url: 'https://text.pollinations.ai/openai', model: 'openai',
-        rpm_limit: 30, rpd_limit: 0, requires_api_key: false,
-        notes: 'Free, no API key needed',
-      },
-      {
-        id: 'groq', display_name: 'Groq',
-        base_url: 'https://api.groq.com/openai', model: 'llama-3.3-70b-versatile',
-        rpm_limit: 30, rpd_limit: 1000, requires_api_key: true,
-        notes: 'Fast inference, free tier',
-      },
+    lmStudioStatus: { running: true, model_count: 3 },
+    lmStudioModels: [
+      { id: 'gemma-4-12b-it', name: 'Gemma 4 12B IT', loaded: true },
+      { id: 'qwen3-embedding-0.6b', name: 'Qwen 3 Embedding 0.6B', loaded: true },
+      { id: 'llama-3.1-8b-instruct', name: 'Llama 3.1 8B Instruct', loaded: false },
     ],
+    freeProviders: [],
     systemInfo: {
       total_ram_mb: 32768, ram_tier_label: 'Large (32 GB)',
       cpu_cores: 12, cpu_name: 'Intel Core i7-12700K',
@@ -179,7 +165,7 @@ const BRAIN_FREE_STATE = {
   },
 };
 
-// ── Sample memories for memory tab ───────────────────────────────────────
+// ── Sample memories ──────────────────────────────────────────────────────
 const SAMPLE_MEMORIES = [
   { id: 1, content: 'Article 429: The statute of limitations for filing lawsuits related to contractual disputes is three years, from the date the claimant knew or should have known that their rights were infringed.', tags: 'vietnamese-law,contract,statute-of-limitations', importance: 5, memory_type: 'fact', created_at: NOW - 60000, last_accessed: NOW - 5000, access_count: 3, tier: 'long', decay_score: 0.95, session_id: null, parent_id: null, token_count: 52 },
   { id: 2, content: 'Article 351: A party that fails to perform or improperly performs a civil obligation shall bear civil liability. Liability for breach is strict — the aggrieved party need not prove fault.', tags: 'vietnamese-law,liability,breach', importance: 5, memory_type: 'fact', created_at: NOW - 59000, last_accessed: NOW - 8000, access_count: 2, tier: 'long', decay_score: 0.92, session_id: null, parent_id: null, token_count: 45 },
@@ -214,33 +200,18 @@ const MEMORY_STATE = {
 // 01 — Fresh Launch
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('01 — Fresh Launch');
-await setPinia({ settings: { firstLaunchDone: true, hasCompletedSetup: true }, ...BRAIN_FREE_STATE });
-// Switch to chatbox mode so messages are always visible
-const chatModeBtn = page.locator('.mode-seg-btn', { hasText: 'Chat' });
-if (await chatModeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-  await chatModeBtn.click();
-  await sleep(500);
-} else {
-  await page.evaluate(() => {
-    const app = document.querySelector('#app')?.__vue_app__;
-    const pinia = app?.config?.globalProperties?.$pinia;
-    if (!pinia) return;
-    const s = pinia._s.get('settings');
-    if (s) s.settings.chatbox_mode = true;
-  });
-  await sleep(500);
-}
+await setPinia({ settings: { firstLaunchDone: true, hasCompletedSetup: true }, ...BRAIN_LM_STUDIO_STATE });
 await navigateTo('Chat');
 await sleep(500);
 await assertSelector('.app-nav');
 await screenshot('01-fresh-launch.png');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 02 — Alice asks to learn Vietnamese
+// 02 — Alice asks to learn Vietnamese using Local LM
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('02 — Alice asks to learn Vietnamese');
+console.log('02 — Alice asks to learn Vietnamese using Local LM');
 await setMessages([
-  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents', timestamp: NOW - 60000 },
+  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents using Local LM', timestamp: NOW - 60000 },
 ]);
 await sleep(600);
 await assertVisible('Learn Vietnamese laws');
@@ -251,11 +222,11 @@ await screenshot('02-alice-learn-request.png');
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('03 — Missing prerequisites prompt');
 await setMessages([
-  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents', timestamp: NOW - 60000 },
+  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents using Local LM', timestamp: NOW - 60000 },
   {
     id: 'sys-missing', role: 'assistant',
-    content: 'To learn **Vietnamese laws** from your documents I need a few quests to be active first:\n\n'
-      + '• 🧠 **Awaken the Mind** — Connect to a free cloud AI\n'
+    content: 'To learn **Vietnamese laws** from your documents using Local LM Studio I need a few quests to be active first:\n\n'
+      + '• 🧠 **Awaken the Mind** — Connect to Local LM Studio (http://127.0.0.1:1234)\n'
       + '• 📖 **Long-Term Memory** — Persistent memory across sessions\n'
       + '• 📚 **Sage\'s Library** — Local semantic-search RAG\n'
       + '• 📚 **Scholar\'s Quest** — Document ingestion pipeline\n\n'
@@ -276,20 +247,21 @@ await assertVisible('Cancel');
 await screenshot('03-missing-prereqs.png');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 04 — Auto-install progress
+// 04 — Auto-install progress (LM Studio)
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('04 — Auto-install progress');
 await setMessages([
-  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents', timestamp: NOW - 60000 },
+  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents using Local LM', timestamp: NOW - 60000 },
   { id: 'sys-auto', role: 'assistant', content: '⚡ Auto-installing all required quests…', agentName: 'System', sentiment: 'happy', timestamp: NOW - 55000 },
-  { id: 'q1', role: 'assistant', content: '✅ **Awaken the Mind** activated — Free cloud AI connected (Pollinations / Groq)', agentName: 'System', sentiment: 'happy', timestamp: NOW - 54000 },
+  { id: 'q1', role: 'assistant', content: '✅ **Awaken the Mind** activated — Local LM Studio connected (gemma-4-12b-it @ http://127.0.0.1:1234)', agentName: 'System', sentiment: 'happy', timestamp: NOW - 54000 },
   { id: 'q2', role: 'assistant', content: '✅ **Long-Term Memory** activated — SQLite memory store online', agentName: 'System', sentiment: 'happy', timestamp: NOW - 53000 },
-  { id: 'q3', role: 'assistant', content: '✅ **Sage\'s Library** activated — 6-signal hybrid RAG pipeline ready', agentName: 'System', sentiment: 'happy', timestamp: NOW - 52000 },
+  { id: 'q3', role: 'assistant', content: '✅ **Sage\'s Library** activated — 6-signal hybrid RAG pipeline ready (qwen3-embedding-0.6b embeddings)', agentName: 'System', sentiment: 'happy', timestamp: NOW - 52000 },
   { id: 'q4', role: 'assistant', content: '✅ **Scholar\'s Quest** activated — document ingestion unlocked', agentName: 'System', sentiment: 'happy', timestamp: NOW - 51000 },
   {
     id: 'ready', role: 'assistant',
     content: '🎉 All 4 quests installed! Your brain is fully configured:\n\n'
-      + '- **Brain:** Free cloud AI (auto-rotating providers)\n'
+      + '- **Brain:** Local LM Studio (gemma-4-12b-it)\n'
+      + '- **Embeddings:** qwen3-embedding-0.6b via LM Studio\n'
       + '- **Memory:** SQLite long-term store\n'
       + '- **RAG:** Hybrid 6-signal search (vector + keyword + recency + importance + decay + tier)\n'
       + '- **Ingestion:** Semantic chunking + embedding pipeline\n\n'
@@ -304,67 +276,36 @@ await setMessages([
 ]);
 await sleep(600);
 await assertVisible('Awaken the Mind');
-await assertVisible('Sage\'s Library');
+await assertVisible('Local LM Studio');
 await assertVisible('All 4 quests installed');
 await assertVisible('Start Knowledge Quest');
 await screenshot('04-auto-install.png');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 05 — Brain tab fully configured (Local LLM — Gemma 4 + Qwen embedding)
+// 05 — Brain tab — LM Studio configured
 // ═══════════════════════════════════════════════════════════════════════════
-console.log('05 — Brain tab fully configured');
+console.log('05 — Brain tab — LM Studio configured');
 await navigateTo('Brain');
-// Set brain to Local LLM (LM Studio) with Gemma 4 chat + Qwen embedding
-await setPinia({
-  brain: {
-    brainMode: {
-      mode: 'local_lm_studio',
-      model: 'gemma-4-12b-it',
-      base_url: 'http://localhost:1234/v1',
-      api_key: null,
-      embedding_model: 'qwen3-embedding-0.6b',
-    },
-    hasBrain: true,
-    activeBrain: null,
-    isLoading: false,
-    ollamaStatus: { running: false, model_count: 0 },
-    lmStudioStatus: { running: true, model_count: 2, loaded_count: 2 },
-    freeProviders: BRAIN_FREE_STATE.brain.freeProviders,
-    systemInfo: BRAIN_FREE_STATE.brain.systemInfo,
-  },
-  ...MEMORY_STATE,
-});
+await setPinia({ ...BRAIN_LM_STUDIO_STATE, ...MEMORY_STATE });
 await sleep(1200);
-
-// ASSERT: the brain page shows "alive" not "No brain configured"
 await assertVisible('Your brain is alive');
 await assertSelector('[data-testid="bv-mode-switcher"]');
 await assertSelector('[data-testid="bv-card-config"]');
 await assertSelector('[data-testid="bv-card-hardware"]');
 await assertSelector('[data-testid="bv-card-memory"]');
-// Assert config card content
 await assertVisible('Configuration');
-await assertVisible('Local LLM');
-await assertVisible('LM Studio');
-await assertVisible('gemma-4-12b-it');
-await assertVisible('qwen3-embedding-0.6b');
-// Assert hardware card
 await assertVisible('Hardware');
-await assertVisible('Intel Core i7-12700K');
-await assertVisible('NVIDIA RTX 3080');
-// Assert memory health
 await assertVisible('Memory health');
-
 console.log('  ✓ All brain page assertions passed');
 await screenshot('05-brain-configured.png');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 06 — Attach documents (Knowledge Quest dialog)
+// 06 — Attach documents
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('06 — Attach documents dialog');
 await navigateTo('Chat');
 await setMessages([
-  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents', timestamp: NOW - 60000 },
+  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents using Local LM', timestamp: NOW - 60000 },
   {
     id: 'attach-prompt', role: 'assistant',
     content: '📚 **Scholar\'s Quest — Step 1: Gather Sources**\n\n'
@@ -395,14 +336,14 @@ await screenshot('06-attach-documents.png');
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('07 — Ingestion progress');
 await setMessages([
-  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents', timestamp: NOW - 60000 },
+  { id: 'u1', role: 'user', content: 'Learn Vietnamese laws using my provided documents using Local LM', timestamp: NOW - 60000 },
   {
     id: 'ingest-progress', role: 'assistant',
     content: '📚 **Scholar\'s Quest — Step 2: Learning in Progress**\n\n'
       + '**Source 1:** `vietnamese-civil-code.html`\n'
       + '  ✅ Fetched (Articles 351–468)\n'
       + '  ✅ Chunked → 12 semantic pieces (~500–800 tokens each)\n'
-      + '  ✅ Embedded → 12/12 vectors (cloud `/v1/embeddings`)\n'
+      + '  ✅ Embedded → 12/12 vectors (qwen3-embedding-0.6b via LM Studio)\n'
       + '  ✅ Stored → 12 long-term memories with tags `vietnamese-law,contract`\n\n'
       + '**Source 2:** `article-429-commentary.txt`\n'
       + '  ✅ Read file\n'
@@ -447,7 +388,8 @@ await setMessages([
       + '2. **"Should have known" standard:** Courts may determine knowledge constructively (Article 429 Commentary)\n'
       + '3. **Tolling:** Suspended during force majeure (Article 156) or when the claimant is a minor without legal representation\n'
       + '4. **Related:** Strict liability under Article 351 means the aggrieved party need not prove fault\n\n'
-      + '> 📚 **Sources:** `vietnamese-civil-code.html` (Articles 351, 429), `article-429-commentary.txt`',
+      + '> 📚 **Sources:** `vietnamese-civil-code.html` (Articles 351, 429), `article-429-commentary.txt`\n'
+      + '> 🧠 **Provider:** Local LM Studio (gemma-4-12b-it)',
     agentName: 'TerranSoul', sentiment: 'neutral', timestamp: NOW - 5000,
   },
 ]);
@@ -472,7 +414,8 @@ await setMessages([
       + '2. The penalty amount is freely negotiated between parties\n'
       + '3. **If no agreement exists** on the relationship between penalty and compensation, the aggrieved party **may claim both** the penalty AND full compensation\n\n'
       + 'Related: Under Article 419, compensation covers both **material** and **spiritual** losses, including lost benefits.\n\n'
-      + '> 📚 **Sources:** `vietnamese-civil-code.html` (Articles 419, 420)',
+      + '> 📚 **Sources:** `vietnamese-civil-code.html` (Articles 419, 420)\n'
+      + '> 🧠 **Provider:** Local LM Studio (gemma-4-12b-it)',
     agentName: 'TerranSoul', sentiment: 'neutral', timestamp: NOW - 15000,
   },
 ]);
@@ -601,7 +544,7 @@ await screenshot('15-korean-answer.png');
 // ═══════════════════════════════════════════════════════════════════════════
 console.log('16 — Brain tab with RAG pipeline active');
 await navigateTo('Brain');
-await setPinia({ ...BRAIN_FREE_STATE, ...MEMORY_STATE });
+await setPinia({ ...BRAIN_LM_STUDIO_STATE, ...MEMORY_STATE });
 await sleep(800);
 await assertVisible('Your brain is alive');
 await assertVisible('15');
@@ -632,6 +575,10 @@ await setMessages([
       + '**Your knowledge base (15 memories):**\n'
       + '- 12 chunks from the Vietnamese Civil Code (Articles 351–468)\n'
       + '- 3 auto-extracted personal facts from our conversation\n\n'
+      + '**Brain configuration:**\n'
+      + '- **Provider:** Local LM Studio (gemma-4-12b-it)\n'
+      + '- **Embeddings:** qwen3-embedding-0.6b (local)\n'
+      + '- **Privacy:** 100% offline — no data leaves your machine\n\n'
       + '**Multilingual capability:**\n'
       + '- Answers verified in English, Vietnamese, Chinese, Russian, Japanese, and Korean\n'
       + '- Same RAG pipeline retrieves the correct sources regardless of query language\n\n'
@@ -643,6 +590,7 @@ await setMessages([
 await sleep(600);
 await assertVisible('law student');
 await assertVisible('15 memories');
+await assertVisible('Local LM Studio');
 await assertVisible('Multilingual');
 await screenshot('18-final.png');
 

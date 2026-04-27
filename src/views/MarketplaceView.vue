@@ -350,7 +350,7 @@
             v-if="showLlmConfig"
             class="llm-config-body"
           >
-            <!-- Tab bar: Free / Paid / Local -->
+            <!-- Tab bar: Free / Paid / Local LLM -->
             <div class="llm-tier-tabs">
               <button
                 :class="['llm-tier-tab', { active: llmTier === 'free' }]"
@@ -365,16 +365,10 @@
                 💳 Paid API
               </button>
               <button
-                :class="['llm-tier-tab', { active: llmTier === 'local' }]"
-                @click="llmTier = 'local'"
+                :class="['llm-tier-tab', { active: llmTier === 'local' || llmTier === 'lm_studio' }]"
+                @click="llmTier = llmLocalProvider === 'lm_studio' ? 'lm_studio' : 'local'"
               >
-                🖥 Local Ollama
-              </button>
-              <button
-                :class="['llm-tier-tab', { active: llmTier === 'lm_studio' }]"
-                @click="llmTier = 'lm_studio'"
-              >
-                LM Studio
+                🖥 Local LLM
               </button>
             </div>
 
@@ -487,46 +481,68 @@
 
             <!-- Local Ollama configuration -->
             <div
-              v-if="llmTier === 'local'"
+              v-if="llmTier === 'local' || llmTier === 'lm_studio'"
               class="llm-local-form"
             >
-              <div :class="['bs-status-indicator', brainStore.ollamaStatus.running ? 'ok' : 'error']">
-                {{ brainStore.ollamaStatus.running ? '✅ Ollama is running' : '❌ Ollama is not running — start it with `ollama serve`' }}
-              </div>
-              <div
-                v-if="brainStore.recommendations.length"
-                class="llm-local-models"
-              >
-                <div
-                  v-for="m in brainStore.recommendations"
-                  :key="m.model_tag"
-                  :class="['llm-provider-card', { active: llmLocalModel === m.model_tag }]"
-                  @click="llmLocalModel = m.model_tag"
+              <!-- Provider pill switcher -->
+              <div class="llm-provider-pills">
+                <button
+                  :class="['llm-provider-pill', { active: llmLocalProvider === 'ollama' }]"
+                  @click="llmLocalProvider = 'ollama'; llmTier = 'local'"
                 >
-                  <div class="llm-provider-row">
-                    <strong>{{ m.display_name }}</strong>
-                    <span
-                      v-if="m.is_top_pick"
-                      class="llm-rec-badge"
-                    >⭐ Recommended</span>
-                  </div>
-                  <small>{{ m.description }}</small>
-                </div>
+                  Ollama
+                </button>
+                <button
+                  :class="['llm-provider-pill', { active: llmLocalProvider === 'lm_studio' }]"
+                  @click="llmLocalProvider = 'lm_studio'; llmTier = 'lm_studio'"
+                >
+                  LM Studio
+                </button>
+                <button
+                  class="llm-provider-pill"
+                  disabled
+                  title="Coming soon"
+                >
+                  HuggingFace 🔜
+                </button>
               </div>
-              <button
-                class="btn-primary btn-sm llm-apply-btn"
-                :disabled="!brainStore.ollamaStatus.running || !llmLocalModel"
-                @click="applyLocalModel"
-              >
-                Install & Activate {{ llmLocalModel || '…' }}
-              </button>
-            </div>
 
-            <!-- Local LM Studio configuration -->
-            <div
-              v-if="llmTier === 'lm_studio'"
-              class="llm-local-form"
-            >
+              <!-- Ollama sub-panel -->
+              <template v-if="llmLocalProvider === 'ollama'">
+                <div :class="['bs-status-indicator', brainStore.ollamaStatus.running ? 'ok' : 'error']">
+                  {{ brainStore.ollamaStatus.running ? '✅ Ollama is running' : '❌ Ollama is not running — start it with `ollama serve`' }}
+                </div>
+                <div
+                  v-if="brainStore.recommendations.length"
+                  class="llm-local-models"
+                >
+                  <div
+                    v-for="m in brainStore.recommendations"
+                    :key="m.model_tag"
+                    :class="['llm-provider-card', { active: llmLocalModel === m.model_tag }]"
+                    @click="llmLocalModel = m.model_tag"
+                  >
+                    <div class="llm-provider-row">
+                      <strong>{{ m.display_name }}</strong>
+                      <span
+                        v-if="m.is_top_pick"
+                        class="llm-rec-badge"
+                      >⭐ Recommended</span>
+                    </div>
+                    <small>{{ m.description }}</small>
+                  </div>
+                </div>
+                <button
+                  class="btn-primary btn-sm llm-apply-btn"
+                  :disabled="!brainStore.ollamaStatus.running || !llmLocalModel"
+                  @click="applyLocalModel"
+                >
+                  Install & Activate {{ llmLocalModel || '…' }}
+                </button>
+              </template>
+
+              <!-- LM Studio sub-panel -->
+              <template v-if="llmLocalProvider === 'lm_studio'">
               <div class="llm-field">
                 <label>Base URL:</label>
                 <input
@@ -628,6 +644,7 @@
                   Activate {{ llmLmStudioModel || '…' }}
                 </button>
               </div>
+              </template>
             </div>
 
             <!-- Confirmation after switching -->
@@ -973,7 +990,7 @@ const activeBrainBadge = computed(() => {
   if (mode.mode === 'free_api') return '☁️ ' + activeProviderName.value;
   if (mode.mode === 'paid_api') return '💳 ' + (mode as { model?: string }).model;
   if (mode.mode === 'local_ollama') return '🖥 Ollama';
-  if (mode.mode === 'local_lm_studio') return 'LM Studio';
+  if (mode.mode === 'local_lm_studio') return '🖥 LM Studio';
   return 'Local';
 });
 
@@ -989,6 +1006,9 @@ const llmTier = ref<'free' | 'paid' | 'local' | 'lm_studio'>(
       : brainStore.brainMode?.mode === 'local_lm_studio'
         ? 'lm_studio'
         : 'free',
+);
+const llmLocalProvider = ref<'ollama' | 'lm_studio'>(
+  brainStore.brainMode?.mode === 'local_lm_studio' ? 'lm_studio' : 'ollama',
 );
 const llmSelectedProvider = ref(
   brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
@@ -1538,6 +1558,22 @@ onMounted(async () => {
 }
 .llm-tier-tab:hover { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
 .llm-tier-tab.active { background: var(--ts-bg-surface); color: var(--ts-text-primary); border-color: var(--ts-accent-blue-hover); }
+
+/* Local LLM provider pill switcher */
+.llm-provider-pills { display: flex; gap: 0.25rem; margin-bottom: 0.25rem; }
+.llm-provider-pill {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ts-border-medium);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--ts-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background var(--ts-transition-fast), color var(--ts-transition-fast), border-color var(--ts-transition-fast);
+}
+.llm-provider-pill:hover:not(:disabled) { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
+.llm-provider-pill.active { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); border-color: var(--ts-accent-blue-hover); }
+.llm-provider-pill:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Provider cards */
 .llm-providers { display: flex; flex-direction: column; gap: 0.4rem; }

@@ -40,10 +40,10 @@
             🔗 {{ edgeCount }} connections
           </span>
           <span
-            v-if="brain.ollamaStatus.running"
+            v-if="brain.ollamaStatus.running || brain.lmStudioStatus?.running"
             class="bv-pill bv-pill-ollama"
           >
-            🖥 Ollama running
+            🖥 {{ brain.ollamaStatus.running && brain.lmStudioStatus?.running ? 'Ollama + LM Studio' : brain.ollamaStatus.running ? 'Ollama running' : 'LM Studio running' }}
           </span>
         </div>
       </div>
@@ -129,6 +129,15 @@
               :title="configRows.endpoint"
             >
               {{ shortUrl(configRows.endpoint) }}
+            </dd>
+          </div>
+          <div
+            v-if="configRows.embeddingModel"
+            class="bv-dl-row"
+          >
+            <dt>Embedding</dt>
+            <dd class="bv-model">
+              <code>{{ configRows.embeddingModel }}</code>
             </dd>
           </div>
         </dl>
@@ -541,6 +550,14 @@ const heroSubtitle = computed(() => {
     : `${memoryCount.value} memories shape every reply.`;
 });
 
+const localProviderLabel = computed(() => {
+  const m = brain.brainMode;
+  if (!m) return '';
+  if (m.mode === 'local_ollama') return 'Ollama';
+  if (m.mode === 'local_lm_studio') return 'LM Studio';
+  return '';
+});
+
 const moodPillLabel = computed(() => ({
   none: '⚠ No brain',
   free: '☁️ Free cloud',
@@ -669,8 +686,8 @@ const providerName = computed(() => {
     return p?.display_name ?? m.provider_id;
   }
   if (m.mode === 'paid_api') return m.base_url;
-  if (m.mode === 'local_ollama') return 'Ollama';
-  if (m.mode === 'local_lm_studio') return 'LM Studio';
+  if (m.mode === 'local_ollama') return 'Ollama (Local LLM)';
+  if (m.mode === 'local_lm_studio') return 'LM Studio (Local LLM)';
   return null;
 });
 
@@ -698,18 +715,19 @@ const configRows = computed(() => {
   }
   if (m.mode === 'local_ollama') {
     return {
-      mode: 'Local Ollama',
-      provider: 'localhost',
+      mode: 'Local LLM',
+      provider: 'Ollama',
       model: m.model,
       endpoint: 'http://localhost:11434',
     };
   }
   if (m.mode === 'local_lm_studio') {
     return {
-      mode: 'Local LM Studio',
-      provider: 'localhost',
+      mode: 'Local LLM',
+      provider: 'LM Studio',
       model: m.model,
       endpoint: m.base_url,
+      embeddingModel: m.embedding_model ?? undefined,
     };
   }
   return { mode: 'Unknown', provider: '—', model: '—', endpoint: '' };
@@ -764,6 +782,19 @@ interface ModeOption {
   action: () => void | Promise<void>;
 }
 
+const localLlmDetail = computed(() => {
+  const ollamaUp = brain.ollamaStatus.running;
+  const lmUp = brain.lmStudioStatus?.running;
+  if (moodKey.value === 'local') {
+    // Show which provider is active
+    return `${localProviderLabel.value} · active`;
+  }
+  if (ollamaUp && lmUp) return 'Ollama + LM Studio available';
+  if (ollamaUp) return `Ollama · ${brain.installedModels.length} model${brain.installedModels.length === 1 ? '' : 's'} ready`;
+  if (lmUp) return `LM Studio · ${(brain.lmStudioModels ?? []).length} model${(brain.lmStudioModels ?? []).length === 1 ? '' : 's'} available`;
+  return 'No local provider running';
+});
+
 const modeOptions = computed<ModeOption[]>(() => [
   {
     key: 'free',
@@ -787,27 +818,13 @@ const modeOptions = computed<ModeOption[]>(() => [
   },
   {
     key: 'local',
-    label: 'Local Ollama',
+    label: 'Local LLM',
     emoji: '🖥',
-    detail: brain.ollamaStatus.running
-      ? `${brain.installedModels.length} model${brain.installedModels.length === 1 ? '' : 's'} ready`
-      : 'Requires Ollama running',
-    description: 'Pick a local Ollama model from the marketplace',
-    disabled: !brain.ollamaStatus.running,
-    disabledReason: 'Ollama is not running — start it with `ollama serve`',
+    detail: localLlmDetail.value,
+    description: 'Configure a local LLM provider (Ollama, LM Studio, or more)',
+    disabled: !brain.ollamaStatus.running && !brain.lmStudioStatus?.running,
+    disabledReason: 'No local provider running — start Ollama or LM Studio',
     action: () => emitNavigate('marketplace'),
-  },
-  {
-    key: 'lm_studio',
-    label: 'Local LM Studio',
-    emoji: 'LM',
-    detail: brain.lmStudioStatus?.running
-      ? `${(brain.lmStudioModels ?? []).length} model${(brain.lmStudioModels ?? []).length === 1 ? '' : 's'} available`
-      : 'Requires LM Studio server',
-    description: 'Open the wizard to configure an LM Studio local model',
-    disabled: !brain.lmStudioStatus?.running,
-    disabledReason: 'LM Studio is not running - start its local server on port 1234',
-    action: () => emitNavigate('brain-setup'),
   },
 ]);
 
