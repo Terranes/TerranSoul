@@ -206,7 +206,7 @@ describe('BrainView', () => {
     expect(w.emitted('navigate')?.[0]).toEqual(['brain-setup']);
   });
 
-  it('selects the first available LM Studio LLM from quick mode', async () => {
+  it('routes LM Studio availability through the Local LLM quick mode', async () => {
     mockInvoke.mockImplementation(makeInvokeMock({
       lmStudioRunning: true,
       lmStudioModels: [
@@ -239,16 +239,8 @@ describe('BrainView', () => {
     await local!.trigger('click');
     await flushPromises();
 
-    expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', {
-      mode: {
-        mode: 'local_lm_studio',
-        model: 'google/gemma-4-e4b',
-        base_url: 'http://127.0.0.1:1234',
-        api_key: null,
-        embedding_model: 'text-embedding-nomic',
-      },
-    });
-    expect(w.emitted('navigate')).toBeUndefined();
+    expect(mockInvoke).not.toHaveBeenCalledWith('set_brain_mode', expect.anything());
+    expect(w.emitted('navigate')?.[0]).toEqual(['marketplace']);
   });
 
   it('shows LM Studio as visibly selected when it is the active brain mode', async () => {
