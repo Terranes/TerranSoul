@@ -94,10 +94,12 @@ struct CacheEntry {
 /// each entry is a few hundred bytes at most.
 const CACHE_MAX_ENTRIES: usize = 256;
 
-/// Default topic used when the LLM tags a teach/ingest intent but doesn't
+/// Fallback topic used when the LLM tags a teach/ingest intent but doesn't
 /// echo back a usable topic phrase. Surfaced verbatim in the Scholar's Quest
-/// invitation, so keep it short and human-readable.
-const DEFAULT_TEACH_TOPIC: &str = "the provided content";
+/// invitation, so keep it short and human-readable. This is a safety net,
+/// not a preferred default — a well-behaved classifier always provides a
+/// real topic.
+const FALLBACK_TEACH_TOPIC: &str = "the provided content";
 
 fn cache() -> &'static Mutex<HashMap<String, CacheEntry>> {
     static CACHE: OnceLock<Mutex<HashMap<String, CacheEntry>>> = OnceLock::new();
@@ -219,7 +221,7 @@ fn parse_decision(reply: &str, original_input: &str) -> IntentDecision {
                 .topic
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| DEFAULT_TEACH_TOPIC.to_string()),
+                .unwrap_or_else(|| FALLBACK_TEACH_TOPIC.to_string()),
         },
         "gated_setup" => match parsed.setup.as_deref() {
             Some("upgrade_gemini") => IntentDecision::GatedSetup {
@@ -527,9 +529,23 @@ mod tests {
     }
 
     // ── cache ────────────────────────────────────────────────────────
+    //
+    // The cache is a `OnceLock` static shared across the whole process, so
+    // tests that mutate it race when run in parallel (the default).  Every
+    // cache-touching test below acquires `cache_test_lock()` for the entire
+    // duration of its body to guarantee `clear_cache` + `cache_put` +
+    // `cache_get` operate atomically with respect to other tests.
+
+    fn cache_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
 
     #[test]
     fn cache_roundtrip() {
+        let _g = cache_test_lock();
         clear_cache();
         cache_put("hello".to_string(), IntentDecision::Chat);
         assert_eq!(cache_get("hello"), Some(IntentDecision::Chat));
@@ -537,12 +553,14 @@ mod tests {
 
     #[test]
     fn cache_returns_none_for_missing() {
+        let _g = cache_test_lock();
         clear_cache();
         assert_eq!(cache_get("nope-i-am-not-there"), None);
     }
 
     #[test]
     fn cache_evicts_oldest_when_full() {
+        let _g = cache_test_lock();
         clear_cache();
         // Fill the cache.
         for i in 0..CACHE_MAX_ENTRIES {
@@ -581,6 +599,7 @@ mod tests {
     async fn cache_short_circuits_classification() {
         // Pre-seed the cache for a query, then call with no brain — should
         // return the cached value without ever hitting the network.
+        let _g = cache_test_lock();
         clear_cache();
         cache_put(
             cache_key("Learn Vietnamese laws using my docs"),
