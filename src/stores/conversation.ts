@@ -12,6 +12,7 @@ import { useMemoryStore } from './memory';
 import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
+import { useAiDecisionPolicyStore } from './ai-decision-policy';
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
@@ -143,6 +144,16 @@ function isTauriAvailable(): boolean {
  * doesn't decisively pick a side-channel intent.
  */
 async function classifyIntent(text: string, hasBrain: boolean): Promise<IntentDecision> {
+  // Respects the "Intent classifier" toggle in the Brain panel. When off,
+  // skip the IPC entirely and treat every turn as plain chat — side-channel
+  // intents (learn-with-docs, teach-ingest, gated-setup) won't auto-trigger.
+  try {
+    if (!useAiDecisionPolicyStore().policy.intentClassifierEnabled) {
+      return { kind: 'chat' };
+    }
+  } catch {
+    // Pinia not active — fall through to default-on behaviour.
+  }
   // No brain configured → classifier has no provider to ask. We deliberately
   // return `chat` (not `unknown`) here so the existing persona-fallback UX
   // handles the turn — that fallback already prompts the user to install a
@@ -176,6 +187,14 @@ async function classifyIntent(text: string, hasBrain: boolean): Promise<IntentDe
  * quest suggestions appear reliably for getting-started queries.
  */
 function maybeShowQuestFromResponse(responseText: string, userInput?: string): void {
+  // Respects the "Auto-suggest quests after replies" toggle. When off, never
+  // open a quest overlay from a chat response — the user can still launch
+  // quests manually from the Skill Tree.
+  try {
+    if (!useAiDecisionPolicyStore().policy.questSuggestionsEnabled) return;
+  } catch {
+    // Pinia not active — fall through to default behaviour.
+  }
   const responseLower = responseText.toLowerCase();
   const inputLower = (userInput ?? '').toLowerCase();
 
@@ -306,6 +325,13 @@ export function detectDontKnow(responseText: string): boolean {
  * setup — we never mutate brain mode or open a quest silently.
  */
 function maybeShowDontKnowPrompt(responseText: string): void {
+  // Respects the "Don't-know gate" toggle in the Brain panel. When the user
+  // has disabled this opinionated prompt, never push it.
+  try {
+    if (!useAiDecisionPolicyStore().policy.dontKnowGateEnabled) return;
+  } catch {
+    // Pinia not active (e.g. legacy unit tests) — fall through to default.
+  }
   if (!detectDontKnow(responseText)) return;
 
   const conversation = useConversationStore();
@@ -1279,7 +1305,16 @@ export const useConversationStore = defineStore('conversation', () => {
     const brain = useBrainStore();
 
     const llmCmd = detectLlmCommand(content);
-    if (llmCmd) {
+    // Respect the "Chat-based LLM switching" toggle: when off, ignore commands
+    // like "switch to groq" / "use my openai api key …" and let them flow
+    // through to the LLM as ordinary messages.
+    let llmSwitchEnabled = true;
+    try {
+      llmSwitchEnabled = useAiDecisionPolicyStore().policy.chatBasedLlmSwitchEnabled;
+    } catch {
+      // Pinia not active — keep default-on behaviour.
+    }
+    if (llmCmd && llmSwitchEnabled) {
       const response = await executeLlmCommand(llmCmd, brain);
       messages.value.push(response);
       isThinking.value = false;
@@ -1318,14 +1353,26 @@ export const useConversationStore = defineStore('conversation', () => {
       }
       case 'unknown': {
         // Free LLM couldn't decide (no brain, timeout, malformed JSON).
-        // Fall back to the universal install-all overlay so the user can
-        // install a local Ollama brain and have a guaranteed-working
-        // classifier on every subsequent turn.
-        startLearnDocsFlow(content);
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
+        // When the user has opted in (default), fall back to the universal
+        // install-all overlay so a local Ollama brain is set up and future
+        // turns have a working classifier offline forever after. When the
+        // user has opted out via the Brain-panel "Auto-install fallback"
+        // toggle, fall through to the streaming chat path silently.
+        let installFallback = true;
+        try {
+          installFallback = useAiDecisionPolicyStore().policy.unknownFallbackToInstall;
+        } catch {
+          // Pinia not active — keep default-on behaviour.
+        }
+        if (installFallback) {
+          startLearnDocsFlow(content);
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+        // Fall through to streaming chat path.
+        break;
       }
       case 'chat':
       default:

@@ -2718,11 +2718,11 @@ phrase — not a silent failure.
 
 ### 25.6 Test surface
 
-- `intent_classifier.rs` — 19 Rust unit tests covering every
+- `intent_classifier.rs` — 20 Rust unit tests covering every
   `IntentDecision` variant, malformed JSON, unknown kinds, prose /
-  markdown-fence tolerance, nested-brace JSON extraction, cache
-  round-trip + TTL eviction + capacity eviction, empty input, and
-  no-brain-mode short-circuit.
+  markdown-fence tolerance, nested-brace JSON extraction (including
+  unbalanced-brace guard), cache round-trip + TTL eviction + capacity
+  eviction, empty input, and no-brain-mode short-circuit.
 - `conversation.test.ts` — every sendMessage flow that used to rely
   on a regex detector now mocks `invoke('classify_intent', …)` to
   return the intended decision; one new integration test verifies
@@ -2731,6 +2731,32 @@ phrase — not a silent failure.
 - The three legacy `detect*Intent` helpers retain their unit tests
   as deterministic golden cases; they are no longer called from the
   live message path.
+
+### 25.7 User controls — Brain panel "🧭 AI decision-making"
+
+Every "LLM decides" surface exposed by TerranSoul is opt-out from a
+single panel in `src/views/BrainView.vue`. Settings live in the
+frontend-only Pinia store `src/stores/ai-decision-policy.ts` and
+persist via `localStorage` under the key
+`terransoul.ai-decision-policy.v1`. No DB schema change, no Tauri
+round-trip — toggling a setting takes effect on the very next message.
+
+| Setting | Default | What it controls |
+|---|---|---|
+| `intentClassifierEnabled` | on | Run every chat turn through `classify_intent`. Off = skip the IPC entirely; every message goes straight to streaming. |
+| `unknownFallbackToInstall` | on | When the classifier returns `Unknown`, open the Auto-Install-All overlay. Off = silently fall through to streaming. |
+| `dontKnowGateEnabled` | on | Watch assistant replies for hedging language ("I don't know", …) and push the Gemini-search / context-upload gate. Off = no follow-up prompt. |
+| `questSuggestionsEnabled` | on | Auto-open quest overlay when a reply or the user's input mentions getting-started keywords. Off = quests only launch from the Skill Tree. |
+| `chatBasedLlmSwitchEnabled` | on | Recognise commands like `switch to groq` / `use my openai api key sk-…` and reconfigure the brain in-place. Off = those messages reach the LLM unchanged. |
+
+All gates in `conversation.ts` early-return when their corresponding
+field is `false`, with a `try { … } catch` wrapper so legacy unit
+tests that don't set up Pinia retain default-on behaviour.
+
+`src/stores/ai-decision-policy.test.ts` covers defaults, persistence,
+rehydration, corrupt-JSON recovery, sanitisation of non-boolean
+values, and `reset()`. `conversation.test.ts` adds three integration
+tests asserting that each toggle actually short-circuits its gate.
 
 ---
 

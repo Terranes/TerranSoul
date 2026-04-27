@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { useConversationStore } from './conversation';
 import { useBrainStore } from './brain';
+import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import type { Message } from '../types';
 
 // Mock the Tauri invoke API
@@ -1059,5 +1060,84 @@ describe('conversation store — stream queue concurrency', () => {
 
     // LLM command path should still reset generationActive
     expect(store.generationActive).toBe(false);
+  });
+});
+
+describe('conversation store — AI decision-making policy gates', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+    mockStreamChat.mockReset();
+    localStorage.clear();
+    // Default: any time the chat path falls through to streaming, resolve
+    // immediately so a falling-through gate test doesn't hang.
+    mockStreamChat.mockImplementation(
+      (_b: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
+        cb.onDone('ok');
+        return new AbortController();
+      },
+    );
+  });
+
+  it('skips the classifier IPC entirely when intentClassifierEnabled=false', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    const policy = useAiDecisionPolicyStore();
+    policy.policy.intentClassifierEnabled = false;
+    // If the classifier ran, this mock would short-circuit into the install
+    // overlay. Instead the call must never happen and the message must reach
+    // the streaming chat path.
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') return { kind: 'learn_with_docs', topic: 'X' };
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Learn quantum physics with my files');
+
+    const callTypes = mockInvoke.mock.calls.map((c) => c[0]);
+    expect(callTypes).not.toContain('classify_intent');
+    // No learn-docs overlay was pushed; the message reached the streaming path.
+    expect(store.messages.find((m) => m.questId === 'learn-docs-missing')).toBeUndefined();
+    expect(mockStreamChat).toHaveBeenCalled();
+  });
+
+  it('falls through to streaming when unknownFallbackToInstall=false', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    const policy = useAiDecisionPolicyStore();
+    policy.policy.unknownFallbackToInstall = false;
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') return { kind: 'unknown' };
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('hello there');
+
+    // No install-all overlay should be pushed — message proceeds normally.
+    expect(store.messages.find((m) => m.questId === 'learn-docs-missing')).toBeUndefined();
+    expect(mockStreamChat).toHaveBeenCalled();
+  });
+
+  it('chat-based LLM switch is ignored when chatBasedLlmSwitchEnabled=false', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    const policy = useAiDecisionPolicyStore();
+    policy.policy.chatBasedLlmSwitchEnabled = false;
+    policy.policy.intentClassifierEnabled = false;
+    mockInvoke.mockResolvedValue(undefined);
+
+    const store = useConversationStore();
+    await store.sendMessage('switch to pollinations');
+
+    // The "switch to pollinations" message must be treated as plain chat;
+    // there is no follow-up confirmation message about the brain switch and
+    // the streaming path was invoked instead.
+    const switchedMsg = store.messages.find(
+      (m) => m.role === 'assistant' && /switched to/i.test(m.content),
+    );
+    expect(switchedMsg).toBeUndefined();
+    expect(mockStreamChat).toHaveBeenCalled();
   });
 });
