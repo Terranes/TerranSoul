@@ -599,14 +599,20 @@ mod tests {
     async fn cache_short_circuits_classification() {
         // Pre-seed the cache for a query, then call with no brain — should
         // return the cached value without ever hitting the network.
-        let _g = cache_test_lock();
-        clear_cache();
-        cache_put(
-            cache_key("Learn Vietnamese laws using my docs"),
-            IntentDecision::LearnWithDocs {
-                topic: "Vietnamese laws".to_string(),
-            },
-        );
+        //
+        // The sync MutexGuard must be dropped *before* the await point to
+        // satisfy `clippy::await_holding_lock`.  We only need the lock to
+        // guard the clear+put setup; by the time we await the guard is gone.
+        {
+            let _g = cache_test_lock();
+            clear_cache();
+            cache_put(
+                cache_key("Learn Vietnamese laws using my docs"),
+                IntentDecision::LearnWithDocs {
+                    topic: "Vietnamese laws".to_string(),
+                },
+            );
+        } // _g dropped here — safe to await below
         let r = rotator();
         let d = classify_user_intent("Learn Vietnamese laws using my docs", None, &r).await;
         assert_eq!(
