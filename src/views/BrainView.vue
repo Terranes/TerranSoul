@@ -968,6 +968,20 @@ const decisionToggleRows: DecisionToggleRow[] = [
       'Recognise "switch to groq", "use my openai api key sk-…" etc. and reconfigure the brain in-place. Off = those messages reach the LLM unchanged.',
     testid: 'bv-aidp-llm-switch',
   },
+  {
+    key: 'quickRepliesEnabled',
+    label: 'Yes/No quick-reply suggestions',
+    description:
+      'Show one-tap "Yes / No" buttons under the latest reply when it ends with a yes/no question pattern. Off = always type your full reply.',
+    testid: 'bv-aidp-quick-replies',
+  },
+  {
+    key: 'capacityDetectionEnabled',
+    label: 'Auto-suggest model upgrade when struggling',
+    description:
+      'Watch free-API replies for "I can\'t / cannot / am only an AI / beyond my capabilities" phrasings; after a few low-quality replies, pop the upgrade dialog. Off = no auto-prompts.',
+    testid: 'bv-aidp-capacity',
+  },
 ];
 
 function onToggleDecision(key: keyof AiDecisionPolicy, enabled: boolean): void {

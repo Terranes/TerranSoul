@@ -225,4 +225,36 @@ describe('ChatMessageList', () => {
     });
     expect(wrapper.find('.quest-choices').exists()).toBe(false);
   });
+
+  it('shows quick replies when assistant ends with a yes/no question (default policy)', async () => {
+    const { setActivePinia, createPinia } = await import('pinia');
+    setActivePinia(createPinia());
+    const messages = [
+      makeMessage({
+        role: 'assistant',
+        content: 'Looks like you have everything you need. Shall we?',
+      }),
+    ];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    expect(wrapper.find('.quick-replies').exists()).toBe(true);
+  });
+
+  it('hides quick replies when quickRepliesEnabled is false', async () => {
+    const { setActivePinia, createPinia } = await import('pinia');
+    setActivePinia(createPinia());
+    const { useAiDecisionPolicyStore } = await import('../stores/ai-decision-policy');
+    useAiDecisionPolicyStore().policy.quickRepliesEnabled = false;
+    const messages = [
+      makeMessage({
+        role: 'assistant',
+        content: 'Looks like you have everything you need. Shall we?',
+      }),
+    ];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+    expect(wrapper.find('.quick-replies').exists()).toBe(false);
+  });
 });

@@ -78,6 +78,28 @@ export interface AiDecisionPolicy {
    * LLM unchanged.
    */
   chatBasedLlmSwitchEnabled: boolean;
+  /**
+   * Show one-tap "Yes / No" quick-reply buttons under the latest assistant
+   * message when its trailing sentence matches a yes/no question pattern
+   * (`shall we…?`, `would you like…?`, `want me to…?`, etc.).
+   *
+   * This is a **regex-based heuristic** — it can't read the model's intent,
+   * only its surface phrasing. Disable it for a strictly-typed chat where
+   * the user always composes the full reply.
+   */
+  quickRepliesEnabled: boolean;
+  /**
+   * Watch each free-API assistant reply for incapability signals
+   * (very short responses, "I can't / cannot / am only an AI / beyond my
+   * capabilities" phrasings) via a 7-regex bank in `capacity-detector.ts`.
+   * After a few low-quality replies in a sliding window, pop the in-chat
+   * "Upgrade to a more capable model" dialog.
+   *
+   * When `false`, `assessCapacity()` is never consulted from the chat view
+   * — useful for users on deliberately small / cheap models who don't want
+   * to be nagged.
+   */
+  capacityDetectionEnabled: boolean;
 }
 
 const STORAGE_KEY = 'terransoul.ai-decision-policy.v1';
@@ -92,6 +114,8 @@ export const DEFAULT_AI_DECISION_POLICY: AiDecisionPolicy = Object.freeze({
   dontKnowGateEnabled: true,
   questSuggestionsEnabled: true,
   chatBasedLlmSwitchEnabled: true,
+  quickRepliesEnabled: true,
+  capacityDetectionEnabled: true,
 });
 
 /**

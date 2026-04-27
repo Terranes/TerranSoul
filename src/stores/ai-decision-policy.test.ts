@@ -21,6 +21,16 @@ describe('ai-decision-policy store', () => {
     for (const key of Object.keys(DEFAULT_AI_DECISION_POLICY) as Array<keyof AiDecisionPolicy>) {
       expect(store.policy[key]).toBe(true);
     }
+    // Lock in the full schema so accidental field renames break this test.
+    expect(Object.keys(DEFAULT_AI_DECISION_POLICY).sort()).toEqual([
+      'capacityDetectionEnabled',
+      'chatBasedLlmSwitchEnabled',
+      'dontKnowGateEnabled',
+      'intentClassifierEnabled',
+      'questSuggestionsEnabled',
+      'quickRepliesEnabled',
+      'unknownFallbackToInstall',
+    ]);
   });
 
   it('persists toggles to localStorage on the next tick', async () => {
