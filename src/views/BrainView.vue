@@ -873,7 +873,7 @@ const ramTier = computed(() => {
 // ── Quick mode switcher ────────────────────────────────────────────────────
 
 interface ModeOption {
-  key: 'free' | 'paid' | 'local' | 'lm_studio';
+  key: 'free' | 'paid' | 'local';
   label: string;
   emoji: string;
   detail: string;

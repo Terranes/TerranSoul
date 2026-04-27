@@ -229,11 +229,14 @@ describe('BrainView', () => {
     const w = mount(BrainView);
     await flushPromises();
 
-    const lmStudio = w.findAll('.bv-mode-card').find((b) => b.text().includes('Local LM Studio'));
-    expect(lmStudio).toBeTruthy();
-    expect(lmStudio!.attributes('disabled')).toBeUndefined();
+    const cards = w.findAll('.bv-mode-card');
+    expect(cards.find((b) => b.text().includes('Local LM Studio'))).toBeUndefined();
+    const local = cards.find((b) => b.text().includes('Local LLM'));
+    expect(local).toBeTruthy();
+    expect(local!.text()).toContain('LM Studio');
+    expect(local!.attributes('disabled')).toBeUndefined();
 
-    await lmStudio!.trigger('click');
+    await local!.trigger('click');
     await flushPromises();
 
     expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', {
@@ -271,10 +274,12 @@ describe('BrainView', () => {
     const w = mount(BrainView);
     await flushPromises();
 
-    const lmStudio = w.findAll('.bv-mode-card').find((b) => b.text().includes('Local LM Studio'));
+    const cards = w.findAll('.bv-mode-card');
+    expect(cards.find((b) => b.text().includes('Local LM Studio'))).toBeUndefined();
+    const local = cards.find((b) => b.text().includes('Local LLM'));
 
-    expect(lmStudio).toBeTruthy();
-    expect(lmStudio!.classes()).toContain('active');
-    expect(lmStudio!.text()).toContain('Selected');
+    expect(local).toBeTruthy();
+    expect(local!.classes()).toContain('active');
+    expect(local!.text()).toContain('LM Studio');
   });
 });
