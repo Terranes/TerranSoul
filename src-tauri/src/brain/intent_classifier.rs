@@ -35,6 +35,11 @@ use crate::brain::{BrainMode, OllamaAgent, ProviderRotator};
 /// up and returning `IntentDecision::Unknown`. A short timeout is critical:
 /// the user is waiting on the message-send path, and if the free provider is
 /// slow we'd rather fall back to install-all than block the chat turn.
+///
+/// 3 s is the design constant from `docs/brain-advanced-design.md` § 25 —
+/// long enough that Pollinations / Groq routinely reply (typical ~700 ms)
+/// but short enough that a hung connection never noticeably stalls a chat
+/// turn. Tune this in lockstep with the design doc.
 pub const CLASSIFY_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// How long to remember a previous classification for the exact same trimmed
@@ -88,6 +93,11 @@ struct CacheEntry {
 /// oldest entries are evicted before insertion. The bound is generous because
 /// each entry is a few hundred bytes at most.
 const CACHE_MAX_ENTRIES: usize = 256;
+
+/// Default topic used when the LLM tags a teach/ingest intent but doesn't
+/// echo back a usable topic phrase. Surfaced verbatim in the Scholar's Quest
+/// invitation, so keep it short and human-readable.
+const DEFAULT_TEACH_TOPIC: &str = "the provided content";
 
 fn cache() -> &'static Mutex<HashMap<String, CacheEntry>> {
     static CACHE: OnceLock<Mutex<HashMap<String, CacheEntry>>> = OnceLock::new();
@@ -209,7 +219,7 @@ fn parse_decision(reply: &str, original_input: &str) -> IntentDecision {
                 .topic
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "the provided content".to_string()),
+                .unwrap_or_else(|| DEFAULT_TEACH_TOPIC.to_string()),
         },
         "gated_setup" => match parsed.setup.as_deref() {
             Some("upgrade_gemini") => IntentDecision::GatedSetup {
@@ -243,6 +253,11 @@ fn extract_json_object(text: &str) -> Option<&str> {
             b'{' if !in_string => depth += 1,
             b'}' if !in_string => {
                 depth -= 1;
+                if depth < 0 {
+                    // Malformed input: more closing braces than opening.
+                    // Refuse to return a substring rather than over-trim.
+                    return None;
+                }
                 if depth == 0 {
                     return Some(&text[start..=i]);
                 }
@@ -503,6 +518,12 @@ mod tests {
     fn extract_json_ignores_braces_in_strings() {
         let s = extract_json_object(r#"{"text":"oh look a } in the string"}"#).unwrap();
         assert_eq!(s, r#"{"text":"oh look a } in the string"}"#);
+    }
+
+    #[test]
+    fn extract_json_returns_none_on_unbalanced_closing_brace() {
+        // More `}` than `{` — must not panic or over-trim.
+        assert_eq!(extract_json_object("} not json {"), None);
     }
 
     // ── cache ────────────────────────────────────────────────────────

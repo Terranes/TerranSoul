@@ -675,12 +675,19 @@ describe('conversation store — new quest trigger behavior', () => {
     });
 
     const store = useConversationStore();
-    await store.sendMessage('học luật Việt Nam từ tài liệu của tôi');
+    const VIETNAMESE_INPUT = 'học luật Việt Nam từ tài liệu của tôi';
+    await store.sendMessage(VIETNAMESE_INPUT);
 
     // user + the install-all missing-components prompt
     expect(store.messages.length).toBeGreaterThanOrEqual(2);
     const prompt = store.messages[store.messages.length - 1];
     expect(prompt.questId).toBe('learn-docs-missing');
+    // The original user input is preserved as the topic in the install-all
+    // overlay (the prompt body and the choice values both encode it).
+    expect(prompt.content).toContain(VIETNAMESE_INPUT);
+    const installAll = prompt.questChoices!.find((c) => c.value.startsWith('learn-docs:install-all:'));
+    expect(installAll).toBeDefined();
+    expect(decodeURIComponent(installAll!.value.split(':').slice(2).join(':'))).toBe(VIETNAMESE_INPUT);
   });
 });
 

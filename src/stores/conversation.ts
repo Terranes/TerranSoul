@@ -143,9 +143,14 @@ function isTauriAvailable(): boolean {
  * doesn't decisively pick a side-channel intent.
  */
 async function classifyIntent(text: string, hasBrain: boolean): Promise<IntentDecision> {
-  // No brain configured → classifier has no provider to ask. Skip the IPC
-  // call entirely so we don't make a no-op invoke and so existing
-  // persona-fallback / browser-only code paths behave exactly as before.
+  // No brain configured → classifier has no provider to ask. We deliberately
+  // return `chat` (not `unknown`) here so the existing persona-fallback UX
+  // handles the turn — that fallback already prompts the user to install a
+  // brain and is friendlier than the install-all overlay for someone who's
+  // just exploring the UI.  In real-world flows the free brain auto-
+  // configures on first launch, so `hasBrain` is true by the time the user
+  // ever types a real message; the install-all overlay is reserved for the
+  // documented "free LLM was tried but couldn't decide" failure mode below.
   if (!hasBrain) return { kind: 'chat' };
   try {
     const decision = await invoke<IntentDecision>('classify_intent', { text });
