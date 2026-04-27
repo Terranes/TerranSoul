@@ -118,5 +118,12 @@ pub async fn auto_setup_local_llm_with_runtime(
         *brain_mode = Some(mode);
     }
 
+    // Track the auto-installed container in settings.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        settings.track_auto_configured("docker_container");
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
     Ok(result)
 }

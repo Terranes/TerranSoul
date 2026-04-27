@@ -575,6 +575,16 @@ impl StorageBackend for MssqlBackend {
         })
     }
 
+    fn delete_all(&self) -> StorageResult<usize> {
+        self.block_on(async {
+            let mut client = self.client.lock().await;
+            let result = client.execute(
+                "DELETE FROM memories", &[],
+            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            Ok(result.rows_affected().iter().sum::<u64>() as usize)
+        })
+    }
+
     fn apply_decay(&self) -> StorageResult<usize> {
         let now = Self::now_ms();
         self.block_on(async {

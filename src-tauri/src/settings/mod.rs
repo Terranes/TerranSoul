@@ -168,6 +168,13 @@ pub struct AppSettings {
     /// pill or the Brain settings hub.
     #[serde(default)]
     pub chatbox_mode: bool,
+
+    /// Components auto-configured by the first-launch wizard or fallback
+    /// paths. Entries are descriptive keys: `"brain"`, `"voice"`,
+    /// `"quests"`. Factory reset uses this list to selectively undo
+    /// auto-configuration while leaving user-chosen settings intact.
+    #[serde(default)]
+    pub auto_configured: Vec<String>,
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -218,6 +225,7 @@ impl Default for AppSettings {
             contextual_retrieval: false,
             first_launch_complete: false,
             chatbox_mode: false,
+            auto_configured: Vec::new(),
         }
     }
 }
@@ -240,6 +248,14 @@ impl AppSettings {
     /// Stale or corrupt settings should be replaced with defaults.
     pub fn is_valid_schema(&self) -> bool {
         self.version == CURRENT_SCHEMA_VERSION
+    }
+
+    /// Record a component tag in `auto_configured` (deduplicates).
+    pub fn track_auto_configured(&mut self, tag: &str) {
+        let s = tag.to_string();
+        if !self.auto_configured.contains(&s) {
+            self.auto_configured.push(s);
+        }
     }
 }
 
@@ -322,6 +338,7 @@ mod tests {
             contextual_retrieval: false,
             first_launch_complete: false,
             chatbox_mode: false,
+            auto_configured: Vec::new(),
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

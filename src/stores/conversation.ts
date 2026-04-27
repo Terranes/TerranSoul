@@ -1352,26 +1352,11 @@ export const useConversationStore = defineStore('conversation', () => {
         return;
       }
       case 'unknown': {
-        // Free LLM couldn't decide (no brain, timeout, malformed JSON).
-        // When the user has opted in (default), fall back to the universal
-        // install-all overlay so a local Ollama brain is set up and future
-        // turns have a working classifier offline forever after. When the
-        // user has opted out via the Brain-panel "Auto-install fallback"
-        // toggle, fall through to the streaming chat path silently.
-        let installFallback = true;
-        try {
-          installFallback = useAiDecisionPolicyStore().policy.unknownFallbackToInstall;
-        } catch {
-          // Pinia not active — keep default-on behaviour.
-        }
-        if (installFallback) {
-          startLearnDocsFlow(content);
-          isThinking.value = false;
-          generationActive.value = false;
-          void drainQueue();
-          return;
-        }
-        // Fall through to streaming chat path.
+        // Classifier couldn't decide (no brain, timeout, malformed JSON).
+        // The safe default is to fall through to the streaming chat path —
+        // never assume the user wants to learn from documents just because
+        // the classifier failed. The persona-fallback UX will handle the
+        // turn if no brain is configured.
         break;
       }
       case 'chat':

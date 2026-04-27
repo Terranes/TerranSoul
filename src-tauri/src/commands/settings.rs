@@ -83,6 +83,7 @@ mod tests {
             contextual_retrieval: false,
             first_launch_complete: false,
             chatbox_mode: false,
+            auto_configured: Vec::new(),
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -117,6 +118,7 @@ mod tests {
             contextual_retrieval: false,
             first_launch_complete: false,
             chatbox_mode: false,
+            auto_configured: Vec::new(),
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());
