@@ -65,244 +65,8 @@ Pick the next `not-started` item from the tables below or from `rules/backlog.md
 |---|---|---|---|
 | 15.2 | **gRPC server** — `tonic` + mTLS on `127.0.0.1:7422`, `brain.v1.proto`, streaming search. | not-started | ~700 LOC + tests. |
 | 15.4 | **Control Panel** — `AICodingIntegrationsView.vue` + `ai-integrations.ts` store. Server status, clients, auto-setup buttons, LAN toggle. | not-started | ~500 LOC + tests. |
-| 15.5 | **Voice / chat intents** — `ai_integrations` capability + intents in routing.rs. "ai-bridge" skill activation gate. | not-started | ~300 LOC + tests. |
 | 15.7 | **VS Code Copilot incremental-indexing QA** — e2e test: cold/warm calls, fingerprint cache, file-watcher invalidation. | not-started | Depends on 15.1 + 15.3 + 15.6. |
 | 15.8 | **Doc finalisation** — replace all "Planned" sections in `docs/AI-coding-integrations.md` with as-built reality. | not-started | Final QA gate for Phase 15. |
-| 15.9 | **MCP stdio transport shim** — `terransoul --mcp-stdio` runs the same `BrainGateway` adapter over stdin/stdout JSON-RPC instead of HTTP, so editors that prefer the canonical MCP stdio transport (Claude Desktop default, Codex CLI default, VS Code MCP extension) can connect without a TCP listener. Single binary entry point — no separate companion exe — guarded by a CLI flag so a normal launch still spawns the GUI. Reuses bearer-token auth (token still needed because the editor and TerranSoul are different processes; the editor reads the token from `mcp-token.txt` and passes it as a JSON-RPC arg on each call). Auto-setup writers in 15.6 flip to write `command: terransoul --mcp-stdio` instead of an HTTP endpoint when the user picks "stdio" in the Control Panel (15.4). | not-started | Deep-analysis verdict: stdio is the *canonical* MCP transport per spec, not optional polish. Loopback HTTP is enough for power-users today but every cited client documents stdio as the primary path, so the doc-promise debt grows the longer this slips. ~250 LOC + integration tests. Depends on 15.1 (HTTP gateway), 15.3 (BrainGateway adapter), and benefits 15.4 (Control Panel transport picker) + 15.6 (auto-setup writers). |
-| 15.10 | **VS Code workspace surfacing — open / focus / ancestor-reuse for the project folder.** Pure-Rust `vscode_workspace` module + `vscode_open_project(target_path)` Tauri command. When the user (or a chat intent, or a Copilot autonomous-loop step) asks TerranSoul to "open this project in VS Code", the resolver picks the right window per the rules: exact match → focus; closest ancestor of `target_path` already open → focus that window; otherwise → launch new window. **No duplicate windows for a folder that's already inside an open VS Code workspace.** | not-started | See design notes below. Foundation for the Copilot autonomous loop (Phase 10) so the next-chunk prompt always lands in the right editor window. ~450 LOC + 25 unit tests + 4 integration tests gated by `TERRANSOUL_VSCODE_INTEGRATION=1`. Depends on nothing already shipped; can land independently of 15.1 / 15.4. Surfaces in the Control Panel (15.4) as a "📂 Open project in VS Code" button and in voice intents (15.5) as the phrase set defined below. |
-
-#### Design notes — Chunk 15.10
-
-**Problem.** Today the Copilot autonomous loop (Phase 10) and the
-auto-setup writers (Chunk 15.6, shipped) leave the user responsible
-for finding *which* VS Code window to paste the next-chunk prompt
-into. If the user has multiple VS Code windows open — e.g. one at
-`D:\Git\` (monorepo root) and one at `D:\Git\TerranSoul\` — TerranSoul
-cannot answer "let me code on TerranSoul" without guessing. Worse,
-naive `code D:\Git\TerranSoul` always opens a new window even when
-`D:\Git\` is already open and would contain the project. We end up
-with duplicate windows and a confused Copilot session that doesn't
-share context with the existing window.
-
-**The user's contract** (verbatim spec, mapped to test cases):
-
-| Spec phrase | Resolver branch | Acceptance test |
-|---|---|---|
-| *"if the folder related with the current project isn't opened, please open vscode with the project folder"* | `WindowChoice::None` → spawn `code <target>` | `pick_window` returns None when registry is empty; integration test asserts a fresh process is launched. |
-| *"If there is an opened one same with folder … please use the existing one instead"* | `WindowChoice::Exact { pid }` → focus | Registry has `(pid=123, root=/D/Git/TerranSoul)`; target=`/D/Git/TerranSoul` → returns `Exact { pid: 123 }`. |
-| *"… or its parents containing that folder"* | `WindowChoice::Ancestor { pid, depth }` → focus | Registry has `(pid=99, root=/D/Git)`; target=`/D/Git/TerranSoul/src` → returns `Ancestor { pid: 99, depth: 1 }` (one component above target). |
-| *"If there are multiple vscode windows, priority to the most children near the current folder one"* | `Ancestor` candidates ranked by deepest root (longest common prefix) | Registry has both `(pid=99, root=/D/Git)` and `(pid=42, root=/D/Git/TerranSoul)`; target=`/D/Git/TerranSoul/src` → returns `Ancestor { pid: 42, depth: 1 }` because `/D/Git/TerranSoul` (3 components) beats `/D/Git` (2 components). |
-| *"if not, creating new"* | All ancestor candidates fail PID-liveness check → fall through to `WindowChoice::None` | Registry has `(pid=42, root=/D/Git/TerranSoul)` but `sysinfo` says PID 42 is dead → `pick_window` returns None. |
-
-**Why a self-launched registry, not VS Code introspection.** A full
-day of investigation (recorded in this audit, 2026-04-25) confirmed
-there is **no reliable cross-platform way** for an outside process to
-enumerate currently-open VS Code windows with their folder paths:
-
-- `code --status` prints the editor *title*, not the workspace path,
-  and the title format is unstable across extensions and locales.
-- VS Code child processes do not carry `--folder-uri` on their command
-  lines (the arg is consumed before the renderer launches, so
-  `Win32_Process.CommandLine` / `/proc/*/cmdline` show nothing useful).
-- `<user-data>/User/workspaceStorage/<hash>/workspace.json` records
-  every workspace VS Code has *ever* opened, not which are currently
-  open — useless for our question.
-- `<user-data>/Backups/<hash>/` exists for windows with hot-exit
-  state but is not a reliable signal of "currently open" either.
-- VS Code's IPC singleton pipe is not part of the documented
-  extension surface and changes between releases.
-
-So the only honest answer is: TerranSoul tracks **the windows it
-launched itself**, validates them via PID liveness on every query,
-and falls through to "launch new" when nothing matches. This trades
-one limitation (we miss windows the user opened from the Start menu)
-for full reliability. Manually-opened windows can be picked up by a
-future best-effort `WorkspaceStorageScanner` follow-up — see the
-"Out of scope" section below.
-
-**Architecture.**
-
-```
-src-tauri/src/vscode_workspace/
-├── mod.rs              # public API: open_project, pick_window
-├── registry.rs         # SelfLaunchedRegistry — JSON-on-disk, PID-validated
-├── resolver.rs         # pick_window(target, &[VsCodeWindow]) -> WindowChoice
-├── launcher.rs         # spawn `code <path>` detached, cross-platform
-└── path_norm.rs        # canonicalise + case-fold (Windows) for prefix match
-
-src-tauri/src/commands/vscode.rs
-├── vscode_open_project(target: String) -> Result<OpenOutcome, String>
-├── vscode_list_known_windows() -> Vec<VsCodeWindow>     # for Control Panel
-└── vscode_forget_window(pid: u32) -> Result<(), String>  # manual purge
-```
-
-**Data shapes.**
-
-```rust
-pub struct VsCodeWindow {
-    pub pid: u32,
-    pub root: PathBuf,            // canonicalised
-    pub launched_at_ms: i64,
-    pub launched_by: LaunchSource, // SelfLaunched | DiscoveredViaScanner
-}
-
-pub enum WindowChoice {
-    Exact { pid: u32 },
-    Ancestor { pid: u32, depth: usize }, // depth = target_components - root_components
-    None,
-}
-
-pub enum OpenOutcome {
-    Focused { pid: u32, kind: ChoiceKind }, // existing window brought forward
-    Launched { pid: u32 },                   // fresh window spawned
-}
-```
-
-**`pick_window` algorithm** (pure, fully unit-testable):
-
-1. Canonicalise `target` (resolve `..`, symlinks, case-fold on Windows).
-2. For each window in the registry:
-   - If `window.root == target` → emit `Exact { pid }` candidate.
-   - Else if `target.starts_with(&window.root)` → emit `Ancestor { pid, depth }` where `depth = target.components().count() - window.root.components().count()`.
-3. PID-liveness filter — drop any candidate whose `pid` is no longer
-   alive (per `sysinfo::System::process(pid)`).
-4. If any `Exact` survives → return it (there should be at most one
-   per the registry's `(root → pid)` invariant; if duplicates exist,
-   pick the lowest depth then the most-recently-launched).
-5. Else if any `Ancestor` survives → return the one with **smallest
-   `depth`** (= deepest root = most-children-near-target per the spec).
-6. Else → `WindowChoice::None`.
-
-**`open_project` flow:**
-
-```
-1. Normalise target_path (canonicalise, reject if missing).
-2. Load registry, run pick_window.
-3. Match WindowChoice:
-   ├── Exact { pid }     → spawn `code <window.root>`        → OpenOutcome::Focused
-   ├── Ancestor { pid }  → spawn `code <window.root>`        → OpenOutcome::Focused
-   └── None              → spawn `code <target>` detached, capture PID,
-                           append (pid, target) to registry  → OpenOutcome::Launched
-4. On Launched: poll the new PID for up to 3s to confirm it stayed alive
-   (catches "code not on PATH" / immediate-exit), else surface error to UI
-   with the recovery hint "Run Cmd+Shift+P → 'Shell Command: Install code in PATH'".
-```
-
-Note step 3 calls `code <window.root>` for Exact / Ancestor reuse,
-not `code <target>` — `code <subpath>` would create a *new* window
-even when an ancestor is open, defeating the whole point. The
-existing window already contains the target subfolder so the user
-can navigate to it inside VS Code; we deliberately do **not** try to
-do `code -g <target>/<some-file>` because we don't always have a
-file to land on, and the VS Code Explorer auto-scrolls to the active
-file when the user opens one anyway.
-
-**Path-prefix matching gotchas.**
-
-- Windows: `Path::starts_with` is case-sensitive but the filesystem
-  isn't — `path_norm.rs::canonical_eq` lowercases on `cfg!(windows)`
-  before comparing. UNC paths (`\\server\share\...`) round-trip
-  through the same canonicaliser.
-- macOS: HFS+ / APFS are usually case-insensitive but `Path` treats
-  them as case-sensitive; same lowercase fold applied.
-- Linux: case-sensitive both ways, no special handling.
-- Symlinks: `std::fs::canonicalize` resolves them on all platforms;
-  registry stores the canonical path, never the symlink.
-
-**Registry persistence.** `<data_dir>/vscode-windows.json` (atomic
-write, follows the dev/release split design from Chunk 20.1 once
-that lands). Format:
-
-```json
-{
-  "version": 1,
-  "windows": [
-    {
-      "pid": 47588,
-      "root": "D:\\Git\\TerranSoul",
-      "launched_at_ms": 1714050000000,
-      "launched_by": "SelfLaunched"
-    }
-  ]
-}
-```
-
-PID-liveness check happens on every read; dead entries are filtered
-out and rewritten back. Stale entries can never linger across an OS
-reboot because PIDs reset.
-
-**Frontend surface (folded into the Control Panel chunk 15.4).**
-
-- Big primary button "📂 Open this project in VS Code" — pre-fills
-  `target` with the current project root inferred from `Cargo.toml`
-  + `package.json` discovery; user can override via folder picker.
-- Status pill below the button: "VS Code: 2 windows open at
-  `D:\Git\` and `D:\Git\TerranSoul\` — clicking will focus the
-  TerranSoul window" so the user sees *why* a particular window will
-  be picked before they click.
-- Sub-button "Forget this window" per registry row, in case the
-  registry got out of sync (the user closed VS Code via Task
-  Manager, etc.).
-
-**Voice / chat intents (folded into chunk 15.5).**
-
-| Phrase examples | Intent |
-|---|---|
-| "open this project in VS Code", "let me code on TerranSoul", "show me the code" | `vscode.open_project` (uses inferred project root) |
-| "open `<path>` in VS Code" | `vscode.open_project { target: <path> }` |
-| "which VS Code windows do you know about?" | `vscode.list_known` |
-
-**Out of scope for 15.10** (captured here so they don't get lost):
-
-1. **Multi-root `.code-workspace` files.** A VS Code window opened on
-   `myproject.code-workspace` has *N* folder roots, any of which
-   could be an ancestor of `target`. v1 treats workspace files as
-   opaque (registers the `.code-workspace` path, not its inner roots).
-   Follow-up chunk: parse the workspace file and emit one registry
-   row per inner root.
-2. **Discovering manually-opened VS Code windows.** v1 only knows
-   about windows TerranSoul launched. Follow-up:
-   `WorkspaceStorageScanner` reads `<user-data>/User/workspaceStorage/`
-   + `Backups/` heuristically and matches against running PIDs.
-   Document the technique in the chunk so later contributors don't
-   re-investigate.
-3. **VS Code Insiders / VSCodium / Cursor.** v1 hard-codes the `code`
-   binary. The launcher is parametrised over the binary name so
-   adding `code-insiders` / `cursor` is a one-constant change in a
-   later chunk; the user picks the preferred editor in the Control
-   Panel.
-4. **Remote / WSL workspaces.** A VS Code window opened with a
-   `vscode-remote://wsl+Ubuntu/home/user/proj` URI cannot be matched
-   against a Windows-side `D:\` path. Detect remote URIs in the
-   registry and skip them in `pick_window` (never reuse, always
-   launch new on the local side).
-5. **Navigating to a sub-path inside a focused ancestor.** v1 just
-   focuses the ancestor window. If the user wants the Explorer
-   highlighted on the target subfolder, they navigate themselves.
-   Follow-up chunk could add `code -g <target>/.gitkeep` style
-   tricks but the use case is weak.
-
-**Acceptance.**
-
-- Two consecutive `vscode_open_project("/D/Git/TerranSoul")` calls:
-  first launches a new window (registry was empty); second focuses
-  the same window (registry exact-match hits).
-- Open VS Code at `D:\Git\` manually via the OS, then run
-  `vscode_open_project("/D/Git/TerranSoul/src")` from TerranSoul:
-  v1 launches a *new* window (manually-opened windows are not in the
-  registry — documented limitation, see Out-of-scope #2).
-- Run `vscode_open_project("/D/Git/TerranSoul")`, then
-  `vscode_open_project("/D/Git/TerranSoul/src/components")`: the
-  second call focuses the existing TerranSoul window (Ancestor match,
-  depth = 2). Registry still has exactly one entry.
-- Kill the VS Code window via Task Manager; immediately call
-  `vscode_open_project("/D/Git/TerranSoul")`: registry's PID-liveness
-  filter drops the dead entry; new window launches; registry rewritten.
-- Three windows open at `D:\`, `D:\Git\`, `D:\Git\TerranSoul\`. Call
-  `vscode_open_project("/D/Git/TerranSoul/src")`: focuses the
-  `D:\Git\TerranSoul\` window (deepest ancestor wins).
-- `vscode_open_project("/Z/does-not-exist")` returns a clear "target
-  path does not exist" error without touching the registry.
 
 ---
 
@@ -310,11 +74,10 @@ reboot because PIDs reset.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 16.3 | **Late chunking** — long-context embed → mean-pool per-chunk windows. `memory::late_chunking` module. | not-started | Needs long-context embedding model in Ollama catalogue. |
-| 16.4 | **Self-RAG iterative refinement** — orchestrator loop with `<Retrieve>`/`<Relevant>`/`<Supported>`/`<Useful>` reflection tokens, max 3 iterations. | not-started | Reuses `StreamTagParser`. |
-| 16.5 | **Corrective RAG (CRAG)** — LLM evaluator classifies recall as Correct/Ambiguous/Incorrect; rewrite or web-search fallback. | not-started | Web-search only with crawl capability. |
+| 16.3b | **Late chunking — ingest integration** — wire `memory::late_chunking::pool_chunks` into `run_ingest_task` behind an `AppSettings.late_chunking` flag, calling a long-context Ollama embedder that returns per-token vectors. (16.3a — pure pooling utility — shipped.) | not-started | Needs long-context embedding model in Ollama catalogue that exposes per-token embeddings. |
+| 16.4b | **Self-RAG orchestrator loop** — wire `SelfRagController` (16.4a) into a Tauri streaming command that re-prompts the LLM with augmented context until `Decision::Accept` or `Decision::Reject`. | not-started | Depends on 16.4a (shipped). Threads through `OllamaAgent::respond_contextual` + `hybrid_search_rrf`. |
+| 16.5b | **CRAG query-rewrite + web-search fallback** — wire `crag::aggregate` (16.5a) into a Tauri command: on `RetrievalQuality::Ambiguous` run an LLM rewrite + retry; on `Incorrect` fall through to web fetch (gated by crawl capability). | not-started | Depends on 16.5a (shipped). Web-search only when crawl capability is granted. |
 | 16.6 | **GraphRAG / LightRAG community summaries** — Leiden community detection over `memory_edges`, LLM summaries, dual-level retrieval + RRF. | not-started | Heavy chunk; background workflow job. |
-| 16.8 | **Matryoshka embeddings** — two-stage search: fast 256-dim pass → re-rank at 768-dim. | not-started | Pairs with ANN index (16.10, shipped). |
 
 ---
 
@@ -388,15 +151,11 @@ reboot because PIDs reset.
 | 21.2 | **Backfill Chunk 14.1 (Persona MVP) entry in `rules/completion-log.md`.** Per `docs/persona-design.md` § 15.1, the Persona MVP is `PersonaTraits` store + `persona-prompt.ts` injection + `PersonaPanel.vue` + Soul Mirror quest activation. All four artifacts exist (`src/stores/persona.ts`, `src/utils/persona-prompt.ts`, `src/components/PersonaPanel.vue`, Soul Mirror node in `src/stores/skill-tree.ts`) and tests pass, but no chunk-numbered entry exists. Reconstruct the entry from `git log --all -- src/stores/persona.ts src/utils/persona-prompt.ts` and file it with the same shape as the other 14.x entries. | not-started | Foundation chunk for Phase 14 — predates 14.2. |
 | 21.3 | **Number the "Multi-Agent Resilience" entry at the top of `rules/completion-log.md`.** The 2026-04-25 entry at line 183 (per-agent threads + `workflows/resilience.rs` + agent-swap context) ships with no chunk #. Per the deep-analysis verdict in Phase 23, this entry actually only delivers the *scaffold* (library code + per-agent stamping), so renumber it as **Chunk 23.0 — Multi-agent resilience scaffold** and amend the entry's text to make clear the wiring chunks 23.1–23.3 are still pending. | not-started | Names a real chunk so Phase 23 has a clean predecessor. |
 | 21.4 | **Backfill TaskControls (Stop / Stop-and-Send) chunk in `rules/completion-log.md`.** New component `src/components/TaskControls.vue` + `src/components/TaskControls.test.ts`, wired into `src/views/ChatView.vue` at lines 228 / 369 with `conversationStore.stopGeneration()` / `stopAndSend()` (defined in `src/stores/conversation.ts`). File a chunk entry — appropriate name **Chunk 23.0b — Stop & Stop-and-Send Controls** since it shipped in the same multi-agent-resilience PR per repo timestamps. | not-started | Pairs with 21.3. |
-| 21.5 | **Fix MCP tool names in `docs/brain-advanced-design.md` § 24.2.** The doc lists `brain_health / brain_search / brain_ingest / brain_ask / brain_summarize / brain_extract / brain_list_memories / brain_stats`. Real names per `src-tauri/src/ai_integrations/mcp/tools.rs` are `brain_search / brain_get_entry / brain_list_recent / brain_kg_neighbors / brain_summarize / brain_suggest_context / brain_ingest_url / brain_health`. Replace the table to match the code (and match `docs/AI-coding-integrations.md § Surface`, which is already correct). | not-started | brain-doc-sync rule (architecture-rules.md rule 11). |
-| 21.6 | **Refresh `docs/AI-coding-integrations.md` to reality.** (a) Roadmap table row 15.6 still says "not-started"; flip to ✅ shipped 2026-04-25 with the per-client config-path summary. (b) Top-line status banner says "MCP server (Chunk 15.1) are complete. gRPC (15.2) and the Control Panel (15.4–15.8) are in progress" — add 15.6 to the complete list and add 15.9 to the in-progress list (per the new Phase 15 row). (c) Add a note linking the stdio transport sentence in the table at line ≈22 to chunk 15.9. | not-started | Smaller than 15.8 (full doc rewrite). 15.8 is the final pass; this is the half-time correction. |
-| 21.7 | **Renumber `docs/persona-design.md` § 15 from "Phase 13.A/B + 140-155" to "Phase 14.A/B + 14.1-14.15".** Current § 15.1 / § 15.2 still use legacy "Phase 13.A" / "Phase 13.B" headings and chunk numbers 140–155 (the pre-audit numbering). The audit at `completion-log.md` line 1114 has long since renumbered to Phase 14 / 14.1–14.15, and "Phase 13" in the repo today is GitNexus Code-Intelligence (chunks 2.1–2.4). Renumber tables, update cross-references in § 10 and § 14.3, and add a one-line note at the top of § 15 pointing to `rules/completion-log.md` for the as-shipped status of each row. | not-started | persona-doc-sync rule (architecture-rules.md rule 13). |
 
-> **How to handle these.** Each row is a small doc / log edit; pick
+> **How to handle these.** Each row is a small log edit; pick
 > one, do it, log it in `completion-log.md`, remove the row from this
-> file. Rows 21.5 / 21.6 / 21.7 are pure doc edits and can ship as a
-> single bundled chunk. Rows 21.1–21.4 are log-only edits and can
-> ship as a second bundle.
+> file. Rows 21.1–21.4 are log-only edits and can ship as a single
+> bundle.
 
 ---
 
@@ -475,7 +234,6 @@ memory-hook that prepends `auto:` to every new memory's tags. After
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 23.1 | **Wire `ResilientRunner` into workflow activities (`src-tauri/src/workflows/engine.rs`).** Every `Activity::run()` invocation in the engine routes through a `ResilientRunner` configured per workflow type (defaults: `RetryPolicy::default` 3-attempt exponential, `TimeoutPolicy` 60 s overall + 30 s per activity, `CircuitBreaker` 5-failure / 60 s recovery, `HeartbeatWatchdog` 30 s stale threshold). Re-exec / `Resuming` events on app restart inherit the same policies. New `WorkflowResilienceConfig` Tauri command surface so power users can override per-workflow-type. ~250 LOC + 8 integration tests showing retry-on-transient + circuit-open-after-N-fails + workflow-resumes-after-restart-with-half-open. | not-started | The library and tests already exist (resilience.rs, 13 unit tests). This chunk is "just" the integration into engine.rs, but engine.rs is core durable-workflow code so it is genuinely a careful chunk. |
-| 23.2 | **Inject handoff context into system prompts on agent switch.** When `setAgent(newAgentId)` is called, look up the previous agent's recorded `handoffContexts[prevAgentId]` and emit it as a `[HANDOFF FROM <prev-agent-name>]` block in the *next* assistant turn's system prompt — same precedence as `[PERSONA]` / `[LONG-TERM MEMORY]`, just below them. New helper `buildHandoffBlock(ctx)` in `src/utils/handoff-prompt.ts` (pure, like `persona-prompt.ts`). Cleared after one turn so the new agent gets briefed once and then operates on its own thread. ~120 LOC + 10 vitest tests covering empty context, multi-line context, character-budget cap, and one-shot-clear. | not-started | The data flow already exists — the agent-roster store records `handoffContexts` on switch (line 224). This wires the consumer side. |
 | 23.3 | **Surface per-agent threads in the chat UI.** Today messages are stamped with `agentId` (via `stampAgent`) and `agentMessages` filters them, but no view reads `agentMessages`. Add a per-agent thread filter chip row above the chat scroll (existing visual style — same as MemoryView's tag chips), backed by `agentMessages`. When toggled, the message list shows only that agent's turns. Default chip is "All agents" (= existing flat list). Persists across app restarts via `localStorage`. ~180 LOC + 8 vitest tests. | not-started | Pure frontend chunk; backend is unchanged. Closes the visibility gap noted in the audit. |
 
 #### Phase 23 acceptance gate
@@ -491,3 +249,68 @@ swaps to Agent B, exchanges 5 more turns, swaps back to Agent A.
   triggers a `CircuitBreaker::Open` after the configured failure
   threshold, recovers half-open after the recovery timeout, and the
   workflow resumes on the next chat turn instead of permanently failing.
+
+
+---
+
+### Phase 24 — Mobile Companion (iOS + LAN gRPC Remote Control)
+
+> **Why this phase exists.** TerranSoul today is desktop-only and
+> binds every server to `127.0.0.1`. The user wants to **drive the
+> desktop companion from an iOS phone over the home Wi-Fi LAN** —
+> e.g. ask the phone "what's the progress of the Copilot session
+> running in VS Code on my desktop?" or "continue the next step of
+> chunk X" and have the phone-side LLM call into the desktop brain
+> + workflow + Copilot-state surface via gRPC.
+>
+> This phase splits cleanly along three independent axes:
+>
+> 1. **LAN networking on the desktop** — bind config, address
+>    discovery, mTLS pairing, gRPC remote-control surface
+>    (24.1 – 24.5). Each ships independently of iOS work.
+> 2. **iOS app shell** — Tauri iOS target reusing the Vue frontend
+>    with a mobile layout + Keychain-backed pair store
+>    (24.6 – 24.8).
+> 3. **Phone-driven LLM control loop** — phone-side chat that
+>    surfaces gRPC-backed tools (Copilot-session probe, workflow
+>    progress, "continue next chunk" trigger) so the LLM can
+>    *act* on the desktop, not just *report* (24.9 – 24.11).
+>
+> Pairs with the long-deferred Chunk 15.2 (gRPC server) — that
+> chunk delivers the tonic transport; this phase delivers the
+> phone-control RPC surface on top of it.
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 24.1b | **LAN bind config + OS probe wrapper.** Add `local-ip-address` (or `if-addrs`) crate; thin `discover_lan_addresses() -> Vec<LanAddress>` wrapper that calls the OS interface enumerator and feeds it through 24.1a. New `--lan` Tauri config flag (and `AppSettings.lan_enabled`) flips MCP server bind from `127.0.0.1` to `0.0.0.0` — gated behind explicit user opt-in (clear UI warning). Tauri command `list_lan_addresses` for the pairing-UI. ~120 LOC + integration tests. | not-started | Depends on 24.1a. The bind switch must default off — never silently expose a brain server to the LAN. |
+| 24.2b | **mTLS pairing flow + persistent device registry.** Generate self-signed CA on first LAN-enable via `rcgen` (already a dep); issue per-device client certs at pairing time; persist `(device_id, cert_fingerprint, display_name, paired_at, last_seen_at)` to a new `paired_devices` SQLite table. Tauri commands `start_pairing` (returns QR payload), `confirm_pairing(device_id)`, `revoke_device(device_id)`, `list_paired_devices`. 5-minute pairing window enforced server-side. ~400 LOC + 10 integration tests. | not-started | Depends on 24.1b + 24.2a. Database migration adds `paired_devices` table. |
+| 24.3 | **Land Chunk 15.2 — gRPC server (`tonic` + `brain.v1.proto`).** Existing milestones row 15.2 promoted into this phase since it's the prerequisite transport. Bind to `0.0.0.0:7422` when `lan_enabled`, else `127.0.0.1:7422`. mTLS layer reads CA + per-device certs from 24.2b. ~700 LOC + tests. | not-started | Existing row from Phase 15. Sequencing constraint: must land after 24.2b so it has the cert store to authenticate against. |
+| 24.4 | **Phone-control RPC surface (`phone_control.v1.proto`).** New proto in addition to `brain.v1`: `GetSystemStatus` (CPU/RAM/active-models), `ListVsCodeWorkspaces`, `GetCopilotSessionStatus { workspace }`, `ListWorkflowRuns`, `GetWorkflowProgress { run_id }`, `ContinueWorkflow { run_id }`, `SendChatMessage / StreamChat`, `ListPairedDevices`. Capability-gated per-RPC (declared in `paired_devices.capabilities` JSON column added in 24.2b). ~500 LOC + tests. | not-started | Depends on 24.3. Pure proto + handlers; no iOS code yet. |
+| 24.5b | **VS Code / Copilot session probe — FS wrapper.** Now that the pure parser `network::vscode_log::summarise_log` is shipped (24.5a), wire `tokio::fs::read_to_string` of `<user-data>/logs/<latest-date>/window<N>/exthost/GitHub.copilot-chat/Copilot-Chat.log` plus `state.vscdb` SQLite open. Resolves `<user-data>` per-OS (Windows `%APPDATA%/Code/User`, macOS `~/Library/Application Support/Code/User`, Linux `~/.config/Code/User`). Tauri command `get_copilot_session_status` returning `CopilotLogSummary`. ~250 LOC + integration tests. | not-started | Pure parser (24.5a) shipped — this chunk is the I/O wrapper + Tauri surface. |
+| 24.6 | **Tauri iOS target + shared frontend.** Add `[targets.ios]` to `tauri.conf.json`; mobile layout via existing `viewport` breakpoints; iOS Keychain for pairing token storage via `tauri-plugin-stronghold` or `tauri-plugin-keyring`. Cargo `cargo tauri ios init` + first build pipeline. ~300 LOC + iOS-CI smoke job. | not-started | Heavy chunk — splits into 24.6a (iOS init + smoke build) and 24.6b (mobile layout pass) at implementation time. |
+| 24.7 | **iOS pairing UX (`MobilePairingView.vue`).** Scan QR via `tauri-plugin-barcode-scanner`; on confirm, store cert + token in Keychain; trust list in `MobileSettingsView`. Re-pair flow when fingerprint mismatches. ~250 LOC + tests. | not-started | Depends on 24.2b (server side) + 24.6 (iOS shell). |
+| 24.8 | **gRPC-Web client + transport adapter (`src/transport/grpc_web.ts`).** Use `@bufbuild/connect` for browser-native streaming over the Tauri WebView. Replace direct `invoke()` calls with a `RemoteHost` abstraction so the same Vue components work locally (in-process Tauri) or remotely (gRPC-Web). ~400 LOC + tests. | not-started | This is the abstraction that lets one frontend codebase serve both desktop and mobile. |
+| 24.9 | **Mobile chat view streaming through `RemoteHost`.** Refit `ChatView.vue` to render under mobile breakpoints AND switch its backing store from in-process `conversation.ts` to `remote-conversation.ts` when running on iOS. Same `[PERSONA]` / `[LONG-TERM MEMORY]` / `[HANDOFF]` injection — performed server-side; phone receives the pre-built prompt's stream. ~300 LOC + tests. | not-started | Depends on 24.4 + 24.8. |
+| 24.10 | **"Continue next step" remote command + workflow progress narration.** Phone-side LLM tools (`describe_workflow_progress`, `continue_workflow`, `describe_copilot_session`) backed by RPC calls from 24.4 + 24.5. Tool surface mirrors the MCP brain tools so the same LLM prompts work locally and remotely. The phone LLM is the host's brain — the phone is "just" a microphone + screen; capability gates enforce that the phone cannot escalate beyond what its `paired_devices.capabilities` allow. ~250 LOC + tests. | not-started | The chunk that delivers the user's headline use case ("ask what's the progress of Copilot in VS Code, continue next step"). |
+| 24.11 | **Local push notification on long-running task completion.** When a workflow run, an ingest job, or a Copilot session crosses a threshold (configurable, default 30 s), fire a local notification via `tauri-plugin-notification` on the iOS shell when the phone is paired and connected. No APNS dependency — push lives over the LAN connection while paired. ~150 LOC + tests. | not-started | Depends on 24.6 + 24.4. Optional polish. |
+
+#### Phase 24 acceptance gate
+
+User on the same Wi-Fi as the desktop:
+
+1. Opens the iOS TerranSoul app, scans the desktop's QR pairing
+   code → device shows up in the desktop's paired-devices list
+   within 5 s, and the iOS app's home screen reads "Connected to
+   `<desktop-name>`".
+2. Asks the phone (via voice or chat) "What's Copilot doing on my
+   desktop right now?" → the phone's LLM calls
+   `describe_copilot_session` → renders e.g. "Copilot Chat is
+   active in `D:/Git/TerranSoul`, last assistant reply 30s ago,
+   currently streaming chunk 16.4b".
+3. Says "continue the next chunk" → phone LLM calls
+   `continue_workflow(active_run_id)` → desktop resumes work →
+   phone receives a streaming narration of progress.
+4. User leaves the LAN → phone shows "Disconnected"; on returning,
+   pairing is re-used silently from Keychain.
+5. Revoking the phone from the desktop's trust list immediately
+   terminates streams and forces a re-pair on the iOS side.

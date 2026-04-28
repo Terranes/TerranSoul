@@ -13,6 +13,8 @@ import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
+import { useAgentRosterStore } from './agent-roster';
+import { buildHandoffBlock } from '../utils/handoff-prompt';
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
@@ -1371,6 +1373,30 @@ export const useConversationStore = defineStore('conversation', () => {
       try {
         const streaming = useStreamingStore();
 
+        // ── One-shot handoff briefing (Chunk 23.2b) ───────────────────
+        // If the user just switched to this agent and the previous agent
+        // left a context summary, push it to the Rust streaming pipeline
+        // (which read-and-clears it on the next system-prompt build).
+        try {
+          const roster = useAgentRosterStore();
+          const targetAgentId =
+            currentAgent.value === 'auto' ? null : currentAgent.value;
+          if (targetAgentId) {
+            const consumed = roster.consumeHandoff(targetAgentId);
+            if (consumed) {
+              const block = buildHandoffBlock({
+                prevAgentName: consumed.prevAgentName,
+                context: consumed.context,
+              });
+              if (block) {
+                await invoke('set_handoff_block', { block });
+              }
+            }
+          }
+        } catch {
+          // Handoff is best-effort; never block chat on it.
+        }
+
         // Don't set isStreaming immediately - wait for first chunk
         // Keep character in thinking state until text actually arrives
 
@@ -1593,7 +1619,28 @@ export const useConversationStore = defineStore('conversation', () => {
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },
-                getSystemPrompt(useEnhanced) + usePersonaStore().personaBlock + memoryBlock,
+                getSystemPrompt(useEnhanced) +
+                  usePersonaStore().personaBlock +
+                  memoryBlock +
+                  (() => {
+                    // ── One-shot handoff briefing (Chunk 23.2b, browser path) ────
+                    try {
+                      const roster = useAgentRosterStore();
+                      const targetAgentId =
+                        currentAgent.value === 'auto'
+                          ? null
+                          : currentAgent.value;
+                      if (!targetAgentId) return '';
+                      const consumed = roster.consumeHandoff(targetAgentId);
+                      if (!consumed) return '';
+                      return buildHandoffBlock({
+                        prevAgentName: consumed.prevAgentName,
+                        context: consumed.context,
+                      });
+                    } catch {
+                      return '';
+                    }
+                  })(),
               );
               // User-initiated abort
               if (activeAbortController) {

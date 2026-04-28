@@ -1850,13 +1850,19 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ LLM extract/summarize/embed                                 │
 │  └── ✓ Deduplication via cosine threshold                          │
 │                                                                     │
-│  PHASE 2 — Categories & Graph                                       │
-│  ├── ○ Add category column (V5 migration)                          │
-│  ├── ○ Auto-categorize via LLM on insert                           │
-│  ├── ○ Category-aware decay rates                                  │
-│  ├── ○ Category filters in Memory View                             │
-│  ├── ○ Tag prefix convention (personal:*, domain:*, etc.)          │
-│  └── ○ Obsidian vault export (one-way)                             │
+│  PHASE 2 — Categories & Graph (✅ Shipped via tag-prefix convention) │
+│  ├── ✓ Tag-prefix vocabulary as category surrogate                 │
+│  │     (`memory::tag_vocabulary::CURATED_PREFIXES` —                │
+│  │      `personal:`, `domain:`, `project:`, `event:`, `temporal:`,  │
+│  │      `meta:`) — Chunk 18.4                                       │
+│  ├── ✓ Auto-categorise via LLM on insert                           │
+│  │     (LLM prompted with curated prefix list) — Chunk 18.1         │
+│  ├── ✓ Category-aware decay rates                                  │
+│  │     (`category_decay_multiplier(tags_csv)` →                     │
+│  │      slowest-decaying prefix wins) — Chunk 18.2                  │
+│  ├── ✓ Category filters in Memory View                             │
+│  │     (multi-select chip row) — Chunk 18.3                         │
+│  └── ✓ Obsidian vault export (one-way) — Chunk 18.5                │
 │                                                                     │
 │  PHASE 3 — Entity Graph (✅ Shipped — V5 schema)                    │
 │  ├── ✓ memory_edges table (V5 migration, FK cascade)               │
@@ -1916,15 +1922,25 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
 │  │     context before embedding (`memory::contextualize`,          │
 │  │     `AppSettings.contextual_retrieval`) — Chunk 16.2            │
-│  ├── ○ Late chunking (embed full doc, pool per-chunk windows)      │
+│  ├── ◐ Late chunking — `memory::late_chunking` pooling utility    │
+│  │      shipped (Chunk 16.3a); 16.3b wires long-context embedder  │
 │  ├── ○ GraphRAG / LightRAG-style community summaries over          │
 │  │     memory_edges (multi-hop + LLM cluster summary)              │
-│  ├── ○ Self-RAG / Corrective RAG (CRAG) iterative refinement loop  │
-│  ├── ○ Sleep-time consolidation (Letta-style background job that   │
-│  │     compresses/links short→working→long during idle)            │
+│  ├── ◐ Self-RAG controller shipped (`orchestrator::self_rag` —    │
+│  │     reflection-token parser + 3-iteration decision SM,           │
+│  │     Chunk 16.4a); orchestrator-loop integration is Chunk 16.4b   │
+│  ├── ◐ CRAG retrieval evaluator shipped (`memory::crag` —        │
+│  │     `parse_verdict` + `aggregate` over CORRECT/AMBIGUOUS/        │
+│  │     INCORRECT, Chunk 16.5a); query-rewrite + web-search          │
+│  │     fallback is Chunk 16.5b                                      │
+│  ├── ✓ Sleep-time consolidation (Letta-style background job that    │
+│  │     compresses/links short→working→long during idle)             │
+│  │     (`memory::consolidation`, schedule via workflows) — Chunk 16.7│
 │  ├── ✓ Temporal knowledge graph (Zep / Graphiti-style valid_from / │
 │  │     valid_to columns on memory_edges, V6 schema)                │
-│  └── ○ Matryoshka embeddings (variable-dim 256/512/768 truncation) │
+│  └── ✓ Matryoshka embeddings (truncate to 256-dim fast pass +    │
+│        full-dim re-rank; `memory::matryoshka` module +              │
+│        `matryoshka_search_memories` Tauri command) — Chunk 16.8     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2054,14 +2070,14 @@ Quick reference for all diagrams in this document:
 | 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wired into `hybrid_search_rrf` (`memory/store.rs`) — fuses vector + keyword + freshness rankings with `k = 60`; exposed as `hybrid_search_memories_rrf` Tauri command. |
 | 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | ✅ | `src-tauri/src/memory/contextualize.rs` — `contextualise_chunk(doc_summary, chunk, brain_mode)` + `generate_doc_summary()`. Opt-in via `AppSettings.contextual_retrieval`. Integrated into `run_ingest_task`. Chunk 16.2. |
 | 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | ✅ | `src-tauri/src/memory/hyde.rs` (prompt + reply cleaner, 10 unit tests) + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command. Falls back to embedding the raw query if the brain is unreachable. |
-| 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | 🔵 | Phase 6 — orchestrator-level loop (`src-tauri/src/orchestrator/`) |
-| 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | 🔵 | Phase 6 — pairs naturally with our `relevance_threshold` Phase 4 item |
+| 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | � | `src-tauri/src/orchestrator/self_rag.rs` ships the **pure controller** — reflection-token parser + 3-iteration decision SM (Chunk 16.4a). Orchestrator-loop integration that re-prompts the LLM until `Decision::Accept` is the follow-up Chunk 16.4b. |
+| 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | � | `src-tauri/src/memory/crag.rs` ships the **pure evaluator** — `build_evaluator_prompts` + `parse_verdict` + `aggregate` over CORRECT/AMBIGUOUS/INCORRECT (Chunk 16.5a). Query-rewrite + web-search fallback is the follow-up Chunk 16.5b. |
 | 7 | **GraphRAG** ([Microsoft, 2024](https://github.com/microsoft/graphrag)) | LLM extracts entities + relations into a KG, runs Leiden community detection, summarizes each community; queries hit community summaries first | 🟡 → 🔵 | Foundations: `memory_edges` V5 + `multi_hop_search_memories` (§6). Missing: community detection + LLM community-summary rollups. Phase 6. |
 | 8 | **LightRAG** (HKU, 2024) | GraphRAG variant: dual-level retrieval (low-level entity + high-level theme) with incremental graph updates; cheaper than full GraphRAG | 🔵 | Phase 6 — natural follow-on once community summaries land |
-| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | 🔵 | Phase 6 — requires long-context embedding model (e.g. `jina-embeddings-v3`) selectable via Ollama |
+| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | � | Pooling utility shipped in `memory::late_chunking` (Chunk 16.3a — `mean_pool_token_embeddings`, `pool_chunks`, `spans_from_token_counts`). Chunk 16.3b wires the long-context embedder into the ingest pipeline. |
 | 10 | **Cross-encoder reranking** (BGE-reranker-v2-m3, Cohere Rerank 3, etc.) | Second-pass scorer over top-k candidates with a query-doc joint encoder, much higher precision than bi-encoder cosine | ✅ | `src-tauri/src/memory/reranker.rs` (prompt + score parser + reorder logic, 14 unit tests) + `OllamaAgent::rerank_score` + `rerank_search_memories` Tauri command. Uses **LLM-as-judge** with the active brain (no extra model download). Unscored candidates are kept rather than dropped, preserving recall when the brain is flaky. Interface (`(query, document) -> Option<u8>`) is identical to a future BGE/mxbai backend so swapping is a one-line change. |
-| 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | 🔵 | Phase 6 — pairs with ANN index (Phase 4); current `nomic-embed-text` is fixed-dim |
-| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | 🔵 | Phase 6 — fits TerranSoul's tier model (§2); reuses durable workflow engine (`workflows/engine.rs`) for the idle-time job |
+| 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | ✅ | `src-tauri/src/memory/matryoshka.rs` — `truncate_and_normalize` + `two_stage_search`, plus `matryoshka_search_memories` Tauri command. Default fast-dim 256 for `nomic-embed-text`. Chunk 16.8. |
+| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | ✅ | `src-tauri/src/memory/consolidation.rs` — `run_sleep_time_consolidation` job runs during idle, links short→working→long, surfaces stats via `ConsolidationResult`. Chunk 16.7. |
 | 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | ✅ | V6 schema migration adds two nullable Unix-ms columns to `memory_edges` (`valid_from` inclusive, `valid_to` exclusive — open ends mean "always"). `MemoryEdge::is_valid_at(t)` is the pure interval predicate; `MemoryStore::get_edges_for_at(memory, dir, valid_at)` is the point-in-time query (when `valid_at = None` it preserves the legacy "return all edges" behaviour for full back-compat). `MemoryStore::close_edge(id, t)` records supersession; pairing it with `add_edge { valid_from: Some(t) }` expresses "fact X changed value at time t" as two non-destructive rows. The `add_memory_edge` Tauri command gained `valid_from` / `valid_to` parameters; the new `close_memory_edge` command exposes supersession to the frontend. 13 new edge unit tests + 2 new migration tests (round-trip + sentinel). |
 | 14 | **Agentic RAG** (industry term, 2024–2026) | RAG embedded in an agent loop: plan → retrieve → reflect → re-retrieve → generate, with tool use | 🟡 | Foundations: roster + workflow engine (Chunk 1.5, `agents/roster.rs`). Phase 6: explicit retrieve-as-tool wiring. |
 | 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
@@ -2608,16 +2624,20 @@ axum task receives `AppState` directly.
 
 ### 24.2 Exposed MCP tools
 
+> Source of truth: `src-tauri/src/ai_integrations/mcp/tools.rs`. The
+> 8-tool surface below mirrors that file's `tool_definitions()` /
+> `dispatch_tool()` exactly.
+
 | Tool | BrainGateway op | Description |
 |---|---|---|
+| `brain_search` | `search()` | Hybrid semantic + keyword memory search |
+| `brain_get_entry` | `get_entry()` | Fetch a single memory by id |
+| `brain_list_recent` | `list_recent()` | List the most recently created/touched memories |
+| `brain_kg_neighbors` | `kg_neighbors()` | Knowledge-graph neighbours of a memory (typed edges) |
+| `brain_summarize` | `summarize()` | LLM summary of a passage |
+| `brain_suggest_context` | `suggest_context()` | Suggest relevant memories for an editor cursor / file |
+| `brain_ingest_url` | `ingest_url()` | Crawl + chunk + embed a URL into the memory store |
 | `brain_health` | `health()` | Provider status + model info |
-| `brain_search` | `search()` | Semantic memory search |
-| `brain_ingest` | `ingest()` | Store a new memory |
-| `brain_ask` | `ask()` | One-shot LLM question |
-| `brain_summarize` | `summarize()` | Summarize text |
-| `brain_extract` | `extract()` | Extract structured entities |
-| `brain_list_memories` | `list_memories()` | List recent memories |
-| `brain_stats` | `stats()` | Memory store statistics |
 
 ### 24.3 Security
 

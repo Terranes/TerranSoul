@@ -96,3 +96,17 @@ pub async fn get_device_permissions(
         .collect();
     Ok(policies)
 }
+
+/// Match a user utterance against the AI-integrations phrase set
+/// (Chunk 15.5). Returns `None` when the utterance is unrelated to
+/// MCP / VS Code / auto-setup operations — the frontend should fall
+/// through to normal chat in that case.
+///
+/// Pure phrase matching, no LLM required. Cheap to call on every
+/// chat turn before the message reaches the brain.
+#[tauri::command]
+pub async fn match_ai_integration_intent(
+    text: String,
+) -> Result<Option<crate::routing::AiIntegrationIntent>, String> {
+    Ok(crate::routing::match_intent(&text))
+}

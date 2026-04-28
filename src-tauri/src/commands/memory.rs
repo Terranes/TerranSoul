@@ -510,6 +510,81 @@ pub async fn hyde_search_memories(
         .map_err(|e| e.to_string())
 }
 
+/// **Matryoshka two-stage vector search** (Chunk 16.8).
+///
+/// Brute-force vector search where stage 1 scores every candidate
+/// against a *truncated* query embedding (default 256-dim), then
+/// stage 2 re-ranks the top `fast_top_k` survivors with the full-dim
+/// embedding. Returns the top `limit` entries by full-dim cosine
+/// similarity.
+///
+/// Why bother when we already have an ANN index? The ANN index is
+/// optional (rebuilds lazily, may be unavailable on first start, may
+/// have dimension mismatch after model swap). When the brute-force
+/// fallback path runs — which it does for every user on a cold first
+/// query — Matryoshka cuts the per-candidate cost roughly 3× with a
+/// negligible recall hit.
+///
+/// Arguments:
+/// - `query` — natural-language search text. Embedded via the same
+///   path as the other search commands (cloud, Ollama, or no-op).
+/// - `limit` — final result count (default 10).
+/// - `fast_dim` — truncation dimension for stage 1 (default 256).
+///   Set to 0 to use the module default.
+/// - `fast_top_k` — survivors carried into the full-dim re-ranker
+///   (default `limit * 5`, capped at the candidate-set size).
+///
+/// Returns the same `Vec<MemoryEntry>` shape as the other search
+/// commands so it is a drop-in replacement.
+///
+/// Implements §16 Phase 6 / §19.2 row 11 of `docs/brain-advanced-design.md`.
+#[tauri::command]
+pub async fn matryoshka_search_memories(
+    query: String,
+    limit: Option<usize>,
+    fast_dim: Option<usize>,
+    fast_top_k: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let limit = limit.unwrap_or(10).max(1);
+    let fast_dim = match fast_dim {
+        Some(0) | None => crate::memory::matryoshka::DEFAULT_FAST_DIM,
+        Some(n) => n,
+    };
+    let fast_top_k = fast_top_k.unwrap_or(limit.saturating_mul(5)).max(limit);
+
+    let Some(query_emb) = embed(&state, &query).await else {
+        // No embedding available (no brain configured, or daemon
+        // unreachable). Return empty results — the caller can fall
+        // back to keyword search.
+        return Ok(vec![]);
+    };
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let all_with_emb = store.get_with_embeddings().map_err(|e| e.to_string())?;
+    let candidates: Vec<(i64, Vec<f32>)> = all_with_emb
+        .iter()
+        .filter_map(|e| Some((e.id, e.embedding.clone()?)))
+        .collect();
+
+    let scored = crate::memory::matryoshka::two_stage_search(
+        &query_emb,
+        &candidates,
+        fast_dim,
+        fast_top_k,
+        limit,
+    );
+
+    // Map scored ids back to full entries, preserving order.
+    let mut results = Vec::with_capacity(scored.len());
+    for s in scored {
+        if let Some(entry) = all_with_emb.iter().find(|e| e.id == s.id) {
+            results.push(entry.clone());
+        }
+    }
+    Ok(results)
+}
+
 /// **Cross-encoder rerank** over RRF-fused hybrid search (LLM-as-judge style).
 ///
 /// Two-stage retrieval pipeline:

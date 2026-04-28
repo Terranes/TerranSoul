@@ -359,6 +359,17 @@ async fn stream_openai_api<R: tauri::Runtime>(
         }
     }
 
+    // ── Handoff block (Chunk 23.2b) ──────────────────────────────────
+    // Pushed from the frontend agent-roster store on agent switch.
+    // **One-shot**: read-and-clear so the new agent is briefed exactly
+    // once, then operates on its own thread for subsequent turns.
+    if let Ok(mut handoff) = state.handoff_block.lock() {
+        if !handoff.is_empty() {
+            system_prompt.push_str(handoff.as_str());
+            handoff.clear();
+        }
+    }
+
     // Build OpenAI message array
     let mut messages = vec![OpenAiMessage {
         role: "system".to_string(),
@@ -480,6 +491,15 @@ async fn stream_ollama<R: tauri::Runtime>(
     if let Ok(persona) = state.persona_block.lock() {
         if !persona.is_empty() {
             system_prompt.push_str(persona.as_str());
+        }
+    }
+
+    // ── Handoff block (Chunk 23.2b) ──────────────────────────────────
+    // One-shot read-and-clear; same pattern as the OpenAI path above.
+    if let Ok(mut handoff) = state.handoff_block.lock() {
+        if !handoff.is_empty() {
+            system_prompt.push_str(handoff.as_str());
+            handoff.clear();
         }
     }
 

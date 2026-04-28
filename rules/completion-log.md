@@ -21,6 +21,19 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 23.2b — Handoff system-prompt block consumer wiring](#chunk-232b--handoff-system-prompt-block-consumer-wiring) | 2026-04-29 |
+| [Chunk 24.5a — VS Code / Copilot log parser (Phase 24)](#chunk-245a--vs-code--copilot-log-parser) | 2026-04-29 |
+| [Chunk 24.2a — Pairing payload codec (Phase 24)](#chunk-242a--pairing-payload-codec) | 2026-04-29 |
+| [Chunk 24.1a — Pure LAN address classifier (Phase 24 foundation)](#chunk-241a--pure-lan-address-classifier) | 2026-04-29 |
+| [Chunk 23.2a — Handoff system-prompt block builder](#chunk-232a--handoff-system-prompt-block-builder) | 2026-04-29 |
+| [Chunk 21.5/6/7 — Doc reality bundle (MCP tool names + persona renumber)](#chunk-21567--doc-reality-bundle) | 2026-04-29 |
+| [Chunk 16.3a — Late chunking pooling utility](#chunk-163a--late-chunking-pooling-utility) | 2026-04-29 |
+| [Chunk 16.5a — CRAG retrieval evaluator](#chunk-165a--crag-retrieval-evaluator) | 2026-04-29 |
+| [Chunk 16.4a — Self-RAG reflection-token controller](#chunk-164a--self-rag-reflection-token-controller) | 2026-04-29 |
+| [Chunk 16.8 — Matryoshka embeddings (two-stage vector search)](#chunk-168--matryoshka-embeddings-two-stage-vector-search) | 2026-04-29 |
+| [Chunk 15.5 — Voice / chat intents (AI integrations)](#chunk-155--voice--chat-intents-ai-integrations) | 2026-04-29 |
+| [Chunk 15.10 — VS Code workspace surfacing](#chunk-1510--vs-code-workspace-surfacing) | 2026-04-29 |
+| [Chunk 15.9 — MCP stdio transport shim](#chunk-159--mcp-stdio-transport-shim) | 2026-04-29 |
 | [Multi-Agent Resilience — Per-agent threads, workflow resilience, agent swap context](#multi-agent-resilience--per-agent-threads-workflow-resilience-agent-swap-context) | 2026-04-25 |
 | [Chunk 16.7 — Sleep-time consolidation](#chunk-167--sleep-time-consolidation) | 2026-04-25 |
 | [Chunk 15.6 — Auto-setup writers for Copilot, Claude Desktop, Codex](#chunk-156--auto-setup-writers-for-copilot-claude-desktop-codex) | 2026-04-25 |
@@ -177,6 +190,1151 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 23.2b — Handoff system-prompt block consumer wiring
+
+**Date:** 2026-04-29 · **Phase:** 23 (Multi-agent resilience) · **Tests:** +6 frontend, +2 Rust
+
+Wired the pure builder shipped in 23.2a (`buildHandoffBlock`) end-to-end. On agent
+switch the roster store now records both `handoffContexts[newId]` and
+`handoffPrevAgentName[newId]`. The conversation store's pre-send pipeline calls
+a new `consumeHandoff(agentId)` (read-and-clear, returns `{ prevAgentName, context }`)
+and renders the block via `buildHandoffBlock`, then either:
+
+- **Tauri path:** `await invoke('set_handoff_block', { block })` before
+  `streaming.sendStreaming(content)`. The Rust streaming splice (both Ollama
+  and OpenAI paths in `commands/streaming.rs`) reads `state.handoff_block`,
+  appends to the assembled system prompt, and `clear()`s the slot — same
+  one-shot semantics as the milestone called for.
+- **Browser path:** appended inline to the system-prompt string passed to
+  `streamChatCompletion` in `conversation.ts`.
+
+New Rust surface in `commands/persona.rs`: `set_handoff_block` (8 KiB cap) +
+`get_handoff_block` (debug peek) registered in `lib.rs` `invoke_handler!`.
+`AppStateInner.handoff_block: Mutex<String>` initialised in both production
+and `for_test` constructors.
+
+**Files touched (8):**
+
+- `src-tauri/src/lib.rs` — `handoff_block` field + 2 ctor inits + 2 command registrations.
+- `src-tauri/src/commands/persona.rs` — `set_handoff_block` / `get_handoff_block` + 2 unit tests.
+- `src-tauri/src/commands/streaming.rs` — read-and-clear splice in OpenAI + Ollama paths.
+- `src/stores/agent-roster.ts` — `handoffPrevAgentName` ref + `consumeHandoff()` + `display_name` capture.
+- `src/stores/agent-roster.test.ts` — +6 vitest covering record / one-shot / clear / no-msgs / peek.
+- `src/stores/conversation.ts` — imports + Tauri-path `invoke('set_handoff_block', ...)` + browser-path inline append.
+
+**No brain-doc-sync triggered** (UI/agent-roster surface, not brain).
+**Test count:** Rust 1359 → 1361 · frontend 1319 → 1325. `cargo clippy --all-targets -- -D warnings` clean. `vue-tsc --noEmit` clean.
+
+---
+
+## Chunk 24.5a — VS Code / Copilot log parser
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the pure parser half of the Phase 24 mobile-companion
+"what's Copilot doing right now" feature. This is the data layer
+that backs the user's headline use case — phone asks "what's the
+progress of using Copilot in VS Code?" and the desktop returns a
+structured summary the phone-side LLM can narrate.
+
+**Why split into a/b.** The data lives in two places (an
+append-only log file + a SQLite `state.vscdb`). The
+classification + summarisation rules — which substrings count as
+"user turn" vs "assistant turn" vs "tool call", how to pick the
+most-recent of each, how to truncate previews UTF-8-safely — are
+pure logic, separable from the FS / SQLite I/O. Shipping the
+parser first locks the contract `CopilotLogSummary` that 24.5b's
+`get_copilot_session_status` Tauri command will return; 24.5b is
+then a ~150 LOC FS wrapper. Same a/b pattern used for 16.3, 16.4,
+16.5, 23.2, 24.1, 24.2 across this multi-prompt session.
+
+**What shipped.**
+
+- `src-tauri/src/network/vscode_log.rs` (~370 LOC, 22 tests):
+  - `pub struct LogEvent { timestamp, level, kind, body }`.
+  - `pub enum EventKind { WorkspaceFolder, SessionId, UserTurn, AssistantTurn, ToolInvocation, ModelSelected, Other }`.
+  - `pub struct CopilotLogSummary { workspace_folder, session_id, model, last_user_turn_ts, last_user_preview, last_assistant_turn_ts, last_assistant_preview, tool_invocation_count, event_count }` deriving `Default` for the empty-log case.
+  - `pub fn parse_events(log: &str) -> Vec<LogEvent>` — line-by-line; silently skips malformed continuation lines.
+  - `pub fn summarise_log(log: &str) -> CopilotLogSummary` — the call the Tauri layer will hit; reverse-iterates events to pick the most-recent of each field.
+  - `pub const ASSISTANT_PREVIEW_MAX_CHARS = 240`, `pub const USER_PREVIEW_MAX_CHARS = 160`.
+
+**Critical design choices.**
+
+- **Substring matching, case-insensitive.** Copilot Chat's log
+  phrasing has shifted between extension versions; matching
+  `"user message" / "user turn" / "user prompt"` (and similar
+  for assistant / tool / model / workspace) means a Copilot
+  bump tweaking phrasing degrades the affected line to
+  `EventKind::Other` rather than hard-failing the parser. Worst
+  case: `tool_invocation_count` undercounts; the summary still
+  renders.
+- **Tail-first summarisation.** `summarise_log` walks events in
+  reverse and the *first* match for each field wins — exactly
+  what the phone narrator wants ("the **most recent** assistant
+  turn was 30 s ago"). Tool invocations are the one field that's
+  whole-file: count, not pick.
+- **UTF-8-safe truncation.** Both previews use `chars().take(N)`
+  + appended ellipsis, so the truncation never splits a
+  multi-byte char (Greek letters / emoji / CJK characters from
+  pasted user prompts are common in test logs).
+- **`CopilotLogSummary` derives `Default`.** Empty-log case
+  returns `CopilotLogSummary::default()` directly — no awkward
+  `Option<Summary>` branches in the FS wrapper.
+- **Skips garbage lines.** Multi-line stack-trace continuations
+  and free-form banners that don't match `[ts] [level] body` are
+  silently dropped. `parse_events` therefore always returns
+  well-formed events.
+
+**Tests.** 22 unit tests, all passing — every classification
+path, every malformed-input case, the realistic session excerpt
+(`User → Assistant → Tool call → Tool call → Assistant`), the
+multi-workspace tie-break (newest wins), the UTF-8 truncation
+edge-case with Greek letters, and the empty-log identity.
+
+- Whole `cargo test --lib`: **1359 passed** (was 1337 before this chunk → +22).
+- `cargo clippy --all-targets -- -D warnings`: clean.
+
+**Files touched.**
+
+- `src-tauri/src/network/vscode_log.rs` (new).
+- `src-tauri/src/network/mod.rs` — `pub mod vscode_log;`
+  registered alphabetically after `pair_token`.
+- `rules/milestones.md` — Phase 24 row 24.5 transformed into
+  24.5b (FS wrapper + Tauri command).
+
+**Docs.** No brain-doc-sync impact — Phase 24 is a transport /
+mobile-shell phase, and this chunk reads VS Code's own log
+format. When 24.4 (phone-control RPC surface) lands and
+`GetCopilotSessionStatus { workspace }` exposes
+`CopilotLogSummary` over gRPC to the paired phone, that is when
+`docs/AI-coding-integrations.md` will get its Phase-24 entry.
+The parser itself is generic enough that the doc update can
+defer to the chunk that actually exposes the surface.
+
+---
+
+## Chunk 24.2a — Pairing payload codec
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the pure codec half of the iOS-companion pairing
+handshake: a stable `terransoul://pair?...` URI scheme that
+encodes everything the phone needs (LAN host, gRPC port, 32-byte
+pairing token, TLS-cert SHA-256 fingerprint, expiry timestamp)
+plus the small set of crypto primitives the consumer chunk
+(24.2b) will compose against — token generation, constant-time
+comparison, expiry check.
+
+**Why split into a/b.** The pairing surface is the gate that lets
+a phone speak to the brain. Splitting the codec (24.2a) from the
+mTLS-issuance + SQLite-persistence flow (24.2b) means the URI
+format, token byte-length, fingerprint byte-length, expiry
+semantics, and timing-attack surface are all hand-auditable and
+unit-testable without a database, without `rcgen` CA generation,
+and without Tauri command plumbing. When 24.2b lands, it's a
+straight composition: `gen_token` → `PairPayload::from_bytes` →
+`encode_uri` → render QR; on confirm, `decode_uri` →
+`is_expired` → `constant_time_eq` against the stored token.
+
+**What shipped.**
+
+- `src-tauri/src/network/pair_token.rs` (~440 LOC, 23 tests):
+  - `pub struct PairPayload { host, port, token_b64, fingerprint_b64, expires_at_unix_ms }` with serde.
+  - `pub enum PairError` covering `BadScheme`, `BadHost`, `MissingField`, `InvalidField`, `UriTooLong`, `BadByteLength`, `Malformed`.
+  - `pub fn encode_uri(&PairPayload) -> Result<String, PairError>` — emits `terransoul://pair?host=...&port=...&token=...&fp=...&exp=...`.
+  - `pub fn decode_uri(&str) -> Result<PairPayload, PairError>` — strict scheme/host/field validation; tolerates unknown extension keys.
+  - `pub fn gen_token() -> [u8; 32]` — only impure function, uses `rand_core::OsRng::fill_bytes`.
+  - `pub fn constant_time_eq(&[u8], &[u8]) -> bool` — hand-rolled XOR-OR with `std::hint::black_box` to discourage short-circuit optimisation; no `subtle` crate dep.
+  - `pub fn is_expired(&PairPayload, now_unix_ms: u64) -> bool`.
+  - `pub const DEFAULT_EXPIRY_MS = 300_000` (5 min), `pub const TOKEN_BYTE_LEN = 32`, `pub const MAX_URI_LEN = 480`, `pub const PAIR_URI_SCHEME = "terransoul"`, `pub const PAIR_URI_HOST = "pair"`.
+  - `PairPayload::from_bytes(host, port, token, fingerprint, expires_at)` constructor that enforces 32-byte token + 32-byte fingerprint up-front.
+  - `PairPayload::token_bytes()` / `fingerprint_bytes()` decoders that re-validate length on the way out (defence in depth).
+
+**Critical design choices.**
+
+- **base64url-no-pad for token + fingerprint.** All bytes that go
+  in the URI are URL-safe by construction, so the encode path is
+  almost a no-op (only `&`, `=`, `#`, `?`, ` `, `+`, `%` are escaped
+  for the `host` field, which can contain IPv6 colons or DNS dots).
+- **Length validation on every byte-decode.** Both
+  `token_bytes()` and `fingerprint_bytes()` re-check
+  `bytes.len() == 32` after base64-decode, even though
+  `from_bytes` already enforced it. Defence in depth — the codec
+  is the trust boundary.
+- **`is_expired` is `>=` strict.** Exactly at the boundary is
+  considered expired (tests pin this) — the pairing window is
+  half-open `[issued, expires_at)`.
+- **`MAX_URI_LEN = 480`.** QR codes degrade past ~512 chars at
+  reasonable error-correction levels; capping at 480 leaves
+  ~30 chars of headroom for an optional `display_name=` field
+  in 24.2b without breaking the QR scan.
+- **Tolerates unknown extension keys.** `decode_uri` ignores
+  query parameters it doesn't recognise — forward-compatible for
+  future extensions (e.g. `display_name`, `cap=` capability bits)
+  without breaking older iOS clients.
+- **Fixed scheme + host strings as constants.** `PAIR_URI_SCHEME`
+  / `PAIR_URI_HOST` are public so the iOS client can build its
+  validator against the same constants the Rust desktop emits.
+
+**Tests.** 23 unit tests, all passing:
+
+- Constructor: `from_bytes_rejects_short_token`, `from_bytes_rejects_short_fingerprint`.
+- Round-trip: `round_trip_encode_decode`, `encoded_uri_uses_terransoul_pair_scheme`, `token_bytes_round_trip`, `fingerprint_bytes_round_trip`, `host_with_special_chars_round_trips`.
+- Decode rejection: `decode_rejects_bad_scheme`, `decode_rejects_bad_host`, `decode_reports_each_missing_field` (5 cases inline), `decode_rejects_unparseable_port`, `decode_rejects_unparseable_exp`, `decode_rejects_short_token_byte_length`, `decode_rejects_uri_too_long`.
+- Encode rejection: `encode_rejects_uri_too_long`.
+- Forward-compat: `decode_tolerates_unknown_extension_keys`.
+- Crypto primitives: `gen_token_is_well_formed_and_nondeterministic`, `constant_time_eq_handles_length_mismatch`, `constant_time_eq_matches_eq_on_content`.
+- Time: `is_expired_strict_ge_boundary`, `default_expiry_is_five_minutes`.
+- Encoding helper: `url_encode_component_passes_safe_chars`, `url_encode_component_escapes_query_breakers`.
+- Whole `cargo test --lib`: **1337 passed** (was 1314 before this chunk → +23).
+- `cargo clippy --all-targets -- -D warnings`: clean.
+
+**Files touched.**
+
+- `src-tauri/src/network/pair_token.rs` (new).
+- `src-tauri/src/network/mod.rs` — `pub mod pair_token;` registered alphabetically after `lan_addresses`.
+- `rules/milestones.md` — Phase 24 row 24.2a removed after archival.
+
+**Docs.** No brain-doc-sync impact yet — Phase 24 is a transport
+phase, not a brain-surface phase. When 24.4 (phone-control RPC
+surface) lands and the gRPC handlers expose brain operations to
+authenticated phones, that's when `docs/brain-advanced-design.md`
+§24 needs an "MCP-over-LAN-paired-device" section and
+`docs/AI-coding-integrations.md` needs a Phase 24 entry. The
+codec itself is generic enough that those updates can defer to
+the chunk that actually exposes the surface.
+
+---
+
+## Chunk 24.1a — Pure LAN address classifier
+
+**Date.** 2026-04-29
+
+**Goal.** Open Phase 24 (Mobile Companion — iOS + LAN gRPC remote
+control) with the foundation chunk: a pure, security-critical
+classifier that decides which of the OS-reported network interface
+addresses are legitimate pairing endpoints for the upcoming iOS
+companion app. Every later chunk in Phase 24 (LAN bind, mTLS pairing,
+gRPC remote control, iOS shell) sits on this filter.
+
+**Why split into a/b.** The "expose the brain to the LAN" surface is
+the highest-blast-radius security boundary in the project. Splitting
+the OS probe (24.1b) from the classifier (24.1a) makes the
+filtering rules — RFC 1918 / RFC 6598 / loopback / link-local /
+documentation / benchmarking / multicast — hand-auditable and
+deterministically unit-testable without mocking
+`local-ip-address` / `if-addrs`. When 24.1b lands it is "just" a
+30-line OS call followed by `classify_addresses(...)`. Same a/b
+pattern applied to 16.3, 16.4, 16.5, 23.2 earlier this session.
+
+**What shipped.**
+
+- `src-tauri/src/network/mod.rs` (new module entry).
+- `src-tauri/src/network/lan_addresses.rs` (~340 LOC, 14 tests):
+  - `pub enum LanAddressKind { Private, Public }`.
+  - `pub struct LanAddress { addr: IpAddr, kind: LanAddressKind }`.
+  - `pub struct ClassifyOptions { allow_ipv6, allow_public }`
+    deriving `Default` (both false → conservative posture).
+  - `pub fn classify_addresses(&[IpAddr], ClassifyOptions) -> Vec<LanAddress>`.
+  - `pub fn private_lan_addresses(&[IpAddr]) -> Vec<LanAddress>` —
+    convenience for the common pairing-UI case.
+- `src-tauri/src/lib.rs` — `pub mod network;` registered alphabetically between `messaging` and `orchestrator`.
+
+**Filtering rules** (always rejected, regardless of options):
+
+- `is_unspecified()` (`0.0.0.0`, `::`)
+- `is_loopback()` (`127/8`, `::1`)
+- `is_multicast()` (`224/4`, `ff00::/8`)
+- IPv4 link-local (`169.254/16`)
+- IPv4 documentation ranges (`192.0.2/24`, `198.51.100/24`, `203.0.113/24`)
+- IPv4 benchmarking (`198.18/15`)
+- IPv4 broadcast (`255.255.255.255`)
+
+**Classification rules:**
+
+- IPv4 Private = RFC 1918 (`10/8`, `172.16/12`, `192.168/16`) ∪ RFC 6598 (`100.64/10`, carrier-grade NAT).
+- IPv6 Private = unique-local (`fc00::/7`).
+- Everything else = Public.
+
+**Tests.** 14 unit tests, all passing:
+
+- `rejects_loopback_unspecified_multicast_broadcast`,
+  `rejects_link_local_v4`,
+  `rejects_documentation_and_benchmarking_ranges`,
+  `classifies_rfc1918_as_private`,
+  `rfc1918_boundary_addresses` (ensures `172.15.x.x` / `172.32.x.x` are *not* classified private),
+  `classifies_rfc6598_carrier_grade_nat_as_private`,
+  `drops_public_by_default`,
+  `allow_public_keeps_routable_addresses`,
+  `drops_ipv6_by_default`,
+  `ipv6_unique_local_classified_as_private_when_allowed`,
+  `ipv6_global_classified_as_public_and_dropped_by_default`,
+  `preserves_input_order`,
+  `private_lan_addresses_helper_matches_default_options`,
+  `empty_input_yields_empty_output`.
+- Whole `cargo test --lib`: **1314 passed** (was 1300 before this chunk → +14).
+- `cargo clippy --all-targets -- -D warnings`: clean.
+
+**Critical design choices.**
+
+- **Conservative defaults.** `ClassifyOptions::default()` is
+  IPv6-off, public-off. Surfacing a routable IPv4 to the pairing UI
+  is almost always a misconfiguration; the caller has to opt in.
+- **No syscalls.** The classifier takes a slice of `IpAddr` and
+  returns a `Vec<LanAddress>`. Every rule is unit-testable on
+  fixture input without an actual network interface.
+- **Order preservation.** Output mirrors input order so the UI can
+  display "the interface listed first by the OS first" — usually the
+  primary Wi-Fi adapter on Windows/macOS.
+- **RFC 6598 included.** Mobile / tethered LANs commonly hand out
+  `100.64/10`; treating those as private is correct for the
+  iOS-companion use case (phone hotspots, tethered Mac).
+
+**Files touched.**
+
+- `src-tauri/src/network/mod.rs` (new).
+- `src-tauri/src/network/lan_addresses.rs` (new).
+- `src-tauri/src/lib.rs` — `pub mod network;` declaration.
+- `rules/milestones.md` — Phase 24 added (12 chunks: 24.1a–24.11);
+  24.1a row removed after archival.
+
+**Docs.** Phase 24 milestones row introduced in `rules/milestones.md`
+defines the full mobile-companion roadmap and the user's headline
+acceptance gate ("ask the phone what's the progress of Copilot in VS
+Code → continue next step"). No brain-doc-sync impact yet — Phase 24
+is a transport / mobile-shell phase; the brain surface (RAG, memory,
+embeddings) is unchanged. When 24.4 (phone-control RPC surface)
+lands and exposes brain-search to the phone, that's when
+`docs/AI-coding-integrations.md` needs the parallel update.
+
+---
+
+## Chunk 23.2a — Handoff system-prompt block builder
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the pure `buildHandoffBlock(input)` helper so Phase
+23's "agent swap loses context" gap can be closed by a thin
+conversation-store integration (23.2b) rather than a parallel
+rewrite. Pure, dependency-free, fully unit-testable in isolation —
+identical shape to `src/utils/persona-prompt.ts::buildPersonaBlock`.
+
+**Why split into a/b.** The block-builder is pure data-in,
+data-out and has no Pinia / no Tauri / no streaming surface to
+mock. Shipping it now (a) freezes the contract that 23.2b will
+compose against — exact block format, truncation semantics,
+guard cases — and (b) makes 23.2b a ~60 LOC integration patch
+instead of a self-contained component. Same a/b pattern applied
+to 16.4 (Self-RAG), 16.5 (CRAG), and 16.3 (Late chunking) earlier
+this session.
+
+**What shipped.**
+
+- `src/utils/handoff-prompt.ts` (~120 LOC):
+  - `export interface HandoffBlockInput { prevAgentName, context, nextAgentName? }`.
+  - `export function buildHandoffBlock(input): string` — emits
+    `\n\n[HANDOFF FROM <prev>]\n<body>\n[/HANDOFF]` (same
+    precedence-shape as `[PERSONA]` and `[LONG-TERM MEMORY]`).
+  - `export const HANDOFF_MAX_CHARS = 2000`,
+    `export const HANDOFF_MAX_LINES = 40`.
+- `src/utils/handoff-prompt.test.ts` — 14 vitest tests covering:
+  null/undefined input, blank agent name, blank context,
+  basic single-line render, multi-line ordering, empty-line
+  drop + trailing-whitespace trim, CRLF→LF normalisation,
+  control-char stripping in name, line-cap takes the **tail**,
+  hard char-cap with `…(truncated)\n` marker preserving tail,
+  exact-cap no-truncate, non-string context guard,
+  snapshot-style stable format, and `nextAgentName` accepted
+  but never rendered.
+
+**Critical design choices.**
+
+- **Tail-keeping truncation.** Both line-cap and char-cap keep
+  the *most recent* turns and drop the older head — recency
+  bias, since a handoff briefing wants the freshest context.
+  Char-cap prefixes a `…(truncated)\n` marker so the LLM can
+  see the truncation happened.
+- **Guard-rail returns `''` rather than throwing.** Empty
+  agent name, empty context, non-string context, and
+  null/undefined input all silently render to `''`. The
+  consumer can safely concatenate the result into the system
+  prompt without a try/catch — same convention as
+  `buildPersonaBlock`.
+- **Control-character sanitisation.** Both the agent name and
+  the context body strip ASCII control chars (\\x00–\\x1F /
+  \\x7F, except \\n / \\t in the body) before rendering. The
+  recorded handoff context comes from a Pinia ref that could
+  contain arbitrary message content — paranoia is cheap here.
+- **`nextAgentName` accepted but unused.** The interface
+  preserves it for future symmetry (e.g. a `[HANDOFF FROM A
+  TO B]` variant) without forcing 23.2b to evolve the type.
+
+**Tests.** 14 unit tests, all passing.
+
+- Whole `npx vitest run`: **1319 passed** across 87 files (was
+  1305 before this chunk → +14).
+- Frontend test gate clean.
+
+**Files touched.**
+
+- `src/utils/handoff-prompt.ts` (new).
+- `src/utils/handoff-prompt.test.ts` (new).
+- `rules/milestones.md` — row 23.2 transformed into 23.2b
+  ("consumer wiring"), keeping only the deferred half visible.
+
+**Docs.** No brain-doc-sync impact — this chunk is in the
+agent-roster / conversation-store surface, not the brain. The
+Phase 23 acceptance gate text in `milestones.md` stays valid;
+once 23.2b lands, Agent B's first reply demonstrably acknowledges
+the `[HANDOFF FROM A]` block.
+
+---
+
+## Chunk 21.5/6/7 — Doc reality bundle
+
+**Date.** 2026-04-29
+
+**Goal.** Three Phase 21 doc-hygiene rows shipped as one bundle:
+21.5 (MCP tool name correction), 21.6 (AI-coding-integrations status
+re-check), 21.7 (persona-design.md renumber from legacy Phase 13 to
+canonical Phase 14).
+
+**What shipped.**
+
+- **21.5 — MCP tool name table fix.** `docs/brain-advanced-design.md`
+  §24.2 listed eight invented tool names (`brain_ask`, `brain_extract`,
+  `brain_list_memories`, `brain_stats`, plus a wrong `brain_ingest`).
+  Replaced with the real eight from `src-tauri/src/ai_integrations/mcp/tools.rs`:
+  `brain_search`, `brain_get_entry`, `brain_list_recent`,
+  `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`,
+  `brain_ingest_url`, `brain_health`. Added a "Source of truth" note
+  pointing at `tools.rs` so the next drift is catchable.
+- **21.6 — AI-coding-integrations.md re-check.** Verified the doc was
+  already updated by the 15.5 / 15.9 / 15.10 chunks earlier this
+  session: status banner says "Phase 15 mostly shipped"; table rows
+  15.6 / 15.9 already marked ✅; stdio transport already linked to
+  15.9. The audit row's complaint was stale — no edit required.
+  Closing the row.
+- **21.7 — persona-design.md §15 renumber.** Flipped legacy
+  "Phase 13.A/B + chunks 140–155" to canonical "Phase 14.A/B + chunks
+  14.1–14.15". Reflects the as-shipped reality from the Phase 14
+  completion-log entries (14.1, 14.3, 14.4, 14.5, 14.6, 14.7, 14.9–14.12
+  all ✅). Updated §15.1 main-chain table, §15.2 side-chain table,
+  the §10 cross-reference at line 1081, and the §16 "Sources" link to
+  `rules/milestones.md`. Added a banner at the top of §15 pointing
+  readers to `completion-log.md` for as-shipped status, since the
+  shipped chunks no longer have rows in `milestones.md`.
+
+**Why bundle.** All three are non-code doc edits, all three are
+mandated by the architecture-rules.md doc-sync rules (brain-doc-sync
+for 21.5, ai-integrations-doc-sync for 21.6, persona-doc-sync for
+21.7). Bundling means one commit, one log entry, one milestone-row
+removal — the per-row prose was disproportionate to the actual edit
+size.
+
+**Tests.** None — pure doc edits. Existing 1300-test gate stays green
+(no code touched).
+
+**Files touched.**
+
+- `docs/brain-advanced-design.md` — §24.2 tool table replaced.
+- `docs/persona-design.md` — §10 cross-ref + §15 fully renumbered + §16 source link.
+- `rules/milestones.md` — rows 21.5 / 21.6 / 21.7 removed; trailing prose updated.
+
+**Docs.** Self-contained — these *are* the doc updates.
+
+---
+
+## Chunk 16.3a — Late chunking pooling utility
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the pure pooling half of the Jina AI 2024 late-chunking
+technique as a fully-tested utility module — `mean_pool_token_embeddings`,
+`pool_chunks`, and `spans_from_token_counts` — so the follow-up
+ingest-pipeline integration (16.3b) becomes a thin glue layer rather
+than a parallel rewrite.
+
+**Why split into a/b.** Late chunking has two genuinely separable
+halves: (1) the **pooling math** — given per-token embeddings + chunk
+spans, mean-pool and L2-renormalise — which is pure, deterministic,
+and unit-testable without any LLM, network, or DB; and (2) the
+**ingest integration** — calling a long-context embedder that
+returns per-token vectors and threading the result into
+`run_ingest_task`, which depends on an Ollama model that exposes
+per-token embeddings (none currently in the catalogue) and on the
+`AppSettings.late_chunking` flag plumbing. Shipping (1) now locks
+the contract the integration will compose against; shipping (2) is
+deferred until a long-context embedder is pullable. Same a/b pattern
+used for 16.4 (Self-RAG) and 16.5 (CRAG) earlier this session.
+
+**What shipped.**
+
+- `src-tauri/src/memory/late_chunking.rs` (~380 LOC, 15 tests):
+  - `pub struct TokenSpan { start, end }` with `new`, `is_empty`, `len`.
+  - `pub fn mean_pool_token_embeddings(token_embeddings: &[Vec<f32>], span: TokenSpan) -> Option<Vec<f32>>` — averages tokens in `span`, L2-renormalises so the result is directly comparable via cosine similarity. Returns `None` on: empty span, out-of-range span, dimensionality drift mid-document, zero-norm result, zero-dim tokens.
+  - `pub fn pool_chunks(token_embeddings: &[Vec<f32>], spans: &[TokenSpan]) -> Vec<Option<Vec<f32>>>` — vectorised application aligned 1:1 with input spans so callers can zip with chunk metadata.
+  - `pub fn spans_from_token_counts(&[usize]) -> Vec<TokenSpan>` — convenience builder for contiguous gap-free span lists.
+- `src-tauri/src/memory/mod.rs` — `pub mod late_chunking;` registered alphabetically between `hyde` and `matryoshka`.
+
+**Critical design choices.**
+
+- **L2-renormalise, not just mean.** Raw mean of unit-norm token
+  vectors has magnitude that grows roughly with √(span.len), which
+  would bias cosine scores. Renormalising makes the pooled chunk
+  embedding numerically identical-shape to anything else in the
+  store.
+- **Refuse rather than degrade.** Dimensionality drift mid-document,
+  empty spans, and zero-norm means all return `None`. The ingest
+  pipeline can decide whether to skip the chunk or fail the job —
+  the utility doesn't silently pad/truncate.
+- **f64 accumulator, f32 output.** Pooling 8k-token windows of
+  768-dim vectors in f32 accumulates noticeable error; using f64
+  internally costs nothing measurable and keeps the result clean.
+- **Reuses the existing `Chunk` shape from `memory::chunking`.** No
+  parallel type — when 16.3b lands, it will pass the same
+  `Vec<Chunk>` around plus a parallel `Vec<TokenSpan>`.
+
+**Tests.** 15 unit tests, all passing:
+
+- `token_span_basics`, `pool_single_token_returns_normalized_input`,
+  `pool_averages_then_normalises`,
+  `pool_orthogonal_tokens_yields_45_degree_vector`,
+  `pool_rejects_empty_span`, `pool_rejects_out_of_range_span`,
+  `pool_rejects_dimension_mismatch`, `pool_rejects_zero_norm_mean`,
+  `pool_rejects_zero_dim_tokens`, `pool_chunks_aligns_with_spans`,
+  `spans_from_counts_round_trip`,
+  `spans_from_counts_handles_empty_counts`,
+  `spans_from_counts_empty_input_empty_output`,
+  `pooled_output_is_unit_norm`, `pool_partial_span`.
+- Whole `cargo test --lib`: **1300 passed**, 0 failed (was 1285 before this chunk → +15).
+- `cargo clippy --all-targets -- -D warnings`: clean.
+
+**Files touched.**
+
+- `src-tauri/src/memory/late_chunking.rs` (new).
+- `src-tauri/src/memory/mod.rs` (module registration).
+- `docs/brain-advanced-design.md` — Phase 6 ASCII diagram flips
+  `○ Late chunking` to `◐ Late chunking — pooling utility shipped (16.3a); 16.3b wires long-context embedder`; §19.2 row 9 status flips from 🔵 to 🟡 with file refs to `mean_pool_token_embeddings`, `pool_chunks`, `spans_from_token_counts`.
+- `README.md` — Brain System list gains Late chunking pooling utility paragraph.
+- `rules/milestones.md` — row 16.3 transformed into 16.3b
+  ("ingest-integration"), keeping only the deferred half visible.
+
+**Docs.** Brain Documentation Sync rule honoured —
+`docs/brain-advanced-design.md` and `README.md` updated in the same
+commit as the code.
+
+---
+
+## Chunk 16.5a — CRAG retrieval evaluator
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the *evaluator half* of Corrective RAG (Yan et al.,
+2024): a pure classifier that, given a `(query, document)` pair,
+decides whether the document is `CORRECT` / `AMBIGUOUS` /
+`INCORRECT` for that query — plus a corpus-level aggregator that
+collapses per-document verdicts into a single retrieval-quality
+classification the orchestrator can branch on.
+
+**Why split into a/b** (mirrors 16.4 split). The original Chunk 16.5
+spec was "evaluator + rewrite + web-search fallback". The evaluator
+is the load-bearing piece — without it, the rewriter and web search
+are firing blindly. By landing the evaluator standalone:
+
+- **16.5a (this chunk)** — pure prompt builder + reply parser +
+  aggregator. 100 % synchronous, 100 % testable without an LLM,
+  tokio runtime, or DB. Independently useful: callers can use
+  `RetrievalQuality::Incorrect` today as a confidence check before
+  injecting low-quality memories into the system prompt.
+- **16.5b (next-chunk row)** — wire the evaluator into a Tauri
+  command, add an LLM-driven query rewriter (mirrors HyDE), and
+  hook the web-search fallback (gated on the `code.read` / web-fetch
+  capability surface). The web-search piece depends on the crawl
+  pipeline.
+
+**What shipped (16.5a).**
+
+- `src-tauri/src/memory/crag.rs` (NEW, ~280 LOC):
+  - `pub enum DocumentVerdict { Correct, Ambiguous, Incorrect }` —
+    per-document classification.
+  - `pub enum RetrievalQuality { Correct, Ambiguous, Incorrect }` —
+    corpus-level aggregate. Used by orchestrator branching.
+  - `pub fn build_evaluator_prompts(query, document) -> (String, String)`
+    — mirrors `memory::reranker::build_rerank_prompts` shape (system
+    + user) so the LLM-call pipeline is identical.
+  - `pub fn parse_verdict(reply) -> Option<DocumentVerdict>` —
+    case-insensitive, robust to chat-noise prefixes (`"Verdict:
+    CORRECT"`), uses **whole-word** token matching to distinguish
+    `CORRECT` from `INCORRECT` and reject substring-of-word
+    matches like `"incorrectly"`.
+  - `pub fn aggregate(&[DocumentVerdict]) -> RetrievalQuality` —
+    canonical CRAG decision rule: any `Correct` → `Correct`; else
+    any `Ambiguous` → `Ambiguous`; else `Incorrect` (including the
+    empty-corpus case).
+- `src-tauri/src/memory/mod.rs`: registered `pub mod crag;`.
+
+**Decision rule (canonical CRAG aggregation).**
+
+| Verdicts | Aggregate |
+|---|---|
+| at least one `Correct` | `Correct` (use as-is) |
+| no `Correct`, ≥ 1 `Ambiguous` | `Ambiguous` (rewrite + retry) |
+| all `Incorrect`, or empty | `Incorrect` (drop, seek alternatives) |
+
+**Token-boundary check.** Critical edge case: `INCORRECT` contains
+`CORRECT` as a substring. The parser's `find_token` helper rejects
+matches that aren't bounded by string-end or non-alphanumeric
+characters, so `"incorrectly phrased"` doesn't false-match
+`INCORRECT`, and `"INCORRECT"` is correctly classified rather than
+landing as `CORRECT`.
+
+**Tests.** 1285 Rust tests pass (was 1271); `cargo clippy --all-targets
+-- -D warnings` clean. 14 new unit tests covering: prompt-format
+sanity, clean verdicts in all three states, case-insensitivity, chat-
+noise tolerance ("Verdict: CORRECT"), earliest-keyword-wins on
+multi-keyword replies, substring-of-word rejection (`"incorrectly"`,
+`"correctness"`), empty/unrelated-reply handling, punctuation-
+bounded tokens (`"(CORRECT)"`, `"CORRECT."`), CORRECT-vs-INCORRECT
+disambiguation, and every aggregation branch (empty, any-correct,
+ambiguous-only, all-incorrect, all-ambiguous).
+
+**Files touched.**
+- NEW: `src-tauri/src/memory/crag.rs` (~280 LOC, 14 tests).
+- MODIFIED: `src-tauri/src/memory/mod.rs`.
+
+**Docs.** §16 Phase 6 of `docs/brain-advanced-design.md` and §19.2
+row 6 ("Corrective RAG / CRAG") to be flipped from 🔵 to 🟡
+(evaluator only, rewriter + web-search pending) in the doc-tick pass.
+
+---
+
+## Chunk 16.4a — Self-RAG reflection-token controller
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the *pure decision logic* half of Self-RAG (Asai et
+al., 2023): a parser for the four reflection tokens
+(`<Retrieve>` / `<Relevant>` / `<Supported>` / `<Useful>`), and a
+state-machine controller that decides — given each LLM response —
+whether to retrieve again, accept the answer, or refuse. Capped at
+3 iterations per the milestone spec.
+
+**Why split into a/b.** The original Chunk 16.4 was scoped as
+"orchestrator loop with reflection tokens". The honest cleavage is:
+
+- **16.4a (this chunk)** — pure controller, 100 % synchronous, 100 %
+  testable without an LLM, tokio runtime, or DB. Independently
+  useful: any future integration site can plug it in.
+- **16.4b (next-chunk row)** — wire the controller into a Tauri
+  streaming command that calls `OllamaAgent::respond_contextual` +
+  `hybrid_search_rrf` in a loop. Depends on a streaming-pipeline
+  decision (does each iteration re-emit `llm-chunk` events? does the
+  frontend see intermediate failed attempts?) that's worth its own
+  design pass.
+
+**What shipped (16.4a).**
+
+- `src-tauri/src/orchestrator/self_rag.rs` (NEW, ~440 LOC):
+  - `pub enum RetrieveToken { Yes, No, Continue }`
+  - `pub enum RelevantToken { Relevant, Irrelevant }`
+  - `pub enum SupportedToken { Fully, Partially, No }`
+  - `pub struct Reflection { retrieve, relevant, supported, useful }`
+    with `is_complete()` for caller telemetry.
+  - `pub fn parse_reflection(response) -> Reflection` — case-
+    insensitive on tag names AND values; first-occurrence-wins on
+    duplicates; out-of-range `<Useful>` (must be 1..=5) silently
+    rejected; missing tokens yield `None` so a chatty model can't
+    crash the controller.
+  - `pub fn strip_reflection_tokens(response) -> String` — for
+    user-visible rendering; collapses runs of blank lines created
+    by stripping; tolerates malformed (no-close-tag) inputs.
+  - `pub struct SelfRagController` with
+    `new()` / `with_max_iterations(max)` (clamped 1..=10) /
+    `iteration() -> u8` / `next_step(response) -> Decision`.
+  - `pub enum Decision { Retrieve, Accept { answer }, Reject { reason } }`
+    where `RejectReason::{ MaxIterationsExceeded, Unsupported }`.
+  - `pub const SELF_RAG_SYSTEM_PROMPT: &str` — addendum that
+    instructs an LLM to emit reflection tokens in our exact format.
+  - `pub const DEFAULT_MAX_ITERATIONS: u8 = 3` and
+    `pub const MIN_ACCEPTABLE_USEFULNESS: u8 = 3`.
+- `src-tauri/src/orchestrator/mod.rs`: registered `pub mod self_rag;`.
+
+**Decision rules** (table — implemented in `next_step`):
+
+| Iteration cap reached? | `<Supported>` | `<Useful>` | `<Retrieve>` | Verdict |
+|---|---|---|---|---|
+| Yes | `NO` | * | * | Reject (Unsupported) |
+| Yes | `FULLY` / `PARTIALLY` | * | * | Accept |
+| Yes | missing | * | * | Reject (MaxIterationsExceeded) |
+| No | * | * | `YES` / `CONTINUE` | Retrieve |
+| No | `FULLY` | * | `NO` | Accept |
+| No | `PARTIALLY` | ≥ 3 | `NO` | Accept |
+| No | `PARTIALLY` | < 3 | `NO` | Retrieve |
+| No | `NO` | * | `NO` | Retrieve |
+| No | * | * | missing | Accept iff `FULLY`, else Retrieve |
+
+**Why a fresh parser instead of reusing `StreamTagParser`.** The
+existing parser at `src-tauri/src/commands/streaming.rs:45` is
+hard-coded to `<anim>{"…"}</anim>` JSON-payload blocks streamed
+mid-text, with state for partial-prefix holdback across chunk
+boundaries. Self-RAG reflection tokens are emitted *at the end* of a
+complete response, not streamed mid-generation, and contain plain
+enum values rather than JSON. A simpler whole-string parser fits
+better and avoids contaminating either surface with the other's
+concerns. Documented in the module-level comment.
+
+**Tests.** 1271 Rust tests pass (was 1251); `cargo clippy --all-targets
+-- -D warnings` clean. 20 new unit tests covering: complete and
+partial reflections, case-insensitivity, missing tokens, garbage
+values, range checks on `<Useful>`, stripping (with malformed-input
+tolerance), every branch of the decision table (accept/retrieve/reject
+at and below cap), iteration counter advancement, max-iterations
+clamping, and a sanity check that the system-prompt addendum
+mentions all four tag families.
+
+**Files touched.**
+- NEW: `src-tauri/src/orchestrator/self_rag.rs` (~440 LOC, 20 tests).
+- MODIFIED: `src-tauri/src/orchestrator/mod.rs`.
+
+**Docs.** §16 Phase 6 of `docs/brain-advanced-design.md` and §19.2
+row 5 ("Self-RAG") to be flipped from 🔵 to 🟡 (controller only,
+loop pending) in the doc-tick pass.
+
+---
+
+## Chunk 16.8 — Matryoshka embeddings (two-stage vector search)
+
+**Date.** 2026-04-29
+
+**Goal.** Implement Matryoshka Representation Learning (Kusupati et
+al., NeurIPS 2022) on the brute-force vector-search path. Truncate
+the query embedding to 256 dims for a fast first-pass scan, then
+re-rank only the top survivors with the full 768-dim embedding.
+Cuts brute-force per-candidate cost ~3× with negligible recall hit
+on the top-K — meaningful on cold-start (when the ANN index isn't
+populated), on dimension-mismatch fallbacks (after model swap), and
+on smaller corpora where the ANN overhead doesn't pay off.
+
+**Why now.** The ANN index (Chunk 16.10) is optional and rebuilds
+lazily; until it's hot, every query falls through to the O(n)
+brute-force scan. Matryoshka makes that fallback path much cheaper
+without touching the schema or the embedding model.
+
+**What shipped.**
+
+- `src-tauri/src/memory/matryoshka.rs` (NEW, ~330 LOC):
+  - `pub fn truncate_and_normalize(emb, target_dim) -> Option<Vec<f32>>` —
+    pure utility. Slices the first `target_dim` components and L2-
+    renormalises so cosine similarity stays meaningful. Rejects
+    `target_dim == 0`, `target_dim > emb.len()`, empty input, and
+    zero-norm degenerate cases.
+  - `pub fn two_stage_search(query, candidates, fast_dim, fast_top_k,
+    final_top_k) -> Vec<ScoredId>` — pure function over a slice of
+    `(id, full_embedding)` pairs. Stage 1: dot-product against
+    truncated+renormalised query. Stage 2: full-dim cosine re-rank
+    of survivors. Mismatched-dim candidates skipped up-front.
+  - `pub const DEFAULT_FAST_DIM: usize = 256` — picked for
+    `nomic-embed-text` per the model card.
+  - 12 unit tests covering truncation invariants, unit-norm output,
+    full-dim winner bubbling up despite a misleading truncated
+    score, dim-mismatch filtering, empty-input handling, fallback
+    when query truncation fails (`fast_dim > emb.len()`), agreement
+    with `memory::store::cosine_similarity` for re-rank scoring,
+    and degenerate `fast_top_k <= final_top_k`.
+- `src-tauri/src/commands/memory.rs`: new `matryoshka_search_memories`
+  Tauri command. Embeds the query via the same path as the other
+  search commands (`embed()` helper), pulls all entries with
+  embeddings, and runs `two_stage_search`. Returns `Vec<MemoryEntry>`
+  in full-dim cosine order — drop-in compatible with
+  `hybrid_search_memories_rrf` / `hyde_search_memories` callers.
+- `src-tauri/src/memory/mod.rs`: registered `pub mod matryoshka;`.
+- `src-tauri/src/lib.rs`: registered the new command.
+
+**Why this module is pure.** Storage stays at full-dim — we never
+persist truncated vectors. Truncation happens at query time only;
+the cost is one slice + one L2 renormalise. No schema change, no
+migration, no index rebuild. Feature can be turned on/off per-query.
+
+**Not done.** The hybrid 6-signal pipeline still uses full-dim
+vectors throughout. Wiring Matryoshka into `hybrid_search_rrf` /
+`hybrid_search_with_threshold` is a future optimisation chunk —
+the current change adds a new entry point so callers can opt in
+explicitly via `matryoshka_search_memories`. ANN-index integration
+(per-leaf truncated codes) is also future work.
+
+**Tests.** 1251 Rust tests pass (was 1239); `cargo clippy --all-targets
+-- -D warnings` clean.
+
+**Files touched.**
+- NEW: `src-tauri/src/memory/matryoshka.rs` (~330 LOC, 12 tests).
+- MODIFIED: `src-tauri/src/memory/mod.rs`,
+  `src-tauri/src/commands/memory.rs`,
+  `src-tauri/src/lib.rs`.
+
+**Docs.** §16 Phase 6 of `docs/brain-advanced-design.md` and §19.2
+row 11 ("Matryoshka Representation Learning") to be flipped from 🔵
+to ✅ in the doc-tick pass.
+
+---
+
+## Chunk 15.5 — Voice / chat intents (AI integrations)
+
+**Date.** 2026-04-29
+
+**Goal.** Recognise short, deterministic voice/chat phrases that drive
+the AI-integrations control plane (start/stop/status the MCP server,
+open VS Code, run the auto-setup writers for Copilot / Claude Desktop /
+Codex) without involving the LLM intent classifier. The phrases are
+high-stakes (they spawn processes and rewrite editor configs), so a
+phrase-based matcher is faster, free, deterministic, and trivially
+auditable — falling through to normal chat on anything it doesn't
+recognise.
+
+**What shipped.**
+
+- `src-tauri/src/routing/ai_integrations.rs` (NEW, ~370 LOC):
+  - `pub enum AiIntegrationIntent` with variants `McpStart`, `McpStop`,
+    `McpStatus`, `VscodeOpenProject { target: Option<String> }`,
+    `VscodeListKnown`, `AutosetupCopilot { transport }`,
+    `AutosetupClaude { transport }`, `AutosetupCodex { transport }`.
+  - `pub enum McpTransport { Http, Stdio }` — defaults to **stdio**
+    (canonical since Chunk 15.9), bumps to HTTP when the utterance
+    explicitly says "via http" / "over http" / "http transport".
+  - `pub fn match_intent(text: &str) -> Option<AiIntegrationIntent>` —
+    pure phrase matcher. Case-insensitive, punctuation-tolerant,
+    whitespace-collapsing. Specific patterns tested before generic ones.
+  - VS Code path extraction: handles "open `<path>` in vs code" /
+    "open `<path>` in vscode". `looks_like_path()` rejects gibberish
+    like "the door" by requiring `/`, `\`, `~/` or a Windows drive
+    letter.
+  - 19 unit tests covering MCP control, VS Code surfacing, autosetup
+    writers, transport detection, punctuation tolerance, JSON tagging,
+    and negative fall-through cases.
+- `src-tauri/src/routing/mod.rs`: re-exports `match_intent`,
+  `AiIntegrationIntent`, `McpTransport`.
+- `src-tauri/src/commands/routing.rs`: new `match_ai_integration_intent`
+  Tauri command — pure phrase matcher, no state needed, returns
+  `Result<Option<AiIntegrationIntent>, String>`. Frontend pattern: call
+  on every chat turn *before* the LLM; on `Some(intent)` route to the
+  matching Tauri command (`mcp_server_start`, `setup_vscode_mcp_stdio`,
+  `vscode_open_project`, etc.); on `None` proceed with normal chat.
+- `src-tauri/src/lib.rs`: registered the new command in the
+  `invoke_handler` block.
+
+**Tests.** 1239 Rust tests pass (was 1220); `cargo clippy --all-targets
+-- -D warnings` clean.
+
+**Why phrase-based, not LLM.** The existing `intent_classifier` (chat
+vs. teach vs. learn) is a separate concern; piggy-backing the AI-
+integrations control intents onto it would (a) add latency to every
+chat turn for high-stakes branches, (b) introduce a non-zero false-
+positive rate on commands that spawn processes, and (c) make these
+phrases harder to audit. The phrase matcher is O(n) over a small
+constant table and runs in ~microseconds.
+
+**ai-bridge skill gate.** The skill-tree quest activation lives in
+the frontend (`src/stores/skill-tree.ts`). The Rust matcher is
+gate-agnostic — it always returns matches; the frontend decides whether
+to dispatch the matched intent based on whether the relevant
+integration is configured. Skill activation happens organically when
+the user runs an autosetup command for the first time.
+
+**Files touched.**
+- NEW: `src-tauri/src/routing/ai_integrations.rs` (~370 LOC).
+- MODIFIED: `src-tauri/src/routing/mod.rs`,
+  `src-tauri/src/commands/routing.rs`, `src-tauri/src/lib.rs`.
+
+---
+
+## Chunk 15.10 — VS Code workspace surfacing
+
+**Date.** 2026-04-29
+
+**Goal.** Resolve "open this project in VS Code" intelligently: focus an
+existing window if one (or any ancestor of `target_path`) is already open,
+else launch a new `code <target>` window. Foundation for the Copilot
+autonomous loop so next-chunk prompts always land in the right editor
+window — and the Control Panel's "📂 Open project in VS Code" button
+(Chunk 15.4).
+
+**Architecture.**
+
+```
+src-tauri/src/vscode_workspace/
+├── mod.rs       — public API: open_project, list_known_windows, forget_window
+├── path_norm.rs — canonicalise + case-fold (Windows/macOS) for prefix match
+├── registry.rs  — SelfLaunchedRegistry, JSON-on-disk, PID-validated
+├── resolver.rs  — pure pick_window(target, &[VsCodeWindow]) -> WindowChoice
+└── launcher.rs  — cross-platform `code <path>` spawn, detached child
+
+src-tauri/src/commands/vscode.rs
+├── vscode_open_project(target_path) -> OpenOutcome
+├── vscode_list_known_windows() -> Vec<VsCodeWindow>
+└── vscode_forget_window(pid)
+```
+
+**Resolver algorithm** (per the milestones spec, fully unit-testable
+with injected `pid_alive`):
+
+1. For each registered window, classify against canonicalised target:
+   `Exact` if equal, `Ancestor { depth }` if `target_inside_root`.
+2. Drop dead PIDs via `sysinfo::System::refresh_processes_specifics`.
+3. `Exact` always beats `Ancestor`; ties broken by most-recent launch.
+4. Among `Ancestor` candidates, pick the deepest root (most components,
+   "most-children-near-target"); ties broken by most-recent launch.
+5. Otherwise return `WindowChoice::None` → caller spawns fresh window.
+
+`open_project` re-launches `code <window.root>` for reuse (not
+`code <subpath>`, which would create a new window) — the existing
+window already contains the subpath so the user navigates inside VS Code.
+
+**Cross-platform path matching.** `path_norm::canonicalise` resolves
+`..` and symlinks via `std::fs::canonicalize`, then strips the
+`\\?\` verbatim prefix on Windows. Comparison helpers
+(`paths_equal`, `target_inside_root`, `depth_below`) lowercase paths
+on Windows and macOS to match filesystem case-insensitivity, while
+preserving case-sensitive semantics on Linux.
+
+**Registry persistence.** `<data_dir>/vscode-windows.json`, atomic
+write via temp-file + rename. Format version 1; corrupt files or
+version mismatches yield an empty registry (worst case: TerranSoul
+forgets some windows and launches fresh ones — harmless).
+Liveness-pruned on every read; PIDs reset on OS reboot so stale
+entries never linger.
+
+**Launcher.** `Command::new("code")` (Linux/macOS) or `code.cmd`
+(Windows, resolved via `PATHEXT`). Child stdio is `null`-redirected;
+the spawned process is `mem::forget`-ed so we never wait on it,
+giving fire-and-forget detached semantics without needing
+`pre_exec` / `setsid`. `NotFound` errors translate to a friendly
+"Run Cmd+Shift+P → 'Shell Command: Install code in PATH'" message.
+
+**Out of scope (documented in milestones design notes).**
+
+- Multi-root `.code-workspace` files — registry stores them as opaque.
+- Discovery of manually-opened VS Code windows — v1 only knows about
+  windows it launched itself. Folded into a future
+  `WorkspaceStorageScanner` follow-up.
+- Insiders / VSCodium / Cursor — `CODE_BIN` is a single constant for v1.
+- Remote / WSL workspaces (`vscode-remote://...`) — never reused.
+- Highlighting a sub-path inside a focused ancestor.
+
+**Files created.**
+
+- `src-tauri/src/vscode_workspace/mod.rs` (~210 LOC)
+- `src-tauri/src/vscode_workspace/path_norm.rs` (~130 LOC)
+- `src-tauri/src/vscode_workspace/registry.rs` (~250 LOC)
+- `src-tauri/src/vscode_workspace/resolver.rs` (~250 LOC)
+- `src-tauri/src/vscode_workspace/launcher.rs` (~130 LOC)
+- `src-tauri/src/commands/vscode.rs` (~60 LOC)
+
+**Files modified.**
+
+- `src-tauri/src/lib.rs` — declared `pub mod vscode_workspace`,
+  imported and registered the 3 new Tauri commands.
+- `src-tauri/src/commands/mod.rs` — declared `pub mod vscode`.
+
+**Test counts.** 37 new unit tests across the 6 module files:
+- `path_norm` — 7 tests (equality, case folding, ancestor matching,
+  depth, specificity; Windows-only tests gated with `#[cfg(windows)]`).
+- `registry` — 10 tests (load/save round-trip, append, forget,
+  prune, corrupt-file recovery, version-mismatch recovery, atomic
+  parent-dir creation, real-PID liveness checks).
+- `resolver` — 11 tests (empty, exact-wins, ancestor depth,
+  deepest-ancestor-wins, three-window chain, dead-pid filter,
+  dead-exact-falls-through, unrelated target, duplicate-exact
+  most-recent, tie-breaking, exact-beats-ancestor).
+- `launcher` — 2 tests (Unix-only PATH-hijack failure path; cross-platform
+  error-message readability).
+- `mod` — 5 tests (missing-target rejection, empty `list_known_windows`,
+  `forget_window` no-op + remove, `now_ms` sanity).
+
+All 1183 existing Rust tests still green; clippy `-D warnings` clean.
+
+**Acceptance scenarios** (from the milestones spec; first three
+verified by unit tests, real `code` exec covered by future
+`TERRANSOUL_VSCODE_INTEGRATION=1` integration tests):
+
+- Empty registry → `vscode_open_project` launches new window.
+- Same target called twice → second call focuses the registered window.
+- Three windows at `D:\`, `D:\Git\`, `D:\Git\TerranSoul\`; target
+  `D:\Git\TerranSoul\src` → focuses `D:\Git\TerranSoul\` (deepest
+  ancestor wins).
+- Killed window's PID is no longer alive → resolver falls through to
+  launch-new and rewrites the registry.
+- Missing target path → clear `TargetMissing` error without touching
+  the registry.
+
+**Notes.**
+
+- Concurrent `vscode_open_project` calls are serialised by the caller —
+  Tauri's `spawn_blocking` keeps each invocation on its own thread,
+  but the registry file is rewritten atomically so the worst case is
+  the last writer wins (one extra entry that gets pruned on next
+  load if its PID is dead).
+- Voice / chat intents (`vscode.open_project`, `vscode.list_known`)
+  and the Control Panel's status pill are folded into Chunks 15.5 and
+  15.4 respectively; this chunk ships only the Tauri-level surface.
+
+---
+
+## Chunk 15.9 — MCP stdio transport shim
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the canonical MCP transport (newline-delimited JSON-RPC over
+stdin/stdout) alongside the existing loopback HTTP transport, so editors that
+prefer stdio (Claude Desktop, the VS Code MCP extension, Codex CLI defaults)
+can connect to TerranSoul's brain without a TCP listener. Single binary
+entry point — no separate companion exe — guarded by a CLI flag so a normal
+launch still spawns the GUI.
+
+**Architecture.**
+
+- New module `src-tauri/src/ai_integrations/mcp/stdio.rs` —
+  `run_loop<R, W>` reads NDJSON requests from any `AsyncRead`, dispatches via
+  the shared `router::dispatch_method`, writes NDJSON responses to any
+  `AsyncWrite`. Exits cleanly on EOF; parse errors emit a JSON-RPC `-32700`
+  reply but keep the loop alive. Notifications (no `id`) produce no output
+  per JSON-RPC 2.0.
+- `router.rs` refactored to expose `pub(crate) dispatch_method(gw, caps,
+  method, params, id) -> JsonRpcResponse` so the HTTP and stdio handlers
+  share one source of truth for the `initialize` / `tools/list` /
+  `tools/call` / `ping` surface. The HTTP handler keeps bearer-token auth;
+  stdio runs in a trusted parent–child relationship and skips auth (matches
+  canonical MCP behaviour — Claude Desktop, the VS Code MCP extension, etc.
+  never pass tokens to stdio servers).
+- `lib.rs` gains `pub fn run_stdio() -> std::io::Result<()>` plus a
+  private `resolve_data_dir_for_cli()` that mirrors the GUI's
+  `app_data_dir / dev` split using the `dirs` crate (no Tauri `AppHandle`
+  required) but **never** wipes the dev directory.
+- `main.rs` checks `std::env::args` for `--mcp-stdio` *before* calling
+  `terransoul_lib::run()`. When present, runs the stdio shim and exits;
+  otherwise launches the GUI as normal.
+- `auto_setup.rs` gains stdio entry builders + writers
+  (`write_vscode_stdio_config`, `write_claude_stdio_config`,
+  `write_codex_stdio_config`) sharing a private `upsert_entry` helper
+  with the existing HTTP writers. Switching transport overwrites the
+  previous entry cleanly — no stale `url` / `headers` fields leak through.
+- `commands/auto_setup.rs` adds three new Tauri commands
+  (`setup_vscode_mcp_stdio`, `setup_claude_mcp_stdio`,
+  `setup_codex_mcp_stdio`) tracked under separate `mcp_*_stdio` quest keys.
+
+**Test counts.** 9 stdio loop tests + 5 stdio auto-setup tests = 14 new.
+All 1115+ existing Rust tests green; clippy clean.
+
+**Notes / out-of-scope.**
+
+- Windows release builds use `windows_subsystem = "windows"`; editors that
+  spawn TerranSoul with explicit `STARTUPINFO::hStd*` redirection (every
+  cited MCP client) inherit working pipes, so this does not break stdio.
+- No bearer-token validation on stdio — canonical MCP behaviour.
+- Frontend Control Panel transport picker writing the stdio config via the
+  new commands lives in Chunk 15.4.
+
+---
+
+## Multi-Agent Resilience — Per-agent threads, workflow resilience, agent swap context
+
+**Date.** 2026-04-29
+
+**Goal.** Ship the canonical MCP transport (newline-delimited JSON-RPC over
+stdin/stdout) alongside the existing loopback HTTP transport, so editors that
+prefer stdio (Claude Desktop, the VS Code MCP extension, Codex CLI defaults)
+can connect to TerranSoul's brain without a TCP listener. Single binary
+entry point — no separate companion exe — guarded by a CLI flag so a normal
+launch still spawns the GUI.
+
+**Architecture.**
+
+- New module `src-tauri/src/ai_integrations/mcp/stdio.rs` —
+  `run_loop<R, W>` reads NDJSON requests from any `AsyncRead`, dispatches via
+  the shared `router::dispatch_method`, writes NDJSON responses to any
+  `AsyncWrite`. Exits cleanly on EOF; parse errors emit a JSON-RPC `-32700`
+  reply but keep the loop alive. Notifications (no `id`) produce no output
+  per JSON-RPC 2.0.
+- `router.rs` refactored to expose `pub(crate) dispatch_method(gw, caps,
+  method, params, id) -> JsonRpcResponse` so the HTTP and stdio handlers
+  share one source of truth for the `initialize` / `tools/list` /
+  `tools/call` / `ping` surface. The HTTP handler keeps bearer-token auth;
+  stdio runs in a trusted parent–child relationship and skips auth (matches
+  canonical MCP behaviour — Claude Desktop, the VS Code MCP extension, etc.
+  never pass tokens to stdio servers).
+- `lib.rs` gains `pub fn run_stdio() -> std::io::Result<()>` plus a
+  private `resolve_data_dir_for_cli()` that mirrors the GUI's
+  `app_data_dir / dev` split using the `dirs` crate (no Tauri `AppHandle`
+  required) but **never** wipes the dev directory — the stdio shim must
+  not destroy data the GUI relies on. Spins up its own multi-threaded
+  Tokio runtime and calls `stdio::run_with_state(AppState::new(&dir))`.
+- `main.rs` checks `std::env::args` for `--mcp-stdio` *before* calling
+  `terransoul_lib::run()`. When present, runs the stdio shim and exits;
+  otherwise launches the GUI as normal.
+- `auto_setup.rs` gains stdio entry builders (`build_vscode_stdio_entry`,
+  `build_claude_stdio_entry`, `build_codex_stdio_entry`) that produce
+  `{ "command": "<exe>", "args": ["--mcp-stdio"] }` shapes (with the VS Code
+  variant additionally tagging `"type": "stdio"`). New writers
+  (`write_vscode_stdio_config`, `write_claude_stdio_config`,
+  `write_codex_stdio_config`) share a private `upsert_entry` helper with
+  the existing HTTP writers. Switching transport overwrites the previous
+  entry cleanly — no stale `url` / `headers` fields leak through.
+- `commands/auto_setup.rs` adds three new Tauri commands
+  (`setup_vscode_mcp_stdio`, `setup_claude_mcp_stdio`,
+  `setup_codex_mcp_stdio`) that resolve the running executable via
+  `std::env::current_exe()`, write the stdio config, and track the
+  setting under separate `mcp_*_stdio` quest keys so the Control Panel
+  (Chunk 15.4) can show *which* transport is wired up per client.
+  Registered in `lib.rs` alongside the existing HTTP commands.
+
+**Files created.**
+
+- `src-tauri/src/ai_integrations/mcp/stdio.rs` (~330 LOC including 9 unit
+  tests).
+
+**Files modified.**
+
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — declared `pub mod stdio`,
+  refreshed module docstring (stdio is no longer "planned").
+- `src-tauri/src/ai_integrations/mcp/router.rs` — extracted shared
+  `dispatch_method` (router types now `pub(crate)`), `handle_request` now
+  delegates.
+- `src-tauri/src/ai_integrations/mcp/auto_setup.rs` — added 3 stdio
+  builders, 3 stdio writers, shared `upsert_entry` helper, 5 new tests.
+- `src-tauri/src/commands/auto_setup.rs` — 3 new `setup_*_mcp_stdio`
+  Tauri commands + `current_exe_path` helper + `track_auto_configured`
+  helper.
+- `src-tauri/src/lib.rs` — exported the new commands, added
+  `resolve_data_dir_for_cli` + `run_stdio()`.
+- `src-tauri/src/main.rs` — `--mcp-stdio` CLI flag detection.
+- `docs/AI-coding-integrations.md` — replaced the "stdio planned in
+  Chunk 15.6" note with the as-built two-transport layout, refreshed the
+  Auto-setup section, and added the 15.9 row to the roadmap table.
+
+**Test counts.**
+
+- 9 new stdio loop tests in `stdio.rs::tests` (initialize, tools/list,
+  ping, notification-no-output, unknown-method, parse-error-keeps-loop,
+  empty-input-clean-exit, multi-request ordering, real `tokio::io::duplex`
+  pipe smoke test).
+- 5 new stdio auto-setup tests (3 entry-builder shape tests, 1 fresh-config
+  writer, 1 transport-switch overwrite test).
+- All 1115+ existing Rust tests still green; clippy `-D warnings` clean.
+
+**Notes / out-of-scope.**
+
+- On Windows the binary is built with `windows_subsystem = "windows"` in
+  release, which suppresses console allocation. Editors that spawn TerranSoul
+  via `CreateProcessW` with explicit `STARTUPINFO::hStd*` redirection (the
+  way every cited MCP client does it) inherit working pipes, so this does
+  not break stdio. A separate `console`-subsystem variant is **not** needed
+  for v1; can be revisited if a real client breaks.
+- No bearer-token validation on stdio (canonical MCP behaviour). The HTTP
+  transport keeps the existing token check.
+- Frontend Control Panel transport picker (writing the stdio config via the
+  new commands) lives in Chunk 15.4 and is still planned.
 
 ---
 

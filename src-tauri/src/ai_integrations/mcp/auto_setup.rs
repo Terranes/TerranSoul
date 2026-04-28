@@ -111,7 +111,57 @@ pub fn build_codex_entry(url: &str, token: &str) -> Value {
     })
 }
 
+// ─── Stdio entry builders (Chunk 15.9) ──────────────────────────────
+
+/// Build a VS Code MCP entry for the **stdio** transport.
+///
+/// VS Code stdio format:
+/// ```json
+/// { "servers": { "terransoul-brain": { "type": "stdio", "command": "...", "args": [...] } } }
+/// ```
+pub fn build_vscode_stdio_entry(exe_path: &str) -> Value {
+    json!({
+        "type": "stdio",
+        "command": exe_path,
+        "args": ["--mcp-stdio"]
+    })
+}
+
+/// Build a Claude Desktop MCP entry for the **stdio** transport.
+pub fn build_claude_stdio_entry(exe_path: &str) -> Value {
+    json!({
+        "command": exe_path,
+        "args": ["--mcp-stdio"]
+    })
+}
+
+/// Build a Codex CLI MCP entry for the **stdio** transport.
+pub fn build_codex_stdio_entry(exe_path: &str) -> Value {
+    json!({
+        "command": exe_path,
+        "args": ["--mcp-stdio"]
+    })
+}
+
 // ─── Writers ────────────────────────────────────────────────────────
+
+/// Upsert `entry` under `parent_key` → [`entry_name()`] inside the
+/// JSON object at `path`, creating the file (and `parent_key`) if
+/// missing. Used by every writer below to share the same upsert /
+/// atomic-write logic across HTTP and stdio transports.
+fn upsert_entry(path: &Path, parent_key: &str, entry: Value) -> Result<(), String> {
+    let mut config = read_json_or_empty(path)?;
+
+    if config.get(parent_key).is_none() {
+        config
+            .as_object_mut()
+            .ok_or("config is not a JSON object")?
+            .insert(parent_key.to_string(), json!({}));
+    }
+
+    config[parent_key][entry_name()] = entry;
+    atomic_write_json(path, &config)
+}
 
 /// Write the VS Code `.vscode/mcp.json` file.
 ///
@@ -122,30 +172,32 @@ pub fn write_vscode_config(
     token: &str,
 ) -> Result<SetupResult, String> {
     let path = vscode_mcp_path(workspace_root);
-    let entry = build_vscode_entry(url, token);
-
-    let mut config = read_json_or_empty(&path)?;
-
-    // Ensure "servers" object exists
-    if config.get("servers").is_none() {
-        config
-            .as_object_mut()
-            .ok_or("config is not a JSON object")?
-            .insert("servers".to_string(), json!({}));
-    }
-
-    // Upsert the terransoul-brain entry
-    config["servers"][entry_name()] = entry;
-
-    atomic_write_json(&path, &config)?;
-
+    upsert_entry(&path, "servers", build_vscode_entry(url, token))?;
     Ok(SetupResult {
         success: true,
         config_path: path.display().to_string(),
-        message: 
+        message:
             "VS Code MCP config written. Restart VS Code to activate. \
-             Test with: @workspace use terransoul-brain to search memories".to_string()
-        ,
+             Test with: @workspace use terransoul-brain to search memories"
+                .to_string(),
+    })
+}
+
+/// Write the VS Code `.vscode/mcp.json` file using the **stdio**
+/// transport (Chunk 15.9). `exe_path` is the absolute path to the
+/// `terransoul` executable that will be spawned with `--mcp-stdio`.
+pub fn write_vscode_stdio_config(
+    workspace_root: &Path,
+    exe_path: &str,
+) -> Result<SetupResult, String> {
+    let path = vscode_mcp_path(workspace_root);
+    upsert_entry(&path, "servers", build_vscode_stdio_entry(exe_path))?;
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message:
+            "VS Code MCP config written (stdio transport). Restart VS Code to activate."
+                .to_string(),
     })
 }
 
@@ -155,22 +207,7 @@ pub fn write_vscode_config(
 pub fn write_claude_config(url: &str, token: &str) -> Result<SetupResult, String> {
     let path = claude_desktop_config_path()
         .ok_or("could not determine Claude Desktop config path")?;
-    let entry = build_claude_entry(url, token);
-
-    let mut config = read_json_or_empty(&path)?;
-
-    // Ensure "mcpServers" object exists
-    if config.get("mcpServers").is_none() {
-        config
-            .as_object_mut()
-            .ok_or("config is not a JSON object")?
-            .insert("mcpServers".to_string(), json!({}));
-    }
-
-    config["mcpServers"][entry_name()] = entry;
-
-    atomic_write_json(&path, &config)?;
-
+    upsert_entry(&path, "mcpServers", build_claude_entry(url, token))?;
     Ok(SetupResult {
         success: true,
         config_path: path.display().to_string(),
@@ -178,30 +215,40 @@ pub fn write_claude_config(url: &str, token: &str) -> Result<SetupResult, String
     })
 }
 
+/// Write the Claude Desktop config using the **stdio** transport.
+pub fn write_claude_stdio_config(exe_path: &str) -> Result<SetupResult, String> {
+    let path = claude_desktop_config_path()
+        .ok_or("could not determine Claude Desktop config path")?;
+    upsert_entry(&path, "mcpServers", build_claude_stdio_entry(exe_path))?;
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message: "Claude Desktop config written (stdio transport). Restart Claude to activate."
+            .to_string(),
+    })
+}
+
 /// Write the Codex CLI config.
 pub fn write_codex_config(url: &str, token: &str) -> Result<SetupResult, String> {
     let path =
         codex_config_path().ok_or("could not determine Codex config path")?;
-    let entry = build_codex_entry(url, token);
-
-    let mut config = read_json_or_empty(&path)?;
-
-    // Ensure "mcpServers" object exists (Codex uses same key as Claude)
-    if config.get("mcpServers").is_none() {
-        config
-            .as_object_mut()
-            .ok_or("config is not a JSON object")?
-            .insert("mcpServers".to_string(), json!({}));
-    }
-
-    config["mcpServers"][entry_name()] = entry;
-
-    atomic_write_json(&path, &config)?;
-
+    upsert_entry(&path, "mcpServers", build_codex_entry(url, token))?;
     Ok(SetupResult {
         success: true,
         config_path: path.display().to_string(),
         message: "Codex CLI config written.".to_string(),
+    })
+}
+
+/// Write the Codex CLI config using the **stdio** transport.
+pub fn write_codex_stdio_config(exe_path: &str) -> Result<SetupResult, String> {
+    let path =
+        codex_config_path().ok_or("could not determine Codex config path")?;
+    upsert_entry(&path, "mcpServers", build_codex_stdio_entry(exe_path))?;
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message: "Codex CLI config written (stdio transport).".to_string(),
     })
 }
 
@@ -469,6 +516,68 @@ mod tests {
         let entry = build_codex_entry(TEST_URL, TEST_TOKEN);
         assert_eq!(entry["url"], TEST_URL);
         assert_eq!(entry["token"], TEST_TOKEN);
+    }
+
+    // ─── Stdio entry builder + writer tests (Chunk 15.9) ───────────
+
+    const TEST_EXE: &str = "/usr/local/bin/terransoul";
+
+    #[test]
+    fn vscode_stdio_entry_has_correct_structure() {
+        let entry = build_vscode_stdio_entry(TEST_EXE);
+        assert_eq!(entry["type"], "stdio");
+        assert_eq!(entry["command"], TEST_EXE);
+        assert_eq!(entry["args"], json!(["--mcp-stdio"]));
+        // No URL/token leaked into stdio entry.
+        assert!(entry.get("url").is_none());
+        assert!(entry.get("headers").is_none());
+    }
+
+    #[test]
+    fn claude_stdio_entry_has_correct_structure() {
+        let entry = build_claude_stdio_entry(TEST_EXE);
+        assert_eq!(entry["command"], TEST_EXE);
+        assert_eq!(entry["args"], json!(["--mcp-stdio"]));
+    }
+
+    #[test]
+    fn codex_stdio_entry_has_correct_structure() {
+        let entry = build_codex_stdio_entry(TEST_EXE);
+        assert_eq!(entry["command"], TEST_EXE);
+        assert_eq!(entry["args"], json!(["--mcp-stdio"]));
+    }
+
+    #[test]
+    fn write_vscode_stdio_creates_new_config() {
+        let tmp = TempDir::new().unwrap();
+        let result = write_vscode_stdio_config(tmp.path(), TEST_EXE).unwrap();
+        assert!(result.success);
+
+        let config: Value =
+            serde_json::from_str(&fs::read_to_string(vscode_mcp_path(tmp.path())).unwrap())
+                .unwrap();
+        assert_eq!(config["servers"][entry_name()]["type"], "stdio");
+        assert_eq!(config["servers"][entry_name()]["command"], TEST_EXE);
+    }
+
+    #[test]
+    fn stdio_writer_overwrites_previous_http_entry() {
+        let tmp = TempDir::new().unwrap();
+        // First wire up the HTTP transport, then switch to stdio —
+        // simulating a user toggling the Control Panel's transport
+        // picker. The terransoul-brain entry should now be the stdio
+        // form, with no leftover URL field.
+        write_vscode_config(tmp.path(), TEST_URL, TEST_TOKEN).unwrap();
+        write_vscode_stdio_config(tmp.path(), TEST_EXE).unwrap();
+
+        let config: Value =
+            serde_json::from_str(&fs::read_to_string(vscode_mcp_path(tmp.path())).unwrap())
+                .unwrap();
+        let entry = &config["servers"][entry_name()];
+        assert_eq!(entry["type"], "stdio");
+        assert_eq!(entry["command"], TEST_EXE);
+        assert!(entry.get("url").is_none(), "stale http url leaked: {entry}");
+        assert!(entry.get("headers").is_none(), "stale headers leaked: {entry}");
     }
 
     #[test]

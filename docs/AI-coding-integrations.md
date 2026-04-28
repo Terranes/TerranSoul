@@ -1,10 +1,12 @@
 # TerranSoul — AI Coding Integrations
 
-> **Status — Phase 15 partially shipped.** The `BrainGateway` trait (Chunk 15.3)
-> and MCP server (Chunk 15.1) are complete. gRPC (15.2) and the Control Panel
-> (15.4–15.8) are in progress. Sections marked **Planned** are not yet wired up
-> and will be filled in (with screenshots, exact command names, and CLI samples)
-> as each chunk lands.
+> **Status — Phase 15 mostly shipped (April 2026).** Shipped: `BrainGateway`
+> trait (15.3), MCP HTTP server (15.1), auto-setup writers (15.6), MCP stdio
+> transport (15.9), VS Code workspace surfacing (15.10), voice/chat intents
+> (15.5). Remaining: gRPC server (15.2), Control Panel Vue view (15.4),
+> incremental-indexing QA (15.7), final doc pass (15.8). Sections marked
+> **Planned** are not yet wired up and will be filled in (with screenshots,
+> exact command names, and CLI samples) as each chunk lands.
 
 ## Why this exists
 
@@ -91,7 +93,14 @@ per-client switch in the Control Panel.
 - Bind: `127.0.0.1:7421` (configurable). Loopback only by default.
 - Auth: bearer token, generated on first start (SHA-256 of UUID v4), persisted
   to `${app_data}/mcp-token.txt` with mode `0600`.
-- Transport: **HTTP** (POST `/mcp` — JSON-RPC 2.0). stdio planned in Chunk 15.6.
+- Transports:
+  - **HTTP** (POST `/mcp` — JSON-RPC 2.0) on `127.0.0.1:7421`. Bearer-token
+    auth on every request.
+  - **stdio** (newline-delimited JSON-RPC over stdin/stdout) — invoked as
+    `terransoul --mcp-stdio`, the canonical MCP transport per spec
+    (Claude Desktop / VS Code MCP / Codex CLI defaults). No bearer token
+    on stdio: the editor spawns TerranSoul as a child process so the
+    pipe is already trusted.
 - Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`,
   `mcp_regenerate_token`.
 - **AppState refactor**: `AppState` is now a newtype around `Arc<AppStateInner>`
@@ -199,30 +208,51 @@ Pinia store: `src/stores/ai-integrations.ts` (mirrors the existing pattern of
 
 ---
 
-## Voice / chat operability (Planned — Chunk 15.5)
+## Voice / chat operability (✅ shipped 2026-04-29, Chunk 15.5)
 
-The intent router (`src-tauri/src/commands/routing.rs`) gains a new
-**`ai_integrations` capability** with these intents:
+The matcher lives at `src-tauri/src/routing/ai_integrations.rs` and is
+exposed to the frontend via the `match_ai_integration_intent(text)`
+Tauri command. It is a **pure phrase matcher** — no LLM call — chosen
+because these intents are short, exact, and high-stakes (they spawn
+processes and rewrite editor configs). Returns `Option<AiIntegrationIntent>`;
+the frontend dispatches the matched intent (via the existing Tauri
+commands) on `Some`, and falls through to normal chat on `None`.
 
-| Phrase examples | Intent |
+| Phrase examples | Intent variant |
 |---|---|
-| "start the MCP server", "turn MCP on" | `mcp.start` |
-| "stop the gRPC server" | `grpc.stop` |
-| "set up Copilot", "let VS Code talk to you" | `autosetup.copilot` |
-| "set up Claude Desktop" | `autosetup.claude_desktop` |
-| "set up Codex" / "set up ChatGPT desktop" | `autosetup.codex` |
-| "who is connected to my brain?" | `clients.list` |
-| "kick &lt;client&gt;" | `clients.disconnect` |
+| "start the MCP server", "turn MCP on" | `McpStart` |
+| "stop the MCP server", "turn MCP off" | `McpStop` |
+| "is MCP running?", "MCP status" | `McpStatus` |
+| "open this project in VS Code", "let me code on TerranSoul", "show me the code" | `VscodeOpenProject { target: None }` |
+| "open `<path>` in VS Code" | `VscodeOpenProject { target: Some(path) }` |
+| "which VS Code windows do you know about?" | `VscodeListKnown` |
+| "set up Copilot", "let VS Code talk to you" | `AutosetupCopilot { transport }` |
+| "set up Claude Desktop" | `AutosetupClaude { transport }` |
+| "set up Codex" / "set up ChatGPT desktop" | `AutosetupCodex { transport }` |
 
-Each intent calls the matching Tauri command and TerranSoul reports back
-through the chat surface using the existing assistant-message pipeline.
+Transport defaults to **`stdio`** (canonical since 15.9). It bumps to
+**`http`** when the utterance explicitly contains "via http", "over
+http", or "http transport".
+
+The matcher is case-insensitive, punctuation-tolerant, and whitespace-
+collapsing. `looks_like_path()` rejects gibberish (e.g. "open the door
+in vs code") by requiring `/`, `\`, `~/`, or a Windows drive letter.
+
+After dispatch, TerranSoul reports back through the chat surface using
+the existing assistant-message pipeline.
 
 ---
 
-## Auto-setup (Planned — Chunk 15.6)
+## Auto-setup (✅ shipped 2026-04-25, Chunk 15.6 + 15.9)
 
 TerranSoul *writes* the integration config for the user. Each writer is a pure
 function of `(transport, bind, token, cert_path)` so it can be unit-tested.
+
+Both **HTTP** and **stdio** transport variants are shipped. Tauri commands
+`setup_vscode_mcp` / `setup_claude_mcp` / `setup_codex_mcp` write the HTTP
+form; the `_stdio` siblings (`setup_vscode_mcp_stdio`, etc.) write
+`command: <terransoul.exe> --mcp-stdio` instead — picked by the user from
+the Control Panel transport picker (Chunk 15.4).
 
 ### GitHub Copilot (VS Code)
 
@@ -304,10 +334,12 @@ See **Phase 15** in [`rules/milestones.md`](../rules/milestones.md).
 | 15.2 | not-started | gRPC server (`tonic`) with mTLS — recommended transport |
 | 15.3 | ✅ shipped 2026-04-24 | `BrainGateway` trait + shared op surface |
 | 15.4 | not-started | Control Panel sub-view under Brain tab |
-| 15.5 | not-started | Voice / chat intents to start / stop / set up |
-| 15.6 | not-started | Auto-setup writers for Copilot, Claude Desktop, Codex |
+| 15.5 | ✅ shipped 2026-04-29 | Voice / chat intents to start / stop / set up |
+| 15.6 | ✅ shipped 2026-04-25 | Auto-setup writers for Copilot, Claude Desktop, Codex (HTTP transport) |
 | 15.7 | not-started | VS Code Copilot incremental-indexing QA + e2e |
 | 15.8 | not-started | Final pass over this doc — replace "Planned" with screenshots, exact CLI commands, and the verified version matrix |
+| 15.9 | ✅ shipped 2026-04-29 | MCP stdio transport shim (`terransoul --mcp-stdio` + `setup_*_mcp_stdio` Tauri commands) |
+| 15.10 | ✅ shipped 2026-04-29 | VS Code workspace surfacing (`vscode_open_project`, `vscode_list_known_windows`, `vscode_forget_window` Tauri commands; self-launched window registry; PID-liveness pruning) |
 
 When a chunk lands, the agent that finishes it must:
 

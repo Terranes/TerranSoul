@@ -100,6 +100,14 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
   /** Per-agent handoff context: agent_id → summary string. */
   const handoffContexts = ref<Record<string, string>>({});
 
+  /**
+   * Per-agent prev-agent display name keyed the same as `handoffContexts`.
+   * Populated alongside the context in `switchAgent` so consumers can
+   * render `[HANDOFF FROM <name>]` without a second store lookup.
+   * Chunk 23.2b.
+   */
+  const handoffPrevAgentName = ref<Record<string, string>>({});
+
   /** Build a plain-text context window from recent messages. */
   function buildHandoffContext(msgs: Message[], agentId: string | undefined): string {
     const relevant = agentId
@@ -115,6 +123,22 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
   /** Get the handoff context for an agent (e.g. to inject into system prompt). */
   function getHandoffContext(agentId: string): string | null {
     return handoffContexts.value[agentId] ?? null;
+  }
+
+  /**
+   * Read-and-clear the handoff payload for `agentId`. The new agent is
+   * briefed exactly once — subsequent turns get no `[HANDOFF FROM ...]`
+   * block. See Chunk 23.2b.
+   */
+  function consumeHandoff(
+    agentId: string,
+  ): { prevAgentName: string; context: string } | null {
+    const context = handoffContexts.value[agentId];
+    if (!context) return null;
+    const prevAgentName = handoffPrevAgentName.value[agentId] ?? '';
+    delete handoffContexts.value[agentId];
+    delete handoffPrevAgentName.value[agentId];
+    return { prevAgentName, context };
   }
 
   const currentAgent = computed<AgentProfile | null>(() => {
@@ -222,6 +246,9 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
       const ctx = buildHandoffContext(conversationMessages, currentAgentId.value);
       if (ctx) {
         handoffContexts.value[id] = ctx;
+        const prevAgent = agents.value.find((a) => a.id === currentAgentId.value);
+        handoffPrevAgentName.value[id] =
+          prevAgent?.display_name ?? currentAgentId.value;
       }
     }
 
@@ -317,6 +344,8 @@ export const useAgentRosterStore = defineStore('agent-roster', () => {
     cancelWorkflow,
     // handoff context
     handoffContexts,
+    handoffPrevAgentName,
     getHandoffContext,
+    consumeHandoff,
   };
 });

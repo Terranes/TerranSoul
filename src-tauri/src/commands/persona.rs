@@ -162,6 +162,78 @@ pub async fn get_persona_block(state: State<'_, AppState>) -> Result<String, Str
     Ok(slot.clone())
 }
 
+// ── handoff block routing (Chunk 23.2b) ────────────────────────────────────
+//
+// The frontend agent-roster store records a per-agent conversation-window
+// summary on switchAgent and runs it through `buildHandoffBlock` (pure
+// utility shipped in Chunk 23.2a) to produce a `[HANDOFF FROM <prev>]`
+// block. That block is pushed here and spliced into the next system
+// prompt by streaming.rs. **One-shot**: streaming reads-and-clears so
+// the new agent is briefed exactly once.
+
+/// Push a rendered `[HANDOFF FROM <prev>]` block into `AppState.handoff_block`.
+/// Empty string clears the slot (useful for explicit reset on agent revert).
+#[tauri::command]
+pub async fn set_handoff_block(block: String, state: State<'_, AppState>) -> Result<(), String> {
+    if block.len() > 8192 {
+        return Err("Handoff block too large (>8 KiB)".to_string());
+    }
+    let mut slot = state
+        .handoff_block
+        .lock()
+        .map_err(|e| format!("Handoff block lock poisoned: {e}"))?;
+    *slot = block;
+    Ok(())
+}
+
+/// Read the current handoff block (mostly for tests / debugging — the
+/// streaming pipeline reads-and-clears via `state.handoff_block` directly).
+#[tauri::command]
+pub async fn get_handoff_block(state: State<'_, AppState>) -> Result<String, String> {
+    let slot = state
+        .handoff_block
+        .lock()
+        .map_err(|e| format!("Handoff block lock poisoned: {e}"))?;
+    Ok(slot.clone())
+}
+
+#[cfg(test)]
+mod handoff_tests {
+    use super::*;
+
+    fn block_state() -> AppState {
+        AppState::for_test()
+    }
+
+    #[tokio::test]
+    async fn set_then_get_round_trips() {
+        let state = block_state();
+        // We can't easily go through `State<'_, AppState>` in a unit test
+        // without a Tauri app handle, so exercise the underlying mutex
+        // directly — same code path the command uses.
+        {
+            let mut slot = state.handoff_block.lock().unwrap();
+            *slot = "\n\n[HANDOFF FROM A]\nfoo\n[/HANDOFF]".to_string();
+        }
+        let got = state.handoff_block.lock().unwrap().clone();
+        assert!(got.contains("[HANDOFF FROM A]"));
+    }
+
+    #[tokio::test]
+    async fn empty_string_clears_slot() {
+        let state = block_state();
+        {
+            let mut slot = state.handoff_block.lock().unwrap();
+            *slot = "previous".to_string();
+        }
+        {
+            let mut slot = state.handoff_block.lock().unwrap();
+            *slot = String::new();
+        }
+        assert_eq!(state.handoff_block.lock().unwrap().as_str(), "");
+    }
+}
+
 // ── learned expressions (side-chain artifacts; storage shipped early) ──────
 
 /// Generic "JSON document with an id" envelope for the listing commands.

@@ -18,6 +18,7 @@ pub mod identity;
 pub mod link;
 pub mod memory;
 pub mod messaging;
+pub mod network;
 pub mod orchestrator;
 pub mod package_manager;
 pub mod persona;
@@ -29,6 +30,7 @@ pub mod settings;
 pub mod sync;
 pub mod tasks;
 pub mod voice;
+pub mod vscode_workspace;
 pub mod workflows;
 
 use commands::{
@@ -79,6 +81,7 @@ use commands::{
         get_schema_info, get_short_term_memory, hybrid_search_memories,
         hybrid_search_memories_rrf, hyde_search_memories,
         list_memory_conflicts, list_memory_edges, list_relation_types,
+        matryoshka_search_memories,
         multi_hop_search_memories, promote_memory, rerank_search_memories,
         resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
         set_auto_learn_policy, summarize_session,
@@ -94,17 +97,17 @@ use commands::{
     },
     persona::{
         check_persona_drift, delete_learned_expression, delete_learned_motion,
-        export_persona_pack, extract_persona_from_brain, get_persona, get_persona_block,
-        import_persona_pack, list_learned_expressions, list_learned_motions,
+        export_persona_pack, extract_persona_from_brain, get_handoff_block, get_persona,
+        get_persona_block, import_persona_pack, list_learned_expressions, list_learned_motions,
         preview_persona_pack, save_learned_expression, save_learned_motion, save_persona,
-        set_persona_block,
+        set_handoff_block, set_persona_block,
     },
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
     },
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions,
-        list_pending_commands, set_device_permission,
+        list_pending_commands, match_ai_integration_intent, set_device_permission,
     },
     sandbox::{
         clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
@@ -138,11 +141,15 @@ use commands::{
     },
     auto_setup::{
         setup_vscode_mcp, setup_claude_mcp, setup_codex_mcp,
+        setup_vscode_mcp_stdio, setup_claude_mcp_stdio, setup_codex_mcp_stdio,
         remove_vscode_mcp, remove_claude_mcp, remove_codex_mcp,
         list_mcp_clients,
     },
     consolidation::{
         run_sleep_consolidation, touch_activity, get_idle_status,
+    },
+    vscode::{
+        vscode_open_project, vscode_list_known_windows, vscode_forget_window,
     },
     plugins::{
         plugin_install, plugin_activate, plugin_deactivate, plugin_uninstall,
@@ -207,6 +214,14 @@ pub struct AppStateInner {
     /// Empty string means "no persona injection". See
     /// `docs/persona-design.md` § 9.1.
     pub persona_block: Mutex<String>,
+    /// Rendered `[HANDOFF FROM <prev>]` block pushed from the frontend
+    /// agent-roster store on agent switch. Same splicing slot as
+    /// `persona_block` — server-driven streaming paths inject it into
+    /// the system prompt below `[PERSONA]` / `[LONG-TERM MEMORY]`.
+    /// One-shot: streaming paths read-and-clear so the new agent gets
+    /// briefed once and then operates on its own thread. See Chunk 23.2
+    /// in `rules/milestones.md`.
+    pub handoff_block: Mutex<String>,
     /// Configuration for spawning the GitNexus sidecar (Chunk 2.1).
     /// Defaults to `npx gitnexus mcp`. Mutable so the frontend can point at
     /// a globally-installed binary (`gitnexus`) or supply a working dir.
@@ -284,6 +299,7 @@ impl AppState {
                     }),
             ),
             persona_block: Mutex::new(String::new()),
+            handoff_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
@@ -331,6 +347,7 @@ impl AppState {
                     .expect("in-memory workflow engine must open"),
             ),
             persona_block: Mutex::new(String::new()),
+            handoff_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
@@ -338,6 +355,50 @@ impl AppState {
             activity_tracker: memory::consolidation::ActivityTracker::new(),
         }))
     }
+}
+
+/// Resolve the on-disk data directory the same way the GUI does, but
+/// without requiring a Tauri `AppHandle`. Used by [`run_stdio`] so the
+/// stdio shim sees identical persistent state to a running GUI.
+///
+/// In dev builds the path includes a `dev` subdirectory (matching the
+/// GUI), but unlike the GUI we **do not** wipe it on launch — the
+/// stdio shim must never destroy data the GUI may rely on.
+fn resolve_data_dir_for_cli() -> PathBuf {
+    // App identifier from `tauri.conf.json`. Hard-coded here because
+    // there is no `AppHandle` available in CLI mode.
+    const BUNDLE_ID: &str = "com.terranes.terransoul";
+
+    let base = dirs::data_dir()
+        .map(|d| d.join(BUNDLE_ID))
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let dir = if cfg!(debug_assertions) {
+        base.join("dev")
+    } else {
+        base
+    };
+
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Run TerranSoul as an MCP **stdio** server. Reads newline-delimited
+/// JSON-RPC 2.0 from `stdin`, writes responses to `stdout`. Exits when
+/// stdin reaches EOF.
+///
+/// Triggered by `terransoul --mcp-stdio` from `main.rs`. See Chunk 15.9.
+pub fn run_stdio() -> std::io::Result<()> {
+    let data_dir = resolve_data_dir_for_cli();
+    eprintln!("[mcp-stdio] data dir: {}", data_dir.display());
+
+    let state = AppState::new(&data_dir);
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -364,6 +425,7 @@ pub fn run() {
             deny_remote_command,
             set_device_permission,
             get_device_permissions,
+            match_ai_integration_intent,
             parse_agent_manifest,
             validate_agent_manifest,
             get_ipc_protocol_range,
@@ -401,6 +463,7 @@ pub fn run() {
             hybrid_search_memories_rrf,
             hyde_search_memories,
             rerank_search_memories,
+            matryoshka_search_memories,
             backfill_embeddings,
             get_schema_info,
             get_memory_stats,
@@ -514,6 +577,8 @@ pub fn run() {
             save_persona,
             set_persona_block,
             get_persona_block,
+            set_handoff_block,
+            get_handoff_block,
             list_learned_expressions,
             save_learned_expression,
             delete_learned_expression,
@@ -572,6 +637,10 @@ pub fn run() {
             setup_vscode_mcp,
             setup_claude_mcp,
             setup_codex_mcp,
+            // Stdio transport variants — Chunk 15.9 (Phase 15)
+            setup_vscode_mcp_stdio,
+            setup_claude_mcp_stdio,
+            setup_codex_mcp_stdio,
             remove_vscode_mcp,
             remove_claude_mcp,
             remove_codex_mcp,
@@ -580,6 +649,10 @@ pub fn run() {
             run_sleep_consolidation,
             touch_activity,
             get_idle_status,
+            // VS Code workspace surfacing — Chunk 15.10 (Phase 15)
+            vscode_open_project,
+            vscode_list_known_windows,
+            vscode_forget_window,
             // Plugin system
             plugin_install,
             plugin_activate,

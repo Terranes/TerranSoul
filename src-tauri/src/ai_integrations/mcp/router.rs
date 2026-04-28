@@ -33,32 +33,32 @@ pub struct McpRouterState {
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
-struct JsonRpcRequest {
+pub(crate) struct JsonRpcRequest {
     #[allow(dead_code)]
-    jsonrpc: String,
-    id: Option<Value>,
-    method: String,
-    params: Option<Value>,
+    pub jsonrpc: String,
+    pub id: Option<Value>,
+    pub method: String,
+    pub params: Option<Value>,
 }
 
 #[derive(Serialize)]
-struct JsonRpcResponse {
-    jsonrpc: &'static str,
-    id: Value,
+pub(crate) struct JsonRpcResponse {
+    pub jsonrpc: &'static str,
+    pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
+    pub result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcError>,
+    pub error: Option<JsonRpcError>,
 }
 
 #[derive(Serialize)]
-struct JsonRpcError {
-    code: i64,
-    message: String,
+pub(crate) struct JsonRpcError {
+    pub code: i64,
+    pub message: String,
 }
 
 impl JsonRpcResponse {
-    fn ok(id: Value, result: Value) -> Self {
+    pub(crate) fn ok(id: Value, result: Value) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
@@ -67,13 +67,88 @@ impl JsonRpcResponse {
         }
     }
 
-    fn err(id: Value, code: i64, message: String) -> Self {
+    pub(crate) fn err(id: Value, code: i64, message: String) -> Self {
         Self {
             jsonrpc: "2.0",
             id,
             result: None,
             error: Some(JsonRpcError { code, message }),
         }
+    }
+}
+
+/// Dispatch a JSON-RPC method/params pair to the brain gateway.
+/// Shared between the HTTP transport ([`handle_request`]) and the
+/// stdio transport ([`super::stdio`]).
+///
+/// Authentication is the caller's responsibility — this function does
+/// **not** check tokens. HTTP enforces the bearer header before
+/// calling; stdio runs in a trusted parent-child relationship and
+/// skips auth by design (canonical MCP stdio behaviour).
+pub(crate) async fn dispatch_method(
+    gw: &dyn BrainGateway,
+    caps: &GatewayCaps,
+    method: &str,
+    params: Value,
+    id: Value,
+) -> JsonRpcResponse {
+    match method {
+        "initialize" => {
+            let build_mode = if super::is_dev_build() { "dev" } else { "release" };
+            let server_name = if super::is_dev_build() {
+                "terransoul-brain-dev"
+            } else {
+                "terransoul-brain"
+            };
+            let result = json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": { "tools": {} },
+                "serverInfo": {
+                    "name": server_name,
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "buildMode": build_mode
+                }
+            });
+            JsonRpcResponse::ok(id, result)
+        }
+
+        "tools/list" => {
+            let result = json!({ "tools": tools::definitions() });
+            JsonRpcResponse::ok(id, result)
+        }
+
+        "tools/call" => {
+            let name = params["name"].as_str().unwrap_or("");
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default()));
+
+            match tools::dispatch(gw, caps, name, &args).await {
+                Ok(text) => {
+                    let result = json!({
+                        "content": [{ "type": "text", "text": text }],
+                        "isError": false
+                    });
+                    JsonRpcResponse::ok(id, result)
+                }
+                Err(e) => {
+                    let result = json!({
+                        "content": [{ "type": "text", "text": e }],
+                        "isError": true
+                    });
+                    JsonRpcResponse::ok(id, result)
+                }
+            }
+        }
+
+        "ping" => JsonRpcResponse::ok(id, json!({})),
+
+        _ => JsonRpcResponse::err(
+            id,
+            -32601,
+            format!("method not found: {method}"),
+        ),
     }
 }
 
@@ -121,64 +196,14 @@ async fn handle_request(
 
     let params = req.params.unwrap_or(Value::Null);
 
-    let resp = match req.method.as_str() {
-        "initialize" => {
-            let build_mode = if super::is_dev_build() { "dev" } else { "release" };
-            let server_name = if super::is_dev_build() {
-                "terransoul-brain-dev"
-            } else {
-                "terransoul-brain"
-            };
-            let result = json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": { "tools": {} },
-                "serverInfo": {
-                    "name": server_name,
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "buildMode": build_mode
-                }
-            });
-            JsonRpcResponse::ok(id, result)
-        }
-
-        "tools/list" => {
-            let result = json!({ "tools": tools::definitions() });
-            JsonRpcResponse::ok(id, result)
-        }
-
-        "tools/call" => {
-            let name = params["name"].as_str().unwrap_or("");
-            let args = params
-                .get("arguments")
-                .cloned()
-                .unwrap_or(Value::Object(Default::default()));
-
-            match tools::dispatch(state.gw.as_ref(), &state.caps, name, &args).await {
-                Ok(text) => {
-                    let result = json!({
-                        "content": [{ "type": "text", "text": text }],
-                        "isError": false
-                    });
-                    JsonRpcResponse::ok(id, result)
-                }
-                Err(e) => {
-                    let result = json!({
-                        "content": [{ "type": "text", "text": e }],
-                        "isError": true
-                    });
-                    JsonRpcResponse::ok(id, result)
-                }
-            }
-        }
-
-        "ping" => JsonRpcResponse::ok(id, json!({})),
-
-        _ => JsonRpcResponse::err(
-            id,
-            -32601,
-            format!("method not found: {}", req.method),
-        ),
-    };
+    let resp = dispatch_method(
+        state.gw.as_ref(),
+        &state.caps,
+        &req.method,
+        params,
+        id,
+    )
+    .await;
 
     (StatusCode::OK, Json(resp)).into_response()
 }

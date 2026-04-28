@@ -1078,7 +1078,7 @@ right now" — never "the camera is on but you can't tell".
 - MediaPipe Tasks Vision FaceLandmarker / PoseLandmarker integration,
   per-session ConsentDialog + `useCameraCapture` composable, ARKit→VRM
   expression mapper, IK pose retargeter, learned-asset recording UI —
-  all chunked as Phase 13.B (chunks 145–155, see §15) and **gated behind
+  all chunked as Phase 14.B (chunks 14.3–14.5 + 14.9–14.15, see §15) and **gated behind
   the consent contract of §5**.
 
 ### 14.4 Sources
@@ -1099,28 +1099,37 @@ right now" — never "the camera is on but you can't tell".
 
 ## 15. Roadmap
 
-Captured as Phase 13 — Persona & Self-Learning in `rules/milestones.md`.
-Each chunk maps to a row in §14.2.
+> **As-shipped status note (renumbered 2026-04-29).** This section was
+> originally drafted before the Phase 13 / Phase 14 audit
+> (see `rules/completion-log.md` Milestones audit entry, line ≈1114).
+> Phase 13 in the repo today is GitNexus Code-Intelligence (chunks
+> 2.1–2.4); the persona / self-learning roadmap is **Phase 14**, and
+> the chunk numbers below now use the canonical `14.1–14.15` scheme.
+> For the as-shipped status of each row see
+> [`rules/completion-log.md`](../rules/completion-log.md) (Phase 14 entries).
+
+Captured as **Phase 14 — Persona, Self-Learning Animation & Master-Mirror**
+in `rules/milestones.md`. Each chunk maps to a row in §14.2.
 
 The roadmap is split into a **main chain** (research-conducted, brain-driven
 persona; ships first) and a **side chain** (camera-driven self-learning;
 ships last per the user's explicit ordering). The split mirrors §10.
 
-### 15.1 Phase 13.A — Main chain (ships first)
+### 15.1 Phase 14.A — Main chain (ships first)
 
 | Chunk | Title | Maps to §14.2 row | Phase 1 dep |
 |---|---|---|---|
-| **140** | Persona MVP — `PersonaTraits` store + `persona-prompt.ts` injection + Persona panel + Soul Mirror quest activation | 13 | none |
-| **141** | My Persona quest — full editable traits UI + brain-aware combo | 13 | 140, brain configured |
-| **142** | Master's Echo (main-chain version) — `extract_persona_from_brain` LLM-assisted authoring from chat history + `personal:*` long-term memories | 13 | 141 + memory tier |
-| **143** | Persona drift detection (auto-correction prompt fired by `auto_learn`) ✅ shipped 2026-04-26 | 14 | 142 |
-| **144** | Persona export / import as a `.terransoul-persona` JSON bundle (no camera assets in the main-chain bundle) | 15 | 140 |
+| **14.1** | Persona MVP — `PersonaTraits` store + `persona-prompt.ts` injection + Persona panel + Soul Mirror quest activation | 13 | none |
+| **14.2** | My Persona quest — full editable traits UI + brain-aware combo | 13 | 14.1, brain configured |
+| **14.7** | Persona pack export / import as a `.terransoul-persona` JSON bundle (no camera assets in the main-chain bundle) ✅ shipped 2026-04-24 | 15 | 14.1 |
+| **14.8** | Master's Echo (main-chain version) — `extract_persona_from_brain` LLM-assisted authoring from chat history + `personal:*` long-term memories | 13 | 14.2 + memory tier |
+| **14.A** | Persona drift detection (auto-correction prompt fired by `auto_learn`) ✅ shipped 2026-04-26 | 14 | 14.8 |
 
-These five chunks deliver everything the user asked for in the main-chain
+These deliver everything the user asked for in the main-chain
 sense: research-conducted (§14), brain-driven, persona-as-quest-chain,
 no camera dependency.
 
-### 15.2 Phase 13.B — Side chain (camera-driven, ships LAST)
+### 15.2 Phase 14.B — Side chain (camera-driven, ships LAST)
 
 > Per the user requirement: *"Camera quests & implementation should come
 > last."* Every chunk below depends on the consent contract in §5 being
@@ -1128,21 +1137,22 @@ no camera dependency.
 
 | Chunk | Title | Maps to §14.2 row | Phase 1 dep |
 |---|---|---|---|
-| **145** | Per-session camera consent dialog + `useCameraCapture` composable + always-visible "Camera live" badge | — (privacy infra, §5) | 140 |
-| **146** | MediaPipe FaceLandmarker face mirror + ARKit→VRM expression mapper (face-mirror.ts) | 1, 3 | 145 |
-| **147** | Save / load learned expression presets (JSON-on-disk) — promotes `expressions-pack` from stub to real | — (storage) | 146 |
-| **148** | PoseLandmarker upper-body mirror + IK retargeting (pose-mirror.ts) | 2 | 146 |
-| **149** | Save / load learned motion clips + `LearnedMotionPlayer` — promotes `motion-capture` from stub to real | — (storage) | 148 |
-| **150** | Bake learned motion clips → `.vrma` files for VrmaManager / sharing | — | 149 |
-| **151** | Side-chain export — bundle learned expressions + motions into the persona zip | 15 | 147, 149 |
-| **152** | Phoneme-aware viseme model (FaceFormer / EMOTalk-class) | 11 | 146 |
-| **153** | Hunyuan-Motion / MimicMotion offline polish pass (opt-in, deferred) | 4, 6 | 149 |
-| **154** | MoMask reconstruction for full-body retarget from sparse keypoints | 5 | 148 |
-| **155** | MotionGPT — let the brain *generate* motion tokens directly | 8 | 149, brain configured |
+| **14.3** | Per-session camera consent dialog + `useCameraCapture` composable + always-visible "Camera live" badge — expressions-pack quest scaffolding ✅ shipped 2026-04-25 | — (privacy infra, §5) | 14.1 |
+| **14.4** | MediaPipe FaceLandmarker face mirror + ARKit→VRM expression mapper + motion-capture quest ✅ shipped 2026-04-25 | 1, 2, 3 | 14.3 |
+| **14.5** | VRMA baking — turn recorded motion buffers into `.vrma` files for `VrmaManager` / sharing ✅ shipped 2026-04-25 | — | 14.4 |
+| **14.6** | Audio-prosody persona hints (camera-free) ✅ shipped 2026-04-24 | 11 | 14.1 |
+| **14.9** | Save / load learned expression presets (JSON-on-disk) — promotes `expressions-pack` from stub to real ✅ shipped 2026-04-25 | — (storage) | 14.4 |
+| **14.10** | Save / load learned motion clips + `LearnedMotionPlayer` — promotes `motion-capture` from stub to real ✅ shipped 2026-04-25 | — (storage) | 14.4 |
+| **14.11** | Side-chain export — bundle learned expressions + motions into the persona zip ✅ shipped 2026-04-25 | 15 | 14.9, 14.10 |
+| **14.12** | Phoneme-aware viseme model (FaceFormer / EMOTalk-class) ✅ shipped 2026-04-25 | 11 | 14.4 |
+| **14.13** | Hunyuan-Motion / MimicMotion offline polish pass (opt-in, deferred) | 4, 6 | 14.10 |
+| **14.14** | MoMask reconstruction for full-body retarget from sparse keypoints | 5 | 14.4 |
+| **14.15** | MotionGPT — let the brain *generate* motion tokens directly | 8 | 14.10, brain configured |
 
-Chunks 140–144 (main chain) deliver the user-authored / brain-extracted
-persona experience first. Chunks 145–155 (side chain, camera) layer the
-self-learning embodiment on top, in strict consent-first order.
+Chunks 14.1–14.2 + 14.7–14.8 (main chain) deliver the user-authored /
+brain-extracted persona experience first. Chunks 14.3–14.6 + 14.9–14.15
+(side chain, camera) layer the self-learning embodiment on top, in strict
+consent-first order.
 
 ---
 
@@ -1162,7 +1172,7 @@ TerranSoul-internal cross-references are:
 - `rules/architecture-rules.md` — rule 12 "Persona Documentation Sync"
   requires this doc and `README.md` to stay in sync with code changes
   to the persona subsystem.
-- `rules/milestones.md` Phase 13 — the chunked implementation plan.
+- `rules/milestones.md` Phase 14 — the chunked implementation plan.
 - `src/stores/persona.ts`, `src/stores/skill-tree.ts`,
   `src/composables/useCameraCapture.ts`, `src/renderer/face-mirror.ts`,
   `src/components/PersonaTeacher.vue`, `src-tauri/src/commands/persona.rs`
