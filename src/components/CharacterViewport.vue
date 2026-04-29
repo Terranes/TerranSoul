@@ -482,8 +482,9 @@ import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
-import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender } from '../renderer/vrma-manager';
+import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender, SITTING_ANIMATION_PATHS } from '../renderer/vrma-manager';
 import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
+import { createSittingProps, type SittingProps } from '../renderer/props';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -804,9 +805,19 @@ const vrmaManager = new VrmaManager();
 const motionPlayer = new LearnedMotionPlayer(vrmaManager);
 let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Wire VRMA playback state to the animator
+// ── Sitting chair prop ───────────────────────────────────────────────
+let sittingProps: SittingProps | null = null;
+
+// Wire VRMA playback state to the animator + toggle chair visibility
 vrmaManager.onPlaybackChange((playing) => {
   animator.setVrmaPlaying(playing);
+
+  // Show the chair when a sitting animation plays, hide it otherwise.
+  if (sittingProps) {
+    const isSitting = playing && vrmaManager.currentPath != null
+      && SITTING_ANIMATION_PATHS.has(vrmaManager.currentPath);
+    sittingProps.chair.visible = isSitting;
+  }
 });
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
@@ -965,6 +976,10 @@ onMounted(async () => {
   sceneCtx = ctx;
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
+
+  // Create the sitting chair prop and add it to the scene (starts hidden).
+  sittingProps = createSittingProps();
+  ctx.scene.add(sittingProps.chair);
 
   // Apply the current pet-mode state now that the scene is available.
   // The reactive watch below only fires on subsequent changes — this

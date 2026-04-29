@@ -10,57 +10,15 @@
             v-if="visible"
             class="flw-dialog"
           >
-            <!-- Step 1: Choose setup path -->
-            <template v-if="step === 'choose'">
+            <!-- Step 1: Quest acceptance mode -->
+            <template v-if="step === 'quest-mode'">
               <div class="flw-header">
                 <span class="flw-logo">🌟</span>
                 <h2 class="flw-title">
                   Welcome to TerranSoul
                 </h2>
                 <p class="flw-subtitle">
-                  Your AI companion is ready. How would you like to get started?
-                </p>
-              </div>
-
-              <div class="flw-options">
-                <button
-                  class="flw-option flw-option--recommended"
-                  @click="step = 'quest-mode'"
-                >
-                  <span class="flw-option-icon">⚡</span>
-                  <div class="flw-option-text">
-                    <strong>Recommended Setup</strong>
-                    <span class="flw-option-desc">
-                      Auto-configure brain, voice, and avatar — ready to chat in seconds.
-                    </span>
-                  </div>
-                  <span class="flw-badge">Recommended</span>
-                </button>
-
-                <button
-                  class="flw-option"
-                  @click="chooseManual"
-                >
-                  <span class="flw-option-icon">🔧</span>
-                  <div class="flw-option-text">
-                    <strong>Set Up From Scratch</strong>
-                    <span class="flw-option-desc">
-                      Explore on your own — configure each feature manually through quests.
-                    </span>
-                  </div>
-                </button>
-              </div>
-            </template>
-
-            <!-- Step 2: Quest acceptance mode -->
-            <template v-if="step === 'quest-mode'">
-              <div class="flw-header">
-                <span class="flw-logo">⚔️</span>
-                <h2 class="flw-title">
-                  Quest Activation
-                </h2>
-                <p class="flw-subtitle">
-                  TerranSoul uses a quest system to unlock features. How would you like to discover them?
+                  Your AI companion is ready. How would you like to discover features?
                 </p>
               </div>
 
@@ -76,7 +34,7 @@
                       Activate all available quests instantly — brain, voice, avatar, and more. Jump right in.
                     </span>
                   </div>
-                  <span class="flw-badge">Fastest</span>
+                  <span class="flw-badge">Recommended</span>
                 </button>
 
                 <button
@@ -91,17 +49,133 @@
                     </span>
                   </div>
                 </button>
-              </div>
 
-              <button
-                class="flw-back"
-                @click="step = 'choose'"
-              >
-                ← Back
-              </button>
+                <button
+                  class="flw-option"
+                  @click="chooseManual"
+                >
+                  <span class="flw-option-icon">🔧</span>
+                  <div class="flw-option-text">
+                    <strong>Set Up From Scratch</strong>
+                    <span class="flw-option-desc">
+                      Skip auto-configuration — configure each feature manually through settings.
+                    </span>
+                  </div>
+                </button>
+              </div>
             </template>
 
             <!-- Step 3: Setting up (progress) -->
+            <template v-if="step === 'confirm-disk'">
+              <div class="flw-header">
+                <span class="flw-logo">💾</span>
+                <h2 class="flw-title">
+                  Disk Space Check
+                </h2>
+                <p class="flw-subtitle">
+                  A local AI model will be downloaded to your computer.
+                </p>
+              </div>
+
+              <div class="flw-disk-info">
+                <div class="flw-disk-row">
+                  <span class="flw-disk-label">Model</span>
+                  <span class="flw-disk-value">{{ modelDisplayName }}</span>
+                </div>
+                <div class="flw-disk-row">
+                  <span class="flw-disk-label">Download size</span>
+                  <span class="flw-disk-value flw-disk-size">
+                    ~{{ (modelDownloadMb / 1024).toFixed(1) }} GB
+                  </span>
+                </div>
+                <div class="flw-disk-row">
+                  <span class="flw-disk-label">Storage location</span>
+                  <span class="flw-disk-value flw-disk-path">{{ ollamaDir || 'Default' }}</span>
+                </div>
+                <div class="flw-disk-row">
+                  <span class="flw-disk-label">Available space</span>
+                  <span
+                    class="flw-disk-value"
+                    :class="diskInsufficient ? 'flw-disk-warn' : 'flw-disk-ok'"
+                  >
+                    {{ formatBytes(diskAvailable) }} / {{ formatBytes(diskTotal) }}
+                    <span v-if="diskMountPoint"> on {{ diskMountPoint }}</span>
+                  </span>
+                </div>
+
+                <!-- Disk space bar -->
+                <div class="flw-disk-bar-container">
+                  <div class="flw-disk-bar">
+                    <div
+                      class="flw-disk-bar-used"
+                      :style="{ width: Math.min(100, ((diskTotal - diskAvailable) / diskTotal) * 100) + '%' }"
+                    />
+                    <div
+                      class="flw-disk-bar-model"
+                      :style="{ width: Math.min(100, (modelDownloadMb * 1024 * 1024 / diskTotal) * 100) + '%' }"
+                    />
+                  </div>
+                  <div class="flw-disk-bar-legend">
+                    <span><span class="flw-legend-dot flw-legend-used" /> Used</span>
+                    <span><span class="flw-legend-dot flw-legend-model" /> Model</span>
+                    <span><span class="flw-legend-dot flw-legend-free" /> Free</span>
+                  </div>
+                </div>
+
+                <!-- Warning if insufficient -->
+                <div
+                  v-if="diskInsufficient"
+                  class="flw-disk-warning"
+                >
+                  ⚠️ Not enough disk space! Free up at least
+                  {{ (modelDownloadMb / 1024).toFixed(1) }} GB or use a different drive.
+                </div>
+
+                <!-- Other drives (if multiple) -->
+                <div
+                  v-if="allDrives.length > 1"
+                  class="flw-drives-section"
+                >
+                  <p class="flw-drives-label">
+                    Other drives available:
+                  </p>
+                  <div
+                    v-for="drive in allDrives.filter(d => d.mount_point !== diskMountPoint)"
+                    :key="drive.mount_point"
+                    class="flw-drive-item"
+                  >
+                    <span class="flw-drive-name">
+                      {{ drive.mount_point }} {{ drive.label ? `(${drive.label})` : '' }}
+                    </span>
+                    <span class="flw-drive-space">
+                      {{ formatBytes(drive.available_bytes) }} free
+                    </span>
+                  </div>
+                  <p class="flw-drives-hint">
+                    To use a different drive, set the <code>OLLAMA_MODELS</code> environment
+                    variable to your preferred path and restart Ollama.
+                  </p>
+                </div>
+              </div>
+
+              <div class="flw-disk-actions">
+                <button
+                  class="flw-done-btn"
+                  :disabled="diskInsufficient"
+                  @click="confirmDiskAndProceed"
+                >
+                  {{ diskInsufficient ? 'Insufficient Space' : 'Continue with Download →' }}
+                </button>
+                <button
+                  class="flw-back"
+                  @click="step = 'quest-mode'"
+                >
+                  ← Back
+                </button>
+              </div>
+            </template>
+
+            <!-- Step 4: Setting up (progress) -->
             <template v-if="step === 'setup'">
               <div class="flw-header">
                 <span class="flw-logo flw-spin">⚙️</span>
@@ -226,11 +300,27 @@ const voice = useVoiceStore();
 const skillTree = useSkillTreeStore();
 const settingsStore = useSettingsStore();
 
-type Step = 'choose' | 'quest-mode' | 'setup' | 'done';
-const step = ref<Step>('choose');
+type Step = 'quest-mode' | 'confirm-disk' | 'setup' | 'done';
+const step = ref<Step>('quest-mode');
 const setupMessage = ref('Preparing...');
 const setupProgress = ref(0);
 const setupFailed = ref(false);
+const autoAcceptMode = ref(true);
+
+// ── Disk check state ─────────────────────────────────────────────────
+interface DriveInfo { mount_point: string; label: string; available_bytes: number; total_bytes: number }
+const ollamaDir = ref('');
+const diskAvailable = ref(0);
+const diskTotal = ref(0);
+const diskMountPoint = ref('');
+const allDrives = ref<DriveInfo[]>([]);
+const modelDownloadMb = ref(0);
+const modelDisplayName = ref('');
+const diskInsufficient = computed(
+  () => modelDownloadMb.value > 0 && diskAvailable.value > 0
+    && modelDownloadMb.value * 1024 * 1024 > diskAvailable.value,
+);
+const spaceFreedMb = ref(0);
 
 // ── Debug log ────────────────────────────────────────────────────────
 interface DebugEntry { time: string; message: string; level: 'info' | 'warn' | 'error' }
@@ -340,13 +430,76 @@ async function chooseManual() {
 }
 
 async function chooseAutoAll() {
-  step.value = 'setup';
-  await runRecommendedSetup(true);
+  autoAcceptMode.value = true;
+  await prepareDiskCheck();
 }
 
 async function chooseOneByOne() {
+  autoAcceptMode.value = false;
+  await prepareDiskCheck();
+}
+
+/** Gather disk info and the recommended model, then show confirmation. */
+async function prepareDiskCheck() {
+  try {
+    // Refresh catalogue + recommendations + system info in parallel.
+    await Promise.allSettled([
+      brain.checkOllamaStatus(),
+      brain.fetchSystemInfo(),
+      brain.fetchRecommendations(),
+      brain.fetchInstalledModels(),
+    ]);
+
+    // Determine which model would be pulled.
+    const top = brain.topRecommendation;
+    if (top) {
+      modelDisplayName.value = top.display_name;
+      modelDownloadMb.value = top.download_size_mb ?? 0;
+    }
+
+    // Only show disk check if Ollama is running and we need to pull.
+    if (brain.ollamaStatus.running) {
+      // Already installed? Skip disk check.
+      const topTag = top?.model_tag;
+      const installed = brain.installedModels;
+      if (topTag && installed.some(m => m.name === topTag)) {
+        step.value = 'setup';
+        await runRecommendedSetup(autoAcceptMode.value);
+        return;
+      }
+
+      // Get Ollama models dir + disk info.
+      try {
+        const [dir, drives] = await Promise.all([
+          brain.getOllamaModelsDir(),
+          brain.listDrives(),
+        ]);
+        ollamaDir.value = dir;
+        allDrives.value = drives;
+        const diskInfo = await brain.getDiskSpace(dir);
+        diskAvailable.value = diskInfo.available_bytes;
+        diskTotal.value = diskInfo.total_bytes;
+        diskMountPoint.value = diskInfo.mount_point;
+      } catch {
+        // If disk queries fail, proceed without checking.
+      }
+
+      if (modelDownloadMb.value > 0) {
+        step.value = 'confirm-disk';
+        return;
+      }
+    }
+  } catch {
+    // If any detection fails, just proceed.
+  }
+
   step.value = 'setup';
-  await runRecommendedSetup(false);
+  await runRecommendedSetup(autoAcceptMode.value);
+}
+
+function confirmDiskAndProceed() {
+  step.value = 'setup';
+  runRecommendedSetup(autoAcceptMode.value);
 }
 
 async function runRecommendedSetup(autoAcceptAll: boolean) {
@@ -388,6 +541,15 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
             label: `Brain connected (Local — ${result.model}${pullNote})`,
           });
           logDebug(`Brain configured: local ${result.model}${pullNote}`);
+        } else if (result.pullFailed) {
+          // Download was attempted but failed — show as error.
+          logDebug(`Model download failed: ${result.pullFailed}`, 'error');
+          items.push({
+            icon: '⚠️',
+            label: `Local model download failed — using cloud fallback. Error: ${result.pullFailed}`,
+            error: true,
+          });
+          setupFailed.value = true;
         } else {
           items.push({
             icon: '🧠',
@@ -430,6 +592,26 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
   // Stop the pull progress listener (download phase is over).
   stopPullProgressListener();
+
+  // ── Cleanup: track space freed by removing old models ──────────────
+  try {
+    await brain.fetchInstalledModels();
+    // Measure disk space freed (if we can reach the disk API).
+    if (ollamaDir.value) {
+      const afterDisk = await brain.getDiskSpace(ollamaDir.value);
+      const freed = afterDisk.available_bytes - diskAvailable.value;
+      if (freed > 1024 * 1024) {
+        // Disk space increased → old models were removed.
+        spaceFreedMb.value = Math.round(freed / (1024 * 1024));
+        logDebug(`Disk cleanup: freed ${formatBytes(freed)}`);
+      } else if (freed < -(1024 * 1024)) {
+        // Disk space decreased → model was downloaded.
+        logDebug(`Model downloaded: used ${formatBytes(-freed)} of disk space`);
+      }
+    }
+  } catch {
+    // Non-critical — skip cleanup reporting.
+  }
 
   // ── Phase 2: Voice (TTS) ────────────────────────────────────────────
   setupMessage.value = 'Setting up voice...';
@@ -497,6 +679,12 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   });
   setupProgress.value = 100;
   logDebug(setupFailed.value ? 'Setup completed with issues' : 'Setup completed successfully');
+
+  // Add disk space summary if relevant.
+  if (spaceFreedMb.value > 0) {
+    const gb = (spaceFreedMb.value / 1024).toFixed(1);
+    items.push({ icon: '🧹', label: `Cleaned up old models — freed ${gb} GB` });
+  }
 
   completedItems.value = items;
 
@@ -647,6 +835,161 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
 .flw-back:hover {
   color: var(--ts-text-primary);
+}
+
+/* ── Disk check step ─────────────────────────────────────────────── */
+.flw-disk-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.flw-disk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  font-size: 0.88rem;
+}
+
+.flw-disk-label {
+  color: var(--ts-text-secondary);
+  flex-shrink: 0;
+}
+
+.flw-disk-value {
+  text-align: right;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.flw-disk-size {
+  color: var(--ts-accent, #6478ff);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.flw-disk-path {
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flw-disk-ok { color: var(--ts-success, #4caf50); }
+.flw-disk-warn { color: var(--ts-danger, #e84040); font-weight: 600; }
+
+.flw-disk-bar-container {
+  margin-top: 0.25rem;
+}
+
+.flw-disk-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--ts-bg-card);
+}
+
+.flw-disk-bar-used {
+  background: var(--ts-text-secondary);
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.flw-disk-bar-model {
+  background: var(--ts-accent, #6478ff);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.flw-disk-bar-legend {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--ts-text-secondary);
+}
+
+.flw-legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+.flw-legend-used { background: var(--ts-text-secondary); opacity: 0.4; }
+.flw-legend-model { background: var(--ts-accent, #6478ff); opacity: 0.7; }
+.flw-legend-free { background: var(--ts-bg-card); border: 1px solid var(--ts-border); }
+
+.flw-disk-warning {
+  padding: 0.65rem 0.85rem;
+  background: rgba(232, 64, 64, 0.08);
+  border: 1px solid rgba(232, 64, 64, 0.2);
+  border-radius: 8px;
+  color: var(--ts-danger, #e84040);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.flw-drives-section {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--ts-border);
+}
+
+.flw-drives-label {
+  font-size: 0.82rem;
+  color: var(--ts-text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.flw-drive-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 0.25rem 0;
+}
+
+.flw-drive-name { color: var(--ts-text-primary); }
+.flw-drive-space { color: var(--ts-text-secondary); }
+
+.flw-drives-hint {
+  font-size: 0.75rem;
+  color: var(--ts-text-secondary);
+  margin-top: 0.5rem;
+  line-height: 1.4;
+}
+
+.flw-drives-hint code {
+  background: var(--ts-bg-card);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.72rem;
+}
+
+.flw-disk-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.flw-disk-actions .flw-done-btn {
+  width: 100%;
+}
+
+.flw-disk-actions .flw-done-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
 }
 
 .flw-progress {

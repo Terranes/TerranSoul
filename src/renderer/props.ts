@@ -1,5 +1,5 @@
 /**
- * Procedural "sitting with tea" props — sofa + teacup.
+ * Procedural sitting props — elegant chair + teacup.
  *
  * These are generated from primitives (no external GLB) so the app ships
  * without extra assets.  When higher-fidelity GLB models are placed in
@@ -8,96 +8,180 @@
 import * as THREE from 'three';
 
 export interface SittingProps {
-  /** Group containing the sofa — add this to the scene and toggle `.visible`. */
-  sofa: THREE.Group;
+  /** Group containing the chair — add this to the scene and toggle `.visible`. */
+  chair: THREE.Group;
   /** Group containing the teacup — parented to the right hand bone at mount. */
   teacup: THREE.Group;
 }
 
-/** Create the sofa primitive — a low-poly two-seat couch in a warm neutral tone.
+/**
+ * Create an elegant accent chair — mid-century modern style with tapered legs,
+ * curved backrest, and plush upholstered cushion.
  *
  * Coordinate convention (matches the VRM scene):
  *  - +Z is toward the camera (viewer)
- *  - Character root is at origin; when sitting, the body is lowered by
- *    SITTING_BODY_Y_OFFSET (≈ -0.42m).
+ *  - Character root is at origin
  *
- * We place the sofa so the seat cushion surface sits at y = 0.13 (just below
- * the lowered hip level) with the cushion extending forward to z = +0.45 so
- * the camera sees the couch beneath the character and the character reads
- * as sitting ON the sofa rather than standing behind it.
+ * The chair is sized and positioned so the seat surface sits just beneath
+ * the character's hips during a VRMA sitting animation.  Tweak CHAIR_SEAT_Y
+ * if the character floats above or sinks into the cushion.
  */
-function createSofa(): THREE.Group {
-  const group = new THREE.Group();
-  group.name = 'sitting-sofa';
 
+/** Seat surface Y — adjust to align with specific VRMA sitting animations. */
+const CHAIR_SEAT_Y = 0.36;
+
+function createChair(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'sitting-chair';
+
+  // ── Materials ──────────────────────────────────────────────────────
+  const woodMat = new THREE.MeshStandardMaterial({
+    color: 0x5c3a1e,      // rich walnut
+    roughness: 0.45,
+    metalness: 0.05,
+  });
+  const woodDarkMat = new THREE.MeshStandardMaterial({
+    color: 0x3b2410,      // darker accent
+    roughness: 0.40,
+    metalness: 0.08,
+  });
   const fabricMat = new THREE.MeshStandardMaterial({
-    color: 0x7a5a47,
-    roughness: 0.85,
-    metalness: 0.02,
+    color: 0x4a3f5c,      // muted plum/mauve upholstery
+    roughness: 0.82,
+    metalness: 0.0,
   });
   const cushionMat = new THREE.MeshStandardMaterial({
-    color: 0x9b7660,
-    roughness: 0.85,
-    metalness: 0.02,
-  });
-  const legMat = new THREE.MeshStandardMaterial({
-    color: 0x2d221b,
-    roughness: 0.55,
-    metalness: 0.1,
+    color: 0x584d6e,      // slightly lighter cushion highlight
+    roughness: 0.78,
+    metalness: 0.0,
   });
 
-  // Geometry reference: cushion top at y = 0.17 (seat) + 0.06 (cushion half) = 0.20
-  // Back of couch at z = -0.15 (behind character), front of cushion at z = +0.45
-  // Arms flare outward so camera sees the couch silhouette on both sides.
+  // ── Seat frame (slightly rounded box) ─────────────────────────────
+  const seatThickness = 0.06;
+  const seatWidth = 0.52;
+  const seatDepth = 0.48;
+  const seatFrame = new THREE.Mesh(
+    new THREE.BoxGeometry(seatWidth, seatThickness, seatDepth, 2, 1, 2),
+    woodMat,
+  );
+  seatFrame.position.set(0, CHAIR_SEAT_Y - seatThickness / 2, 0.04);
+  group.add(seatFrame);
 
-  // Seat block (wide, shallow)
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 0.72), fabricMat);
-  seat.position.set(0, 0.12, 0.12);
-  group.add(seat);
-
-  // Cushion on top of seat
-  const cushion = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.10, 0.66), cushionMat);
-  cushion.position.set(0, 0.25, 0.12);
+  // ── Seat cushion (soft, slightly puffy) ───────────────────────────
+  const cushionH = 0.055;
+  const cushionGeo = new THREE.BoxGeometry(
+    seatWidth - 0.04, cushionH, seatDepth - 0.04, 3, 2, 3,
+  );
+  // Slightly round the cushion vertices to give a pillow-like feel
+  const pos = cushionGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    // Puff up the top face and round edges via a dome function
+    const hw = (seatWidth - 0.04) / 2;
+    const hd = (seatDepth - 0.04) / 2;
+    const nx = x / hw;  // -1..1
+    const nz = z / hd;  // -1..1
+    const edgeFade = Math.max(0, 1 - nx * nx) * Math.max(0, 1 - nz * nz);
+    if (y > 0) {
+      pos.setY(i, y + edgeFade * 0.015);
+    }
+  }
+  cushionGeo.computeVertexNormals();
+  const cushion = new THREE.Mesh(cushionGeo, cushionMat);
+  cushion.position.set(0, CHAIR_SEAT_Y + cushionH / 2, 0.04);
   group.add(cushion);
 
-  // Back rest — tall panel behind the character
-  const back = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.7, 0.18), fabricMat);
-  back.position.set(0, 0.55, -0.32);
-  group.add(back);
+  // ── Backrest (curved panel) ───────────────────────────────────────
+  const backWidth = seatWidth - 0.02;
+  const backHeight = 0.42;
+  const backThickness = 0.04;
+  const backGeo = new THREE.BoxGeometry(
+    backWidth, backHeight, backThickness, 4, 6, 1,
+  );
+  // Curve the backrest: arch the vertices in the Z direction
+  const bPos = backGeo.attributes.position;
+  for (let i = 0; i < bPos.count; i++) {
+    const y = bPos.getY(i);
+    const z = bPos.getZ(i);
+    // Gentle concave curve — more pronounced at top
+    const t = (y / (backHeight / 2)); // -1 at bottom, +1 at top
+    const curvature = 0.04 * t * t;   // quadratic curve
+    bPos.setZ(i, z - curvature);
 
-  // Soft back cushion on top
-  const backCushion = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.55, 0.14), cushionMat);
-  backCushion.position.set(0, 0.58, -0.21);
-  group.add(backCushion);
+    // Slight side-wing splay at top
+    const x = bPos.getX(i);
+    const wingFactor = Math.max(0, t) * 0.015;
+    const sideSign = x > 0 ? 1 : x < 0 ? -1 : 0;
+    bPos.setX(i, x + sideSign * wingFactor);
+  }
+  backGeo.computeVertexNormals();
+  const backrest = new THREE.Mesh(backGeo, fabricMat);
+  const backCenterY = CHAIR_SEAT_Y + backHeight / 2 + 0.02;
+  backrest.position.set(0, backCenterY, -seatDepth / 2 + 0.02);
+  group.add(backrest);
 
-  // Arm rests — flare outward so the camera reads them clearly on both sides
-  const armGeo = new THREE.BoxGeometry(0.18, 0.42, 0.72);
-  const leftArm = new THREE.Mesh(armGeo, fabricMat);
-  leftArm.position.set(-0.72, 0.36, 0.12);
-  group.add(leftArm);
-  const rightArm = new THREE.Mesh(armGeo, fabricMat);
-  rightArm.position.set(0.72, 0.36, 0.12);
-  group.add(rightArm);
+  // ── Backrest top rail (decorative wood strip) ─────────────────────
+  const railGeo = new THREE.BoxGeometry(backWidth + 0.02, 0.028, 0.045, 4, 1, 1);
+  // Match the backrest curve on the rail
+  const rPos = railGeo.attributes.position;
+  for (let i = 0; i < rPos.count; i++) {
+    const x = rPos.getX(i);
+    const z = rPos.getZ(i);
+    const sideSign = x > 0 ? 1 : x < 0 ? -1 : 0;
+    rPos.setX(i, x + sideSign * 0.015);
+    // Slight forward arch
+    const nx = x / ((backWidth + 0.02) / 2);
+    rPos.setZ(i, z - 0.02 * nx * nx);
+  }
+  railGeo.computeVertexNormals();
+  const rail = new THREE.Mesh(railGeo, woodDarkMat);
+  rail.position.set(0, CHAIR_SEAT_Y + backHeight + 0.04, -seatDepth / 2 + 0.0);
+  group.add(rail);
 
-  // Legs — four short cylinders at the corners, slightly visible under the seat
-  const legGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.12, 12);
-  const legOffsets: [number, number][] = [
-    [-0.62, -0.18],
-    [0.62, -0.18],
-    [-0.62, 0.40],
-    [0.62, 0.40],
+  // ── Legs (4 tapered cylinders, angled outward) ────────────────────
+  const legH = CHAIR_SEAT_Y - seatThickness;
+  const legTopR = 0.022;
+  const legBotR = 0.016;
+  const legGeo = new THREE.CylinderGeometry(legTopR, legBotR, legH, 10);
+
+  // Leg positions: corners of the seat frame, slightly inset
+  const legInset = 0.04;
+  const legs: { x: number; z: number; tiltX: number; tiltZ: number }[] = [
+    { x: -(seatWidth / 2 - legInset), z: -(seatDepth / 2 - legInset) + 0.04, tiltX: 0.06, tiltZ: -0.06 },   // back-left
+    { x:  (seatWidth / 2 - legInset), z: -(seatDepth / 2 - legInset) + 0.04, tiltX: 0.06, tiltZ:  0.06 },   // back-right
+    { x: -(seatWidth / 2 - legInset), z:  (seatDepth / 2 - legInset) + 0.04, tiltX: -0.06, tiltZ: -0.06 },  // front-left
+    { x:  (seatWidth / 2 - legInset), z:  (seatDepth / 2 - legInset) + 0.04, tiltX: -0.06, tiltZ:  0.06 },  // front-right
   ];
-  for (const [x, z] of legOffsets) {
-    const leg = new THREE.Mesh(legGeo, legMat);
-    leg.position.set(x, 0.06, z);
+
+  for (const l of legs) {
+    const leg = new THREE.Mesh(legGeo, woodMat);
+    leg.position.set(l.x, legH / 2, l.z);
+    leg.rotation.set(l.tiltX, 0, l.tiltZ);
     group.add(leg);
+
+    // Foot cap — small rounded sphere at the bottom of each leg
+    const footGeo = new THREE.SphereGeometry(legBotR + 0.003, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const foot = new THREE.Mesh(footGeo, woodDarkMat);
+    foot.position.set(l.x + Math.sin(l.tiltZ) * legH * 0.5, 0.003, l.z - Math.sin(l.tiltX) * legH * 0.5);
+    foot.rotation.x = Math.PI;
+    group.add(foot);
   }
 
-  // Group root sits at the scene origin (floor).  The character is translated
-  // down by SITTING_BODY_Y_OFFSET when the sitting idle is active, so their
-  // hips land on the cushion at y ≈ 0.28 (cushion top).
-  group.position.set(0, 0, 0);
+  // ── Back support struts (two vertical dowels connecting seat to backrest) ──
+  const strutGeo = new THREE.CylinderGeometry(0.012, 0.012, backHeight * 0.6, 8);
+  for (const xSign of [-1, 1]) {
+    const strut = new THREE.Mesh(strutGeo, woodDarkMat);
+    strut.position.set(
+      xSign * (backWidth / 2 - 0.03),
+      CHAIR_SEAT_Y + backHeight * 0.3,
+      -seatDepth / 2 + 0.06,
+    );
+    group.add(strut);
+  }
 
+  group.position.set(0, 0, 0);
   return group;
 }
 
@@ -178,17 +262,17 @@ function createTeacup(): THREE.Group {
 }
 
 /**
- * Create both the sofa and teacup as independent groups.  The caller is
- * responsible for adding them to the scene (sofa) or parenting the teacup to
- * the character's right hand bone.  Both start hidden — call
- * setSittingPropsVisible(true) when the seated idle is active.
+ * Create both the chair and teacup as independent groups.  The caller is
+ * responsible for adding them to the scene (chair) or parenting the teacup to
+ * the character's right hand bone.  Both start hidden — set `.visible = true`
+ * when a sitting VRMA animation is active.
  */
 export function createSittingProps(): SittingProps {
-  const sofa = createSofa();
+  const chair = createChair();
   const teacup = createTeacup();
-  sofa.visible = false;
+  chair.visible = false;
   teacup.visible = false;
-  return { sofa, teacup };
+  return { chair, teacup };
 }
 
 /**

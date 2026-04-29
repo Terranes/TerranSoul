@@ -137,8 +137,16 @@ export interface ModelRecommendation {
   display_name: string;
   description: string;
   required_ram_mb: number;
+  download_size_mb?: number;
   is_top_pick: boolean;
   is_cloud?: boolean;
+}
+
+export interface DiskInfo {
+  mount_point: string;
+  label: string;
+  available_bytes: number;
+  total_bytes: number;
 }
 
 export interface OllamaStatus {

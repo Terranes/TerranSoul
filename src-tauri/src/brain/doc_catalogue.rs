@@ -23,6 +23,28 @@ pub struct ParsedCatalogue {
     pub top_picks: HashMap<String, String>,
 }
 
+/// Estimate download size in MB from the description text or required RAM.
+///
+/// Tries to parse "X GB download" or "X MB download" from the description
+/// first, then falls back to `required_ram_mb * 0.8`.
+fn estimate_download_size(description: &str, required_ram_mb: u64) -> u64 {
+    let lower = description.to_lowercase();
+    // Look for patterns like "20 GB download", "815 MB download", "9.6 GB download"
+    for window in lower.split_whitespace().collect::<Vec<_>>().windows(3) {
+        if window[2].starts_with("download") {
+            if let Ok(val) = window[0].parse::<f64>() {
+                if window[1] == "gb" {
+                    return (val * 1024.0) as u64;
+                } else if window[1] == "mb" {
+                    return val as u64;
+                }
+            }
+        }
+    }
+    // Fallback: ~80% of required RAM is a decent estimate for Q4 quantised models.
+    required_ram_mb * 4 / 5
+}
+
 /// Extract the model catalogue + top-picks from a markdown string.
 ///
 /// Returns `None` if the required markers are missing or the tables are
@@ -48,8 +70,9 @@ pub fn parse_catalogue(markdown: &str) -> Option<ParsedCatalogue> {
         let rec = ModelRecommendation {
             model_tag,
             display_name,
-            description,
             required_ram_mb,
+            download_size_mb: estimate_download_size(&description, required_ram_mb),
+            description,
             is_top_pick: false,
             is_cloud,
         };
@@ -315,11 +338,13 @@ async fn fetch_from_ollama_library(
             desc.chars().take(200).collect()
         };
 
+        let ram = estimate_ram_mb_for_name(name);
         models.push(ModelRecommendation {
             model_tag:       name.to_string(),
             display_name:    format_display_name(name),
+            download_size_mb: estimate_download_size(&desc, ram),
             description:     desc,
-            required_ram_mb: estimate_ram_mb_for_name(name),
+            required_ram_mb: ram,
             is_top_pick:     false,
             is_cloud:        false,
         });
@@ -408,11 +433,13 @@ async fn fetch_from_huggingface(
             if is_gguf { " · GGUF available" } else { "" },
             m.downloads,
         );
+        let ram = estimate_ram_mb_for_name(&ollama_tag);
         result.push(ModelRecommendation {
             model_tag:       ollama_tag.clone(),
             display_name:    format_display_name(&ollama_tag),
-            description:     desc,
-            required_ram_mb: estimate_ram_mb_for_name(&ollama_tag),
+            description:     desc.clone(),
+            required_ram_mb: ram,
+            download_size_mb: estimate_download_size(&desc, ram),
             is_top_pick:     false,
             is_cloud:        false,
         });
@@ -463,11 +490,13 @@ async fn fetch_from_lm_studio(
         } else {
             m.description.chars().take(200).collect()
         };
+        let ram = estimate_ram_mb_for_name(&ollama_tag);
         result.push(ModelRecommendation {
             model_tag:       ollama_tag.clone(),
             display_name:    format_display_name(&ollama_tag),
-            description:     desc,
-            required_ram_mb: estimate_ram_mb_for_name(&ollama_tag),
+            description:     desc.clone(),
+            required_ram_mb: ram,
+            download_size_mb: estimate_download_size(&desc, ram),
             is_top_pick:     false,
             is_cloud:        false,
         });
@@ -579,6 +608,17 @@ pub async fn fetch_online_catalogue(
 
     if merged.is_empty() {
         return Err("all online sources (Ollama, HuggingFace, LM Studio) returned no models".to_string());
+    }
+
+    // Always include our curated models from the hardcoded catalogue.
+    // The hardcoded list has precise RAM estimates and download sizes that
+    // online scrapers cannot reliably provide.  Online models *supplement*
+    // but never *replace* the curated entries.
+    let curated = super::model_recommender::recommend(u64::MAX);
+    for m in curated {
+        if seen.insert(m.model_tag.clone()) {
+            merged.push(m);
+        }
     }
 
     // Sort by required RAM descending so most-capable models come first.
@@ -774,27 +814,27 @@ mod tests {
             ModelRecommendation {
                 model_tag: "gemma4:31b".to_string(), display_name: String::new(),
                 description: String::new(), required_ram_mb: 24_576,
-                is_top_pick: false, is_cloud: false,
+                download_size_mb: 0, is_top_pick: false, is_cloud: false,
             },
             ModelRecommendation {
                 model_tag: "gemma4:e4b".to_string(), display_name: String::new(),
                 description: String::new(), required_ram_mb: 12_288,
-                is_top_pick: false, is_cloud: false,
+                download_size_mb: 0, is_top_pick: false, is_cloud: false,
             },
             ModelRecommendation {
                 model_tag: "gemma4:e2b".to_string(), display_name: String::new(),
                 description: String::new(), required_ram_mb: 8_192,
-                is_top_pick: false, is_cloud: false,
+                download_size_mb: 0, is_top_pick: false, is_cloud: false,
             },
             ModelRecommendation {
                 model_tag: "gemma3:1b".to_string(), display_name: String::new(),
                 description: String::new(), required_ram_mb: 2_048,
-                is_top_pick: false, is_cloud: false,
+                download_size_mb: 0, is_top_pick: false, is_cloud: false,
             },
             ModelRecommendation {
                 model_tag: "tinyllama".to_string(), display_name: String::new(),
                 description: String::new(), required_ram_mb: 2_048,
-                is_top_pick: false, is_cloud: false,
+                download_size_mb: 0, is_top_pick: false, is_cloud: false,
             },
         ];
         let picks = build_top_picks(&models);

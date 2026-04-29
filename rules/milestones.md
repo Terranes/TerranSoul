@@ -56,6 +56,170 @@ Pick the next `not-started` item from the tables below or from `rules/backlog.md
 | 14.13 | **Hunyuan-Motion / MimicMotion offline polish** — research chunk, feature-flagged. ML pass smooths recorded motion clips. | not-started | Deferred until 3+ user requests. |
 | 14.14 | **MoMask full-body retarget from sparse keypoints** — research chunk. SMPL-X reconstruction from 33 PoseLandmarker keypoints. | not-started | Research, off by default. |
 | 14.15 | **MotionGPT motion token generation** — research chunk. Brain generates motion tokens → `LearnedMotionPlayer` playback. | not-started | Furthest-out research chunk. |
+| 14.16 | **LLM-Driven 3D Animation — Research, Implement & Self-Improve** — Full pipeline: LLM generates per-frame VRM bone poses from conversation context, emotion, and motion intent. Integrates with self-improve loop for continuous animation learning. See detailed spec below. | not-started | Large chunk — can be split into sub-chunks 14.16a–14.16f. |
+
+---
+
+#### Chunk 14.16 — LLM-Driven 3D Animation (Detailed Spec)
+
+**Goal:** The brain generates context-aware 3D animations in real time — no
+pre-baked clips needed for novel motions. The self-improve system discovers,
+learns, and refines new animation patterns autonomously.
+
+**Sub-chunks (implement sequentially):**
+
+##### 14.16a — Research & Animation Taxonomy (research-only, no code)
+
+Survey the state of the art in LLM-driven 3D character animation and build a
+taxonomy of techniques applicable to VRM models:
+
+| Technique | Paper/Source | Applicability |
+|---|---|---|
+| **MotionGPT** (Jiang et al. 2024) | Text → motion-token sequences decoded to SMPL-X | Retarget SMPL → VRM 11 bones; brain generates motion tokens alongside text |
+| **MotionDiffuse** (Zhang et al. 2022) | Text-conditioned diffusion on joint angles | Generate `LearnedMotion` frames directly; long inference (~1s/motion) |
+| **MoMask** (Guo et al. 2024) | Masked motion prediction from sparse keypoints | From webcam PoseLandmarker input → full-body VRM retarget |
+| **AI4Animation MANN** (Holden et al. 2020) | Mode-Adaptive Neural Networks, expert blending | Already analysed in research-reverse-engineering.md § 7 |
+| **T2M-GPT** (Zhang et al. 2023) | VQ-VAE motion tokens + GPT-2 decoder | Lightweight; motion codebook fits in ~50 MB |
+| **LLM-as-animator** (novel) | Structured JSON pose output from chat LLM | Zero extra model; works with any Ollama/cloud LLM |
+
+Deliverable: Write `docs/llm-animation-research.md` with pros/cons matrix,
+latency estimates, VRM bone mapping strategy, and recommended implementation
+order. No code changes.
+
+##### 14.16b — LLM-as-Animator: Structured Pose Generation
+
+The simplest and most immediately useful approach — the existing chat LLM
+generates structured animation data alongside its text response.
+
+**New stream tag:** `<pose>{ "head": [0.1, -0.05, 0], "spine": [0.03, 0, 0], ... }</pose>`
+
+Implementation:
+1. **Extend `StreamTagParser`** to recognise `<pose>...</pose>` tags (like existing `<anim>` tags).
+2. **New type `LlmPoseFrame`** in `persona-types.ts`:
+   ```typescript
+   interface LlmPoseFrame {
+     bones: Record<string, [number, number, number]>;  // Euler XYZ rad
+     duration_s?: number;   // how long to hold (default 2s)
+     easing?: 'linear' | 'ease-in-out' | 'spring';
+     expression?: Record<string, number>;  // optional face weights
+   }
+   ```
+3. **New `PoseAnimator` class** in `src/renderer/pose-animator.ts`:
+   - Receives `LlmPoseFrame` from the stream parser
+   - Smoothly interpolates current bone state → target pose via damped spring
+   - Layered on top of procedural idle (takes priority, fades back to idle)
+   - Respects VRMA lock (yields when a VRMA clip is playing)
+4. **Wire into CharacterViewport** — `onPoseTag(frame: LlmPoseFrame)` callback
+5. **System prompt injection** — Add pose instruction block to the system prompt
+   when the `local-brain` or `paid-brain` skill is active:
+   ```
+   You can control the character's body by emitting <pose> tags:
+   <pose>{"head":[0.1,0,0],"spine":[0.03,0,0]}</pose>
+   Bones: head, neck, spine, chest, hips, leftUpperArm, rightUpperArm,
+   leftLowerArm, rightLowerArm, leftShoulder, rightShoulder
+   Values are Euler angles in radians. Use small values (±0.3 max).
+   ```
+
+Tests: Unit tests for PoseAnimator (damping, layering, VRMA yield). Stream
+parser tests for `<pose>` tag extraction. Vitest + vue-tsc clean.
+
+##### 14.16c — Motion Library: LLM-Generated Clip Catalogue
+
+Let the brain generate reusable `LearnedMotion` clips from text descriptions.
+
+1. **New Tauri command `generate_motion_from_text`**:
+   - Input: `{ description: string, duration_s: number, fps: number }`
+   - Calls the active brain with a structured prompt:
+     ```
+     Generate a VRM animation clip for: "{description}"
+     Output JSON: { "frames": [{ "t": 0.0, "bones": { "head": [x,y,z], ... } }, ...] }
+     Duration: {duration_s}s at {fps} FPS. Bones: head, neck, spine, chest,
+     hips, leftUpperArm, rightUpperArm, leftLowerArm, rightLowerArm,
+     leftShoulder, rightShoulder. Values are Euler radians (±0.5 max).
+     Output ONLY valid JSON.
+     ```
+   - Parse response → `LearnedMotion` struct
+   - Validate: clamp angles, verify frame count, ensure monotonic timestamps
+   - Persist to persona store's `learnedMotions`
+2. **UI in Persona panel** — "Generate motion" button, text input, preview, save
+3. **Motion preview** — plays generated clip on the character before saving
+4. **Motion trigger** — saved motions get a `trigger` key the LLM can emit
+
+Tests: Rust command tests (mock LLM response). Frontend tests for motion
+generation flow. End-to-end validation that baked clip plays on VRM.
+
+##### 14.16d — Emotion-Reactive Procedural Blending
+
+Replace the current 6 static idle poses with an emotion-weighted blend system
+inspired by AI4Animation's expert blending architecture.
+
+1. **Emotion-weighted pose blending** in `CharacterAnimator`:
+   - Current: `IDLE_POSES[randomIndex]` picks one static pose
+   - New: `blendedPose = Σ (emotionWeight[i] × EMOTION_POSES[i])` where
+     weights come from the AvatarStateMachine emotion layer
+   - Emotions: neutral, happy, sad, angry, relaxed, surprised, thinking
+   - Each emotion has a characteristic pose (head tilt, spine lean, arm rest)
+2. **Conversation energy signal**:
+   - Track recent message sentiment and response speed
+   - Map to body "energy level" (0–1): low energy = slumped/sleepy, high = upright/alert
+   - Blended into spine/chest lean and breathing amplitude
+3. **Micro-gestures** — small procedural movements triggered by brain output:
+   - Nod on agreement (`<gesture:nod>`)
+   - Head shake on disagreement (`<gesture:shake>`)
+   - Shrug on uncertainty (`<gesture:shrug>`)
+   - These are 0.5s procedural tweens, not full VRMA clips
+
+Tests: Animator unit tests for blend weights, energy mapping, micro-gestures.
+
+##### 14.16e — Self-Improve Animation Learning Loop
+
+Integrate animation generation with the self-improve system so the companion
+autonomously discovers and learns new animations.
+
+1. **New self-improve task type: `animation_discovery`** in the engine:
+   - Engine reads the current `VRMA_ANIMATIONS` catalogue + `learnedMotions`
+   - Identifies gaps (e.g., no "waving goodbye" motion, no "thinking hard" pose)
+   - Generates a text prompt → calls `generate_motion_from_text` (from 14.16c)
+   - Validates the generated clip (plays on headless Three.js, checks bone limits)
+   - Saves to `learnedMotions` with auto-generated trigger key
+   - Logs the discovery to `self-improve-progress` event feed
+2. **Animation quality scoring** (Rust):
+   - Score each generated motion on: smoothness (jerk minimisation), range
+     adherence (no clipping), expressiveness (variance from idle)
+   - Reject motions below quality threshold, retry with refined prompt
+   - Log quality scores to self-improve metrics
+3. **Iterative refinement**:
+   - After N chat sessions, analyse which motions were triggered vs ignored
+   - Prune unused motions, regenerate with adjusted prompts
+   - Track improvement metrics: motion diversity, trigger frequency, user
+     engagement (did user continue chatting after animation played?)
+4. **Skill tree integration** — new quest `animation-mastery`:
+   - Auto-activates when `local-brain` is active + 5+ learned motions exist
+   - Rewards: "Self-taught animations", "Expanding motion vocabulary"
+   - Stat boosts: CHA +8, DEX +8, INT +5 (creative expression + precision)
+
+Tests: Engine task type routing tests. Quality scoring tests. Skill tree
+activation test.
+
+##### 14.16f — MotionGPT / T2M-GPT Inference (Optional, GPU-Required)
+
+For users with capable GPUs, run a dedicated motion generation model locally.
+
+1. **Evaluate T2M-GPT** (smallest: ~50 MB VQ-VAE codebook + 124M GPT-2):
+   - Text → motion tokens → VQ-VAE decode → SMPL joint angles
+   - Retarget SMPL 23 joints → VRM 11 bones via FK chain mapping
+2. **ONNX runtime integration** in Rust (`ort` crate, already used by some projects):
+   - Load quantised T2M-GPT model from `~/.terransoul/models/motion/`
+   - Inference: ~200ms per 3-second clip on RTX 3060
+   - Fallback: if no GPU / model not downloaded, use LLM-as-animator (14.16b)
+3. **Model download flow** — reuse the Ollama-style pull progress UI
+4. **Quality comparison** — A/B test LLM-generated vs T2M-GPT motions
+
+Feature-flagged behind `AppSettings.motion_model_enabled`. This sub-chunk is
+optional and depends on user GPU availability.
+
+Tests: ONNX loading tests (mock model). Retarget bone-mapping tests.
+Integration test with VRM playback.
 
 ---
 

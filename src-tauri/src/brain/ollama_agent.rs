@@ -872,6 +872,7 @@ where
     let mut layer_totals: std::collections::HashMap<String, (u64, u64)> =
         std::collections::HashMap::new();
     let mut buf = String::new();
+    let mut saw_success = false;
 
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
@@ -892,6 +893,10 @@ where
             // Ollama surfaces errors inline.
             if let Some(err) = parsed.error {
                 return Err(format!("Ollama pull error: {err}"));
+            }
+
+            if parsed.status == "success" {
+                saw_success = true;
             }
 
             // Update per-layer tracking.
@@ -924,6 +929,15 @@ where
             });
         }
     }
+
+    if !saw_success {
+        return Err(
+            "Ollama pull stream ended without a success status — \
+             the download may have been interrupted or the model may not exist"
+                .to_string(),
+        );
+    }
+
     Ok(())
 }
 

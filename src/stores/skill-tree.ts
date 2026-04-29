@@ -1274,6 +1274,39 @@ const SKILL_NODES: SkillNode[] = [
       },
     ],
   },
+
+  // ── LLM-DRIVEN ANIMATION (Phase 14.16) ──────────────────────────────────
+  {
+    id: 'animation-mastery',
+    name: 'Living Canvas',
+    tagline: 'Self-taught animations from the brain',
+    description: 'The brain generates novel 3D animations from conversation context — no pre-baked clips needed. The self-improve loop discovers motion gaps and autonomously learns new gestures, poses, and reactions over time.',
+    icon: '🎬',
+    tier: 'ultimate',
+    requires: ['local-brain', 'soul-mirror'],
+    rewards: ['LLM-generated bone animations', 'Self-improving motion vocabulary', 'Emotion-reactive procedural blending'],
+    rewardIcons: ['🦴', '🧠', '💃'],
+    questSteps: [
+      { label: 'Install a local LLM via the Brain Setup', action: 'navigate', target: 'brain-setup' },
+      { label: 'Open Persona panel and generate 5+ learned motions', action: 'navigate', target: 'brain' },
+      { label: 'Enable self-improve to let the brain discover new animations', action: 'navigate', target: 'self-improve' },
+    ],
+    category: 'avatar',
+    combos: [
+      {
+        withSkills: ['expressions-pack'],
+        name: 'Full Spectrum',
+        description: 'Brain-generated body animations + learned facial expressions = the avatar performs with its whole being.',
+        icon: '🌈',
+      },
+      {
+        withSkills: ['master-echo'],
+        name: 'Mirror Dance',
+        description: 'A self-aware persona that teaches itself how to move — the avatar\'s gestures evolve alongside its personality.',
+        icon: '🪩',
+      },
+    ],
+  },
 ];
 
 /** Filter skills by current platform */
@@ -1420,6 +1453,12 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       case 'motion-capture': {
         const persona = usePersonaStore();
         return (persona.learnedMotions?.length ?? 0) > 0;
+      }
+      case 'animation-mastery': {
+        // Auto-active when local brain is configured + 5+ learned motions exist
+        const persona = usePersonaStore();
+        return brain.brainMode?.mode === 'local_ollama'
+          && (persona.learnedMotions?.length ?? 0) >= 5;
       }
       case 'bgm':
         return settings.settings?.bgm_enabled ?? false;

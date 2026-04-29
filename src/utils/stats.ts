@@ -121,16 +121,77 @@ export const STAT_DESCRIPTORS: StatDescriptor[] = [
  *   - `device-link`    END +20 ← session-continuity uplift (CRDT/multi-device
  *                                sync removes restart cost)
  *   - `windows-startup` END +15 ← reduces "first launch" friction (uptime ↑)
+ *
+ *   ─── Brain-tier flat bonuses (supplement the per-model benchmark boost) ───
+ *   The three brain-tier skills now carry **flat bonuses** for stats that the
+ *   model-benchmark system doesn't cover (CHA, PER, END). This ensures that
+ *   installing a local LLM visibly fills out the full stat sheet rather than
+ *   only boosting INT/WIS/DEX.
+ *
+ *   - `local-brain`    INT +5 / WIS +5 / CHA +12 / PER +10 / DEX +8 / END +15
+ *                                ← offline availability, faster latency, privacy
+ *                                  (no network round-trip ≈ +8 DEX; always-on
+ *                                   offline ≈ +15 END; richer local interactions
+ *                                   ≈ +12 CHA; local processing ≈ +10 PER)
+ *   - `paid-brain`     CHA +8 / PER +5 / END +5
+ *                                ← premium API = more eloquent, reliable
+ *   - `free-brain`     CHA +3 / PER +3 / END +3
+ *                                ← baseline conversational ability
+ *
+ *   ─── Brain-learning & knowledge skills ────────────────────────────────────
+ *   - `rag-knowledge`  INT +15 / WIS +15 / PER +5
+ *                                ← RAG accuracy lift (Lewis et al. 2020,
+ *                                   +30-50 pp F1 on Natural Questions,
+ *                                   split across INT for reasoning and WIS
+ *                                   for recall, https://arxiv.org/abs/2005.11401)
+ *   - `scholar-quest`  INT +10 / WIS +10 / DEX +5
+ *                                ← structured knowledge acquisition chain
+ *   - `soul-mirror`    CHA +5 / WIS +5
+ *                                ← self-awareness grounds social presence
+ *   - `my-persona`     CHA +10 / WIS +5 / END +5
+ *                                ← personality definition = stronger identity
+ *   - `master-echo`    INT +5 / WIS +10 / CHA +8 / END +5
+ *                                ← brain-extracted persona = self-learning
+ *   - `expressions-pack` CHA +10 / PER +5
+ *                                ← facial expressiveness (Knutsen et al. 2022)
+ *   - `notes-vault`    WIS +10 / END +5
+ *                                ← organized knowledge retention
+ *   - `themes`         END +5
+ *                                ← customization drives engagement longevity
+ *   - `clipboard-watcher` INT +5 / PER +5 / DEX +10
+ *                                ← quick analysis + environmental awareness
+ *   - `focus-timer`    DEX +5 / END +5
+ *                                ← productivity discipline + session persistence
+ *   - `dream-journal`  WIS +10 / INT +5
+ *                                ← reflective self-knowledge
+ *   - `animation-mastery` INT +5 / CHA +8 / DEX +8
+ *                                ← creative expression + precision control;
+ *                                  self-taught motion vocabulary (Phase 14.16e)
  */
 const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
   intelligence: {
     'agents':           20,
     'memory':           10,
     'vision':           15,
+    'rag-knowledge':    15,
+    'scholar-quest':    10,
+    'master-echo':       5,
+    'local-brain':       5,
+    'clipboard-watcher': 5,
+    'dream-journal':     5,
+    'animation-mastery': 5,
   },
   wisdom: {
     'memory':           50,
     'presence':         10,
+    'rag-knowledge':    15,
+    'scholar-quest':    10,
+    'master-echo':      10,
+    'my-persona':        5,
+    'soul-mirror':       5,
+    'notes-vault':      10,
+    'local-brain':       5,
+    'dream-journal':    10,
   },
   charisma: {
     'tts':              45,
@@ -138,6 +199,14 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
     'voice-cloning':    35,
     'presence':         15,
     'agents':           10,
+    'local-brain':      12,
+    'paid-brain':        8,
+    'free-brain':        3,
+    'my-persona':       10,
+    'master-echo':       8,
+    'soul-mirror':       5,
+    'expressions-pack': 10,
+    'animation-mastery': 8,
   },
   perception: {
     'asr':              35,
@@ -145,6 +214,12 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
     'hotwords':         30,
     'diarization':      15,
     'vision':           20,
+    'local-brain':      10,
+    'paid-brain':        5,
+    'free-brain':        3,
+    'rag-knowledge':     5,
+    'clipboard-watcher': 5,
+    'expressions-pack':  5,
   },
   dexterity: {
     'asr':              10,
@@ -152,6 +227,11 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
     'whisper-asr':      15,
     'windows-shortcuts':25,
     'agents':           15,
+    'local-brain':       8,
+    'clipboard-watcher':10,
+    'focus-timer':       5,
+    'scholar-quest':     5,
+    'animation-mastery': 8,
   },
   endurance: {
     'bgm':              30,
@@ -160,6 +240,14 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
     'pet-mode':         30,
     'device-link':      20,
     'windows-startup':  15,
+    'local-brain':      15,
+    'paid-brain':        5,
+    'free-brain':        3,
+    'my-persona':        5,
+    'master-echo':       5,
+    'themes':            5,
+    'notes-vault':       5,
+    'focus-timer':       5,
   },
 };
 

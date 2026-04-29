@@ -38,4 +38,7 @@ pub use selection::{
     AgentSelection, BrainSelection, EmbeddingSelection, MemorySelection, ProviderSelection,
     SearchMethod, SearchSelection, StorageSelection,
 };
-pub use system_info::{collect as collect_system_info, SystemInfo};
+pub use system_info::{
+    collect as collect_system_info, disk_info_for_path, list_drives, ollama_models_dir, DiskInfo,
+    SystemInfo,
+};

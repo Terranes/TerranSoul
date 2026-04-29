@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   BrainMode,
+  DiskInfo,
   FreeProvider,
   LmStudioDownloadStatus,
   LmStudioLoadResult,
@@ -102,6 +103,21 @@ export const useBrainStore = defineStore('brain', () => {
 
   async function fetchInstalledModels(): Promise<void> {
     installedModels.value = await invoke<OllamaModelEntry[]>('get_ollama_models');
+  }
+
+  /** Get the path where Ollama stores downloaded models. */
+  async function getOllamaModelsDir(): Promise<string> {
+    return invoke<string>('get_ollama_models_dir');
+  }
+
+  /** Get disk space info for the drive containing the given path. */
+  async function getDiskSpace(path: string): Promise<DiskInfo> {
+    return invoke<DiskInfo>('get_disk_space', { path });
+  }
+
+  /** List all mounted drives with their available and total space. */
+  async function listDrives(): Promise<DiskInfo[]> {
+    return invoke<DiskInfo[]>('list_drives');
   }
 
   async function checkLmStudioStatus(baseUrl?: string, apiKey?: string | null): Promise<void> {
@@ -341,7 +357,7 @@ export const useBrainStore = defineStore('brain', () => {
    */
   async function autoConfigureLocalFirst(callbacks?: {
     onProgress?: (message: string) => void;
-  }): Promise<{ mode: 'local' | 'cloud'; model: string; pulled: boolean }> {
+  }): Promise<{ mode: 'local' | 'cloud'; model: string; pulled: boolean; pullFailed?: string }> {
     const report = (msg: string) => callbacks?.onProgress?.(msg);
 
     // Step 0: Refresh model catalogue from online (best-effort)
@@ -434,7 +450,12 @@ export const useBrainStore = defineStore('brain', () => {
     // Nothing worked — cloud fallback
     report('Model download failed — using free cloud AI...');
     await autoConfigureForDesktop();
-    return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+    return {
+      mode: 'cloud',
+      model: 'Pollinations AI',
+      pulled: false,
+      pullFailed: pullError.value || `Failed to download ${modelToPull}`,
+    };
   }
 
   /** Full initialisation for the brain setup wizard. */
@@ -601,6 +622,9 @@ export const useBrainStore = defineStore('brain', () => {
     refreshModelCatalogue,
     checkOllamaStatus,
     fetchInstalledModels,
+    getOllamaModelsDir,
+    getDiskSpace,
+    listDrives,
     checkLmStudioStatus,
     fetchLmStudioModels,
     pullModel,

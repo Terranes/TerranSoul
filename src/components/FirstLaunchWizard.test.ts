@@ -52,12 +52,14 @@ describe('FirstLaunchWizard', () => {
     document.body.querySelectorAll('.flw-backdrop').forEach(el => el.remove());
   });
 
-  it('shows the choose step when visible', () => {
+  it('shows the quest-mode step when visible', () => {
     const wrapper = mount(FirstLaunchWizard, {
       props: { visible: true },
       global: { stubs: { Teleport: true } },
     });
     expect(wrapper.text()).toContain('Welcome to TerranSoul');
+    expect(wrapper.text()).toContain('Auto-Accept All');
+    expect(wrapper.text()).toContain('Accept One by One');
   });
 
   it('is hidden when visible=false', () => {
@@ -74,34 +76,26 @@ describe('FirstLaunchWizard', () => {
       global: { stubs: { Teleport: true } },
     });
     const buttons = wrapper.findAll('.flw-option');
-    // Second button = "Set Up From Scratch"
-    await buttons[1].trigger('click');
+    // Third button = "Set Up From Scratch"
+    await buttons[2].trigger('click');
     expect(wrapper.emitted('done')).toBeTruthy();
   });
 
-  it('advances to quest-mode step on Recommended click', async () => {
+  it('starts directly on quest-mode without a choose step', () => {
     const wrapper = mount(FirstLaunchWizard, {
       props: { visible: true },
       global: { stubs: { Teleport: true } },
     });
-    const buttons = wrapper.findAll('.flw-option');
-    // First button = Recommended
-    await buttons[0].trigger('click');
-    expect(wrapper.text()).toContain('Quest Activation');
+    // No separate "Recommended Setup" button — all options are on the first screen
     expect(wrapper.text()).toContain('Auto-Accept All');
-    expect(wrapper.text()).toContain('Accept One by One');
+    expect(wrapper.text()).not.toContain('Recommended Setup');
   });
 
-  it('shows back button on quest-mode step', async () => {
+  it('does not show a back button on the initial step', () => {
     const wrapper = mount(FirstLaunchWizard, {
       props: { visible: true },
       global: { stubs: { Teleport: true } },
     });
-    // Click Recommended to advance to quest-mode step
-    await wrapper.findAll('.flw-option')[0].trigger('click');
-    const backBtn = wrapper.find('.flw-back');
-    expect(backBtn.exists()).toBe(true);
-    await backBtn.trigger('click');
-    expect(wrapper.text()).toContain('Welcome to TerranSoul');
+    expect(wrapper.find('.flw-back').exists()).toBe(false);
   });
 });

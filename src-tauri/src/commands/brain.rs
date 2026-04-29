@@ -24,6 +24,24 @@ pub async fn get_system_info() -> SystemInfo {
     brain::collect_system_info()
 }
 
+/// Return the path where Ollama stores downloaded models.
+#[tauri::command]
+pub async fn get_ollama_models_dir() -> String {
+    brain::ollama_models_dir()
+}
+
+/// Return disk space information for the drive containing the given path.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_disk_space(path: String) -> Result<brain::DiskInfo, String> {
+    brain::disk_info_for_path(&path).ok_or_else(|| format!("No disk found for path: {path}"))
+}
+
+/// List all mounted drives / partitions with available and total space.
+#[tauri::command]
+pub async fn list_drives() -> Vec<brain::DiskInfo> {
+    brain::list_drives()
+}
+
 /// Read a bundled documentation file by relative path (e.g. `"docs/brain-advanced-design.md"`).
 ///
 /// Returns the file contents as a string. This allows the frontend to
