@@ -156,12 +156,27 @@ test('desktop: full end-to-end flow', async ({ page }) => {
   // Next track cycles
   const trackName = page.locator('.music-track-name');
   const initialTrack = await trackName.textContent();
-  const nextBtn = page.locator('.music-bar-panel .music-btn').nth(1);
+  // Resolve the "Next track" button by its title rather than by sibling
+  // index so future additions to the music bar (e.g. the global-mute
+  // button between play and next) do not shift it out from under us.
+  const nextBtn = page.locator('.music-bar-panel button[title="Next track"]');
   await nextBtn.click();
   await expect(async () => {
     const newTrack = await trackName.textContent();
     expect(newTrack).not.toBe(initialTrack);
   }).toPass({ timeout: 2_000 });
+
+  // Mute toggle silences the whole app (BGM + voice). Verify the icon
+  // flips between 🔊 and 🔇 and the active class is applied.
+  const muteBtn = page.locator('.music-bar-panel button.mute-btn');
+  await expect(muteBtn).toBeVisible();
+  await expect(muteBtn).toContainText('🔊');
+  await muteBtn.click();
+  await expect(muteBtn).toContainText('🔇');
+  await expect(muteBtn).toHaveClass(/active/);
+  await muteBtn.click();
+  await expect(muteBtn).toContainText('🔊');
+  await expect(muteBtn).not.toHaveClass(/active/);
 
   await musicToggle.click();
 

@@ -152,8 +152,10 @@ const MEMORY_STATE = {
 test.describe('Brain + Local LM Studio — Complete Walkthrough', () => {
   test(
     'full flow: learn-docs intent → auto-install → ingest → RAG → multilingual',
-    { timeout: 180_000 },
     async ({ page }) => {
+      // `test('name', { timeout }, fn)` is silently ignored on Playwright 1.59
+      // (the second arg is TestDetails, not options) — set timeout from inside.
+      test.setTimeout(180_000);
       mkdirSync(SCREENSHOT_DIR, { recursive: true });
       const errors = collectConsoleErrors(page);
       await page.goto('/');

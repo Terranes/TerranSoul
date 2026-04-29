@@ -59,6 +59,24 @@ Pick the next `not-started` item from the tables below or from `rules/backlog.md
 
 ---
 
+### Phase 25 — Self-Improve Autonomous Coding System
+
+> Goal: TerranSoul becomes a self-improving autonomous coding system that
+> drives `rules/milestones.md` chunks through a dedicated coding LLM, opens
+> PRs against a feature branch (never master), and survives app/computer
+> restart. Disabling is the only stop signal. **Foundation done in
+> Chunk 25.1 — see `completion-log.md`. Chunks 25.2-25.9 (planner-mode
+> autonomous loop, repo binding, autostart, tray, live UI) shipped in
+> the 25.2-25.9 batch — see `completion-log.md`.**
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 25.10 | **Diff application + PR opening** — extend the planner-mode engine to apply LLM-produced patches to a feature branch, run the CI gate, commit, and open a PR via GitHub API. Currently gated behind explicit feature flag. | not-started | Depends on 25.2-25.9. Use `octocrab` for PR. Must keep "branch-only, never push master" invariant. |
+| 25.11 | **MCP server self-host & self-improve** — auto-spawn local MCP server, allow loop to extend its own tools. | not-started | Builds on existing `ai_integrations::mcp`. |
+| 25.12 | **Brain data migration & optimisation** — autonomous loop runs schema migrations + ANN index rebuilds per `docs/brain-advanced-design.md`. | not-started | Brain doc sync required (rule 10). |
+
+---
+
 ### Phase 15 — AI Coding Integrations (MCP + gRPC brain gateway)
 
 | # | Chunk | Status | Notes |

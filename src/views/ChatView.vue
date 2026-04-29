@@ -435,6 +435,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useConversationStore, detectSentiment, handleLearnDocsChoice } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
@@ -442,6 +443,7 @@ import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
 import { useStreamingStore } from '../stores/streaming';
 import { useVoiceStore } from '../stores/voice';
 import { useSettingsStore } from '../stores/settings';
+import { useAudioStore } from '../stores/audio';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
@@ -471,11 +473,14 @@ const aiDecisionPolicy = useAiDecisionPolicyStore().policy;
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const settingsStore = useSettingsStore();
+const audioStore = useAudioStore();
+const { muted: audioMuted } = storeToRefs(audioStore);
 const skillTree = useSkillTreeStore();
 const { chatDrawerExpanded, toggleChatDrawer, setChatDrawerExpanded } = useChatExpansion();
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
   getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  mutedRef: audioMuted,
 });
 const asr = useAsrManager({
   onTranscript: (text: string) => handleSend(text),

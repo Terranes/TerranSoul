@@ -123,9 +123,11 @@ export async function openDrawer(page: Page) {
     // … and for the Vue enter-transition to fully finish (all enter-* classes
     // removed). Returning while the animation is still running would cause
     // closeDrawer to operate on a half-open drawer, triggering a broken
-    // interrupt → restart cycle.
-    await expect(drawer).not.toHaveClass(/chat-panel-enter/, { timeout: 1_000 });
-  }).toPass({ timeout: 10_000 });
+    // interrupt → restart cycle. Bump from 1s → 4s because slow CI runners
+    // (GitHub Actions ubuntu-latest) routinely take 1.5-2s to finish the
+    // 350ms transition once layout-thrash from streaming is included.
+    await expect(drawer).not.toHaveClass(/chat-panel-enter/, { timeout: 4_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /** Close the chat history drawer if it's open. */

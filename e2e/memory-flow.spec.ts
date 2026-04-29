@@ -28,7 +28,14 @@ import {
   TIMEOUTS,
 } from './helpers';
 
-test('memory: UI rendering and interaction flow', { timeout: 120_000 }, async ({ page }) => {
+// Per-test budget aligned with the global default in `playwright.config.ts`
+// (180_000 ms) but extended for cold-start CI runners that need to compile
+// Vite chunks + load VRM assets before reaching the Memory tab. Note that
+// `test('name', { timeout: … }, fn)` is silently ignored — the second
+// argument is `TestDetails` (tags / annotations only) in Playwright 1.59,
+// so the timeout MUST be set via `test.setTimeout()` from inside the body.
+test('memory: UI rendering and interaction flow', async ({ page }) => {
+  test.setTimeout(240_000);
   const errors = collectConsoleErrors(page);
   await page.goto('/');
   await waitForAppReady(page);

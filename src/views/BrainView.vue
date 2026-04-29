@@ -94,6 +94,119 @@
       </div>
     </section>
 
+    <!-- ── Coding LLM (Phase 25 — Self-Improve) ──────────────────────────── -->
+    <section
+      class="bv-coding-llm"
+      data-testid="bv-coding-llm"
+    >
+      <div class="bv-section-title">
+        🛠️ Coding LLM
+        <span class="bv-section-sub">(used by Self-Improve)</span>
+      </div>
+      <p class="bv-coding-llm-desc">
+        Pick a dedicated provider for autonomous coding. This is separate
+        from the chat brain above — Claude is recommended for self-improve.
+      </p>
+
+      <div class="bv-coding-llm-grid">
+        <button
+          v-for="rec in selfImprove.recommendations"
+          :key="rec.provider + rec.display_name"
+          type="button"
+          :class="[
+            'bv-coding-card',
+            { active: selectedCodingProvider === rec.provider, top: rec.is_top_pick },
+          ]"
+          @click="selectedCodingProvider = rec.provider"
+        >
+          <div class="bv-coding-card-head">
+            <strong>{{ rec.display_name }}</strong>
+            <span
+              v-if="rec.is_top_pick"
+              class="bv-coding-badge"
+            >⭐ Top pick</span>
+          </div>
+          <p class="bv-coding-notes">
+            {{ rec.notes }}
+          </p>
+          <small>Default model: <code>{{ rec.default_model || 'custom' }}</code></small>
+        </button>
+      </div>
+
+      <div
+        v-if="selectedCodingRec"
+        class="bv-coding-form"
+      >
+        <label>Model</label>
+        <input
+          v-model="codingModelInput"
+          type="text"
+          :placeholder="selectedCodingRec.default_model || 'gpt-4o'"
+          class="bv-input"
+        >
+        <label>Base URL</label>
+        <input
+          v-model="codingBaseUrlInput"
+          type="url"
+          :placeholder="selectedCodingRec.base_url || 'https://api.example.com/v1'"
+          class="bv-input"
+        >
+        <label>API Key</label>
+        <input
+          v-model="codingApiKeyInput"
+          type="password"
+          placeholder="sk-…"
+          class="bv-input"
+        >
+        <div class="bv-coding-actions">
+          <button
+            type="button"
+            class="bv-btn bv-btn-primary"
+            :disabled="!codingApiKeyInput || !(codingModelInput || selectedCodingRec.default_model)"
+            @click="saveCodingLlm"
+          >
+            Save Coding LLM
+          </button>
+          <button
+            v-if="selfImprove.codingLlm"
+            type="button"
+            class="bv-btn bv-btn-ghost"
+            @click="clearCodingLlm"
+          >
+            Clear
+          </button>
+          <button
+            v-if="selfImprove.codingLlm"
+            type="button"
+            class="bv-btn bv-btn-ghost"
+            :disabled="codingTestInFlight"
+            data-testid="bv-coding-test"
+            @click="testCodingLlm"
+          >
+            {{ codingTestInFlight ? 'Testing…' : '🔌 Test connection' }}
+          </button>
+        </div>
+        <p
+          v-if="selfImprove.reachability"
+          class="bv-coding-status"
+          :class="selfImprove.reachability.ok ? 'bv-coding-status--ok' : 'bv-coding-status--err'"
+        >
+          {{ selfImprove.reachability.summary }}
+          <span
+            v-if="selfImprove.reachability.detail"
+            class="bv-coding-detail"
+          >— {{ selfImprove.reachability.detail }}</span>
+        </p>
+        <p
+          v-if="selfImprove.codingLlm"
+          class="bv-coding-status bv-coding-status--ok"
+        >
+          ✓ Configured: {{ selfImprove.codingLlm.provider }} ·
+          <code>{{ selfImprove.codingLlm.model }}</code>
+        </p>
+      </div>
+    </section>
+
     <!-- ── 3-column data grid ──────────────────────────────────────────────── -->
     <section class="bv-grid">
       <!-- Brain config card -->
@@ -593,19 +706,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
 import { useAiDecisionPolicyStore, type AiDecisionPolicy } from '../stores/ai-decision-policy';
 import { useSettingsStore } from '../stores/settings';
+import { useSelfImproveStore } from '../stores/self-improve';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
-import type { MemoryEntry } from '../types';
+import type { MemoryEntry, CodingLlmProvider } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';
 
@@ -936,6 +1050,81 @@ async function switchToFree() {
   await brain.autoConfigureForDesktop();
 }
 
+// ── Coding LLM picker (Phase 25 — Self-Improve foundation) ────────────────
+const selfImprove = useSelfImproveStore();
+const selectedCodingProvider = ref<CodingLlmProvider | null>(null);
+const codingModelInput = ref('');
+const codingBaseUrlInput = ref('');
+const codingApiKeyInput = ref('');
+const codingTestInFlight = ref(false);
+
+const selectedCodingRec = computed(() =>
+  (selfImprove.recommendations ?? []).find((r) => r.provider === selectedCodingProvider.value) ?? null,
+);
+
+watch(selectedCodingProvider, (provider) => {
+  if (!provider) return;
+  const rec = (selfImprove.recommendations ?? []).find((r) => r.provider === provider);
+  if (!rec) return;
+  // Pre-fill defaults but never overwrite explicit user input.
+  if (!codingModelInput.value) codingModelInput.value = rec.default_model;
+  if (!codingBaseUrlInput.value) codingBaseUrlInput.value = rec.base_url;
+});
+
+async function saveCodingLlm() {
+  if (!selectedCodingRec.value) return;
+  const model = codingModelInput.value || selectedCodingRec.value.default_model;
+  const baseUrl = codingBaseUrlInput.value || selectedCodingRec.value.base_url;
+  if (!model || !baseUrl || !codingApiKeyInput.value) return;
+  try {
+    await selfImprove.setCodingLlm({
+      provider: selectedCodingRec.value.provider,
+      model,
+      base_url: baseUrl,
+      api_key: codingApiKeyInput.value,
+    });
+    codingApiKeyInput.value = ''; // never linger in the input
+  } catch (err) {
+    console.warn('[BrainView] save coding LLM failed:', err);
+  }
+}
+
+async function clearCodingLlm() {
+  try {
+    await selfImprove.setCodingLlm(null);
+    selectedCodingProvider.value = null;
+    codingModelInput.value = '';
+    codingBaseUrlInput.value = '';
+    codingApiKeyInput.value = '';
+  } catch (err) {
+    console.warn('[BrainView] clear coding LLM failed:', err);
+  }
+}
+
+async function testCodingLlm() {
+  codingTestInFlight.value = true;
+  try {
+    await selfImprove.testCodingLlmConnection();
+  } catch (err) {
+    console.warn('[BrainView] test coding LLM failed:', err);
+  } finally {
+    codingTestInFlight.value = false;
+  }
+}
+
+// Pre-select the persisted provider (if any) when the picker first loads.
+watch(
+  () => selfImprove.codingLlm,
+  (cfg) => {
+    if (cfg && !selectedCodingProvider.value) {
+      selectedCodingProvider.value = cfg.provider;
+      codingModelInput.value = cfg.model;
+      codingBaseUrlInput.value = cfg.base_url;
+    }
+  },
+  { immediate: true },
+);
+
 // ── Top-N memory subgraph ──────────────────────────────────────────────────
 
 const topMemories = computed<MemoryEntry[]>(() => {
@@ -1209,6 +1398,7 @@ async function refresh() {
 
 onMounted(async () => {
   await refresh();
+  await selfImprove.initialise();
 });
 </script>
 
@@ -1287,6 +1477,124 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.5rem;
 }
+
+/* ── Coding LLM (Phase 25) ──────────────────────────────────────────── */
+.bv-coding-llm {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(124, 111, 255, 0.18);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 1rem 0;
+}
+.bv-section-sub {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ts-text-muted, #94a3b8);
+  margin-left: 6px;
+}
+.bv-coding-llm-desc {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--ts-text-muted, #94a3b8);
+}
+.bv-coding-llm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.bv-coding-card {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bv-coding-card:hover { background: rgba(124, 111, 255, 0.08); transform: translateY(-1px); }
+.bv-coding-card.active {
+  border-color: rgba(124, 111, 255, 0.6);
+  background: rgba(124, 111, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(124, 111, 255, 0.3);
+}
+.bv-coding-card.top {
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.bv-coding-card-head { display: flex; justify-content: space-between; align-items: center; }
+.bv-coding-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.bv-coding-notes {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ts-text-muted, #94a3b8);
+  line-height: 1.4;
+}
+.bv-coding-card code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+}
+.bv-coding-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.bv-coding-form label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ts-text-muted, #94a3b8);
+  margin-top: 4px;
+}
+.bv-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--ts-text-primary, #eaecf4);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.bv-input:focus { outline: 2px solid var(--ts-accent, #7c6fff); outline-offset: 1px; border-color: transparent; }
+.bv-coding-actions { display: flex; gap: 8px; margin-top: 10px; }
+.bv-btn {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.bv-btn-primary {
+  background: linear-gradient(135deg, #7c6fff, #a78bfa);
+  color: white;
+}
+.bv-btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.bv-coding-status { margin: 8px 0 0; font-size: 0.82rem; }
+.bv-coding-status--ok { color: #86efac; }
+.bv-coding-status--err { color: #fca5a5; }
+.bv-coding-detail { color: var(--ts-text-muted, #94a3b8); font-style: italic; margin-left: 4px; }
 .bv-mode-card {
   display: flex;
   flex-direction: column;

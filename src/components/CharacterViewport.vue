@@ -380,6 +380,15 @@
             >
               {{ bgmEnabled ? '⏸' : '▶️' }}
             </button>
+            <button
+              class="music-btn mute-btn"
+              :class="{ active: audioStore.muted }"
+              :title="audioStore.muted ? 'Unmute app (music + voice)' : 'Mute app (music + voice)'"
+              :aria-pressed="audioStore.muted"
+              @click="toggleAppMute"
+            >
+              {{ audioStore.muted ? '🔇' : '🔊' }}
+            </button>
             <div class="music-track-info">
               <span class="music-track-name">{{ currentTrackName }}</span>
             </div>
@@ -466,6 +475,7 @@ import { useCharacterStore } from '../stores/character';
 import type { CharacterState } from '../types';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
+import { useAudioStore } from '../stores/audio';
 import { useWindowStore } from '../stores/window';
 import { usePersonaStore } from '../stores/persona';
 import { DEFAULT_MODELS } from '../config/default-models';
@@ -490,6 +500,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
 const settingsStore = useSettingsStore();
+const audioStore = useAudioStore();
 const windowStoreLocal = useWindowStore();
 const personaStore = usePersonaStore();
 /** Viewport behaves differently in pet mode: no background, no chrome,
@@ -676,9 +687,25 @@ function nextTrack() {
 function handleBarVolumeChange(e: Event) {
   const v = parseInt((e.target as HTMLInputElement).value, 10) / 100;
   bgmVolume.value = v;
-  bgm.setVolume(v);
+  // Honour the global mute toggle: while muted, the slider only stores the
+  // intended volume — actual playback stays at zero until unmute.
+  bgm.setVolume(audioStore.muted ? 0 : v);
   settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
 }
+
+function toggleAppMute() {
+  audioStore.toggleMuted();
+}
+
+// React to mute toggles — silence BGM immediately and restore prior volume
+// on unmute. Voice (TTS) is muted independently inside `useTtsPlayback`
+// via the `mutedRef` option wired up in ChatView / PetOverlayView.
+watch(
+  () => audioStore.muted,
+  (isMuted) => {
+    bgm.setVolume(isMuted ? 0 : bgmVolume.value);
+  },
+);
 
 function requestAddMusic() {
   bgmFileInputRef.value?.click();
@@ -1901,6 +1928,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 .music-btn.add-btn {
   font-size: 0.9rem;
+}
+.music-btn.mute-btn.active {
+  background: var(--ts-danger, #ef4444);
+  color: #fff;
+}
+.music-btn.mute-btn.active:hover {
+  background: color-mix(in srgb, var(--ts-danger, #ef4444) 80%, transparent);
 }
 
 .music-track-info {

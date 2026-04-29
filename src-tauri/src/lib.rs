@@ -12,6 +12,7 @@ pub mod agent;
 pub mod agents;
 pub mod ai_integrations;
 pub mod brain;
+pub mod coding;
 pub mod commands;
 pub mod container;
 pub mod identity;
@@ -52,6 +53,13 @@ use commands::{
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
+    coding::{
+        clear_self_improve_log, detect_self_improve_repo, get_coding_llm_config,
+        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
+        get_self_improve_status, list_coding_llm_recommendations, set_coding_llm_config,
+        set_self_improve_autostart, set_self_improve_enabled, start_self_improve,
+        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
+    },
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
@@ -237,6 +245,18 @@ pub struct AppStateInner {
     pub plugin_host: plugins::PluginHost,
     /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
     pub activity_tracker: memory::consolidation::ActivityTracker,
+    /// Persisted coding LLM configuration (Phase 25 — self-improve foundation).
+    /// Separate from `brain_mode` because the "chat brain" and the
+    /// "coding brain" can be different providers (e.g. free Pollinations
+    /// for chat, Claude Sonnet for autonomous coding).
+    pub coding_llm_config: Mutex<Option<coding::CodingLlmConfig>>,
+    /// Self-improve toggle + audit metadata (Phase 25 — foundation only).
+    /// `enabled = true` does NOT yet trigger an autonomous loop; that is
+    /// gated behind future chunks.
+    pub self_improve: Mutex<coding::SelfImproveSettings>,
+    /// Live handle for the autonomous self-improve loop. Holds a
+    /// cancellation flag + join handle once the loop is running.
+    pub self_improve_engine: Arc<coding::SelfImproveEngine>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -261,6 +281,8 @@ impl AppState {
     fn new(data_dir: &std::path::Path) -> Self {
         let active_brain = brain::load_brain(data_dir);
         let brain_mode = brain::brain_config::load(data_dir);
+        let coding_llm = coding::load_coding_llm(data_dir);
+        let self_improve = coding::load_self_improve(data_dir);
         Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
@@ -305,6 +327,9 @@ impl AppState {
             mcp_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::new(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
+            coding_llm_config: Mutex::new(coding_llm),
+            self_improve: Mutex::new(self_improve),
+            self_improve_engine: Arc::new(coding::SelfImproveEngine::new()),
         }))
     }
 
@@ -353,6 +378,9 @@ impl AppState {
             mcp_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
+            coding_llm_config: Mutex::new(None),
+            self_improve: Mutex::new(coding::SelfImproveSettings::default()),
+            self_improve_engine: Arc::new(coding::SelfImproveEngine::new()),
         }))
     }
 }
@@ -534,6 +562,22 @@ pub fn run() {
             set_brain_mode,
             get_embed_cache_status,
             reset_embed_cache,
+            // Coding LLM + self-improve foundation (Phase 25)
+            list_coding_llm_recommendations,
+            get_coding_llm_config,
+            set_coding_llm_config,
+            get_self_improve_settings,
+            set_self_improve_enabled,
+            test_coding_llm_connection,
+            detect_self_improve_repo,
+            suggest_self_improve_branch,
+            get_self_improve_status,
+            start_self_improve,
+            stop_self_improve,
+            set_self_improve_autostart,
+            get_self_improve_metrics,
+            get_self_improve_runs,
+            clear_self_improve_log,
             // Agent roster + durable workflows (Chunk 1.5)
             roster_list,
             roster_create,
@@ -692,6 +736,38 @@ pub fn run() {
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
 
+            // Phase 25 — auto-resume the self-improve loop if the user
+            // had it enabled before exit. Only fires when a coding LLM
+            // is also configured. Failures are logged and ignored — the
+            // toggle remains "enabled" so the next launch will retry.
+            {
+                let enabled = state
+                    .self_improve
+                    .lock()
+                    .map(|s| s.enabled)
+                    .unwrap_or(false);
+                let cfg = state
+                    .coding_llm_config
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone());
+                if enabled {
+                    if let Some(cfg) = cfg {
+                        let app_handle = app.app_handle().clone();
+                        let engine = state.self_improve_engine.clone();
+                        let repo_hint = state.data_dir.clone();
+                        tauri::async_runtime::spawn(async move {
+                            coding::engine::start(app_handle, engine, cfg, repo_hint).await;
+                        });
+                    } else {
+                        eprintln!(
+                            "[self-improve] enabled but no coding LLM configured; \
+                             skipping auto-resume"
+                        );
+                    }
+                }
+            }
+
             let identity = load_or_generate_identity(&data_dir)
                 .unwrap_or_else(|_| identity::DeviceIdentity::generate());
             let device_id = identity.device_id.clone();
@@ -703,11 +779,25 @@ pub fn run() {
             *state.command_router.blocking_lock() =
                 routing::CommandRouter::new(&device_id);
 
-            // System tray with Show/Hide + Window/Pet toggle + Quit
+            // System tray with Show/Hide + Window/Pet toggle + Self-Improve + Quit
             let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
             let mode_toggle = MenuItem::with_id(app, "mode_toggle", "Switch to Pet Mode", true, None::<&str>)?;
+            let self_improve_label = {
+                let s = state.self_improve.lock().map(|g| g.enabled).unwrap_or(false);
+                if s { "Self-Improve: ON (click to disable)" } else { "Self-Improve: OFF" }
+            };
+            let self_improve_item = MenuItem::with_id(
+                app,
+                "self_improve_toggle",
+                self_improve_label,
+                true,
+                None::<&str>,
+            )?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[&show_hide, &mode_toggle, &self_improve_item, &quit],
+            )?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
@@ -762,6 +852,78 @@ pub fn run() {
                     }
                     "quit" => {
                         app.exit(0);
+                    }
+                    "self_improve_toggle" => {
+                        // Toggle the persisted self-improve setting from the
+                        // tray. Disabling always succeeds; enabling is
+                        // gated by `set_self_improve_enabled`'s guard
+                        // (requires a coding LLM). Failures are surfaced
+                        // through eprintln only — the tray cannot raise
+                        // a dialog reliably across platforms.
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state = app_handle.state::<AppState>();
+                            let was_enabled = state
+                                .self_improve
+                                .lock()
+                                .map(|s| s.enabled)
+                                .unwrap_or(false);
+                            let cfg = state
+                                .coding_llm_config
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.clone());
+                            // Persist the flip directly through the helper
+                            // module so we don't need to re-implement the
+                            // gating logic here.
+                            let next_enabled = !was_enabled;
+                            if next_enabled && cfg.is_none() {
+                                eprintln!(
+                                    "[self-improve] tray toggle ignored: \
+                                     no coding LLM configured"
+                                );
+                                return;
+                            }
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0);
+                            let provider = cfg
+                                .as_ref()
+                                .map(|c| match c.provider {
+                                    coding::CodingLlmProvider::Anthropic => "anthropic",
+                                    coding::CodingLlmProvider::Openai => "openai",
+                                    coding::CodingLlmProvider::Deepseek => "deepseek",
+                                    coding::CodingLlmProvider::Custom => "custom",
+                                })
+                                .unwrap_or("")
+                                .to_string();
+                            let next = coding::SelfImproveSettings {
+                                enabled: next_enabled,
+                                updated_at: now,
+                                last_acknowledged_at: if next_enabled { now } else { 0 },
+                                last_provider: if next_enabled { provider } else { String::new() },
+                            };
+                            if let Err(e) = coding::save_self_improve(&state.data_dir, &next) {
+                                eprintln!("[self-improve] tray persist failed: {e}");
+                                return;
+                            }
+                            if let Ok(mut s) = state.self_improve.lock() {
+                                *s = next;
+                            }
+                            // Drive the engine accordingly.
+                            if next_enabled {
+                                if let Some(c) = cfg {
+                                    let engine = state.self_improve_engine.clone();
+                                    let repo_hint = state.data_dir.clone();
+                                    let app_for_engine = app_handle.clone();
+                                    coding::engine::start(app_for_engine, engine, c, repo_hint).await;
+                                }
+                            } else {
+                                state.self_improve_engine.request_stop().await;
+                            }
+                            let _ = app_handle.emit("self-improve-toggled", next_enabled);
+                        });
                     }
                     _ => {}
                 })

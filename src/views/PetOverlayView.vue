@@ -206,18 +206,58 @@
       :resize-active="resizeActive"
       @close="menuVisible = false"
       @toggle-resize="resizeActive = !resizeActive"
+      @request-self-improve="onRequestSelfImprove"
+      @open-self-improve-panel="selfImprovePanelOpen = true"
     />
+
+    <!-- Self-improve warning dialog (Phase 25) -->
+    <SelfImproveConfirmDialog
+      :visible="selfImproveDialogOpen"
+      :has-coding-llm="selfImprove.isConfigured"
+      :provider-label="selfImproveProviderLabel"
+      @confirm="onConfirmSelfImprove"
+      @cancel="selfImproveDialogOpen = false"
+    />
+
+    <!-- Self-improve progress panel — modal-style overlay -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="selfImprovePanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="selfImprovePanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="selfImprovePanelOpen = false"
+            >
+              ✕
+            </button>
+            <SelfImprovePanel
+              @request-enable="onRequestSelfImprove"
+              @configure-llm="onOpenBrain"
+            />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useWindowStore } from '../stores/window';
 import { useStreamingStore } from '../stores/streaming';
 import { useVoiceStore } from '../stores/voice';
+import { useAudioStore } from '../stores/audio';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useLipSyncBridge } from '../composables/useLipSyncBridge';
@@ -231,6 +271,9 @@ import * as THREE from 'three';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import PetContextMenu from '../components/PetContextMenu.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
+import SelfImproveConfirmDialog from '../components/SelfImproveConfirmDialog.vue';
+import SelfImprovePanel from '../components/SelfImprovePanel.vue';
+import { useSelfImproveStore } from '../stores/self-improve';
 
 const conversationStore = useConversationStore();
 const characterStore = useCharacterStore();
@@ -240,6 +283,48 @@ const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const { petChatExpanded, setPetChatExpanded, togglePetChat } = useChatExpansion();
 const skillTree = useSkillTreeStore();
+const selfImprove = useSelfImproveStore();
+
+// Self-improve UI state — owned at the overlay level so dialogs/panels
+// can persist across context-menu open/close cycles.
+const selfImproveDialogOpen = ref(false);
+const selfImprovePanelOpen = ref(false);
+
+const selfImproveProviderLabel = computed(() => {
+  const c = selfImprove.codingLlm;
+  if (!c) return 'unset';
+  return `${c.provider} · ${c.model || 'default'}`;
+});
+
+function onRequestSelfImprove() {
+  selfImproveDialogOpen.value = true;
+}
+
+async function onConfirmSelfImprove() {
+  selfImproveDialogOpen.value = false;
+  if (!selfImprove.isConfigured) {
+    // No coding LLM yet — open the brain panel so the user can pick one.
+    onOpenBrain();
+    return;
+  }
+  try {
+    await selfImprove.enable();
+    selfImprovePanelOpen.value = true;
+  } catch (err) {
+    console.warn('[PetOverlayView] enable self-improve failed:', err);
+    // Re-open dialog so the user sees the guard error in context next time.
+    onOpenBrain();
+  }
+}
+
+function onOpenBrain() {
+  selfImprovePanelOpen.value = false;
+  windowStore.openPanelWindow('brain');
+}
+
+onMounted(() => {
+  void selfImprove.initialise();
+});
 
 // ── Millionaire Hot-Seat overlay — quest choices on-screen ────────
 const hotseatDismissed = ref(false);
@@ -304,9 +389,12 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
 }
 
 // ── TTS + LipSync (same pipeline as ChatView) ────────────────────────────────
+const audioStore = useAudioStore();
+const { muted: audioMuted } = storeToRefs(audioStore);
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
   getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  mutedRef: audioMuted,
 });
 
 function getAsm(): AvatarStateMachine | null {
@@ -1188,6 +1276,50 @@ onUnmounted(() => {
   /* The full-screen overlay must not capture events by default — only the
      character container and its children should be interactive. */
   pointer-events: none;
+}
+
+/* Self-Improve modal panel — teleported to body, full-screen backdrop with
+   centred card. Using :global() so the styles apply to the teleported DOM. */
+:global(.pet-si-panel-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 9100;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  pointer-events: auto;
+}
+:global(.pet-si-panel-wrap) {
+  position: relative;
+  width: min(560px, 96vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+:global(.pet-si-panel-close) {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.5);
+  color: #eaecf4;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+:global(.pet-si-panel-close:hover) {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
 }
 
 .pet-character {

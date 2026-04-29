@@ -21,6 +21,9 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 25.12 — Music-bar master mute (BGM + voice)](#chunk-2512--music-bar-master-mute-bgm--voice) | 2026-04-29 |
+| [Chunk 25.2-25.9 — Self-Improve autonomous loop (engine, repo binding, autostart, live UI, tray)](#chunk-252259--self-improve-autonomous-loop) | 2026-04-29 |
+| [Chunk 25.1 — Self-Improve foundation (toggle, coding LLM, progress UI)](#chunk-251--self-improve-foundation) | 2026-04-29 |
 | [Chunk 23.2b — Handoff system-prompt block consumer wiring](#chunk-232b--handoff-system-prompt-block-consumer-wiring) | 2026-04-29 |
 | [Chunk 24.5a — VS Code / Copilot log parser (Phase 24)](#chunk-245a--vs-code--copilot-log-parser) | 2026-04-29 |
 | [Chunk 24.2a — Pairing payload codec (Phase 24)](#chunk-242a--pairing-payload-codec) | 2026-04-29 |
@@ -190,6 +193,237 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 25.12 — Music-bar master mute (BGM + voice)
+
+**Date:** 2026-04-29 · **Phase:** UX polish · **Tests:** vitest 1360/1360, vue-tsc clean, 5/5 e2e green (CI=true)
+
+**Goal.** User asked the music-bar button to mute the *whole app* — both background music *and* the synthesised voice — in a single click, with the state persisted across reloads.
+
+**Architecture.**
+- New Pinia store `src/stores/audio.ts` owns the single boolean `muted` flag, hydrated from / persisted to `localStorage` key `terransoul.audio.muted`. `setMuted(v)` is idempotent; `toggleMuted()` flips. Storage failures (SSR, private mode) degrade silently.
+- `useTtsPlayback` composable gained an optional `mutedRef?: Ref<boolean>` option. A `watch` mirrors the flag onto the active `HTMLAudioElement.muted` (backend WAV path) and pauses/resumes `speechSynthesis` (browser-fallback path). `playWavBytes` and `speakWithBrowserTts` also seed the initial mute state from the ref so a *new* utterance kicked off while muted starts silent.
+- `ChatView` and `PetOverlayView` wire `useAudioStore()` + `storeToRefs` and pass `mutedRef: audioMuted` into their existing `useTtsPlayback` factories — single audio store drives every TTS surface.
+- `CharacterViewport.vue` music-bar gained a `🔊 / 🔇` mute button between play and the track name, plus:
+  - `handleBarVolumeChange` now respects the store: `bgm.setVolume(audioStore.muted ? 0 : v)` so changing the slider while muted only updates *intended* volume, not actual output.
+  - A `watch(() => audioStore.muted, …)` toggles BGM volume between `0` and the slider value.
+  - CSS adds `.music-btn.mute-btn.active { background: var(--ts-danger); color: #fff; }` for the on-state.
+
+**Files modified / created.**
+- `src/stores/audio.ts` (new) + `src/stores/audio.test.ts` (new, 5 tests).
+- `src/composables/useTtsPlayback.ts` (mutedRef option + watcher + initial-state plumbing).
+- `src/composables/useTtsPlayback.test.ts` (3 new tests in `describe('useTtsPlayback — global mute via mutedRef')`; mock `speechSynthesis` gained `pause`/`resume` stubs; `HoldingAudio` subclass keeps `currentAudio` alive across the watch tick).
+- `src/views/ChatView.vue`, `src/views/PetOverlayView.vue` (audio-store wiring).
+- `src/components/CharacterViewport.vue` (mute button, slider gating, watcher).
+- `e2e/desktop-flow.spec.ts` — replaced positional `.music-btn .nth(1)` next-track lookup with `button[title="Next track"]` (the new mute button shifted indices); added explicit mute-button click coverage (icon flips between 🔊/🔇, `.active` class toggles).
+
+**Validation.**
+- `npx vitest run` → 1360/1360 pass (91 files, ~12 s).
+- `npx vue-tsc --noEmit` → clean.
+- `CI=true npx playwright test` → 5/5 pass (~1.8 m).
+- No Rust changes in this chunk.
+
+**Why the e2e selector fix matters.** The failing test had pinned the next-track button by sibling index; inserting any new `.music-btn` between play and next would silently break it. Switching to a stable `title=` attribute (already present for accessibility) hardens the test against future music-bar additions. Logged here as a small follow-up to the Chunk 25.11 e2e CI hardening work.
+
+---
+
+## Chunk 25.11 — E2E CI fix: Playwright per-test timeouts + drawer transition
+
+**Date:** 2026-04-29 · **Phase:** CI hardening · **Tests:** 5/5 e2e green in `CI=true` local run (1.6 m)
+
+### What broke
+
+GitHub Actions run #419 (`devstar/20260429-next-chunks` branch) failed in the
+`playwright-e2e` job with two distinct symptoms:
+
+1. **`memory-flow.spec.ts` hard-failed at line 171** waiting to click the
+   "⏳ Decay" button — "Test timeout of 180000ms exceeded".
+2. **`desktop-flow.spec.ts` was flaky at `helpers.ts:128`** — `not.toHaveClass(/chat-panel-enter/)` timed out at 1 s while the chat-history drawer was still in the `chat-panel-enter-active chat-panel-enter-to` phase on the slower Linux runner.
+
+### Root causes
+
+- **Silent per-test timeout no-op** — three specs used the syntax
+  `test('name', { timeout: 120_000 }, fn)`. In Playwright 1.59 the second
+  positional argument is `TestDetails` (`{ tag, annotation }`), **not**
+  options — the timeout was being silently ignored, and every test fell
+  back to the global 180 s from `playwright.config.ts`. The memory test
+  needed >120 s on cold-start CI but was assumed to have its own bigger
+  budget; in reality it shared the global limit and ran out.
+- **Vue transition assertion too tight** — the `openDrawer` helper waited
+  only 1 s for the chat-panel enter transition (`chat-panel-enter-active`
+  + `chat-panel-enter-to`) to finish. Local dev finishes that in ~350 ms,
+  but ubuntu-latest under load with streaming layout-thrash regularly
+  takes 1.5–2 s, so the test failed once before passing on retry.
+
+### Fixes
+
+- `e2e/helpers.ts` — bumped the inner `not.toHaveClass(/chat-panel-enter/)`
+  timeout from 1 s → 4 s, and the outer `toPass` from 10 s → 15 s.
+- `e2e/memory-flow.spec.ts`, `e2e/brain-local-lm.spec.ts`,
+  `e2e/mobile-flow.spec.ts` — replaced the dead
+  `test('name', { timeout }, fn)` second-arg form with
+  `test.setTimeout(ms)` from inside the test body, which is the
+  correct API for per-test timeouts in Playwright 1.59. Memory test
+  budget: 240 s; brain-local-lm: 180 s; mobile-flow: 180 s.
+
+### Validation
+
+- `CI=true npx playwright test` (Windows host, free Pollinations API) — **5 passed** in 1.6 m
+- `npx vitest run` — **1352 passed** across 90 files
+- `npx vue-tsc --noEmit` — clean
+- `cargo clippy --all-targets -- -D warnings` (already verified earlier this session) — clean
+- `cargo test --lib` — **1395 passed**
+
+---
+
+## Chunk 25.10 — Self-Improve observability
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** +7 Rust unit (`coding::metrics`), +3 Rust integration (real Ollama smoke), +5 frontend (3 store + 2 panel)
+
+### What shipped
+
+- **`src-tauri/src/coding/metrics.rs`** (NEW) — append-only JSONL run log + summary stats. `RunRecord { started_at_ms, finished_at_ms, chunk_id, chunk_title, outcome: "running"|"success"|"failure", duration_ms, provider, model, plan_chars, error }`. `MetricsLog::record_start/record_outcome/recent/summary/clear`, error truncation at 1 KB, `MAX_RECENT_RUNS = 500`, partial-write tolerant readers (skip bad lines).
+- **Engine integration** — `plan_one_chunk` now wraps every planner call in `record_start` + `record_outcome` (success or failure), capturing duration, plan length, provider/model. `start()` constructs the `MetricsLog` once per loop and threads it into each iteration.
+- **Tauri commands** — `get_self_improve_metrics`, `get_self_improve_runs(limit)`, `clear_self_improve_log` — all registered in `lib.rs` invoke handler.
+- **Frontend types + store** — `SelfImproveMetrics` + `SelfImproveRun` interfaces; store gained `metrics`, `runs`, `loadMetrics`, `loadRuns`, `clearRunLog`. `initialise()` hydrates both; the live event listener auto-refreshes them when a chunk finishes (success **or** error).
+- **Observability UI in `SelfImprovePanel.vue`** — 4-stat grid (Runs / Success% / Failure% / Avg latency) with success-green and failure-red accents, a "Last error" row showing the failing chunk + truncated error message, a "Recent runs" list (newest 25) with per-row status icon, time, chunk id, provider/model, duration, plan-character count, and a "Clear log" button. Empty-state message when no runs are logged yet.
+- **Real-Ollama smoke test** — `src-tauri/tests/ollama_self_improve_smoke.rs` (gated on `OLLAMA_REAL_TEST=1`) drives the actual local Ollama daemon at `http://localhost:11434` with `gemma3:4b`. Validates `test_reachability` (returned `ok=true`, "✓ Reachable — gemma3:4b replied"), live `chat()` round-trip ("List two primes under 10" → "2, 3"), and metrics-log success-path math (`success_rate: 1.0`, `avg_duration_ms: 3022`). Skips silently when the env var is not set so CI is never blocked by a missing daemon.
+
+### Validation
+
+- `cargo clippy --all-targets -- -D warnings` — clean
+- `cargo test --lib` — 1395 passed
+- `cargo test --test ollama_self_improve_smoke` (with real Ollama) — 3 passed
+- `npx vitest run` — 1352 passed across 90 files
+- `npx vue-tsc --noEmit` — clean
+
+### Notes
+
+- Append-only JSONL was chosen over rolling SQLite/CSV because it's crash-safe (each line is a complete record), needs zero schema migrations, and is trivially `tail`-able for debugging.
+- Metrics file lives next to `repo_state.json` in the per-OS app-data directory (e.g. `%APPDATA%/com.terransoul/coding-runs.jsonl` on Windows).
+- The summary is computed over the most recent `MAX_RECENT_RUNS = 500` rows so memory and CPU stay bounded as the log grows.
+
+---
+
+## Chunk 25.2-25.9 — Self-Improve autonomous loop
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** +5 frontend (10 total in store suite), +17 Rust (23 total in `coding::*`)
+
+Builds on Chunk 25.1's foundation to deliver an end-to-end autonomous self-improve system. **Planner-only by design** — the loop reads `rules/milestones.md`, asks the configured Coding LLM for an implementation plan, and emits live progress events. Diff application is intentionally NOT included so the system remains safe to leave running unsupervised.
+
+### What landed
+
+**Rust modules** (`src-tauri/src/coding/`):
+- `client.rs` — Adapter that builds an `OpenAiClient` from `CodingLlmConfig` plus `test_reachability()` returning `{ ok, summary, detail }`. Used by the BrainView "🔌 Test connection" button.
+- `repo.rs` — `detect_repo()` shells out to the `git` binary (no `git2` dep) returning `{ is_git_repo, root, current_branch, remote_url, clean }`. `feature_branch_name(chunk_id)` produces canonical `terransoul/self-improve/<sanitised-id>` names. `guess_repo_root()` walks upward looking for `src-tauri/Cargo.toml`.
+- `milestones.rs` — Tolerant markdown-table parser for `rules/milestones.md`, `next_not_started()` selector.
+- `engine.rs` — `SelfImproveEngine` with `AtomicBool` cancel flag + `JoinHandle` slot. Spawns a Tokio task that loops up to 50 cycles, re-reading milestones each time, planning the next chunk through the coding LLM, and emitting `self-improve-progress` events with `{ phase, message, progress, chunk_id, level }`. Sleep between cycles is cancellable so disable acts within ~250ms.
+- `autostart.rs` — Per-user Windows `HKCU\...\Run` registry helper using the `reg` CLI (no `winreg` dep). No-op on macOS/Linux.
+
+**New Tauri commands** (`commands/coding.rs`):
+- `test_coding_llm_connection` — sends a minimal "reply with ok" prompt and returns reachability.
+- `detect_self_improve_repo` — informational repo state for the UI.
+- `suggest_self_improve_branch(chunk_id)` — branch-name preview helper.
+- `get_self_improve_status` — `{ running, enabled, has_coding_llm, autostart_enabled }`.
+- `start_self_improve` / `stop_self_improve` — lifecycle controls.
+- `set_self_improve_autostart(enabled)` — Windows launch-on-login toggle.
+
+**State** (`AppStateInner`):
+- New `self_improve_engine: Arc<coding::SelfImproveEngine>` field, default-constructed.
+
+**Auto-resume** (`lib.rs setup()`):
+- After `app.manage(state)`, if `self_improve.enabled == true` AND a coding LLM is configured, the engine auto-starts via `tauri::async_runtime::spawn`. If enabled but no LLM, logs and skips. Survives restarts of the app, Cargo dev rebuilds, and full reboots.
+
+**Tray** (`lib.rs`):
+- New `Self-Improve: ON / OFF` menu item. Clicking persists the toggle, drives the engine accordingly, and emits `self-improve-toggled` for the UI to re-sync. Enabling without a coding LLM is silently ignored (with `eprintln`) — the user is steered through pet-mode UI for first-time setup.
+
+**Pinia store** (`src/stores/self-improve.ts`):
+- New refs: `running`, `autostartEnabled`, `activePhase`, `livePercent`, `liveMessage`, `reachability`.
+- `subscribeToProgress()` listens for `self-improve-progress` events, updates the live banner state, decorates messages with `[chunk_id]`, and flips the running flag from terminal phases (`startup`/`stopped`/`exit`).
+- New methods: `loadStatus`, `subscribeToProgress`, `testCodingLlmConnection`, `startEngine`, `stopEngine`, `setAutostart`.
+- `enable()` now best-effort calls `startEngine()` after persisting the toggle. `disable()` stops the engine before logging the "disabled" entry so the activity feed reads correctly (most-recent-first).
+- `initialise()` includes status load + event subscription.
+
+**UI**:
+- `SelfImprovePanel.vue` gained a live status banner (animated pulsing dot, currently-active phase, latest message, live progress fill 0–100%) and an "Auto-start on login" checkbox in the footer.
+- `BrainView.vue` gained a "🔌 Test connection" button next to "Clear" in the Coding-LLM section, with success/error pill rendering of `selfImprove.reachability.summary`.
+
+### Safety properties
+
+- **Branch-only autonomy** — engine never pushes; it only plans. Future chunks can layer diff application + branch creation behind explicit feature gates.
+- **Disable always wins** — `request_stop()` flips an atomic flag; the loop checks it every 250ms inside its idle sleep.
+- **API keys never logged** — coding LLM config is treated as secret; only provider name appears in audit events.
+- **No new heavy deps** — git via system `git` binary, autostart via system `reg` binary, networking via existing `reqwest` through `OpenAiClient`.
+
+### Files changed
+
+```
+src-tauri/src/coding/client.rs        (new, 84 lines, 2 tests)
+src-tauri/src/coding/repo.rs          (new, 122 lines, 3 tests)
+src-tauri/src/coding/milestones.rs    (new, 95 lines, 4 tests)
+src-tauri/src/coding/engine.rs        (new, 305 lines, 6 tests)
+src-tauri/src/coding/autostart.rs     (new, 95 lines, 2 tests)
+src-tauri/src/coding/mod.rs           (+9 lines: submodule decls + re-exports)
+src-tauri/src/commands/coding.rs      (+135 lines: 7 new commands)
+src-tauri/src/lib.rs                  (+~110 lines: state field, auto-resume,
+                                       tray item, command registration)
+src/stores/self-improve.ts            (+~140 lines: live state, listener, engine cmds)
+src/stores/self-improve.test.ts       (+~80 lines: 5 new tests + event mock)
+src/components/SelfImprovePanel.vue   (+~70 lines: live banner + autostart toggle)
+src/views/BrainView.vue               (+~40 lines: Test-connection button + styles)
+```
+
+### CI gate
+
+- `npx vitest run` → 1347 passed (was 1342 + 5 new)
+- `npx vue-tsc --noEmit` → 0 errors
+- `cargo clippy --lib -- -D warnings` → clean
+- `cargo test --lib` → 1384 passed (was 1361 + 23 new in `coding::*` and `commands::coding::*`)
+
+---
+
+## Chunk 25.1 — Self-Improve foundation
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** +13 frontend, +6 Rust
+
+**Goal:** Land the safe, reversible foundation for the autonomous self-improving coding system requested by the user — pet-mode toggle with warning dialog, dedicated Coding-LLM picker (Claude / OpenAI / DeepSeek), persisted settings, and a dedicated progress UI panel showing roadmap phases, progress bar, and live activity feed. **No autonomous loop yet** — that is gated behind chunks 25.2–25.9 in `milestones.md`.
+
+**Architecture:**
+- **Rust** — new `coding/` module with `CodingLlmConfig`, `CodingLlmProvider`, `SelfImproveSettings`, JSON persistence to `coding_llm_config.json` and `self_improve.json` in app data dir. Curated `coding_llm_recommendations()` catalogue with Claude as the top pick. Five new Tauri commands: `list_coding_llm_recommendations`, `get/set_coding_llm_config`, `get_self_improve_settings`, `set_self_improve_enabled`. The enable command guards against missing coding-LLM config.
+- **Frontend** — Pinia store `useSelfImproveStore` exposing live phases (computed from coding-LLM config presence), progress percent, activity feed (capped at 100 entries), and enable/disable wrappers. Three new Vue components: `SelfImproveConfirmDialog.vue` (warning yes/no with provider label), `SelfImprovePanel.vue` (progress bar, phase roadmap with status icons + animations, activity feed, action buttons), and integration into `PetContextMenu.vue` (checkbox-style menu item + "Self-Improve progress…" submenu) and `PetOverlayView.vue` (dialog + modal panel host).
+- **BrainView** — new "🛠️ Coding LLM" section between the mode switcher and data grid. Card-based provider picker, model/base-URL/API-key form, save/clear actions. Pre-fills defaults from the recommendation, never overwrites explicit input. Auto-loads persisted config on mount.
+
+**Files created:**
+- `src-tauri/src/coding/mod.rs` (new module, 6 unit tests)
+- `src-tauri/src/commands/coding.rs` (5 Tauri commands, 2 unit tests)
+- `src/stores/self-improve.ts` (Pinia store with phase roadmap + activity feed)
+- `src/components/SelfImproveConfirmDialog.vue` (warning dialog, focus-trapped, default-focuses safer "No")
+- `src/components/SelfImprovePanel.vue` (progress UI: bar, phases, activity feed)
+- `src/stores/self-improve.test.ts` (6 tests)
+- `src/components/SelfImprovePanel.test.ts` (3 tests)
+- `src/components/SelfImproveConfirmDialog.test.ts` (4 tests)
+
+**Files modified:**
+- `src-tauri/src/lib.rs` (registered module, AppState fields, command handlers)
+- `src-tauri/src/commands/mod.rs` (registered `coding` submodule)
+- `src/types/index.ts` (added `CodingLlmProvider`, `CodingLlmConfig`, `CodingLlmRecommendation`, `SelfImproveSettings`)
+- `src/components/PetContextMenu.vue` (Self-Improve menu item + emits)
+- `src/views/PetOverlayView.vue` (dialog + panel host, store init, modal styles)
+- `src/views/BrainView.vue` (Coding LLM picker section + script + styles)
+- `rules/milestones.md` (added Phase 25 with chunks 25.2–25.9)
+
+**Safety properties (per user-confirmed scope):**
+- Disabling self-improve is the safe direction → never requires confirmation.
+- Enabling shows a warning dialog with explicit bullets describing what will happen.
+- Default-focused button is the safer "No, cancel".
+- The toggle is inert (foundation only); no autonomous code modification can occur until chunk 25.4 lands.
+- API keys are stored verbatim in the JSON config file (in app data dir) and cleared from input fields after save — never logged.
+
+**CI gate:** `npx vitest run` → 1343/1343 passing · `npx vue-tsc --noEmit` → clean · `cargo clippy --lib -- -D warnings` → clean · `cargo test --lib coding::` → 6/6 passing.
+
+**Follow-up chunks queued in milestones.md:** 25.2 GitHub repo binding, 25.3 coding-LLM client + reachability test, 25.4 autonomous loop MVP (branch + PR, never master), 25.5 SQLite task queue + auto-resume, 25.6 system tray + Windows auto-start, 25.7 MCP self-host, 25.8 brain data migration, 25.9 live progress UI streaming.
 
 ---
 

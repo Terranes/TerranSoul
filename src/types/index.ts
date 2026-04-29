@@ -369,6 +369,64 @@ export type BrainMode =
       embedding_model: string | null;
     };
 
+// ── Coding LLM + Self-Improve (Phase 25) ─────────────────────────────────────
+
+export type CodingLlmProvider = 'anthropic' | 'openai' | 'deepseek' | 'custom';
+
+/** Persisted dedicated coding-LLM configuration. */
+export interface CodingLlmConfig {
+  provider: CodingLlmProvider;
+  model: string;
+  base_url: string;
+  api_key: string;
+}
+
+/** Curated recommendation entry (Claude / OpenAI / DeepSeek / custom). */
+export interface CodingLlmRecommendation {
+  provider: CodingLlmProvider;
+  display_name: string;
+  default_model: string;
+  base_url: string;
+  requires_api_key: boolean;
+  notes: string;
+  is_top_pick: boolean;
+}
+
+/** Self-improve toggle + audit metadata. */
+export interface SelfImproveSettings {
+  enabled: boolean;
+  updated_at: number;
+  last_acknowledged_at: number;
+  last_provider: string;
+}
+
+/** Aggregate observability stats for the self-improve loop. */
+export interface SelfImproveMetrics {
+  total_runs: number;
+  successes: number;
+  failures: number;
+  success_rate: number;
+  failure_rate: number;
+  avg_duration_ms: number;
+  last_error: string | null;
+  last_error_chunk: string | null;
+  last_error_at_ms: number;
+}
+
+/** One persisted run record from the self-improve JSONL log. */
+export interface SelfImproveRun {
+  started_at_ms: number;
+  finished_at_ms: number;
+  chunk_id: string;
+  chunk_title: string;
+  outcome: 'running' | 'success' | 'failure';
+  duration_ms: number;
+  provider: string;
+  model: string;
+  plan_chars: number;
+  error: string | null;
+}
+
 // ── Voice ──────────────────────────────────────────────────────────────────────
 
 /** Metadata describing an available voice provider. */
