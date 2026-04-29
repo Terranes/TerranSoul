@@ -113,7 +113,7 @@ async fn ollama_real_metrics_log_records_outcome() {
 
     // Use `coding::` to silence unused-import warnings on builds where
     // the env var isn't set (whole test body is gated above).
-    let _ = coding::coding_llm_recommendations();
+    let _ = coding::coding_llm_recommendations(16_384);
 }
 
 /// Loop test: drives `run_coding_task` end-to-end against a real,
@@ -132,7 +132,7 @@ async fn ollama_real_run_coding_task_prose() {
 
     // Source the Local-Ollama recommendation rather than hardcoding —
     // this validates the recommendation defaults are usable as-is.
-    let recs = coding::coding_llm_recommendations();
+    let recs = coding::coding_llm_recommendations(16_384);
     let local = recs
         .iter()
         .find(|r| !r.requires_api_key && r.base_url.contains("127.0.0.1"))

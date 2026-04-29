@@ -151,7 +151,7 @@
             v-else
             v-model="codingModelInput"
             type="text"
-            :placeholder="selectedCodingRec.default_model || 'qwen2.5-coder:7b'"
+            :placeholder="selectedCodingRec.default_model || 'gemma3:4b'"
             class="bv-input"
           >
           <button
@@ -176,7 +176,7 @@
           class="bv-coding-hint"
         >
           ⚠ No Ollama models detected. Install one first:
-          <code>ollama pull {{ selectedCodingRec.default_model || 'qwen2.5-coder:7b' }}</code>
+          <code>ollama pull {{ selectedCodingRec.default_model || 'gemma3:4b' }}</code>
         </p>
         <label>Base URL</label>
         <input

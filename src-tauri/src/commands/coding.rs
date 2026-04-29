@@ -24,9 +24,15 @@ fn now_secs() -> u64 {
 }
 
 /// Return the curated list of recommended coding LLM providers.
+///
+/// The local Ollama entry is hardware-adaptive: the returned
+/// `default_model` is the best model for the user's RAM tier per
+/// `brain-advanced-design.md` §26. The system RAM is detected
+/// automatically via `sysinfo`.
 #[tauri::command]
 pub async fn list_coding_llm_recommendations() -> Vec<CodingLlmRecommendation> {
-    coding::coding_llm_recommendations()
+    let ram = crate::brain::system_info::collect().total_ram_mb;
+    coding::coding_llm_recommendations(ram)
 }
 
 /// Return the persisted coding LLM configuration, or `None` if unset.

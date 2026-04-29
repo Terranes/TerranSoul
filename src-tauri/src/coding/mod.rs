@@ -87,23 +87,48 @@ pub struct CodingLlmRecommendation {
     pub is_top_pick: bool,
 }
 
-/// Curated catalogue. Keep this list small and opinionated — the design
-/// doc explicitly recommends Claude, OpenAI, and DeepSeek for coding,
-/// plus a zero-cost local Ollama option as the privacy-first top pick.
-pub fn coding_llm_recommendations() -> Vec<CodingLlmRecommendation> {
+/// Curated catalogue. The local Ollama entry is hardware-adaptive: it
+/// reads the user's RAM and picks the best model from the same §26
+/// catalogue used by the brain's `model_recommender.rs`. Cloud
+/// providers use fixed default models.
+///
+/// `total_ram_mb` is the user's total system RAM (from `system_info`).
+/// Pass `0` to fall back to the smallest usable model.
+pub fn coding_llm_recommendations(total_ram_mb: u64) -> Vec<CodingLlmRecommendation> {
+    // Pick the best local model for this hardware tier, consistent with
+    // brain-advanced-design.md §26.
+    let brain_recs = crate::brain::model_recommender::recommend(total_ram_mb);
+    let top_local = brain_recs
+        .iter()
+        .find(|r| r.is_top_pick && !r.is_cloud)
+        .or_else(|| brain_recs.iter().find(|r| !r.is_cloud));
+
+    let (local_model, local_display, local_description) = match top_local {
+        Some(r) => (
+            r.model_tag.clone(),
+            format!("Local Ollama — {} (free, private)", r.display_name),
+            format!(
+                "{}. Runs entirely on this machine via Ollama. No API key, no per-token cost, no data leaves your computer.",
+                r.description.trim_end_matches('.')
+            ),
+        ),
+        None => (
+            "gemma3:4b".to_string(),
+            "Local Ollama (free, private)".to_string(),
+            "Runs entirely on this machine via Ollama. No API key, no per-token cost, no data leaves your computer.".to_string(),
+        ),
+    };
+
     vec![
         CodingLlmRecommendation {
             provider: CodingLlmProvider::Custom,
-            display_name: "Local Ollama (free, private)".to_string(),
-            // Default to a coding-tuned model that fits on a laptop.
-            // The UI replaces this with whichever installed model the
-            // user picks from the auto-detected list.
-            default_model: "qwen2.5-coder:7b".to_string(),
+            display_name: local_display,
+            default_model: local_model,
             // Base URL is the Ollama host root — `OpenAiClient` appends
             // `/v1/chat/completions` itself.
             base_url: "http://127.0.0.1:11434".to_string(),
             requires_api_key: false,
-            notes: "Runs entirely on this machine via Ollama. No API key, no per-token cost, no data leaves your computer. Best for privacy and offline work.".to_string(),
+            notes: local_description,
             is_top_pick: true,
         },
         CodingLlmRecommendation {
@@ -338,9 +363,13 @@ mod tests {
 
     #[test]
     fn recommendations_include_local_ollama_first_with_claude_openai_deepseek() {
-        let recs = coding_llm_recommendations();
+        // 16 GB RAM → should recommend Gemma 4 E2B per §26 top-picks.
+        let recs = coding_llm_recommendations(16_384);
         let names: Vec<_> = recs.iter().map(|r| r.display_name.as_str()).collect();
-        assert!(names.iter().any(|n| n.contains("Local Ollama")));
+        assert!(
+            names.iter().any(|n| n.contains("Local Ollama")),
+            "missing Local Ollama: {names:?}"
+        );
         assert!(names.iter().any(|n| n.contains("Claude")));
         assert!(names.iter().any(|n| n.contains("OpenAI")));
         assert!(names.iter().any(|n| n.contains("DeepSeek")));
@@ -360,6 +389,34 @@ mod tests {
                 rec.base_url
             );
         }
+    }
+
+    #[test]
+    fn local_model_adapts_to_ram_tier() {
+        // VeryHigh → gemma4:31b
+        let recs = coding_llm_recommendations(65_536);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "gemma4:31b");
+
+        // High → gemma4:e4b
+        let recs = coding_llm_recommendations(24_000);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "gemma4:e4b");
+
+        // Medium → gemma4:e2b
+        let recs = coding_llm_recommendations(12_000);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "gemma4:e2b");
+
+        // Low → gemma3:1b
+        let recs = coding_llm_recommendations(6_000);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "gemma3:1b");
+
+        // VeryLow → tinyllama
+        let recs = coding_llm_recommendations(2_000);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "tinyllama");
     }
 
     #[test]
