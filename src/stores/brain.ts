@@ -293,6 +293,33 @@ export const useBrainStore = defineStore('brain', () => {
   }
 
   /**
+   * Remove weaker auto-configured Ollama models now that a better one is active.
+   * Only removes models that appear in the recommendation catalogue (never
+   * user-installed custom models). Best-effort — errors are silently ignored.
+   */
+  async function removeWeakerAutoModels(
+    activeModel: string,
+    installed: { name: string }[],
+    report?: (msg: string) => void,
+  ): Promise<void> {
+    const recTags = new Set(
+      recommendations.value.filter(r => !r.is_cloud).map(r => r.model_tag),
+    );
+    for (const m of installed) {
+      if (m.name === activeModel) continue; // keep the active model
+      if (!recTags.has(m.name)) continue; // not in catalogue → user model, skip
+      try {
+        report?.(`Removing superseded model: ${m.name}...`);
+        await invoke('delete_ollama_model', { modelName: m.name });
+      } catch {
+        // Best-effort — Ollama may already have removed it.
+      }
+    }
+    // Refresh the installed list after cleanup.
+    await fetchInstalledModels();
+  }
+
+  /**
    * Local-first brain auto-configuration (rules/local-first-brain.md).
    *
    * Decision cascade:
@@ -330,63 +357,67 @@ export const useBrainStore = defineStore('brain', () => {
     // Step 2: Ollama is running — pick the best model
     const top = topRecommendation.value;
     const installed = installedModels.value;
-
-    // Check if the §26 top-pick (or any recommended model) is already installed
     const topTag = top?.model_tag;
-    const allRecTags = recommendations.value
-      .filter(r => !r.is_cloud)
-      .map(r => r.model_tag);
 
-    // Find best installed model: prefer the top-pick, then any recommended, then largest installed
-    let bestInstalled: string | null = null;
+    // If the top-pick for this hardware is already installed, activate it directly.
     if (topTag && installed.some(m => m.name === topTag)) {
-      bestInstalled = topTag;
-    } else {
-      // Try any recommended model that's installed (in tier order)
-      for (const tag of allRecTags) {
-        if (installed.some(m => m.name === tag)) {
-          bestInstalled = tag;
-          break;
-        }
-      }
-      // Last resort: use any installed model
-      if (!bestInstalled && installed.length > 0) {
-        bestInstalled = installed[0].name;
-      }
-    }
-
-    if (bestInstalled) {
-      report(`Activating local model: ${bestInstalled}...`);
+      report(`Activating local model: ${topTag}...`);
       try {
-        await setBrainMode({ mode: 'local_ollama', model: bestInstalled });
-        return { mode: 'local', model: bestInstalled, pulled: false };
+        await setBrainMode({ mode: 'local_ollama', model: topTag });
+        return { mode: 'local', model: topTag, pulled: false };
       } catch {
-        // setBrainMode failed — cloud fallback
         report('Failed to activate local model — using free cloud AI...');
         await autoConfigureForDesktop();
         return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
       }
     }
 
-    // Step 3: Ollama running but no models installed → pull the §26 top-pick
+    // Step 3: Top-pick is NOT installed — pull it (even if weaker models exist).
+    // A weaker installed model is only used as fallback if the pull fails.
     const modelToPull = topTag || 'gemma3:4b';
-    report(`Downloading local model: ${modelToPull}... (this may take a few minutes)`);
+    report(`Downloading recommended model: ${modelToPull}... (this may take a few minutes)`);
     const pullOk = await pullModel(modelToPull);
 
     if (pullOk) {
       report(`Activating local model: ${modelToPull}...`);
       try {
         await setBrainMode({ mode: 'local_ollama', model: modelToPull });
+
+        // Auto-remove weaker auto-configured models now that a better one is active.
+        await removeWeakerAutoModels(modelToPull, installed, report);
+
         return { mode: 'local', model: modelToPull, pulled: true };
       } catch {
-        // Activation failed after pull — cloud fallback
-        report('Failed to activate local model — using free cloud AI...');
-        await autoConfigureForDesktop();
-        return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+        // Activation failed — fall through to installed fallback
       }
     }
 
-    // Pull failed — cloud fallback
+    // Step 4: Pull failed or activation failed — fall back to any installed model.
+    const allRecTags = recommendations.value
+      .filter(r => !r.is_cloud)
+      .map(r => r.model_tag);
+    let fallbackModel: string | null = null;
+    for (const tag of allRecTags) {
+      if (installed.some(m => m.name === tag)) {
+        fallbackModel = tag;
+        break;
+      }
+    }
+    if (!fallbackModel && installed.length > 0) {
+      fallbackModel = installed[0].name;
+    }
+
+    if (fallbackModel) {
+      report(`Using installed model: ${fallbackModel}...`);
+      try {
+        await setBrainMode({ mode: 'local_ollama', model: fallbackModel });
+        return { mode: 'local', model: fallbackModel, pulled: false };
+      } catch {
+        // Last resort — cloud
+      }
+    }
+
+    // Nothing worked — cloud fallback
     report('Model download failed — using free cloud AI...');
     await autoConfigureForDesktop();
     return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
@@ -420,6 +451,57 @@ export const useBrainStore = defineStore('brain', () => {
       autoConfigureFreeApi();
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /**
+   * Background model-update check — runs once per calendar day.
+   * If a better model is available (and not dismissed), pushes an upgrade
+   * quest message into the conversation store.
+   */
+  async function checkForModelUpdates(): Promise<void> {
+    try {
+      // 1. Read persisted check state (date + dismissed list).
+      const [lastDate, dismissed] = await invoke<[string, string[]]>('get_update_check_state');
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      if (lastDate === today) return; // Already checked today.
+
+      // 2. Mark today's check done first (prevents re-runs on error).
+      await invoke('mark_update_check_done', { date: today });
+
+      // 3. Ask the backend for the update comparison.
+      const info = await invoke<{
+        has_update: boolean;
+        current_model: string;
+        recommended_model: string;
+        recommended_display: string;
+      }>('check_model_updates');
+
+      if (!info.has_update) return;
+      if (dismissed.includes(info.recommended_model)) return;
+
+      // 4. Push an upgrade quest message into the chat.
+      const { useConversationStore } = await import('./conversation');
+      const conversation = useConversationStore();
+      conversation.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content:
+          `A better local model is available for your hardware!\n\n` +
+          `**Current:** ${info.current_model}\n` +
+          `**Recommended:** ${info.recommended_display} (\`${info.recommended_model}\`)\n\n` +
+          `Would you like to upgrade?`,
+        agentName: 'System',
+        sentiment: 'neutral',
+        timestamp: Date.now(),
+        questId: 'model-update',
+        questChoices: [
+          { label: 'Upgrade now', value: `model-update:upgrade:${info.recommended_model}`, icon: '🚀' },
+          { label: 'Ignore this update', value: `model-update:dismiss:${info.recommended_model}`, icon: '💤' },
+        ],
+      });
+    } catch {
+      // Silent failure — this is a background convenience check.
     }
   }
 
@@ -522,6 +604,7 @@ export const useBrainStore = defineStore('brain', () => {
     autoConfigureForDesktop,
     autoConfigureLocalFirst,
     initialise,
+    checkForModelUpdates,
     processPromptSilently,
   };
 });

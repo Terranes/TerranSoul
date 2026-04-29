@@ -560,6 +560,135 @@ pub async fn factory_reset_brain(
     Ok(())
 }
 
+// ── Model update check + auto-cleanup ──────────────────────────────────────
+
+/// Result returned by `check_model_updates`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ModelUpdateInfo {
+    pub has_update: bool,
+    pub current_model: String,
+    pub recommended_model: String,
+    pub recommended_display: String,
+}
+
+/// Compare the currently active local model against the online catalogue's
+/// top-pick for this hardware. Returns whether a better model is available
+/// and what it is. Does NOT check the dismissed list — the frontend handles
+/// that so it can persist dismissals without extra IPC.
+#[tauri::command]
+pub async fn check_model_updates(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ModelUpdateInfo, String> {
+    // Refresh catalogue (best-effort — falls back to cached/bundled).
+    let _ = brain::fetch_online_catalogue(
+        &app.path().app_cache_dir().map_err(|e| e.to_string())?,
+    )
+    .await;
+
+    let info = brain::collect_system_info();
+
+    // Resolve recommendations (same 3-tier as recommend_brain_models).
+    let recs = {
+        if let Ok(cache_dir) = app.path().app_cache_dir() {
+            if let Some(cat) = brain::load_cached_catalogue(&cache_dir) {
+                brain::recommend_from_catalogue(info.total_ram_mb, &cat)
+            } else {
+                brain::recommend(info.total_ram_mb)
+            }
+        } else {
+            brain::recommend(info.total_ram_mb)
+        }
+    };
+
+    let top = recs.iter().find(|r| r.is_top_pick && !r.is_cloud);
+
+    let current_model = {
+        let mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+        match mode.as_ref() {
+            Some(brain::BrainMode::LocalOllama { model }) => model.clone(),
+            _ => String::new(),
+        }
+    };
+
+    let (recommended_model, recommended_display) = match top {
+        Some(r) => (r.model_tag.clone(), r.display_name.clone()),
+        None => (String::new(), String::new()),
+    };
+
+    let has_update = !recommended_model.is_empty()
+        && !current_model.is_empty()
+        && recommended_model != current_model;
+
+    Ok(ModelUpdateInfo {
+        has_update,
+        current_model,
+        recommended_model,
+        recommended_display,
+    })
+}
+
+/// Delete an Ollama model by tag (e.g. `"gemma3:4b"`). Also removes the
+/// corresponding `ollama_model:*` entry from `auto_configured` in settings.
+#[tauri::command]
+pub async fn delete_ollama_model(
+    model_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = &state.ollama_client;
+    brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await?;
+
+    // Remove from auto_configured tracking.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        let tag = format!("ollama_model:{model_name}");
+        settings.auto_configured.retain(|t| t != &tag);
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(())
+}
+
+/// Persist a dismissed model update tag so the upgrade quest is not shown again.
+#[tauri::command]
+pub async fn dismiss_model_update(
+    model_tag: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    if !settings.dismissed_model_updates.contains(&model_tag) {
+        settings.dismissed_model_updates.push(model_tag);
+    }
+    crate::settings::config_store::save(&state.data_dir, &settings)?;
+    Ok(())
+}
+
+/// Update the `last_update_check_date` in settings. The frontend sends
+/// today's ISO date string (`YYYY-MM-DD`) so we don't need a `chrono` dep.
+#[tauri::command]
+pub async fn mark_update_check_done(
+    date: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    settings.last_update_check_date = date;
+    crate::settings::config_store::save(&state.data_dir, &settings)?;
+    Ok(())
+}
+
+/// Return the last update check date and the dismissed model list so the
+/// frontend can decide whether to run a check without extra round-trips.
+#[tauri::command]
+pub async fn get_update_check_state(
+    state: State<'_, AppState>,
+) -> Result<(String, Vec<String>), String> {
+    let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    Ok((
+        settings.last_update_check_date.clone(),
+        settings.dismissed_model_updates.clone(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

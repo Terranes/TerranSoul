@@ -2791,11 +2791,22 @@ tests asserting that each toggle actually short-circuits its gate.
 
 ## 26. Recommended Local LLM Catalogue
 
-> **Source of truth for first-time setup.** The model recommender
-> (`src-tauri/src/brain/model_recommender.rs`) reads this section at
-> runtime from the bundled `docs/brain-advanced-design.md` resource.
-> To add or update a model, edit the tables below — **do not** change
-> the hardcoded fallback unless the doc parser is broken.
+> **Online-first resolution.** The model recommender always fetches the
+> latest catalogue from the GitHub-hosted version of this document first
+> (`brain::doc_catalogue::fetch_online_catalogue`). The online catalogue
+> is cached locally for 24 hours. If the network request fails (offline,
+> timeout, etc.), the recommender falls back to the **bundled** copy of
+> this section shipped inside the app resources. The hardcoded fallback
+> in `model_recommender.rs` is the last resort and should only fire when
+> both the online and bundled sources are unavailable.
+>
+> **Resolution order:**
+> 1. Online catalogue (GitHub raw, cached in `<app_cache_dir>/model-catalogue.md`)
+> 2. Bundled `docs/brain-advanced-design.md` in the app resource directory
+> 3. Hardcoded fallback in `model_recommender.rs`
+>
+> To add or update a model, edit the tables below — the online version
+> will be picked up automatically on the next refresh cycle.
 
 The catalogue is parsed at runtime via HTML comment markers. The
 Rust parser (`brain::doc_catalogue`) extracts the tables between

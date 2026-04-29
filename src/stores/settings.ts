@@ -37,6 +37,10 @@ export interface AppSettings {
    * falling back to a free cloud provider. See rules/local-first-brain.md.
    */
   prefer_local_brain?: boolean;
+  /** Model tags the user dismissed when offered an upgrade (never re-shown). */
+  dismissed_model_updates?: string[];
+  /** ISO date (`YYYY-MM-DD`) of the last auto-update check. */
+  last_update_check_date?: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -54,6 +58,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   chatbox_mode: false,
   auto_configured: [],
   prefer_local_brain: true,
+  dismissed_model_updates: [],
+  last_update_check_date: '',
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

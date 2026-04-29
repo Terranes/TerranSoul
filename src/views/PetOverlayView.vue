@@ -265,7 +265,7 @@ import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
-import { handleLearnDocsChoice } from '../stores/conversation';
+import { handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import * as THREE from 'three';
 import CharacterViewport from '../components/CharacterViewport.vue';
@@ -379,6 +379,10 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
   }
   if (choiceValue.startsWith('learn-docs:')) {
     await handleLearnDocsChoice(choiceValue);
+    return;
+  }
+  if (choiceValue.startsWith('model-update:')) {
+    await handleModelUpdateChoice(choiceValue);
     return;
   }
   if (choiceValue === 'dismiss') {

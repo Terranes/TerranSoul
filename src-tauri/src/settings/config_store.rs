@@ -86,6 +86,8 @@ mod tests {
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
+            dismissed_model_updates: Vec::new(),
+            last_update_check_date: String::new(),
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -133,6 +135,8 @@ mod tests {
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
+            dismissed_model_updates: Vec::new(),
+            last_update_check_date: String::new(),
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -165,6 +169,8 @@ mod tests {
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
+            dismissed_model_updates: Vec::new(),
+            last_update_check_date: String::new(),
         };
         save(dir.path(), &s).unwrap();
 

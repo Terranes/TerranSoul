@@ -849,6 +849,107 @@ export async function handleLearnDocsChoice(value: string): Promise<boolean> {
   }
 }
 
+// ── Model update quest ───────────────────────────────────────────────────────
+
+/**
+ * Route a `model-update:*` quest-choice value emitted by the chat overlay.
+ * Returns `true` when the value was handled.
+ *
+ * Formats:
+ *   `model-update:upgrade:<modelTag>` — pull + activate the recommended model
+ *   `model-update:dismiss:<modelTag>` — persist dismissal, never re-show
+ */
+export async function handleModelUpdateChoice(value: string): Promise<boolean> {
+  if (!value.startsWith('model-update:')) return false;
+  const rest = value.slice('model-update:'.length);
+  const colon = rest.indexOf(':');
+  if (colon < 0) return false;
+  const action = rest.slice(0, colon);
+  const modelTag = rest.slice(colon + 1);
+
+  const conversation = useConversationStore();
+
+  if (action === 'dismiss') {
+    try {
+      await invoke('dismiss_model_update', { modelTag });
+    } catch {
+      // best-effort
+    }
+    conversation.addMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `Got it — I won't suggest **${modelTag}** again.`,
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+    });
+    return true;
+  }
+
+  if (action === 'upgrade') {
+    const brain = useBrainStore();
+    conversation.addMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `Downloading **${modelTag}**... This may take a few minutes. ⏳`,
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+    });
+
+    const ok = await brain.pullModel(modelTag);
+    if (ok) {
+      try {
+        await brain.setBrainMode({ mode: 'local_ollama', model: modelTag });
+        conversation.addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Upgrade complete! Now running **${modelTag}**. 🚀`,
+          agentName: 'System',
+          sentiment: 'happy',
+          timestamp: Date.now(),
+        });
+        // Auto-remove the old weaker model.
+        const installed = brain.installedModels;
+        const recTags = new Set(
+          brain.recommendations.filter(r => !r.is_cloud).map(r => r.model_tag),
+        );
+        for (const m of installed) {
+          if (m.name === modelTag) continue;
+          if (!recTags.has(m.name)) continue;
+          try {
+            await invoke('delete_ollama_model', { modelName: m.name });
+          } catch {
+            // best-effort
+          }
+        }
+        await brain.fetchInstalledModels();
+      } catch {
+        conversation.addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Downloaded **${modelTag}** but failed to activate it. You can switch manually in the Brain tab.`,
+          agentName: 'System',
+          sentiment: 'sad',
+          timestamp: Date.now(),
+        });
+      }
+    } else {
+      conversation.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Failed to download **${modelTag}**. Check that Ollama is running and try again later.`,
+        agentName: 'System',
+        sentiment: 'sad',
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  return false;
+}
+
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
 
 /** Known free-provider keywords mapped to provider IDs. */

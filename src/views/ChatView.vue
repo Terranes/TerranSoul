@@ -436,7 +436,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useConversationStore, detectSentiment, handleLearnDocsChoice } from '../stores/conversation';
+import { useConversationStore, detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
@@ -1168,6 +1168,12 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     return;
   }
 
+  // Handle model-update upgrade/dismiss choices.
+  if (choiceValue.startsWith('model-update:')) {
+    await handleModelUpdateChoice(choiceValue);
+    return;
+  }
+
   // Handle "type this command" shortcuts — the button submits the literal
   // command text through sendMessage so the conversation store's command
   // detector fires exactly as if the user had typed it.
@@ -1353,6 +1359,8 @@ onMounted(async () => {
     if (brain.topRecommendation) {
       selectedBrain.value = brain.topRecommendation.model_tag;
     }
+    // Background model update check — once per day, non-blocking.
+    brain.checkForModelUpdates();
   } catch {
     // No Tauri backend
   }
