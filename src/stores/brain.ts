@@ -292,6 +292,16 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  /** RAM-aware fallback when the catalogue/recommendations are unavailable. */
+  function ramAwareFallback(totalRamMb?: number): string {
+    const ram = totalRamMb ?? 0;
+    if (ram >= 32_768) return 'gemma4:31b';
+    if (ram >= 16_384) return 'gemma4:e4b';
+    if (ram >= 8_192) return 'gemma4:e2b';
+    if (ram >= 4_096) return 'gemma3:1b';
+    return 'tinyllama';
+  }
+
   /**
    * Remove weaker auto-configured Ollama models now that a better one is active.
    * Only removes models that appear in the recommendation catalogue (never
@@ -364,6 +374,10 @@ export const useBrainStore = defineStore('brain', () => {
       report(`Activating local model: ${topTag}...`);
       try {
         await setBrainMode({ mode: 'local_ollama', model: topTag });
+
+        // Auto-remove weaker auto-configured models (same as Step 3).
+        await removeWeakerAutoModels(topTag, installed, report);
+
         return { mode: 'local', model: topTag, pulled: false };
       } catch {
         report('Failed to activate local model — using free cloud AI...');
@@ -374,7 +388,7 @@ export const useBrainStore = defineStore('brain', () => {
 
     // Step 3: Top-pick is NOT installed — pull it (even if weaker models exist).
     // A weaker installed model is only used as fallback if the pull fails.
-    const modelToPull = topTag || 'gemma3:4b';
+    const modelToPull = topTag || ramAwareFallback(systemInfo.value?.total_ram_mb);
     report(`Downloading recommended model: ${modelToPull}... (this may take a few minutes)`);
     const pullOk = await pullModel(modelToPull);
 

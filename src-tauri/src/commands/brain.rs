@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::brain::{
     self, ModelRecommendation, OllamaStatus, SystemInfo,
@@ -104,14 +104,25 @@ pub async fn get_ollama_models(
 }
 
 /// Pull an Ollama model from the registry (downloads it locally).
-/// This may take several minutes for large models.
+/// Emits `ollama-pull-progress` events with live download percentage.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn pull_ollama_model(
+    app: AppHandle,
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let client = &state.ollama_client;
-    brain::pull_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await?;
+
+    let app_handle = app.clone();
+    brain::pull_model_with_progress(
+        client,
+        brain::ollama_agent::OLLAMA_BASE_URL,
+        &model_name,
+        move |progress| {
+            let _ = app_handle.emit("ollama-pull-progress", &progress);
+        },
+    )
+    .await?;
 
     // Track the pulled model so factory reset can remove it.
     {

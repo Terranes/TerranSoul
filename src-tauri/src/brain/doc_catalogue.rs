@@ -151,54 +151,454 @@ pub fn recommend_from_catalogue(
 
 // ── Online catalogue refresh ─────────────────────────────────────────
 
-/// The GitHub raw URL for the design doc containing the model catalogue.
-const CATALOGUE_URL: &str =
-    "https://raw.githubusercontent.com/Terranes/TerranSoul/main/docs/brain-advanced-design.md";
+/// Build a reusable HTTP client for all online-catalogue sources.
+fn build_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .user_agent("TerranSoul/1.0 (model catalogue refresh)")
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))
+}
 
-/// Fetch the latest model catalogue from the upstream repository.
+/// Known Ollama model tags → approximate RAM required (MB, Q4 quant + OS overhead).
+const KNOWN_RAM_TABLE: &[(&str, u64)] = &[
+    ("tinyllama",          2_048),
+    ("gemma3:1b",          2_048),
+    ("llama3.2:1b",        2_048),
+    ("gemma2:2b",          4_096),
+    ("llama3.2:3b",        4_096),
+    ("phi4-mini",          4_096),
+    ("phi3:mini",          4_096),
+    ("gemma3:4b",          6_144),
+    ("deepseek-r1:1.5b",   3_072),
+    ("deepseek-r1:7b",     8_192),
+    ("deepseek-r1:8b",     8_192),
+    ("deepseek-r1:14b",   16_384),
+    ("deepseek-r1:32b",   32_768),
+    ("deepseek-r1:70b",   49_152),
+    ("deepseek-r1:671b", 393_216),
+    ("mistral:7b",         8_192),
+    ("mistral-nemo",      14_336),
+    ("llama3.1:8b",       10_240),
+    ("llama3.3:70b",      49_152),
+    ("qwen2.5:7b",         8_192),
+    ("qwen2.5:14b",       14_336),
+    ("qwen2.5:32b",       32_768),
+    ("qwen2.5:72b",       49_152),
+    ("qwen3:8b",          10_240),
+    ("qwen3:14b",         14_336),
+    ("qwen3:32b",         32_768),
+    ("gemma4:e2b",         8_192),
+    ("gemma4:e4b",        12_288),
+    ("gemma4:26b",        22_528),
+    ("gemma4:31b",        24_576),
+    ("gemma3:12b",        14_336),
+    ("gemma3:27b",        20_480),
+    ("command-r",         16_384),
+    ("command-r-plus",    49_152),
+];
+
+/// Estimate RAM (MB) for an Ollama model by name.
+/// Uses the lookup table first, then heuristics from the parameter count.
+fn estimate_ram_mb_for_name(name: &str) -> u64 {
+    let lower = name.to_lowercase();
+    // Exact or prefix match in the known table.
+    for (key, ram) in KNOWN_RAM_TABLE {
+        if lower == *key || lower.starts_with(&format!("{key}-")) || lower.starts_with(&format!("{key}:")) {
+            return *ram;
+        }
+    }
+    // Heuristic: Q4 quant ≈ 0.55 bytes/param + 20 % runtime overhead, round to 512 MB.
+    if let Some(b) = extract_param_billions(name) {
+        let raw = (b * 1_000.0 * 0.55 * 1.2) as u64;
+        return raw.div_ceil(512) * 512;
+    }
+    // Default: assume a 7 B-class model.
+    8_192
+}
+
+/// Extract the parameter count in billions from strings like "7b", "3.8b", "llama3.2:3b".
+fn extract_param_billions(s: &str) -> Option<f64> {
+    let lower = s.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                i += 1;
+            }
+            // Must be followed by 'b' and then a non-alpha character (or end of string).
+            if i < chars.len() && chars[i] == 'b' {
+                let after = i + 1;
+                let boundary = after >= chars.len()
+                    || !chars[after].is_ascii_alphabetic()
+                    || chars[after] == '-'
+                    || chars[after] == '_';
+                if boundary {
+                    let num_str: String = chars[start..i].iter().collect();
+                    if let Ok(v) = num_str.parse::<f64>() {
+                        if (0.1..=2_000.0).contains(&v) {
+                            return Some(v);
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Convert a model name / Ollama tag to a human-readable display name.
+fn format_display_name(tag: &str) -> String {
+    let base = tag.split(':').next().unwrap_or(tag);
+    base.split(['-', '_'])
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().to_string() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+// ── Source: Ollama Library ────────────────────────────────────────────
+
+/// Scrape the Ollama model library for all pull-able model tags.
+async fn fetch_from_ollama_library(
+    client: &reqwest::Client,
+) -> Result<Vec<ModelRecommendation>, String> {
+    let html = client
+        .get("https://ollama.com/library")
+        .send()
+        .await
+        .map_err(|e| format!("Ollama library request: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("Ollama library body: {e}"))?;
+
+    let doc = scraper::Html::parse_document(&html);
+    // Model cards on ollama.com/library are anchors that link to /library/<name>.
+    let sel = scraper::Selector::parse("a[href^='/library/']")
+        .map_err(|_| "CSS selector parse error".to_string())?;
+
+    let mut models: Vec<ModelRecommendation> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for link in doc.select(&sel) {
+        let href = link.value().attr("href").unwrap_or("");
+        let name = href.trim_start_matches("/library/");
+        // Skip empty, nested paths, and duplicates.
+        if name.is_empty() || name.contains('/') || !seen.insert(name.to_string()) {
+            continue;
+        }
+        let inner_text: String = link
+            .text()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        // Use inner text as description, stripping the model name prefix if present.
+        let desc = inner_text
+            .trim_start_matches(name)
+            .trim_start_matches(':')
+            .trim()
+            .to_string();
+        let desc = if desc.len() < 10 {
+            format!("Available on Ollama library — `ollama pull {name}`")
+        } else {
+            desc.chars().take(200).collect()
+        };
+
+        models.push(ModelRecommendation {
+            model_tag:       name.to_string(),
+            display_name:    format_display_name(name),
+            description:     desc,
+            required_ram_mb: estimate_ram_mb_for_name(name),
+            is_top_pick:     false,
+            is_cloud:        false,
+        });
+    }
+
+    if models.is_empty() {
+        return Err("no models found on Ollama library page".to_string());
+    }
+    Ok(models)
+}
+
+// ── Source: HuggingFace Trending ─────────────────────────────────────
+
+/// Map a HuggingFace model ID to an Ollama-compatible tag, or return `None`.
+fn hf_id_to_ollama_tag(hf_id: &str) -> Option<String> {
+    const MAPPINGS: &[(&str, &str)] = &[
+        ("google/gemma-4",             "gemma4"),
+        ("google/gemma-3",             "gemma3"),
+        ("google/gemma-2",             "gemma2"),
+        ("google/gemma",               "gemma"),
+        ("meta-llama/llama-3.3",       "llama3.3"),
+        ("meta-llama/llama-3.2",       "llama3.2"),
+        ("meta-llama/llama-3.1",       "llama3.1"),
+        ("meta-llama/meta-llama-3",    "llama3"),
+        ("microsoft/phi-4-mini",       "phi4-mini"),
+        ("microsoft/phi-4",            "phi4"),
+        ("microsoft/phi-3",            "phi3"),
+        ("qwen/qwen3",                 "qwen3"),
+        ("qwen/qwen2.5",               "qwen2.5"),
+        ("deepseek-ai/deepseek-r1",    "deepseek-r1"),
+        ("deepseek-ai/deepseek-v3",    "deepseek-v3"),
+        ("mistralai/mistral-7b",       "mistral"),
+        ("mistralai/mixtral",          "mixtral"),
+        ("mistralai/mistral-nemo",     "mistral-nemo"),
+        ("cohere",                     "command-r"),
+        ("01-ai/yi",                   "yi"),
+    ];
+    let lower = hf_id.to_lowercase();
+    for (prefix, base) in MAPPINGS {
+        if lower.starts_with(prefix) {
+            if let Some(b) = extract_param_billions(hf_id) {
+                let suffix = if b.fract() == 0.0 {
+                    format!("{}b", b as u64)
+                } else {
+                    format!("{b:.1}b")
+                };
+                return Some(format!("{base}:{suffix}"));
+            }
+        }
+    }
+    None
+}
+
+/// Fetch trending text-generation models from the HuggingFace public API.
+async fn fetch_from_huggingface(
+    client: &reqwest::Client,
+) -> Result<Vec<ModelRecommendation>, String> {
+    #[derive(serde::Deserialize)]
+    struct HfModel {
+        id: String,
+        #[serde(default)]
+        downloads: u64,
+        #[serde(default)]
+        tags: Vec<String>,
+    }
+
+    let url = "https://huggingface.co/api/models\
+               ?pipeline_tag=text-generation&sort=trending&limit=50&full=false";
+
+    let models: Vec<HfModel> = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("HuggingFace request: {e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("HuggingFace JSON: {e}"))?;
+
+    let mut result = Vec::new();
+    for m in &models {
+        let Some(ollama_tag) = hf_id_to_ollama_tag(&m.id) else { continue };
+        let is_gguf = m.tags.iter().any(|t| t == "gguf");
+        let desc = format!(
+            "Trending on HuggingFace{}. {} downloads.",
+            if is_gguf { " · GGUF available" } else { "" },
+            m.downloads,
+        );
+        result.push(ModelRecommendation {
+            model_tag:       ollama_tag.clone(),
+            display_name:    format_display_name(&ollama_tag),
+            description:     desc,
+            required_ram_mb: estimate_ram_mb_for_name(&ollama_tag),
+            is_top_pick:     false,
+            is_cloud:        false,
+        });
+    }
+    Ok(result)
+}
+
+// ── Source: LM Studio Model Catalog ──────────────────────────────────
+
+/// Fetch curated models from the LM Studio public model catalog.
+async fn fetch_from_lm_studio(
+    client: &reqwest::Client,
+) -> Result<Vec<ModelRecommendation>, String> {
+    #[derive(serde::Deserialize)]
+    struct LmsModel {
+        #[serde(alias = "modelId", alias = "id", default)]
+        id: String,
+        #[serde(alias = "name", default)]
+        name: String,
+        #[serde(default)]
+        description: String,
+    }
+
+    // LM Studio may expose a JSON catalog; this is best-effort.
+    let url = "https://lmstudio.ai/api/catalog/featured";
+    let resp = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("LM Studio request: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("LM Studio HTTP {}", resp.status()));
+    }
+
+    let models: Vec<LmsModel> = resp
+        .json()
+        .await
+        .map_err(|e| format!("LM Studio JSON: {e}"))?;
+
+    let mut result = Vec::new();
+    for m in &models {
+        let key = if m.id.is_empty() { &m.name } else { &m.id };
+        let Some(ollama_tag) = hf_id_to_ollama_tag(key) else { continue };
+        let desc = if m.description.is_empty() {
+            "Curated on LM Studio model catalog.".to_string()
+        } else {
+            m.description.chars().take(200).collect()
+        };
+        result.push(ModelRecommendation {
+            model_tag:       ollama_tag.clone(),
+            display_name:    format_display_name(&ollama_tag),
+            description:     desc,
+            required_ram_mb: estimate_ram_mb_for_name(&ollama_tag),
+            is_top_pick:     false,
+            is_cloud:        false,
+        });
+    }
+    Ok(result)
+}
+
+// ── Merge & cache ─────────────────────────────────────────────────────
+
+/// Assign the best top-pick model for each RAM tier from a sorted list.
+fn build_top_picks(local_models: &[ModelRecommendation]) -> HashMap<String, String> {
+    // For each tier, the budget is the FLOOR of that tier's RAM range
+    // (i.e. the minimum RAM any user in that tier can have).  This ensures
+    // the recommended model can actually run on the weakest machine in the
+    // tier — matching the logic in `RamTier::from_mb` and `recommend()`.
+    //
+    // VeryLow is special: floor is 0 but we use 4,095 (the tier's upper
+    // bound) so we always produce a pick for the smallest machines.
+    const TIERS: &[(&str, u64)] = &[
+        ("VeryLow",  4_095),   // tier spans 0–4095; use ceiling so *something* fits
+        ("Low",      4_096),   // tier floor — gemma3:1b (2048) fits
+        ("Medium",   8_192),   // tier floor — gemma4:e2b (8192) fits
+        ("High",    16_384),   // tier floor — gemma4:e4b (12288) fits
+        ("VeryHigh", 32_768),  // tier floor — gemma4:31b (24576) fits
+    ];
+    let mut picks = HashMap::new();
+    for (tier, budget) in TIERS {
+        if let Some(best) = local_models
+            .iter()
+            .filter(|m| m.required_ram_mb <= *budget)
+            .max_by_key(|m| m.required_ram_mb)
+        {
+            picks.insert(tier.to_string(), best.model_tag.clone());
+        }
+    }
+    picks
+}
+
+/// Serialise a `ParsedCatalogue` to marker-delimited markdown for caching.
+fn catalogue_to_markdown(cat: &ParsedCatalogue) -> String {
+    let mut md = String::from(
+        "<!-- Auto-generated by TerranSoul online catalogue refresh -->\n\n\
+         <!-- BEGIN MODEL_CATALOGUE -->\n\
+         | model_tag | display_name | description | required_ram_mb | is_cloud |\n\
+         |---|---|---|---|---|\n",
+    );
+    for m in &cat.local_models {
+        md.push_str(&format!(
+            "| {} | {} | {} | {} | false |\n",
+            m.model_tag, m.display_name, m.description, m.required_ram_mb,
+        ));
+    }
+    for m in &cat.cloud_models {
+        md.push_str(&format!(
+            "| {} | {} | {} | {} | true |\n",
+            m.model_tag, m.display_name, m.description, m.required_ram_mb,
+        ));
+    }
+    md.push_str("<!-- END MODEL_CATALOGUE -->\n\n");
+    md.push_str("<!-- BEGIN TOP_PICKS -->\n| tier | model_tag |\n|---|---|\n");
+    for (tier, tag) in &cat.top_picks {
+        md.push_str(&format!("| {tier} | {tag} |\n"));
+    }
+    md.push_str("<!-- END TOP_PICKS -->\n");
+    md
+}
+
+/// Fetch the latest model catalogue from multiple well-known public sources
+/// **concurrently**, merge the results, and cache them locally.
 ///
-/// The downloaded markdown is cached to `<cache_dir>/model-catalogue.md`.
-/// Returns `Ok(catalogue)` on success, or an error string on failure.
-/// The caller should fall back to the bundled/hardcoded catalogue on error.
+/// Sources queried:
+/// 1. **Ollama Model Library** (`ollama.com/library`) — definitive list of
+///    all models available via `ollama pull`.
+/// 2. **HuggingFace Trending API** — broad ecosystem quality signal;
+///    only models that map to a known Ollama tag are included.
+/// 3. **LM Studio Model Catalog** — curated, quantised models for
+///    consumer hardware; mapped to Ollama tags where possible.
+///
+/// Individual source failures are silently ignored. Returns an error only
+/// when all sources fail to return any models.
+/// The merged catalogue is cached to `<cache_dir>/model-catalogue.md`.
 pub async fn fetch_online_catalogue(
     cache_dir: &Path,
 ) -> Result<ParsedCatalogue, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("HTTP client error: {e}"))?;
+    let client = build_http_client()?;
 
-    let resp = client
-        .get(CATALOGUE_URL)
-        .header("Accept", "text/plain")
-        .send()
-        .await
-        .map_err(|e| format!("catalogue fetch failed: {e}"))?;
+    // Fetch all three sources concurrently; individual failures are tolerated.
+    let (ollama_res, hf_res, lms_res) = tokio::join!(
+        fetch_from_ollama_library(&client),
+        fetch_from_huggingface(&client),
+        fetch_from_lm_studio(&client),
+    );
 
-    if !resp.status().is_success() {
-        return Err(format!("catalogue fetch HTTP {}", resp.status()));
+    // Merge results, deduplicating by model_tag.
+    // Ollama source takes precedence (inserted first), others fill in gaps.
+    let mut merged: Vec<ModelRecommendation> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = Default::default();
+
+    for batch in [ollama_res.ok(), hf_res.ok(), lms_res.ok()]
+        .into_iter()
+        .flatten()
+    {
+        for model in batch {
+            if seen.insert(model.model_tag.clone()) {
+                merged.push(model);
+            }
+        }
     }
 
-    let markdown = resp
-        .text()
-        .await
-        .map_err(|e| format!("catalogue read failed: {e}"))?;
+    if merged.is_empty() {
+        return Err("all online sources (Ollama, HuggingFace, LM Studio) returned no models".to_string());
+    }
 
-    let catalogue = parse_catalogue(&markdown)
-        .ok_or_else(|| "catalogue markers not found in fetched document".to_string())?;
+    // Sort by required RAM descending so most-capable models come first.
+    merged.sort_by(|a, b| b.required_ram_mb.cmp(&a.required_ram_mb));
 
-    // Cache the raw markdown for offline use.
+    let (local, cloud): (Vec<_>, Vec<_>) = merged.into_iter().partition(|m| !m.is_cloud);
+    let top_picks = build_top_picks(&local);
+
+    let catalogue = ParsedCatalogue { local_models: local, cloud_models: cloud, top_picks };
+
+    // Cache as marker-delimited markdown so `load_cached_catalogue` can read it.
     std::fs::create_dir_all(cache_dir).ok();
-    let cache_path = cache_dir.join("model-catalogue.md");
-    std::fs::write(&cache_path, &markdown).ok();
+    std::fs::write(cache_dir.join("model-catalogue.md"), catalogue_to_markdown(&catalogue)).ok();
 
     Ok(catalogue)
 }
 
 /// Load a previously-cached catalogue from disk.
 pub fn load_cached_catalogue(cache_dir: &Path) -> Option<ParsedCatalogue> {
-    let cache_path = cache_dir.join("model-catalogue.md");
-    let markdown = std::fs::read_to_string(cache_path).ok()?;
+    let markdown = std::fs::read_to_string(cache_dir.join("model-catalogue.md")).ok()?;
     parse_catalogue(&markdown)
 }
 
@@ -341,6 +741,67 @@ mod tests {
             let top_count = recs.iter().filter(|m| m.is_top_pick).count();
             assert_eq!(top_count, 1, "Expected 1 top pick for {} MB, got {}", ram, top_count);
         }
+    }
+
+    #[test]
+    fn recommend_high_tier_picks_e4b_not_31b() {
+        let cat = parse_catalogue(SAMPLE_MD).unwrap();
+        // 16 GB user is "High" tier — should get gemma4:e4b (12 GB),
+        // NOT gemma4:31b (24 GB) which won't fit.
+        let recs = recommend_from_catalogue(16_384, &cat);
+        let top = recs.iter().find(|m| m.is_top_pick).unwrap();
+        assert_eq!(top.model_tag, "gemma4:e4b");
+        // gemma4:31b should NOT be in the list at all (24,576 > 16,384).
+        assert!(!recs.iter().any(|m| m.model_tag == "gemma4:31b"));
+    }
+
+    #[test]
+    fn build_top_picks_matches_hardcoded_recommend() {
+        // Online catalogue top-picks must agree with the hardcoded recommend().
+        let cat = parse_catalogue(SAMPLE_MD).unwrap();
+        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:31b");
+        assert_eq!(cat.top_picks["High"], "gemma4:e4b");
+        assert_eq!(cat.top_picks["Medium"], "gemma4:e2b");
+        assert_eq!(cat.top_picks["Low"], "gemma3:1b");
+        assert_eq!(cat.top_picks["VeryLow"], "tinyllama");
+    }
+
+    #[test]
+    fn build_top_picks_online_picks_correct_models() {
+        // Simulate the online catalogue path where build_top_picks is called
+        // (no explicit TOP_PICKS markers — the function must compute picks).
+        let models = vec![
+            ModelRecommendation {
+                model_tag: "gemma4:31b".to_string(), display_name: String::new(),
+                description: String::new(), required_ram_mb: 24_576,
+                is_top_pick: false, is_cloud: false,
+            },
+            ModelRecommendation {
+                model_tag: "gemma4:e4b".to_string(), display_name: String::new(),
+                description: String::new(), required_ram_mb: 12_288,
+                is_top_pick: false, is_cloud: false,
+            },
+            ModelRecommendation {
+                model_tag: "gemma4:e2b".to_string(), display_name: String::new(),
+                description: String::new(), required_ram_mb: 8_192,
+                is_top_pick: false, is_cloud: false,
+            },
+            ModelRecommendation {
+                model_tag: "gemma3:1b".to_string(), display_name: String::new(),
+                description: String::new(), required_ram_mb: 2_048,
+                is_top_pick: false, is_cloud: false,
+            },
+            ModelRecommendation {
+                model_tag: "tinyllama".to_string(), display_name: String::new(),
+                description: String::new(), required_ram_mb: 2_048,
+                is_top_pick: false, is_cloud: false,
+            },
+        ];
+        let picks = build_top_picks(&models);
+        // High tier user (16–32 GB) must get gemma4:e4b, NOT gemma4:31b
+        assert_eq!(picks["High"], "gemma4:e4b");
+        assert_eq!(picks["VeryHigh"], "gemma4:31b");
+        assert_eq!(picks["Medium"], "gemma4:e2b");
     }
 
     #[test]

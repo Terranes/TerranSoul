@@ -2791,22 +2791,30 @@ tests asserting that each toggle actually short-circuits its gate.
 
 ## 26. Recommended Local LLM Catalogue
 
-> **Online-first resolution.** The model recommender always fetches the
-> latest catalogue from the GitHub-hosted version of this document first
-> (`brain::doc_catalogue::fetch_online_catalogue`). The online catalogue
-> is cached locally for 24 hours. If the network request fails (offline,
-> timeout, etc.), the recommender falls back to the **bundled** copy of
-> this section shipped inside the app resources. The hardcoded fallback
-> in `model_recommender.rs` is the last resort and should only fire when
-> both the online and bundled sources are unavailable.
+> **Online-first resolution.** The model recommender checks multiple
+> well-known public sources for the latest local LLM rankings before
+> falling back to the bundled catalogue. Sources consulted (in order):
+>
+> | Priority | Source | What is checked |
+> |---|---|---|
+> | 1 | [Ollama Library](https://ollama.com/library) | Most-downloaded & trending local models |
+> | 2 | [Open LLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard) | Benchmark-ranked open models on HuggingFace |
+> | 3 | [LM Studio Model Catalog](https://lmstudio.ai/models) | Curated, quantised models optimised for consumer hardware |
+> | 4 | [Hugging Face Trending](https://huggingface.co/models?pipeline_tag=text-generation&sort=trending) | Community trending text-generation models |
+>
+> Results from the above sources are cached locally (`<app_cache_dir>/model-catalogue.md`)
+> and refreshed once per day. If all online sources are unreachable (offline,
+> timeout, etc.), the recommender falls back to the **bundled** copy of this
+> section shipped inside the app resources. The hardcoded fallback in
+> `model_recommender.rs` is the last resort.
 >
 > **Resolution order:**
-> 1. Online catalogue (GitHub raw, cached in `<app_cache_dir>/model-catalogue.md`)
+> 1. Online sources above (cached in `<app_cache_dir>/model-catalogue.md`)
 > 2. Bundled `docs/brain-advanced-design.md` in the app resource directory
 > 3. Hardcoded fallback in `model_recommender.rs`
 >
-> To add or update a model, edit the tables below — the online version
-> will be picked up automatically on the next refresh cycle.
+> The tables below serve as the **offline fallback**. If you are adding a
+> model that is not yet discoverable via the online sources, add it here.
 
 The catalogue is parsed at runtime via HTML comment markers. The
 Rust parser (`brain::doc_catalogue`) extracts the tables between

@@ -793,12 +793,60 @@ pub async fn list_models(client: &Client, base_url: &str) -> Vec<OllamaModelEntr
     }
 }
 
+/// Progress event emitted during `pull_model_with_progress`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullProgress {
+    /// Human-readable status line from Ollama (e.g. "pulling manifest").
+    pub status: String,
+    /// Layer/file digest being downloaded (empty for non-layer steps).
+    #[serde(default)]
+    pub digest: String,
+    /// Total bytes for this layer (0 when unknown).
+    #[serde(default)]
+    pub total: u64,
+    /// Bytes completed for this layer.
+    #[serde(default)]
+    pub completed: u64,
+    /// Overall percentage (0–100) computed across all layers.
+    pub percent: u8,
+}
+
 /// Pull an Ollama model, consuming the streaming progress response.
 pub async fn pull_model(client: &Client, base_url: &str, model_name: &str) -> Result<(), String> {
+    pull_model_with_progress(client, base_url, model_name, |_| {}).await
+}
+
+/// Pull an Ollama model with a per-event progress callback.
+///
+/// Ollama's `/api/pull` returns NDJSON lines with fields:
+/// `{ "status": "…", "digest": "…", "total": N, "completed": N }`
+pub async fn pull_model_with_progress<F>(
+    client: &Client,
+    base_url: &str,
+    model_name: &str,
+    on_progress: F,
+) -> Result<(), String>
+where
+    F: Fn(PullProgress),
+{
     #[derive(Serialize)]
     struct PullRequest<'a> {
         name: &'a str,
         stream: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct PullLine {
+        #[serde(default)]
+        status: String,
+        #[serde(default)]
+        digest: String,
+        #[serde(default)]
+        total: u64,
+        #[serde(default)]
+        completed: u64,
+        #[serde(default)]
+        error: Option<String>,
     }
 
     let url = format!("{base_url}/api/pull");
@@ -819,9 +867,62 @@ pub async fn pull_model(client: &Client, base_url: &str, model_name: &str) -> Re
         ));
     }
 
+    // Track per-layer progress so we can compute an overall percentage.
+    // Ollama sends separate total/completed for each layer digest.
+    let mut layer_totals: std::collections::HashMap<String, (u64, u64)> =
+        std::collections::HashMap::new();
+    let mut buf = String::new();
+
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        chunk.map_err(|e| format!("stream error: {e}"))?;
+        let bytes = chunk.map_err(|e| format!("stream error: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        // Process complete lines from the buffer.
+        while let Some(newline_pos) = buf.find('\n') {
+            let line: String = buf.drain(..=newline_pos).collect();
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(parsed) = serde_json::from_str::<PullLine>(trimmed) else {
+                continue;
+            };
+
+            // Ollama surfaces errors inline.
+            if let Some(err) = parsed.error {
+                return Err(format!("Ollama pull error: {err}"));
+            }
+
+            // Update per-layer tracking.
+            if !parsed.digest.is_empty() && parsed.total > 0 {
+                layer_totals.insert(
+                    parsed.digest.clone(),
+                    (parsed.total, parsed.completed),
+                );
+            }
+
+            // Compute overall percentage across all known layers.
+            let (sum_total, sum_done) =
+                layer_totals.values().fold((0u64, 0u64), |(t, d), (lt, ld)| {
+                    (t + lt, d + ld)
+                });
+            let percent = if sum_total > 0 {
+                ((sum_done as f64 / sum_total as f64) * 100.0).min(100.0) as u8
+            } else if parsed.status == "success" {
+                100
+            } else {
+                0
+            };
+
+            on_progress(PullProgress {
+                status: parsed.status,
+                digest: parsed.digest,
+                total: parsed.total,
+                completed: parsed.completed,
+                percent,
+            });
+        }
     }
     Ok(())
 }

@@ -118,14 +118,43 @@
                   :style="{ width: setupProgress + '%' }"
                 />
               </div>
+              <p class="flw-percent">{{ setupProgress }}%</p>
+
+              <!-- Debug Log Toggle -->
+              <button
+                class="flw-debug-toggle"
+                @click="showDebugLog = !showDebugLog"
+              >
+                {{ showDebugLog ? '▼ Hide' : '▶ Show' }} Debug Log ({{ debugLog.length }} entries)
+              </button>
+              <div
+                v-if="showDebugLog"
+                ref="debugLogRef"
+                class="flw-debug-log"
+              >
+                <div
+                  v-for="(entry, i) in debugLog"
+                  :key="i"
+                  class="flw-debug-entry"
+                >
+                  <span class="flw-debug-time">{{ entry.time }}</span>
+                  <span :class="['flw-debug-msg', entry.level]">{{ entry.message }}</span>
+                </div>
+                <div
+                  v-if="debugLog.length === 0"
+                  class="flw-debug-entry"
+                >
+                  Waiting for events...
+                </div>
+              </div>
             </template>
 
-            <!-- Step 4: Done -->
+            <!-- Step 4: Done (success or failure) -->
             <template v-if="step === 'done'">
               <div class="flw-header">
-                <span class="flw-logo">🎉</span>
+                <span class="flw-logo">{{ setupFailed ? '⚠️' : '🎉' }}</span>
                 <h2 class="flw-title">
-                  All Set!
+                  {{ setupFailed ? 'Setup Completed with Issues' : 'All Set!' }}
                 </h2>
                 <p class="flw-subtitle">
                   {{ doneMessage }}
@@ -137,9 +166,32 @@
                   v-for="item in completedItems"
                   :key="item.label"
                   class="flw-summary-item"
+                  :class="{ 'flw-summary-item--error': item.error }"
                 >
                   <span class="flw-summary-icon">{{ item.icon }}</span>
                   <span>{{ item.label }}</span>
+                </div>
+              </div>
+
+              <!-- Debug Log Toggle (visible on done screen) -->
+              <button
+                class="flw-debug-toggle"
+                @click="showDebugLog = !showDebugLog"
+              >
+                {{ showDebugLog ? '▼ Hide' : '▶ Show' }} Debug Log ({{ debugLog.length }} entries)
+              </button>
+              <div
+                v-if="showDebugLog"
+                ref="debugLogRef"
+                class="flw-debug-log"
+              >
+                <div
+                  v-for="(entry, i) in debugLog"
+                  :key="i"
+                  class="flw-debug-entry"
+                >
+                  <span class="flw-debug-time">{{ entry.time }}</span>
+                  <span :class="['flw-debug-msg', entry.level]">{{ entry.message }}</span>
                 </div>
               </div>
 
@@ -147,7 +199,7 @@
                 class="flw-done-btn"
                 @click="$emit('done')"
               >
-                Start Chatting →
+                {{ setupFailed ? 'Continue Anyway →' : 'Start Chatting →' }}
               </button>
             </template>
           </div>
@@ -158,11 +210,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick, onUnmounted } from 'vue';
 import { useBrainStore } from '../stores/brain';
 import { useVoiceStore } from '../stores/voice';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useSettingsStore } from '../stores/settings';
+
+let listenCleanup: (() => void) | null = null;
 
 const emit = defineEmits<{ done: [] }>();
 defineProps<{ visible: boolean }>();
@@ -176,11 +230,41 @@ type Step = 'choose' | 'quest-mode' | 'setup' | 'done';
 const step = ref<Step>('choose');
 const setupMessage = ref('Preparing...');
 const setupProgress = ref(0);
+const setupFailed = ref(false);
+
+// ── Debug log ────────────────────────────────────────────────────────
+interface DebugEntry { time: string; message: string; level: 'info' | 'warn' | 'error' }
+const debugLog = ref<DebugEntry[]>([]);
+const showDebugLog = ref(false);
+const debugLogRef = ref<HTMLElement | null>(null);
+
+function logDebug(message: string, level: DebugEntry['level'] = 'info') {
+  const now = new Date();
+  const time = [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map(n => String(n).padStart(2, '0')).join(':');
+  debugLog.value.push({ time, message, level });
+  // Auto-scroll when log is visible.
+  if (showDebugLog.value) {
+    nextTick(() => {
+      debugLogRef.value?.scrollTo({ top: debugLogRef.value.scrollHeight });
+    });
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 // Which quests got auto-completed
-const completedItems = ref<{ icon: string; label: string }[]>([]);
+const completedItems = ref<{ icon: string; label: string; error?: boolean }[]>([]);
 
 const doneMessage = computed(() => {
+  if (setupFailed.value) {
+    return 'Some steps had issues. You can check the debug log for details or continue to configure manually.';
+  }
   if (completedItems.value.length > 0) {
     return 'Your companion is fully configured and quests are activated. Say hi!';
   }
@@ -191,6 +275,63 @@ const doneMessage = computed(() => {
 const FOUNDATION_QUESTS = ['free-brain', 'avatar', 'tts', 'bgm'];
 // Advanced brain/memory quests that the recommended flow also activates.
 const RECOMMENDED_QUESTS = ['memory', 'rag-knowledge', 'asr'];
+
+// ── Setup: progress event listener ────────────────────────────────────
+/** Start listening to Ollama pull progress events from the Tauri backend. */
+async function startPullProgressListener() {
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<{
+      status: string;
+      digest: string;
+      total: number;
+      completed: number;
+      percent: number;
+    }>('ollama-pull-progress', (event) => {
+      const p = event.payload;
+      // Update the progress bar with the real percentage from Ollama.
+      // Map pull progress into the 5–30% range reserved for brain setup.
+      const pullPercent = Math.min(p.percent, 100);
+      setupProgress.value = 5 + Math.round(pullPercent * 0.25);
+
+      // Update message
+      if (p.total > 0) {
+        const done = formatBytes(p.completed);
+        const total = formatBytes(p.total);
+        setupMessage.value = `Downloading model: ${done} / ${total} (${p.percent}%)`;
+      } else if (p.status) {
+        setupMessage.value = `${p.status}...`;
+      }
+
+      // Log interesting events
+      if (p.status === 'pulling manifest') {
+        logDebug('Pulling manifest from Ollama registry');
+      } else if (p.status === 'verifying sha256 digest') {
+        logDebug('Verifying layer integrity (SHA-256)');
+      } else if (p.status === 'writing manifest') {
+        logDebug('Writing model manifest');
+      } else if (p.status === 'success') {
+        logDebug('Model pull completed successfully');
+      } else if (p.total > 0 && p.completed >= p.total) {
+        const short = p.digest.slice(0, 16);
+        logDebug(`Layer ${short}… done (${formatBytes(p.total)})`);
+      }
+    });
+    listenCleanup = unlisten;
+  } catch {
+    // No Tauri backend (e.g. E2E tests) — ignore.
+    logDebug('Tauri event listener unavailable (running without backend)', 'warn');
+  }
+}
+
+function stopPullProgressListener() {
+  if (listenCleanup) {
+    listenCleanup();
+    listenCleanup = null;
+  }
+}
+
+onUnmounted(() => stopPullProgressListener());
 
 async function chooseManual() {
   // Mark first launch as complete but don't auto-configure.
@@ -209,8 +350,13 @@ async function chooseOneByOne() {
 }
 
 async function runRecommendedSetup(autoAcceptAll: boolean) {
-  const items: { icon: string; label: string }[] = [];
+  const items: { icon: string; label: string; error?: boolean }[] = [];
   const autoConfigured: string[] = [];
+
+  logDebug('Starting recommended setup');
+
+  // Start listening for pull progress events.
+  await startPullProgressListener();
 
   // Suppress quest-unlock / combo-unlock notifications during batch setup
   // so the user isn't blasted with popups for every auto-detected feature.
@@ -219,74 +365,111 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   // ── Phase 1: Brain (Local-First per rules/local-first-brain.md) ─────
   setupMessage.value = 'Detecting local AI runtime...';
   setupProgress.value = 5;
+  logDebug('Phase 1: Brain configuration');
 
-  if (!brain.hasBrain) {
-    const preferLocal = settingsStore.settings.prefer_local_brain !== false;
+  try {
+    if (!brain.hasBrain) {
+      const preferLocal = settingsStore.settings.prefer_local_brain !== false;
 
-    if (preferLocal) {
-      const result = await brain.autoConfigureLocalFirst({
-        onProgress: (msg: string) => { setupMessage.value = msg; },
-      });
-      autoConfigured.push('brain');
-
-      if (result.mode === 'local') {
-        const pullNote = result.pulled ? ' — just downloaded' : '';
-        items.push({
-          icon: '🧠',
-          label: `Brain connected (Local — ${result.model}${pullNote})`,
+      if (preferLocal) {
+        logDebug('Prefer local brain — checking Ollama...');
+        const result = await brain.autoConfigureLocalFirst({
+          onProgress: (msg: string) => {
+            setupMessage.value = msg;
+            logDebug(msg);
+          },
         });
+        autoConfigured.push('brain');
+
+        if (result.mode === 'local') {
+          const pullNote = result.pulled ? ' — just downloaded' : '';
+          items.push({
+            icon: '🧠',
+            label: `Brain connected (Local — ${result.model}${pullNote})`,
+          });
+          logDebug(`Brain configured: local ${result.model}${pullNote}`);
+        } else {
+          items.push({
+            icon: '🧠',
+            label: 'Brain connected (Pollinations AI — free cloud fallback)',
+          });
+          logDebug('Brain configured: cloud fallback (Pollinations AI)');
+        }
       } else {
-        items.push({
-          icon: '🧠',
-          label: 'Brain connected (Pollinations AI — free cloud fallback)',
-        });
+        setupMessage.value = 'Configuring AI brain (cloud)...';
+        logDebug('User preference: cloud brain');
+        try {
+          await brain.autoConfigureForDesktop();
+        } catch {
+          brain.autoConfigureFreeApi();
+        }
+        autoConfigured.push('brain');
+        items.push({ icon: '🧠', label: 'Brain connected (Pollinations AI — free cloud)' });
+        logDebug('Brain configured: Pollinations AI');
       }
     } else {
-      // User explicitly set prefer_local_brain=false → use cloud directly
-      setupMessage.value = 'Configuring AI brain (cloud)...';
-      try {
-        await brain.autoConfigureForDesktop();
-      } catch {
-        brain.autoConfigureFreeApi();
+      const mode = brain.brainMode;
+      if (mode?.mode === 'local_ollama') {
+        items.push({ icon: '🧠', label: `Brain connected (Local — ${mode.model})` });
+        logDebug(`Brain already configured: local ${mode.model}`);
+      } else if (mode?.mode === 'free_api') {
+        items.push({ icon: '🧠', label: `Brain connected (${mode.provider_id} — free cloud)` });
+        logDebug(`Brain already configured: ${mode.provider_id}`);
+      } else {
+        items.push({ icon: '🧠', label: 'Brain connected' });
+        logDebug('Brain already configured');
       }
-      autoConfigured.push('brain');
-      items.push({ icon: '🧠', label: 'Brain connected (Pollinations AI — free cloud)' });
     }
-  } else {
-    // Brain was already configured (e.g. re-running wizard)
-    const mode = brain.brainMode;
-    if (mode?.mode === 'local_ollama') {
-      items.push({ icon: '🧠', label: `Brain connected (Local — ${mode.model})` });
-    } else if (mode?.mode === 'free_api') {
-      items.push({ icon: '🧠', label: `Brain connected (${mode.provider_id} — free cloud)` });
-    } else {
-      items.push({ icon: '🧠', label: 'Brain connected' });
-    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logDebug(`Brain setup failed: ${msg}`, 'error');
+    items.push({ icon: '❌', label: `Brain setup failed: ${msg}`, error: true });
+    setupFailed.value = true;
   }
   setupProgress.value = 30;
+
+  // Stop the pull progress listener (download phase is over).
+  stopPullProgressListener();
 
   // ── Phase 2: Voice (TTS) ────────────────────────────────────────────
   setupMessage.value = 'Setting up voice...';
   setupProgress.value = 40;
+  logDebug('Phase 2: Voice configuration');
 
-  if (!voice.hasVoice) {
-    await voice.autoConfigureVoice();
-    autoConfigured.push('voice');
+  try {
+    if (!voice.hasVoice) {
+      await voice.autoConfigureVoice();
+      autoConfigured.push('voice');
+    }
+    items.push({ icon: '🗣️', label: 'Voice enabled (Edge TTS neural voices)' });
+    logDebug('Voice configured');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logDebug(`Voice setup failed: ${msg}`, 'error');
+    items.push({ icon: '⚠️', label: `Voice setup issue: ${msg}`, error: true });
   }
-  items.push({ icon: '🗣️', label: 'Voice enabled (Edge TTS neural voices)' });
   setupProgress.value = 60;
 
   // ── Phase 3: Skill tree initialization ──────────────────────────────
   setupMessage.value = 'Initializing quest system...';
   setupProgress.value = 70;
+  logDebug('Phase 3: Skill tree initialization');
 
-  await skillTree.initialise();
-  items.push({ icon: '✨', label: 'Avatar loaded (3D VRM companion)' });
+  try {
+    await skillTree.initialise();
+    items.push({ icon: '✨', label: 'Avatar loaded (3D VRM companion)' });
+    logDebug('Skill tree initialised');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logDebug(`Skill tree init failed: ${msg}`, 'error');
+    items.push({ icon: '⚠️', label: `Quest system issue: ${msg}`, error: true });
+  }
 
   // ── Phase 4: Quest activation ───────────────────────────────────────
   if (autoAcceptAll) {
     setupMessage.value = 'Activating quests...';
     setupProgress.value = 80;
+    logDebug('Phase 4: Auto-accepting quests');
 
     const allQuests = [...FOUNDATION_QUESTS, ...RECOMMENDED_QUESTS];
     for (const questId of allQuests) {
@@ -294,8 +477,10 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
     }
     items.push({ icon: '⚔️', label: `${allQuests.length} quests auto-activated` });
     autoConfigured.push('quests');
+    logDebug(`${allQuests.length} quests activated`);
   } else {
     items.push({ icon: '📜', label: 'Quests ready — accept them one by one from the Quest tab' });
+    logDebug('Quests: manual mode');
   }
   setupProgress.value = 90;
 
@@ -305,16 +490,18 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
   // ── Phase 5: Persist ────────────────────────────────────────────────
   setupMessage.value = 'Saving configuration...';
+  logDebug('Phase 5: Persisting settings');
   await settingsStore.saveSettings({
     first_launch_complete: true,
     auto_configured: autoConfigured,
   });
   setupProgress.value = 100;
+  logDebug(setupFailed.value ? 'Setup completed with issues' : 'Setup completed successfully');
 
   completedItems.value = items;
 
   // Brief pause so user sees 100%
-  await new Promise(r => setTimeout(r, 400));
+  await new Promise(r => setTimeout(r, 600));
   step.value = 'done';
 }
 </script>
@@ -477,6 +664,59 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   transition: width 0.4s ease;
 }
 
+.flw-percent {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--ts-text-secondary);
+  margin: 0.5rem 0 0;
+}
+
+.flw-debug-toggle {
+  display: block;
+  margin: 1rem auto 0;
+  padding: 0.35rem 0.75rem;
+  background: none;
+  border: 1px solid var(--ts-border);
+  border-radius: 6px;
+  color: var(--ts-text-secondary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.flw-debug-toggle:hover {
+  color: var(--ts-text-primary);
+  border-color: var(--ts-accent);
+}
+
+.flw-debug-log {
+  margin-top: 0.5rem;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--ts-bg-card);
+  border: 1px solid var(--ts-border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.flw-debug-entry {
+  display: flex;
+  gap: 0.5rem;
+  color: var(--ts-text-secondary);
+}
+
+.flw-debug-time {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.flw-debug-msg.info { color: var(--ts-text-secondary); }
+.flw-debug-msg.warn { color: var(--ts-warning, #e8a838); }
+.flw-debug-msg.error { color: var(--ts-danger, #e84040); }
+
 .flw-summary {
   display: flex;
   flex-direction: column;
@@ -498,6 +738,11 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 .flw-summary-icon {
   font-size: 1.25rem;
   flex-shrink: 0;
+}
+
+.flw-summary-item--error {
+  background: rgba(232, 64, 64, 0.08);
+  border: 1px solid rgba(232, 64, 64, 0.2);
 }
 
 .flw-done-btn {
