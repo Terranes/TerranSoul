@@ -622,7 +622,7 @@ pub async fn fetch_online_catalogue(
     }
 
     // Sort by required RAM descending so most-capable models come first.
-    merged.sort_by(|a, b| b.required_ram_mb.cmp(&a.required_ram_mb));
+    merged.sort_by_key(|m| std::cmp::Reverse(m.required_ram_mb));
 
     let (local, cloud): (Vec<_>, Vec<_>) = merged.into_iter().partition(|m| !m.is_cloud);
     let top_picks = build_top_picks(&local);
