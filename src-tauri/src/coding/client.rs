@@ -10,8 +10,17 @@ use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
 use super::CodingLlmConfig;
 
 /// Construct an [`OpenAiClient`] from the persisted coding-LLM config.
+///
+/// When `api_key` is empty (e.g. local Ollama on `127.0.0.1:11434/v1`,
+/// which does not require auth), the bearer-auth header is omitted —
+/// otherwise some local servers reject the request with 400 / 401.
 pub fn client_from(config: &CodingLlmConfig) -> OpenAiClient {
-    OpenAiClient::new(&config.base_url, &config.model, Some(&config.api_key))
+    let key = if config.api_key.trim().is_empty() {
+        None
+    } else {
+        Some(config.api_key.as_str())
+    };
+    OpenAiClient::new(&config.base_url, &config.model, key)
 }
 
 /// Result of a reachability test. Surfaced in the BrainView "Test

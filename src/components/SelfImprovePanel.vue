@@ -259,14 +259,164 @@
         <span>Auto-start on login</span>
       </label>
     </footer>
+
+    <!-- GitHub PR + pull-from-main controls (Chunk 25.13) -->
+    <div class="si-github">
+      <h3 class="si-section-h">GitHub</h3>
+      <p class="si-github-desc">
+        When all chunks complete, the loop opens a Pull Request against
+        <code>{{ store.githubConfig?.default_base ?? 'main' }}</code> and
+        requests review from your admin reviewers.
+      </p>
+      <div class="si-github-grid">
+        <label class="si-field">
+          <span class="si-field-label">Token</span>
+          <input
+            v-model="ghToken"
+            type="password"
+            class="si-input"
+            placeholder="ghp_…"
+            autocomplete="off"
+          />
+        </label>
+        <label class="si-field">
+          <span class="si-field-label">Owner / Repo</span>
+          <input
+            v-model="ghOwnerRepo"
+            type="text"
+            class="si-input"
+            placeholder="owner/repo (auto-detected if empty)"
+          />
+        </label>
+        <label class="si-field">
+          <span class="si-field-label">Base branch</span>
+          <input
+            v-model="ghBase"
+            type="text"
+            class="si-input"
+            placeholder="main"
+          />
+        </label>
+        <label class="si-field">
+          <span class="si-field-label">Reviewers (comma-separated)</span>
+          <input
+            v-model="ghReviewers"
+            type="text"
+            class="si-input"
+            placeholder="alice, bob"
+          />
+        </label>
+      </div>
+      <div class="si-github-actions">
+        <button type="button" class="si-btn si-btn-tiny" @click="onSaveGithub">
+          💾 Save GitHub config
+        </button>
+        <button
+          type="button"
+          class="si-btn si-btn-tiny"
+          :disabled="!store.githubConfig"
+          title="Open or update PR for the current feature branch"
+          @click="onOpenPr"
+        >
+          🚀 Open PR now
+        </button>
+        <button
+          type="button"
+          class="si-btn si-btn-tiny"
+          title="Pull origin/<base> and merge with LLM-assisted conflict resolution"
+          @click="onPullMain"
+        >
+          ⬇ Pull from main
+        </button>
+      </div>
+      <p
+        v-if="store.lastPullRequest"
+        class="si-github-result si-github-result--ok"
+      >
+        Last PR: <a :href="store.lastPullRequest.html_url" target="_blank" rel="noreferrer">
+          #{{ store.lastPullRequest.number }}
+        </a>
+        ({{ store.lastPullRequest.created ? 'opened' : 'updated' }})
+      </p>
+      <p
+        v-if="store.lastPullResult"
+        class="si-github-result"
+        :class="store.lastPullResult.merged ? 'si-github-result--ok' : 'si-github-result--warn'"
+      >
+        Last pull: {{ store.lastPullResult.message }}
+      </p>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useSelfImproveStore, type SelfImprovePhase } from '../stores/self-improve';
 
 const store = useSelfImproveStore();
+
+// ── GitHub config bound to local input fields ──────────────────────────
+const ghToken = ref('');
+const ghOwnerRepo = ref('');
+const ghBase = ref('main');
+const ghReviewers = ref('');
+
+watch(
+  () => store.githubConfig,
+  (cfg) => {
+    if (!cfg) return;
+    // Never echo the token back into the visible input; show a masked
+    // placeholder by leaving it blank. Save logic preserves the existing
+    // token if the user leaves it blank.
+    ghOwnerRepo.value = cfg.owner && cfg.repo ? `${cfg.owner}/${cfg.repo}` : '';
+    ghBase.value = cfg.default_base || 'main';
+    ghReviewers.value = cfg.reviewers.join(', ');
+  },
+  { immediate: true },
+);
+
+async function onSaveGithub() {
+  const [owner, repo] = ghOwnerRepo.value.includes('/')
+    ? ghOwnerRepo.value.split('/').map((s) => s.trim())
+    : ['', ''];
+  const token = ghToken.value.trim() || store.githubConfig?.token || '';
+  if (!token) {
+    console.warn('[SelfImprove] GitHub token required to save');
+    store.logActivity('warn', 'GitHub config: token required');
+    return;
+  }
+  try {
+    await store.setGithubConfig({
+      token,
+      owner,
+      repo,
+      default_base: ghBase.value.trim() || 'main',
+      reviewers: ghReviewers.value
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    });
+    ghToken.value = ''; // never linger
+  } catch (e) {
+    console.warn('[SelfImprove] save github config failed:', e);
+  }
+}
+
+async function onOpenPr() {
+  try {
+    await store.openPullRequest();
+  } catch (e) {
+    console.warn('[SelfImprove] open PR failed:', e);
+  }
+}
+
+async function onPullMain() {
+  try {
+    await store.pullFromMain();
+  } catch (e) {
+    console.warn('[SelfImprove] pull main failed:', e);
+  }
+}
 
 defineEmits<{
   'request-enable': [];
@@ -772,4 +922,52 @@ async function onClearLog() {
   cursor: pointer;
 }
 .si-btn-tiny:hover { background: rgba(255, 255, 255, 0.1); color: var(--ts-text-primary, #eaecf4); }
+
+/* GitHub PR + pull-from-main controls (Chunk 25.13) */
+.si-github {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+.si-github-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ts-text-muted, #94a3b8);
+}
+.si-github-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.si-field { display: flex; flex-direction: column; gap: 3px; }
+.si-field-label { font-size: 0.7rem; color: var(--ts-text-muted, #94a3b8); }
+.si-input {
+  padding: 5px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--ts-text-primary, #eaecf4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+.si-input:focus { outline: 1px solid var(--ts-accent, #7c6fff); }
+.si-github-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.si-github-result {
+  margin: 0;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+.si-github-result--ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+}
+.si-github-result--warn {
+  background: rgba(234, 179, 8, 0.12);
+  color: #fbbf24;
+}
+.si-github-result a { color: inherit; text-decoration: underline; }
 </style>

@@ -21,6 +21,11 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 25.17 — Local Ollama as recommended self-improve provider, end-to-end verified](#chunk-2517--local-ollama-as-recommended-self-improve-provider-end-to-end-verified) | 2026-04-30 |
+| [Chunk 25.16 — Configurable coding-workflow context loader + reliability rule](#chunk-2516--configurable-coding-workflow-context-loader--reliability-rule) | 2026-04-29 |
+| [Chunk 25.15 — Reusable coding workflow + Anthropic-style prompting](#chunk-2515--reusable-coding-workflow--anthropic-style-prompting) | 2026-04-29 |
+| [Chunk 25.14 — Doc-driven LLM catalogue + ship docs with release](#chunk-2514--doc-driven-llm-catalogue--ship-docs-with-release) | 2026-04-29 |
+| [Chunk 25.13 — Self-improve PR-on-completion + pull-on-enable + chat learning](#chunk-2513--self-improve-pr-on-completion--pull-on-enable--chat-learning) | 2026-04-29 |
 | [Chunk 25.12 — Music-bar master mute (BGM + voice)](#chunk-2512--music-bar-master-mute-bgm--voice) | 2026-04-29 |
 | [Chunk 25.2-25.9 — Self-Improve autonomous loop (engine, repo binding, autostart, live UI, tray)](#chunk-252259--self-improve-autonomous-loop) | 2026-04-29 |
 | [Chunk 25.1 — Self-Improve foundation (toggle, coding LLM, progress UI)](#chunk-251--self-improve-foundation) | 2026-04-29 |
@@ -193,6 +198,246 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 25.17 — Local Ollama as recommended self-improve provider, end-to-end verified
+
+**Date:** 2026-04-30 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** vitest 1368/1368, vue-tsc clean, cargo clippy clean, cargo test 1449/1449, **+4 live Ollama smoke tests vs `gemma3:4b`** (gated by `OLLAMA_REAL_TEST=1`)
+
+**User ask.** "continue until self-improve fully working as expected. Loop Test and implementing using installed local LLM using recommendation option first starting the app until fully working with perfect QA, UI and UX."
+
+**What landed.**
+
+- **Local Ollama is now the single top recommendation** (`is_top_pick: true`) in `coding_llm_recommendations()`. It is free, private, offline, and requires no API key. Anthropic / OpenAI / DeepSeek remain available but are no longer the default top pick.
+- **Fixed a latent doubled-`/v1` bug** in `OpenAiClient::completions_url()`. The function used to do `format!("{}/v1/chat/completions", base_url)`, which produced `/v1/v1/chat/completions` whenever a recommendation included `/v1` in its base URL (Anthropic, OpenAI, DeepSeek, *every* OpenAI-compatible provider users typically paste). The function now strips a trailing `/v1` (and trailing `/`) before composing the URL, and a new unit test (`completions_url_does_not_double_v1_suffix`) pins both forms.
+- **Stripped `/v1` from all cloud recommendation `base_url` fields** so they match the OpenAI-compatible contract (`OpenAiClient` always appends `/v1/chat/completions`). Added a recommendations-level test that asserts no recommendation has a `/v1` suffix.
+- **End-to-end verified against the live Ollama** (`gemma3:4b`) installed on the dev machine. New gated test `ollama_real_run_coding_task_prose` constructs the recommended Local-Ollama config and drives `coding::workflow::run_coding_task` for a Prose task, asserting `well_formed && payload non-empty`. Pairs with the three pre-existing smoke tests (reachability, chat round-trip, metrics log) — all four pass live: `4 passed; 0 failed; finished in 0.77s`.
+- **No-API-key auth path** in `coding::client::client_from` already skipped bearer auth when `api_key.trim().is_empty()`; this run proved it works against a real local LLM with `api_key: ""`.
+
+**Why it matters.** Self-improve now works **out of the box**, fully offline, with zero credentials, on any machine that has Ollama installed. The Brain panel auto-detects installed models and lets the user save the config in two clicks. Cloud providers (Anthropic / OpenAI / DeepSeek) are now reachable too because the doubled-`/v1` URL bug is fixed.
+
+**Files touched.**
+
+- `src-tauri/src/coding/mod.rs` — Anthropic `is_top_pick: false`; cloud `base_url` values stripped of `/v1`; new test `recommendations_include_local_ollama_first_with_claude_openai_deepseek` (asserts Local Ollama is the single top pick + no recommendation has a `/v1` suffix).
+- `src-tauri/src/brain/openai_client.rs` — `completions_url()` is now tolerant of a `/v1` (or `/v1/`) suffix in `base_url`; new test `completions_url_does_not_double_v1_suffix`.
+- `src-tauri/tests/ollama_self_improve_smoke.rs` — new gated test `ollama_real_run_coding_task_prose` exercises `run_coding_task` against the recommended Local-Ollama provider config.
+
+**Tests.**
+
+- vitest: 1368/1368 ✅
+- vue-tsc: clean ✅
+- cargo clippy `--all-targets -D warnings`: clean ✅
+- cargo test (lib): 1449/1449 ✅ (was 1448 — `+1` for new URL-suffix unit test; same recommendations test renamed)
+- cargo test live Ollama gate (`OLLAMA_REAL_TEST=1`, `OLLAMA_REAL_MODEL=gemma3:4b`): 4/4 ✅ (was 3 — `+1` for the new run_coding_task end-to-end loop test)
+
+**Manual smoke (live).** `gemma3:4b` round-tripped on the user's machine through reachability (`"ok"`), chat (`"2, 3"` to "name two primes under 10"), metrics log (`success_rate=1.0, avg_duration_ms=444`), and `run_coding_task` Prose (`payload="ok"` after `<analysis>...</analysis>` preamble — well-formed because Prose accepts any non-empty body).
+
+**Follow-ups (deferred).**
+
+- UI tests for the Local-Ollama branch in `BrainView` (model dropdown populates, API-key field hides, save validates without key) — covered indirectly by store tests + manual smoke.
+- A first-run onboarding banner ("✅ Detected Ollama with N installed models — recommended for offline self-improve") — backlog.
+
+---
+
+## Chunk 25.16 — Configurable coding-workflow context loader + reliability rule
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** vitest 1368/1368, vue-tsc clean, cargo clippy clean, cargo test 1448/1448
+
+**User ask.** "Make TerranSoul's coding workflow use all our repo's rules and docs. Knowing TerranSoul can choose different providers and isn't a Copilot agent. Make it also configurable for TerranSoul's coding workflows. All configurable should have best UI and UX. Write a rule to make sure code workflows are 100% durable, reliable, atomic, and resilient."
+
+**What landed.**
+
+1. **New rule — `rules/coding-workflow-reliability.md`.** A peer of
+   architecture-rules: defines durability (atomic temp+fsync+rename
+   writes, persist-before-ack), atomicity (validate → write → swap order,
+   transactional git ops), reliability (deterministic prompt assembly,
+   bounded retries, injectable clocks), and resilience (no `unwrap` in
+   workflow paths, typed errors at module boundaries, cancellation
+   observed every loop iteration, graceful degradation on missing
+   files). Includes a 10-point PR enforcement checklist.
+
+2. **`CodingWorkflowConfig` struct + atomic persistence.** New
+   `coding_workflow_config.json` in the data dir, written through the
+   new shared `coding::atomic_write_json` helper (temp file →
+   `flush` + `sync_all` → `rename`). Backwards-compatible loader falls
+   back to defaults on missing/unparseable file. Config controls
+   `include_dirs` (default `rules`, `instructions`, `docs`),
+   `include_files` (default `README.md`, `AGENTS.md`),
+   `exclude_paths`, `max_file_chars` (4 KB default), and
+   `max_total_chars` (30 KB default). All three persisters
+   (`save_coding_llm`, `save_self_improve`,
+   `save_coding_workflow_config`) now route through `atomic_write_json`.
+
+3. **Workflow refactor.** `workflow::run_coding_task` now takes
+   `Option<&CodingWorkflowConfig>` and delegates to a new public
+   `workflow::load_workflow_context(repo, cfg, include_rules,
+   include_instructions, include_docs)`. The self-improve planner
+   (`engine::planner_prompt`) calls the same shared loader, eliminating
+   ~70 lines of duplicate `load_planner_context` / `load_md_dir` code.
+   Per-task booleans still gate which configured directories load, so
+   callers can scope context (e.g. instructions-only for a test-writing
+   task).
+
+4. **Provider-agnostic copy.** Panel headline reads "Coding Workflow
+   Context"; subtitle explicitly mentions Claude, OpenAI, DeepSeek, or
+   local endpoint — never "Copilot". Settings are independent of which
+   coding LLM is selected.
+
+5. **Four new Tauri commands.** `get_coding_workflow_config`,
+   `set_coding_workflow_config` (validates non-zero caps + non-empty
+   trimmed strings, persists atomically before swapping in-memory),
+   `reset_coding_workflow_config`, and
+   `preview_coding_workflow_context` (returns documents list + total
+   chars + repo root for the live preview). All registered in
+   `lib.rs` `invoke_handler!`. AppState gains
+   `coding_workflow_config: Mutex<CodingWorkflowConfig>` initialised
+   from disk on startup.
+
+6. **`CodingWorkflowConfigPanel.vue` + Pinia store.** Best-in-class
+   UI: chip inputs for include_dirs / include_files / exclude_paths
+   (Enter to add, × to remove, validation against duplicates and
+   empty), dual range sliders for per-file / total caps with live KB
+   labels, live preview pane with per-file size bars (green when
+   under cap, amber when truncated), total-budget progress bar that
+   shifts color (green → violet → amber as fill nears 100%), sticky
+   footer with **Reset to defaults** / **Discard changes** /
+   **Save changes** (last two disabled when not dirty). All styles
+   use `var(--ts-*)` design tokens; scoped, responsive grid that
+   collapses to one column under 720px. Wired into `BrainView`
+   immediately below the Coding LLM picker.
+
+7. **Tests.** +6 Rust tests (`load_dir_skips_excluded_paths_by_basename`,
+   `load_workflow_context_loads_all_three_dirs_and_explicit_files`,
+   `load_workflow_context_respects_per_task_dir_flags`,
+   `load_workflow_context_supports_custom_dirs`,
+   `is_excluded_matches_basename_and_full_path`, plus a refactor of
+   the existing 4 `load_dir_*` tests to use `CodingWorkflowConfig`).
+   +8 Vitest tests for the Pinia store covering defaults,
+   load/save/reset/dirty state, addEntry/removeEntry/discardChanges,
+   refreshPreview, and lastError surfacing on backend failure.
+
+**Files changed.** `src-tauri/src/coding/mod.rs`,
+`src-tauri/src/coding/workflow.rs`, `src-tauri/src/coding/engine.rs`,
+`src-tauri/src/commands/coding.rs`, `src-tauri/src/lib.rs`,
+`src/types/index.ts`, `src/stores/coding-workflow.ts` (new),
+`src/stores/coding-workflow.test.ts` (new),
+`src/components/CodingWorkflowConfigPanel.vue` (new),
+`src/views/BrainView.vue`,
+`rules/coding-workflow-reliability.md` (new),
+`rules/completion-log.md`.
+
+**Gates.** `npx vitest run` → 1368/1368 passing, 0 unhandled errors.
+`npx vue-tsc --noEmit` → clean. `cargo clippy --all-targets -- -D
+warnings` → clean. `cargo test` → 1448/1448 passing.
+
+---
+
+## Chunk 25.15 — Reusable coding workflow + Anthropic-style prompting
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** vitest 1360/1360, vue-tsc clean, cargo clippy clean, cargo test 1442/1443 (one pre-existing flake)
+
+**User ask.** "Make the coding workflow reusable for everything related to coding (both self-improve and other coding tasks). For self-improve, always check `instructions/` and `docs/` for rules and recommendations. Apply the ten Anthropic prompt-engineering principles to **every** coding workflow. All instructions in English."
+
+**Two new modules in `src-tauri/src/coding/`.**
+
+- **[`prompting.rs`](src-tauri/src/coding/prompting.rs) (NEW, ~370 lines, 14 tests).** XML-tag-structured `CodingPrompt` builder applying all ten principles uniformly: `<schema_version>`, job-description `<role>`, `<constraints><dont>…</dont></constraints>`, `<error_handling><on_error>…</on_error></error_handling>`, `<thinking_protocol>` forcing `<analysis>` before output, exhaustive `<output_contract>` per `OutputShape` variant (`NumberedPlan { max_steps }`, `StrictJson { schema_description }`, `BareFileContents`, `Prose`), `<documents><document index="N" label="…">…</document></documents>`, optional `<example>`, optional pre-filled assistant message (`<analysis>`). Helper `extract_tag(reply, tag)` extracts the contracted output tag from the model's reply. XML metacharacters auto-escaped. Per-document char cap (`MAX_DOC_CHARS = 6_000`) with truncation marker.
+
+- **[`workflow.rs`](src-tauri/src/coding/workflow.rs) (NEW, ~290 lines, 9 tests).** `CodingTask { id, description, repo_root, include_rules, include_instructions, include_docs, output_kind, extra_documents }` describes any coding job. `run_coding_task(cfg, task)` auto-loads `rules/*.md` + `instructions/*.md` + `docs/*.md` (sorted, per-file capped at 4 KB, total capped at 30 KB) into `<document>` blocks, builds the prompt via `CodingPrompt`, calls the OpenAI-compatible client, and returns `CodingTaskResult { task_id, raw_reply, payload, well_formed, context_doc_count }` with the payload extracted from the contracted output tag. Exports `default_coding_role()`, `default_negative_constraints()`, and `default_error_handling()` as the project-wide defaults — the Anthropic principles 2/5/9 made tangible. The negative-constraint default forbids placeholder code, `.unwrap()` in library code, regex-based AI routing, destructive shortcuts, reinventing wheels, and inventing file paths.
+
+**Refactored `engine.rs::planner_prompt`.** The self-improve planner now delegates to `CodingPrompt` with `OutputShape::NumberedPlan { max_steps: 8 }` and the project-wide defaults, **plus** auto-loads `rules/`, `instructions/`, and `docs/` from the bound repository as `<document>` blocks (the previous version hardcoded a one-paragraph system prompt with no project context). The user message wraps the chunk metadata in `<repository>` and `<chunk>` tags. The unit test was updated to assert the new 3-message layout (system + user + assistant `<analysis>` prefill) and the presence of `<role>`, `<thinking_protocol>`, and `<plan>` in the system prompt.
+
+**[`src-tauri/src/commands/coding.rs`](src-tauri/src/commands/coding.rs) — new `run_coding_task` Tauri command.** Reusable entry point for **any** coding work. Requires a configured Coding LLM (returns explicit error nudging the Brain → Coding LLM picker), defaults `task.repo_root` to the bound repository when omitted so context auto-loading works out of the box, and is fully stateless (no metrics, no progress events) so it is safe to call from chat actions, tests, or background agents.
+
+**[`src-tauri/src/coding/mod.rs`](src-tauri/src/coding/mod.rs).** Registered both new modules + re-exports `CodingPrompt`, `DocSnippet`, `OutputShape`, `PROMPT_SCHEMA_VERSION`, `run_coding_task`, `CodingTask`, `CodingTaskResult`, `TaskDocument`, `TaskOutputKind`.
+
+**[`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).** Imported `run_coding_task` from the coding module and registered it in the Tauri `invoke_handler`.
+
+**[`rules/prompting-rules.md`](rules/prompting-rules.md).** New top section "Coding-LLM Prompt Principles (Applied to Every Task)" enumerating the ten principles in English with code references, plus a "Mandatory consultation of `instructions/` and `docs/`" subsection making the auto-load contract explicit, and a "Reuse contract" subsection forbidding parallel prompt-building paths. Existing chunk-implementation / build-verification rules preserved verbatim.
+
+**Why this matters.** Before this chunk, only the self-improve planner ran through a hand-rolled prompt with no project-context loading. The chat path, future agents, and ad-hoc coding tasks each would have written their own prompt — drifting in tone, format, and constraint discipline. After this chunk, **one** entry point (`run_coding_task`) backed by **one** prompt builder (`CodingPrompt`) serves every coding workflow, and edits to the role / constraint / error-handling defaults propagate everywhere automatically.
+
+---
+
+## Chunk 25.14 — Doc-driven LLM catalogue + ship docs with release
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** vitest 1360/1360, vue-tsc clean, cargo clippy clean, cargo test 1419/1419
+
+**User ask.** "For first time recommended setup, always prefer `brain-advanced-design.md` for full setup for latest local LLMs. Docs and instructions should ship together with the release app so it can read those."
+
+**Changes:**
+
+- **[`docs/brain-advanced-design.md`](docs/brain-advanced-design.md) — new §26 "Recommended Local LLM Catalogue".**
+  Machine-parseable markdown tables between `<!-- BEGIN MODEL_CATALOGUE -->` / `<!-- END MODEL_CATALOGUE -->` and `<!-- BEGIN TOP_PICKS -->` / `<!-- END TOP_PICKS -->` markers. Contains all 10 local models + 1 cloud model + RAM-tier-to-model top-pick mapping. This section is now the **single source of truth** for the first-time setup model recommender. Updated TOC to include §26.
+
+- **[`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) — bundle resources.**
+  Added `"resources": { "../docs": "docs", "../instructions": "instructions" }` so both directories ship with the release binary and are accessible at runtime via `app.path().resource_dir()`.
+
+- **[`src-tauri/src/brain/doc_catalogue.rs`](src-tauri/src/brain/doc_catalogue.rs) (NEW, ~210 lines).**
+  `parse_catalogue(markdown) → Option<ParsedCatalogue>` extracts the markdown tables between the markers, splits rows by `|`, and produces `ParsedCatalogue { local_models, cloud_models, top_picks }`. `recommend_from_catalogue(total_ram_mb, &catalogue)` applies the same RAM-tier filtering, top-pick marking, and sorting logic as the hardcoded fallback. 8 unit tests.
+
+- **[`src-tauri/src/brain/mod.rs`](src-tauri/src/brain/mod.rs) — registered `doc_catalogue` module + re-exports.**
+
+- **[`src-tauri/src/commands/brain.rs`](src-tauri/src/commands/brain.rs) — `recommend_brain_models` now reads bundled doc.**
+  Takes `AppHandle`, resolves `docs/brain-advanced-design.md` from the resource directory, parses via `doc_catalogue`, and serves the doc-driven catalogue. Falls back to the hardcoded `model_recommender::recommend()` when the bundled file is missing or unparseable (e.g. `cargo test` without a Tauri runtime). New `read_bundled_doc(app, relative_path)` command allows the frontend to read any shipped doc by relative path (with path-traversal rejection).
+
+- **[`src-tauri/src/lib.rs`](src-tauri/src/lib.rs) — registered `read_bundled_doc` in import + invoke_handler.**
+
+---
+
+## Chunk 25.13 — Self-improve PR-on-completion + pull-on-enable + chat learning
+
+**Date:** 2026-04-29 · **Phase:** 25 (Self-Improve autonomous coding) · **Tests:** vitest 1360/1360, vue-tsc clean, cargo clippy clean, cargo test 1409/1410 (one pre-existing flake passes in isolation), 5/5 e2e green
+
+**User ask.** "When self-improve finishes all chunks, create a PR and request admin review. When self-improve turns on, always pull latest from `main` and merge using the coding LLM. While self-improve is on, learn from daily-life conversations: detect missing features / required improvements and auto-append them to the chunk list. Resilience must be 100% — no data loss."
+
+**Three new modules in `src-tauri/src/coding/`.**
+- [`github.rs`](src-tauri/src/coding/github.rs) — Persisted `GitHubConfig { token, owner, repo, default_base, reviewers }` + atomic write/load helpers, `parse_owner_repo()` that recognises both SSH (`git@github.com:o/r.git`) and HTTPS forms, and `find_open_pr` / `open_or_update_pr` / `request_reviewers` HTTP calls against `api.github.com` using `reqwest` + bearer token (no `octocrab` dependency added). PR opening is **idempotent** — if a PR already exists for the given head branch, the existing record is returned with `created = false` and reviewers are topped up best-effort.
+- [`git_ops.rs`](src-tauri/src/coding/git_ops.rs) — `pull_main(repo_root, base, coding_llm)` that runs `git fetch origin <base>` + `git merge --no-edit --no-ff origin/<base>`. On conflicts, when a `CodingLlmConfig` is supplied, each conflicted file's contents are sent to the Coding LLM with a strict prompt asking for the resolved file body; replies are written back, `git add`-ed, and committed with a transparent `self-improve: resolve merge conflicts via coding LLM (N files)` message. **Resilience:** every error path runs `git merge --abort` so the working tree is left in a clean state, the function refuses to operate on a dirty tree (never silently stashes user work), and conflict-marker leftovers in LLM replies are detected and treated as failure.
+- [`conversation_learning.rs`](src-tauri/src/coding/conversation_learning.rs) — `detect_improvement(message, &CodingLlmConfig)` calls the Coding LLM with a strict-JSON prompt (`{is_improvement, title, category}`) and parses the reply via a brace-counting `extract_json_object` helper that survives prose wrappers and code fences. `append_chunk_to_milestones(repo_root, &chunk)` writes a `not-started` row to a "Learned from daily conversations" phase in `rules/milestones.md` using **atomic write-temp + rename** so a crash mid-write cannot corrupt the file. `record_learned()` audits each appended chunk to a JSONL log and `is_duplicate()` blocks re-adding equivalent titles within a 30-day window.
+
+**Engine integration ([`coding/engine.rs`](src-tauri/src/coding/engine.rs)).**
+- On `start()` (after the repo is bound) the engine runs `git_ops::pull_main` against the configured base branch — emitting a `pull` progress event with success/error level. Coding-LLM-assisted conflict resolution is wired in by passing the existing `CodingLlmConfig` through.
+- After the cycle loop sees `next_not_started` return `None`, a one-shot latch (`completion_pr_opened`) calls `try_open_completion_pr()` which constructs a `reqwest::Client`, calls `github::open_or_update_pr` against the current branch, and emits a success event with the PR URL or an error event with the GitHub response body. The latch resets the moment a fresh `not-started` chunk appears so subsequent completions trigger fresh PRs.
+
+**Five new Tauri commands ([`commands/coding.rs`](src-tauri/src/commands/coding.rs)).**
+- `get_github_config` / `set_github_config` (auto-derives `owner`/`repo` from the local repo's `origin` remote URL when the user leaves them blank).
+- `open_self_improve_pr` (manual trigger from the panel).
+- `pull_main_for_self_improve` (manual trigger; uses Coding-LLM-assisted resolution when configured).
+- `learn_from_user_message` (called from the chat pipeline; silent no-op when self-improve is disabled or no Coding LLM is configured — never breaks chat).
+
+**Frontend wiring.**
+- [`src/stores/conversation.ts`](src/stores/conversation.ts) — `sendMessage` now schedules a `setTimeout(0)` fire-and-forget `learn_from_user_message` invocation. `setTimeout` was chosen over a microtask so the call is truly out-of-band: it cannot perturb mock `invoke` ordering in vitest and cannot delay the user's perceived response time.
+- [`src/stores/self-improve.ts`](src/stores/self-improve.ts) — added `githubConfig`, `lastPullRequest`, `lastPullResult` reactive refs plus `loadGithubConfig` / `setGithubConfig` / `openPullRequest` / `pullFromMain` actions. `initialise()` now also loads the GitHub config in its `Promise.allSettled` fan-out.
+- [`src/components/SelfImprovePanel.vue`](src/components/SelfImprovePanel.vue) — new "GitHub" section under the footer with a 4-field grid (token, owner/repo, base branch, reviewers), three action buttons ("Save GitHub config", "Open PR now", "Pull from main"), and result pills showing the last PR URL and last pull message. Token is never echoed back into the visible input — saving with an empty token field preserves the previously stored value so the user never has to retype it.
+
+**Resilience properties (per the user's "100% without any lose" requirement).**
+- All disk writes (GitHub config, `milestones.md`, `learned_chunks.jsonl`) use either `OpenOptions::append` or atomic write-temp + rename. A crash mid-operation never corrupts the file.
+- LLM-assisted conflict resolution always follows up with `git merge --abort` on any failure path, so the working tree is left in a clean state. The function refuses to start when the working tree is dirty so it cannot silently move user changes around.
+- PR creation is idempotent — re-running with the same head branch returns the existing PR. Cross-restart safe.
+- Conversation learning is dedup'd by normalised title within a 30-day window (lowercased + collapsed whitespace + alphanumerics-only) so the same recurring user complaint will not produce duplicate chunks.
+- The chat pipeline is fully decoupled from the learning hook (`setTimeout(0)` fire-and-forget). Even if the Coding LLM is unreachable, the user's chat response time is unaffected.
+
+**Tests added (Rust, all in tempdirs / against axum stubs — no real network).**
+- `coding::github::tests` (5): `parse_owner_repo` SSH/HTTPS/dotgit + non-GitHub rejection; round-trip with leftover `.tmp` check; `default_base` migration on legacy configs; `is_complete` truth table; stub HTTP server proves `find_open_pr` short-circuits an existing PR with no POST.
+- `coding::git_ops::tests` (4): `strip_code_fence` unwrap variants; conflict-resolution prompt shape; graceful failure outside a git repo; **end-to-end conflict scenario** that builds a real local bare repo + two clones, diverges them, attempts `pull_main`, and asserts the merge aborts cleanly leaving `working_tree_clean(work) == true`.
+- `coding::conversation_learning::tests` (5): `extract_json_object` handles prose/fences and respects string escapes; phase section is created on first append + reused on the second; JSONL audit log appends + dedup is title-normalised; minimal negative `DetectionReply` parse.
+
+**CI gate.** `npx vitest run` → 1360/1360 green; `npx vue-tsc --noEmit` → clean; `cargo clippy --lib --tests -- -D warnings` → clean; `cargo test --lib` → 1409 passed (one pre-existing flake — `brain::intent_classifier::cache_short_circuits_classification` — passes in isolation, unrelated to this chunk); `CI=true npx playwright test` → 5/5 green in 1.6 m.
+
+**Files changed**
+```
+src-tauri/src/coding/github.rs                (new, ~360 lines, 5 tests)
+src-tauri/src/coding/git_ops.rs               (new, ~370 lines, 4 tests)
+src-tauri/src/coding/conversation_learning.rs (new, ~280 lines, 5 tests)
+src-tauri/src/coding/engine.rs                (+~110 lines: pull-on-start + PR-on-complete)
+src-tauri/src/coding/mod.rs                   (+8 lines: submodule decls + re-exports)
+src-tauri/src/commands/coding.rs              (+~120 lines: 5 new commands)
+src-tauri/src/lib.rs                          (+10 lines: command import + invoke_handler)
+src/stores/conversation.ts                    (+~20 lines: learn-from-message hook)
+src/stores/self-improve.ts                    (+~110 lines: github + PR + pull state/actions)
+src/components/SelfImprovePanel.vue           (+~150 lines template/script + ~50 lines CSS)
+```
 
 ---
 

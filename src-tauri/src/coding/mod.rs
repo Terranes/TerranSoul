@@ -17,21 +17,35 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 pub mod autostart;
 pub mod client;
+pub mod conversation_learning;
 pub mod engine;
+pub mod git_ops;
+pub mod github;
 pub mod metrics;
 pub mod milestones;
+pub mod prompting;
 pub mod repo;
+pub mod workflow;
 
+pub use conversation_learning::{learn_from_message, LearnedChunk};
 pub use engine::{ProgressEvent, SelfImproveEngine};
+pub use git_ops::{pull_main, PullResult};
+pub use prompting::{CodingPrompt, DocSnippet, OutputShape, PROMPT_SCHEMA_VERSION};
+pub use workflow::{run_coding_task, CodingTask, CodingTaskResult, TaskDocument, TaskOutputKind};pub use github::{
+    clear_github_config, load_github_config, open_or_update_pr, parse_owner_repo,
+    save_github_config, GitHubConfig, PrSummary,
+};
 pub use metrics::{MetricsLog, MetricsSummary, RunRecord};
 pub use repo::RepoState;
 
 const CODING_LLM_FILE: &str = "coding_llm_config.json";
 const SELF_IMPROVE_FILE: &str = "self_improve.json";
+const CODING_WORKFLOW_FILE: &str = "coding_workflow_config.json";
 
 /// Provider identifier for the coding LLM. Kept as a string-typed enum so
 /// the UI can pass `"anthropic"`, `"openai"`, `"deepseek"`, or `"custom"`
@@ -74,23 +88,40 @@ pub struct CodingLlmRecommendation {
 }
 
 /// Curated catalogue. Keep this list small and opinionated — the design
-/// doc explicitly recommends Claude, OpenAI, and DeepSeek for coding.
+/// doc explicitly recommends Claude, OpenAI, and DeepSeek for coding,
+/// plus a zero-cost local Ollama option as the privacy-first top pick.
 pub fn coding_llm_recommendations() -> Vec<CodingLlmRecommendation> {
     vec![
+        CodingLlmRecommendation {
+            provider: CodingLlmProvider::Custom,
+            display_name: "Local Ollama (free, private)".to_string(),
+            // Default to a coding-tuned model that fits on a laptop.
+            // The UI replaces this with whichever installed model the
+            // user picks from the auto-detected list.
+            default_model: "qwen2.5-coder:7b".to_string(),
+            // Base URL is the Ollama host root — `OpenAiClient` appends
+            // `/v1/chat/completions` itself.
+            base_url: "http://127.0.0.1:11434".to_string(),
+            requires_api_key: false,
+            notes: "Runs entirely on this machine via Ollama. No API key, no per-token cost, no data leaves your computer. Best for privacy and offline work.".to_string(),
+            is_top_pick: true,
+        },
         CodingLlmRecommendation {
             provider: CodingLlmProvider::Anthropic,
             display_name: "Anthropic Claude".to_string(),
             default_model: "claude-sonnet-4-5".to_string(),
-            base_url: "https://api.anthropic.com/v1".to_string(),
+            // Anthropic's OpenAI-compatible bridge lives at this host;
+            // `OpenAiClient` appends `/v1/chat/completions` itself.
+            base_url: "https://api.anthropic.com".to_string(),
             requires_api_key: true,
-            notes: "Best-in-class for multi-file refactors and reasoning. Recommended for self-improve.".to_string(),
-            is_top_pick: true,
+            notes: "Best-in-class for multi-file refactors and reasoning. Recommended when paying for cloud quality.".to_string(),
+            is_top_pick: false,
         },
         CodingLlmRecommendation {
             provider: CodingLlmProvider::Openai,
             display_name: "OpenAI".to_string(),
             default_model: "gpt-5".to_string(),
-            base_url: "https://api.openai.com/v1".to_string(),
+            base_url: "https://api.openai.com".to_string(),
             requires_api_key: true,
             notes: "Strong general-purpose coding; reliable tool-calling.".to_string(),
             is_top_pick: false,
@@ -99,7 +130,7 @@ pub fn coding_llm_recommendations() -> Vec<CodingLlmRecommendation> {
             provider: CodingLlmProvider::Deepseek,
             display_name: "DeepSeek".to_string(),
             default_model: "deepseek-coder".to_string(),
-            base_url: "https://api.deepseek.com/v1".to_string(),
+            base_url: "https://api.deepseek.com".to_string(),
             requires_api_key: true,
             notes: "Cost-efficient coding-tuned model. Excellent value per token.".to_string(),
             is_top_pick: false,
@@ -110,10 +141,50 @@ pub fn coding_llm_recommendations() -> Vec<CodingLlmRecommendation> {
             default_model: "".to_string(),
             base_url: "".to_string(),
             requires_api_key: true,
-            notes: "Bring-your-own endpoint (Groq, Together, local proxy, etc.).".to_string(),
+            notes: "Bring-your-own endpoint (Groq, Together, LM Studio, vLLM, etc.).".to_string(),
             is_top_pick: false,
         },
     ]
+}
+
+/// Atomically serialise `value` to `path` as pretty JSON.
+///
+/// Implements the durability contract from
+/// `rules/coding-workflow-reliability.md` §1: serialise to a sibling
+/// `*.tmp` file in the same directory, `flush` + `sync_all` to force
+/// the bytes to disk, then `rename` over the destination. A crash at
+/// any point leaves either the previous good file or no change at all
+/// — never a partially-written destination.
+///
+/// The temp file is best-effort cleaned up on serialisation failure.
+pub fn atomic_write_json<T: serde::Serialize>(
+    path: &Path,
+    value: &T,
+    label: &str,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("create dir for {label}: {e}"))?;
+    }
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|e| format!("serialize {label}: {e}"))?;
+    let tmp = path.with_extension("json.tmp");
+    {
+        let mut f = fs::File::create(&tmp)
+            .map_err(|e| format!("create {label} tmp: {e}"))?;
+        f.write_all(json.as_bytes())
+            .map_err(|e| format!("write {label} tmp: {e}"))?;
+        f.flush().map_err(|e| format!("flush {label} tmp: {e}"))?;
+        // Best-effort fsync — on platforms without sync_all support
+        // (rare), we still rely on the rename being atomic at the FS
+        // layer. Errors here are upgraded to hard failures because
+        // the durability contract requires it.
+        f.sync_all().map_err(|e| format!("fsync {label} tmp: {e}"))?;
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        // Clean up the orphaned temp file so retries start clean.
+        let _ = fs::remove_file(&tmp);
+        format!("rename {label} tmp -> dest: {e}")
+    })
 }
 
 /// Load the coding LLM config from disk. Returns `None` if not configured.
@@ -128,10 +199,8 @@ pub fn load_coding_llm(data_dir: &Path) -> Option<CodingLlmConfig> {
 
 /// Persist the coding LLM config as JSON.
 pub fn save_coding_llm(data_dir: &Path, config: &CodingLlmConfig) -> Result<(), String> {
-    fs::create_dir_all(data_dir).map_err(|e| format!("create dir: {e}"))?;
     let path = data_dir.join(CODING_LLM_FILE);
-    let json = serde_json::to_string_pretty(config).map_err(|e| format!("serialize: {e}"))?;
-    fs::write(&path, json).map_err(|e| format!("write coding llm config: {e}"))
+    atomic_write_json(&path, config, "coding llm config")
 }
 
 /// Remove the persisted coding LLM config.
@@ -179,10 +248,87 @@ pub fn load_self_improve(data_dir: &Path) -> SelfImproveSettings {
 
 /// Persist the self-improve settings.
 pub fn save_self_improve(data_dir: &Path, settings: &SelfImproveSettings) -> Result<(), String> {
-    fs::create_dir_all(data_dir).map_err(|e| format!("create dir: {e}"))?;
     let path = data_dir.join(SELF_IMPROVE_FILE);
-    let json = serde_json::to_string_pretty(settings).map_err(|e| format!("serialize: {e}"))?;
-    fs::write(&path, json).map_err(|e| format!("write self-improve: {e}"))
+    atomic_write_json(&path, settings, "self-improve")
+}
+
+/// Configurable context-loading rules for every coding workflow.
+///
+/// Controls which files the shared `run_coding_task` runner injects into
+/// the prompt's `<documents>` block. Persisted as JSON so users can edit
+/// it from the UI without recompiling. Provider-agnostic — the same
+/// config applies regardless of which LLM (Claude / OpenAI / DeepSeek /
+/// local Ollama via OpenAI-compatible proxy) is selected as the
+/// Coding LLM.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingWorkflowConfig {
+    /// Repository-relative directories whose `*.md` files are loaded
+    /// (non-recursive). Default: `rules`, `instructions`, `docs`.
+    pub include_dirs: Vec<String>,
+    /// Repository-relative individual file paths to load verbatim.
+    /// Default: `README.md`, `AGENTS.md` (when present — missing files
+    /// are silently skipped).
+    pub include_files: Vec<String>,
+    /// Repository-relative paths or simple file names to skip when
+    /// scanning `include_dirs` or `include_files`. Default: empty —
+    /// nothing excluded.
+    pub exclude_paths: Vec<String>,
+    /// Per-file character cap. Files larger than this are truncated
+    /// with a `[truncated to N chars]` marker.
+    pub max_file_chars: usize,
+    /// Total character cap across all loaded files. The loader stops
+    /// adding files once this cap is reached.
+    pub max_total_chars: usize,
+}
+
+impl Default for CodingWorkflowConfig {
+    fn default() -> Self {
+        Self {
+            include_dirs: vec![
+                "rules".to_string(),
+                "instructions".to_string(),
+                "docs".to_string(),
+            ],
+            include_files: vec!["README.md".to_string(), "AGENTS.md".to_string()],
+            exclude_paths: Vec::new(),
+            // Defaults match the previous hardcoded constants in
+            // `workflow::MAX_FILE_CHARS` / `workflow::MAX_CONTEXT_CHARS`.
+            max_file_chars: 4_000,
+            max_total_chars: 30_000,
+        }
+    }
+}
+
+/// Load the coding-workflow config from disk. Returns the default
+/// config when the file is missing or unparseable so the workflow
+/// always has a working set of rules.
+pub fn load_coding_workflow_config(data_dir: &Path) -> CodingWorkflowConfig {
+    let path = data_dir.join(CODING_WORKFLOW_FILE);
+    if !path.exists() {
+        return CodingWorkflowConfig::default();
+    }
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Persist the coding-workflow config as JSON.
+pub fn save_coding_workflow_config(
+    data_dir: &Path,
+    config: &CodingWorkflowConfig,
+) -> Result<(), String> {
+    let path = data_dir.join(CODING_WORKFLOW_FILE);
+    atomic_write_json(&path, config, "coding workflow config")
+}
+
+/// Reset the coding-workflow config to defaults (deletes the file).
+pub fn clear_coding_workflow_config(data_dir: &Path) -> Result<(), String> {
+    let path = data_dir.join(CODING_WORKFLOW_FILE);
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("remove coding workflow config: {e}"))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -191,15 +337,29 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn recommendations_include_claude_openai_deepseek_with_claude_top_pick() {
+    fn recommendations_include_local_ollama_first_with_claude_openai_deepseek() {
         let recs = coding_llm_recommendations();
         let names: Vec<_> = recs.iter().map(|r| r.display_name.as_str()).collect();
+        assert!(names.iter().any(|n| n.contains("Local Ollama")));
         assert!(names.iter().any(|n| n.contains("Claude")));
         assert!(names.iter().any(|n| n.contains("OpenAI")));
         assert!(names.iter().any(|n| n.contains("DeepSeek")));
+        // Local Ollama should be the single top pick — it is free,
+        // private, and works fully offline.
         let top: Vec<_> = recs.iter().filter(|r| r.is_top_pick).collect();
         assert_eq!(top.len(), 1, "exactly one top pick");
-        assert_eq!(top[0].provider, CodingLlmProvider::Anthropic);
+        assert!(top[0].display_name.contains("Local Ollama"));
+        assert!(!top[0].requires_api_key, "local provider needs no key");
+        // No recommendation may have a doubled `/v1` suffix in its
+        // base URL — the OpenAI client appends `/v1/chat/completions`.
+        for rec in &recs {
+            assert!(
+                !rec.base_url.trim_end_matches('/').ends_with("/v1"),
+                "{}: base_url must not end with /v1 (got {:?})",
+                rec.display_name,
+                rec.base_url
+            );
+        }
     }
 
     #[test]

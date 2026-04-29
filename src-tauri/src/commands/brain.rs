@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 use crate::brain::{
     self, ModelRecommendation, OllamaStatus, SystemInfo,
@@ -24,10 +24,42 @@ pub async fn get_system_info() -> SystemInfo {
     brain::collect_system_info()
 }
 
+/// Read a bundled documentation file by relative path (e.g. `"docs/brain-advanced-design.md"`).
+///
+/// Returns the file contents as a string. This allows the frontend to
+/// display shipped documentation without a network request.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn read_bundled_doc(app: AppHandle, relative_path: String) -> Result<String, String> {
+    // Sanitise: reject path traversal.
+    if relative_path.contains("..") {
+        return Err("Path traversal not allowed".to_string());
+    }
+    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let full_path = resource_dir.join(&relative_path);
+    std::fs::read_to_string(&full_path).map_err(|e| format!("Cannot read {relative_path}: {e}"))
+}
+
 /// Return a ranked list of model recommendations based on available RAM.
+///
+/// Prefers the catalogue from the bundled `docs/brain-advanced-design.md`
+/// (§26). Falls back to the hardcoded catalogue in `model_recommender.rs`
+/// when the bundled doc is missing or unparseable (e.g. during `cargo test`
+/// without a Tauri runtime).
 #[tauri::command]
-pub async fn recommend_brain_models() -> Vec<ModelRecommendation> {
+pub async fn recommend_brain_models(app: AppHandle) -> Vec<ModelRecommendation> {
     let info = brain::collect_system_info();
+
+    // Try the bundled design doc first.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let doc_path = resource_dir.join("docs").join("brain-advanced-design.md");
+        if let Ok(markdown) = std::fs::read_to_string(&doc_path) {
+            if let Some(catalogue) = brain::parse_catalogue(&markdown) {
+                return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
+            }
+        }
+    }
+
+    // Fallback: hardcoded catalogue.
     brain::recommend(info.total_ram_mb)
 }
 
@@ -517,13 +549,16 @@ mod tests {
 
     #[tokio::test]
     async fn recommend_brain_models_returns_at_least_one() {
-        let recs = recommend_brain_models().await;
+        // Call the underlying function directly (AppHandle unavailable in unit tests).
+        let info = brain::collect_system_info();
+        let recs = brain::recommend(info.total_ram_mb);
         assert!(!recs.is_empty());
     }
 
     #[tokio::test]
     async fn recommend_brain_models_has_exactly_one_top_pick() {
-        let recs = recommend_brain_models().await;
+        let info = brain::collect_system_info();
+        let recs = brain::recommend(info.total_ram_mb);
         let top = recs.iter().filter(|m| m.is_top_pick).count();
         assert_eq!(top, 1);
     }

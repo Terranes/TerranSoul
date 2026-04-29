@@ -111,13 +111,13 @@
       <div class="bv-coding-llm-grid">
         <button
           v-for="rec in selfImprove.recommendations"
-          :key="rec.provider + rec.display_name"
+          :key="rec.provider + '::' + rec.display_name"
           type="button"
           :class="[
             'bv-coding-card',
-            { active: selectedCodingProvider === rec.provider, top: rec.is_top_pick },
+            { active: selectedCodingRecKey === rec.provider + '::' + rec.display_name, top: rec.is_top_pick },
           ]"
-          @click="selectedCodingProvider = rec.provider"
+          @click="selectedCodingRecKey = rec.provider + '::' + rec.display_name"
         >
           <div class="bv-coding-card-head">
             <strong>{{ rec.display_name }}</strong>
@@ -138,12 +138,46 @@
         class="bv-coding-form"
       >
         <label>Model</label>
+        <div v-if="isLocalOllamaSelection" class="bv-local-model-row">
+          <select
+            v-if="localCodingModels.length > 0"
+            v-model="codingModelInput"
+            class="bv-input"
+            data-testid="bv-local-model-select"
+          >
+            <option v-for="m in localCodingModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <input
+            v-else
+            v-model="codingModelInput"
+            type="text"
+            :placeholder="selectedCodingRec.default_model || 'qwen2.5-coder:7b'"
+            class="bv-input"
+          >
+          <button
+            type="button"
+            class="bv-btn bv-btn-ghost"
+            :disabled="loadingLocalModels"
+            data-testid="bv-refresh-local-models"
+            @click="refreshLocalCodingModels"
+          >
+            {{ loadingLocalModels ? '…' : '↻' }}
+          </button>
+        </div>
         <input
+          v-else
           v-model="codingModelInput"
           type="text"
           :placeholder="selectedCodingRec.default_model || 'gpt-4o'"
           class="bv-input"
         >
+        <p
+          v-if="isLocalOllamaSelection && !loadingLocalModels && localCodingModels.length === 0"
+          class="bv-coding-hint"
+        >
+          ⚠ No Ollama models detected. Install one first:
+          <code>ollama pull {{ selectedCodingRec.default_model || 'qwen2.5-coder:7b' }}</code>
+        </p>
         <label>Base URL</label>
         <input
           v-model="codingBaseUrlInput"
@@ -151,18 +185,26 @@
           :placeholder="selectedCodingRec.base_url || 'https://api.example.com/v1'"
           class="bv-input"
         >
-        <label>API Key</label>
-        <input
-          v-model="codingApiKeyInput"
-          type="password"
-          placeholder="sk-…"
-          class="bv-input"
-        >
+        <template v-if="selectedCodingRec.requires_api_key">
+          <label>API Key</label>
+          <input
+            v-model="codingApiKeyInput"
+            type="password"
+            placeholder="sk-…"
+            class="bv-input"
+          >
+        </template>
+        <p v-else class="bv-coding-hint">
+          🔒 No API key needed — this provider runs locally.
+        </p>
         <div class="bv-coding-actions">
           <button
             type="button"
             class="bv-btn bv-btn-primary"
-            :disabled="!codingApiKeyInput || !(codingModelInput || selectedCodingRec.default_model)"
+            :disabled="
+              !(codingModelInput || selectedCodingRec.default_model) ||
+              (selectedCodingRec.requires_api_key && !codingApiKeyInput)
+            "
             @click="saveCodingLlm"
           >
             Save Coding LLM
@@ -205,6 +247,11 @@
           <code>{{ selfImprove.codingLlm.model }}</code>
         </p>
       </div>
+    </section>
+
+    <!-- ── Coding Workflow Context (Chunk 25.16) ───────────────────────────── -->
+    <section class="bv-coding-workflow" data-testid="bv-coding-workflow">
+      <CodingWorkflowConfigPanel />
     </section>
 
     <!-- ── 3-column data grid ──────────────────────────────────────────────── -->
@@ -717,9 +764,10 @@ import { useSelfImproveStore } from '../stores/self-improve';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
+import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
-import type { MemoryEntry, CodingLlmProvider } from '../types';
+import type { MemoryEntry } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';
 
@@ -1052,38 +1100,97 @@ async function switchToFree() {
 
 // ── Coding LLM picker (Phase 25 — Self-Improve foundation) ────────────────
 const selfImprove = useSelfImproveStore();
-const selectedCodingProvider = ref<CodingLlmProvider | null>(null);
+const selectedCodingRecKey = ref<string | null>(null);
 const codingModelInput = ref('');
 const codingBaseUrlInput = ref('');
 const codingApiKeyInput = ref('');
 const codingTestInFlight = ref(false);
+const localCodingModels = ref<string[]>([]);
+const loadingLocalModels = ref(false);
+
+function recKey(rec: { provider: string; display_name: string }): string {
+  return `${rec.provider}::${rec.display_name}`;
+}
 
 const selectedCodingRec = computed(() =>
-  (selfImprove.recommendations ?? []).find((r) => r.provider === selectedCodingProvider.value) ?? null,
+  (selfImprove.recommendations ?? []).find(
+    (r) => recKey(r) === selectedCodingRecKey.value,
+  ) ?? null,
 );
 
-watch(selectedCodingProvider, (provider) => {
-  if (!provider) return;
-  const rec = (selfImprove.recommendations ?? []).find((r) => r.provider === provider);
+/**
+ * True when the selected recommendation is the Local Ollama preset —
+ * recognised by `requires_api_key === false` plus an `127.0.0.1` /
+ * `localhost` base URL. Drives the model-dropdown UI.
+ */
+const isLocalOllamaSelection = computed(() => {
+  const rec = selectedCodingRec.value;
+  if (!rec) return false;
+  if (rec.requires_api_key) return false;
+  const url = (codingBaseUrlInput.value || rec.base_url || '').toLowerCase();
+  return url.includes('127.0.0.1') || url.includes('localhost');
+});
+
+async function refreshLocalCodingModels() {
+  loadingLocalModels.value = true;
+  try {
+    const url = codingBaseUrlInput.value || selectedCodingRec.value?.base_url;
+    localCodingModels.value = await selfImprove.loadLocalCodingModels(url);
+    // Auto-select the first installed model if the user hasn't typed one
+    // and the recommendation default isn't actually installed.
+    if (
+      isLocalOllamaSelection.value &&
+      localCodingModels.value.length > 0 &&
+      !localCodingModels.value.includes(codingModelInput.value)
+    ) {
+      const recDefault = selectedCodingRec.value?.default_model || '';
+      codingModelInput.value =
+        localCodingModels.value.find((m) => m === recDefault) ??
+        localCodingModels.value[0];
+    }
+  } finally {
+    loadingLocalModels.value = false;
+  }
+}
+
+watch(selectedCodingRecKey, async (key) => {
+  if (!key) return;
+  const rec = (selfImprove.recommendations ?? []).find((r) => recKey(r) === key);
   if (!rec) return;
-  // Pre-fill defaults but never overwrite explicit user input.
-  if (!codingModelInput.value) codingModelInput.value = rec.default_model;
-  if (!codingBaseUrlInput.value) codingBaseUrlInput.value = rec.base_url;
+  // Replace defaults from the new recommendation. We *do* overwrite here
+  // because the user just expressed intent by clicking a different card.
+  codingModelInput.value = rec.default_model;
+  codingBaseUrlInput.value = rec.base_url;
+  if (!rec.requires_api_key) {
+    codingApiKeyInput.value = '';
+  }
+  if (isLocalOllamaSelection.value) {
+    await refreshLocalCodingModels();
+  } else {
+    localCodingModels.value = [];
+  }
 });
 
 async function saveCodingLlm() {
   if (!selectedCodingRec.value) return;
-  const model = codingModelInput.value || selectedCodingRec.value.default_model;
-  const baseUrl = codingBaseUrlInput.value || selectedCodingRec.value.base_url;
-  if (!model || !baseUrl || !codingApiKeyInput.value) return;
+  const rec = selectedCodingRec.value;
+  const model = codingModelInput.value || rec.default_model;
+  const baseUrl = codingBaseUrlInput.value || rec.base_url;
+  if (!model || !baseUrl) return;
+  if (rec.requires_api_key && !codingApiKeyInput.value) return;
   try {
     await selfImprove.setCodingLlm({
-      provider: selectedCodingRec.value.provider,
+      provider: rec.provider,
       model,
       base_url: baseUrl,
+      // Empty string when the recommendation does not require auth
+      // (local Ollama). The Rust client skips the bearer header when
+      // this is empty.
       api_key: codingApiKeyInput.value,
     });
-    codingApiKeyInput.value = ''; // never linger in the input
+    if (rec.requires_api_key) {
+      codingApiKeyInput.value = ''; // never linger in the input
+    }
   } catch (err) {
     console.warn('[BrainView] save coding LLM failed:', err);
   }
@@ -1092,10 +1199,11 @@ async function saveCodingLlm() {
 async function clearCodingLlm() {
   try {
     await selfImprove.setCodingLlm(null);
-    selectedCodingProvider.value = null;
+    selectedCodingRecKey.value = null;
     codingModelInput.value = '';
     codingBaseUrlInput.value = '';
     codingApiKeyInput.value = '';
+    localCodingModels.value = [];
   } catch (err) {
     console.warn('[BrainView] clear coding LLM failed:', err);
   }
@@ -1116,8 +1224,17 @@ async function testCodingLlm() {
 watch(
   () => selfImprove.codingLlm,
   (cfg) => {
-    if (cfg && !selectedCodingProvider.value) {
-      selectedCodingProvider.value = cfg.provider;
+    if (cfg && !selectedCodingRecKey.value) {
+      // Find the matching recommendation by provider + base_url so the
+      // local-Ollama vs custom-OpenAI-compatible cards (which share the
+      // `Custom` provider) are disambiguated correctly.
+      const recs = selfImprove.recommendations ?? [];
+      const match =
+        recs.find((r) => r.provider === cfg.provider && r.base_url === cfg.base_url) ??
+        recs.find((r) => r.provider === cfg.provider);
+      if (match) {
+        selectedCodingRecKey.value = recKey(match);
+      }
       codingModelInput.value = cfg.model;
       codingBaseUrlInput.value = cfg.base_url;
     }
@@ -1595,6 +1712,23 @@ onMounted(async () => {
 .bv-coding-status--ok { color: #86efac; }
 .bv-coding-status--err { color: #fca5a5; }
 .bv-coding-detail { color: var(--ts-text-muted, #94a3b8); font-style: italic; margin-left: 4px; }
+.bv-coding-hint {
+  margin: 4px 0 8px;
+  font-size: 0.78rem;
+  color: var(--ts-text-secondary, #94a3b8);
+}
+.bv-coding-hint code {
+  background: var(--ts-bg-input, rgba(255, 255, 255, 0.06));
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--ts-text-bright, #e2e8f0);
+}
+.bv-local-model-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.bv-local-model-row .bv-input { flex: 1; }
 .bv-mode-card {
   display: flex;
   flex-direction: column;

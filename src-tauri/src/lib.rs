@@ -48,15 +48,20 @@ use commands::{
         get_brain_selection,
         get_embed_cache_status, get_lm_studio_download_status, get_lm_studio_models,
         get_next_provider, get_ollama_models, get_system_info, health_check_providers,
-        list_free_providers, load_lm_studio_model, pull_ollama_model, recommend_brain_models,
+        list_free_providers, load_lm_studio_model, pull_ollama_model, read_bundled_doc,
+        recommend_brain_models,
         reset_embed_cache, set_active_brain, set_brain_mode, unload_lm_studio_model,
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
     coding::{
         clear_self_improve_log, detect_self_improve_repo, get_coding_llm_config,
-        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
-        get_self_improve_status, list_coding_llm_recommendations, set_coding_llm_config,
+        get_coding_workflow_config, get_github_config, get_self_improve_metrics,
+        get_self_improve_runs, get_self_improve_settings, get_self_improve_status,
+        learn_from_user_message, list_coding_llm_recommendations,
+        list_local_coding_models, open_self_improve_pr, preview_coding_workflow_context,
+        pull_main_for_self_improve, reset_coding_workflow_config, run_coding_task,
+        set_coding_llm_config, set_coding_workflow_config, set_github_config,
         set_self_improve_autostart, set_self_improve_enabled, start_self_improve,
         stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
     },
@@ -250,6 +255,10 @@ pub struct AppStateInner {
     /// "coding brain" can be different providers (e.g. free Pollinations
     /// for chat, Claude Sonnet for autonomous coding).
     pub coding_llm_config: Mutex<Option<coding::CodingLlmConfig>>,
+    /// Persisted coding-workflow context-loading config (Chunk 25.16).
+    /// Controls which dirs/files the shared `run_coding_task` runner and
+    /// the self-improve planner inject as `<documents>` into every prompt.
+    pub coding_workflow_config: Mutex<coding::CodingWorkflowConfig>,
     /// Self-improve toggle + audit metadata (Phase 25 — foundation only).
     /// `enabled = true` does NOT yet trigger an autonomous loop; that is
     /// gated behind future chunks.
@@ -283,6 +292,7 @@ impl AppState {
         let brain_mode = brain::brain_config::load(data_dir);
         let coding_llm = coding::load_coding_llm(data_dir);
         let self_improve = coding::load_self_improve(data_dir);
+        let coding_workflow = coding::load_coding_workflow_config(data_dir);
         Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
@@ -328,6 +338,7 @@ impl AppState {
             plugin_host: plugins::PluginHost::new(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
             coding_llm_config: Mutex::new(coding_llm),
+            coding_workflow_config: Mutex::new(coding_workflow),
             self_improve: Mutex::new(self_improve),
             self_improve_engine: Arc::new(coding::SelfImproveEngine::new()),
         }))
@@ -379,6 +390,7 @@ impl AppState {
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
             coding_llm_config: Mutex::new(None),
+            coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
             self_improve: Mutex::new(coding::SelfImproveSettings::default()),
             self_improve_engine: Arc::new(coding::SelfImproveEngine::new()),
         }))
@@ -462,6 +474,7 @@ pub fn run() {
             remove_agent,
             list_installed_agents,
             get_system_info,
+            read_bundled_doc,
             recommend_brain_models,
             check_ollama_status,
             get_ollama_models,
@@ -578,6 +591,21 @@ pub fn run() {
             get_self_improve_metrics,
             get_self_improve_runs,
             clear_self_improve_log,
+            // Phase 25 / Chunk 25.13 — GitHub PR + learn-from-chat
+            get_github_config,
+            set_github_config,
+            open_self_improve_pr,
+            pull_main_for_self_improve,
+            learn_from_user_message,
+            // Phase 25 / Chunk 25.15 — reusable coding workflow
+            run_coding_task,
+            // Phase 25 / Chunk 25.16 — configurable coding-workflow context loader
+            get_coding_workflow_config,
+            set_coding_workflow_config,
+            reset_coding_workflow_config,
+            preview_coding_workflow_context,
+            // Phase 25 / Chunk 25.17 — local Ollama recommendation flow
+            list_local_coding_models,
             // Agent roster + durable workflows (Chunk 1.5)
             roster_list,
             roster_create,
@@ -756,8 +784,20 @@ pub fn run() {
                         let app_handle = app.app_handle().clone();
                         let engine = state.self_improve_engine.clone();
                         let repo_hint = state.data_dir.clone();
+                        let workflow_cfg = state
+                            .coding_workflow_config
+                            .lock()
+                            .map(|g| g.clone())
+                            .unwrap_or_default();
                         tauri::async_runtime::spawn(async move {
-                            coding::engine::start(app_handle, engine, cfg, repo_hint).await;
+                            coding::engine::start(
+                                app_handle,
+                                engine,
+                                cfg,
+                                workflow_cfg,
+                                repo_hint,
+                            )
+                            .await;
                         });
                     } else {
                         eprintln!(
@@ -917,7 +957,19 @@ pub fn run() {
                                     let engine = state.self_improve_engine.clone();
                                     let repo_hint = state.data_dir.clone();
                                     let app_for_engine = app_handle.clone();
-                                    coding::engine::start(app_for_engine, engine, c, repo_hint).await;
+                                    let workflow_cfg = state
+                                        .coding_workflow_config
+                                        .lock()
+                                        .map(|g| g.clone())
+                                        .unwrap_or_default();
+                                    coding::engine::start(
+                                        app_for_engine,
+                                        engine,
+                                        c,
+                                        workflow_cfg,
+                                        repo_hint,
+                                    )
+                                    .await;
                                 }
                             } else {
                                 state.self_improve_engine.request_stop().await;

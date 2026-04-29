@@ -246,6 +246,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
         loadStatus(),
         loadMetrics(),
         loadRuns(),
+        loadGithubConfig(),
       ]);
       await subscribeToProgress();
     } finally {
@@ -417,6 +418,24 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
   }
 
   /**
+   * Probe `127.0.0.1:11434/api/tags` and return the names of locally
+   * installed Ollama models. Empty array when Ollama is not running.
+   * Used by the BrainView "Local Ollama" recommendation card to populate
+   * the model dropdown without making the user type a model name.
+   */
+  async function loadLocalCodingModels(baseUrl?: string): Promise<string[]> {
+    try {
+      const models = await invoke<string[]>('list_local_coding_models', {
+        baseUrl: baseUrl ?? null,
+      });
+      return Array.isArray(models) ? models : [];
+    } catch (e) {
+      lastError.value = String(e);
+      return [];
+    }
+  }
+
+  /**
    * Enable self-improve. Returns the updated settings.
    *
    * Throws (rejects) when no coding LLM is configured — callers should
@@ -463,6 +482,91 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     return next;
   }
 
+  // ── GitHub PR automation (Chunk 25.13) ────────────────────────────────
+  /** Persisted GitHub binding (token, owner/repo, base branch, reviewers). */
+  const githubConfig = ref<{
+    token: string;
+    owner: string;
+    repo: string;
+    default_base: string;
+    reviewers: string[];
+  } | null>(null);
+  /** Last opened/found Pull Request, populated by `openPullRequest`. */
+  const lastPullRequest = ref<{
+    number: number;
+    html_url: string;
+    state: string;
+    head_branch: string;
+    base_branch: string;
+    created: boolean;
+  } | null>(null);
+  /** Last `pull_main` outcome, populated by `pullFromMain`. */
+  const lastPullResult = ref<{
+    merged: boolean;
+    fast_forward: boolean;
+    already_up_to_date: boolean;
+    resolved_conflicts: string[];
+    unresolved_conflicts: string[];
+    message: string;
+  } | null>(null);
+
+  async function loadGithubConfig(): Promise<void> {
+    try {
+      githubConfig.value = await invoke('get_github_config');
+    } catch (e) {
+      console.warn('[self-improve] github config load failed:', e);
+    }
+  }
+
+  async function setGithubConfig(
+    cfg: {
+      token: string;
+      owner: string;
+      repo: string;
+      default_base: string;
+      reviewers: string[];
+    } | null,
+  ): Promise<void> {
+    try {
+      const stored = await invoke<typeof githubConfig.value>('set_github_config', {
+        config: cfg,
+      });
+      githubConfig.value = stored;
+      logActivity(
+        cfg ? 'success' : 'info',
+        cfg ? `GitHub config saved (${stored?.owner}/${stored?.repo})` : 'GitHub config cleared',
+      );
+    } catch (e) {
+      lastError.value = String(e);
+      logActivity('error', `GitHub config save failed: ${String(e)}`);
+      throw e;
+    }
+  }
+
+  async function openPullRequest(): Promise<void> {
+    try {
+      lastPullRequest.value = await invoke('open_self_improve_pr');
+      const pr = lastPullRequest.value!;
+      logActivity('success', `PR #${pr.number} ${pr.created ? 'opened' : 'already open'}: ${pr.html_url}`);
+    } catch (e) {
+      lastError.value = String(e);
+      logActivity('error', `Open PR failed: ${String(e)}`);
+      throw e;
+    }
+  }
+
+  async function pullFromMain(): Promise<void> {
+    try {
+      lastPullResult.value = await invoke('pull_main_for_self_improve');
+      const r = lastPullResult.value!;
+      logActivity(r.merged ? 'success' : 'warn', `Pull main: ${r.message}`);
+    } catch (e) {
+      lastError.value = String(e);
+      logActivity('error', `Pull main failed: ${String(e)}`);
+      throw e;
+    }
+  }
+
   return {
     settings,
     codingLlm,
@@ -486,12 +590,16 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     isEnabled,
     isConfigured,
     canEnable,
+    githubConfig,
+    lastPullRequest,
+    lastPullResult,
     loadSettings,
     loadCodingLlm,
     loadRecommendations,
     loadStatus,
     initialise,
     setCodingLlm,
+    loadLocalCodingModels,
     enable,
     disable,
     logActivity,
@@ -503,5 +611,9 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     loadMetrics,
     loadRuns,
     clearRunLog,
+    loadGithubConfig,
+    setGithubConfig,
+    openPullRequest,
+    pullFromMain,
   };
 });

@@ -11,8 +11,8 @@ use tauri::{AppHandle, State};
 
 use crate::coding::{
     self, autostart, client as coding_client, repo as coding_repo, CodingLlmConfig,
-    CodingLlmRecommendation, MetricsLog, MetricsSummary, RepoState, RunRecord,
-    SelfImproveSettings,
+    CodingLlmRecommendation, CodingWorkflowConfig, GitHubConfig, LearnedChunk, MetricsLog,
+    MetricsSummary, PrSummary, PullResult, RepoState, RunRecord, SelfImproveSettings,
 };
 use crate::AppState;
 
@@ -209,7 +209,12 @@ pub async fn start_self_improve(
     }
     let engine = state.self_improve_engine.clone();
     let repo_hint = state.data_dir.clone();
-    coding::engine::start(app, engine, cfg, repo_hint).await;
+    let workflow_cfg = state
+        .coding_workflow_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+    coding::engine::start(app, engine, cfg, workflow_cfg, repo_hint).await;
     Ok(())
 }
 
@@ -273,6 +278,353 @@ pub async fn clear_self_improve_log(
     let log = MetricsLog::new(&state.data_dir);
     log.clear().map_err(|e| format!("clear log: {e}"))?;
     Ok(log.summary())
+}
+
+// ---------------------------------------------------------------------------
+// GitHub config + PR automation (Phase 25 — Chunk 25.13)
+// ---------------------------------------------------------------------------
+
+/// Persisted GitHub binding (token, owner/repo, base branch, reviewers).
+/// Returns `None` when not yet configured.
+#[tauri::command]
+pub async fn get_github_config(
+    state: State<'_, AppState>,
+) -> Result<Option<GitHubConfig>, String> {
+    Ok(coding::load_github_config(&state.data_dir))
+}
+
+/// Save the GitHub config (atomic write). Pass `null` to clear.
+///
+/// When `owner` / `repo` are empty the backend attempts to derive them
+/// from the repository's `origin` remote URL — the resulting config
+/// returned to the caller has the filled-in values so the UI can preview
+/// what was stored.
+#[tauri::command]
+pub async fn set_github_config(
+    config: Option<GitHubConfig>,
+    state: State<'_, AppState>,
+) -> Result<Option<GitHubConfig>, String> {
+    match config {
+        None => {
+            coding::clear_github_config(&state.data_dir)?;
+            Ok(None)
+        }
+        Some(mut cfg) => {
+            if cfg.owner.is_empty() || cfg.repo.is_empty() {
+                let root = coding_repo::guess_repo_root(&state.data_dir);
+                if let Some(remote) = coding_repo::detect_repo(&root).remote_url {
+                    if let Some((o, r)) = coding::parse_owner_repo(&remote) {
+                        if cfg.owner.is_empty() {
+                            cfg.owner = o;
+                        }
+                        if cfg.repo.is_empty() {
+                            cfg.repo = r;
+                        }
+                    }
+                }
+            }
+            if cfg.default_base.is_empty() {
+                cfg.default_base = "main".to_string();
+            }
+            coding::save_github_config(&state.data_dir, &cfg)?;
+            Ok(Some(cfg))
+        }
+    }
+}
+
+/// Manually trigger the "open / update PR for the current feature branch"
+/// flow. Useful for users who want to ship before the autonomous loop
+/// completes every chunk. Returns the PR summary on success.
+#[tauri::command]
+pub async fn open_self_improve_pr(
+    state: State<'_, AppState>,
+) -> Result<PrSummary, String> {
+    let cfg = coding::load_github_config(&state.data_dir)
+        .ok_or_else(|| "GitHub not configured. Set token + owner/repo first.".to_string())?;
+    if !cfg.is_complete() {
+        return Err("GitHub config incomplete (token, owner, repo required).".to_string());
+    }
+    let repo_root = coding_repo::guess_repo_root(&state.data_dir);
+    let repo_state = coding_repo::detect_repo(&repo_root);
+    if !repo_state.is_git_repo {
+        return Err("Not inside a git repository.".to_string());
+    }
+    let head = coding::git_ops::current_branch(&repo_root)
+        .ok_or_else(|| "Detached HEAD — cannot open a PR.".to_string())?;
+    if head == cfg.default_base {
+        return Err(format!(
+            "Currently on the base branch ({head}); switch to a feature branch first."
+        ));
+    }
+    let client = reqwest::Client::new();
+    let title = format!("self-improve: complete autonomous chunks ({head})");
+    let body = "Opened manually from the TerranSoul self-improve panel.".to_string();
+    coding::open_or_update_pr(&client, &cfg, &head, &title, &body).await
+}
+
+/// Manually pull-and-merge `origin/<base>` into the current branch with
+/// optional LLM-assisted conflict resolution. Returns a structured
+/// outcome the UI can render verbatim.
+#[tauri::command]
+pub async fn pull_main_for_self_improve(
+    state: State<'_, AppState>,
+) -> Result<PullResult, String> {
+    let repo_root = coding_repo::guess_repo_root(&state.data_dir);
+    let base = coding::load_github_config(&state.data_dir)
+        .map(|c| c.default_base)
+        .unwrap_or_else(|| "main".to_string());
+    let coding_cfg = state.coding_llm_config.lock().map_err(|e| e.to_string())?.clone();
+    Ok(coding::pull_main(&repo_root, &base, coding_cfg.as_ref()).await)
+}
+
+/// Inspect the current chat message for an improvement / feature /
+/// bug-fix idea and, when found, append it as a new `not-started` chunk
+/// to `rules/milestones.md`. Always returns `Ok` (the chat pipeline must
+/// never fail because of the learning hook); the inner `Option` is
+/// `Some(chunk)` when something actionable was learned.
+///
+/// Silently no-ops when self-improve is disabled OR the coding LLM is
+/// not configured — the UI can fire this on every user message without
+/// pre-checking the toggle.
+#[tauri::command]
+pub async fn learn_from_user_message(
+    message: String,
+    state: State<'_, AppState>,
+) -> Result<Option<LearnedChunk>, String> {
+    let enabled = state
+        .self_improve
+        .lock()
+        .map(|s| s.enabled)
+        .map_err(|e| e.to_string())?;
+    if !enabled {
+        return Ok(None);
+    }
+    let cfg = match state.coding_llm_config.lock().map_err(|e| e.to_string())?.clone() {
+        Some(c) => c,
+        None => return Ok(None),
+    };
+    let repo_root = coding_repo::guess_repo_root(&state.data_dir);
+    let learned =
+        coding::learn_from_message(&message, &cfg, &state.data_dir, &repo_root).await;
+    Ok(learned)
+}
+
+/// Run a coding task through the shared workflow.
+///
+/// Reusable entry point for **any** coding work — not just self-improve.
+/// The chat UI, future agents, and ad-hoc tooling all call this command
+/// when they need the coding LLM to produce a plan, a JSON object,
+/// resolved file contents, or prose.
+///
+/// Behaviour:
+/// 1. Requires a configured Coding LLM (returns `Err` otherwise).
+/// 2. Auto-loads `rules/*.md`, `instructions/*.md`, and `docs/*.md` from
+///    the bound repository as supplementary documents (configurable on
+///    the task) so every task is anchored to the same source of truth.
+/// 3. Builds an XML-structured prompt via
+///    [`coding::CodingPrompt`] applying the ten Anthropic prompt
+///    principles uniformly (see `rules/prompting-rules.md`).
+/// 4. Returns the structured payload extracted from the requested
+///    output tag, plus the raw reply for debugging.
+///
+/// The command is **stateless** — no metrics are recorded and no
+/// progress events are emitted, so it is safe to call from tests, ad-hoc
+/// chat actions, or background agents without touching the self-improve
+/// metrics log.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn run_coding_task(
+    mut task: coding::CodingTask,
+    state: State<'_, AppState>,
+) -> Result<coding::CodingTaskResult, String> {
+    let cfg = state
+        .coding_llm_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| {
+            "No coding LLM configured. Open Brain → Coding LLM and pick a provider first."
+                .to_string()
+        })?;
+
+    // If the caller did not specify a repo root, default to the bound
+    // repository so context auto-loading works out of the box.
+    if task.repo_root.is_none() {
+        task.repo_root = Some(coding_repo::guess_repo_root(&state.data_dir));
+    }
+
+    let workflow_cfg = state
+        .coding_workflow_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+
+    coding::run_coding_task(&cfg, &task, Some(&workflow_cfg)).await
+}
+
+// ---------------------------------------------------------------------------
+// Coding workflow config (Chunk 25.16)
+// ---------------------------------------------------------------------------
+
+/// Single document entry shown in the live preview pane of the
+/// CodingWorkflowConfigPanel — `label` is the repo-relative path and
+/// `char_count` is the loaded length after truncation.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CodingWorkflowPreviewDoc {
+    pub label: String,
+    pub char_count: usize,
+}
+
+/// Aggregate preview returned to the UI: list of matched files plus
+/// roll-ups so the panel can render counters and progress bars.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CodingWorkflowPreview {
+    pub documents: Vec<CodingWorkflowPreviewDoc>,
+    pub total_chars: usize,
+    pub file_count: usize,
+    pub repo_root: String,
+}
+
+/// Return the persisted coding-workflow config (always returns a record
+/// — defaults are returned when nothing has been saved).
+#[tauri::command]
+pub async fn get_coding_workflow_config(
+    state: State<'_, AppState>,
+) -> Result<CodingWorkflowConfig, String> {
+    let cfg = state
+        .coding_workflow_config
+        .lock()
+        .map_err(|e| e.to_string())?;
+    Ok(cfg.clone())
+}
+
+/// Persist a new coding-workflow config. Validates basic invariants
+/// (non-zero char caps, no empty trimmed strings) before writing.
+///
+/// Implements the atomicity contract from
+/// `rules/coding-workflow-reliability.md` §2: write-to-disk happens
+/// before in-memory swap, and the in-memory state stays on its
+/// previous value when the disk write fails.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_coding_workflow_config(
+    config: CodingWorkflowConfig,
+    state: State<'_, AppState>,
+) -> Result<CodingWorkflowConfig, String> {
+    // 1. Validate.
+    if config.max_file_chars == 0 {
+        return Err("max_file_chars must be greater than zero.".to_string());
+    }
+    if config.max_total_chars == 0 {
+        return Err("max_total_chars must be greater than zero.".to_string());
+    }
+    if config.max_total_chars < config.max_file_chars {
+        return Err(
+            "max_total_chars must be greater than or equal to max_file_chars.".to_string(),
+        );
+    }
+    let trim_check = |list: &[String], field: &str| -> Result<(), String> {
+        for entry in list {
+            if entry.trim().is_empty() {
+                return Err(format!("{field} entries must be non-empty."));
+            }
+        }
+        Ok(())
+    };
+    trim_check(&config.include_dirs, "include_dirs")?;
+    trim_check(&config.include_files, "include_files")?;
+    trim_check(&config.exclude_paths, "exclude_paths")?;
+
+    // 2. Persist atomically.
+    coding::save_coding_workflow_config(&state.data_dir, &config)?;
+
+    // 3. Swap in-memory only after the disk write succeeded.
+    let mut slot = state
+        .coding_workflow_config
+        .lock()
+        .map_err(|e| e.to_string())?;
+    *slot = config.clone();
+    Ok(config)
+}
+
+/// Reset the coding-workflow config to defaults (deletes the persisted
+/// file and resets the in-memory state).
+#[tauri::command]
+pub async fn reset_coding_workflow_config(
+    state: State<'_, AppState>,
+) -> Result<CodingWorkflowConfig, String> {
+    coding::clear_coding_workflow_config(&state.data_dir)?;
+    let defaults = CodingWorkflowConfig::default();
+    let mut slot = state
+        .coding_workflow_config
+        .lock()
+        .map_err(|e| e.to_string())?;
+    *slot = defaults.clone();
+    Ok(defaults)
+}
+
+/// Preview which files the current workflow config will inject into
+/// the next coding-task prompt. Used by the settings panel to show a
+/// live preview as the user edits the config.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn preview_coding_workflow_context(
+    config: Option<CodingWorkflowConfig>,
+    state: State<'_, AppState>,
+) -> Result<CodingWorkflowPreview, String> {
+    let cfg = match config {
+        Some(c) => c,
+        None => state
+            .coding_workflow_config
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone(),
+    };
+    let repo_root = coding_repo::guess_repo_root(&state.data_dir);
+    let docs = coding::workflow::load_workflow_context(&repo_root, &cfg, true, true, true);
+    let documents: Vec<CodingWorkflowPreviewDoc> = docs
+        .iter()
+        .map(|d| CodingWorkflowPreviewDoc {
+            label: d.label.clone(),
+            char_count: d.body.chars().count(),
+        })
+        .collect();
+    let total_chars: usize = documents.iter().map(|d| d.char_count).sum();
+    let file_count = documents.len();
+    Ok(CodingWorkflowPreview {
+        documents,
+        total_chars,
+        file_count,
+        repo_root: repo_root.to_string_lossy().to_string(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Local Ollama discovery (Chunk 25.17)
+// ---------------------------------------------------------------------------
+
+/// Probe `/api/tags` on `127.0.0.1:11434` (the default Ollama port) and
+/// return the list of installed model names. Empty vec on connection
+/// failure — the UI treats that as "no Ollama running" and surfaces an
+/// install prompt.
+///
+/// `base_url` is optional; defaults to `http://127.0.0.1:11434`. Pass
+/// the user's custom Ollama port when probing a non-default install.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn list_local_coding_models(
+    base_url: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let url = base_url
+        .as_deref()
+        .map(strip_trailing_slash)
+        .unwrap_or("http://127.0.0.1:11434");
+    // Strip the OpenAI-compatible `/v1` suffix if the user pasted that —
+    // the native `/api/tags` endpoint lives one level up.
+    let probe_url = url.trim_end_matches("/v1");
+    let entries = crate::brain::ollama_agent::list_models(&state.ollama_client, probe_url).await;
+    Ok(entries.into_iter().map(|m| m.name).collect())
+}
+
+fn strip_trailing_slash(s: &str) -> &str {
+    s.trim_end_matches('/')
 }
 
 #[cfg(test)]

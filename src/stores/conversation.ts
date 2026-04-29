@@ -1252,6 +1252,27 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
+    // ── Self-improve learning hook ──
+    // When self-improve is enabled, fire-and-forget a backend call that
+    // asks the Coding LLM whether this message describes a feature
+    // request / bug / improvement and, if so, appends it as a new
+    // chunk to `rules/milestones.md`. The chat pipeline never waits on
+    // or fails because of this — failures are logged only.
+    // Deferred via setTimeout so the call is truly out-of-band: it
+    // cannot affect mock-call ordering in tests, and it cannot delay
+    // the user's perceived response time.
+    setTimeout(() => {
+      try {
+        void Promise.resolve(invoke('learn_from_user_message', { message: content })).catch(
+          (err) => {
+            console.warn('[self-improve] learn-from-message failed:', err);
+          },
+        );
+      } catch (e) {
+        console.warn('[self-improve] learn-from-message dispatch failed:', e);
+      }
+    }, 0);
+
     // ── Concurrency gate: only one generation at a time ──
     // If a stream/generation is already active, queue this message and
     // return immediately.  drainQueue() will pick it up when the current

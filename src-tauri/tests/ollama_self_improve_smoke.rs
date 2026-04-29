@@ -115,3 +115,55 @@ async fn ollama_real_metrics_log_records_outcome() {
     // the env var isn't set (whole test body is gated above).
     let _ = coding::coding_llm_recommendations();
 }
+
+/// Loop test: drives `run_coding_task` end-to-end against a real,
+/// installed Ollama using the recommended-provider configuration.
+///
+/// Proves the full self-improve stack works offline:
+///   recommendations → CodingLlmConfig → workflow::run_coding_task →
+///   prose output → result.well_formed && payload non-empty.
+#[tokio::test]
+async fn ollama_real_run_coding_task_prose() {
+    if !enabled() {
+        eprintln!("skipping: set OLLAMA_REAL_TEST=1 to run");
+        return;
+    }
+    use terransoul_lib::coding::workflow::{run_coding_task, CodingTask, TaskOutputKind};
+
+    // Source the Local-Ollama recommendation rather than hardcoding —
+    // this validates the recommendation defaults are usable as-is.
+    let recs = coding::coding_llm_recommendations();
+    let local = recs
+        .iter()
+        .find(|r| !r.requires_api_key && r.base_url.contains("127.0.0.1"))
+        .expect("Local Ollama recommendation must exist");
+
+    let cfg = CodingLlmConfig {
+        provider: local.provider.clone(),
+        base_url: local.base_url.clone(),
+        model: std::env::var("OLLAMA_REAL_MODEL").unwrap_or_else(|_| "gemma3:4b".to_string()),
+        api_key: String::new(), // no key — proves the no-auth path
+    };
+
+    let task = CodingTask {
+        id: "smoke.coding-task.1".to_string(),
+        description: "Reply with exactly: ok".to_string(),
+        repo_root: None, // skip context loading for a fast smoke
+        include_rules: false,
+        include_instructions: false,
+        include_docs: false,
+        output_kind: TaskOutputKind::Prose,
+        extra_documents: Vec::new(),
+    };
+
+    let result = run_coding_task(&cfg, &task, None)
+        .await
+        .expect("real Ollama coding task must succeed");
+    eprintln!("[real] coding task payload: {}", result.payload);
+    assert_eq!(result.task_id, "smoke.coding-task.1");
+    assert!(result.well_formed, "prose output is always well-formed");
+    assert!(
+        !result.payload.trim().is_empty(),
+        "expected non-empty payload from real Ollama"
+    );
+}

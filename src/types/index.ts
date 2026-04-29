@@ -427,6 +427,32 @@ export interface SelfImproveRun {
   error: string | null;
 }
 
+/**
+ * Configurable context-loading rules for every coding workflow
+ * (Chunk 25.16). Mirrors the `CodingWorkflowConfig` Rust struct.
+ */
+export interface CodingWorkflowConfig {
+  include_dirs: string[];
+  include_files: string[];
+  exclude_paths: string[];
+  max_file_chars: number;
+  max_total_chars: number;
+}
+
+/** One row in the coding-workflow live preview. */
+export interface CodingWorkflowPreviewDoc {
+  label: string;
+  char_count: number;
+}
+
+/** Aggregate preview returned by `preview_coding_workflow_context`. */
+export interface CodingWorkflowPreview {
+  documents: CodingWorkflowPreviewDoc[];
+  total_chars: number;
+  file_count: number;
+  repo_root: string;
+}
+
 // ── Voice ──────────────────────────────────────────────────────────────────────
 
 /** Metadata describing an available voice provider. */

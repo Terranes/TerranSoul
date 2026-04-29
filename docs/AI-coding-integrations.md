@@ -1,5 +1,11 @@
 # TerranSoul — AI Coding Integrations
 
+> **See also:** [`docs/coding-workflow-design.md`](coding-workflow-design.md)
+> for the design and comparative study of TerranSoul's *own* coding
+> workflow (the `run_coding_task` entry point, self-improve loop, and
+> how it stacks up against Temporal.io, Copilot, Claude Code, Roo Code,
+> Aider, Cline, and OpenHands).
+
 > **Status — Phase 15 mostly shipped (April 2026).** Shipped: `BrainGateway`
 > trait (15.3), MCP HTTP server (15.1), auto-setup writers (15.6), MCP stdio
 > transport (15.9), VS Code workspace surfacing (15.10), voice/chat intents

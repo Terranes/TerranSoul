@@ -24,6 +24,8 @@ use tokio::task::JoinHandle;
 use crate::brain::openai_client::OpenAiMessage;
 
 use super::client;
+use super::git_ops;
+use super::github;
 use super::metrics::MetricsLog;
 use super::milestones::{next_not_started, parse_chunks, ChunkRow};
 use super::repo::{detect_repo, feature_branch_name, guess_repo_root, RepoState};
@@ -129,30 +131,82 @@ fn read_milestones(repo_root: &std::path::Path) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("read milestones: {e}"))
 }
 
-/// Build the planner prompt. Kept short and explicit to keep token usage
-/// minimal. The autonomous loop never asks the LLM to *apply* changes —
-/// that gating lives in a future chunk so this layer remains safe.
-fn planner_prompt(repo: &RepoState, chunk: &ChunkRow) -> Vec<OpenAiMessage> {
-    let system = "You are TerranSoul's self-improve planner. Given a chunk \
-                  description from a project's milestones, produce a concise \
-                  step-by-step plan (max 8 steps) listing exactly which files \
-                  to create or modify and why. Do NOT output code. Do NOT \
-                  invent file paths — only suggest edits to plausible \
-                  TerranSoul paths (src-tauri/src/, src/, rules/, docs/). \
-                  Output as a numbered markdown list.";
-    let user = format!(
-        "Repository root: {}\nCurrent branch: {}\nWorking tree clean: {}\n\
-         Chunk id: {}\nChunk title: {}\n\nProduce the plan now.",
+/// Build the planner system + user messages.
+///
+/// Delegates to [`crate::coding::prompting::CodingPrompt`] so the planner
+/// inherits the project-wide XML structure, role description, negative
+/// constraints, and error-handling guidance shared by every coding
+/// workflow. The reply is expected inside a `<plan>` tag — see
+/// [`crate::coding::prompting::OutputShape::NumberedPlan`].
+///
+/// The autonomous loop never asks the LLM to *apply* changes — that
+/// gating lives in a future chunk so this layer remains safe.
+fn planner_prompt(
+    repo: &RepoState,
+    chunk: &ChunkRow,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+) -> Vec<OpenAiMessage> {
+    let user_task = format!(
+        "Plan the implementation for one chunk from TerranSoul's milestones.\n\
+         \n\
+         <repository>\n  \
+           <root>{}</root>\n  \
+           <branch>{}</branch>\n  \
+           <clean>{}</clean>\n\
+         </repository>\n\
+         <chunk>\n  \
+           <id>{}</id>\n  \
+           <title>{}</title>\n\
+         </chunk>\n\
+         \n\
+         Produce the plan now. Do not output code — only the file list and \
+         reasoning. Consult the supplied <documents> for project rules and \
+         conventions before deciding which files to touch.",
         repo.root.as_deref().unwrap_or("unknown"),
         repo.current_branch.as_deref().unwrap_or("unknown"),
         repo.clean,
         chunk.id,
         chunk.title,
     );
-    vec![
-        OpenAiMessage { role: "system".to_string(), content: system.to_string() },
-        OpenAiMessage { role: "user".to_string(), content: user },
-    ]
+
+    let prompt = crate::coding::prompting::CodingPrompt {
+        role: crate::coding::workflow::default_coding_role(),
+        task: user_task,
+        negative_constraints: {
+            let mut c = crate::coding::workflow::default_negative_constraints();
+            c.push(
+                "Do not produce code in this reply — output the plan only."
+                    .to_string(),
+            );
+            c
+        },
+        documents: load_planner_context(repo, workflow_cfg),
+        output: crate::coding::prompting::OutputShape::NumberedPlan { max_steps: 8 },
+        example: None,
+        assistant_prefill: Some("<analysis>".to_string()),
+        error_handling: crate::coding::workflow::default_error_handling(),
+    };
+    prompt.build()
+}
+
+/// Load `rules/`, `instructions/`, `docs/`, and explicit files via the
+/// shared workflow loader. Centralising here means a single change to
+/// `CodingWorkflowConfig` propagates to both the self-improve planner
+/// and the reusable `run_coding_task` runner.
+fn load_planner_context(
+    repo: &RepoState,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+) -> Vec<crate::coding::prompting::DocSnippet> {
+    let Some(root) = repo.root.as_deref() else {
+        return Vec::new();
+    };
+    crate::coding::workflow::load_workflow_context(
+        std::path::Path::new(root),
+        workflow_cfg,
+        true,
+        true,
+        true,
+    )
 }
 
 /// Run a single planning cycle for one chunk. Emits progress events at
@@ -163,6 +217,7 @@ async fn plan_one_chunk<R: Runtime>(
     repo: &RepoState,
     chunk: &ChunkRow,
     metrics: &MetricsLog,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
 ) -> Result<String, String> {
     let provider = provider_label(&config.provider);
     let started_at = metrics.record_start(&chunk.id, &chunk.title, provider, &config.model);
@@ -183,7 +238,7 @@ async fn plan_one_chunk<R: Runtime>(
     );
 
     let openai = client::client_from(config);
-    let messages = planner_prompt(repo, chunk);
+    let messages = planner_prompt(repo, chunk, workflow_cfg);
     match openai.chat(messages).await {
         Ok(plan) => {
             metrics.record_outcome(
@@ -243,6 +298,7 @@ pub async fn start<R: Runtime>(
     app: AppHandle<R>,
     engine: Arc<SelfImproveEngine>,
     config: CodingLlmConfig,
+    workflow_cfg: crate::coding::CodingWorkflowConfig,
     repo_hint: PathBuf,
 ) {
     if engine.running.swap(true, Ordering::Relaxed) {
@@ -253,6 +309,8 @@ pub async fn start<R: Runtime>(
     let cancel = engine.cancel.clone();
     let engine_for_task = engine.clone();
     let metrics = MetricsLog::new(&repo_hint);
+    let data_dir = repo_hint.clone();
+    let github_cfg = github::load_github_config(&data_dir);
 
     let handle = tokio::spawn(async move {
         emit(
@@ -288,7 +346,38 @@ pub async fn start<R: Runtime>(
                 )
                 .with_progress(5),
             );
+
+            // Step 1 — pull latest from the configured base branch and
+            // (when conflicts arise) ask the Coding LLM to resolve them.
+            // Failures here are surfaced but never fatal — the loop
+            // continues with whatever local state exists.
+            let base_branch = github_cfg
+                .as_ref()
+                .map(|g| g.default_base.clone())
+                .unwrap_or_else(|| "main".to_string());
+            emit(
+                &app,
+                ProgressEvent::info(
+                    "pull",
+                    format!("Pulling latest origin/{base_branch}…"),
+                )
+                .with_progress(8),
+            );
+            let pull = git_ops::pull_main(&repo_root, &base_branch, Some(&config)).await;
+            if pull.merged {
+                emit(
+                    &app,
+                    ProgressEvent::success("pull", pull.message.clone()).with_progress(12),
+                );
+            } else {
+                emit(
+                    &app,
+                    ProgressEvent::error("pull", pull.message.clone()),
+                );
+            }
         }
+
+        let mut completion_pr_opened = false;
 
         for cycle in 0..MAX_CYCLES {
             if cancel.load(Ordering::Relaxed) {
@@ -317,10 +406,22 @@ pub async fn start<R: Runtime>(
                              when a new not-started chunk appears in milestones.md.",
                         ),
                     );
+                    // Once per "all done" transition, attempt to open a
+                    // completion PR if the user has configured GitHub.
+                    if !completion_pr_opened {
+                        if let Some(cfg) = github_cfg.as_ref() {
+                            try_open_completion_pr(&app, cfg, &repo_root).await;
+                        }
+                        completion_pr_opened = true;
+                    }
                     sleep_cancellable(&cancel, IDLE_SLEEP_SECS).await;
                     continue;
                 }
             };
+
+            // A new chunk appeared — reset the PR-opened latch so future
+            // completions trigger a fresh PR.
+            completion_pr_opened = false;
 
             emit(
                 &app,
@@ -332,7 +433,7 @@ pub async fn start<R: Runtime>(
             // switched branches manually between cycles.
             repo = detect_repo(&repo_root);
 
-            match plan_one_chunk(&app, &config, &repo, &next, &metrics).await {
+            match plan_one_chunk(&app, &config, &repo, &next, &metrics, &workflow_cfg).await {
                 Ok(plan) => {
                     let summary = plan.lines().take(2).collect::<Vec<_>>().join(" ");
                     emit(
@@ -363,11 +464,85 @@ pub async fn start<R: Runtime>(
         }
 
         emit(&app, ProgressEvent::info("exit", "Self-improve loop exited"));
+        // `data_dir` retained for future use (per-loop state files);
+        // the conversation_learning hook fires from the chat command
+        // pipeline, not inside this loop.
+        let _ = data_dir;
         engine_for_task.running.store(false, Ordering::Relaxed);
     });
 
     let mut slot = engine.task.lock().await;
     *slot = Some(handle);
+}
+
+/// Attempt to open (or update) a completion Pull Request after the loop
+/// has finished every chunk in `milestones.md`. Failures are emitted to
+/// the UI but never crash the loop.
+async fn try_open_completion_pr<R: Runtime>(
+    app: &AppHandle<R>,
+    cfg: &github::GitHubConfig,
+    repo_root: &std::path::Path,
+) {
+    if !cfg.is_complete() {
+        emit(
+            app,
+            ProgressEvent::info(
+                "pr",
+                "All chunks complete, but GitHub config is incomplete — skipping PR.",
+            ),
+        );
+        return;
+    }
+    let head_branch = match git_ops::current_branch(repo_root) {
+        Some(b) => b,
+        None => {
+            emit(app, ProgressEvent::error("pr", "Cannot open PR from detached HEAD"));
+            return;
+        }
+    };
+    if head_branch == cfg.default_base {
+        emit(
+            app,
+            ProgressEvent::info(
+                "pr",
+                format!("Currently on {head_branch}; nothing to PR against itself."),
+            ),
+        );
+        return;
+    }
+    emit(
+        app,
+        ProgressEvent::info("pr", format!("Opening PR for {head_branch}…")).with_progress(50),
+    );
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let title = format!("self-improve: complete autonomous chunks ({head_branch})");
+    let body = "All `not-started` chunks in `rules/milestones.md` have been planned by \
+                the TerranSoul self-improve loop. Please review and merge.\n\n\
+                — Opened automatically by the self-improve engine."
+        .to_string();
+    match github::open_or_update_pr(&client, cfg, &head_branch, &title, &body).await {
+        Ok(pr) => emit(
+            app,
+            ProgressEvent::success(
+                "pr",
+                format!(
+                    "PR #{} {} ({})",
+                    pr.number,
+                    if pr.created { "opened" } else { "already open" },
+                    pr.html_url
+                ),
+            )
+            .with_progress(100),
+        ),
+        Err(e) => emit(
+            app,
+            ProgressEvent::error("pr", format!("PR open failed: {e}")),
+        ),
+    }
 }
 
 /// Sleep for `secs` seconds, returning early if cancellation is requested.
@@ -400,11 +575,21 @@ mod tests {
             title: "Autonomous loop MVP".to_string(),
             status: "not-started".to_string(),
         };
-        let msgs = planner_prompt(&repo, &chunk);
-        assert_eq!(msgs.len(), 2);
+        let msgs = planner_prompt(&repo, &chunk, &crate::coding::CodingWorkflowConfig::default());
+        // system + user + assistant-prefill (rule 6 from prompting-rules).
+        assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].role, "system");
+        assert_eq!(msgs[1].role, "user");
+        assert_eq!(msgs[2].role, "assistant");
+        // System prompt carries the role + thinking-protocol scaffolding.
+        assert!(msgs[0].content.contains("<role>"));
+        assert!(msgs[0].content.contains("<thinking_protocol>"));
+        assert!(msgs[0].content.contains("<plan>"));
+        // User prompt carries the chunk id + title verbatim.
         assert!(msgs[1].content.contains("25.4"));
         assert!(msgs[1].content.contains("Autonomous loop MVP"));
+        // Pre-fill steers the model into the analysis tag.
+        assert_eq!(msgs[2].content, "<analysis>");
     }
 
     #[test]

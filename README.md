@@ -41,7 +41,7 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 
 > 📖 **Deep dive:** every cell in this table — the LLM providers behind Intelligence, the three-tier store and embedding model behind Wisdom, the hybrid 6-signal RAG behind Knowledge, the typed entity-relationship graph, decay/GC, cognitive episodic/semantic/procedural axes, multi-source ingestion, sleep-time consolidation, and the April 2026 research survey — is documented in **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)**. Any contribution that touches the brain (LLM, memory, RAG, ingestion, embeddings, cognitive-kind, brain-gating quests) must consult that doc first. The Charisma row — persona traits, the master-mirror self-learning loop, ARKit-blendshape → VRM expression mapping, MediaPipe FaceLandmarker / PoseLandmarker, and the per-session camera consent contract — is documented in **[docs/persona-design.md](docs/persona-design.md)**, which any persona/animation contribution must consult first.
 
-> 🖥️ **Offline / Local LLM models (current):** TerranSoul's hardware-adaptive model recommender selects from **Gemma 4** and **Qwen** families for fully offline, private operation via Ollama — chosen based on your available RAM. This list is kept up to date as better locally-runnable models emerge.
+> 🖥️ **Offline / Local LLM models (current):** TerranSoul's hardware-adaptive model recommender selects from **Gemma 4** and **Qwen** families for fully offline, private operation via Ollama — chosen based on your available RAM. The full catalogue is maintained in [docs/brain-advanced-design.md §26](docs/brain-advanced-design.md#recommended-local-llm-catalogue) and ships with every release build, so the app always has the latest recommendations.
 
 As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
 
@@ -184,7 +184,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - Implementations: `OllamaAgent`, `OpenAiClient`, `FreeProvider`, `ProviderRotator`, `StubAgent`
 - Cloud embedding API (`cloud_embeddings.rs`) — unified `embed_for_mode` dispatcher routes to OpenAI-compatible `/v1/embeddings` for paid/free cloud modes, so vector RAG works without local Ollama
 - External CLI agents (Chunk 1.5): multi-agent **roster** + Temporal-style **durable workflow engine** (`src-tauri/src/agents/`, `src-tauri/src/workflows/`)
-- Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM
+- Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM — catalogue defined in [docs/brain-advanced-design.md §26](docs/brain-advanced-design.md#recommended-local-llm-catalogue) (single source of truth), parsed at runtime from bundled docs, with hardcoded fallback
 - Zero-setup first launch — free brain auto-configures with no API keys
 - Streaming responses (SSE → `llm-chunk` Tauri event, parsed by `StreamTagParser` state machine)
 - Animation channel: `llm-animation` events for `<anim>` JSON blocks emitted by the LLM

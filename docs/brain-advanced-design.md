@@ -48,6 +48,13 @@
 17. [FAQ](#faq)
 18. [Diagrams Index](#diagrams-index)
 19. [April 2026 Research Survey — Modern RAG & Agent-Memory Techniques](#april-2026-research-survey--modern-rag--agent-memory-techniques)
+20. [Brain Component Selection & Routing](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
+21. [How Daily Conversation Updates the Brain](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
+22. [Code-Intelligence Bridge — GitNexus Sidecar](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
+23. [Code-RAG Fusion](#code-rag-fusion-in-rerank_search_memories-phase-13-tier-2)
+24. [MCP Server — External AI Coding Assistant Integration](#mcp-server--external-ai-coding-assistant-integration-phase-15)
+25. [Intent Classification](#intent-classification)
+26. [Recommended Local LLM Catalogue](#recommended-local-llm-catalogue)
 20. [Brain Component Selection & Routing — How the LLM Knows What to Use](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
 21. [How Daily Conversation Updates the Brain — Write-Back / Learning Loop](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
 22. [Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
@@ -2779,6 +2786,63 @@ tests that don't set up Pinia retain default-on behaviour.
 rehydration, corrupt-JSON recovery, sanitisation of non-boolean
 values, and `reset()`. `conversation.test.ts` adds three integration
 tests asserting that each toggle actually short-circuits its gate.
+
+---
+
+## 26. Recommended Local LLM Catalogue
+
+> **Source of truth for first-time setup.** The model recommender
+> (`src-tauri/src/brain/model_recommender.rs`) reads this section at
+> runtime from the bundled `docs/brain-advanced-design.md` resource.
+> To add or update a model, edit the tables below — **do not** change
+> the hardcoded fallback unless the doc parser is broken.
+
+The catalogue is parsed at runtime via HTML comment markers. The
+Rust parser (`brain::doc_catalogue`) extracts the tables between
+the `BEGIN` / `END` markers below.
+
+### 26.1 Local & Cloud Model Catalogue
+
+<!-- BEGIN MODEL_CATALOGUE -->
+| model_tag | display_name | description | required_ram_mb | is_cloud |
+|---|---|---|---|---|
+| gemma4:31b | Gemma 4 31B | Google's dense 30.7B flagship. State-of-the-art reasoning, coding, and 256K context. 20 GB download. | 24576 | false |
+| gemma4:26b | Gemma 4 26B MoE | MoE with 25.2B total / 3.8B active params. Fast inference with 256K context. 18 GB download. | 22528 | false |
+| gemma3:27b | Gemma 3 27B | Previous-gen flagship. Excellent reasoning, vision, and 128K context. 17 GB download. | 20480 | false |
+| gemma4:e4b | Gemma 4 E4B | 4.5B effective params optimised for edge. 128K context, vision + audio. 9.6 GB download. | 12288 | false |
+| gemma4:e2b | Gemma 4 E2B | 2.3B effective params for edge devices. 128K context, vision + audio. 7.2 GB download. | 8192 | false |
+| gemma3:4b | Gemma 3 4B | Compact multimodal model. 128K context, great for everyday chat. 3.3 GB download. | 6144 | false |
+| phi4-mini | Phi-4 Mini 3.8B | Microsoft's compact reasoner. 128K context, strong math/logic. 2.5 GB download. | 4096 | false |
+| gemma3:1b | Gemma 3 1B | Ultra-lightweight. 32K context, text-only. 815 MB download. | 2048 | false |
+| gemma2:2b | Gemma 2 2B | Compact Gemma 2. 8K context, solid for simple tasks. 1.6 GB download. | 4096 | false |
+| tinyllama | TinyLlama 1.1B | Minimal 1.1B model. 2K context. Works on very limited hardware. 638 MB download. | 2048 | false |
+| kimi-k2.6:cloud | Kimi K2.6 (Cloud) | Moonshot AI's 1T MoE (32B active). Vision, tool use, thinking. 256K context. Runs via Ollama Cloud — no local GPU needed. | 0 | true |
+<!-- END MODEL_CATALOGUE -->
+
+### 26.2 RAM-Tier Top Picks
+
+The installer marks one model as the "top pick" per hardware tier.
+When the app detects the user's total RAM on first launch, it selects
+the corresponding model automatically.
+
+<!-- BEGIN TOP_PICKS -->
+| tier | model_tag |
+|---|---|
+| VeryHigh | gemma4:31b |
+| High | gemma4:e4b |
+| Medium | gemma4:e2b |
+| Low | gemma3:1b |
+| VeryLow | tinyllama |
+<!-- END TOP_PICKS -->
+
+### 26.3 Updating the catalogue
+
+1. Edit the table(s) above — keep the `<!-- BEGIN … -->` / `<!-- END … -->` markers intact.
+2. The Rust parser splits on `|`, trims whitespace, and expects exactly the column order shown.
+3. `required_ram_mb` must be a plain integer (no commas, no units).
+4. `is_cloud` must be `true` or `false`.
+5. The `tier` column in the top-picks table must match a `RamTier` variant name exactly: `VeryHigh`, `High`, `Medium`, `Low`, `VeryLow`.
+6. Run `cargo test -p terransoul-app` to validate the parser picks up your changes.
 
 ---
 
