@@ -7,6 +7,7 @@
 //! used by the hardcoded fallback in [`super::model_recommender`].
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use super::model_recommender::ModelRecommendation;
 use super::system_info::RamTier;
@@ -146,6 +147,59 @@ pub fn recommend_from_catalogue(
 
     candidates.append(&mut cloud);
     candidates
+}
+
+// ── Online catalogue refresh ─────────────────────────────────────────
+
+/// The GitHub raw URL for the design doc containing the model catalogue.
+const CATALOGUE_URL: &str =
+    "https://raw.githubusercontent.com/Terranes/TerranSoul/main/docs/brain-advanced-design.md";
+
+/// Fetch the latest model catalogue from the upstream repository.
+///
+/// The downloaded markdown is cached to `<cache_dir>/model-catalogue.md`.
+/// Returns `Ok(catalogue)` on success, or an error string on failure.
+/// The caller should fall back to the bundled/hardcoded catalogue on error.
+pub async fn fetch_online_catalogue(
+    cache_dir: &Path,
+) -> Result<ParsedCatalogue, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let resp = client
+        .get(CATALOGUE_URL)
+        .header("Accept", "text/plain")
+        .send()
+        .await
+        .map_err(|e| format!("catalogue fetch failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("catalogue fetch HTTP {}", resp.status()));
+    }
+
+    let markdown = resp
+        .text()
+        .await
+        .map_err(|e| format!("catalogue read failed: {e}"))?;
+
+    let catalogue = parse_catalogue(&markdown)
+        .ok_or_else(|| "catalogue markers not found in fetched document".to_string())?;
+
+    // Cache the raw markdown for offline use.
+    std::fs::create_dir_all(cache_dir).ok();
+    let cache_path = cache_dir.join("model-catalogue.md");
+    std::fs::write(&cache_path, &markdown).ok();
+
+    Ok(catalogue)
+}
+
+/// Load a previously-cached catalogue from disk.
+pub fn load_cached_catalogue(cache_dir: &Path) -> Option<ParsedCatalogue> {
+    let cache_path = cache_dir.join("model-catalogue.md");
+    let markdown = std::fs::read_to_string(cache_path).ok()?;
+    parse_catalogue(&markdown)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────

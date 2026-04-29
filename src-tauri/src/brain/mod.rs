@@ -17,7 +17,10 @@ pub mod system_info;
 pub use brain_config::BrainMode;
 pub use brain_store::{clear as clear_brain, load as load_brain, save as save_brain};
 pub use cloud_embeddings::embed_for_mode;
-pub use doc_catalogue::{parse_catalogue, recommend_from_catalogue, ParsedCatalogue};
+pub use doc_catalogue::{
+    fetch_online_catalogue, load_cached_catalogue, parse_catalogue,
+    recommend_from_catalogue, ParsedCatalogue,
+};
 pub use free_api::{free_provider_catalogue, get_free_provider, FreeProvider};
 pub use intent_classifier::{classify_user_intent, GatedSetupKind, IntentDecision};
 pub use lm_studio::{

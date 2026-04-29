@@ -100,7 +100,7 @@ describe('coding-workflow store', () => {
   it('surfaces errors via lastError', async () => {
     mockInvoke.mockRejectedValueOnce('disk full');
     const store = useCodingWorkflowStore();
-    await expect(store.load()).rejects.toBeDefined();
+    await store.load();
     expect(store.lastError).toContain('disk full');
   });
 });

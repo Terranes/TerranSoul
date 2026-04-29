@@ -85,7 +85,6 @@ export const useCodingWorkflowStore = defineStore('coding-workflow', () => {
       pristine.value = cloneConfig(safe);
     } catch (err) {
       lastError.value = String(err);
-      throw err;
     } finally {
       loading.value = false;
     }

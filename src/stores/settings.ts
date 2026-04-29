@@ -32,6 +32,11 @@ export interface AppSettings {
   chatbox_mode?: boolean;
   /** Components auto-configured by the first-launch wizard (e.g. "brain", "voice", "quests"). */
   auto_configured?: string[];
+  /**
+   * When true (default), first-launch wizard tries local Ollama before
+   * falling back to a free cloud provider. See rules/local-first-brain.md.
+   */
+  prefer_local_brain?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -48,6 +53,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   first_launch_complete: false,
   chatbox_mode: false,
   auto_configured: [],
+  prefer_local_brain: true,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

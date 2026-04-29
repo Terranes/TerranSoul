@@ -175,6 +175,17 @@ pub struct AppSettings {
     /// auto-configuration while leaving user-chosen settings intact.
     #[serde(default)]
     pub auto_configured: Vec<String>,
+
+    /// When `true` (default), the first-launch wizard tries local Ollama
+    /// before falling back to a free cloud provider. When `false`, the
+    /// wizard defaults to Pollinations cloud immediately.
+    /// See `rules/local-first-brain.md`.
+    #[serde(default = "default_true")]
+    pub prefer_local_brain: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -226,6 +237,7 @@ impl Default for AppSettings {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         }
     }
 }
@@ -339,6 +351,7 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

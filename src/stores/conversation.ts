@@ -649,9 +649,9 @@ async function runAutoInstall(topic: string): Promise<void> {
     try {
       // Perform the actual activation for each quest type.
       if (id === 'free-brain') {
-        // Configure a free cloud LLM provider (Pollinations).
+        // Configure brain — local-first per rules/local-first-brain.md.
         try {
-          await brain.autoConfigureForDesktop();
+          await brain.autoConfigureLocalFirst();
         } catch {
           brain.autoConfigureFreeApi();
         }
@@ -659,7 +659,7 @@ async function runAutoInstall(topic: string): Promise<void> {
         // Memory auto-activates once the brain is configured.
         // Ensure brain mode is set (should be from free-brain step).
         if (!brain.brainMode) {
-          try { await brain.autoConfigureForDesktop(); }
+          try { await brain.autoConfigureLocalFirst(); }
           catch { brain.autoConfigureFreeApi(); }
         }
       } else if (id === 'rag-knowledge') {

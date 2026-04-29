@@ -632,6 +632,32 @@
       </div>
     </section>
 
+    <!-- ── Local-First Brain Policy (rules/local-first-brain.md) ──────────── -->
+    <section class="bv-autolearn-section">
+      <header class="bv-autolearn-header">
+        <span class="bv-section-title">🏠 First-Launch Brain Policy</span>
+      </header>
+      <label
+        class="bv-config-list"
+        style="display:flex;align-items:center;gap:8px;"
+      >
+        <input
+          type="checkbox"
+          :checked="appSettings.settings?.prefer_local_brain !== false"
+          data-testid="bv-prefer-local-toggle"
+          @change="onTogglePreferLocal(($event.target as HTMLInputElement).checked)"
+        >
+        <span>Prefer local LLM on first launch</span>
+      </label>
+      <p class="bv-cog-desc">
+        When enabled (default), the first-launch wizard detects Ollama and
+        auto-configures a local model from the
+        <strong>§26 catalogue</strong> (Gemma 4 / Gemma 3 family, picked
+        by your RAM). Falls back to free cloud only if Ollama is unreachable.
+        Disable to default to Pollinations cloud AI instead.
+      </p>
+    </section>
+
     <!-- ── Auto-tag toggle (Chunk 18.1) ────────────────────────────────────── -->
     <section class="bv-autolearn-section">
       <header class="bv-autolearn-header">
@@ -1452,6 +1478,16 @@ async function onToggleAutoTag(enabled: boolean) {
     await appSettings.loadSettings();
   }
 }
+
+async function onTogglePreferLocal(enabled: boolean) {
+  try {
+    await appSettings.saveSettings({ prefer_local_brain: enabled });
+  } catch (err) {
+    console.warn('[BrainView] save prefer_local_brain failed; reverting UI:', err);
+    await appSettings.loadSettings();
+  }
+}
+
 async function forceExtractNow() {
   try {
     const count = await invoke<number>('extract_memories_from_session');
@@ -1500,6 +1536,7 @@ async function refresh() {
       brain.fetchInstalledModels(),
       brain.checkLmStudioStatus(),
       brain.fetchLmStudioModels(),
+      brain.refreshModelCatalogue().catch(() => brain.fetchRecommendations()),
       memory.fetchAll(),
       memory.getStats(),
       memory.fetchEdges(),

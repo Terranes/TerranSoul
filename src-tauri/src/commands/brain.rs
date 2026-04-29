@@ -41,15 +41,22 @@ pub async fn read_bundled_doc(app: AppHandle, relative_path: String) -> Result<S
 
 /// Return a ranked list of model recommendations based on available RAM.
 ///
-/// Prefers the catalogue from the bundled `docs/brain-advanced-design.md`
-/// (§26). Falls back to the hardcoded catalogue in `model_recommender.rs`
-/// when the bundled doc is missing or unparseable (e.g. during `cargo test`
-/// without a Tauri runtime).
+/// Resolution order:
+/// 1. Cached online catalogue (previously fetched via `refresh_model_catalogue`)
+/// 2. Bundled `docs/brain-advanced-design.md` (§26)
+/// 3. Hardcoded fallback in `model_recommender.rs`
 #[tauri::command]
 pub async fn recommend_brain_models(app: AppHandle) -> Vec<ModelRecommendation> {
     let info = brain::collect_system_info();
 
-    // Try the bundled design doc first.
+    // 1. Try cached online catalogue (freshest data).
+    if let Ok(cache_dir) = app.path().app_cache_dir() {
+        if let Some(catalogue) = brain::load_cached_catalogue(&cache_dir) {
+            return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
+        }
+    }
+
+    // 2. Try the bundled design doc.
     if let Ok(resource_dir) = app.path().resource_dir() {
         let doc_path = resource_dir.join("docs").join("brain-advanced-design.md");
         if let Ok(markdown) = std::fs::read_to_string(&doc_path) {
@@ -59,8 +66,25 @@ pub async fn recommend_brain_models(app: AppHandle) -> Vec<ModelRecommendation> 
         }
     }
 
-    // Fallback: hardcoded catalogue.
+    // 3. Hardcoded fallback.
     brain::recommend(info.total_ram_mb)
+}
+
+/// Fetch the latest model catalogue from the upstream repository.
+///
+/// The catalogue is cached locally so subsequent `recommend_brain_models`
+/// calls use the fresh data without another network request.
+/// Returns the number of models in the refreshed catalogue.
+#[tauri::command]
+pub async fn refresh_model_catalogue(app: AppHandle) -> Result<usize, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("cache dir unavailable: {e}"))?;
+
+    let catalogue = brain::fetch_online_catalogue(&cache_dir).await?;
+    let count = catalogue.local_models.len() + catalogue.cloud_models.len();
+    Ok(count)
 }
 
 /// Check whether the local Ollama service is running.

@@ -84,6 +84,7 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -119,6 +120,7 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

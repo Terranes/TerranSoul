@@ -89,6 +89,13 @@ export const useBrainStore = defineStore('brain', () => {
     recommendations.value = await invoke<ModelRecommendation[]>('recommend_brain_models');
   }
 
+  /** Fetch the latest model catalogue from the upstream repo, then refresh recommendations. */
+  async function refreshModelCatalogue(): Promise<number> {
+    const count = await invoke<number>('refresh_model_catalogue');
+    await fetchRecommendations();
+    return count;
+  }
+
   async function checkOllamaStatus(): Promise<void> {
     ollamaStatus.value = await invoke<OllamaStatus>('check_ollama_status');
   }
@@ -285,6 +292,106 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  /**
+   * Local-first brain auto-configuration (rules/local-first-brain.md).
+   *
+   * Decision cascade:
+   * 1. If Ollama is running and has models → pick best installed model
+   * 2. If Ollama is running but no models → pull §26 top-pick, then activate
+   * 3. If Ollama is unreachable → fall back to Pollinations free cloud API
+   *
+   * Returns a summary object describing what was configured.
+   */
+  async function autoConfigureLocalFirst(callbacks?: {
+    onProgress?: (message: string) => void;
+  }): Promise<{ mode: 'local' | 'cloud'; model: string; pulled: boolean }> {
+    const report = (msg: string) => callbacks?.onProgress?.(msg);
+
+    // Step 0: Refresh model catalogue from online (best-effort)
+    report('Checking for latest model recommendations...');
+    try { await invoke('refresh_model_catalogue'); } catch { /* offline — use cached/bundled */ }
+
+    // Step 1: Detect Ollama + system info + fresh recommendations
+    report('Detecting local AI runtime (Ollama)...');
+    await Promise.allSettled([
+      checkOllamaStatus(),
+      fetchSystemInfo(),
+      fetchRecommendations(),
+      fetchInstalledModels(),
+    ]);
+
+    if (!ollamaStatus.value.running) {
+      // Ollama not available — cloud fallback
+      report('Ollama not detected — using free cloud AI...');
+      await autoConfigureForDesktop();
+      return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+    }
+
+    // Step 2: Ollama is running — pick the best model
+    const top = topRecommendation.value;
+    const installed = installedModels.value;
+
+    // Check if the §26 top-pick (or any recommended model) is already installed
+    const topTag = top?.model_tag;
+    const allRecTags = recommendations.value
+      .filter(r => !r.is_cloud)
+      .map(r => r.model_tag);
+
+    // Find best installed model: prefer the top-pick, then any recommended, then largest installed
+    let bestInstalled: string | null = null;
+    if (topTag && installed.some(m => m.name === topTag)) {
+      bestInstalled = topTag;
+    } else {
+      // Try any recommended model that's installed (in tier order)
+      for (const tag of allRecTags) {
+        if (installed.some(m => m.name === tag)) {
+          bestInstalled = tag;
+          break;
+        }
+      }
+      // Last resort: use any installed model
+      if (!bestInstalled && installed.length > 0) {
+        bestInstalled = installed[0].name;
+      }
+    }
+
+    if (bestInstalled) {
+      report(`Activating local model: ${bestInstalled}...`);
+      try {
+        await setBrainMode({ mode: 'local_ollama', model: bestInstalled });
+        return { mode: 'local', model: bestInstalled, pulled: false };
+      } catch {
+        // setBrainMode failed — cloud fallback
+        report('Failed to activate local model — using free cloud AI...');
+        await autoConfigureForDesktop();
+        return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+      }
+    }
+
+    // Step 3: Ollama running but no models installed → pull the §26 top-pick
+    const modelToPull = topTag || 'gemma3:4b';
+    report(`Downloading local model: ${modelToPull}... (this may take a few minutes)`);
+    const pullOk = await pullModel(modelToPull);
+
+    if (pullOk) {
+      report(`Activating local model: ${modelToPull}...`);
+      try {
+        await setBrainMode({ mode: 'local_ollama', model: modelToPull });
+        return { mode: 'local', model: modelToPull, pulled: true };
+      } catch {
+        // Activation failed after pull — cloud fallback
+        report('Failed to activate local model — using free cloud AI...');
+        await autoConfigureForDesktop();
+        return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+      }
+    }
+
+    // Pull failed — cloud fallback
+    report('Model download failed — using free cloud AI...');
+    await autoConfigureForDesktop();
+    return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+  }
+
   /** Full initialisation for the brain setup wizard. */
   async function initialise(): Promise<void> {
     isLoading.value = true;
@@ -302,7 +409,7 @@ export const useBrainStore = defineStore('brain', () => {
       // These may fail if Ollama isn't installed — that's fine, we still function.
       await Promise.allSettled([
         fetchSystemInfo(),
-        fetchRecommendations(),
+        refreshModelCatalogue().catch(() => fetchRecommendations()),
         checkOllamaStatus(),
         fetchInstalledModels(),
         checkLmStudioStatus(),
@@ -395,6 +502,7 @@ export const useBrainStore = defineStore('brain', () => {
     loadActiveBrain,
     fetchSystemInfo,
     fetchRecommendations,
+    refreshModelCatalogue,
     checkOllamaStatus,
     fetchInstalledModels,
     checkLmStudioStatus,
@@ -412,6 +520,7 @@ export const useBrainStore = defineStore('brain', () => {
     setBrainMode,
     autoConfigureFreeApi,
     autoConfigureForDesktop,
+    autoConfigureLocalFirst,
     initialise,
     processPromptSilently,
   };

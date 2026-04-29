@@ -216,19 +216,53 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   // so the user isn't blasted with popups for every auto-detected feature.
   skillTree.suppressNotifications();
 
-  // ── Phase 1: Brain (Free API) ───────────────────────────────────────
-  setupMessage.value = 'Configuring AI brain (Pollinations AI)...';
-  setupProgress.value = 10;
+  // ── Phase 1: Brain (Local-First per rules/local-first-brain.md) ─────
+  setupMessage.value = 'Detecting local AI runtime...';
+  setupProgress.value = 5;
 
   if (!brain.hasBrain) {
-    try {
-      await brain.autoConfigureForDesktop();
-    } catch {
-      brain.autoConfigureFreeApi();
+    const preferLocal = settingsStore.settings.prefer_local_brain !== false;
+
+    if (preferLocal) {
+      const result = await brain.autoConfigureLocalFirst({
+        onProgress: (msg: string) => { setupMessage.value = msg; },
+      });
+      autoConfigured.push('brain');
+
+      if (result.mode === 'local') {
+        const pullNote = result.pulled ? ' — just downloaded' : '';
+        items.push({
+          icon: '🧠',
+          label: `Brain connected (Local — ${result.model}${pullNote})`,
+        });
+      } else {
+        items.push({
+          icon: '🧠',
+          label: 'Brain connected (Pollinations AI — free cloud fallback)',
+        });
+      }
+    } else {
+      // User explicitly set prefer_local_brain=false → use cloud directly
+      setupMessage.value = 'Configuring AI brain (cloud)...';
+      try {
+        await brain.autoConfigureForDesktop();
+      } catch {
+        brain.autoConfigureFreeApi();
+      }
+      autoConfigured.push('brain');
+      items.push({ icon: '🧠', label: 'Brain connected (Pollinations AI — free cloud)' });
     }
-    autoConfigured.push('brain');
+  } else {
+    // Brain was already configured (e.g. re-running wizard)
+    const mode = brain.brainMode;
+    if (mode?.mode === 'local_ollama') {
+      items.push({ icon: '🧠', label: `Brain connected (Local — ${mode.model})` });
+    } else if (mode?.mode === 'free_api') {
+      items.push({ icon: '🧠', label: `Brain connected (${mode.provider_id} — free cloud)` });
+    } else {
+      items.push({ icon: '🧠', label: 'Brain connected' });
+    }
   }
-  items.push({ icon: '🧠', label: 'Brain connected (Pollinations AI — free, no key needed)' });
   setupProgress.value = 30;
 
   // ── Phase 2: Voice (TTS) ────────────────────────────────────────────

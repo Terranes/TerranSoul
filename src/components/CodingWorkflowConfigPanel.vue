@@ -75,8 +75,12 @@ async function onReset() {
 }
 
 onMounted(async () => {
-  await store.load();
-  await store.refreshPreview();
+  try {
+    await store.load();
+    await store.refreshPreview();
+  } catch {
+    // Tauri backend unavailable — panel renders with defaults
+  }
 });
 
 // Re-run preview when slider values settle.

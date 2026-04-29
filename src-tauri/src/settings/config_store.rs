@@ -85,6 +85,7 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -131,6 +132,7 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -162,6 +164,7 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
         };
         save(dir.path(), &s).unwrap();
 
