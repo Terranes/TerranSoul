@@ -74,10 +74,25 @@ pub async fn recommend_brain_models(app: AppHandle) -> Vec<ModelRecommendation> 
         }
     }
 
-    // 2. Try the bundled design doc.
+    // 2. Try the bundled design doc (works in production builds).
     if let Ok(resource_dir) = app.path().resource_dir() {
         let doc_path = resource_dir.join("docs").join("brain-advanced-design.md");
         if let Ok(markdown) = std::fs::read_to_string(&doc_path) {
+            if let Some(catalogue) = brain::parse_catalogue(&markdown) {
+                return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
+            }
+        }
+    }
+
+    // 2b. Dev fallback: check workspace root (resource_dir points to target/
+    //     during `cargo tauri dev`, but docs/ lives at the project root).
+    {
+        let dev_doc = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("docs")
+            .join("brain-advanced-design.md");
+        if let Ok(markdown) = std::fs::read_to_string(&dev_doc) {
             if let Some(catalogue) = brain::parse_catalogue(&markdown) {
                 return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
             }

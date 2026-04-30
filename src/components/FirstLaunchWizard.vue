@@ -654,12 +654,20 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
     logDebug('Phase 4: Auto-accepting quests');
 
     const allQuests = [...FOUNDATION_QUESTS, ...RECOMMENDED_QUESTS];
+    let activatedCount = 0;
     for (const questId of allQuests) {
-      skillTree.markComplete(questId);
+      // Only mark quests that are actually active (auto-detected as working).
+      // This prevents showing quests as "completed" when their underlying
+      // feature wasn't actually configured during setup.
+      const status = skillTree.getSkillStatus(questId);
+      if (status === 'active') {
+        skillTree.markComplete(questId);
+        activatedCount++;
+      }
     }
-    items.push({ icon: '⚔️', label: `${allQuests.length} quests auto-activated` });
+    items.push({ icon: '⚔️', label: `${activatedCount} quests auto-activated` });
     autoConfigured.push('quests');
-    logDebug(`${allQuests.length} quests activated`);
+    logDebug(`${activatedCount} quests activated (${allQuests.length - activatedCount} skipped — not yet active)`);
   } else {
     items.push({ icon: '📜', label: 'Quests ready — accept them one by one from the Quest tab' });
     logDebug('Quests: manual mode');
