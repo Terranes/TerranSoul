@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::brain::{
     self, ModelRecommendation, OllamaStatus, SystemInfo,
@@ -24,11 +24,85 @@ pub async fn get_system_info() -> SystemInfo {
     brain::collect_system_info()
 }
 
-/// Return a ranked list of model recommendations based on available RAM.
+/// Return the path where Ollama stores downloaded models.
 #[tauri::command]
-pub async fn recommend_brain_models() -> Vec<ModelRecommendation> {
+pub async fn get_ollama_models_dir() -> String {
+    brain::ollama_models_dir()
+}
+
+/// Return disk space information for the drive containing the given path.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_disk_space(path: String) -> Result<brain::DiskInfo, String> {
+    brain::disk_info_for_path(&path).ok_or_else(|| format!("No disk found for path: {path}"))
+}
+
+/// List all mounted drives / partitions with available and total space.
+#[tauri::command]
+pub async fn list_drives() -> Vec<brain::DiskInfo> {
+    brain::list_drives()
+}
+
+/// Read a bundled documentation file by relative path (e.g. `"docs/brain-advanced-design.md"`).
+///
+/// Returns the file contents as a string. This allows the frontend to
+/// display shipped documentation without a network request.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn read_bundled_doc(app: AppHandle, relative_path: String) -> Result<String, String> {
+    // Sanitise: reject path traversal.
+    if relative_path.contains("..") {
+        return Err("Path traversal not allowed".to_string());
+    }
+    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let full_path = resource_dir.join(&relative_path);
+    std::fs::read_to_string(&full_path).map_err(|e| format!("Cannot read {relative_path}: {e}"))
+}
+
+/// Return a ranked list of model recommendations based on available RAM.
+///
+/// Resolution order:
+/// 1. Cached online catalogue (previously fetched via `refresh_model_catalogue`)
+/// 2. Bundled `docs/brain-advanced-design.md` (§26)
+/// 3. Hardcoded fallback in `model_recommender.rs`
+#[tauri::command]
+pub async fn recommend_brain_models(app: AppHandle) -> Vec<ModelRecommendation> {
     let info = brain::collect_system_info();
+
+    // 1. Try cached online catalogue (freshest data).
+    if let Ok(cache_dir) = app.path().app_cache_dir() {
+        if let Some(catalogue) = brain::load_cached_catalogue(&cache_dir) {
+            return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
+        }
+    }
+
+    // 2. Try the bundled design doc.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let doc_path = resource_dir.join("docs").join("brain-advanced-design.md");
+        if let Ok(markdown) = std::fs::read_to_string(&doc_path) {
+            if let Some(catalogue) = brain::parse_catalogue(&markdown) {
+                return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
+            }
+        }
+    }
+
+    // 3. Hardcoded fallback.
     brain::recommend(info.total_ram_mb)
+}
+
+/// Fetch the latest model catalogue from the upstream repository.
+///
+/// The catalogue is cached locally so subsequent `recommend_brain_models`
+/// calls use the fresh data without another network request.
+/// Returns the number of models in the refreshed catalogue.
+#[tauri::command]
+pub async fn refresh_model_catalogue(app: AppHandle) -> Result<usize, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("cache dir unavailable: {e}"))?;
+
+    let catalogue = brain::fetch_online_catalogue(&cache_dir).await?;
+    let count = catalogue.local_models.len() + catalogue.cloud_models.len();
+    Ok(count)
 }
 
 /// Check whether the local Ollama service is running.
@@ -48,14 +122,25 @@ pub async fn get_ollama_models(
 }
 
 /// Pull an Ollama model from the registry (downloads it locally).
-/// This may take several minutes for large models.
+/// Emits `ollama-pull-progress` events with live download percentage.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn pull_ollama_model(
+    app: AppHandle,
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let client = &state.ollama_client;
-    brain::pull_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await?;
+
+    let app_handle = app.clone();
+    brain::pull_model_with_progress(
+        client,
+        brain::ollama_agent::OLLAMA_BASE_URL,
+        &model_name,
+        move |progress| {
+            let _ = app_handle.emit("ollama-pull-progress", &progress);
+        },
+    )
+    .await?;
 
     // Track the pulled model so factory reset can remove it.
     {
@@ -504,6 +589,135 @@ pub async fn factory_reset_brain(
     Ok(())
 }
 
+// ── Model update check + auto-cleanup ──────────────────────────────────────
+
+/// Result returned by `check_model_updates`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ModelUpdateInfo {
+    pub has_update: bool,
+    pub current_model: String,
+    pub recommended_model: String,
+    pub recommended_display: String,
+}
+
+/// Compare the currently active local model against the online catalogue's
+/// top-pick for this hardware. Returns whether a better model is available
+/// and what it is. Does NOT check the dismissed list — the frontend handles
+/// that so it can persist dismissals without extra IPC.
+#[tauri::command]
+pub async fn check_model_updates(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ModelUpdateInfo, String> {
+    // Refresh catalogue (best-effort — falls back to cached/bundled).
+    let _ = brain::fetch_online_catalogue(
+        &app.path().app_cache_dir().map_err(|e| e.to_string())?,
+    )
+    .await;
+
+    let info = brain::collect_system_info();
+
+    // Resolve recommendations (same 3-tier as recommend_brain_models).
+    let recs = {
+        if let Ok(cache_dir) = app.path().app_cache_dir() {
+            if let Some(cat) = brain::load_cached_catalogue(&cache_dir) {
+                brain::recommend_from_catalogue(info.total_ram_mb, &cat)
+            } else {
+                brain::recommend(info.total_ram_mb)
+            }
+        } else {
+            brain::recommend(info.total_ram_mb)
+        }
+    };
+
+    let top = recs.iter().find(|r| r.is_top_pick && !r.is_cloud);
+
+    let current_model = {
+        let mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+        match mode.as_ref() {
+            Some(brain::BrainMode::LocalOllama { model }) => model.clone(),
+            _ => String::new(),
+        }
+    };
+
+    let (recommended_model, recommended_display) = match top {
+        Some(r) => (r.model_tag.clone(), r.display_name.clone()),
+        None => (String::new(), String::new()),
+    };
+
+    let has_update = !recommended_model.is_empty()
+        && !current_model.is_empty()
+        && recommended_model != current_model;
+
+    Ok(ModelUpdateInfo {
+        has_update,
+        current_model,
+        recommended_model,
+        recommended_display,
+    })
+}
+
+/// Delete an Ollama model by tag (e.g. `"gemma3:4b"`). Also removes the
+/// corresponding `ollama_model:*` entry from `auto_configured` in settings.
+#[tauri::command]
+pub async fn delete_ollama_model(
+    model_name: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let client = &state.ollama_client;
+    brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, &model_name).await?;
+
+    // Remove from auto_configured tracking.
+    {
+        let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        let tag = format!("ollama_model:{model_name}");
+        settings.auto_configured.retain(|t| t != &tag);
+        crate::settings::config_store::save(&state.data_dir, &settings)?;
+    }
+
+    Ok(())
+}
+
+/// Persist a dismissed model update tag so the upgrade quest is not shown again.
+#[tauri::command]
+pub async fn dismiss_model_update(
+    model_tag: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    if !settings.dismissed_model_updates.contains(&model_tag) {
+        settings.dismissed_model_updates.push(model_tag);
+    }
+    crate::settings::config_store::save(&state.data_dir, &settings)?;
+    Ok(())
+}
+
+/// Update the `last_update_check_date` in settings. The frontend sends
+/// today's ISO date string (`YYYY-MM-DD`) so we don't need a `chrono` dep.
+#[tauri::command]
+pub async fn mark_update_check_done(
+    date: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    settings.last_update_check_date = date;
+    crate::settings::config_store::save(&state.data_dir, &settings)?;
+    Ok(())
+}
+
+/// Return the last update check date and the dismissed model list so the
+/// frontend can decide whether to run a check without extra round-trips.
+#[tauri::command]
+pub async fn get_update_check_state(
+    state: State<'_, AppState>,
+) -> Result<(String, Vec<String>), String> {
+    let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    Ok((
+        settings.last_update_check_date.clone(),
+        settings.dismissed_model_updates.clone(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -517,13 +731,16 @@ mod tests {
 
     #[tokio::test]
     async fn recommend_brain_models_returns_at_least_one() {
-        let recs = recommend_brain_models().await;
+        // Call the underlying function directly (AppHandle unavailable in unit tests).
+        let info = brain::collect_system_info();
+        let recs = brain::recommend(info.total_ram_mb);
         assert!(!recs.is_empty());
     }
 
     #[tokio::test]
     async fn recommend_brain_models_has_exactly_one_top_pick() {
-        let recs = recommend_brain_models().await;
+        let info = brain::collect_system_info();
+        let recs = brain::recommend(info.total_ram_mb);
         let top = recs.iter().filter(|m| m.is_top_pick).count();
         assert_eq!(top, 1);
     }

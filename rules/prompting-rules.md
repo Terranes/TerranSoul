@@ -1,5 +1,88 @@
 # Prompting Rules — TerranSoul
 
+> **Scope.** These rules govern (a) how human contributors prompt the
+> coding assistant during sessions, **and** (b) how every TerranSoul
+> coding workflow programmatically prompts the configured Coding LLM —
+> the self-improve planner, the chat-driven coding tasks, conflict
+> resolution, conversation learning, and any future agent. Both surfaces
+> share one prompt builder
+> (`src-tauri/src/coding/prompting.rs::CodingPrompt`) so a single rule
+> change propagates everywhere.
+
+## Coding-LLM Prompt Principles (Applied to Every Task)
+
+The shared `CodingPrompt` builder enforces these ten principles for all
+programmatic LLM calls. They are ordered by how much accuracy each
+principle empirically adds. **All instructions sent to the model are in
+English** — never localise the prompt itself; the assistant may still
+reply in the user's language when the task is conversational.
+
+1. **Use XML tags for structure.** Every prompt is wrapped in
+   `<system>`, `<role>`, `<task>`, `<documents>`, `<output_contract>`,
+   etc. Not markdown, not JSON. Claude and GPT-class models are trained
+   to read XML structure first, then content.
+2. **Roles read like a job description, not a flattering label.** Never
+   `"You are an expert"`. Instead: skills + tools + measurable
+   priorities (e.g. `"Senior Rust engineer. Tools: cargo, clippy.
+   Priorities: correctness > readability > brevity."`). The default
+   role for TerranSoul lives in
+   `coding::workflow::default_coding_role()`.
+3. **Force the model to think before it answers.** Every prompt asks
+   for `<analysis>…</analysis>` first, then the contracted output tag
+   (`<plan>`, `<json>`, `<file>`). The thinking tag is discarded by the
+   parser; only the output tag is consumed.
+4. **Few-shot examples include the reasoning, not just input → output.**
+   When supplying an `example`, include the full `<analysis>` block so
+   the model learns *how to think*, not only *what to emit*.
+5. **State explicitly what the model MUST NOT do.** Negative
+   constraints are first-class. The default set lives in
+   `coding::workflow::default_negative_constraints()` and forbids
+   placeholder code, `.unwrap()` in library code, regex-based AI
+   routing, destructive shortcuts, reinventing wheels, and inventing
+   file paths.
+6. **Pre-write the assistant's first words.** Every non-prose prompt
+   sends an `assistant` message with content `<analysis>` so the model
+   continues from there, skipping `"I'd be happy to help…"` preambles.
+7. **Define the output shape exhaustively.** Every prompt picks one
+   `OutputShape` variant: `NumberedPlan { max_steps }`, `StrictJson
+   { schema_description }`, `BareFileContents`, or `Prose`. The
+   builder writes a precise `<output_contract>` describing the exact
+   tag, format, and forbidden elements (e.g. "no markdown fences").
+8. **Wrap every supplied document in an indexed tag.** Reference
+   material is auto-loaded from `rules/`, `instructions/`, and `docs/`
+   into `<document index="N" label="…">…</document>` blocks. The model
+   can cite `"document 3"` unambiguously and the parser knows where
+   each one begins and ends.
+9. **Build error handling into the prompt itself.** The default
+   `<error_handling>` block tells the model what to do when documents
+   conflict, the task is ambiguous, or a required input is missing —
+   *before* the model starts answering. See
+   `coding::workflow::default_error_handling()`.
+10. **Treat prompts as versioned product code.** The builder embeds
+    `<schema_version>v1</schema_version>` so call sites can pin a known
+    revision; every helper has unit tests; the role / constraint /
+    error-handling defaults are exported constants, not inline string
+    literals.
+
+### Mandatory consultation of `instructions/` and `docs/`
+
+Every coding workflow (especially self-improve) **must** auto-load the
+project's `rules/*.md`, `instructions/*.md`, and `docs/*.md` files into
+the prompt's `<documents>` block before asking the model to plan or
+edit anything. This is what `coding::workflow::run_coding_task` does by
+default. The model is expected to consult these documents and cite
+them by `<document index>` when its output deviates from a default.
+
+### Reuse contract
+
+There is **one** entry point for every coding task: the Tauri command
+`run_coding_task(task)`. The self-improve engine, the chat path, future
+agents, and ad-hoc tooling all funnel through it. Do **not** roll a new
+prompt-building path for a one-off feature — extend `CodingPrompt`
+instead so every workflow inherits the upgrade.
+
+---
+
 ## Environment Prerequisites
 
 Before implementing any chunk, verify the development environment:

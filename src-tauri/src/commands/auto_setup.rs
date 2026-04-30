@@ -110,3 +110,61 @@ pub async fn list_mcp_clients(workspace_root: String) -> Result<Vec<ClientStatus
         &workspace_root,
     )))
 }
+
+// ─── Stdio transport commands (Chunk 15.9) ──────────────────────────
+
+/// Resolve the path to the running TerranSoul executable. Used by the
+/// stdio auto-setup writers so editors know which binary to spawn.
+fn current_exe_path() -> Result<String, String> {
+    std::env::current_exe()
+        .map_err(|e| format!("could not resolve current executable: {e}"))
+        .map(|p| p.display().to_string())
+}
+
+/// Track an auto-configured MCP entry (separate key per client so the
+/// quest tracker can detect *which* clients are wired up).
+fn track_auto_configured(state: &AppState, key: &str) -> Result<(), String> {
+    let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+    settings.track_auto_configured(key);
+    crate::settings::config_store::save(&state.data_dir, &settings)?;
+    Ok(())
+}
+
+/// Set up VS Code / Copilot MCP integration over the **stdio**
+/// transport. Writes `.vscode/mcp.json` with `command: <exe> --mcp-stdio`
+/// instead of an HTTP URL. See Chunk 15.9.
+#[tauri::command]
+pub async fn setup_vscode_mcp_stdio(
+    state: State<'_, AppState>,
+    workspace_root: String,
+) -> Result<SetupResult, String> {
+    let exe = current_exe_path()?;
+    let result = auto_setup::write_vscode_stdio_config(
+        std::path::Path::new(&workspace_root),
+        &exe,
+    )?;
+    track_auto_configured(&state, "mcp_vscode_stdio")?;
+    Ok(result)
+}
+
+/// Set up Claude Desktop MCP integration over the **stdio** transport.
+#[tauri::command]
+pub async fn setup_claude_mcp_stdio(
+    state: State<'_, AppState>,
+) -> Result<SetupResult, String> {
+    let exe = current_exe_path()?;
+    let result = auto_setup::write_claude_stdio_config(&exe)?;
+    track_auto_configured(&state, "mcp_claude_stdio")?;
+    Ok(result)
+}
+
+/// Set up Codex CLI MCP integration over the **stdio** transport.
+#[tauri::command]
+pub async fn setup_codex_mcp_stdio(
+    state: State<'_, AppState>,
+) -> Result<SetupResult, String> {
+    let exe = current_exe_path()?;
+    let result = auto_setup::write_codex_stdio_config(&exe)?;
+    track_auto_configured(&state, "mcp_codex_stdio")?;
+    Ok(result)
+}

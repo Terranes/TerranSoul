@@ -16,7 +16,7 @@
  *   tts.stop();
  */
 
-import { ref, readonly } from 'vue';
+import { ref, readonly, watch, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 /** Sentence-ending punctuation patterns that trigger TTS synthesis. */
@@ -61,6 +61,14 @@ export interface TtsPlaybackOptions {
   getBrowserPitch?: () => number;
   /** Returns the browser speech rate to use (called per utterance). */
   getBrowserRate?: () => number;
+  /**
+   * Reactive flag that mutes all TTS playback when `true`. The composable
+   * applies the value to the active `HTMLAudioElement.muted` property and
+   * pauses any in-flight `speechSynthesis` utterance immediately. Designed
+   * to be wired up to the `useAudioStore().muted` ref so the music-bar
+   * mute button silences both BGM and voice in one click.
+   */
+  mutedRef?: Ref<boolean>;
 }
 
 export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle {
@@ -89,6 +97,26 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
   let audioStartCb: ((audio: HTMLAudioElement) => void) | null = null;
   let audioEndCb: (() => void) | null = null;
   let playbackStopCb: (() => void) | null = null;
+
+  // ── Global mute integration ───────────────────────────────────────────────
+  // When the music-bar mute toggle flips, propagate the change to whichever
+  // playback path is currently active (HTMLAudioElement for synth, browser
+  // speechSynthesis queue for fallback).
+  if (options?.mutedRef) {
+    watch(options.mutedRef, (isMuted) => {
+      if (currentAudio) {
+        currentAudio.muted = isMuted;
+      }
+      if (typeof speechSynthesis !== 'undefined') {
+        if (isMuted) {
+          // pause() is non-destructive: when unmuted we resume the queue.
+          speechSynthesis.pause();
+        } else {
+          speechSynthesis.resume();
+        }
+      }
+    });
+  }
 
   // ── Internal helpers ───────────────────────────────────────────────────────
 
@@ -189,6 +217,12 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       blobUrls.push(url);
 
       const audio = new Audio(url);
+      // Honour the global mute toggle (music-bar mute button) by starting
+      // muted; the watch below keeps `currentAudio.muted` in sync if the
+      // user toggles mute while a sentence is already mid-playback.
+      if (options?.mutedRef?.value) {
+        audio.muted = true;
+      }
       currentAudio = audio;
 
       audio.onended = () => {
@@ -244,6 +278,11 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.pitch = options?.getBrowserPitch?.() ?? 1.0;
       utterance.rate = options?.getBrowserRate?.() ?? 1.0;
+      // Browser SpeechSynthesisUtterance does not honour HTMLAudioElement
+      // mute, so we silence the voice by setting `volume = 0` when the
+      // global mute toggle is active. Watch below pauses/resumes the
+      // browser queue if the user toggles mute mid-utterance.
+      utterance.volume = options?.mutedRef?.value ? 0 : 1;
       utterance.onend = () => {
         audioEndCb?.();
         resolve();

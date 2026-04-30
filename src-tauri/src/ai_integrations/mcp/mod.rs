@@ -11,11 +11,13 @@
 //! - **Auth**: Bearer token from `<data_dir>/mcp-token.txt`.
 //! - **Ops**: 8 tools routed to [`crate::ai_integrations::gateway::BrainGateway`].
 //!
-//! The stdio transport (for sidecar usage) is planned in Chunk 15.6.
+//! The stdio transport ([`stdio`]) reuses the same dispatch surface
+//! over newline-delimited JSON-RPC on stdin/stdout. See Chunk 15.9.
 
 pub mod auth;
 pub mod auto_setup;
 pub mod router;
+pub mod stdio;
 pub mod tools;
 
 #[cfg(test)]

@@ -253,4 +253,84 @@ describe('agent roster store', () => {
     const ok = await store.deleteAgent('default');
     expect(ok).toBe(false);
   });
+
+  // ── consumeHandoff one-shot semantics (Chunk 23.2b) ──────────────
+  // Helpers: stay hermetic without Tauri by direct-pushing a coder agent.
+  function pushCoderAgent(store: ReturnType<typeof useAgentRosterStore>) {
+    store.agents.push({
+      id: 'coder',
+      display_name: 'Coder',
+      vrm_model_id: 'shinra',
+      brain_backend: { kind: 'native', data: { mode: null } },
+      working_folder: null,
+      created_at: 0,
+      last_active_at: 0,
+    });
+  }
+  const sampleMsgs: import('../types').Message[] = [
+    { id: 'u1', role: 'user', content: 'q', timestamp: 0 },
+    { id: 'a1', role: 'assistant', content: 'a', timestamp: 1 },
+  ];
+
+  it('consumeHandoff returns null when no context is recorded', () => {
+    const store = useAgentRosterStore();
+    expect(store.consumeHandoff('default')).toBeNull();
+  });
+
+  it('switchAgent records prev-agent name + context, consumeHandoff returns both', async () => {
+    const store = useAgentRosterStore();
+    await store.refresh();
+    pushCoderAgent(store);
+    await store.switchAgent('default');
+    await store.switchAgent('coder', sampleMsgs);
+    const consumed = store.consumeHandoff('coder');
+    expect(consumed).not.toBeNull();
+    expect(consumed?.prevAgentName).toBe('TerranSoul');
+    expect(consumed?.context.length).toBeGreaterThan(0);
+  });
+
+  it('consumeHandoff is one-shot: second call returns null', async () => {
+    const store = useAgentRosterStore();
+    await store.refresh();
+    pushCoderAgent(store);
+    await store.switchAgent('default');
+    await store.switchAgent('coder', sampleMsgs);
+    expect(store.consumeHandoff('coder')).not.toBeNull();
+    expect(store.consumeHandoff('coder')).toBeNull();
+  });
+
+  it('consumeHandoff clears both context and prevAgentName maps', async () => {
+    const store = useAgentRosterStore();
+    await store.refresh();
+    pushCoderAgent(store);
+    await store.switchAgent('default');
+    await store.switchAgent('coder', sampleMsgs);
+    expect(store.handoffContexts['coder']).toBeDefined();
+    expect(store.handoffPrevAgentName['coder']).toBeDefined();
+    store.consumeHandoff('coder');
+    expect(store.handoffContexts['coder']).toBeUndefined();
+    expect(store.handoffPrevAgentName['coder']).toBeUndefined();
+  });
+
+  it('switchAgent without conversationMessages records nothing', async () => {
+    const store = useAgentRosterStore();
+    await store.refresh();
+    pushCoderAgent(store);
+    await store.switchAgent('default');
+    await store.switchAgent('coder');
+    expect(store.consumeHandoff('coder')).toBeNull();
+  });
+
+  it('getHandoffContext is a non-destructive peek (does not clear)', async () => {
+    const store = useAgentRosterStore();
+    await store.refresh();
+    pushCoderAgent(store);
+    await store.switchAgent('default');
+    await store.switchAgent('coder', sampleMsgs);
+    const peek1 = store.getHandoffContext('coder');
+    const peek2 = store.getHandoffContext('coder');
+    expect(peek1).toBe(peek2);
+    expect(peek1).not.toBeNull();
+    expect(store.consumeHandoff('coder')).not.toBeNull();
+  });
 });

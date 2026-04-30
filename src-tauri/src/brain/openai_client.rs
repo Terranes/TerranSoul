@@ -78,8 +78,14 @@ impl OpenAiClient {
     }
 
     /// Build the full completions URL.
+    ///
+    /// Tolerant of a `/v1` suffix that the caller may have pasted (e.g.
+    /// "https://api.openai.com/v1") — the suffix is stripped so we never
+    /// produce a doubled `/v1/v1/chat/completions` URL.
     fn completions_url(&self) -> String {
-        format!("{}/v1/chat/completions", self.base_url)
+        let trimmed = self.base_url.trim_end_matches('/');
+        let normalised = trimmed.strip_suffix("/v1").unwrap_or(trimmed);
+        format!("{normalised}/v1/chat/completions")
     }
 
     /// Send a non-streaming chat completion request and return the full reply.
@@ -216,6 +222,23 @@ mod tests {
         assert_eq!(
             client.completions_url(),
             "https://api.groq.com/openai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn completions_url_does_not_double_v1_suffix() {
+        // Users frequently paste "/v1" into the base URL because every
+        // OpenAI-compatible doc lists endpoints rooted at "/v1/...".
+        // Both forms must produce the correct completions URL.
+        let with_v1 = OpenAiClient::new("http://127.0.0.1:11434/v1", "gemma3:4b", None);
+        assert_eq!(
+            with_v1.completions_url(),
+            "http://127.0.0.1:11434/v1/chat/completions"
+        );
+        let with_v1_slash = OpenAiClient::new("http://127.0.0.1:11434/v1/", "gemma3:4b", None);
+        assert_eq!(
+            with_v1_slash.completions_url(),
+            "http://127.0.0.1:11434/v1/chat/completions"
         );
     }
 

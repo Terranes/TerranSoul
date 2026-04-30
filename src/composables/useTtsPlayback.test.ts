@@ -72,6 +72,8 @@ const mockSpeechSynthesis = {
     Promise.resolve().then(() => utterance.onend?.());
   }),
   cancel: vi.fn(),
+  pause: vi.fn(),
+  resume: vi.fn(),
 };
 
 vi.stubGlobal('SpeechSynthesisUtterance', MockSpeechSynthesisUtterance);
@@ -453,5 +455,77 @@ describe('useTtsPlayback — sentence tracking (currentSentence & spokenText)', 
     expect(tts.currentSentence.value).toBe('');
     tts.feedChunk('no sentence boundary yet');
     expect(tts.currentSentence.value).toBe('');
+  });
+});
+
+describe('useTtsPlayback — global mute via mutedRef', () => {
+  beforeEach(async () => {
+    mockInvoke.mockReset();
+    createdUrls.length = 0;
+    revokedUrls.length = 0;
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.cancel.mockClear();
+  });
+
+  it('mutes the active HTMLAudioElement when mutedRef flips to true', async () => {
+    const { ref } = await import('vue');
+    // Override MockAudio for this test only — play() does NOT auto-resolve
+    // so currentAudio stays alive long enough for the watch to mutate it.
+    class HoldingAudio extends MockAudio {
+      muted = false;
+      override play(): Promise<void> { return Promise.resolve(); }
+    }
+    vi.stubGlobal('Audio', HoldingAudio);
+
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const muted = ref(false);
+    const tts = useTtsPlayback({ mutedRef: muted });
+    let captured: HoldingAudio | null = null;
+    tts.onAudioStart((a) => {
+      captured = a as unknown as HoldingAudio;
+    });
+    tts.feedChunk('Hello world. ');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(captured).not.toBeNull();
+    expect(captured!.muted).toBe(false);
+    muted.value = true;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(captured!.muted).toBe(true);
+    muted.value = false;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(captured!.muted).toBe(false);
+
+    // Restore default MockAudio for subsequent tests.
+    vi.stubGlobal('Audio', MockAudio);
+  });
+
+  it('starts the next utterance already muted when mutedRef is true at synth time', async () => {
+    const { ref } = await import('vue');
+    mockInvoke.mockResolvedValue(stubWavBytes());
+    const muted = ref(true);
+    const tts = useTtsPlayback({ mutedRef: muted });
+    let captured: { muted: boolean } | null = null;
+    tts.onAudioStart((a) => { captured = a as unknown as { muted: boolean }; });
+    tts.feedChunk('Greetings. ');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(captured).not.toBeNull();
+    expect(captured!.muted).toBe(true);
+  });
+
+  it('pauses speechSynthesis when mutedRef flips to true and resumes on false', async () => {
+    const { ref } = await import('vue');
+    const pause = vi.fn();
+    const resume = vi.fn();
+    (mockSpeechSynthesis as unknown as Record<string, unknown>).pause = pause;
+    (mockSpeechSynthesis as unknown as Record<string, unknown>).resume = resume;
+    const muted = ref(false);
+    useTtsPlayback({ mutedRef: muted });
+    muted.value = true;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(pause).toHaveBeenCalledTimes(1);
+    muted.value = false;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(resume).toHaveBeenCalledTimes(1);
   });
 });

@@ -564,7 +564,9 @@ import { useBrainStore } from '../stores/brain';
 const emit = defineEmits<{ (e: 'done'): void }>();
 
 const brain = useBrainStore();
-const step = ref(0);
+// Auto-activate free cloud (Pollinations) — skip provider selection entirely.
+// Users can navigate to step 0 to pick a different tier if they want.
+const step = ref(99);
 const selectedTier = ref<'free' | 'paid' | 'local'>('free');
 const localRuntime = ref<'ollama' | 'lm_studio'>('ollama');
 const selectedModel = ref('');
@@ -709,6 +711,23 @@ onMounted(async () => {
   }
   if (brain.freeProviders.length > 0) {
     selectedProvider.value = brain.freeProviders[0].id;
+  }
+  // Auto-activate free cloud if brain isn't already configured.
+  if (!brain.hasBrain) {
+    try {
+      await brain.setBrainMode({
+        mode: 'free_api',
+        provider_id: selectedProvider.value,
+        api_key: null,
+      });
+    } catch {
+      brain.brainMode = {
+        mode: 'free_api',
+        provider_id: selectedProvider.value,
+        api_key: null,
+      };
+    }
+    step.value = 99;
   }
 });
 </script>

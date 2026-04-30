@@ -175,6 +175,28 @@ pub struct AppSettings {
     /// auto-configuration while leaving user-chosen settings intact.
     #[serde(default)]
     pub auto_configured: Vec<String>,
+
+    /// When `true` (default), the first-launch wizard tries local Ollama
+    /// before falling back to a free cloud provider. When `false`, the
+    /// wizard defaults to Pollinations cloud immediately.
+    /// See `rules/local-first-brain.md`.
+    #[serde(default = "default_true")]
+    pub prefer_local_brain: bool,
+
+    /// Model tags the user has explicitly dismissed when offered an upgrade
+    /// (e.g. `["gemma4:31b"]`). The auto-update checker skips any model
+    /// whose tag appears in this list so the same upgrade is never re-shown.
+    #[serde(default)]
+    pub dismissed_model_updates: Vec<String>,
+
+    /// ISO-8601 date string (`YYYY-MM-DD`) of the last automatic model
+    /// update check. Used to throttle the check to once per calendar day.
+    #[serde(default)]
+    pub last_update_check_date: String,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -226,6 +248,9 @@ impl Default for AppSettings {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
+            dismissed_model_updates: Vec::new(),
+            last_update_check_date: String::new(),
         }
     }
 }
@@ -339,6 +364,9 @@ mod tests {
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
+            prefer_local_brain: true,
+            dismissed_model_updates: Vec::new(),
+            last_update_check_date: String::new(),
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

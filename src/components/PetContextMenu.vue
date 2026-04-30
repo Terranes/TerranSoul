@@ -144,6 +144,40 @@
 
           <div class="ctx-separator" />
 
+          <!-- Self-Improve toggle (Phase 25). Clicking emits to parent so
+               the warning confirm dialog can be shown.  Disabling never
+               needs confirmation — it's the safe direction. -->
+          <div
+            class="ctx-item ctx-item--self-improve"
+            role="menuitemcheckbox"
+            :aria-checked="selfImprove.isEnabled"
+            data-testid="ctx-self-improve"
+            @click="onClickSelfImprove"
+          >
+            <span class="ctx-icon">🛠️</span>
+            <span class="ctx-label">Self-Improve</span>
+            <span
+              v-if="selfImprove.isEnabled"
+              class="ctx-check"
+            >✓</span>
+            <span
+              v-else
+              class="ctx-hint"
+            >Off</span>
+          </div>
+
+          <div
+            class="ctx-item ctx-item--sub"
+            role="menuitem"
+            data-testid="ctx-self-improve-panel"
+            @click="onOpenSelfImprovePanel"
+          >
+            <span class="ctx-icon">📊</span>
+            <span class="ctx-label">Self-Improve progress…</span>
+          </div>
+
+          <div class="ctx-separator" />
+
           <div
             class="ctx-item"
             role="menuitem"
@@ -187,6 +221,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
 import { useWindowStore } from '../stores/window';
+import { useSelfImproveStore } from '../stores/self-improve';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import { DEFAULT_MODELS } from '../config/default-models';
@@ -203,10 +238,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   'toggle-resize': [];
+  'request-self-improve': [];
+  'open-self-improve-panel': [];
 }>();
 
 const characterStore = useCharacterStore();
 const windowStore = useWindowStore();
+const selfImprove = useSelfImproveStore();
 const { togglePetChat } = useChatExpansion();
 
 const menuRef = ref<HTMLElement | null>(null);
@@ -328,6 +366,27 @@ function onToggleResize() {
   close();
 }
 
+async function onClickSelfImprove() {
+  if (selfImprove.isEnabled) {
+    // Disabling is the safe direction — no confirmation required.
+    try {
+      await selfImprove.disable();
+    } catch (err) {
+      console.warn('[PetContextMenu] disable self-improve failed:', err);
+    }
+    close();
+    return;
+  }
+  // Enabling is destructive — bubble to parent which owns the warning dialog.
+  emit('request-self-improve');
+  close();
+}
+
+function onOpenSelfImprovePanel() {
+  emit('open-self-improve-panel');
+  close();
+}
+
 async function onExit() {
   close();
   try {
@@ -446,6 +505,13 @@ onBeforeUnmount(() => {
 .ctx-check {
   color: var(--ts-accent, #7c6fff);
   font-weight: 700;
+}
+.ctx-hint {
+  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .ctx-separator {
   height: 1px;

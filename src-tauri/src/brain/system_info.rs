@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sysinfo::System;
+use sysinfo::{Disks, System};
 
 /// Coarse RAM tier used for model recommendations.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -118,6 +118,74 @@ pub fn collect() -> SystemInfo {
         arch,
         gpu_name,
     }
+}
+
+// ── Disk info ────────────────────────────────────────────────────────
+
+/// Disk space information for a single drive/mount.
+#[derive(Debug, Clone, Serialize)]
+pub struct DiskInfo {
+    /// Mount point or drive letter (e.g. "C:\\" or "/").
+    pub mount_point: String,
+    /// Drive label (e.g. "Windows", "Data") or empty string.
+    pub label: String,
+    /// Available (free) space in bytes.
+    pub available_bytes: u64,
+    /// Total capacity in bytes.
+    pub total_bytes: u64,
+}
+
+/// List all mounted drives/partitions with their space info.
+pub fn list_drives() -> Vec<DiskInfo> {
+    let disks = Disks::new_with_refreshed_list();
+    disks
+        .list()
+        .iter()
+        .map(|d| DiskInfo {
+            mount_point: d.mount_point().to_string_lossy().to_string(),
+            label: d.name().to_string_lossy().to_string(),
+            available_bytes: d.available_space(),
+            total_bytes: d.total_space(),
+        })
+        .collect()
+}
+
+/// Get disk space info for the drive containing the given path.
+pub fn disk_info_for_path(path: &str) -> Option<DiskInfo> {
+    let target = std::path::Path::new(path);
+    let disks = Disks::new_with_refreshed_list();
+
+    // Find the disk whose mount point is the longest prefix of the target path.
+    disks
+        .list()
+        .iter()
+        .filter(|d| target.starts_with(d.mount_point()))
+        .max_by_key(|d| d.mount_point().as_os_str().len())
+        .map(|d| DiskInfo {
+            mount_point: d.mount_point().to_string_lossy().to_string(),
+            label: d.name().to_string_lossy().to_string(),
+            available_bytes: d.available_space(),
+            total_bytes: d.total_space(),
+        })
+}
+
+/// Return the directory where Ollama stores downloaded models.
+///
+/// Checks the `OLLAMA_MODELS` environment variable first.
+/// Falls back to the platform default:
+/// - Windows: `%USERPROFILE%\.ollama\models`
+/// - macOS/Linux: `~/.ollama/models`
+pub fn ollama_models_dir() -> String {
+    if let Ok(dir) = std::env::var("OLLAMA_MODELS") {
+        if !dir.is_empty() {
+            return dir;
+        }
+    }
+    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    home.join(".ollama")
+        .join("models")
+        .to_string_lossy()
+        .to_string()
 }
 
 /// Attempt to detect GPU information (basic implementation)

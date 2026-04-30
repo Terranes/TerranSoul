@@ -154,6 +154,12 @@ export function getAnimationForMotion(motionKey: string): VrmaAnimationEntry | u
   return VRMA_ANIMATIONS.find(a => a.motionKey === canonical);
 }
 
+/** Paths of VRMA animations where the character is in a seated pose. */
+export const SITTING_ANIMATION_PATHS = new Set([
+  '/animations/relax.vrma',
+  '/animations/ladylike.vrma',
+]);
+
 // ── VrmaManager class ────────────────────────────────────────────────────────
 
 export class VrmaManager {
@@ -165,6 +171,9 @@ export class VrmaManager {
 
   /** True when a VRMA animation is actively playing (mixer drives bones). */
   private _isPlaying = false;
+
+  /** Path of the currently playing animation (null when stopped). */
+  private _currentPath: string | null = null;
 
   /**
    * When true, the mood watcher in CharacterViewport should not auto-play
@@ -185,6 +194,11 @@ export class VrmaManager {
   /** Whether a VRMA animation is currently playing. */
   get isPlaying(): boolean {
     return this._isPlaying;
+  }
+
+  /** Path of the currently playing animation, or null. */
+  get currentPath(): string | null {
+    return this._currentPath;
   }
 
   /** Whether mood-mapped auto-play should be suppressed (explicit motion active). */
@@ -225,6 +239,7 @@ export class VrmaManager {
         this.currentAction.stop();
         this.currentAction = null;
       }
+      this._currentPath = null;
       this._suppressMoodAnimation = false;
       this.setPlaybackState(false);
     });
@@ -272,6 +287,7 @@ export class VrmaManager {
     const clip = await this.loadClip(path);
     if (!clip) return false;
 
+    this._currentPath = path;
     return this.playClip(clip, loop, fadeIn);
   }
 
@@ -314,6 +330,7 @@ export class VrmaManager {
         }
       }, fadeOut * 1000);
     }
+    this._currentPath = null;
     this._suppressMoodAnimation = false;
     this.setPlaybackState(false);
   }
@@ -335,6 +352,7 @@ export class VrmaManager {
   /** Clean up when changing models. */
   dispose() {
     this.stop(0);
+    this._currentPath = null;
     this.mixer = null;
     this.currentVrm = null;
     this.clipCache.clear();

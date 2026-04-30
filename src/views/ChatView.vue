@@ -435,13 +435,15 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { useConversationStore, detectSentiment, handleLearnDocsChoice } from '../stores/conversation';
+import { storeToRefs } from 'pinia';
+import { useConversationStore, detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
 import { useStreamingStore } from '../stores/streaming';
 import { useVoiceStore } from '../stores/voice';
 import { useSettingsStore } from '../stores/settings';
+import { useAudioStore } from '../stores/audio';
 import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
@@ -471,11 +473,14 @@ const aiDecisionPolicy = useAiDecisionPolicyStore().policy;
 const streaming = useStreamingStore();
 const voice = useVoiceStore();
 const settingsStore = useSettingsStore();
+const audioStore = useAudioStore();
+const { muted: audioMuted } = storeToRefs(audioStore);
 const skillTree = useSkillTreeStore();
 const { chatDrawerExpanded, toggleChatDrawer, setChatDrawerExpanded } = useChatExpansion();
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
   getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  mutedRef: audioMuted,
 });
 const asr = useAsrManager({
   onTranscript: (text: string) => handleSend(text),
@@ -1163,6 +1168,12 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     return;
   }
 
+  // Handle model-update upgrade/dismiss choices.
+  if (choiceValue.startsWith('model-update:')) {
+    await handleModelUpdateChoice(choiceValue);
+    return;
+  }
+
   // Handle "type this command" shortcuts — the button submits the literal
   // command text through sendMessage so the conversation store's command
   // detector fires exactly as if the user had typed it.
@@ -1348,6 +1359,8 @@ onMounted(async () => {
     if (brain.topRecommendation) {
       selectedBrain.value = brain.topRecommendation.model_tag;
     }
+    // Background model update check — once per day, non-blocking.
+    brain.checkForModelUpdates();
   } catch {
     // No Tauri backend
   }

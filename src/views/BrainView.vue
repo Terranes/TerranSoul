@@ -94,6 +94,166 @@
       </div>
     </section>
 
+    <!-- ── Coding LLM (Phase 25 — Self-Improve) ──────────────────────────── -->
+    <section
+      class="bv-coding-llm"
+      data-testid="bv-coding-llm"
+    >
+      <div class="bv-section-title">
+        🛠️ Coding LLM
+        <span class="bv-section-sub">(used by Self-Improve)</span>
+      </div>
+      <p class="bv-coding-llm-desc">
+        Pick a dedicated provider for autonomous coding. This is separate
+        from the chat brain above — Claude is recommended for self-improve.
+      </p>
+
+      <div class="bv-coding-llm-grid">
+        <button
+          v-for="rec in selfImprove.recommendations"
+          :key="rec.provider + '::' + rec.display_name"
+          type="button"
+          :class="[
+            'bv-coding-card',
+            { active: selectedCodingRecKey === rec.provider + '::' + rec.display_name, top: rec.is_top_pick },
+          ]"
+          @click="selectedCodingRecKey = rec.provider + '::' + rec.display_name"
+        >
+          <div class="bv-coding-card-head">
+            <strong>{{ rec.display_name }}</strong>
+            <span
+              v-if="rec.is_top_pick"
+              class="bv-coding-badge"
+            >⭐ Top pick</span>
+          </div>
+          <p class="bv-coding-notes">
+            {{ rec.notes }}
+          </p>
+          <small>Default model: <code>{{ rec.default_model || 'custom' }}</code></small>
+        </button>
+      </div>
+
+      <div
+        v-if="selectedCodingRec"
+        class="bv-coding-form"
+      >
+        <label>Model</label>
+        <div v-if="isLocalOllamaSelection" class="bv-local-model-row">
+          <select
+            v-if="localCodingModels.length > 0"
+            v-model="codingModelInput"
+            class="bv-input"
+            data-testid="bv-local-model-select"
+          >
+            <option v-for="m in localCodingModels" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <input
+            v-else
+            v-model="codingModelInput"
+            type="text"
+            :placeholder="selectedCodingRec.default_model || 'gemma3:4b'"
+            class="bv-input"
+          >
+          <button
+            type="button"
+            class="bv-btn bv-btn-ghost"
+            :disabled="loadingLocalModels"
+            data-testid="bv-refresh-local-models"
+            @click="refreshLocalCodingModels"
+          >
+            {{ loadingLocalModels ? '…' : '↻' }}
+          </button>
+        </div>
+        <input
+          v-else
+          v-model="codingModelInput"
+          type="text"
+          :placeholder="selectedCodingRec.default_model || 'gpt-4o'"
+          class="bv-input"
+        >
+        <p
+          v-if="isLocalOllamaSelection && !loadingLocalModels && localCodingModels.length === 0"
+          class="bv-coding-hint"
+        >
+          ⚠ No Ollama models detected. Install one first:
+          <code>ollama pull {{ selectedCodingRec.default_model || 'gemma3:4b' }}</code>
+        </p>
+        <label>Base URL</label>
+        <input
+          v-model="codingBaseUrlInput"
+          type="url"
+          :placeholder="selectedCodingRec.base_url || 'https://api.example.com/v1'"
+          class="bv-input"
+        >
+        <template v-if="selectedCodingRec.requires_api_key">
+          <label>API Key</label>
+          <input
+            v-model="codingApiKeyInput"
+            type="password"
+            placeholder="sk-…"
+            class="bv-input"
+          >
+        </template>
+        <p v-else class="bv-coding-hint">
+          🔒 No API key needed — this provider runs locally.
+        </p>
+        <div class="bv-coding-actions">
+          <button
+            type="button"
+            class="bv-btn bv-btn-primary"
+            :disabled="
+              !(codingModelInput || selectedCodingRec.default_model) ||
+              (selectedCodingRec.requires_api_key && !codingApiKeyInput)
+            "
+            @click="saveCodingLlm"
+          >
+            Save Coding LLM
+          </button>
+          <button
+            v-if="selfImprove.codingLlm"
+            type="button"
+            class="bv-btn bv-btn-ghost"
+            @click="clearCodingLlm"
+          >
+            Clear
+          </button>
+          <button
+            v-if="selfImprove.codingLlm"
+            type="button"
+            class="bv-btn bv-btn-ghost"
+            :disabled="codingTestInFlight"
+            data-testid="bv-coding-test"
+            @click="testCodingLlm"
+          >
+            {{ codingTestInFlight ? 'Testing…' : '🔌 Test connection' }}
+          </button>
+        </div>
+        <p
+          v-if="selfImprove.reachability"
+          class="bv-coding-status"
+          :class="selfImprove.reachability.ok ? 'bv-coding-status--ok' : 'bv-coding-status--err'"
+        >
+          {{ selfImprove.reachability.summary }}
+          <span
+            v-if="selfImprove.reachability.detail"
+            class="bv-coding-detail"
+          >— {{ selfImprove.reachability.detail }}</span>
+        </p>
+        <p
+          v-if="selfImprove.codingLlm"
+          class="bv-coding-status bv-coding-status--ok"
+        >
+          ✓ Configured: {{ selfImprove.codingLlm.provider }} ·
+          <code>{{ selfImprove.codingLlm.model }}</code>
+        </p>
+      </div>
+    </section>
+
+    <!-- ── Coding Workflow Context (Chunk 25.16) ───────────────────────────── -->
+    <section class="bv-coding-workflow" data-testid="bv-coding-workflow">
+      <CodingWorkflowConfigPanel />
+    </section>
+
     <!-- ── 3-column data grid ──────────────────────────────────────────────── -->
     <section class="bv-grid">
       <!-- Brain config card -->
@@ -472,6 +632,32 @@
       </div>
     </section>
 
+    <!-- ── Local-First Brain Policy (rules/local-first-brain.md) ──────────── -->
+    <section class="bv-autolearn-section">
+      <header class="bv-autolearn-header">
+        <span class="bv-section-title">🏠 First-Launch Brain Policy</span>
+      </header>
+      <label
+        class="bv-config-list"
+        style="display:flex;align-items:center;gap:8px;"
+      >
+        <input
+          type="checkbox"
+          :checked="appSettings.settings?.prefer_local_brain !== false"
+          data-testid="bv-prefer-local-toggle"
+          @change="onTogglePreferLocal(($event.target as HTMLInputElement).checked)"
+        >
+        <span>Prefer local LLM on first launch</span>
+      </label>
+      <p class="bv-cog-desc">
+        When enabled (default), the first-launch wizard detects Ollama and
+        auto-configures a local model from the
+        <strong>§26 catalogue</strong> (Gemma 4 / Gemma 3 family, picked
+        by your RAM). Falls back to free cloud only if Ollama is unreachable.
+        Disable to default to Pollinations cloud AI instead.
+      </p>
+    </section>
+
     <!-- ── Auto-tag toggle (Chunk 18.1) ────────────────────────────────────── -->
     <section class="bv-autolearn-section">
       <header class="bv-autolearn-header">
@@ -593,16 +779,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
 import { useAiDecisionPolicyStore, type AiDecisionPolicy } from '../stores/ai-decision-policy';
 import { useSettingsStore } from '../stores/settings';
+import { useSelfImproveStore } from '../stores/self-improve';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
+import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import type { MemoryEntry } from '../types';
@@ -936,6 +1124,150 @@ async function switchToFree() {
   await brain.autoConfigureForDesktop();
 }
 
+// ── Coding LLM picker (Phase 25 — Self-Improve foundation) ────────────────
+const selfImprove = useSelfImproveStore();
+const selectedCodingRecKey = ref<string | null>(null);
+const codingModelInput = ref('');
+const codingBaseUrlInput = ref('');
+const codingApiKeyInput = ref('');
+const codingTestInFlight = ref(false);
+const localCodingModels = ref<string[]>([]);
+const loadingLocalModels = ref(false);
+
+function recKey(rec: { provider: string; display_name: string }): string {
+  return `${rec.provider}::${rec.display_name}`;
+}
+
+const selectedCodingRec = computed(() =>
+  (selfImprove.recommendations ?? []).find(
+    (r) => recKey(r) === selectedCodingRecKey.value,
+  ) ?? null,
+);
+
+/**
+ * True when the selected recommendation is the Local Ollama preset —
+ * recognised by `requires_api_key === false` plus an `127.0.0.1` /
+ * `localhost` base URL. Drives the model-dropdown UI.
+ */
+const isLocalOllamaSelection = computed(() => {
+  const rec = selectedCodingRec.value;
+  if (!rec) return false;
+  if (rec.requires_api_key) return false;
+  const url = (codingBaseUrlInput.value || rec.base_url || '').toLowerCase();
+  return url.includes('127.0.0.1') || url.includes('localhost');
+});
+
+async function refreshLocalCodingModels() {
+  loadingLocalModels.value = true;
+  try {
+    const url = codingBaseUrlInput.value || selectedCodingRec.value?.base_url;
+    localCodingModels.value = await selfImprove.loadLocalCodingModels(url);
+    // Auto-select the first installed model if the user hasn't typed one
+    // and the recommendation default isn't actually installed.
+    if (
+      isLocalOllamaSelection.value &&
+      localCodingModels.value.length > 0 &&
+      !localCodingModels.value.includes(codingModelInput.value)
+    ) {
+      const recDefault = selectedCodingRec.value?.default_model || '';
+      codingModelInput.value =
+        localCodingModels.value.find((m) => m === recDefault) ??
+        localCodingModels.value[0];
+    }
+  } finally {
+    loadingLocalModels.value = false;
+  }
+}
+
+watch(selectedCodingRecKey, async (key) => {
+  if (!key) return;
+  const rec = (selfImprove.recommendations ?? []).find((r) => recKey(r) === key);
+  if (!rec) return;
+  // Replace defaults from the new recommendation. We *do* overwrite here
+  // because the user just expressed intent by clicking a different card.
+  codingModelInput.value = rec.default_model;
+  codingBaseUrlInput.value = rec.base_url;
+  if (!rec.requires_api_key) {
+    codingApiKeyInput.value = '';
+  }
+  if (isLocalOllamaSelection.value) {
+    await refreshLocalCodingModels();
+  } else {
+    localCodingModels.value = [];
+  }
+});
+
+async function saveCodingLlm() {
+  if (!selectedCodingRec.value) return;
+  const rec = selectedCodingRec.value;
+  const model = codingModelInput.value || rec.default_model;
+  const baseUrl = codingBaseUrlInput.value || rec.base_url;
+  if (!model || !baseUrl) return;
+  if (rec.requires_api_key && !codingApiKeyInput.value) return;
+  try {
+    await selfImprove.setCodingLlm({
+      provider: rec.provider,
+      model,
+      base_url: baseUrl,
+      // Empty string when the recommendation does not require auth
+      // (local Ollama). The Rust client skips the bearer header when
+      // this is empty.
+      api_key: codingApiKeyInput.value,
+    });
+    if (rec.requires_api_key) {
+      codingApiKeyInput.value = ''; // never linger in the input
+    }
+  } catch (err) {
+    console.warn('[BrainView] save coding LLM failed:', err);
+  }
+}
+
+async function clearCodingLlm() {
+  try {
+    await selfImprove.setCodingLlm(null);
+    selectedCodingRecKey.value = null;
+    codingModelInput.value = '';
+    codingBaseUrlInput.value = '';
+    codingApiKeyInput.value = '';
+    localCodingModels.value = [];
+  } catch (err) {
+    console.warn('[BrainView] clear coding LLM failed:', err);
+  }
+}
+
+async function testCodingLlm() {
+  codingTestInFlight.value = true;
+  try {
+    await selfImprove.testCodingLlmConnection();
+  } catch (err) {
+    console.warn('[BrainView] test coding LLM failed:', err);
+  } finally {
+    codingTestInFlight.value = false;
+  }
+}
+
+// Pre-select the persisted provider (if any) when the picker first loads.
+watch(
+  () => selfImprove.codingLlm,
+  (cfg) => {
+    if (cfg && !selectedCodingRecKey.value) {
+      // Find the matching recommendation by provider + base_url so the
+      // local-Ollama vs custom-OpenAI-compatible cards (which share the
+      // `Custom` provider) are disambiguated correctly.
+      const recs = selfImprove.recommendations ?? [];
+      const match =
+        recs.find((r) => r.provider === cfg.provider && r.base_url === cfg.base_url) ??
+        recs.find((r) => r.provider === cfg.provider);
+      if (match) {
+        selectedCodingRecKey.value = recKey(match);
+      }
+      codingModelInput.value = cfg.model;
+      codingBaseUrlInput.value = cfg.base_url;
+    }
+  },
+  { immediate: true },
+);
+
 // ── Top-N memory subgraph ──────────────────────────────────────────────────
 
 const topMemories = computed<MemoryEntry[]>(() => {
@@ -1146,6 +1478,16 @@ async function onToggleAutoTag(enabled: boolean) {
     await appSettings.loadSettings();
   }
 }
+
+async function onTogglePreferLocal(enabled: boolean) {
+  try {
+    await appSettings.saveSettings({ prefer_local_brain: enabled });
+  } catch (err) {
+    console.warn('[BrainView] save prefer_local_brain failed; reverting UI:', err);
+    await appSettings.loadSettings();
+  }
+}
+
 async function forceExtractNow() {
   try {
     const count = await invoke<number>('extract_memories_from_session');
@@ -1194,6 +1536,7 @@ async function refresh() {
       brain.fetchInstalledModels(),
       brain.checkLmStudioStatus(),
       brain.fetchLmStudioModels(),
+      brain.refreshModelCatalogue().catch(() => brain.fetchRecommendations()),
       memory.fetchAll(),
       memory.getStats(),
       memory.fetchEdges(),
@@ -1209,6 +1552,7 @@ async function refresh() {
 
 onMounted(async () => {
   await refresh();
+  await selfImprove.initialise();
 });
 </script>
 
@@ -1287,6 +1631,141 @@ onMounted(async () => {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.5rem;
 }
+
+/* ── Coding LLM (Phase 25) ──────────────────────────────────────────── */
+.bv-coding-llm {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(124, 111, 255, 0.18);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 1rem 0;
+}
+.bv-section-sub {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ts-text-muted, #94a3b8);
+  margin-left: 6px;
+}
+.bv-coding-llm-desc {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--ts-text-muted, #94a3b8);
+}
+.bv-coding-llm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.bv-coding-card {
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bv-coding-card:hover { background: rgba(124, 111, 255, 0.08); transform: translateY(-1px); }
+.bv-coding-card.active {
+  border-color: rgba(124, 111, 255, 0.6);
+  background: rgba(124, 111, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(124, 111, 255, 0.3);
+}
+.bv-coding-card.top {
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.bv-coding-card-head { display: flex; justify-content: space-between; align-items: center; }
+.bv-coding-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.bv-coding-notes {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ts-text-muted, #94a3b8);
+  line-height: 1.4;
+}
+.bv-coding-card code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+}
+.bv-coding-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.bv-coding-form label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ts-text-muted, #94a3b8);
+  margin-top: 4px;
+}
+.bv-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--ts-text-primary, #eaecf4);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+.bv-input:focus { outline: 2px solid var(--ts-accent, #7c6fff); outline-offset: 1px; border-color: transparent; }
+.bv-coding-actions { display: flex; gap: 8px; margin-top: 10px; }
+.bv-btn {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.bv-btn-primary {
+  background: linear-gradient(135deg, #7c6fff, #a78bfa);
+  color: white;
+}
+.bv-btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.bv-coding-status { margin: 8px 0 0; font-size: 0.82rem; }
+.bv-coding-status--ok { color: #86efac; }
+.bv-coding-status--err { color: #fca5a5; }
+.bv-coding-detail { color: var(--ts-text-muted, #94a3b8); font-style: italic; margin-left: 4px; }
+.bv-coding-hint {
+  margin: 4px 0 8px;
+  font-size: 0.78rem;
+  color: var(--ts-text-secondary, #94a3b8);
+}
+.bv-coding-hint code {
+  background: var(--ts-bg-input, rgba(255, 255, 255, 0.06));
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--ts-text-bright, #e2e8f0);
+}
+.bv-local-model-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.bv-local-model-row .bv-input { flex: 1; }
 .bv-mode-card {
   display: flex;
   flex-direction: column;

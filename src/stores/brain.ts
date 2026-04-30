@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type {
   BrainMode,
+  DiskInfo,
   FreeProvider,
   LmStudioDownloadStatus,
   LmStudioLoadResult,
@@ -89,12 +90,34 @@ export const useBrainStore = defineStore('brain', () => {
     recommendations.value = await invoke<ModelRecommendation[]>('recommend_brain_models');
   }
 
+  /** Fetch the latest model catalogue from the upstream repo, then refresh recommendations. */
+  async function refreshModelCatalogue(): Promise<number> {
+    const count = await invoke<number>('refresh_model_catalogue');
+    await fetchRecommendations();
+    return count;
+  }
+
   async function checkOllamaStatus(): Promise<void> {
     ollamaStatus.value = await invoke<OllamaStatus>('check_ollama_status');
   }
 
   async function fetchInstalledModels(): Promise<void> {
     installedModels.value = await invoke<OllamaModelEntry[]>('get_ollama_models');
+  }
+
+  /** Get the path where Ollama stores downloaded models. */
+  async function getOllamaModelsDir(): Promise<string> {
+    return invoke<string>('get_ollama_models_dir');
+  }
+
+  /** Get disk space info for the drive containing the given path. */
+  async function getDiskSpace(path: string): Promise<DiskInfo> {
+    return invoke<DiskInfo>('get_disk_space', { path });
+  }
+
+  /** List all mounted drives with their available and total space. */
+  async function listDrives(): Promise<DiskInfo[]> {
+    return invoke<DiskInfo[]>('list_drives');
   }
 
   async function checkLmStudioStatus(baseUrl?: string, apiKey?: string | null): Promise<void> {
@@ -285,6 +308,156 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  /** RAM-aware fallback when the catalogue/recommendations are unavailable. */
+  function ramAwareFallback(totalRamMb?: number): string {
+    const ram = totalRamMb ?? 0;
+    if (ram >= 32_768) return 'gemma4:31b';
+    if (ram >= 16_384) return 'gemma4:e4b';
+    if (ram >= 8_192) return 'gemma4:e2b';
+    if (ram >= 4_096) return 'gemma3:1b';
+    return 'tinyllama';
+  }
+
+  /**
+   * Remove weaker auto-configured Ollama models now that a better one is active.
+   * Only removes models that appear in the recommendation catalogue (never
+   * user-installed custom models). Best-effort — errors are silently ignored.
+   */
+  async function removeWeakerAutoModels(
+    activeModel: string,
+    installed: { name: string }[],
+    report?: (msg: string) => void,
+  ): Promise<void> {
+    const recTags = new Set(
+      recommendations.value.filter(r => !r.is_cloud).map(r => r.model_tag),
+    );
+    for (const m of installed) {
+      if (m.name === activeModel) continue; // keep the active model
+      if (!recTags.has(m.name)) continue; // not in catalogue → user model, skip
+      try {
+        report?.(`Removing superseded model: ${m.name}...`);
+        await invoke('delete_ollama_model', { modelName: m.name });
+      } catch {
+        // Best-effort — Ollama may already have removed it.
+      }
+    }
+    // Refresh the installed list after cleanup.
+    await fetchInstalledModels();
+  }
+
+  /**
+   * Local-first brain auto-configuration (rules/local-first-brain.md).
+   *
+   * Decision cascade:
+   * 1. If Ollama is running and has models → pick best installed model
+   * 2. If Ollama is running but no models → pull §26 top-pick, then activate
+   * 3. If Ollama is unreachable → fall back to Pollinations free cloud API
+   *
+   * Returns a summary object describing what was configured.
+   */
+  async function autoConfigureLocalFirst(callbacks?: {
+    onProgress?: (message: string) => void;
+  }): Promise<{ mode: 'local' | 'cloud'; model: string; pulled: boolean; pullFailed?: string }> {
+    const report = (msg: string) => callbacks?.onProgress?.(msg);
+
+    // Step 0: Refresh model catalogue from online (best-effort)
+    report('Checking for latest model recommendations...');
+    try { await invoke('refresh_model_catalogue'); } catch { /* offline — use cached/bundled */ }
+
+    // Step 1: Detect Ollama + system info + fresh recommendations
+    report('Detecting local AI runtime (Ollama)...');
+    await Promise.allSettled([
+      checkOllamaStatus(),
+      fetchSystemInfo(),
+      fetchRecommendations(),
+      fetchInstalledModels(),
+    ]);
+
+    if (!ollamaStatus.value.running) {
+      // Ollama not available — cloud fallback
+      report('Ollama not detected — using free cloud AI...');
+      await autoConfigureForDesktop();
+      return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+    }
+
+    // Step 2: Ollama is running — pick the best model
+    const top = topRecommendation.value;
+    const installed = installedModels.value;
+    const topTag = top?.model_tag;
+
+    // If the top-pick for this hardware is already installed, activate it directly.
+    if (topTag && installed.some(m => m.name === topTag)) {
+      report(`Activating local model: ${topTag}...`);
+      try {
+        await setBrainMode({ mode: 'local_ollama', model: topTag });
+
+        // Auto-remove weaker auto-configured models (same as Step 3).
+        await removeWeakerAutoModels(topTag, installed, report);
+
+        return { mode: 'local', model: topTag, pulled: false };
+      } catch {
+        report('Failed to activate local model — using free cloud AI...');
+        await autoConfigureForDesktop();
+        return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+      }
+    }
+
+    // Step 3: Top-pick is NOT installed — pull it (even if weaker models exist).
+    // A weaker installed model is only used as fallback if the pull fails.
+    const modelToPull = topTag || ramAwareFallback(systemInfo.value?.total_ram_mb);
+    report(`Downloading recommended model: ${modelToPull}... (this may take a few minutes)`);
+    const pullOk = await pullModel(modelToPull);
+
+    if (pullOk) {
+      report(`Activating local model: ${modelToPull}...`);
+      try {
+        await setBrainMode({ mode: 'local_ollama', model: modelToPull });
+
+        // Auto-remove weaker auto-configured models now that a better one is active.
+        await removeWeakerAutoModels(modelToPull, installed, report);
+
+        return { mode: 'local', model: modelToPull, pulled: true };
+      } catch {
+        // Activation failed — fall through to installed fallback
+      }
+    }
+
+    // Step 4: Pull failed or activation failed — fall back to any installed model.
+    const allRecTags = recommendations.value
+      .filter(r => !r.is_cloud)
+      .map(r => r.model_tag);
+    let fallbackModel: string | null = null;
+    for (const tag of allRecTags) {
+      if (installed.some(m => m.name === tag)) {
+        fallbackModel = tag;
+        break;
+      }
+    }
+    if (!fallbackModel && installed.length > 0) {
+      fallbackModel = installed[0].name;
+    }
+
+    if (fallbackModel) {
+      report(`Using installed model: ${fallbackModel}...`);
+      try {
+        await setBrainMode({ mode: 'local_ollama', model: fallbackModel });
+        return { mode: 'local', model: fallbackModel, pulled: false };
+      } catch {
+        // Last resort — cloud
+      }
+    }
+
+    // Nothing worked — cloud fallback
+    report('Model download failed — using free cloud AI...');
+    await autoConfigureForDesktop();
+    return {
+      mode: 'cloud',
+      model: 'Pollinations AI',
+      pulled: false,
+      pullFailed: pullError.value || `Failed to download ${modelToPull}`,
+    };
+  }
+
   /** Full initialisation for the brain setup wizard. */
   async function initialise(): Promise<void> {
     isLoading.value = true;
@@ -302,7 +475,7 @@ export const useBrainStore = defineStore('brain', () => {
       // These may fail if Ollama isn't installed — that's fine, we still function.
       await Promise.allSettled([
         fetchSystemInfo(),
-        fetchRecommendations(),
+        refreshModelCatalogue().catch(() => fetchRecommendations()),
         checkOllamaStatus(),
         fetchInstalledModels(),
         checkLmStudioStatus(),
@@ -313,6 +486,57 @@ export const useBrainStore = defineStore('brain', () => {
       autoConfigureFreeApi();
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  /**
+   * Background model-update check — runs once per calendar day.
+   * If a better model is available (and not dismissed), pushes an upgrade
+   * quest message into the conversation store.
+   */
+  async function checkForModelUpdates(): Promise<void> {
+    try {
+      // 1. Read persisted check state (date + dismissed list).
+      const [lastDate, dismissed] = await invoke<[string, string[]]>('get_update_check_state');
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      if (lastDate === today) return; // Already checked today.
+
+      // 2. Mark today's check done first (prevents re-runs on error).
+      await invoke('mark_update_check_done', { date: today });
+
+      // 3. Ask the backend for the update comparison.
+      const info = await invoke<{
+        has_update: boolean;
+        current_model: string;
+        recommended_model: string;
+        recommended_display: string;
+      }>('check_model_updates');
+
+      if (!info.has_update) return;
+      if (dismissed.includes(info.recommended_model)) return;
+
+      // 4. Push an upgrade quest message into the chat.
+      const { useConversationStore } = await import('./conversation');
+      const conversation = useConversationStore();
+      conversation.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content:
+          `A better local model is available for your hardware!\n\n` +
+          `**Current:** ${info.current_model}\n` +
+          `**Recommended:** ${info.recommended_display} (\`${info.recommended_model}\`)\n\n` +
+          `Would you like to upgrade?`,
+        agentName: 'System',
+        sentiment: 'neutral',
+        timestamp: Date.now(),
+        questId: 'model-update',
+        questChoices: [
+          { label: 'Upgrade now', value: `model-update:upgrade:${info.recommended_model}`, icon: '🚀' },
+          { label: 'Ignore this update', value: `model-update:dismiss:${info.recommended_model}`, icon: '💤' },
+        ],
+      });
+    } catch {
+      // Silent failure — this is a background convenience check.
     }
   }
 
@@ -395,8 +619,12 @@ export const useBrainStore = defineStore('brain', () => {
     loadActiveBrain,
     fetchSystemInfo,
     fetchRecommendations,
+    refreshModelCatalogue,
     checkOllamaStatus,
     fetchInstalledModels,
+    getOllamaModelsDir,
+    getDiskSpace,
+    listDrives,
     checkLmStudioStatus,
     fetchLmStudioModels,
     pullModel,
@@ -412,7 +640,9 @@ export const useBrainStore = defineStore('brain', () => {
     setBrainMode,
     autoConfigureFreeApi,
     autoConfigureForDesktop,
+    autoConfigureLocalFirst,
     initialise,
+    checkForModelUpdates,
     processPromptSilently,
   };
 });

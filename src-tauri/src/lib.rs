@@ -12,12 +12,14 @@ pub mod agent;
 pub mod agents;
 pub mod ai_integrations;
 pub mod brain;
+pub mod coding;
 pub mod commands;
 pub mod container;
 pub mod identity;
 pub mod link;
 pub mod memory;
 pub mod messaging;
+pub mod network;
 pub mod orchestrator;
 pub mod package_manager;
 pub mod persona;
@@ -29,6 +31,7 @@ pub mod settings;
 pub mod sync;
 pub mod tasks;
 pub mod voice;
+pub mod vscode_workspace;
 pub mod workflows;
 
 use commands::{
@@ -44,12 +47,27 @@ use commands::{
         download_lm_studio_model, factory_reset_brain, get_active_brain, get_brain_mode,
         get_brain_selection,
         get_embed_cache_status, get_lm_studio_download_status, get_lm_studio_models,
-        get_next_provider, get_ollama_models, get_system_info, health_check_providers,
-        list_free_providers, load_lm_studio_model, pull_ollama_model, recommend_brain_models,
+        get_next_provider, get_ollama_models, get_system_info, get_ollama_models_dir,
+        get_disk_space, list_drives, health_check_providers,
+        list_free_providers, load_lm_studio_model, pull_ollama_model, read_bundled_doc,
+        recommend_brain_models, refresh_model_catalogue,
         reset_embed_cache, set_active_brain, set_brain_mode, unload_lm_studio_model,
+        check_model_updates, delete_ollama_model, dismiss_model_update,
+        mark_update_check_done, get_update_check_state,
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
+    coding::{
+        clear_self_improve_log, detect_self_improve_repo, get_coding_llm_config,
+        get_coding_workflow_config, get_github_config, get_self_improve_metrics,
+        get_self_improve_runs, get_self_improve_settings, get_self_improve_status,
+        learn_from_user_message, list_coding_llm_recommendations,
+        list_local_coding_models, open_self_improve_pr, preview_coding_workflow_context,
+        pull_main_for_self_improve, reset_coding_workflow_config, run_coding_task,
+        set_coding_llm_config, set_coding_workflow_config, set_github_config,
+        set_self_improve_autostart, set_self_improve_enabled, start_self_improve,
+        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
+    },
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
@@ -79,6 +97,7 @@ use commands::{
         get_schema_info, get_short_term_memory, hybrid_search_memories,
         hybrid_search_memories_rrf, hyde_search_memories,
         list_memory_conflicts, list_memory_edges, list_relation_types,
+        matryoshka_search_memories,
         multi_hop_search_memories, promote_memory, rerank_search_memories,
         resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
         set_auto_learn_policy, summarize_session,
@@ -94,17 +113,17 @@ use commands::{
     },
     persona::{
         check_persona_drift, delete_learned_expression, delete_learned_motion,
-        export_persona_pack, extract_persona_from_brain, get_persona, get_persona_block,
-        import_persona_pack, list_learned_expressions, list_learned_motions,
+        export_persona_pack, extract_persona_from_brain, get_handoff_block, get_persona,
+        get_persona_block, import_persona_pack, list_learned_expressions, list_learned_motions,
         preview_persona_pack, save_learned_expression, save_learned_motion, save_persona,
-        set_persona_block,
+        set_handoff_block, set_persona_block,
     },
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
     },
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions,
-        list_pending_commands, set_device_permission,
+        list_pending_commands, match_ai_integration_intent, set_device_permission,
     },
     sandbox::{
         clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
@@ -138,11 +157,15 @@ use commands::{
     },
     auto_setup::{
         setup_vscode_mcp, setup_claude_mcp, setup_codex_mcp,
+        setup_vscode_mcp_stdio, setup_claude_mcp_stdio, setup_codex_mcp_stdio,
         remove_vscode_mcp, remove_claude_mcp, remove_codex_mcp,
         list_mcp_clients,
     },
     consolidation::{
         run_sleep_consolidation, touch_activity, get_idle_status,
+    },
+    vscode::{
+        vscode_open_project, vscode_list_known_windows, vscode_forget_window,
     },
     plugins::{
         plugin_install, plugin_activate, plugin_deactivate, plugin_uninstall,
@@ -207,6 +230,14 @@ pub struct AppStateInner {
     /// Empty string means "no persona injection". See
     /// `docs/persona-design.md` § 9.1.
     pub persona_block: Mutex<String>,
+    /// Rendered `[HANDOFF FROM <prev>]` block pushed from the frontend
+    /// agent-roster store on agent switch. Same splicing slot as
+    /// `persona_block` — server-driven streaming paths inject it into
+    /// the system prompt below `[PERSONA]` / `[LONG-TERM MEMORY]`.
+    /// One-shot: streaming paths read-and-clear so the new agent gets
+    /// briefed once and then operates on its own thread. See Chunk 23.2
+    /// in `rules/milestones.md`.
+    pub handoff_block: Mutex<String>,
     /// Configuration for spawning the GitNexus sidecar (Chunk 2.1).
     /// Defaults to `npx gitnexus mcp`. Mutable so the frontend can point at
     /// a globally-installed binary (`gitnexus`) or supply a working dir.
@@ -222,6 +253,22 @@ pub struct AppStateInner {
     pub plugin_host: plugins::PluginHost,
     /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
     pub activity_tracker: memory::consolidation::ActivityTracker,
+    /// Persisted coding LLM configuration (Phase 25 — self-improve foundation).
+    /// Separate from `brain_mode` because the "chat brain" and the
+    /// "coding brain" can be different providers (e.g. free Pollinations
+    /// for chat, Claude Sonnet for autonomous coding).
+    pub coding_llm_config: Mutex<Option<coding::CodingLlmConfig>>,
+    /// Persisted coding-workflow context-loading config (Chunk 25.16).
+    /// Controls which dirs/files the shared `run_coding_task` runner and
+    /// the self-improve planner inject as `<documents>` into every prompt.
+    pub coding_workflow_config: Mutex<coding::CodingWorkflowConfig>,
+    /// Self-improve toggle + audit metadata (Phase 25 — foundation only).
+    /// `enabled = true` does NOT yet trigger an autonomous loop; that is
+    /// gated behind future chunks.
+    pub self_improve: Mutex<coding::SelfImproveSettings>,
+    /// Live handle for the autonomous self-improve loop. Holds a
+    /// cancellation flag + join handle once the loop is running.
+    pub self_improve_engine: Arc<coding::SelfImproveEngine>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -246,6 +293,9 @@ impl AppState {
     fn new(data_dir: &std::path::Path) -> Self {
         let active_brain = brain::load_brain(data_dir);
         let brain_mode = brain::brain_config::load(data_dir);
+        let coding_llm = coding::load_coding_llm(data_dir);
+        let self_improve = coding::load_self_improve(data_dir);
+        let coding_workflow = coding::load_coding_workflow_config(data_dir);
         Self(Arc::new(AppStateInner {
             conversation: Mutex::new(Vec::new()),
             vrm_path: Mutex::new(None),
@@ -284,11 +334,16 @@ impl AppState {
                     }),
             ),
             persona_block: Mutex::new(String::new()),
+            handoff_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::new(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
+            coding_llm_config: Mutex::new(coding_llm),
+            coding_workflow_config: Mutex::new(coding_workflow),
+            self_improve: Mutex::new(self_improve),
+            self_improve_engine: Arc::new(coding::SelfImproveEngine::new()),
         }))
     }
 
@@ -331,13 +386,62 @@ impl AppState {
                     .expect("in-memory workflow engine must open"),
             ),
             persona_block: Mutex::new(String::new()),
+            handoff_block: Mutex::new(String::new()),
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
+            coding_llm_config: Mutex::new(None),
+            coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
+            self_improve: Mutex::new(coding::SelfImproveSettings::default()),
+            self_improve_engine: Arc::new(coding::SelfImproveEngine::new()),
         }))
     }
+}
+
+/// Resolve the on-disk data directory the same way the GUI does, but
+/// without requiring a Tauri `AppHandle`. Used by [`run_stdio`] so the
+/// stdio shim sees identical persistent state to a running GUI.
+///
+/// In dev builds the path includes a `dev` subdirectory (matching the
+/// GUI), but unlike the GUI we **do not** wipe it on launch — the
+/// stdio shim must never destroy data the GUI may rely on.
+fn resolve_data_dir_for_cli() -> PathBuf {
+    // App identifier from `tauri.conf.json`. Hard-coded here because
+    // there is no `AppHandle` available in CLI mode.
+    const BUNDLE_ID: &str = "com.terranes.terransoul";
+
+    let base = dirs::data_dir()
+        .map(|d| d.join(BUNDLE_ID))
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let dir = if cfg!(debug_assertions) {
+        base.join("dev")
+    } else {
+        base
+    };
+
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Run TerranSoul as an MCP **stdio** server. Reads newline-delimited
+/// JSON-RPC 2.0 from `stdin`, writes responses to `stdout`. Exits when
+/// stdin reaches EOF.
+///
+/// Triggered by `terransoul --mcp-stdio` from `main.rs`. See Chunk 15.9.
+pub fn run_stdio() -> std::io::Result<()> {
+    let data_dir = resolve_data_dir_for_cli();
+    eprintln!("[mcp-stdio] data dir: {}", data_dir.display());
+
+    let state = AppState::new(&data_dir);
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -364,6 +468,7 @@ pub fn run() {
             deny_remote_command,
             set_device_permission,
             get_device_permissions,
+            match_ai_integration_intent,
             parse_agent_manifest,
             validate_agent_manifest,
             get_ipc_protocol_range,
@@ -372,7 +477,17 @@ pub fn run() {
             remove_agent,
             list_installed_agents,
             get_system_info,
+            get_ollama_models_dir,
+            get_disk_space,
+            list_drives,
+            read_bundled_doc,
             recommend_brain_models,
+            refresh_model_catalogue,
+            check_model_updates,
+            delete_ollama_model,
+            dismiss_model_update,
+            mark_update_check_done,
+            get_update_check_state,
             check_ollama_status,
             get_ollama_models,
             pull_ollama_model,
@@ -401,6 +516,7 @@ pub fn run() {
             hybrid_search_memories_rrf,
             hyde_search_memories,
             rerank_search_memories,
+            matryoshka_search_memories,
             backfill_embeddings,
             get_schema_info,
             get_memory_stats,
@@ -471,6 +587,37 @@ pub fn run() {
             set_brain_mode,
             get_embed_cache_status,
             reset_embed_cache,
+            // Coding LLM + self-improve foundation (Phase 25)
+            list_coding_llm_recommendations,
+            get_coding_llm_config,
+            set_coding_llm_config,
+            get_self_improve_settings,
+            set_self_improve_enabled,
+            test_coding_llm_connection,
+            detect_self_improve_repo,
+            suggest_self_improve_branch,
+            get_self_improve_status,
+            start_self_improve,
+            stop_self_improve,
+            set_self_improve_autostart,
+            get_self_improve_metrics,
+            get_self_improve_runs,
+            clear_self_improve_log,
+            // Phase 25 / Chunk 25.13 — GitHub PR + learn-from-chat
+            get_github_config,
+            set_github_config,
+            open_self_improve_pr,
+            pull_main_for_self_improve,
+            learn_from_user_message,
+            // Phase 25 / Chunk 25.15 — reusable coding workflow
+            run_coding_task,
+            // Phase 25 / Chunk 25.16 — configurable coding-workflow context loader
+            get_coding_workflow_config,
+            set_coding_workflow_config,
+            reset_coding_workflow_config,
+            preview_coding_workflow_context,
+            // Phase 25 / Chunk 25.17 — local Ollama recommendation flow
+            list_local_coding_models,
             // Agent roster + durable workflows (Chunk 1.5)
             roster_list,
             roster_create,
@@ -514,6 +661,8 @@ pub fn run() {
             save_persona,
             set_persona_block,
             get_persona_block,
+            set_handoff_block,
+            get_handoff_block,
             list_learned_expressions,
             save_learned_expression,
             delete_learned_expression,
@@ -572,6 +721,10 @@ pub fn run() {
             setup_vscode_mcp,
             setup_claude_mcp,
             setup_codex_mcp,
+            // Stdio transport variants — Chunk 15.9 (Phase 15)
+            setup_vscode_mcp_stdio,
+            setup_claude_mcp_stdio,
+            setup_codex_mcp_stdio,
             remove_vscode_mcp,
             remove_claude_mcp,
             remove_codex_mcp,
@@ -580,6 +733,10 @@ pub fn run() {
             run_sleep_consolidation,
             touch_activity,
             get_idle_status,
+            // VS Code workspace surfacing — Chunk 15.10 (Phase 15)
+            vscode_open_project,
+            vscode_list_known_windows,
+            vscode_forget_window,
             // Plugin system
             plugin_install,
             plugin_activate,
@@ -619,6 +776,50 @@ pub fn run() {
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
 
+            // Phase 25 — auto-resume the self-improve loop if the user
+            // had it enabled before exit. Only fires when a coding LLM
+            // is also configured. Failures are logged and ignored — the
+            // toggle remains "enabled" so the next launch will retry.
+            {
+                let enabled = state
+                    .self_improve
+                    .lock()
+                    .map(|s| s.enabled)
+                    .unwrap_or(false);
+                let cfg = state
+                    .coding_llm_config
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone());
+                if enabled {
+                    if let Some(cfg) = cfg {
+                        let app_handle = app.app_handle().clone();
+                        let engine = state.self_improve_engine.clone();
+                        let repo_hint = state.data_dir.clone();
+                        let workflow_cfg = state
+                            .coding_workflow_config
+                            .lock()
+                            .map(|g| g.clone())
+                            .unwrap_or_default();
+                        tauri::async_runtime::spawn(async move {
+                            coding::engine::start(
+                                app_handle,
+                                engine,
+                                cfg,
+                                workflow_cfg,
+                                repo_hint,
+                            )
+                            .await;
+                        });
+                    } else {
+                        eprintln!(
+                            "[self-improve] enabled but no coding LLM configured; \
+                             skipping auto-resume"
+                        );
+                    }
+                }
+            }
+
             let identity = load_or_generate_identity(&data_dir)
                 .unwrap_or_else(|_| identity::DeviceIdentity::generate());
             let device_id = identity.device_id.clone();
@@ -630,11 +831,25 @@ pub fn run() {
             *state.command_router.blocking_lock() =
                 routing::CommandRouter::new(&device_id);
 
-            // System tray with Show/Hide + Window/Pet toggle + Quit
+            // System tray with Show/Hide + Window/Pet toggle + Self-Improve + Quit
             let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
             let mode_toggle = MenuItem::with_id(app, "mode_toggle", "Switch to Pet Mode", true, None::<&str>)?;
+            let self_improve_label = {
+                let s = state.self_improve.lock().map(|g| g.enabled).unwrap_or(false);
+                if s { "Self-Improve: ON (click to disable)" } else { "Self-Improve: OFF" }
+            };
+            let self_improve_item = MenuItem::with_id(
+                app,
+                "self_improve_toggle",
+                self_improve_label,
+                true,
+                None::<&str>,
+            )?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[&show_hide, &mode_toggle, &self_improve_item, &quit],
+            )?;
 
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().unwrap())
@@ -689,6 +904,90 @@ pub fn run() {
                     }
                     "quit" => {
                         app.exit(0);
+                    }
+                    "self_improve_toggle" => {
+                        // Toggle the persisted self-improve setting from the
+                        // tray. Disabling always succeeds; enabling is
+                        // gated by `set_self_improve_enabled`'s guard
+                        // (requires a coding LLM). Failures are surfaced
+                        // through eprintln only — the tray cannot raise
+                        // a dialog reliably across platforms.
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let state = app_handle.state::<AppState>();
+                            let was_enabled = state
+                                .self_improve
+                                .lock()
+                                .map(|s| s.enabled)
+                                .unwrap_or(false);
+                            let cfg = state
+                                .coding_llm_config
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.clone());
+                            // Persist the flip directly through the helper
+                            // module so we don't need to re-implement the
+                            // gating logic here.
+                            let next_enabled = !was_enabled;
+                            if next_enabled && cfg.is_none() {
+                                eprintln!(
+                                    "[self-improve] tray toggle ignored: \
+                                     no coding LLM configured"
+                                );
+                                return;
+                            }
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0);
+                            let provider = cfg
+                                .as_ref()
+                                .map(|c| match c.provider {
+                                    coding::CodingLlmProvider::Anthropic => "anthropic",
+                                    coding::CodingLlmProvider::Openai => "openai",
+                                    coding::CodingLlmProvider::Deepseek => "deepseek",
+                                    coding::CodingLlmProvider::Custom => "custom",
+                                })
+                                .unwrap_or("")
+                                .to_string();
+                            let next = coding::SelfImproveSettings {
+                                enabled: next_enabled,
+                                updated_at: now,
+                                last_acknowledged_at: if next_enabled { now } else { 0 },
+                                last_provider: if next_enabled { provider } else { String::new() },
+                            };
+                            if let Err(e) = coding::save_self_improve(&state.data_dir, &next) {
+                                eprintln!("[self-improve] tray persist failed: {e}");
+                                return;
+                            }
+                            if let Ok(mut s) = state.self_improve.lock() {
+                                *s = next;
+                            }
+                            // Drive the engine accordingly.
+                            if next_enabled {
+                                if let Some(c) = cfg {
+                                    let engine = state.self_improve_engine.clone();
+                                    let repo_hint = state.data_dir.clone();
+                                    let app_for_engine = app_handle.clone();
+                                    let workflow_cfg = state
+                                        .coding_workflow_config
+                                        .lock()
+                                        .map(|g| g.clone())
+                                        .unwrap_or_default();
+                                    coding::engine::start(
+                                        app_for_engine,
+                                        engine,
+                                        c,
+                                        workflow_cfg,
+                                        repo_hint,
+                                    )
+                                    .await;
+                                }
+                            } else {
+                                state.self_improve_engine.request_stop().await;
+                            }
+                            let _ = app_handle.emit("self-improve-toggled", next_enabled);
+                        });
                     }
                     _ => {}
                 })

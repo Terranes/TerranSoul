@@ -48,6 +48,13 @@
 17. [FAQ](#faq)
 18. [Diagrams Index](#diagrams-index)
 19. [April 2026 Research Survey — Modern RAG & Agent-Memory Techniques](#april-2026-research-survey--modern-rag--agent-memory-techniques)
+20. [Brain Component Selection & Routing](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
+21. [How Daily Conversation Updates the Brain](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
+22. [Code-Intelligence Bridge — GitNexus Sidecar](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
+23. [Code-RAG Fusion](#code-rag-fusion-in-rerank_search_memories-phase-13-tier-2)
+24. [MCP Server — External AI Coding Assistant Integration](#mcp-server--external-ai-coding-assistant-integration-phase-15)
+25. [Intent Classification](#intent-classification)
+26. [Recommended Local LLM Catalogue](#recommended-local-llm-catalogue)
 20. [Brain Component Selection & Routing — How the LLM Knows What to Use](#brain-component-selection--routing--how-the-llm-knows-what-to-use)
 21. [How Daily Conversation Updates the Brain — Write-Back / Learning Loop](#how-daily-conversation-updates-the-brain--write-back--learning-loop)
 22. [Code-Intelligence Bridge — GitNexus Sidecar (Phase 13 Tier 1)](#code-intelligence-bridge--gitnexus-sidecar-phase-13-tier-1)
@@ -1850,13 +1857,19 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ LLM extract/summarize/embed                                 │
 │  └── ✓ Deduplication via cosine threshold                          │
 │                                                                     │
-│  PHASE 2 — Categories & Graph                                       │
-│  ├── ○ Add category column (V5 migration)                          │
-│  ├── ○ Auto-categorize via LLM on insert                           │
-│  ├── ○ Category-aware decay rates                                  │
-│  ├── ○ Category filters in Memory View                             │
-│  ├── ○ Tag prefix convention (personal:*, domain:*, etc.)          │
-│  └── ○ Obsidian vault export (one-way)                             │
+│  PHASE 2 — Categories & Graph (✅ Shipped via tag-prefix convention) │
+│  ├── ✓ Tag-prefix vocabulary as category surrogate                 │
+│  │     (`memory::tag_vocabulary::CURATED_PREFIXES` —                │
+│  │      `personal:`, `domain:`, `project:`, `event:`, `temporal:`,  │
+│  │      `meta:`) — Chunk 18.4                                       │
+│  ├── ✓ Auto-categorise via LLM on insert                           │
+│  │     (LLM prompted with curated prefix list) — Chunk 18.1         │
+│  ├── ✓ Category-aware decay rates                                  │
+│  │     (`category_decay_multiplier(tags_csv)` →                     │
+│  │      slowest-decaying prefix wins) — Chunk 18.2                  │
+│  ├── ✓ Category filters in Memory View                             │
+│  │     (multi-select chip row) — Chunk 18.3                         │
+│  └── ✓ Obsidian vault export (one-way) — Chunk 18.5                │
 │                                                                     │
 │  PHASE 3 — Entity Graph (✅ Shipped — V5 schema)                    │
 │  ├── ✓ memory_edges table (V5 migration, FK cascade)               │
@@ -1916,15 +1929,25 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
 │  │     context before embedding (`memory::contextualize`,          │
 │  │     `AppSettings.contextual_retrieval`) — Chunk 16.2            │
-│  ├── ○ Late chunking (embed full doc, pool per-chunk windows)      │
+│  ├── ◐ Late chunking — `memory::late_chunking` pooling utility    │
+│  │      shipped (Chunk 16.3a); 16.3b wires long-context embedder  │
 │  ├── ○ GraphRAG / LightRAG-style community summaries over          │
 │  │     memory_edges (multi-hop + LLM cluster summary)              │
-│  ├── ○ Self-RAG / Corrective RAG (CRAG) iterative refinement loop  │
-│  ├── ○ Sleep-time consolidation (Letta-style background job that   │
-│  │     compresses/links short→working→long during idle)            │
+│  ├── ◐ Self-RAG controller shipped (`orchestrator::self_rag` —    │
+│  │     reflection-token parser + 3-iteration decision SM,           │
+│  │     Chunk 16.4a); orchestrator-loop integration is Chunk 16.4b   │
+│  ├── ◐ CRAG retrieval evaluator shipped (`memory::crag` —        │
+│  │     `parse_verdict` + `aggregate` over CORRECT/AMBIGUOUS/        │
+│  │     INCORRECT, Chunk 16.5a); query-rewrite + web-search          │
+│  │     fallback is Chunk 16.5b                                      │
+│  ├── ✓ Sleep-time consolidation (Letta-style background job that    │
+│  │     compresses/links short→working→long during idle)             │
+│  │     (`memory::consolidation`, schedule via workflows) — Chunk 16.7│
 │  ├── ✓ Temporal knowledge graph (Zep / Graphiti-style valid_from / │
 │  │     valid_to columns on memory_edges, V6 schema)                │
-│  └── ○ Matryoshka embeddings (variable-dim 256/512/768 truncation) │
+│  └── ✓ Matryoshka embeddings (truncate to 256-dim fast pass +    │
+│        full-dim re-rank; `memory::matryoshka` module +              │
+│        `matryoshka_search_memories` Tauri command) — Chunk 16.8     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2054,14 +2077,14 @@ Quick reference for all diagrams in this document:
 | 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wired into `hybrid_search_rrf` (`memory/store.rs`) — fuses vector + keyword + freshness rankings with `k = 60`; exposed as `hybrid_search_memories_rrf` Tauri command. |
 | 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | ✅ | `src-tauri/src/memory/contextualize.rs` — `contextualise_chunk(doc_summary, chunk, brain_mode)` + `generate_doc_summary()`. Opt-in via `AppSettings.contextual_retrieval`. Integrated into `run_ingest_task`. Chunk 16.2. |
 | 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | ✅ | `src-tauri/src/memory/hyde.rs` (prompt + reply cleaner, 10 unit tests) + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command. Falls back to embedding the raw query if the brain is unreachable. |
-| 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | 🔵 | Phase 6 — orchestrator-level loop (`src-tauri/src/orchestrator/`) |
-| 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | 🔵 | Phase 6 — pairs naturally with our `relevance_threshold` Phase 4 item |
+| 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | � | `src-tauri/src/orchestrator/self_rag.rs` ships the **pure controller** — reflection-token parser + 3-iteration decision SM (Chunk 16.4a). Orchestrator-loop integration that re-prompts the LLM until `Decision::Accept` is the follow-up Chunk 16.4b. |
+| 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | � | `src-tauri/src/memory/crag.rs` ships the **pure evaluator** — `build_evaluator_prompts` + `parse_verdict` + `aggregate` over CORRECT/AMBIGUOUS/INCORRECT (Chunk 16.5a). Query-rewrite + web-search fallback is the follow-up Chunk 16.5b. |
 | 7 | **GraphRAG** ([Microsoft, 2024](https://github.com/microsoft/graphrag)) | LLM extracts entities + relations into a KG, runs Leiden community detection, summarizes each community; queries hit community summaries first | 🟡 → 🔵 | Foundations: `memory_edges` V5 + `multi_hop_search_memories` (§6). Missing: community detection + LLM community-summary rollups. Phase 6. |
 | 8 | **LightRAG** (HKU, 2024) | GraphRAG variant: dual-level retrieval (low-level entity + high-level theme) with incremental graph updates; cheaper than full GraphRAG | 🔵 | Phase 6 — natural follow-on once community summaries land |
-| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | 🔵 | Phase 6 — requires long-context embedding model (e.g. `jina-embeddings-v3`) selectable via Ollama |
+| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | � | Pooling utility shipped in `memory::late_chunking` (Chunk 16.3a — `mean_pool_token_embeddings`, `pool_chunks`, `spans_from_token_counts`). Chunk 16.3b wires the long-context embedder into the ingest pipeline. |
 | 10 | **Cross-encoder reranking** (BGE-reranker-v2-m3, Cohere Rerank 3, etc.) | Second-pass scorer over top-k candidates with a query-doc joint encoder, much higher precision than bi-encoder cosine | ✅ | `src-tauri/src/memory/reranker.rs` (prompt + score parser + reorder logic, 14 unit tests) + `OllamaAgent::rerank_score` + `rerank_search_memories` Tauri command. Uses **LLM-as-judge** with the active brain (no extra model download). Unscored candidates are kept rather than dropped, preserving recall when the brain is flaky. Interface (`(query, document) -> Option<u8>`) is identical to a future BGE/mxbai backend so swapping is a one-line change. |
-| 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | 🔵 | Phase 6 — pairs with ANN index (Phase 4); current `nomic-embed-text` is fixed-dim |
-| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | 🔵 | Phase 6 — fits TerranSoul's tier model (§2); reuses durable workflow engine (`workflows/engine.rs`) for the idle-time job |
+| 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | ✅ | `src-tauri/src/memory/matryoshka.rs` — `truncate_and_normalize` + `two_stage_search`, plus `matryoshka_search_memories` Tauri command. Default fast-dim 256 for `nomic-embed-text`. Chunk 16.8. |
+| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | ✅ | `src-tauri/src/memory/consolidation.rs` — `run_sleep_time_consolidation` job runs during idle, links short→working→long, surfaces stats via `ConsolidationResult`. Chunk 16.7. |
 | 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | ✅ | V6 schema migration adds two nullable Unix-ms columns to `memory_edges` (`valid_from` inclusive, `valid_to` exclusive — open ends mean "always"). `MemoryEdge::is_valid_at(t)` is the pure interval predicate; `MemoryStore::get_edges_for_at(memory, dir, valid_at)` is the point-in-time query (when `valid_at = None` it preserves the legacy "return all edges" behaviour for full back-compat). `MemoryStore::close_edge(id, t)` records supersession; pairing it with `add_edge { valid_from: Some(t) }` expresses "fact X changed value at time t" as two non-destructive rows. The `add_memory_edge` Tauri command gained `valid_from` / `valid_to` parameters; the new `close_memory_edge` command exposes supersession to the frontend. 13 new edge unit tests + 2 new migration tests (round-trip + sentinel). |
 | 14 | **Agentic RAG** (industry term, 2024–2026) | RAG embedded in an agent loop: plan → retrieve → reflect → re-retrieve → generate, with tool use | 🟡 | Foundations: roster + workflow engine (Chunk 1.5, `agents/roster.rs`). Phase 6: explicit retrieve-as-tool wiring. |
 | 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
@@ -2608,16 +2631,20 @@ axum task receives `AppState` directly.
 
 ### 24.2 Exposed MCP tools
 
+> Source of truth: `src-tauri/src/ai_integrations/mcp/tools.rs`. The
+> 8-tool surface below mirrors that file's `tool_definitions()` /
+> `dispatch_tool()` exactly.
+
 | Tool | BrainGateway op | Description |
 |---|---|---|
+| `brain_search` | `search()` | Hybrid semantic + keyword memory search |
+| `brain_get_entry` | `get_entry()` | Fetch a single memory by id |
+| `brain_list_recent` | `list_recent()` | List the most recently created/touched memories |
+| `brain_kg_neighbors` | `kg_neighbors()` | Knowledge-graph neighbours of a memory (typed edges) |
+| `brain_summarize` | `summarize()` | LLM summary of a passage |
+| `brain_suggest_context` | `suggest_context()` | Suggest relevant memories for an editor cursor / file |
+| `brain_ingest_url` | `ingest_url()` | Crawl + chunk + embed a URL into the memory store |
 | `brain_health` | `health()` | Provider status + model info |
-| `brain_search` | `search()` | Semantic memory search |
-| `brain_ingest` | `ingest()` | Store a new memory |
-| `brain_ask` | `ask()` | One-shot LLM question |
-| `brain_summarize` | `summarize()` | Summarize text |
-| `brain_extract` | `extract()` | Extract structured entities |
-| `brain_list_memories` | `list_memories()` | List recent memories |
-| `brain_stats` | `stats()` | Memory store statistics |
 
 ### 24.3 Security
 
@@ -2759,6 +2786,82 @@ tests that don't set up Pinia retain default-on behaviour.
 rehydration, corrupt-JSON recovery, sanitisation of non-boolean
 values, and `reset()`. `conversation.test.ts` adds three integration
 tests asserting that each toggle actually short-circuits its gate.
+
+---
+
+## 26. Recommended Local LLM Catalogue
+
+> **Online-first resolution.** The model recommender checks multiple
+> well-known public sources for the latest local LLM rankings before
+> falling back to the bundled catalogue. Sources consulted (in order):
+>
+> | Priority | Source | What is checked |
+> |---|---|---|
+> | 1 | [Ollama Library](https://ollama.com/library) | Most-downloaded & trending local models |
+> | 2 | [Open LLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard) | Benchmark-ranked open models on HuggingFace |
+> | 3 | [LM Studio Model Catalog](https://lmstudio.ai/models) | Curated, quantised models optimised for consumer hardware |
+> | 4 | [Hugging Face Trending](https://huggingface.co/models?pipeline_tag=text-generation&sort=trending) | Community trending text-generation models |
+>
+> Results from the above sources are cached locally (`<app_cache_dir>/model-catalogue.md`)
+> and refreshed once per day. If all online sources are unreachable (offline,
+> timeout, etc.), the recommender falls back to the **bundled** copy of this
+> section shipped inside the app resources. The hardcoded fallback in
+> `model_recommender.rs` is the last resort.
+>
+> **Resolution order:**
+> 1. Online sources above (cached in `<app_cache_dir>/model-catalogue.md`)
+> 2. Bundled `docs/brain-advanced-design.md` in the app resource directory
+> 3. Hardcoded fallback in `model_recommender.rs`
+>
+> The tables below serve as the **offline fallback**. If you are adding a
+> model that is not yet discoverable via the online sources, add it here.
+
+The catalogue is parsed at runtime via HTML comment markers. The
+Rust parser (`brain::doc_catalogue`) extracts the tables between
+the `BEGIN` / `END` markers below.
+
+### 26.1 Local & Cloud Model Catalogue
+
+<!-- BEGIN MODEL_CATALOGUE -->
+| model_tag | display_name | description | required_ram_mb | is_cloud |
+|---|---|---|---|---|
+| gemma4:31b | Gemma 4 31B | Google's dense 30.7B flagship. State-of-the-art reasoning, coding, and 256K context. 20 GB download. | 24576 | false |
+| gemma4:26b | Gemma 4 26B MoE | MoE with 25.2B total / 3.8B active params. Fast inference with 256K context. 18 GB download. | 22528 | false |
+| gemma3:27b | Gemma 3 27B | Previous-gen flagship. Excellent reasoning, vision, and 128K context. 17 GB download. | 20480 | false |
+| gemma4:e4b | Gemma 4 E4B | 4.5B effective params optimised for edge. 128K context, vision + audio. 9.6 GB download. | 12288 | false |
+| gemma4:e2b | Gemma 4 E2B | 2.3B effective params for edge devices. 128K context, vision + audio. 7.2 GB download. | 8192 | false |
+| gemma3:4b | Gemma 3 4B | Compact multimodal model. 128K context, great for everyday chat. 3.3 GB download. | 6144 | false |
+| phi4-mini | Phi-4 Mini 3.8B | Microsoft's compact reasoner. 128K context, strong math/logic. 2.5 GB download. | 4096 | false |
+| gemma3:1b | Gemma 3 1B | Ultra-lightweight. 32K context, text-only. 815 MB download. | 2048 | false |
+| gemma2:2b | Gemma 2 2B | Compact Gemma 2. 8K context, solid for simple tasks. 1.6 GB download. | 4096 | false |
+| tinyllama | TinyLlama 1.1B | Minimal 1.1B model. 2K context. Works on very limited hardware. 638 MB download. | 2048 | false |
+| kimi-k2.6:cloud | Kimi K2.6 (Cloud) | Moonshot AI's 1T MoE (32B active). Vision, tool use, thinking. 256K context. Runs via Ollama Cloud — no local GPU needed. | 0 | true |
+<!-- END MODEL_CATALOGUE -->
+
+### 26.2 RAM-Tier Top Picks
+
+The installer marks one model as the "top pick" per hardware tier.
+When the app detects the user's total RAM on first launch, it selects
+the corresponding model automatically.
+
+<!-- BEGIN TOP_PICKS -->
+| tier | model_tag |
+|---|---|
+| VeryHigh | gemma4:31b |
+| High | gemma4:e4b |
+| Medium | gemma4:e2b |
+| Low | gemma3:1b |
+| VeryLow | tinyllama |
+<!-- END TOP_PICKS -->
+
+### 26.3 Updating the catalogue
+
+1. Edit the table(s) above — keep the `<!-- BEGIN … -->` / `<!-- END … -->` markers intact.
+2. The Rust parser splits on `|`, trims whitespace, and expects exactly the column order shown.
+3. `required_ram_mb` must be a plain integer (no commas, no units).
+4. `is_cloud` must be `true` or `false`.
+5. The `tier` column in the top-picks table must match a `RamTier` variant name exactly: `VeryHigh`, `High`, `Medium`, `Low`, `VeryLow`.
+6. Run `cargo test -p terransoul-app` to validate the parser picks up your changes.
 
 ---
 

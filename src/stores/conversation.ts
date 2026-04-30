@@ -13,6 +13,8 @@ import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
+import { useAgentRosterStore } from './agent-roster';
+import { buildHandoffBlock } from '../utils/handoff-prompt';
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
@@ -647,9 +649,9 @@ async function runAutoInstall(topic: string): Promise<void> {
     try {
       // Perform the actual activation for each quest type.
       if (id === 'free-brain') {
-        // Configure a free cloud LLM provider (Pollinations).
+        // Configure brain — local-first per rules/local-first-brain.md.
         try {
-          await brain.autoConfigureForDesktop();
+          await brain.autoConfigureLocalFirst();
         } catch {
           brain.autoConfigureFreeApi();
         }
@@ -657,7 +659,7 @@ async function runAutoInstall(topic: string): Promise<void> {
         // Memory auto-activates once the brain is configured.
         // Ensure brain mode is set (should be from free-brain step).
         if (!brain.brainMode) {
-          try { await brain.autoConfigureForDesktop(); }
+          try { await brain.autoConfigureLocalFirst(); }
           catch { brain.autoConfigureFreeApi(); }
         }
       } else if (id === 'rag-knowledge') {
@@ -845,6 +847,107 @@ export async function handleLearnDocsChoice(value: string): Promise<boolean> {
     default:
       return false;
   }
+}
+
+// ── Model update quest ───────────────────────────────────────────────────────
+
+/**
+ * Route a `model-update:*` quest-choice value emitted by the chat overlay.
+ * Returns `true` when the value was handled.
+ *
+ * Formats:
+ *   `model-update:upgrade:<modelTag>` — pull + activate the recommended model
+ *   `model-update:dismiss:<modelTag>` — persist dismissal, never re-show
+ */
+export async function handleModelUpdateChoice(value: string): Promise<boolean> {
+  if (!value.startsWith('model-update:')) return false;
+  const rest = value.slice('model-update:'.length);
+  const colon = rest.indexOf(':');
+  if (colon < 0) return false;
+  const action = rest.slice(0, colon);
+  const modelTag = rest.slice(colon + 1);
+
+  const conversation = useConversationStore();
+
+  if (action === 'dismiss') {
+    try {
+      await invoke('dismiss_model_update', { modelTag });
+    } catch {
+      // best-effort
+    }
+    conversation.addMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `Got it — I won't suggest **${modelTag}** again.`,
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+    });
+    return true;
+  }
+
+  if (action === 'upgrade') {
+    const brain = useBrainStore();
+    conversation.addMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `Downloading **${modelTag}**... This may take a few minutes. ⏳`,
+      agentName: 'System',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+    });
+
+    const ok = await brain.pullModel(modelTag);
+    if (ok) {
+      try {
+        await brain.setBrainMode({ mode: 'local_ollama', model: modelTag });
+        conversation.addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Upgrade complete! Now running **${modelTag}**. 🚀`,
+          agentName: 'System',
+          sentiment: 'happy',
+          timestamp: Date.now(),
+        });
+        // Auto-remove the old weaker model.
+        const installed = brain.installedModels;
+        const recTags = new Set(
+          brain.recommendations.filter(r => !r.is_cloud).map(r => r.model_tag),
+        );
+        for (const m of installed) {
+          if (m.name === modelTag) continue;
+          if (!recTags.has(m.name)) continue;
+          try {
+            await invoke('delete_ollama_model', { modelName: m.name });
+          } catch {
+            // best-effort
+          }
+        }
+        await brain.fetchInstalledModels();
+      } catch {
+        conversation.addMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `Downloaded **${modelTag}** but failed to activate it. You can switch manually in the Brain tab.`,
+          agentName: 'System',
+          sentiment: 'sad',
+          timestamp: Date.now(),
+        });
+      }
+    } else {
+      conversation.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Failed to download **${modelTag}**. Check that Ollama is running and try again later.`,
+        agentName: 'System',
+        sentiment: 'sad',
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  return false;
 }
 
 // ── Chat-based LLM switching ─────────────────────────────────────────────────
@@ -1250,6 +1353,27 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
+    // ── Self-improve learning hook ──
+    // When self-improve is enabled, fire-and-forget a backend call that
+    // asks the Coding LLM whether this message describes a feature
+    // request / bug / improvement and, if so, appends it as a new
+    // chunk to `rules/milestones.md`. The chat pipeline never waits on
+    // or fails because of this — failures are logged only.
+    // Deferred via setTimeout so the call is truly out-of-band: it
+    // cannot affect mock-call ordering in tests, and it cannot delay
+    // the user's perceived response time.
+    setTimeout(() => {
+      try {
+        void Promise.resolve(invoke('learn_from_user_message', { message: content })).catch(
+          (err) => {
+            console.warn('[self-improve] learn-from-message failed:', err);
+          },
+        );
+      } catch (e) {
+        console.warn('[self-improve] learn-from-message dispatch failed:', e);
+      }
+    }, 0);
+
     // ── Concurrency gate: only one generation at a time ──
     // If a stream/generation is already active, queue this message and
     // return immediately.  drainQueue() will pick it up when the current
@@ -1370,6 +1494,30 @@ export const useConversationStore = defineStore('conversation', () => {
     if (isTauriAvailable()) {
       try {
         const streaming = useStreamingStore();
+
+        // ── One-shot handoff briefing (Chunk 23.2b) ───────────────────
+        // If the user just switched to this agent and the previous agent
+        // left a context summary, push it to the Rust streaming pipeline
+        // (which read-and-clears it on the next system-prompt build).
+        try {
+          const roster = useAgentRosterStore();
+          const targetAgentId =
+            currentAgent.value === 'auto' ? null : currentAgent.value;
+          if (targetAgentId) {
+            const consumed = roster.consumeHandoff(targetAgentId);
+            if (consumed) {
+              const block = buildHandoffBlock({
+                prevAgentName: consumed.prevAgentName,
+                context: consumed.context,
+              });
+              if (block) {
+                await invoke('set_handoff_block', { block });
+              }
+            }
+          }
+        } catch {
+          // Handoff is best-effort; never block chat on it.
+        }
 
         // Don't set isStreaming immediately - wait for first chunk
         // Keep character in thinking state until text actually arrives
@@ -1593,7 +1741,28 @@ export const useConversationStore = defineStore('conversation', () => {
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },
-                getSystemPrompt(useEnhanced) + usePersonaStore().personaBlock + memoryBlock,
+                getSystemPrompt(useEnhanced) +
+                  usePersonaStore().personaBlock +
+                  memoryBlock +
+                  (() => {
+                    // ── One-shot handoff briefing (Chunk 23.2b, browser path) ────
+                    try {
+                      const roster = useAgentRosterStore();
+                      const targetAgentId =
+                        currentAgent.value === 'auto'
+                          ? null
+                          : currentAgent.value;
+                      if (!targetAgentId) return '';
+                      const consumed = roster.consumeHandoff(targetAgentId);
+                      if (!consumed) return '';
+                      return buildHandoffBlock({
+                        prevAgentName: consumed.prevAgentName,
+                        context: consumed.context,
+                      });
+                    } catch {
+                      return '';
+                    }
+                  })(),
               );
               // User-initiated abort
               if (activeAbortController) {

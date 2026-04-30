@@ -4,6 +4,7 @@ pub mod auto_setup;
 pub mod brain;
 pub mod character;
 pub mod chat;
+pub mod coding;
 pub mod consolidation;
 pub mod ingest;
 pub mod docker;
@@ -27,6 +28,7 @@ pub mod translation;
 pub mod user_models;
 pub mod vision;
 pub mod voice;
+pub mod vscode;
 pub mod window;
 
 #[cfg(test)]

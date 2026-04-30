@@ -164,6 +164,7 @@ mod tests {
             display_name: "Gemma 3 4B".to_string(),
             description: "Test model".to_string(),
             required_ram_mb: 6_144,
+            download_size_mb: 0,
             is_top_pick: true,
             is_cloud: false,
         };
@@ -190,6 +191,7 @@ mod tests {
             display_name: "Kimi K2.6".to_string(),
             description: "Cloud-routed".to_string(),
             required_ram_mb: 0,
+            download_size_mb: 0,
             is_top_pick: false,
             is_cloud: true,
         };

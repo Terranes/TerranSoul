@@ -33,7 +33,10 @@ const PANEL_TIMEOUT = 3_000;
 test.describe('Mobile', () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
-  test('mobile: full end-to-end flow', { timeout: 120_000 }, async ({ page }) => {
+  test('mobile: full end-to-end flow', async ({ page }) => {
+    // `test('name', { timeout }, fn)` is silently ignored on Playwright 1.59
+    // (the second arg is TestDetails, not options) — set timeout from inside.
+    test.setTimeout(180_000);
     const errors = collectConsoleErrors(page);
     await page.goto('/');
     await waitForAppReady(page);

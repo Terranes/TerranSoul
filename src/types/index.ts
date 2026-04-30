@@ -137,8 +137,16 @@ export interface ModelRecommendation {
   display_name: string;
   description: string;
   required_ram_mb: number;
+  download_size_mb?: number;
   is_top_pick: boolean;
   is_cloud?: boolean;
+}
+
+export interface DiskInfo {
+  mount_point: string;
+  label: string;
+  available_bytes: number;
+  total_bytes: number;
 }
 
 export interface OllamaStatus {
@@ -368,6 +376,90 @@ export type BrainMode =
       api_key: string | null;
       embedding_model: string | null;
     };
+
+// ── Coding LLM + Self-Improve (Phase 25) ─────────────────────────────────────
+
+export type CodingLlmProvider = 'anthropic' | 'openai' | 'deepseek' | 'custom';
+
+/** Persisted dedicated coding-LLM configuration. */
+export interface CodingLlmConfig {
+  provider: CodingLlmProvider;
+  model: string;
+  base_url: string;
+  api_key: string;
+}
+
+/** Curated recommendation entry (Claude / OpenAI / DeepSeek / custom). */
+export interface CodingLlmRecommendation {
+  provider: CodingLlmProvider;
+  display_name: string;
+  default_model: string;
+  base_url: string;
+  requires_api_key: boolean;
+  notes: string;
+  is_top_pick: boolean;
+}
+
+/** Self-improve toggle + audit metadata. */
+export interface SelfImproveSettings {
+  enabled: boolean;
+  updated_at: number;
+  last_acknowledged_at: number;
+  last_provider: string;
+}
+
+/** Aggregate observability stats for the self-improve loop. */
+export interface SelfImproveMetrics {
+  total_runs: number;
+  successes: number;
+  failures: number;
+  success_rate: number;
+  failure_rate: number;
+  avg_duration_ms: number;
+  last_error: string | null;
+  last_error_chunk: string | null;
+  last_error_at_ms: number;
+}
+
+/** One persisted run record from the self-improve JSONL log. */
+export interface SelfImproveRun {
+  started_at_ms: number;
+  finished_at_ms: number;
+  chunk_id: string;
+  chunk_title: string;
+  outcome: 'running' | 'success' | 'failure';
+  duration_ms: number;
+  provider: string;
+  model: string;
+  plan_chars: number;
+  error: string | null;
+}
+
+/**
+ * Configurable context-loading rules for every coding workflow
+ * (Chunk 25.16). Mirrors the `CodingWorkflowConfig` Rust struct.
+ */
+export interface CodingWorkflowConfig {
+  include_dirs: string[];
+  include_files: string[];
+  exclude_paths: string[];
+  max_file_chars: number;
+  max_total_chars: number;
+}
+
+/** One row in the coding-workflow live preview. */
+export interface CodingWorkflowPreviewDoc {
+  label: string;
+  char_count: number;
+}
+
+/** Aggregate preview returned by `preview_coding_workflow_context`. */
+export interface CodingWorkflowPreview {
+  documents: CodingWorkflowPreviewDoc[];
+  total_chars: number;
+  file_count: number;
+  repo_root: string;
+}
 
 // ── Voice ──────────────────────────────────────────────────────────────────────
 
