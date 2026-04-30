@@ -231,8 +231,19 @@ pub async fn extract_memories_from_session(
     }; // lock released before await
 
     let facts = if let Some(mode) = brain_mode {
-        crate::memory::brain_memory::extract_facts_any_mode(
+        // Chunk 26.2b — route through the topic-segmenter so a chat
+        // that wandered across topics produces a focused per-topic
+        // fact list instead of one jumbled blob. Falls back to
+        // single-pass extraction when embeddings are unavailable or
+        // no topic shift is detected.
+        let active_model = state
+            .active_brain
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        crate::memory::brain_memory::extract_facts_segmented_any_mode(
             &mode,
+            active_model.as_deref(),
             &history,
             &state.provider_rotator,
         )
@@ -252,7 +263,75 @@ pub async fn extract_memories_from_session(
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         crate::memory::brain_memory::save_facts(&facts, &store)
     };
+
+    // Chunk 26.3 — auto-fire edge extraction so newly-learned facts
+    // immediately participate in the typed-edge knowledge graph instead of
+    // waiting for the user to manually trigger `extract_edges_via_brain`.
+    // Gated by `auto_extract_edges` (default on); skipped silently when
+    // disabled, when no facts were saved this round, or when no Ollama
+    // model is configured (edge extraction currently requires `active_brain`,
+    // see `extract_edges_via_brain` below). A failure in this follow-up
+    // never surfaces to the caller — the primary fact-save already
+    // succeeded and the next learn cycle will retry edge extraction.
+    if count > 0 {
+        let auto_edges = state
+            .app_settings
+            .lock()
+            .map(|s| s.auto_extract_edges)
+            .unwrap_or(true);
+        let active_model = state
+            .active_brain
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        if auto_edges {
+            if let Some(model) = active_model {
+                let _ = run_edge_extraction(&model, &state, 25).await;
+            }
+        }
+    }
+
     Ok(count)
+}
+
+/// Inner helper used by both [`extract_edges_via_brain`] (manual command)
+/// and the auto-fire path inside [`extract_memories_from_session`]
+/// (Chunk 26.3). Snapshots all memories under a short lock, runs the LLM
+/// edge proposer in chunked batches without holding the lock, and re-locks
+/// briefly to insert each batch. Returns the count of new edges inserted.
+async fn run_edge_extraction(
+    model: &str,
+    state: &State<'_, AppState>,
+    chunk: usize,
+) -> Result<usize, String> {
+    let entries: Vec<MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    if entries.len() < 2 {
+        return Ok(0);
+    }
+    let known_ids: std::collections::HashSet<i64> = entries.iter().map(|e| e.id).collect();
+    let agent = crate::brain::OllamaAgent::new(model);
+    let chunk = chunk.clamp(2, 50);
+    let mut total_inserted = 0usize;
+
+    for window in entries.chunks(chunk) {
+        let block = crate::memory::format_memories_for_extraction(window);
+        let reply = agent.propose_edges(&block).await;
+        if reply.trim().eq_ignore_ascii_case("NONE") {
+            continue;
+        }
+        let new_edges = crate::memory::parse_llm_edges(&reply, &known_ids);
+        if new_edges.is_empty() {
+            continue;
+        }
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        if let Ok(n) = store.add_edges_batch(&new_edges) {
+            total_inserted += n;
+        }
+    }
+    Ok(total_inserted)
 }
 
 /// Use the active brain to summarize the current session into a single memory entry.
@@ -298,6 +377,99 @@ pub async fn summarize_session(
         crate::memory::brain_memory::save_summary(&summary, &store);
     }
     Ok(summary)
+}
+
+/// Walk historical session summaries and re-run fact extraction on each.
+///
+/// **Chunk 26.4** — Earlier versions of TerranSoul saved
+/// `MemoryType::Summary` paragraphs but did not extract structured facts
+/// from them. This command backfills those facts using the same
+/// segmented extractor that auto-fires after every chat
+/// (Chunk 26.2b). Emits `brain-replay-progress` events with a
+/// [`crate::memory::replay::ReplayProgress`] payload so the UI can show
+/// a progress bar.
+///
+/// `since_timestamp_ms`: only replay summaries created at or after this
+/// Unix-millisecond timestamp. `None` means replay all summaries.
+///
+/// `dry_run`: when `true`, the LLM is invoked but the resulting facts
+/// are **not** persisted. Useful for "preview how many memories this
+/// would create" before committing.
+///
+/// `max_summaries`: hard cap on the number of summaries replayed. `None`
+/// = no cap.
+#[tauri::command]
+pub async fn replay_extract_history(
+    since_timestamp_ms: Option<i64>,
+    dry_run: Option<bool>,
+    max_summaries: Option<usize>,
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::memory::replay::ReplayProgress, String> {
+    use tauri::Emitter;
+
+    let config = crate::memory::replay::ReplayConfig {
+        since_timestamp_ms,
+        dry_run: dry_run.unwrap_or(false),
+        max_summaries,
+    };
+
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    let active_model = state
+        .active_brain
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+
+    // Snapshot all entries under a short lock, then filter without it.
+    let all = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    let summaries = crate::memory::replay::select_summaries(&all, &config);
+    let total = summaries.len();
+
+    let mut progress = crate::memory::replay::ReplayProgress {
+        processed: 0,
+        total,
+        new_memories: 0,
+        current_summary_created_at: None,
+        current_summary_id: None,
+        done: total == 0,
+    };
+
+    // Always emit at least one event so the UI sees the total even when
+    // there are no summaries to process.
+    let _ = app_handle.emit("brain-replay-progress", &progress);
+
+    for summary in &summaries {
+        let history = crate::memory::replay::synthetic_history_from_summary(&summary.content);
+        let facts = crate::memory::brain_memory::extract_facts_segmented_any_mode(
+            &brain_mode,
+            active_model.as_deref(),
+            &history,
+            &state.provider_rotator,
+        )
+        .await;
+
+        let saved = if config.dry_run {
+            facts.len()
+        } else {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            crate::memory::brain_memory::save_facts(&facts, &store)
+        };
+
+        progress = crate::memory::replay::next_progress(&progress, summary, saved, total);
+        let _ = app_handle.emit("brain-replay-progress", &progress);
+    }
+
+    Ok(progress)
 }
 
 /// Use the active brain to perform a semantic search across stored memories.
@@ -1127,41 +1299,8 @@ pub async fn extract_edges_via_brain(
         .clone()
         .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
 
-    // The store mutex must not be held across `.await`, so we snapshot the
-    // memories under a short-lived lock, do all LLM calls without the lock,
-    // and re-acquire it briefly to insert each batch of edges.
     let chunk = chunk_size.unwrap_or(25);
-
-    let entries: Vec<MemoryEntry> = {
-        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-        store.get_all().map_err(|e| e.to_string())?
-    };
-    if entries.len() < 2 {
-        return Ok(0);
-    }
-    let known_ids: std::collections::HashSet<i64> =
-        entries.iter().map(|e| e.id).collect();
-
-    let agent = crate::brain::OllamaAgent::new(&model);
-    let chunk = chunk.clamp(2, 50);
-    let mut total_inserted = 0usize;
-
-    for window in entries.chunks(chunk) {
-        let block = crate::memory::format_memories_for_extraction(window);
-        let reply = agent.propose_edges(&block).await;
-        if reply.trim().eq_ignore_ascii_case("NONE") {
-            continue;
-        }
-        let new_edges = crate::memory::parse_llm_edges(&reply, &known_ids);
-        if new_edges.is_empty() {
-            continue;
-        }
-        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-        if let Ok(n) = store.add_edges_batch(&new_edges) {
-            total_inserted += n;
-        }
-    }
-    Ok(total_inserted)
+    run_edge_extraction(&model, &state, chunk).await
 }
 
 /// Multi-hop hybrid search: vector + keyword + graph traversal.

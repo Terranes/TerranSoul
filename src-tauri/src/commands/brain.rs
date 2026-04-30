@@ -127,6 +127,33 @@ pub async fn check_ollama_status(state: State<'_, AppState>) -> Result<OllamaSta
     Ok(brain::check_status(client, brain::ollama_agent::OLLAMA_BASE_URL).await)
 }
 
+/// Detect Ollama installation status (binary on disk + service responding).
+#[tauri::command]
+pub async fn detect_ollama_install() -> brain::ollama_lifecycle::OllamaInstallStatus {
+    brain::ollama_lifecycle::detect_ollama().await
+}
+
+/// Try to start the Ollama service if it's installed but not running.
+/// Polls for up to `timeout_secs` (default 15) for the API to respond.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn start_ollama_service(timeout_secs: Option<u64>) -> Result<bool, String> {
+    brain::ollama_lifecycle::start_ollama(timeout_secs.unwrap_or(15)).await
+}
+
+/// Download and install Ollama from the official site.
+/// Emits `ollama-install-progress` events with `{ phase: string, percent: u32 }`.
+#[tauri::command]
+pub async fn install_ollama(app: AppHandle) -> Result<String, String> {
+    let app_for_progress = app.clone();
+    brain::ollama_lifecycle::install_ollama(move |phase, percent| {
+        let _ = app_for_progress.emit(
+            "ollama-install-progress",
+            serde_json::json!({ "phase": phase, "percent": percent }),
+        );
+    })
+    .await
+}
+
 /// List all Ollama models installed on this machine.
 #[tauri::command]
 pub async fn get_ollama_models(

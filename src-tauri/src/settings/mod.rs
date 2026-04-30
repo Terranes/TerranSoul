@@ -155,6 +155,19 @@ pub struct AppSettings {
     #[serde(default)]
     pub contextual_retrieval: bool,
 
+    /// When `true` (default), every successful `extract_memories_from_session`
+    /// run is followed by an automatic `extract_edges_via_brain` pass over the
+    /// freshly-grown memory store, so newly-learned facts immediately
+    /// participate in the typed-edge knowledge graph instead of waiting for
+    /// the user to manually trigger edge extraction. Disabling skips the
+    /// follow-up call (saves one LLM round-trip per learn cycle but leaves
+    /// the graph stale until manual extraction runs).
+    ///
+    /// Maps to `docs/brain-advanced-design.md` §21.7 roadmap item
+    /// "auto-fire edge extraction" (chunk 26.3).
+    #[serde(default = "default_true")]
+    pub auto_extract_edges: bool,
+
     /// Set to `true` after the first-launch wizard completes (recommended
     /// or manual path).  The frontend uses this flag to decide whether to
     /// show the welcome wizard on startup.
@@ -245,6 +258,7 @@ impl Default for AppSettings {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
@@ -361,6 +375,7 @@ mod tests {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
@@ -389,6 +404,34 @@ mod tests {
         assert!(!parsed.bgm_enabled);
         assert!((parsed.bgm_volume - DEFAULT_BGM_VOLUME).abs() < 0.001);
         assert_eq!(parsed.bgm_track_id, DEFAULT_BGM_TRACK_ID);
+    }
+
+    /// Chunk 26.3 — `auto_extract_edges` defaults to `true` so newly-learned
+    /// facts auto-participate in the typed-edge graph without requiring the
+    /// user to opt in. Persisted-config files that pre-date this field must
+    /// also deserialise with `auto_extract_edges = true` (forward-compat).
+    #[test]
+    fn default_auto_extract_edges_is_on() {
+        let s = AppSettings::default();
+        assert!(s.auto_extract_edges, "auto_extract_edges must default to true (Chunk 26.3)");
+    }
+
+    #[test]
+    fn serde_fills_auto_extract_edges_default_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(
+            parsed.auto_extract_edges,
+            "missing auto_extract_edges must deserialise to true for forward-compat"
+        );
+    }
+
+    #[test]
+    fn auto_extract_edges_roundtrips_through_serde() {
+        let s = AppSettings { auto_extract_edges: false, ..AppSettings::default() };
+        let json = serde_json::to_string(&s).unwrap();
+        let parsed: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(!parsed.auto_extract_edges);
     }
 
     #[test]

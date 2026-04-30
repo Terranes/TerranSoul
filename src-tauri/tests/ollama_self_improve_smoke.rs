@@ -97,9 +97,11 @@ async fn ollama_real_metrics_log_records_outcome() {
     match &outcome {
         Ok(reply) => log.record_outcome(
             started, "smoke.1", "Smoke test", "custom", &cfg.model, true, reply.len(), None,
+            terransoul_lib::coding::metrics::TokenUsage::default(),
         ),
         Err(e) => log.record_outcome(
             started, "smoke.1", "Smoke test", "custom", &cfg.model, false, 0, Some(e),
+            terransoul_lib::coding::metrics::TokenUsage::default(),
         ),
     }
 
@@ -154,6 +156,7 @@ async fn ollama_real_run_coding_task_prose() {
         include_docs: false,
         output_kind: TaskOutputKind::Prose,
         extra_documents: Vec::new(),
+        prior_handoff: None,
     };
 
     let result = run_coding_task(&cfg, &task, None)

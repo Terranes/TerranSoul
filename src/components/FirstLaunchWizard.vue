@@ -414,6 +414,32 @@ async function startPullProgressListener() {
   }
 }
 
+let installListenCleanup: (() => void) | null = null;
+
+/** Start listening to Ollama install progress events (download + setup phases). */
+async function startInstallProgressListener() {
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await listen<{ phase: string; percent: number }>('ollama-install-progress', (event) => {
+      const p = event.payload;
+      setupMessage.value = p.phase;
+      // Map install progress into the 5–25% range reserved for Ollama install.
+      setupProgress.value = 5 + Math.round((p.percent / 100) * 20);
+      logDebug(`Install: ${p.phase} (${p.percent}%)`);
+    });
+    installListenCleanup = unlisten;
+  } catch {
+    // No Tauri backend — ignore.
+  }
+}
+
+function stopInstallProgressListener() {
+  if (installListenCleanup) {
+    installListenCleanup();
+    installListenCleanup = null;
+  }
+}
+
 function stopPullProgressListener() {
   if (listenCleanup) {
     listenCleanup();
@@ -421,7 +447,10 @@ function stopPullProgressListener() {
   }
 }
 
-onUnmounted(() => stopPullProgressListener());
+onUnmounted(() => {
+  stopPullProgressListener();
+  stopInstallProgressListener();
+});
 
 async function chooseManual() {
   // Mark first launch as complete but don't auto-configure.
@@ -508,8 +537,9 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
   logDebug('Starting recommended setup');
 
-  // Start listening for pull progress events.
+  // Start listening for pull + install progress events.
   await startPullProgressListener();
+  await startInstallProgressListener();
 
   // Suppress quest-unlock / combo-unlock notifications during batch setup
   // so the user isn't blasted with popups for every auto-detected feature.
@@ -536,11 +566,14 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
 
         if (result.mode === 'local') {
           const pullNote = result.pulled ? ' — just downloaded' : '';
+          const installNote = result.ollamaInstalled && !result.ollamaStarted
+            ? ' (Ollama auto-installed)'
+            : result.ollamaStarted ? ' (Ollama auto-started)' : '';
           items.push({
             icon: '🧠',
-            label: `Brain connected (Local — ${result.model}${pullNote})`,
+            label: `Brain connected (Local — ${result.model}${pullNote})${installNote}`,
           });
-          logDebug(`Brain configured: local ${result.model}${pullNote}`);
+          logDebug(`Brain configured: local ${result.model}${pullNote}${installNote}`);
         } else if (result.pullFailed) {
           // Download was attempted but failed — show as error.
           logDebug(`Model download failed: ${result.pullFailed}`, 'error');
@@ -590,8 +623,9 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   }
   setupProgress.value = 30;
 
-  // Stop the pull progress listener (download phase is over).
+  // Stop the pull + install progress listeners (download phase is over).
   stopPullProgressListener();
+  stopInstallProgressListener();
 
   // ── Cleanup: track space freed by removing old models ──────────────
   try {
@@ -651,23 +685,17 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
   if (autoAcceptAll) {
     setupMessage.value = 'Activating quests...';
     setupProgress.value = 80;
-    logDebug('Phase 4: Auto-accepting quests');
+    logDebug('Phase 4: Quest system ready');
 
-    const allQuests = [...FOUNDATION_QUESTS, ...RECOMMENDED_QUESTS];
-    let activatedCount = 0;
-    for (const questId of allQuests) {
-      // Only mark quests that are actually active (auto-detected as working).
-      // This prevents showing quests as "completed" when their underlying
-      // feature wasn't actually configured during setup.
-      const status = skillTree.getSkillStatus(questId);
-      if (status === 'active') {
-        skillTree.markComplete(questId);
-        activatedCount++;
-      }
-    }
-    items.push({ icon: '⚔️', label: `${activatedCount} quests auto-activated` });
+    // On first launch, do NOT mark any quests as completed or report them
+    // as "auto-activated". The skill tree auto-detects active features via
+    // checkActive() but we don't want to confuse users by showing
+    // completion badges before they've even started using the app.
+    // Quests will naturally show as "available" or "active" based on
+    // real-time feature detection as the user explores the app.
+    items.push({ icon: '⚔️', label: 'Quests ready — explore your skill tree!' });
     autoConfigured.push('quests');
-    logDebug(`${activatedCount} quests activated (${allQuests.length - activatedCount} skipped — not yet active)`);
+    logDebug('Quests: ready for discovery (no pre-completion marks)');
   } else {
     items.push({ icon: '📜', label: 'Quests ready — accept them one by one from the Quest tab' });
     logDebug('Quests: manual mode');

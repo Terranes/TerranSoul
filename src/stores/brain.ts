@@ -11,6 +11,7 @@ import type {
   LmStudioStatus,
   LmStudioUnloadResult,
   ModelRecommendation,
+  OllamaInstallStatus,
   OllamaModelEntry,
   OllamaStatus,
   SystemInfo,
@@ -99,6 +100,21 @@ export const useBrainStore = defineStore('brain', () => {
 
   async function checkOllamaStatus(): Promise<void> {
     ollamaStatus.value = await invoke<OllamaStatus>('check_ollama_status');
+  }
+
+  /** Detect Ollama installation status (binary on disk + service responding). */
+  async function detectOllamaInstall(): Promise<OllamaInstallStatus> {
+    return invoke<OllamaInstallStatus>('detect_ollama_install');
+  }
+
+  /** Try to start the Ollama service. Returns true if running by end of timeout. */
+  async function startOllamaService(timeoutSecs = 15): Promise<boolean> {
+    return invoke<boolean>('start_ollama_service', { timeoutSecs });
+  }
+
+  /** Download + install Ollama. Emits 'ollama-install-progress' events. */
+  async function installOllama(): Promise<string> {
+    return invoke<string>('install_ollama');
   }
 
   async function fetchInstalledModels(): Promise<void> {
@@ -357,7 +373,7 @@ export const useBrainStore = defineStore('brain', () => {
    */
   async function autoConfigureLocalFirst(callbacks?: {
     onProgress?: (message: string) => void;
-  }): Promise<{ mode: 'local' | 'cloud'; model: string; pulled: boolean; pullFailed?: string }> {
+  }): Promise<{ mode: 'local' | 'cloud'; model: string; pulled: boolean; pullFailed?: string; ollamaInstalled?: boolean; ollamaStarted?: boolean }> {
     const report = (msg: string) => callbacks?.onProgress?.(msg);
 
     // Step 0: Refresh model catalogue from online (best-effort)
@@ -373,11 +389,67 @@ export const useBrainStore = defineStore('brain', () => {
       fetchInstalledModels(),
     ]);
 
+    let ollamaInstalled = false;
+    let ollamaStarted = false;
+
     if (!ollamaStatus.value.running) {
-      // Ollama not available — cloud fallback
-      report('Ollama not detected — using free cloud AI...');
-      await autoConfigureForDesktop();
-      return { mode: 'cloud', model: 'Pollinations AI', pulled: false };
+      // Ollama not responding — check if it's installed but stopped, or missing entirely.
+      report('Ollama not responding — checking install status...');
+      let installStatus: OllamaInstallStatus;
+      try {
+        installStatus = await detectOllamaInstall();
+      } catch {
+        installStatus = { installed: false, running: false, binary_path: null };
+      }
+      ollamaInstalled = installStatus.installed;
+
+      if (installStatus.installed) {
+        // Try to start it.
+        report('Ollama is installed — starting service...');
+        try {
+          const started = await startOllamaService(20);
+          if (started) {
+            ollamaStarted = true;
+            report('Ollama service started successfully');
+            await checkOllamaStatus();
+            await fetchInstalledModels();
+          } else {
+            report('Ollama did not start within 20 seconds');
+          }
+        } catch (e) {
+          report(`Failed to start Ollama: ${e}`);
+        }
+      } else {
+        // Try to install it.
+        report('Ollama not installed — downloading installer...');
+        try {
+          await installOllama();
+          ollamaInstalled = true;
+          report('Ollama installed — starting service...');
+          const started = await startOllamaService(30);
+          if (started) {
+            ollamaStarted = true;
+            report('Ollama service started successfully');
+            await checkOllamaStatus();
+            await fetchInstalledModels();
+          }
+        } catch (e) {
+          report(`Ollama auto-install failed: ${e}`);
+        }
+      }
+
+      // If still not running after install/start attempts, fall back to cloud.
+      if (!ollamaStatus.value.running) {
+        report('Could not get Ollama running — using free cloud AI...');
+        await autoConfigureForDesktop();
+        return {
+          mode: 'cloud',
+          model: 'Pollinations AI',
+          pulled: false,
+          ollamaInstalled,
+          ollamaStarted,
+        };
+      }
     }
 
     // Step 2: Ollama is running — pick the best model
@@ -621,6 +693,9 @@ export const useBrainStore = defineStore('brain', () => {
     fetchRecommendations,
     refreshModelCatalogue,
     checkOllamaStatus,
+    detectOllamaInstall,
+    startOllamaService,
+    installOllama,
     fetchInstalledModels,
     getOllamaModelsDir,
     getDiskSpace,

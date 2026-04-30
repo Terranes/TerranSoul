@@ -327,17 +327,10 @@ Integration test with VRM playback.
 > The deferred MCP stdio transport escalated to Chunk 15.9 in Phase 15
 > because deep-analysis decided it is not optional polish.
 
-| # | Chunk | Status | Notes |
-|---|---|---|---|
-| 21.1 | **Restore missing `## Chunk 14.7 — Persona Pack Export / Import` H2 heading in `rules/completion-log.md`.** TOC links to `#chunk-147--persona-pack-export--import` (line 55) but the section body at line ≈1273 starts directly at `**Date:** 2026-04-24` with no H2 heading — anchor link is broken. Insert the heading on a new line before line 1273. | not-started | Pure log hygiene. |
-| 21.2 | **Backfill Chunk 14.1 (Persona MVP) entry in `rules/completion-log.md`.** Per `docs/persona-design.md` § 15.1, the Persona MVP is `PersonaTraits` store + `persona-prompt.ts` injection + `PersonaPanel.vue` + Soul Mirror quest activation. All four artifacts exist (`src/stores/persona.ts`, `src/utils/persona-prompt.ts`, `src/components/PersonaPanel.vue`, Soul Mirror node in `src/stores/skill-tree.ts`) and tests pass, but no chunk-numbered entry exists. Reconstruct the entry from `git log --all -- src/stores/persona.ts src/utils/persona-prompt.ts` and file it with the same shape as the other 14.x entries. | not-started | Foundation chunk for Phase 14 — predates 14.2. |
-| 21.3 | **Number the "Multi-Agent Resilience" entry at the top of `rules/completion-log.md`.** The 2026-04-25 entry at line 183 (per-agent threads + `workflows/resilience.rs` + agent-swap context) ships with no chunk #. Per the deep-analysis verdict in Phase 23, this entry actually only delivers the *scaffold* (library code + per-agent stamping), so renumber it as **Chunk 23.0 — Multi-agent resilience scaffold** and amend the entry's text to make clear the wiring chunks 23.1–23.3 are still pending. | not-started | Names a real chunk so Phase 23 has a clean predecessor. |
-| 21.4 | **Backfill TaskControls (Stop / Stop-and-Send) chunk in `rules/completion-log.md`.** New component `src/components/TaskControls.vue` + `src/components/TaskControls.test.ts`, wired into `src/views/ChatView.vue` at lines 228 / 369 with `conversationStore.stopGeneration()` / `stopAndSend()` (defined in `src/stores/conversation.ts`). File a chunk entry — appropriate name **Chunk 23.0b — Stop & Stop-and-Send Controls** since it shipped in the same multi-agent-resilience PR per repo timestamps. | not-started | Pairs with 21.3. |
-
-> **How to handle these.** Each row is a small log edit; pick
-> one, do it, log it in `completion-log.md`, remove the row from this
-> file. Rows 21.1–21.4 are log-only edits and can ship as a single
-> bundle.
+> **Status — 2026-04-30:** All four hygiene rows (21.1–21.4) shipped as
+> a single bundle. See `rules/completion-log.md` →
+> `Phase 21.1–21.4 — Doc & Completion-Log Hygiene Bundle`. This phase
+> is now closed; remaining audit-surfaced work lives in Phase 22 / 23.
 
 ---
 
@@ -366,12 +359,7 @@ Integration test with VRM playback.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 22.1 | **Backfill `## Chunk 22.1 — Plugin host registry (engine + manifest + Pinia store)` entry in `rules/completion-log.md`.** Documents the as-shipped engine: `src-tauri/src/plugins/{mod,manifest,host}.rs`, `src-tauri/src/commands/plugins.rs` (12 Tauri commands), `src/stores/plugins.ts` + tests, `docs/plugin-development.md` (613 LOC). Marks engine ✅ but explicitly notes 22.2–22.7 are required before plugins are *useful*. Counts: 28 Rust tests, 152-LOC store with full vitest coverage. | not-started | Engine is real; only the log entry is missing. Same shape as 21.1–21.4 but big enough to be its own chunk. |
-| 22.2 | **PluginsView.vue — install / activate / disable / uninstall UI surface.** New `src/views/PluginsView.vue` with: list of installed plugins (status pill + last-active timestamp), drag-and-drop / file-picker install for `.terransoul-plugin.json` manifests, per-plugin Activate / Disable / Uninstall buttons that call the existing Tauri commands (`plugin_install`, `plugin_activate`, `plugin_deactivate`, `plugin_uninstall`), and a permissions panel showing each plugin's declared `capabilities` with explicit user-grant toggles before activation. Routed under the existing Brain or Settings tab — no new top-level navigation. ~400 LOC + ~12 vitest tests. | not-started | Depends on 22.1 (just for log naming). Real prerequisite is the existing engine, which works. Activation event `OnStartup` is wired here too — fires `plugin_host.check_activation(&ActivationEvent::OnStartup)` once after `load_installed()`. |
-| 22.3 | **Theme contribution → CSS variable applier.** Active plugins' `contributes.themes[].tokens` (already a `Record<string, string>`) flow into a new composable `useActiveTheme()` that writes them to `document.documentElement.style.setProperty(...)`. Theme picker UI added to PluginsView (22.2) so the user can pick which contributed theme is active; persisted to a single `active_theme_id` setting. Hot-swap on activate / deactivate without reload. ~150 LOC + tests for token application + idempotent reset on deactivate. | not-started | Depends on 22.2. The CSS variable layer (`--ts-*`) already exists per Chunk 065 (Design System) — this just wires plugin tokens into it. |
-| 22.4 | **Slash-command contribution → ChatView dispatcher.** When the user types `/<name>` in `ChatView.vue` and `<name>` matches an active plugin's `slash_commands[].name`, dispatch to that plugin's `command_id` via `plugin_host.invoke_command(command_id, args)`. New `invoke_command` method on `PluginHost` that resolves `command_id` → `CommandEntry` and (for now) returns the contributed command's metadata as a chat message; full execution path lands in 22.7. Slash-command autocomplete dropdown in the input field. ~250 LOC + tests for fuzzy match + dispatch + unknown-command graceful error. | not-started | Depends on 22.2. `ContributedSlashCommand` already has `name` + `command_id` fields, no schema change. |
 | 22.5 | **Memory-hook contribution → `add_memory` pre/post pipeline.** When `commands::memory::add_memory` runs, fire each active plugin's `memory_hooks[]` matching the current stage (`PreStore`, `PostStore`, etc.). Hooks are dispatched through the existing `WasmRunner` sandbox (`src-tauri/src/sandbox/wasm_runner.rs`) so untrusted plugins cannot read other memories. PreStore hooks may rewrite tags / content; PostStore hooks are notification-only. Hard-cap each hook at 200 ms. ~300 LOC + integration tests showing a sample WASM tag-rewriter plugin altering a memory in-flight. | not-started | Depends on 22.2 + sandbox/wasm_runner.rs (already exists, used elsewhere). The activation events `OnMemoryTag` are also wired here. |
-| 22.6 | **Plugin settings UI — read / write contributed settings.** Each active plugin's `contributes.settings[]` rendered as a section in the new PluginsView (22.2) using the existing form-control primitives. Read via `plugin_get_setting`, write via `plugin_set_setting`. Schema validation (per `value_type`) is already implemented backend-side — the UI just renders the appropriate control (boolean → toggle, string → input, number → number input, enum → select). ~200 LOC + tests. | not-started | Depends on 22.2. Pure UI work — backend support is complete. |
 | 22.7 | **Plugin command execution — Tool / Sidecar / WASM dispatch.** Today `plugin_host.invoke_command` (added in 22.4) only echoes metadata. Wire real execution: `kind: Tool` → call native sidecar via `tauri-plugin-shell` with the plugin's declared args, capture stdout / stderr; `kind: Wasm` → invoke through `WasmRunner`; `kind: Sidecar` → launch + handle bidirectional pipe. Capability-checked at every call site (rejects if user has not granted the capability). ~500 LOC + integration tests for each kind. | not-started | Depends on 22.4 (dispatcher) + 22.2 (capability grant UI). The biggest chunk in this phase; gates the *useful* end of plugin development. |
 
 #### Phase 22 acceptance gate
@@ -415,8 +403,6 @@ memory-hook that prepends `auto:` to every new memory's tags. After
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 23.1 | **Wire `ResilientRunner` into workflow activities (`src-tauri/src/workflows/engine.rs`).** Every `Activity::run()` invocation in the engine routes through a `ResilientRunner` configured per workflow type (defaults: `RetryPolicy::default` 3-attempt exponential, `TimeoutPolicy` 60 s overall + 30 s per activity, `CircuitBreaker` 5-failure / 60 s recovery, `HeartbeatWatchdog` 30 s stale threshold). Re-exec / `Resuming` events on app restart inherit the same policies. New `WorkflowResilienceConfig` Tauri command surface so power users can override per-workflow-type. ~250 LOC + 8 integration tests showing retry-on-transient + circuit-open-after-N-fails + workflow-resumes-after-restart-with-half-open. | not-started | The library and tests already exist (resilience.rs, 13 unit tests). This chunk is "just" the integration into engine.rs, but engine.rs is core durable-workflow code so it is genuinely a careful chunk. |
-| 23.3 | **Surface per-agent threads in the chat UI.** Today messages are stamped with `agentId` (via `stampAgent`) and `agentMessages` filters them, but no view reads `agentMessages`. Add a per-agent thread filter chip row above the chat scroll (existing visual style — same as MemoryView's tag chips), backed by `agentMessages`. When toggled, the message list shows only that agent's turns. Default chip is "All agents" (= existing flat list). Persists across app restarts via `localStorage`. ~180 LOC + 8 vitest tests. | not-started | Pure frontend chunk; backend is unchanged. Closes the visibility gap noted in the audit. |
 
 #### Phase 23 acceptance gate
 
@@ -496,3 +482,47 @@ User on the same Wi-Fi as the desktop:
    pairing is re-used silently from Keychain.
 5. Revoking the phone from the desktop's trust list immediately
    terminates streams and forces a re-pair on the iOS side.
+
+---
+
+### Phase 26 — Brain Background Maintenance & Auto-Learn Completion
+
+> **Why this phase exists.** `docs/brain-advanced-design.md` §21.7 lists
+> four roadmap items required to close the auto-learn loop. They are not
+> tracked anywhere in milestones today.
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 26.1 | **Daily background maintenance scheduler (`tasks::manager::TaskManager`).** Today the Step-5 maintenance jobs (importance recalc, decay sweep, sleep-time consolidation, drift check) only fire when the user manually triggers them. Add a single Tokio-backed scheduler that runs once per `AppSettings.maintenance_interval_hours` (default 24, configurable 1–168), gated behind `AppSettings.background_maintenance_enabled` (default true), with a "skip if app idle < N minutes" guard so it does not fight active chat. Survives restart by persisting `last_run_at` in `app_settings.json`. ~250 LOC + tests. | not-started | Brain doc sync (§21.7 item 1). Lives in `src-tauri/src/tasks/manager.rs`. |
+| 26.2 | **Conversation-aware (segmented) extraction.** Today `extract_facts` sees the whole session as one blob; long sessions miss topic-shifted facts. Add `memory::segmentation::topic_segments(messages, threshold)` — pure function that segments by embedding-distance peaks (cosine drop > `threshold`, default 0.35). Run extraction once per segment instead of once per session. ~200 LOC + tests. | not-started | Brain doc sync (§21.7 item 2). Pure utility; wires into `auto_learn::run_extraction`. |
+| 26.3 | **Edge auto-extraction after `extract_facts`.** `extract_edges_via_brain` is manual today. Auto-fire it after each successful `extract_facts` when ≥2 facts were created. Gated behind `AutoLearnPolicy.auto_edges` (default true). ~120 LOC + tests. | not-started | Brain doc sync (§21.7 item 3). Plugs into the existing auto-learn loop. |
+| 26.4 | **Replay-from-history rebuild command.** New Tauri command `rebuild_memories_from_history(start_ts, end_ts)` re-runs `extract_facts` over saved chat logs. Surfaces progress event `memory-rebuild-progress` and writes new memories with `source_url = "rebuild:<run_id>"`. Capability-gated. ~250 LOC + tests. | not-started | Brain doc sync (§21.7 item 4). Backfills memories for sessions that pre-date auto-learn. |
+
+---
+
+### Phase 27 — Agentic RAG & Context Engineering
+
+> **Why this phase exists.** `docs/brain-advanced-design.md` §19.2
+> tracker rows 14 and 15 are still 🟡 partial — they need to land.
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 27.1 | **Agentic RAG: retrieve-as-tool inside the agent loop.** Wire `retrieve_memory` as an explicit LLM tool inside the orchestrator (`src-tauri/src/orchestrator/`) so the agent can plan → retrieve → reflect → re-retrieve. Tool schema mirrors existing brain `search_memory` command. Loop-cap of 5 iterations. ~350 LOC + tests for the plan/retrieve/reflect cycle. | not-started | Brain doc sync. Replaces the static "retrieve once at start" pattern. |
+
+---
+
+### Phase 28 — Self-Improve Loop Maturation
+
+> **Why this phase exists.** `docs/coding-workflow-design.md` §5
+> ("Roadmap & gaps") lists six unimplemented items beyond what landed in
+> chunks 25.x.
+
+| # | Chunk | Status | Notes |
+|---|---|---|---|
+| 28.1 | **Reviewer sub-agent.** Feed the LLM-produced diff into a third workflow with `OutputShape::StrictJson` `{ ok: bool, issues: Vec<{ severity, file, line, msg }> }`. Reject the diff if `ok == false` or any `severity == "error"` issue. ~250 LOC + tests. | not-started | Coding workflow doc sync. Depends on 25.10 (apply_file). Lives in `src-tauri/src/coding_workflow/reviewer.rs`. |
+| 28.2 | **Orchestrator → coding-workflow wiring.** Connect `crate::orchestrator` so chat messages like "implement chunk 28.5" dispatch coding workflows the same way they currently dispatch brain queries. Capability-gated. ~200 LOC + tests. | not-started | Depends on 27.1 (agentic RAG retrieve-as-tool) so the orchestrator already knows how to call workflow tools. |
+| 28.3 | **Multi-agent fan-out / DAG runner.** Mirror Copilot's `/fleet`: parallelise independent chunks, serialise dependents via a small DAG runner. Inputs: a `WorkflowGraph { nodes, edges }`. ~400 LOC + tests for diamond + linear + parallel cases. | not-started | Depends on 28.1 (each parallel run still needs reviewer gate). |
+| 28.5 | **GitHub PR flow polish — OAuth device flow + per-chunk PRs.** Finish the partially-implemented `coding::github` module: complete the OAuth device-code flow, persist tokens via `tauri-plugin-stronghold`, open one PR per applied chunk with auto-generated title/body from `RunRecord` + `MetricsSummary`. Capability-gated. ~350 LOC + tests with mocked GitHub API. | not-started | Coding workflow doc sync (§5 item 6). Depends on 25.10 (apply_file). |
+| 28.6 | **Persistent SQLite task queue.** Replace "read milestones.md every cycle" with a SQLite-backed queue (`coding_tasks` table) so MCP / CLI / phone (Phase 24) can enqueue tasks. Queue worker pops + dispatches. ~350 LOC + tests for FIFO + priority + retry-on-fail. | not-started | Coding workflow doc sync. Unblocks the phone "continue next step" UX from Phase 24. |
+| 28.7 | **Cost / token telemetry per chunk.** Extend `RunRecord` with `prompt_tokens`, `completion_tokens`, `est_cost_usd` (per-provider rate table). Aggregate per-provider in `MetricsSummary`. Surface in the metrics panel as a stacked bar by provider × chunk. ~200 LOC + tests. | not-started | Coding workflow doc sync (§5 item 7). Pure additive; no breaking schema. |
+

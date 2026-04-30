@@ -25,6 +25,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::client::client_from;
+use super::handoff::{
+    build_handoff_block, emit_handoff_seed_instruction, parse_handoff_reply, HandoffState,
+};
 use super::prompting::{extract_tag, CodingPrompt, DocSnippet, OutputShape};
 use super::{CodingLlmConfig, CodingWorkflowConfig};
 
@@ -69,6 +72,17 @@ pub struct CodingTask {
     /// snippets, commit messages) injected after the auto-loaded ones.
     #[serde(default)]
     pub extra_documents: Vec<TaskDocument>,
+    /// Optional in-memory handoff state to inject as a `[RESUMING
+    /// SESSION]` block at the head of the prompt. The Tauri command
+    /// layer loads this from disk via
+    /// [`super::handoff_store::load_handoff`] when the caller passes a
+    /// `handoffSessionId`; pure callers can populate it themselves.
+    ///
+    /// When `Some`, the task description is also suffixed with the
+    /// seed-emission instruction so the model is asked to produce a
+    /// `<next_session_seed>` JSON payload for the next call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_handoff: Option<HandoffState>,
 }
 
 fn default_true() -> bool {
@@ -129,6 +143,12 @@ pub struct CodingTaskResult {
     pub well_formed: bool,
     /// Number of context documents auto-loaded into the prompt.
     pub context_doc_count: usize,
+    /// Parsed `<next_session_seed>` from the model's reply, if the task
+    /// asked for one and the model produced a well-formed payload.
+    /// Persistence to disk is the caller's responsibility (the Tauri
+    /// command does it via `handoff_store::save_handoff`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_handoff: Option<HandoffState>,
 }
 
 /// Run a single coding task through the shared workflow.
@@ -146,14 +166,24 @@ pub async fn run_coding_task(
     // Auto-load context.
     let mut documents: Vec<DocSnippet> = Vec::new();
 
+    // Handoff block goes FIRST so the model re-grounds before reading
+    // any other documents. It's small (≤4 KiB) and deterministic.
+    if let Some(prior) = &task.prior_handoff {
+        documents.push(DocSnippet {
+            label: "resuming_session".to_string(),
+            body: build_handoff_block(prior),
+        });
+    }
+
     if let Some(root) = &task.repo_root {
-        documents = load_workflow_context(
+        let auto = load_workflow_context(
             root,
             workflow_cfg,
             task.include_rules,
             task.include_instructions,
             task.include_docs,
         );
+        documents.extend(auto);
     }
 
     // Append caller-supplied documents.
@@ -166,9 +196,24 @@ pub async fn run_coding_task(
         OutputShape::Prose => None,
         _ => Some("<analysis>".to_string()),
     };
+
+    // When a prior handoff is in play we ask the model to emit a fresh
+    // seed at the end of its reply. The instruction is appended to the
+    // task description so it lands inside the user message — easier to
+    // keep within token budgets than mutating the role.
+    let task_description = if task.prior_handoff.is_some() {
+        format!(
+            "{}\n\n{}",
+            task.description.trim_end(),
+            emit_handoff_seed_instruction().trim()
+        )
+    } else {
+        task.description.clone()
+    };
+
     let prompt = CodingPrompt {
         role: default_coding_role(),
-        task: task.description.clone(),
+        task: task_description,
         negative_constraints: default_negative_constraints(),
         documents,
         output: output.clone(),
@@ -190,12 +235,19 @@ pub async fn run_coding_task(
         OutputShape::Prose => (raw_reply.trim().to_string(), true),
     };
 
+    let next_handoff = if task.prior_handoff.is_some() {
+        parse_handoff_reply(&raw_reply)
+    } else {
+        None
+    };
+
     Ok(CodingTaskResult {
         task_id: task.id.clone(),
         raw_reply,
         payload,
         well_formed,
         context_doc_count,
+        next_handoff,
     })
 }
 

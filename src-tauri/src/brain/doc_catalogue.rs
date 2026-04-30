@@ -852,4 +852,31 @@ mod tests {
             Some("middle")
         );
     }
+
+    #[test]
+    fn dev_path_reads_actual_design_doc() {
+        // This test verifies the CARGO_MANIFEST_DIR dev fallback path
+        // actually finds and parses the real brain-advanced-design.md.
+        let dev_doc = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("docs")
+            .join("brain-advanced-design.md");
+        let markdown = std::fs::read_to_string(&dev_doc)
+            .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", dev_doc, e));
+        let catalogue = parse_catalogue(&markdown)
+            .expect("Failed to parse catalogue from brain-advanced-design.md");
+        // Must have local models
+        assert!(!catalogue.local_models.is_empty(), "No local models parsed");
+        // Must have top picks for all tiers
+        assert!(catalogue.top_picks.contains_key("VeryHigh"));
+        assert!(catalogue.top_picks.contains_key("High"));
+        assert!(catalogue.top_picks.contains_key("Medium"));
+        assert!(catalogue.top_picks.contains_key("Low"));
+        assert!(catalogue.top_picks.contains_key("VeryLow"));
+        // Verify recommend_from_catalogue returns results for a typical system
+        let recs = recommend_from_catalogue(16_384, &catalogue);
+        assert!(!recs.is_empty(), "No recommendations for 16 GB RAM");
+        assert!(recs[0].is_top_pick, "First result should be top pick");
+    }
 }

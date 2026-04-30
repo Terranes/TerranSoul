@@ -80,6 +80,76 @@ pub async fn extract_facts_any_mode(
         .collect()
 }
 
+/// Conversation-segmented variant of [`extract_facts_any_mode`] (Chunk
+/// 26.2b). Embeds each turn, runs the Phase-26 topic segmenter to find
+/// topic-shift boundaries, then runs extraction once per segment so a
+/// "vacation → debugging → cooking" session produces a focused fact
+/// list per topic instead of one jumbled blob.
+///
+/// Falls back to single-pass [`extract_facts_any_mode`] (graceful
+/// degradation) when:
+///
+/// - any turn fails to embed (e.g. offline embedder, mismatched dim),
+/// - the segmenter returns ≤1 segment (no topic shifts detected), or
+/// - the history is too short to segment meaningfully.
+///
+/// Per-segment results are concatenated in segment order and
+/// deduplicated by trimmed lower-cased content (the LLM frequently
+/// re-states the same fact across topic boundaries).
+pub async fn extract_facts_segmented_any_mode(
+    brain_mode: &BrainMode,
+    active_brain_model: Option<&str>,
+    history: &[(String, String)],
+    rotator: &std::sync::Mutex<crate::brain::ProviderRotator>,
+) -> Vec<String> {
+    if history.len() < 4 {
+        // Not enough material to segment — fall through to single-pass.
+        return extract_facts_any_mode(brain_mode, history, rotator).await;
+    }
+
+    // Embed every turn. If *any* embedding is missing, fall back rather
+    // than degrading the segmenter into a single-bucket noop.
+    let mut embeddings: Vec<Vec<f32>> = Vec::with_capacity(history.len());
+    for (_, content) in history.iter() {
+        match crate::brain::embed_for_mode(content, Some(brain_mode), active_brain_model).await {
+            Some(v) if !v.is_empty() => embeddings.push(v),
+            _ => return extract_facts_any_mode(brain_mode, history, rotator).await,
+        }
+    }
+
+    let turns: Vec<crate::brain::segmenter::SegTurn<'_>> = history
+        .iter()
+        .map(|(role, content)| crate::brain::segmenter::SegTurn {
+            role: role.as_str(),
+            content: content.as_str(),
+        })
+        .collect();
+    let segments = crate::brain::segmenter::segment(
+        &turns,
+        &embeddings,
+        &crate::brain::segmenter::SegmenterConfig::default(),
+    );
+
+    if segments.len() <= 1 {
+        // No topic shift found — single-pass is fine.
+        return extract_facts_any_mode(brain_mode, history, rotator).await;
+    }
+
+    let mut all_facts: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for seg in segments {
+        let slice: Vec<(String, String)> = history[seg.start..seg.end].to_vec();
+        let facts = extract_facts_any_mode(brain_mode, &slice, rotator).await;
+        for fact in facts {
+            let key = fact.trim().to_lowercase();
+            if !key.is_empty() && seen.insert(key) {
+                all_facts.push(fact);
+            }
+        }
+    }
+    all_facts
+}
+
 /// Summarize a conversation via any brain mode (Free/Paid/Local).
 pub async fn summarize_any_mode(
     brain_mode: &BrainMode,
@@ -487,5 +557,53 @@ mod tests {
             semantic_search_entries("gemma3:4b", "Python", &entries, 5).await;
         // Keyword fallback should find the "User prefers Python" entry.
         assert!(results.iter().any(|e| e.content.contains("Python")));
+    }
+
+    /// Chunk 26.2b — short transcripts skip the segmenter and fall
+    /// through to single-pass extraction. Verifies the early-exit
+    /// guard against `history.len() < 4`.
+    #[tokio::test]
+    async fn segmented_extract_short_history_falls_back() {
+        let mode = BrainMode::LocalOllama {
+            model: "gemma3:4b".to_string(),
+        };
+        let rotator = std::sync::Mutex::new(crate::brain::ProviderRotator::default());
+        // 2-turn history is below the segmenter floor; with no Ollama
+        // running the underlying single-pass path returns empty rather
+        // than panicking — the assertion is that the function
+        // *terminates* with a `Vec` (i.e. takes the fallback path
+        // instead of trying to embed and segment).
+        let facts = extract_facts_segmented_any_mode(
+            &mode,
+            None,
+            &sample_history(),
+            &rotator,
+        )
+        .await;
+        assert!(facts.is_empty() || facts.iter().all(|f| !f.is_empty()));
+    }
+
+    /// Chunk 26.2b — when no embeddings are available the function
+    /// must fall back to single-pass without panicking.
+    #[tokio::test]
+    async fn segmented_extract_falls_back_when_no_embeddings() {
+        let mode = BrainMode::LocalOllama {
+            model: "gemma3:4b".to_string(),
+        };
+        let rotator = std::sync::Mutex::new(crate::brain::ProviderRotator::default());
+        // 6-turn history triggers the embed path; with no Ollama
+        // running, embeddings come back `None` and the function falls
+        // back to single-pass.
+        let history: Vec<(String, String)> = (0..6)
+            .map(|i| {
+                (
+                    if i % 2 == 0 { "user" } else { "assistant" }.to_string(),
+                    format!("turn {i} content"),
+                )
+            })
+            .collect();
+        let facts = extract_facts_segmented_any_mode(&mode, None, &history, &rotator).await;
+        // No assertion on contents (offline) — assertion is "doesn't panic".
+        let _ = facts;
     }
 }

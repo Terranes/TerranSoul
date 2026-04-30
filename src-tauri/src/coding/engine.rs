@@ -250,6 +250,7 @@ async fn plan_one_chunk<R: Runtime>(
                 true,
                 plan.len(),
                 None,
+                crate::coding::metrics::TokenUsage::default(),
             );
             emit(
                 app,
@@ -269,6 +270,7 @@ async fn plan_one_chunk<R: Runtime>(
                 false,
                 0,
                 Some(&e),
+                crate::coding::metrics::TokenUsage::default(),
             );
             Err(e)
         }

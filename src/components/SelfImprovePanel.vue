@@ -176,6 +176,42 @@
           <div class="si-stat-label">Avg. latency</div>
         </div>
       </div>
+
+      <!-- Cost / token telemetry (Chunk 28.5) -->
+      <div class="si-cost-row">
+        <div class="si-cost-card">
+          <div class="si-cost-label">Total spend</div>
+          <div class="si-cost-value">{{ formatUsd(store.metrics.total_cost_usd) }}</div>
+          <div class="si-cost-sub">
+            {{ formatTokens(store.metrics.total_prompt_tokens) }} prompt
+            · {{ formatTokens(store.metrics.total_completion_tokens) }} out
+          </div>
+        </div>
+        <div class="si-cost-card">
+          <div class="si-cost-label">Last 7 days</div>
+          <div class="si-cost-value">{{ formatUsd(store.metrics.rolling_7d_cost_usd) }}</div>
+          <div class="si-cost-sub">
+            {{ store.metrics.rolling_7d_runs }} runs
+            · {{ formatTokens(store.metrics.rolling_7d_prompt_tokens) }} prompt
+          </div>
+        </div>
+        <div
+          v-if="providerCostEntries.length > 0"
+          class="si-cost-card si-cost-card--breakdown"
+        >
+          <div class="si-cost-label">By provider</div>
+          <ul class="si-cost-breakdown">
+            <li
+              v-for="[provider, cost] in providerCostEntries"
+              :key="provider"
+              class="si-cost-breakdown-item"
+            >
+              <code>{{ provider }}</code>
+              <span>{{ formatUsd(cost) }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
       <div
         v-if="store.metrics.last_error"
         class="si-obs-error"
@@ -211,6 +247,12 @@
               <code>{{ r.provider }}/{{ r.model }}</code>
               · {{ formatDuration(r.duration_ms) }}
               <template v-if="r.outcome === 'success'"> · {{ r.plan_chars }}c</template>
+              <template v-if="r.cost_usd !== null && r.cost_usd !== undefined">
+                · <span
+                  class="si-run-cost"
+                  :title="`${r.prompt_tokens ?? 0} prompt + ${r.completion_tokens ?? 0} completion tokens`"
+                >{{ formatUsd(r.cost_usd) }}</span>
+              </template>
             </span>
           </li>
         </ul>
@@ -429,6 +471,18 @@ const statusPillClass = computed(() => ({
 }));
 const statusPillLabel = computed(() => (store.isEnabled ? 'ENABLED' : 'OFF'));
 
+/**
+ * Sorted per-provider cost entries (descending USD) so the UI shows
+ * the biggest spenders first. Filters out zero-cost providers (local
+ * Ollama) so the list stays short.
+ */
+const providerCostEntries = computed<[string, number][]>(() => {
+  const map = store.metrics.cost_by_provider ?? {};
+  return Object.entries(map)
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]);
+});
+
 function phaseStatusIcon(status: SelfImprovePhase['status']): string {
   switch (status) {
     case 'completed': return '✓';
@@ -471,6 +525,27 @@ function runIcon(outcome: 'running' | 'success' | 'failure'): string {
     case 'failure': return '✗';
     default: return '◐';
   }
+}
+
+/**
+ * Format a USD cost. Renders `—` when undefined, `Free` for $0, and
+ * up to 4 decimal places for small spends so a $0.0002 run doesn't
+ * round to `$0.00` and look like a free local run.
+ */
+function formatUsd(usd: number | null | undefined): string {
+  if (usd === null || usd === undefined || !Number.isFinite(usd)) return '—';
+  if (usd === 0) return 'Free';
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+/** Compact integer formatter — `1234` -> `1.2k`, `1_500_000` -> `1.5M`. */
+function formatTokens(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  if (n < 1000) return n.toString();
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 async function onDisable() {
@@ -826,6 +901,63 @@ async function onClearLog() {
 .si-stat--ok .si-stat-num { color: #5eead4; }
 .si-stat--err { border-color: rgba(252, 165, 165, 0.3); }
 .si-stat--err .si-stat-num { color: #fca5a5; }
+
+/* Cost telemetry (Chunk 28.5) */
+.si-cost-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.si-cost-card {
+  background: rgba(124, 111, 255, 0.06);
+  border: 1px solid rgba(124, 111, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.si-cost-card--breakdown {
+  grid-column: 1 / -1;
+}
+.si-cost-label {
+  font-size: 0.68rem;
+  color: var(--ts-text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.si-cost-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  color: #c7b9ff;
+}
+.si-cost-sub {
+  font-size: 0.7rem;
+  color: var(--ts-text-muted, #94a3b8);
+  margin-top: 2px;
+}
+.si-cost-breakdown {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 4px 12px;
+}
+.si-cost-breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.si-cost-breakdown-item code {
+  background: transparent;
+  padding: 0;
+  color: var(--ts-text-muted, #94a3b8);
+}
+.si-run-cost {
+  color: #c7b9ff;
+  font-variant-numeric: tabular-nums;
+}
 
 .si-obs-error {
   display: flex;

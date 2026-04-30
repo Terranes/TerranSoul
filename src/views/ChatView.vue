@@ -198,9 +198,14 @@
 
       <!-- Full-height message list -->
       <div class="chatbox-messages">
+        <AgentThreadPicker
+          :messages="conversationStore.messages"
+          :current-agent="conversationStore.currentAgent"
+          @pick="(id: string) => conversationStore.setAgent(id)"
+        />
         <TaskProgressBar />
         <ChatMessageList
-          :messages="conversationStore.messages"
+          :messages="conversationStore.agentMessages"
           :is-thinking="conversationStore.isThinking"
           :streaming-text="conversationStore.streamingText"
           :is-streaming="conversationStore.isStreaming"
@@ -338,8 +343,13 @@
             </div>
           </div>
           <TaskProgressBar />
-          <ChatMessageList
+          <AgentThreadPicker
             :messages="conversationStore.messages"
+            :current-agent="conversationStore.currentAgent"
+            @pick="(id: string) => conversationStore.setAgent(id)"
+          />
+          <ChatMessageList
+            :messages="conversationStore.agentMessages"
             :is-thinking="conversationStore.isThinking"
             :streaming-text="conversationStore.streamingText"
             :is-streaming="conversationStore.isStreaming"
@@ -457,11 +467,13 @@ import type { UpgradeOption } from '../components/UpgradeDialog.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useTaskStore } from '../stores/tasks';
 import { useChatExpansion } from '../composables/useChatExpansion';
+import { usePluginSlashDispatch } from '../composables/usePluginSlashDispatch';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
 import TaskControls from '../components/TaskControls.vue';
+import AgentThreadPicker from '../components/AgentThreadPicker.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
@@ -477,6 +489,7 @@ const audioStore = useAudioStore();
 const { muted: audioMuted } = storeToRefs(audioStore);
 const skillTree = useSkillTreeStore();
 const { chatDrawerExpanded, toggleChatDrawer, setChatDrawerExpanded } = useChatExpansion();
+const { tryDispatchSlashCommand } = usePluginSlashDispatch();
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
   getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
@@ -859,6 +872,31 @@ function handleAddMusicRequest() {
 async function handleSend(message: string) {
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
+
+  // Plugin slash-command interception (Chunk 22.4): if the message
+  // matches `/<name> ...` and an active plugin contributes that name,
+  // route to the plugin host and surface the result as an assistant
+  // chat message instead of going through the LLM.
+  const dispatch = await tryDispatchSlashCommand(message);
+  if (dispatch.handled) {
+    conversationStore.messages.push({
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    });
+    conversationStore.messages.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: dispatch.error
+        ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
+        : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
+      agentName: 'TerranSoul',
+      sentiment: dispatch.error ? 'sad' : 'neutral',
+      timestamp: Date.now(),
+    });
+    return;
+  }
 
   // Store user query for capacity detection.
   lastUserQuery = message;

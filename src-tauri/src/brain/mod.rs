@@ -1,16 +1,21 @@
 pub mod brain_config;
 pub mod brain_store;
 pub mod cloud_embeddings;
+pub mod context_budget;
 pub mod doc_catalogue;
 pub mod docker_ollama;
 pub mod free_api;
 pub mod intent_classifier;
 pub mod lm_studio;
+pub mod maintenance_runtime;
+pub mod maintenance_scheduler;
 pub mod model_recommender;
 pub mod ollama_agent;
+pub mod ollama_lifecycle;
 pub mod openai_client;
 pub mod provider_rotator;
 pub mod ram_budget;
+pub mod segmenter;
 pub mod selection;
 pub mod system_info;
 

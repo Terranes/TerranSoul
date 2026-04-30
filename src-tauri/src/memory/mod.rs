@@ -19,6 +19,7 @@ pub mod late_chunking;
 pub mod matryoshka;
 pub mod migrations;
 pub mod obsidian_export;
+pub mod replay;
 pub mod reranker;
 pub mod store;
 pub mod tag_vocabulary;

@@ -23,18 +23,26 @@ use std::path::Path;
 pub mod autostart;
 pub mod client;
 pub mod conversation_learning;
+pub mod cost;
 pub mod engine;
 pub mod git_ops;
 pub mod github;
+pub mod handoff;
+pub mod handoff_store;
 pub mod metrics;
 pub mod milestones;
 pub mod prompting;
 pub mod repo;
+pub mod test_runner;
 pub mod workflow;
 
 pub use conversation_learning::{learn_from_message, LearnedChunk};
 pub use engine::{ProgressEvent, SelfImproveEngine};
 pub use git_ops::{pull_main, PullResult};
+pub use handoff::HandoffState;
+pub use handoff_store::{
+    clear_handoff, list_handoffs, load_handoff, save_handoff, HandoffSummary,
+};
 pub use prompting::{CodingPrompt, DocSnippet, OutputShape, PROMPT_SCHEMA_VERSION};
 pub use workflow::{run_coding_task, CodingTask, CodingTaskResult, TaskDocument, TaskOutputKind};pub use github::{
     clear_github_config, load_github_config, open_or_update_pr, parse_owner_repo,

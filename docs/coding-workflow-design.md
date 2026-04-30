@@ -341,8 +341,18 @@ them. The roadmap, in priority order:
    today.
 4. **Multi-agent fan-out.** Mirror Copilot `/fleet` — parallelise
    independent chunks, serialise dependent ones via a small DAG runner.
-5. **Sandboxed test runs.** Before committing, run `cargo test` and
-   `vitest` in a child process and gate the diff on a green run.
+5. **Sandboxed test runs.** ✅ **Chunk 28.4 shipped (2026-04-30):**
+   `src-tauri/src/coding/test_runner.rs` runs `cargo test` and
+   `vitest run` (or any `Custom` suite) in isolated `tokio::process`
+   children with stripped env (`RUST_LOG`, `CARGO_TARGET_DIR`,
+   `NODE_OPTIONS`), per-suite timeout (default 5 min), retry-once for
+   flaky-test detection (fail → pass on retry → `Flaky` status, still
+   green for the gate), and 4 KiB stdout/stderr tail capture. Returns
+   `TestRunResult { suites, all_green, total_duration_ms, flaky_suites }`
+   that the orchestrator gates the commit on. 15 unit tests covering
+   pass/fail/flaky/timeout/spawn-error/mixed/serde. Wiring into the
+   orchestrator (so it actually gates `apply_file` commits) is a
+   follow-up.
 6. **GitHub PR flow.** Already partially implemented in
    `coding::github`; finish the OAuth device flow and per-chunk PR
    creation.

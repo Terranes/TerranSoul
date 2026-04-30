@@ -72,7 +72,9 @@ export const usePluginStore = defineStore('plugins', () => {
   const error = ref<string | null>(null)
 
   const activePlugins = computed(() =>
-    plugins.value.filter((p) => p.state === 'Active'),
+    // Backend serializes `PluginState` with `rename_all = "snake_case"` →
+    // 'installed' | 'active' | 'disabled'.
+    plugins.value.filter((p) => typeof p.state === 'string' && p.state.toLowerCase() === 'active'),
   )
 
   async function refresh() {
@@ -131,6 +133,22 @@ export const usePluginStore = defineStore('plugins', () => {
     return invoke<PluginManifest>('plugin_parse_manifest', { json })
   }
 
+  /** Invoke a contributed command by its `command_id` (Chunk 22.4). */
+  async function invokeCommand(commandId: string, args?: unknown) {
+    return invoke<{ success: boolean; output: string | null; error: string | null }>(
+      'plugin_invoke_command',
+      { commandId, args: args ?? null },
+    )
+  }
+
+  /** Invoke a slash-command by name (without `/`) (Chunk 22.4). */
+  async function invokeSlashCommand(name: string, args?: unknown) {
+    return invoke<{ success: boolean; output: string | null; error: string | null }>(
+      'plugin_invoke_slash_command',
+      { name, args: args ?? null },
+    )
+  }
+
   return {
     plugins,
     commands,
@@ -148,5 +166,7 @@ export const usePluginStore = defineStore('plugins', () => {
     getSetting,
     setSetting,
     parseManifest,
+    invokeCommand,
+    invokeSlashCommand,
   }
 })

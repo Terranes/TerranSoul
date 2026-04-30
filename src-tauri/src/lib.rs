@@ -44,24 +44,27 @@ use commands::{
     },
     brain::{
         check_lm_studio_status, check_ollama_status, classify_intent, clear_active_brain,
+        detect_ollama_install,
         download_lm_studio_model, factory_reset_brain, get_active_brain, get_brain_mode,
         get_brain_selection,
         get_embed_cache_status, get_lm_studio_download_status, get_lm_studio_models,
         get_next_provider, get_ollama_models, get_system_info, get_ollama_models_dir,
-        get_disk_space, list_drives, health_check_providers,
+        get_disk_space, install_ollama, list_drives, health_check_providers,
         list_free_providers, load_lm_studio_model, pull_ollama_model, read_bundled_doc,
         recommend_brain_models, refresh_model_catalogue,
-        reset_embed_cache, set_active_brain, set_brain_mode, unload_lm_studio_model,
+        reset_embed_cache, set_active_brain, set_brain_mode, start_ollama_service,
+        unload_lm_studio_model,
         check_model_updates, delete_ollama_model, dismiss_model_update,
         mark_update_check_done, get_update_check_state,
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
     coding::{
-        clear_self_improve_log, detect_self_improve_repo, get_coding_llm_config,
-        get_coding_workflow_config, get_github_config, get_self_improve_metrics,
-        get_self_improve_runs, get_self_improve_settings, get_self_improve_status,
-        learn_from_user_message, list_coding_llm_recommendations,
+        clear_self_improve_log, coding_session_clear_handoff, coding_session_list_handoffs,
+        coding_session_load_handoff, coding_session_save_handoff, detect_self_improve_repo,
+        get_coding_llm_config, get_coding_workflow_config, get_github_config,
+        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
+        get_self_improve_status, learn_from_user_message, list_coding_llm_recommendations,
         list_local_coding_models, open_self_improve_pr, preview_coding_workflow_context,
         pull_main_for_self_improve, reset_coding_workflow_config, run_coding_task,
         set_coding_llm_config, set_coding_workflow_config, set_github_config,
@@ -98,7 +101,8 @@ use commands::{
         hybrid_search_memories_rrf, hyde_search_memories,
         list_memory_conflicts, list_memory_edges, list_relation_types,
         matryoshka_search_memories,
-        multi_hop_search_memories, promote_memory, rerank_search_memories,
+        multi_hop_search_memories, promote_memory, replay_extract_history,
+        rerank_search_memories,
         resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
         set_auto_learn_policy, summarize_session,
         temporal_query, update_memory,
@@ -172,6 +176,7 @@ use commands::{
         plugin_list, plugin_get, plugin_list_commands, plugin_list_slash_commands,
         plugin_list_themes, plugin_get_setting, plugin_set_setting,
         plugin_host_status, plugin_parse_manifest,
+        plugin_invoke_command, plugin_invoke_slash_command,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -489,6 +494,9 @@ pub fn run() {
             mark_update_check_done,
             get_update_check_state,
             check_ollama_status,
+            detect_ollama_install,
+            install_ollama,
+            start_ollama_service,
             get_ollama_models,
             pull_ollama_model,
             check_lm_studio_status,
@@ -511,6 +519,7 @@ pub fn run() {
             get_short_term_memory,
             extract_memories_from_session,
             summarize_session,
+            replay_extract_history,
             semantic_search_memories,
             hybrid_search_memories,
             hybrid_search_memories_rrf,
@@ -611,6 +620,11 @@ pub fn run() {
             learn_from_user_message,
             // Phase 25 / Chunk 25.15 — reusable coding workflow
             run_coding_task,
+            // Chunk 28.9 — coding-workflow long-session handoff persistence
+            coding_session_save_handoff,
+            coding_session_load_handoff,
+            coding_session_list_handoffs,
+            coding_session_clear_handoff,
             // Phase 25 / Chunk 25.16 — configurable coding-workflow context loader
             get_coding_workflow_config,
             set_coding_workflow_config,
@@ -751,6 +765,8 @@ pub fn run() {
             plugin_set_setting,
             plugin_host_status,
             plugin_parse_manifest,
+            plugin_invoke_command,
+            plugin_invoke_slash_command,
         ])
         .setup(|app| {
             let base_data_dir = app
@@ -830,6 +846,17 @@ pub fn run() {
 
             *state.command_router.blocking_lock() =
                 routing::CommandRouter::new(&device_id);
+
+            // Chunk 26.1b — start the brain background-maintenance
+            // scheduler tick loop. Persists per-job last-run timestamps
+            // to `<data_dir>/maintenance_state.json`; ticks every hour
+            // and dispatches whichever of the four brain-maintenance
+            // jobs (decay / GC / promote / edge-extract) are due.
+            let _maintenance_runtime = brain::maintenance_runtime::spawn(
+                state.inner().clone(),
+                brain::maintenance_scheduler::MaintenanceConfig::default(),
+                brain::maintenance_runtime::DEFAULT_TICK_INTERVAL,
+            );
 
             // System tray with Show/Hide + Window/Pet toggle + Self-Improve + Quit
             let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;

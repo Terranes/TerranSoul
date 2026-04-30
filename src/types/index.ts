@@ -154,6 +154,17 @@ export interface OllamaStatus {
   model_count: number;
 }
 
+export interface OllamaInstallStatus {
+  installed: boolean;
+  running: boolean;
+  binary_path: string | null;
+}
+
+export interface OllamaInstallProgress {
+  phase: string;
+  percent: number;
+}
+
 export interface OllamaModelEntry {
   name: string;
   size: number;
@@ -419,6 +430,19 @@ export interface SelfImproveMetrics {
   last_error: string | null;
   last_error_chunk: string | null;
   last_error_at_ms: number;
+  /** Sum of prompt tokens across all completed runs (Chunk 28.5). */
+  total_prompt_tokens: number;
+  /** Sum of completion tokens across all completed runs. */
+  total_completion_tokens: number;
+  /** Sum of estimated USD cost across all completed runs. */
+  total_cost_usd: number;
+  /** Same totals as above, restricted to the last 7 days. */
+  rolling_7d_runs: number;
+  rolling_7d_prompt_tokens: number;
+  rolling_7d_completion_tokens: number;
+  rolling_7d_cost_usd: number;
+  /** Per-provider USD cost breakdown (full window). */
+  cost_by_provider: Record<string, number>;
 }
 
 /** One persisted run record from the self-improve JSONL log. */
@@ -433,6 +457,12 @@ export interface SelfImproveRun {
   model: string;
   plan_chars: number;
   error: string | null;
+  /** Prompt tokens reported by the LLM provider, when available (Chunk 28.5). */
+  prompt_tokens?: number | null;
+  /** Completion tokens reported by the LLM provider, when available. */
+  completion_tokens?: number | null;
+  /** Estimated USD cost for the run, when token counts are available. */
+  cost_usd?: number | null;
 }
 
 /**

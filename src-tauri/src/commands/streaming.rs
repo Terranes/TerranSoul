@@ -339,30 +339,17 @@ async fn stream_openai_api<R: tauri::Runtime>(
         }
     };
 
-    if !relevant.is_empty() {
-        let memory_block: String = relevant
-            .iter()
-            .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
-            .collect::<Vec<_>>()
-            .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
-    }
-
-    // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
-    // Pushed from the frontend persona store via `set_persona_block`.
-    // Empty string means no persona injection.
+    // ── Persona block (see docs/persona-design.md § 9.1) — appended to
+    // the persona text *before* budgeting so it stays in the
+    // never-truncated section.
     if let Ok(persona) = state.persona_block.lock() {
         if !persona.is_empty() {
             system_prompt.push_str(persona.as_str());
         }
     }
 
-    // ── Handoff block (Chunk 23.2b) ──────────────────────────────────
-    // Pushed from the frontend agent-roster store on agent switch.
-    // **One-shot**: read-and-clear so the new agent is briefed exactly
-    // once, then operates on its own thread for subsequent turns.
+    // ── Handoff block (Chunk 23.2b) — one-shot read-and-clear so the
+    // new agent is briefed exactly once.
     if let Ok(mut handoff) = state.handoff_block.lock() {
         if !handoff.is_empty() {
             system_prompt.push_str(handoff.as_str());
@@ -370,12 +357,27 @@ async fn stream_openai_api<R: tauri::Runtime>(
         }
     }
 
+    // Apply the Phase-27 budgeter (Chunk 27.2b). Persona is kept whole;
+    // retrieved memory is trimmed by score; old history turns are
+    // dropped to fit the per-mode budget.
+    let budget_config = if paid_override.is_some() {
+        crate::brain::context_budget::BudgetConfig::for_paid_mode()
+    } else {
+        crate::brain::context_budget::BudgetConfig::for_free_mode()
+    };
+    let (system_prompt, history) = super::chat::build_budgeted_prompt(
+        &system_prompt,
+        history,
+        &relevant,
+        &budget_config,
+    );
+
     // Build OpenAI message array
     let mut messages = vec![OpenAiMessage {
         role: "system".to_string(),
         content: system_prompt,
     }];
-    for (role, content) in history {
+    for (role, content) in &history {
         messages.push(OpenAiMessage {
             role: role.clone(),
             content: content.clone(),
@@ -476,26 +478,13 @@ async fn stream_ollama<R: tauri::Runtime>(
         }
     };
 
-    if !relevant.is_empty() {
-        let memory_block: String = relevant
-            .iter()
-            .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
-            .collect::<Vec<_>>()
-            .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
-    }
-
-    // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
+    // Persona + handoff are appended *before* budgeting so they stay
+    // in the never-truncated section (Chunk 27.2b).
     if let Ok(persona) = state.persona_block.lock() {
         if !persona.is_empty() {
             system_prompt.push_str(persona.as_str());
         }
     }
-
-    // ── Handoff block (Chunk 23.2b) ──────────────────────────────────
-    // One-shot read-and-clear; same pattern as the OpenAI path above.
     if let Ok(mut handoff) = state.handoff_block.lock() {
         if !handoff.is_empty() {
             system_prompt.push_str(handoff.as_str());
@@ -503,13 +492,23 @@ async fn stream_ollama<R: tauri::Runtime>(
         }
     }
 
+    // Apply the Phase-27 budgeter (Chunk 27.2b) with the local-mode
+    // preset — tokens are free on local Ollama so retrieval gets the
+    // lion's share.
+    let (system_prompt, history) = super::chat::build_budgeted_prompt(
+        &system_prompt,
+        history,
+        &relevant,
+        &crate::brain::context_budget::BudgetConfig::for_local_mode(),
+    );
+
     // Build Ollama message array
     let system_msg = ChatMessage {
         role: "system".to_string(),
         content: system_prompt,
     };
     let mut messages = vec![system_msg];
-    for (role, content) in history {
+    for (role, content) in &history {
         messages.push(ChatMessage {
             role: role.clone(),
             content: content.clone(),

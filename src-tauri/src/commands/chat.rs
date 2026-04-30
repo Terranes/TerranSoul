@@ -59,6 +59,70 @@ fn sentiment_str(s: &Sentiment) -> &'static str {
     }
 }
 
+/// Apply the Phase-27 [`crate::brain::context_budget`] budgeter to a
+/// chat prompt: persona is kept verbatim, retrieved memories are
+/// trimmed by score, and old history turns are dropped to stay within
+/// the per-mode token budget. Returns the assembled system prompt
+/// (persona + `[LONG-TERM MEMORY]` block) and the trimmed history.
+///
+/// `relevant` is assumed to be sorted best-first (as
+/// [`crate::memory::MemoryStore::hybrid_search`] returns) — we
+/// synthesise descending scores so the budgeter preserves that order
+/// when it has to drop tail entries.
+pub(super) fn build_budgeted_prompt(
+    base_system: &str,
+    history: &[(String, String)],
+    relevant: &[crate::memory::MemoryEntry],
+    config: &crate::brain::context_budget::BudgetConfig,
+) -> (String, Vec<(String, String)>) {
+    use crate::brain::context_budget::{fit, BudgetInputs, HistoryTurn, RetrievedChunk};
+
+    let total = relevant.len();
+    let inputs = BudgetInputs {
+        persona: base_system.to_string(),
+        history: history
+            .iter()
+            .map(|(r, c)| HistoryTurn {
+                role: r.clone(),
+                content: c.clone(),
+            })
+            .collect(),
+        retrieval: relevant
+            .iter()
+            .enumerate()
+            .map(|(i, e)| RetrievedChunk {
+                content: format!("- [{}] {}", e.tier.as_str(), e.content),
+                // hybrid_search returns best-first; synthesise a
+                // descending score so the budgeter keeps that order
+                // when it has to drop tail entries.
+                score: (total - i) as f64,
+            })
+            .collect(),
+        tools: String::new(),
+    };
+    let result = fit(&inputs, config);
+
+    let mut system = result.persona;
+    if !result.retrieval.is_empty() {
+        let mem_block: String = result
+            .retrieval
+            .iter()
+            .map(|c| c.content.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        system.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
+    let trimmed_history: Vec<(String, String)> = result
+        .history
+        .into_iter()
+        .map(|t| (t.role, t.content))
+        .collect();
+    (system, trimmed_history)
+}
+
 pub async fn process_message(
     message: &str,
     agent_id: Option<&str>,
@@ -119,17 +183,18 @@ pub async fn process_message(
             let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
 
             // RAG: hybrid search (keyword + recency + importance + decay)
-            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
             let relevant: Vec<crate::memory::MemoryEntry> = {
                 match app_state.memory_store.lock() {
                     Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
                     Err(_) => vec![],
                 }
             };
-            if !relevant.is_empty() {
-                let mem_block: String = relevant.iter().map(|e| format!("- [{}] {}", e.tier.as_str(), e.content)).collect::<Vec<_>>().join("\n");
-                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
-            }
+            let (system, history) = build_budgeted_prompt(
+                SYSTEM_PROMPT_FOR_STREAMING,
+                &history,
+                &relevant,
+                &crate::brain::context_budget::BudgetConfig::for_free_mode(),
+            );
 
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
@@ -145,17 +210,18 @@ pub async fn process_message(
             let client = OpenAiClient::new(&base_url, &model, Some(&api_key));
 
             // RAG: hybrid search (keyword + recency + importance + decay)
-            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
             let relevant: Vec<crate::memory::MemoryEntry> = {
                 match app_state.memory_store.lock() {
                     Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
                     Err(_) => vec![],
                 }
             };
-            if !relevant.is_empty() {
-                let mem_block: String = relevant.iter().map(|e| format!("- [{}] {}", e.tier.as_str(), e.content)).collect::<Vec<_>>().join("\n");
-                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
-            }
+            let (system, history) = build_budgeted_prompt(
+                SYSTEM_PROMPT_FOR_STREAMING,
+                &history,
+                &relevant,
+                &crate::brain::context_budget::BudgetConfig::for_paid_mode(),
+            );
 
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
@@ -175,7 +241,6 @@ pub async fn process_message(
         }) => {
             let client = OpenAiClient::new(&base_url, &model, api_key.as_deref());
 
-            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
             let query_emb = crate::brain::embed_for_mode(
                 message,
                 Some(&BrainMode::LocalLmStudio {
@@ -195,14 +260,12 @@ pub async fn process_message(
                     Err(_) => vec![],
                 }
             };
-            if !relevant.is_empty() {
-                let mem_block: String = relevant
-                    .iter()
-                    .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
-            }
+            let (system, history) = build_budgeted_prompt(
+                SYSTEM_PROMPT_FOR_STREAMING,
+                &history,
+                &relevant,
+                &crate::brain::context_budget::BudgetConfig::for_local_mode(),
+            );
 
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),

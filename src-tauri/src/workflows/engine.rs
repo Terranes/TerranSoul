@@ -477,6 +477,149 @@ impl WorkflowEngine {
             inner: self.inner.clone(),
         }
     }
+
+    /// Run an activity through a [`crate::workflows::resilience::ResilientRunner`]
+    /// and emit the matching `ActivityScheduled` / `ActivityCompleted` /
+    /// `ActivityFailed` events on this engine (Chunk 23.1).
+    ///
+    /// This is the recommended entry point for caller-defined activities
+    /// — instead of hand-rolling retry, timeout, and circuit-breaker
+    /// logic at every callsite, callers pass an `op` closure plus a
+    /// [`WorkflowResilienceConfig`] and the engine handles persistence.
+    ///
+    /// On success: the JSON-serialised output is recorded in the
+    /// `ActivityCompleted` event and returned to the caller. On
+    /// permanent failure (retries exhausted or non-retryable error or
+    /// breaker open): an `ActivityFailed` event is appended and the
+    /// error string is returned. Event-append failures (e.g. terminal
+    /// workflow) propagate as the caller's error.
+    pub async fn run_activity_resilient<F, Fut, T>(
+        &self,
+        workflow_id: &WorkflowId,
+        activity_id: &str,
+        kind: &str,
+        config: &WorkflowResilienceConfig,
+        op: F,
+    ) -> Result<T, String>
+    where
+        F: Fn() -> Fut + Clone,
+        Fut: std::future::Future<Output = Result<T, String>>,
+        T: serde::Serialize,
+    {
+        // Emit Scheduled before any attempt so the UI sees the activity
+        // even if every retry fails.
+        self.append(
+            workflow_id,
+            WorkflowEventKind::ActivityScheduled {
+                activity_id: activity_id.to_string(),
+                kind: kind.to_string(),
+            },
+        )
+        .await?;
+
+        let runner = config.build_runner();
+        let outcome = runner.run_activity(op).await;
+        match outcome {
+            Ok(value) => {
+                let json = serde_json::to_value(&value)
+                    .map_err(|e| format!("activity output serialisation failed: {e}"))?;
+                self.append(
+                    workflow_id,
+                    WorkflowEventKind::ActivityCompleted {
+                        activity_id: activity_id.to_string(),
+                        output: json,
+                    },
+                )
+                .await?;
+                Ok(value)
+            }
+            Err(err) => {
+                self.append(
+                    workflow_id,
+                    WorkflowEventKind::ActivityFailed {
+                        activity_id: activity_id.to_string(),
+                        error: err.clone(),
+                    },
+                )
+                .await?;
+                Err(err)
+            }
+        }
+    }
+}
+
+/// Per-workflow resilience configuration (Chunk 23.1). Wraps the four
+/// primitives in [`crate::workflows::resilience`] in a single
+/// serializable shape so it can be persisted alongside workflow type
+/// definitions, exposed through Tauri commands, and overridden per
+/// workflow type by power users.
+///
+/// Defaults match the milestones-23.1 spec:
+///
+/// - `RetryPolicy::default()` — 3 attempts, exponential 1 s → 30 s.
+/// - 60 s overall timeout, 30 s per attempt.
+/// - 5-failure circuit breaker with a 60 s recovery window.
+/// - 30 s heartbeat-stale threshold (unused by `run_activity_resilient`
+///   itself but surfaced here so the watchdog and the runner share the
+///   same source of truth).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowResilienceConfig {
+    pub retry: crate::workflows::resilience::RetryPolicy,
+    pub overall_timeout_secs: u64,
+    pub per_attempt_timeout_secs: u64,
+    pub circuit_failure_threshold: u32,
+    pub circuit_recovery_secs: u64,
+    pub heartbeat_stale_secs: u64,
+}
+
+impl Default for WorkflowResilienceConfig {
+    fn default() -> Self {
+        Self {
+            retry: crate::workflows::resilience::RetryPolicy::default(),
+            overall_timeout_secs: 60,
+            per_attempt_timeout_secs: 30,
+            circuit_failure_threshold: 5,
+            circuit_recovery_secs: 60,
+            heartbeat_stale_secs: 30,
+        }
+    }
+}
+
+impl WorkflowResilienceConfig {
+    /// No retry / generous timeouts / breaker effectively disabled
+    /// (huge threshold). Useful for one-shot activities where retry is
+    /// unsafe (e.g. side-effecting writes that aren't idempotent).
+    pub fn no_retry() -> Self {
+        Self {
+            retry: crate::workflows::resilience::RetryPolicy::no_retry(),
+            overall_timeout_secs: 60,
+            per_attempt_timeout_secs: 60,
+            circuit_failure_threshold: u32::MAX,
+            circuit_recovery_secs: 60,
+            heartbeat_stale_secs: 30,
+        }
+    }
+
+    /// Build a [`crate::workflows::resilience::ResilientRunner`] from
+    /// this config. Cheap — runners are just three policy structs.
+    pub fn build_runner(&self) -> crate::workflows::resilience::ResilientRunner {
+        use crate::workflows::resilience::{
+            CircuitBreaker, ResilientRunner, TimeoutPolicy,
+        };
+        use std::time::Duration;
+        ResilientRunner::new(
+            self.retry.clone(),
+            TimeoutPolicy {
+                workflow_timeout: Some(Duration::from_secs(self.overall_timeout_secs)),
+                activity_timeout: Some(Duration::from_secs(self.per_attempt_timeout_secs)),
+                heartbeat_timeout: Some(Duration::from_secs(self.heartbeat_stale_secs)),
+            },
+            CircuitBreaker::new(
+                self.circuit_failure_threshold,
+                Duration::from_secs(self.circuit_recovery_secs),
+            ),
+        )
+    }
 }
 
 fn map_status(tag: &str, attached: bool) -> WorkflowStatus {
@@ -646,5 +789,188 @@ mod tests {
         assert_eq!(e.attached_count().await, 1);
         e.complete(&id, serde_json::json!(null)).await.unwrap();
         assert_eq!(e.attached_count().await, 0);
+    }
+
+    // ── Chunk 23.1: ResilientRunner integration ──────────────────────
+
+    fn fast_config() -> WorkflowResilienceConfig {
+        WorkflowResilienceConfig {
+            retry: crate::workflows::resilience::RetryPolicy {
+                max_attempts: 3,
+                initial_interval: std::time::Duration::from_millis(1),
+                max_interval: std::time::Duration::from_millis(5),
+                backoff_multiplier: 1.0,
+                non_retryable_errors: vec!["fatal".to_string()],
+            },
+            overall_timeout_secs: 5,
+            per_attempt_timeout_secs: 2,
+            circuit_failure_threshold: 5,
+            circuit_recovery_secs: 60,
+            heartbeat_stale_secs: 30,
+        }
+    }
+
+    #[tokio::test]
+    async fn resilient_activity_records_scheduled_then_completed_on_success() {
+        let e = new_engine().await;
+        let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
+        let cfg = fast_config();
+        let result: i32 = e
+            .run_activity_resilient(&id, "act-1", "noop", &cfg, || async { Ok(7_i32) })
+            .await
+            .unwrap();
+        assert_eq!(result, 7);
+        let hist = e.history(&id).await.unwrap();
+        // Started + Scheduled + Completed
+        assert_eq!(hist.len(), 3);
+        assert!(matches!(
+            hist[1].kind,
+            WorkflowEventKind::ActivityScheduled { .. }
+        ));
+        match &hist[2].kind {
+            WorkflowEventKind::ActivityCompleted { activity_id, output } => {
+                assert_eq!(activity_id, "act-1");
+                assert_eq!(output, &serde_json::json!(7));
+            }
+            _ => panic!("expected ActivityCompleted at position 2"),
+        }
+    }
+
+    #[tokio::test]
+    async fn resilient_activity_retries_then_succeeds_on_transient() {
+        let e = new_engine().await;
+        let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
+        let cfg = fast_config();
+        let attempts =
+            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+        let result: i32 = e
+            .run_activity_resilient(&id, "act-r", "transient", &cfg, move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    let n =
+                        attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if n < 2 {
+                        Err("transient blip".to_string())
+                    } else {
+                        Ok(99_i32)
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(result, 99);
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::Relaxed), 3);
+        // Only the *final* outcome is persisted — intermediate retries
+        // do not pollute the event log so the UI shows one
+        // schedule + one completion per logical activity.
+        let hist = e.history(&id).await.unwrap();
+        assert_eq!(hist.len(), 3);
+        assert!(matches!(
+            hist[2].kind,
+            WorkflowEventKind::ActivityCompleted { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn resilient_activity_records_failed_after_exhausted_retries() {
+        let e = new_engine().await;
+        let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
+        let cfg = fast_config();
+        let attempts =
+            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+        let result: Result<i32, String> = e
+            .run_activity_resilient(&id, "act-f", "always_fails", &cfg, move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    Err("transient blip".to_string())
+                }
+            })
+            .await;
+        assert!(result.is_err());
+        // RetryPolicy { max_attempts: 3 } → exactly 3 invocations.
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::Relaxed), 3);
+        let hist = e.history(&id).await.unwrap();
+        assert_eq!(hist.len(), 3);
+        match &hist[2].kind {
+            WorkflowEventKind::ActivityFailed { activity_id, error } => {
+                assert_eq!(activity_id, "act-f");
+                assert!(error.contains("transient blip"));
+            }
+            _ => panic!("expected ActivityFailed at position 2"),
+        }
+    }
+
+    #[tokio::test]
+    async fn resilient_activity_skips_retry_on_non_retryable() {
+        let e = new_engine().await;
+        let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
+        let cfg = fast_config(); // includes "fatal" as non-retryable
+        let attempts =
+            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+        let result: Result<i32, String> = e
+            .run_activity_resilient(&id, "act-nr", "fatal_only", &cfg, move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    Err("fatal: do not retry".to_string())
+                }
+            })
+            .await;
+        assert!(result.is_err());
+        // Non-retryable filter short-circuits after the first attempt.
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn resilience_config_default_matches_spec() {
+        let cfg = WorkflowResilienceConfig::default();
+        assert_eq!(cfg.retry.max_attempts, 3);
+        assert_eq!(cfg.overall_timeout_secs, 60);
+        assert_eq!(cfg.per_attempt_timeout_secs, 30);
+        assert_eq!(cfg.circuit_failure_threshold, 5);
+        assert_eq!(cfg.circuit_recovery_secs, 60);
+        assert_eq!(cfg.heartbeat_stale_secs, 30);
+    }
+
+    #[test]
+    fn resilience_config_no_retry_disables_breaker() {
+        let cfg = WorkflowResilienceConfig::no_retry();
+        assert_eq!(cfg.retry.max_attempts, 1);
+        assert_eq!(cfg.circuit_failure_threshold, u32::MAX);
+        // Round-trip through serde so persisted Tauri-side configs work.
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: WorkflowResilienceConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.retry.max_attempts, 1);
+        assert_eq!(back.circuit_failure_threshold, u32::MAX);
+    }
+
+    #[test]
+    fn resilience_config_build_runner_is_cheap() {
+        // Sanity: building a runner does not mutate or panic; we should
+        // be able to build many in a row from one config.
+        let cfg = WorkflowResilienceConfig::default();
+        for _ in 0..16 {
+            let _runner = cfg.build_runner();
+        }
+    }
+
+    #[tokio::test]
+    async fn resilient_activity_propagates_terminal_workflow_error() {
+        let e = new_engine().await;
+        let id = e.start("t", serde_json::json!({})).await.unwrap();
+        e.complete(&id, serde_json::json!(null)).await.unwrap();
+        // Once the workflow is terminal, append() returns Err — the
+        // resilient helper must surface that instead of swallowing it.
+        let cfg = fast_config();
+        let result: Result<i32, String> = e
+            .run_activity_resilient(&id, "act-x", "after_terminal", &cfg, || async {
+                Ok(0_i32)
+            })
+            .await;
+        assert!(result.is_err());
     }
 }
