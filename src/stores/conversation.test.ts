@@ -93,41 +93,12 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.isThinking).toBe(false);
   });
 
-  it('activates translator mode from normal chat and translates alternating turns', async () => {
-    mockInvoke.mockResolvedValueOnce({
-      original: 'hello',
-      source_lang: 'en',
-      translated: '[vi] hello',
-      target_lang: 'vi',
-      confidence: 0.5,
-    });
-
+  it('does not activate translator mode without a paid or local brain', async () => {
     const store = useConversationStore();
     await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
-    expect(store.translatorMode?.active).toBe(true);
-    expect(store.messages[1].agentName).toBe('Translator Mode');
-    expect(store.messages[1].content).toContain('English ↔ Vietnamese');
-
-    await store.sendMessage('hello');
-
-    expect(mockInvoke).toHaveBeenCalledWith('translate_text', {
-      text: 'hello',
-      sourceLang: 'en',
-      targetLang: 'vi',
-    });
-    expect(store.messages[3].agentName).toBe('Translator Mode');
-    expect(store.messages[3].content).toContain('English → Vietnamese');
-    expect(store.messages[3].content).toContain('[vi] hello');
-    expect(store.translatorMode?.nextDirection).toBe('target_to_source');
-  });
-
-  it('stops translator mode from normal chat', async () => {
-    const store = useConversationStore();
-    await store.sendMessage('translate between English and Japanese');
-    await store.sendMessage('stop translator mode');
-
     expect(store.translatorMode).toBeNull();
-    expect(store.messages[store.messages.length - 1]?.content).toContain('Translator mode stopped');
+    expect(store.messages[1].agentName).toBe('Translator Mode');
+    expect(store.messages[1].content).toContain('paid API or local LLM brain');
   });
 });
 
@@ -220,6 +191,43 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.messages[2].agentName).toBe('System');
     expect(store.messages[2].content).toContain('Could not reach the AI provider');
     expect(store.isThinking).toBe(false);
+  });
+
+  it('activates translator mode only with a local or paid brain and translates direct turns', async () => {
+    const brain = useBrainStore();
+    brain.brainMode = { mode: 'local_ollama', model: 'llama3.2' };
+
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, history: Array<{ role: string; content: string }>, callbacks: { onDone: (text: string) => void }) => {
+        expect(history[history.length - 1].content).toContain('Translate the user\'s message from English (en) to Vietnamese (vi)');
+        callbacks.onDone('xin chào');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
+    expect(store.translatorMode?.active).toBe(true);
+    expect(store.messages[1].content).toContain('English ↔ Vietnamese');
+
+    await store.sendMessage('hello');
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(store.messages[3].agentName).toBe('Translator Mode');
+    expect(store.messages[3].content).toContain('English → Vietnamese');
+    expect(store.messages[3].content).toContain('xin chào');
+    expect(store.translatorMode?.nextDirection).toBe('target_to_source');
+  });
+
+  it('stops translator mode from normal chat', async () => {
+    const brain = useBrainStore();
+    brain.brainMode = { mode: 'local_ollama', model: 'llama3.2' };
+    const store = useConversationStore();
+    await store.sendMessage('translate between English and Japanese');
+    await store.sendMessage('stop translator mode');
+
+    expect(store.translatorMode).toBeNull();
+    expect(store.messages[store.messages.length - 1]?.content).toContain('Translator mode stopped');
   });
 });
 

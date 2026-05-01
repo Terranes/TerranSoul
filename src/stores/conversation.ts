@@ -1231,6 +1231,34 @@ function flipTranslatorDirection(mode: TranslatorModeState): void {
   mode.nextDirection = mode.nextDirection === 'source_to_target' ? 'target_to_source' : 'source_to_target';
 }
 
+function hasAccurateTranslatorBrain(brain: ReturnType<typeof useBrainStore>): boolean {
+  return brain.brainMode?.mode === 'paid_api' ||
+    brain.brainMode?.mode === 'local_ollama' ||
+    brain.brainMode?.mode === 'local_lm_studio' ||
+    (brain.activeBrain !== null && brain.brainMode === null);
+}
+
+function createTranslatorBrainRequiredMessage(): Message {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      `🌍 Translator mode needs a **paid API or local LLM brain** for accurate direct translation. ` +
+      `Free LLM mode is intentionally not used for two-person client conversations.\n\n` +
+      `Please switch to a paid API, Local Ollama, or LM Studio, then ask again: ` +
+      `“become a translator between English and Vietnamese”.`,
+    agentName: 'Translator Mode',
+    sentiment: 'neutral',
+    timestamp: Date.now(),
+    questChoices: [
+      { label: 'Configure Paid API', value: 'navigate:brain-setup', icon: '⚡' },
+      { label: 'Install Local LLM', value: 'navigate:brain-setup', icon: '🏰' },
+      { label: 'Dismiss', value: 'dismiss', icon: '💤' },
+    ],
+    questId: 'paid-brain',
+  };
+}
+
 // Re-export detectLlmCommand for tests
 export { detectLlmCommand };
 
@@ -1541,6 +1569,13 @@ export const useConversationStore = defineStore('conversation', () => {
 
     const translatorRequest = detectTranslatorModeRequest(content);
     if (translatorRequest) {
+      if (!hasAccurateTranslatorBrain(brain)) {
+        messages.value.push(createTranslatorBrainRequiredMessage());
+        isThinking.value = false;
+        generationActive.value = false;
+        void drainQueue();
+        return;
+      }
       translatorMode.value = {
         active: true,
         source: translatorRequest.source,
@@ -1606,6 +1641,14 @@ export const useConversationStore = defineStore('conversation', () => {
     const translatorPromptForTurn = translatorMode.value
       ? translatorPrompt(content, translatorMode.value)
       : null;
+    if (translatorPromptForTurn && !hasAccurateTranslatorBrain(brain)) {
+      translatorMode.value = null;
+      messages.value.push(createTranslatorBrainRequiredMessage());
+      isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
+      return;
+    }
 
     const llmCmd = translatorPromptForTurn ? null : detectLlmCommand(content);
     // Respect the "Chat-based LLM switching" toggle: when off, ignore commands

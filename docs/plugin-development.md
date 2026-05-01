@@ -415,7 +415,8 @@ TerranSoul ships a built-in reference plugin named `terransoul-translator`. It d
 1. Declare a normal command (`terransoul-translator.start`) plus a slash command (`/translator`).
 2. Use an `OnChatMessage` activation event so natural language like “become a translator to help me translate between English and Vietnamese” can activate the feature.
 3. Keep plugin state in the host app (`translatorMode` in the conversation store) while the plugin command remains the stable extension point.
-4. Route the actual work through existing host capabilities instead of inventing a separate framework: configured LLMs translate with a strict translator prompt, and the `translate_text` command provides a local fallback.
+4. Require a paid API, Local Ollama, or LM Studio brain for accuracy. Free LLM mode is deliberately rejected for client-facing direct translation.
+5. Route the actual work through existing host capabilities instead of inventing a separate framework: ASR transcripts or typed turns enter the normal chat pipeline, and the configured non-free LLM receives a strict “translate only” prompt.
 
 ```json
 {
@@ -459,8 +460,8 @@ TerranSoul ships a built-in reference plugin named `terransoul-translator`. It d
 User flow:
 
 - Start: “become a translator to help me translate between English and Vietnamese”
-- Turn 1: TerranSoul translates English → Vietnamese
-- Turn 2: TerranSoul translates Vietnamese → English
+- Person A speaks/types in English; TerranSoul directly outputs Vietnamese
+- Person B speaks/types in Vietnamese; TerranSoul directly outputs English
 - Stop: “stop translator mode”
 
 Use this plugin as the smallest complete example for a new chat-mode plugin: one manifest, one contributed command, one optional slash command, deterministic activation text, tests for state transitions, and documentation of the user-facing flow.
