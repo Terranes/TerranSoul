@@ -45,7 +45,12 @@ pub async fn mcp_server_start(state: State<'_, AppState>) -> Result<McpServerSta
 
     let token = mcp::auth::load_or_create(&state.data_dir)?;
     let port = mcp::default_port();
-    let handle = mcp::start_server(state.inner().clone(), port, token).await?;
+    let lan_enabled = state
+        .app_settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .lan_enabled;
+    let handle = mcp::start_server(state.inner().clone(), port, token, lan_enabled).await?;
 
     let status = McpServerStatus {
         running: true,

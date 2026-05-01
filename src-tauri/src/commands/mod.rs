@@ -7,6 +7,7 @@ pub mod chat;
 pub mod consolidation;
 pub mod crag;
 pub mod ingest;
+pub mod lan;
 pub mod docker;
 pub mod emotion;
 pub mod gitnexus;

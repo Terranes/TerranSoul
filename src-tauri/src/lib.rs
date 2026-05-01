@@ -75,6 +75,7 @@ use commands::{
         remove_trusted_device_cmd,
     },
     ingest::{cancel_ingest_task, get_all_tasks, ingest_document, resume_ingest_task},
+    lan::list_lan_addresses,
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
     mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
     memory::{
@@ -606,6 +607,7 @@ pub fn run() {
             cancel_ingest_task,
             resume_ingest_task,
             get_all_tasks,
+            list_lan_addresses,
             import_user_model,
             list_user_models,
             delete_user_model,

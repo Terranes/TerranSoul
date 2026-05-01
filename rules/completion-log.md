@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 24.1b — LAN bind config + OS probe wrapper](#chunk-241b--lan-bind-config--os-probe-wrapper) | 2026-05-02 |
+| [Chunk 20.1 — Dev/release data-root split (Docker namespacing)](#chunk-201--devrelease-data-root-split-docker-namespacing) | 2026-05-02 |
 | [Chunk 16.5b — CRAG query-rewrite + web-search fallback](#chunk-165b--crag-query-rewrite--web-search-fallback) | 2026-05-02 |
 | [Chunk 16.4b — Self-RAG orchestrator loop](#chunk-164b--self-rag-orchestrator-loop) | 2026-05-02 |
 | [Chunk 27.8 — Persona pack schema spec document](#chunk-278--persona-pack-schema-spec-document) | 2026-05-02 |
@@ -235,6 +237,42 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 24.1b — LAN bind config + OS probe wrapper
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+**Phase:** 24 (Mobile Companion)
+
+**Goal.** Enable LAN-mode brain exposure with explicit user opt-in. Provide OS network-interface discovery for the pairing UI.
+
+**Deliverables:**
+- `src-tauri/src/network/lan_probe.rs` — `discover_lan_addresses()` / `discover_lan_addresses_with(options)` / `enumerate_os_addresses()` using `local-ip-address` crate v0.6. Feeds addresses through 24.1a's `classify_addresses()` filter.
+- `src-tauri/src/commands/lan.rs` — Tauri command `list_lan_addresses` returning `Vec<LanAddress>` for the pairing UI.
+- `AppSettings.lan_enabled: bool` (default `false`, `#[serde(default)]`) — when true, MCP server binds to `0.0.0.0` instead of `127.0.0.1`.
+- `ai_integrations/mcp/mod.rs` — `start_server()` now takes `lan_enabled` param to select bind address.
+- 3 unit tests in `lan_probe.rs`, 1 in `commands/lan.rs`.
+
+**Tests:** 1891 Rust tests pass, 1480 Vitest pass, clippy clean.
+
+---
+
+## Chunk 20.1 — Dev/release data-root split (Docker namespacing)
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+**Phase:** 20 (Data Lifecycle)
+
+**Goal.** Namespace Docker/Podman Ollama containers and volumes by build mode so dev and release don't interfere with each other.
+
+**Deliverables:**
+- `src-tauri/src/brain/docker_ollama.rs` — `CONTAINER_NAME` and `VOLUME_NAME` consts using `cfg!(debug_assertions)`: dev → `"ollama-dev"` / `"ollama_data_dev"`, release → `"ollama"` / `"ollama_data"`.
+- `volume_mount` now uses `format!("{VOLUME_NAME}:/root/.ollama")`.
+- Follows the same `cfg!` pattern already established by MCP port split.
+
+**Tests:** All passing, clippy clean.
 
 ---
 

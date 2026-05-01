@@ -4,7 +4,23 @@ use tokio::process::Command;
 
 use crate::container::{ContainerRuntime, RuntimePreference};
 
-const CONTAINER_NAME: &str = "ollama";
+/// Container name for the Ollama service.
+/// Dev builds use a separate container so dev/release can coexist and
+/// dev containers are ephemeral (matching the data-root wipe in lib.rs).
+const CONTAINER_NAME: &str = if cfg!(debug_assertions) {
+    "ollama-dev"
+} else {
+    "ollama"
+};
+
+/// Docker volume for Ollama model storage. Namespaced by build profile
+/// so dev model pulls don't pollute (or depend on) release volumes.
+const VOLUME_NAME: &str = if cfg!(debug_assertions) {
+    "ollama_data_dev"
+} else {
+    "ollama_data"
+};
+
 const OLLAMA_IMAGE: &str = "ollama/ollama:latest";
 
 /// Status report returned by `check_docker_status`.
@@ -246,9 +262,11 @@ pub async fn remove_ollama_container_for(runtime: ContainerRuntime) -> Result<St
     }
 
     // Remove the named volume.
-    match run_command(bin, &["volume", "rm", "ollama_data"]).await {
-        Ok(_) => steps.push("Removed volume 'ollama_data'".to_string()),
-        Err(_) => steps.push("Volume 'ollama_data' not found (already removed)".to_string()),
+    match run_command(bin, &["volume", "rm", VOLUME_NAME]).await {
+        Ok(_) => steps.push(format!("Removed volume '{VOLUME_NAME}'")),
+        Err(_) => steps.push(format!(
+            "Volume '{VOLUME_NAME}' not found (already removed)"
+        )),
     }
 
     Ok(steps.join("\n"))
@@ -287,6 +305,7 @@ pub async fn ensure_ollama_container_for(runtime: ContainerRuntime) -> Result<St
 
     // Container doesn't exist — create and run
     let has_gpu = detect_nvidia_gpu().await;
+    let volume_mount = format!("{VOLUME_NAME}:/root/.ollama");
     let mut args = vec![
         "run",
         "-d",
@@ -295,7 +314,7 @@ pub async fn ensure_ollama_container_for(runtime: ContainerRuntime) -> Result<St
         "-p",
         "11434:11434",
         "-v",
-        "ollama_data:/root/.ollama",
+        &volume_mount,
         "--restart",
         "unless-stopped",
     ];

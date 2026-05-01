@@ -327,35 +327,6 @@ Integration test with VRM playback.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 20.1 | **Dev/release data-root split.** Single resolver behind `cfg!(debug_assertions)`: dev → ephemeral subdir wiped on launch; release → existing stable path. Covers `memory.db`, `workflows.sqlite`, agent roster JSON, settings, learned assets, (future) per-agent chat history. Backing services (Ollama container + named volumes) namespaced `-dev` vs prod. | not-started | See design notes below. Already-precedented by MCP port split (`7422` debug / `7421` release). |
-
-#### Design notes — Chunk 20.1
-
-**Problem.** Persistent state now spans (a) the agent roster (`<data>/agents/<id>.json` + `current_agent.json`, `src-tauri/src/agents/roster.rs:3`), (b) the durable workflow event log `workflows.sqlite` whose `Resuming` event explicitly re-attaches non-terminal runs across restarts (`src-tauri/src/workflows/engine.rs`), (c) the RAG memory store `memory.db` + `.bak` (`src-tauri/src/memory/store.rs:17`), and (d) settings/brain/voice config + learned-asset bundles + user VRM models. In dev, this state mutates across debugging sessions and contaminates scenarios; in release, the same persistence is required — losing a long-running workflow on app restart is unacceptable.
-
-**Targets to namespace** (all currently rooted at `app.path().app_data_dir()`, resolved at `src-tauri/src/lib.rs:558-561`):
-- `memory.db` + `memory.db.bak`
-- `workflows.sqlite` event log
-- `agents/<id>.json`, `current_agent.json`
-- `app_settings.json`, `active_brain.txt`, brain config, voice config
-- `user_models/*.vrm`, learned-asset bundles
-- (Future) per-agent chat-history persistence — chat is currently an in-memory `Vec<Message>` (`src-tauri/src/lib.rs:148`); when persistence lands it must follow the same rules.
-
-**Approach.**
-1. **One resolver, one switch.** Add a `terransoul_data_root(app: &AppHandle) -> PathBuf` helper. Every call site that currently calls `app.path().app_data_dir()` for app data switches to it. In `cfg!(debug_assertions)` it appends a `dev/` segment; release returns the current stable path unchanged (no migration needed for existing users).
-2. **Wipe before open.** On app start in debug, recursively remove the `dev/` subtree *before* any module opens its files. Single chokepoint avoids the "module X already opened the SQLite file" hazard.
-3. **Backing-service split.** Ollama (managed via `src-tauri/src/commands/docker.rs`) namespaces container name + named volume by mode: `terransoul-ollama-dev` (removed-and-recreated each launch) vs `terransoul-ollama` (reused). This is where the "Docker in dev" suggestion fits naturally — Docker already lives at the service boundary, so we get fresh-dev for free without trying to wrap the Tauri GUI in a container (impractical on Windows).
-4. **Env override stays.** Existing `TERRANSOUL_*` setting overrides keep their precedence so CI can force a fresh data root without rebuilding.
-5. **Precedent.** Same shape as the MCP port split (`src-tauri/src/ai_integrations/mcp/mod.rs:46-50`): debug=`7422`, release=`7421`. Extend the pattern; don't invent a new one.
-
-**Why not full Docker for the app itself.** Tauri is a desktop GUI app; running the Vue/Tauri shell inside a Linux container on Windows means X server / WSLg gymnastics for marginal benefit. The dirty state we want to wipe is files, not the runtime — a path-namespace + rmdir gives the same isolation with none of the GUI-in-container pain. Reserve Docker isolation for the service tier (Ollama, future gRPC sidecars).
-
-**Out of scope for 20.1.** Adding chat-history persistence itself (separate chunk when ready — this chunk only ensures it inherits the rules); cloud-sync across machines (covered by 17.5); migrating existing user data (release path is unchanged).
-
-**Acceptance.**
-- Two consecutive `cargo tauri dev` launches: agent roster, workflow log, memory store all empty on second launch. No residue under `dev/` from prior session. Release data dir untouched.
-- Installed release build: workflow started in run A appears as `Resuming` in run B; agents + memory survive restart. Existing users' data still loads from the unchanged release path.
-- Ollama dev container/volume can be wiped without affecting release container/volume and vice-versa.
 
 ---
 
@@ -475,7 +446,6 @@ swaps to Agent B, exchanges 5 more turns, swaps back to Agent A.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 24.1b | **LAN bind config + OS probe wrapper.** Add `local-ip-address` (or `if-addrs`) crate; thin `discover_lan_addresses() -> Vec<LanAddress>` wrapper that calls the OS interface enumerator and feeds it through 24.1a. New `--lan` Tauri config flag (and `AppSettings.lan_enabled`) flips MCP server bind from `127.0.0.1` to `0.0.0.0` — gated behind explicit user opt-in (clear UI warning). Tauri command `list_lan_addresses` for the pairing-UI. ~120 LOC + integration tests. | not-started | Depends on 24.1a. The bind switch must default off — never silently expose a brain server to the LAN. |
 | 24.2b | **mTLS pairing flow + persistent device registry.** Generate self-signed CA on first LAN-enable via `rcgen` (already a dep); issue per-device client certs at pairing time; persist `(device_id, cert_fingerprint, display_name, paired_at, last_seen_at)` to a new `paired_devices` SQLite table. Tauri commands `start_pairing` (returns QR payload), `confirm_pairing(device_id)`, `revoke_device(device_id)`, `list_paired_devices`. 5-minute pairing window enforced server-side. ~400 LOC + 10 integration tests. | not-started | Depends on 24.1b + 24.2a. Database migration adds `paired_devices` table. |
 | 24.3 | **LAN gRPC activation + paired-device mTLS enforcement.** Wire the shipped Chunk 15.2 `brain.v1` tonic transport into the Phase 24 LAN mode: bind to `0.0.0.0:7422` when `lan_enabled`, else keep loopback, and require CA + per-device certs from 24.2b for non-loopback clients. ~350 LOC + tests. | not-started | Depends on 24.2b. Chunk 15.2 transport foundation is shipped; this row is only the LAN/runtime activation layer. |
 | 24.4 | **Phone-control RPC surface (`phone_control.v1.proto`).** New proto in addition to `brain.v1`: `GetSystemStatus` (CPU/RAM/active-models), `ListVsCodeWorkspaces`, `GetCopilotSessionStatus { workspace }`, `ListWorkflowRuns`, `GetWorkflowProgress { run_id }`, `ContinueWorkflow { run_id }`, `SendChatMessage / StreamChat`, `ListPairedDevices`. Capability-gated per-RPC (declared in `paired_devices.capabilities` JSON column added in 24.2b). ~500 LOC + tests. | not-started | Depends on 24.3. Pure proto + handlers; no iOS code yet. |

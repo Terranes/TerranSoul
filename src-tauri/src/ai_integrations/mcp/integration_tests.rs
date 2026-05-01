@@ -20,7 +20,7 @@ mod tests {
         // Our start_server binds to a specific port, so use a high
         // ephemeral port that's unlikely to conflict.
         let port = portpicker();
-        let handle = mcp::start_server(state, port, token.clone())
+        let handle = mcp::start_server(state, port, token.clone(), false)
             .await
             .expect("MCP server should start");
 

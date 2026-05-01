@@ -163,6 +163,15 @@ pub struct AppSettings {
     #[serde(default)]
     pub web_search_enabled: bool,
 
+    /// When `true`, the MCP/gRPC servers bind to `0.0.0.0` instead of
+    /// `127.0.0.1`, exposing the brain to the local network. Default off
+    /// — never silently expose a brain server to the LAN. Requires
+    /// explicit user opt-in with a clear UI warning.
+    ///
+    /// Maps to Chunk 24.1b (LAN bind config).
+    #[serde(default)]
+    pub lan_enabled: bool,
+
     /// When `true` (default), every successful `extract_memories_from_session`
     /// run is followed by an automatic `extract_edges_via_brain` pass over the
     /// freshly-grown memory store, so newly-learned facts immediately
@@ -313,6 +322,7 @@ impl Default for AppSettings {
             auto_tag: false,
             contextual_retrieval: false,
             web_search_enabled: false,
+            lan_enabled: false,
             auto_extract_edges: true,
             expanded_blendshapes: false,
             first_launch_complete: false,
@@ -457,6 +467,7 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             web_search_enabled: false,
+            lan_enabled: false,
             auto_extract_edges: true,
             expanded_blendshapes: false,
             first_launch_complete: false,
