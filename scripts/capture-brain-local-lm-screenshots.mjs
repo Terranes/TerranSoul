@@ -83,8 +83,8 @@ async function navigateTo(tabName) {
   } catch {
     await page.evaluate((name) => {
       const btns = [...document.querySelectorAll('button')];
-      const b = btns.find(b => b.textContent.includes(name));
-      if (b) b.click();
+      const found = btns.find(el => el.textContent.includes(name));
+      if (found) found.click();
     }, tabName);
   }
   await sleep(1000);

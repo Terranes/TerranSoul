@@ -47,7 +47,6 @@ const root = join(__dirname, '..');
 const MILESTONES_PATH = join(root, 'rules', 'milestones.md');
 const COMPLETION_LOG_PATH = join(root, 'rules', 'completion-log.md');
 const SESSION_LOG_PATH = join(root, '.vscode', 'copilot-session.log');
-const MAX_RETRIES = 20; // safety cap
 
 // ── Helpers ────────────────────────────────────────────────────────
 

@@ -87,15 +87,15 @@ async function navigateTo(tabName) {
     // Fallback: dispatch click event via JS
     await page.evaluate((name) => {
       const btns = [...document.querySelectorAll('button')];
-      const b = btns.find(b => b.textContent.includes(name));
-      if (b) b.click();
+      const found = btns.find(el => el.textContent.includes(name));
+      if (found) found.click();
     }, tabName);
   }
   await sleep(1000);
 }
 
 /** Assert text is visible on page. Throws if not found. */
-async function assertVisible(text, timeout = 3000) {
+async function assertVisible(text) {
   const found = await page.evaluate((t) => {
     return document.body.innerText.includes(t);
   }, text);
