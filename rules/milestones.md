@@ -302,7 +302,6 @@ Integration test with VRM playback.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 16.3b | **Late chunking — ingest integration** — wire `memory::late_chunking::pool_chunks` into `run_ingest_task` behind an `AppSettings.late_chunking` flag, calling a long-context Ollama embedder that returns per-token vectors. (16.3a — pure pooling utility — shipped.) | not-started | Needs long-context embedding model in Ollama catalogue that exposes per-token embeddings. |
-| 16.4b | **Self-RAG orchestrator loop** — wire `SelfRagController` (16.4a) into a Tauri streaming command that re-prompts the LLM with augmented context until `Decision::Accept` or `Decision::Reject`. | not-started | Depends on 16.4a (shipped). Threads through `OllamaAgent::respond_contextual` + `hybrid_search_rrf`. |
 | 16.5b | **CRAG query-rewrite + web-search fallback** — wire `crag::aggregate` (16.5a) into a Tauri command: on `RetrievalQuality::Ambiguous` run an LLM rewrite + retry; on `Incorrect` fall through to web fetch (gated by crawl capability). | not-started | Depends on 16.5a (shipped). Web-search only when crawl capability is granted. |
 | 16.6 | **GraphRAG / LightRAG community summaries** — Leiden community detection over `memory_edges`, LLM summaries, dual-level retrieval + RRF. | not-started | Heavy chunk; background workflow job. |
 
@@ -526,7 +525,6 @@ User on the same Wi-Fi as the desktop:
 | 27.4 | **MoMask-style full-body reconstruction research spike.** Evaluate whether a permissively licensed, locally runnable sparse-keypoint → full-body-pose model can improve the existing BlazePose retarget path without requiring cloud inference. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 row 5. Research + thin integration plan first; do not vendor model weights. |
 | 27.5 | **Offline recorded-motion polish pass.** Design an explicit-user-trigger background workflow for smoothing / enhancing saved teach-session clips, informed by Hunyuan-Motion, MimicMotion, and MagicAnimate research references. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 rows 4, 6, 7. Must remain optional, GPU-aware, and license-clean. |
 | 27.6 | **Neural audio-to-face upgrade evaluation.** Compare the shipped phoneme-aware viseme path against Audio2Face, EMOTalk, and FaceFormer-class approaches and define an optional backend if a local, license-clean model is viable. | not-started | Derived from `docs/persona-design.md` §14.2 rows 9 and 11. Do not add NVIDIA ACE or cloud-only dependencies without an explicit opt-in design. |
-| 27.8 | **Persona pack schema spec.** Publish a stable `.terransoul-persona` schema document and compatibility/versioning contract for sharable persona packs. | not-started | Derived from `docs/persona-design.md` §14.2 row 15. Builds on shipped chunk 14.7 export/import; mostly docs + schema validation tests. |
 
 ---
 

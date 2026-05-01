@@ -126,7 +126,7 @@ use commands::{
     settings::{
         get_app_settings, get_model_camera_positions, save_app_settings, save_model_camera_position,
     },
-    streaming::send_message_stream,
+    streaming::{send_message_stream, send_message_stream_self_rag},
     translation::{detect_language, list_languages, translate_text},
     user_models::{
         delete_user_model, import_user_model, list_user_models, read_user_model_bytes,
@@ -518,6 +518,7 @@ pub fn run() {
             open_panel_window,
             close_panel_window,
             send_message_stream,
+            send_message_stream_self_rag,
             list_free_providers,
             classify_intent,
             get_brain_mode,

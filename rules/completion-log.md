@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.4b — Self-RAG orchestrator loop](#chunk-164b--self-rag-orchestrator-loop) | 2026-05-02 |
+| [Chunk 27.8 — Persona pack schema spec document](#chunk-278--persona-pack-schema-spec-document) | 2026-05-02 |
 | [Chunk 27.7 — Persona example-dialogue field](#chunk-277--persona-example-dialogue-field) | 2026-05-02 |
 | [Chunk 15.8 — AI Coding Integrations doc finalisation](#chunk-158--ai-coding-integrations-doc-finalisation) | 2026-05-02 |
 | [Chunk 27.3 — Blendshape passthrough — expanded ARKit rig](#chunk-273--blendshape-passthrough--expanded-arkit-rig) | 2026-05-02 |
@@ -232,6 +234,43 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.4b — Self-RAG orchestrator loop
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+
+**Summary:** Wired `SelfRagController` (shipped in 16.4a) into a new Tauri streaming command `send_message_stream_self_rag` that implements the full Self-RAG iterative refinement loop over Ollama. The command:
+1. Embeds the user query and retrieves memories via `hybrid_search_with_threshold`
+2. Builds a system prompt augmented with `[LONG-TERM MEMORY]` + `SELF_RAG_SYSTEM_PROMPT` (asks LLM to emit reflection tokens)
+3. Streams the LLM response in real-time via `llm-chunk` events (with `StreamTagParser` for anim/pose blocks)
+4. Evaluates the complete response via `SelfRagController::next_step()`
+5. On `Decision::Retrieve` → emits a "refining…" indicator and loops (re-embed + re-retrieve + re-prompt)
+6. On `Decision::Accept` → stores the cleaned answer and emits done
+7. On `Decision::Reject` → emits a graceful refusal message
+
+**Files changed:**
+- `src-tauri/src/commands/streaming.rs` — added `send_message_stream_self_rag` command + `run_self_rag_stream` testable entry point (~200 lines)
+- `src-tauri/src/lib.rs` — registered `send_message_stream_self_rag` in import + handler list
+
+**Testing:** Cargo clippy clean (0 warnings), all cargo tests pass, 1480 Vitest tests pass.
+
+---
+
+## Chunk 27.8 — Persona pack schema spec document
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+
+**Summary:** Created a stable `.terransoul-persona` v1 schema specification document and added 6 schema-conformance unit tests to `persona::pack`.
+
+**Files changed:**
+- `docs/persona-pack-schema.md` (NEW) — ~230-line spec covering envelope structure, traits/expressions/motions, packVersion semantics, additive-only-within-version contract, forward/backward compat rules, import merge semantics, examples
+- `src-tauri/src/persona/pack.rs` — added 6 `schema_spec_*` tests validating minimal/full packs, unknown-keys round-trip, id-charset validation, optional provenance
+
+**Testing:** All 27 pack.rs tests pass, cargo clippy clean.
 
 ---
 
