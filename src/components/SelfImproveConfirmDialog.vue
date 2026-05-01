@@ -95,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -122,8 +122,6 @@ watch(
   },
 );
 
-const _ = computed(() => props.hasCodingLlm);
-void _;
 </script>
 
 <style scoped>

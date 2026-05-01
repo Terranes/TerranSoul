@@ -392,6 +392,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable max-lines */
 import { computed, ref, watch } from 'vue';
 import { useSelfImproveStore, type SelfImprovePhase } from '../stores/self-improve';
 

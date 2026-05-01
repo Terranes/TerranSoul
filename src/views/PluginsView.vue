@@ -219,7 +219,7 @@
               <input
                 v-else-if="settingTypeKind(setting.value_type) === 'number'"
                 type="number"
-                :value="(readSetting(plugin.manifest.id, setting.key) ?? '') as number | string"
+                :value="settingInputValue(plugin.manifest.id, setting.key)"
                 :data-testid="`pv-setting-${plugin.manifest.id}-${setting.key}`"
                 @change="writeSetting(plugin.manifest.id, setting.key, parseSettingNumber(($event.target as HTMLInputElement).value))"
               >
@@ -365,6 +365,10 @@ function enumValues(t: SettingValueTypeT): string[] {
 }
 function readSetting(pluginId: string, key: string): unknown {
   return settingValues.value[`${pluginId}.${key}`];
+}
+function settingInputValue(pluginId: string, key: string): string | number {
+  const value = readSetting(pluginId, key);
+  return typeof value === 'number' || typeof value === 'string' ? value : '';
 }
 function parseSettingNumber(raw: string): number | null {
   if (raw.trim() === '') return null;

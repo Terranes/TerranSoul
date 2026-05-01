@@ -127,7 +127,7 @@ describe('conversation store — no brain (persona fallback)', () => {
     await store.sendMessage('stop translator mode');
 
     expect(store.translatorMode).toBeNull();
-    expect(store.messages.at(-1)?.content).toContain('Translator mode stopped');
+    expect(store.messages[store.messages.length - 1]?.content).toContain('Translator mode stopped');
   });
 });
 

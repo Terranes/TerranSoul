@@ -1,3 +1,4 @@
+/* eslint-disable prefer-spread */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PoseAnimator, POSE_BONES, type LlmPoseFrame } from './pose-animator';
 
