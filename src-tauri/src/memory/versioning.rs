@@ -7,7 +7,7 @@
 //!
 //! Maps to `docs/brain-advanced-design.md` §16 Phase 4 (chunk 16.12).
 
-use rusqlite::{Connection, Result as SqlResult, params};
+use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 
 /// A single version snapshot of a memory entry.

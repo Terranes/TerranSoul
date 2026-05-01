@@ -81,7 +81,9 @@ mod tests {
         });
         let mode: crate::brain::BrainMode = serde_json::from_value(payload).unwrap();
         match mode {
-            crate::brain::BrainMode::PaidApi { provider, model, .. } => {
+            crate::brain::BrainMode::PaidApi {
+                provider, model, ..
+            } => {
                 assert_eq!(provider, "openai");
                 assert_eq!(model, "gpt-4o");
             }
@@ -99,8 +101,7 @@ mod tests {
             "name": "My Phone",
             "paired_at": 1713312000000u64
         });
-        let device: crate::identity::TrustedDevice =
-            serde_json::from_value(payload).unwrap();
+        let device: crate::identity::TrustedDevice = serde_json::from_value(payload).unwrap();
         assert_eq!(device.device_id, "abc-123");
         assert_eq!(device.name, "My Phone");
     }
@@ -121,8 +122,7 @@ mod tests {
                 "shinra": { "azimuth": 0.5, "distance": 3.0 }
             }
         });
-        let settings: crate::settings::AppSettings =
-            serde_json::from_value(payload).unwrap();
+        let settings: crate::settings::AppSettings = serde_json::from_value(payload).unwrap();
         assert_eq!(settings.selected_model_id, "shinra");
         assert!(settings.bgm_enabled);
         assert_eq!(settings.model_camera_positions.len(), 1);
@@ -140,12 +140,14 @@ mod tests {
             "api_key": "sk-test",
             "endpoint_url": "https://custom.api/v1"
         });
-        let config: crate::voice::VoiceConfig =
-            serde_json::from_value(payload).unwrap();
+        let config: crate::voice::VoiceConfig = serde_json::from_value(payload).unwrap();
         assert_eq!(config.asr_provider.as_deref(), Some("groq-whisper"));
         assert_eq!(config.tts_provider.as_deref(), Some("web-speech"));
         assert_eq!(config.api_key.as_deref(), Some("sk-test"));
-        assert_eq!(config.endpoint_url.as_deref(), Some("https://custom.api/v1"));
+        assert_eq!(
+            config.endpoint_url.as_deref(),
+            Some("https://custom.api/v1")
+        );
     }
 
     #[test]
@@ -156,8 +158,7 @@ mod tests {
             "api_key": null,
             "endpoint_url": null
         });
-        let config: crate::voice::VoiceConfig =
-            serde_json::from_value(payload).unwrap();
+        let config: crate::voice::VoiceConfig = serde_json::from_value(payload).unwrap();
         assert!(config.asr_provider.is_none());
         assert!(config.tts_provider.is_none());
     }
@@ -220,8 +221,7 @@ mod tests {
             "sentiment": null,
             "timestamp": 1713312000000u64
         });
-        let msg: crate::commands::chat::Message =
-            serde_json::from_value(payload).unwrap();
+        let msg: crate::commands::chat::Message = serde_json::from_value(payload).unwrap();
         assert_eq!(msg.role, "user");
         assert!(msg.agent_name.is_none());
     }

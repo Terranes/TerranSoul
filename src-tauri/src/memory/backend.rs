@@ -113,7 +113,10 @@ pub trait StorageBackend: Send {
     fn add(&self, m: NewMemory) -> StorageResult<MemoryEntry>;
     /// Insert a new memory into a specific tier with an optional session ID.
     fn add_to_tier(
-        &self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>,
+        &self,
+        m: NewMemory,
+        tier: MemoryTier,
+        session_id: Option<&str>,
     ) -> StorageResult<MemoryEntry>;
 
     // ── Read ─────────────────────────────────────────────────────────────
@@ -143,15 +146,19 @@ pub trait StorageBackend: Send {
     fn set_embedding(&self, id: i64, embedding: &[f32]) -> StorageResult<()>;
     /// Pure cosine-similarity vector search.
     fn vector_search(
-        &self, query_embedding: &[f32], limit: usize,
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>>;
     /// Find near-duplicate by cosine threshold.
-    fn find_duplicate(
-        &self, query_embedding: &[f32], threshold: f32,
-    ) -> StorageResult<Option<i64>>;
+    fn find_duplicate(&self, query_embedding: &[f32], threshold: f32)
+        -> StorageResult<Option<i64>>;
     /// 6-signal hybrid search (vector + keyword + recency + importance + decay + tier).
     fn hybrid_search(
-        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>>;
 
     /// Hybrid search using **Reciprocal Rank Fusion** over independent
@@ -162,7 +169,10 @@ pub trait StorageBackend: Send {
     /// non-default backends keep working until they implement RRF natively.
     /// See `docs/brain-advanced-design.md` §16 Phase 6 / §19.2 row 2.
     fn hybrid_search_rrf(
-        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         self.hybrid_search(query, query_embedding, limit)
     }
@@ -191,5 +201,7 @@ pub trait StorageBackend: Send {
     fn backend_name(&self) -> &'static str;
     /// Whether this backend supports server-side vector operations
     /// (pgvector, Cassandra ANN). If false, vector search is done in-process.
-    fn supports_native_vector_search(&self) -> bool { false }
+    fn supports_native_vector_search(&self) -> bool {
+        false
+    }
 }

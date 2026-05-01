@@ -132,13 +132,11 @@ pub fn summarise_log(log: &str) -> CopilotLogSummary {
             }
             EventKind::UserTurn if s.last_user_turn_ts.is_none() => {
                 s.last_user_turn_ts = Some(ev.timestamp.clone());
-                s.last_user_preview =
-                    Some(truncate(&ev.body, USER_PREVIEW_MAX_CHARS));
+                s.last_user_preview = Some(truncate(&ev.body, USER_PREVIEW_MAX_CHARS));
             }
             EventKind::AssistantTurn if s.last_assistant_turn_ts.is_none() => {
                 s.last_assistant_turn_ts = Some(ev.timestamp.clone());
-                s.last_assistant_preview =
-                    Some(truncate(&ev.body, ASSISTANT_PREVIEW_MAX_CHARS));
+                s.last_assistant_preview = Some(truncate(&ev.body, ASSISTANT_PREVIEW_MAX_CHARS));
             }
             _ => {}
         }
@@ -207,13 +205,23 @@ fn classify(body: &str) -> EventKind {
     }
     if contains_any(
         &lower,
-        &["assistant message", "assistant turn", "assistant chunk", "stream chunk"],
+        &[
+            "assistant message",
+            "assistant turn",
+            "assistant chunk",
+            "stream chunk",
+        ],
     ) {
         return EventKind::AssistantTurn;
     }
     if contains_any(
         &lower,
-        &["tool call", "tool invocation", "function call", "invoking tool"],
+        &[
+            "tool call",
+            "tool invocation",
+            "function call",
+            "invoking tool",
+        ],
     ) {
         return EventKind::ToolInvocation;
     }
@@ -256,7 +264,11 @@ mod tests {
 
     #[test]
     fn parse_line_classifies_workspace_folder() {
-        let l = line("2026-04-29 05:17:33", "info", "workspace folder set: D:/Git/TerranSoul");
+        let l = line(
+            "2026-04-29 05:17:33",
+            "info",
+            "workspace folder set: D:/Git/TerranSoul",
+        );
         let ev = parse_line(&l).unwrap();
         assert_eq!(ev.timestamp, "2026-04-29 05:17:33");
         assert_eq!(ev.level, "info");
@@ -266,7 +278,12 @@ mod tests {
 
     #[test]
     fn parse_line_classifies_user_turn() {
-        let ev = parse_line(&line("t", "info", "User message received: continue next chunk")).unwrap();
+        let ev = parse_line(&line(
+            "t",
+            "info",
+            "User message received: continue next chunk",
+        ))
+        .unwrap();
         assert_eq!(ev.kind, EventKind::UserTurn);
     }
 
@@ -350,7 +367,11 @@ mod tests {
         let log = format!(
             "{}\n{}\n{}\n",
             line("t", "info", "workspace folder set: D:/Git/TerranSoul"),
-            line("t", "info", "chat session: 11111111-2222-3333-4444-555555555555"),
+            line(
+                "t",
+                "info",
+                "chat session: 11111111-2222-3333-4444-555555555555"
+            ),
             line("t", "info", "model selected: gpt-5-codex"),
         );
         let s = summarise_log(&log);

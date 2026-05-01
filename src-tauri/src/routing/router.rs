@@ -29,7 +29,10 @@ impl CommandRouter {
         if envelope.target_device != self.device_id {
             return Some(CommandResult::denied(
                 &envelope.command_id,
-                &format!("wrong target: expected {}, got {}", self.device_id, envelope.target_device),
+                &format!(
+                    "wrong target: expected {}, got {}",
+                    self.device_id, envelope.target_device
+                ),
             ));
         }
 
@@ -41,7 +44,10 @@ impl CommandRouter {
             }
             Some(false) => {
                 // Denied
-                Some(CommandResult::denied(&envelope.command_id, "device is blocked"))
+                Some(CommandResult::denied(
+                    &envelope.command_id,
+                    "device is blocked",
+                ))
             }
             None => {
                 // Ask — put it in pending
@@ -62,7 +68,8 @@ impl CommandRouter {
             .position(|e| e.command_id == command_id)?;
 
         let mut envelope = self.pending_envelopes.remove(idx);
-        self.permissions.approve(command_id, &envelope.origin_device, remember);
+        self.permissions
+            .approve(command_id, &envelope.origin_device, remember);
         envelope.status = CommandStatus::Executing;
         Some(self.execute(&envelope))
     }
@@ -75,7 +82,8 @@ impl CommandRouter {
             .position(|e| e.command_id == command_id)?;
 
         let envelope = self.pending_envelopes.remove(idx);
-        self.permissions.deny(command_id, &envelope.origin_device, block);
+        self.permissions
+            .deny(command_id, &envelope.origin_device, block);
         Some(CommandResult::denied(&envelope.command_id, "user denied"))
     }
 
@@ -85,13 +93,14 @@ impl CommandRouter {
             "ping" => CommandResult::success(&envelope.command_id, serde_json::json!("pong")),
             "list_agents" => {
                 // Stub — in production this would call the orchestrator
-                CommandResult::success(
-                    &envelope.command_id,
-                    serde_json::json!(["stub"]),
-                )
+                CommandResult::success(&envelope.command_id, serde_json::json!(["stub"]))
             }
             "send_message" => {
-                let text = envelope.payload.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                let text = envelope
+                    .payload
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 if text.is_empty() {
                     return CommandResult::failed(&envelope.command_id, "empty message");
                 }
@@ -130,9 +139,9 @@ impl CommandRouter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::command_envelope::CommandEnvelope;
     use super::super::permission::PermissionPolicy;
+    use super::*;
 
     fn make_router() -> CommandRouter {
         CommandRouter::new("pc-device")
@@ -148,7 +157,10 @@ mod tests {
         let env = CommandEnvelope::new("phone", "other-device", "ping", serde_json::json!(null));
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Denied);
-        assert!(result.payload["reason"].as_str().unwrap().contains("wrong target"));
+        assert!(result.payload["reason"]
+            .as_str()
+            .unwrap()
+            .contains("wrong target"));
     }
 
     #[test]
@@ -163,7 +175,9 @@ mod tests {
     #[test]
     fn allowed_device_executes_immediately() {
         let mut router = make_router();
-        router.permissions_mut().set_policy("phone", PermissionPolicy::Allow);
+        router
+            .permissions_mut()
+            .set_policy("phone", PermissionPolicy::Allow);
         let env = make_envelope("phone", "ping", serde_json::json!(null));
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Completed);
@@ -173,7 +187,9 @@ mod tests {
     #[test]
     fn blocked_device_is_denied() {
         let mut router = make_router();
-        router.permissions_mut().set_policy("phone", PermissionPolicy::Deny);
+        router
+            .permissions_mut()
+            .set_policy("phone", PermissionPolicy::Deny);
         let env = make_envelope("phone", "ping", serde_json::json!(null));
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Denied);
@@ -235,18 +251,30 @@ mod tests {
     #[test]
     fn execute_list_agents() {
         let mut router = make_router();
-        router.permissions_mut().set_policy("phone", PermissionPolicy::Allow);
+        router
+            .permissions_mut()
+            .set_policy("phone", PermissionPolicy::Allow);
         let env = make_envelope("phone", "list_agents", serde_json::json!(null));
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Completed);
-        assert!(result.payload.as_array().unwrap().contains(&serde_json::json!("stub")));
+        assert!(result
+            .payload
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("stub")));
     }
 
     #[test]
     fn execute_send_message() {
         let mut router = make_router();
-        router.permissions_mut().set_policy("phone", PermissionPolicy::Allow);
-        let env = make_envelope("phone", "send_message", serde_json::json!({"text": "hello"}));
+        router
+            .permissions_mut()
+            .set_policy("phone", PermissionPolicy::Allow);
+        let env = make_envelope(
+            "phone",
+            "send_message",
+            serde_json::json!({"text": "hello"}),
+        );
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Completed);
         assert_eq!(result.payload["queued"], true);
@@ -256,7 +284,9 @@ mod tests {
     #[test]
     fn execute_send_message_empty_fails() {
         let mut router = make_router();
-        router.permissions_mut().set_policy("phone", PermissionPolicy::Allow);
+        router
+            .permissions_mut()
+            .set_policy("phone", PermissionPolicy::Allow);
         let env = make_envelope("phone", "send_message", serde_json::json!({"text": ""}));
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Failed);
@@ -265,11 +295,16 @@ mod tests {
     #[test]
     fn unknown_command_type_fails() {
         let mut router = make_router();
-        router.permissions_mut().set_policy("phone", PermissionPolicy::Allow);
+        router
+            .permissions_mut()
+            .set_policy("phone", PermissionPolicy::Allow);
         let env = make_envelope("phone", "hack_the_planet", serde_json::json!(null));
         let result = router.handle_incoming(env).unwrap();
         assert_eq!(result.status, CommandStatus::Failed);
-        assert!(result.payload["error"].as_str().unwrap().contains("unknown command type"));
+        assert!(result.payload["error"]
+            .as_str()
+            .unwrap()
+            .contains("unknown command type"));
     }
 
     #[test]

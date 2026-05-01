@@ -71,10 +71,7 @@ pub fn clean_hyde_reply(reply: &str) -> Option<String> {
     let stripped = strip_preamble(trimmed);
 
     // Collapse newlines + repeated whitespace.
-    let collapsed: String = stripped
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed: String = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
 
     if collapsed.chars().count() < 4 {
         None
@@ -156,8 +153,8 @@ mod tests {
 
     #[test]
     fn clean_reply_collapses_whitespace_and_newlines() {
-        let cleaned = clean_hyde_reply("foo\n\nbar   baz\n\tqux")
-            .expect("should produce a hypothetical");
+        let cleaned =
+            clean_hyde_reply("foo\n\nbar   baz\n\tqux").expect("should produce a hypothetical");
         assert_eq!(cleaned, "foo bar baz qux");
     }
 

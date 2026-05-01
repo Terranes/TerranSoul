@@ -88,7 +88,11 @@ pub fn build_pack(
         exported_at: now_ms,
         note: note.and_then(|s| {
             let trimmed = s.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
         }),
         traits,
         expressions,
@@ -101,8 +105,7 @@ pub fn build_pack(
 /// `serde_json` itself fails (essentially unreachable for the known
 /// `PersonaPack` shape).
 pub fn pack_to_string(pack: &PersonaPack) -> Result<String, String> {
-    serde_json::to_string_pretty(pack)
-        .map_err(|e| format!("Failed to serialise persona pack: {e}"))
+    serde_json::to_string_pretty(pack).map_err(|e| format!("Failed to serialise persona pack: {e}"))
 }
 
 /// Parse a user-supplied JSON string into a [`PersonaPack`].
@@ -129,8 +132,8 @@ pub fn parse_pack(raw: &str) -> Result<PersonaPack, String> {
     if trimmed.is_empty() {
         return Err("Pack is empty".to_string());
     }
-    let pack: PersonaPack = serde_json::from_str(trimmed)
-        .map_err(|e| format!("Pack is not valid JSON: {e}"))?;
+    let pack: PersonaPack =
+        serde_json::from_str(trimmed).map_err(|e| format!("Pack is not valid JSON: {e}"))?;
 
     if pack.pack_version > PERSONA_PACK_VERSION {
         return Err(format!(
@@ -156,6 +159,19 @@ pub struct ImportReport {
     pub expressions_accepted: u32,
     /// Number of motions accepted by the validator.
     pub motions_accepted: u32,
+    /// Of the accepted motions, how many declared `provenance:
+    /// "generated"` (LLM-as-Animator output, Chunk 14.16e). Lets the
+    /// import preview say "5 motions (3 generated, 2 camera)" so the
+    /// receiving user can see at a glance which clips came from the
+    /// brain vs the camera mirror.
+    #[serde(default)]
+    pub motions_generated: u32,
+    /// Of the accepted motions, how many declared `provenance:
+    /// "camera"` (mirror-captured). Motions with no provenance field
+    /// stay uncounted in either bucket so old packs don't get
+    /// mis-attributed.
+    #[serde(default)]
+    pub motions_camera: u32,
     /// Per-entry skip reasons (max 32 entries to keep the JSON small).
     /// Each string is a single-line, user-facing explanation.
     #[serde(default)]
@@ -204,7 +220,24 @@ pub fn note_skip(report: &mut ImportReport, reason: String) {
     if report.skipped.len() < MAX_SKIPS {
         report.skipped.push(reason);
     } else if report.skipped.len() == MAX_SKIPS {
-        report.skipped.push("…(further skip messages truncated)".to_string());
+        report
+            .skipped
+            .push("…(further skip messages truncated)".to_string());
+    }
+}
+
+/// Inspect a learned-motion JSON value and bump the matching
+/// `motions_{generated,camera}` counter on the report when its
+/// `provenance` field is present. Unknown / missing values leave both
+/// counters unchanged so old packs without the field don't get
+/// mis-attributed (Chunk 14.16f).
+pub fn note_motion_provenance(report: &mut ImportReport, motion: &serde_json::Value) {
+    if let Some(prov) = motion.get("provenance").and_then(|v| v.as_str()) {
+        match prov {
+            "generated" => report.motions_generated += 1,
+            "camera" => report.motions_camera += 1,
+            _ => {}
+        }
     }
 }
 
@@ -212,6 +245,42 @@ pub fn note_skip(report: &mut ImportReport, reason: String) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn note_motion_provenance_generated() {
+        let mut r = ImportReport::default();
+        let m = json!({"provenance": "generated"});
+        note_motion_provenance(&mut r, &m);
+        assert_eq!(r.motions_generated, 1);
+        assert_eq!(r.motions_camera, 0);
+    }
+
+    #[test]
+    fn note_motion_provenance_camera() {
+        let mut r = ImportReport::default();
+        let m = json!({"provenance": "camera"});
+        note_motion_provenance(&mut r, &m);
+        assert_eq!(r.motions_generated, 0);
+        assert_eq!(r.motions_camera, 1);
+    }
+
+    #[test]
+    fn note_motion_provenance_missing_is_unattributed() {
+        let mut r = ImportReport::default();
+        let m = json!({"id": "x", "kind": "motion"});
+        note_motion_provenance(&mut r, &m);
+        assert_eq!(r.motions_generated, 0);
+        assert_eq!(r.motions_camera, 0);
+    }
+
+    #[test]
+    fn note_motion_provenance_unknown_label_is_unattributed() {
+        let mut r = ImportReport::default();
+        let m = json!({"provenance": "telepathy"});
+        note_motion_provenance(&mut r, &m);
+        assert_eq!(r.motions_generated, 0);
+        assert_eq!(r.motions_camera, 0);
+    }
 
     fn sample_traits() -> serde_json::Value {
         json!({

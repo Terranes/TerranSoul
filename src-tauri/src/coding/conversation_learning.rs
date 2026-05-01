@@ -84,8 +84,14 @@ fn detection_prompt(message: &str) -> Vec<OpenAiMessage> {
         message.chars().take(4000).collect::<String>()
     );
     vec![
-        OpenAiMessage { role: "system".to_string(), content: system.to_string() },
-        OpenAiMessage { role: "user".to_string(), content: user },
+        OpenAiMessage {
+            role: "system".to_string(),
+            content: system.to_string(),
+        },
+        OpenAiMessage {
+            role: "user".to_string(),
+            content: user,
+        },
     ]
 }
 
@@ -128,10 +134,7 @@ fn extract_json_object(reply: &str) -> Option<&str> {
 /// Ask the Coding LLM whether `message` describes an improvement; returns
 /// `None` for chit-chat / questions / non-actionable inputs and on any
 /// transport / parsing failure (the chat pipeline must never break).
-pub async fn detect_improvement(
-    message: &str,
-    cfg: &CodingLlmConfig,
-) -> Option<LearnedChunk> {
+pub async fn detect_improvement(message: &str, cfg: &CodingLlmConfig) -> Option<LearnedChunk> {
     let trimmed = message.trim();
     if trimmed.len() < 5 {
         return None;
@@ -210,10 +213,7 @@ pub fn record_learned(data_dir: &Path, chunk: &LearnedChunk) -> Result<(), Strin
 /// Atomically append a `not-started` row to `rules/milestones.md` under
 /// the "Learned from daily conversations" phase. Creates the phase
 /// section if it does not exist.
-pub fn append_chunk_to_milestones(
-    repo_root: &Path,
-    chunk: &LearnedChunk,
-) -> Result<(), String> {
+pub fn append_chunk_to_milestones(repo_root: &Path, chunk: &LearnedChunk) -> Result<(), String> {
     let path = repo_root.join("rules").join("milestones.md");
     let original = fs::read_to_string(&path).map_err(|e| format!("read milestones: {e}"))?;
     let row = format!(

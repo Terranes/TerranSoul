@@ -180,19 +180,18 @@ pub async fn transcribe_audio(
         }
         Some("groq-whisper") => {
             let key = api_key.ok_or("Groq Whisper requires an API key")?;
-            let endpoint = endpoint_url
-                .unwrap_or_else(|| GROQ_WHISPER_ENDPOINT.to_string());
+            let endpoint = endpoint_url.unwrap_or_else(|| GROQ_WHISPER_ENDPOINT.to_string());
             let engine = voice::whisper_api::WhisperApi::with_endpoint(key, endpoint);
             engine.transcribe(&pcm).await
         }
         Some("web-speech") => Err(
-            "web-speech uses the browser SpeechRecognition API directly; call useWebSpeech instead".to_string(),
+            "web-speech uses the browser SpeechRecognition API directly; call useWebSpeech instead"
+                .to_string(),
         ),
         Some(id) => Err(format!("Unknown ASR provider: {id}")),
         None => Err("No ASR provider configured".to_string()),
     }
 }
-
 
 /// Diarize speech audio into speaker-attributed segments.
 ///
@@ -270,7 +269,6 @@ pub async fn clear_hotwords(state: State<'_, AppState>) -> Result<(), String> {
     voice::config_store::save(&state.data_dir, &config)?;
     Ok(())
 }
-
 
 /// Routes to the configured TTS provider (from `voice_config.tts_provider`).
 /// Returns the WAV audio bytes so the frontend can play them directly.
@@ -560,7 +558,10 @@ mod tests {
     #[test]
     fn hotword_validate_boost_range() {
         for &b in &[-0.1f32, 10.1, 100.0, -5.0] {
-            assert!(!(0.0..=10.0).contains(&b), "boost {b} should be out of range");
+            assert!(
+                !(0.0..=10.0).contains(&b),
+                "boost {b} should be out of range"
+            );
         }
         for &b in &[0.0f32, 5.0, 10.0, 3.7] {
             assert!((0.0..=10.0).contains(&b), "boost {b} should be in range");
@@ -572,7 +573,10 @@ mod tests {
         let mut hotwords: Vec<voice::Hotword> = vec![];
 
         // Add
-        hotwords.push(voice::Hotword { phrase: "Kerrigan".into(), boost: 8.0 });
+        hotwords.push(voice::Hotword {
+            phrase: "Kerrigan".into(),
+            boost: 8.0,
+        });
         assert_eq!(hotwords.len(), 1);
 
         // Duplicate check
@@ -587,8 +591,14 @@ mod tests {
     #[test]
     fn hotword_clear_logic() {
         let mut hotwords = vec![
-            voice::Hotword { phrase: "Zeratul".into(), boost: 7.0 },
-            voice::Hotword { phrase: "Protoss".into(), boost: 5.0 },
+            voice::Hotword {
+                phrase: "Zeratul".into(),
+                boost: 7.0,
+            },
+            voice::Hotword {
+                phrase: "Protoss".into(),
+                boost: 5.0,
+            },
         ];
         hotwords.clear();
         assert!(hotwords.is_empty());
@@ -596,11 +606,15 @@ mod tests {
 
     #[test]
     fn hotword_remove_nonexistent_detected() {
-        let hotwords = vec![
-            voice::Hotword { phrase: "Artanis".into(), boost: 6.0 },
-        ];
+        let hotwords = vec![voice::Hotword {
+            phrase: "Artanis".into(),
+            boost: 6.0,
+        }];
         let before = hotwords.len();
-        let after: Vec<_> = hotwords.into_iter().filter(|h| h.phrase != "Zagara").collect();
+        let after: Vec<_> = hotwords
+            .into_iter()
+            .filter(|h| h.phrase != "Zagara")
+            .collect();
         assert_eq!(after.len(), before, "nothing should be removed");
     }
 
@@ -653,4 +667,3 @@ mod tests {
         assert_eq!(cfg.tts_rate, 0);
     }
 }
-

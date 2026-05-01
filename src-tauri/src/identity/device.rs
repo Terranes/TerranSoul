@@ -92,8 +92,7 @@ mod tests {
     fn key_roundtrip_from_bytes() {
         let original = DeviceIdentity::generate();
         let key_bytes = original.to_key_bytes();
-        let restored =
-            DeviceIdentity::from_bytes(original.device_id.clone(), &key_bytes).unwrap();
+        let restored = DeviceIdentity::from_bytes(original.device_id.clone(), &key_bytes).unwrap();
         assert_eq!(restored.public_key_b64(), original.public_key_b64());
         assert_eq!(restored.device_id, original.device_id);
     }

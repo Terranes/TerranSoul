@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
-use crate::AppState;
+use crate::brain::brain_config::BrainMode;
 use crate::brain::ollama_agent::{ChatMessage, OLLAMA_BASE_URL};
 use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
-use crate::brain::brain_config::BrainMode;
+use crate::persona::pose_frame::{parse_pose_payload, LlmPoseFrame};
+use crate::AppState;
+use serde::{Deserialize, Serialize};
+use tauri::{Emitter, State};
 
 /// A single streamed chunk emitted via Tauri events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,13 +40,48 @@ struct OllamaStreamMessage {
 
 // ── Streaming tag parser ──────────────────────────────────────────────────────
 
-/// State-machine parser that extracts `<anim>{"emotion":"happy"}</anim>` blocks
-/// from a stream of text chunks. Returns clean text and deserialized
-/// [`AnimationCommand`]s — no regex needed on the frontend.
+/// Outputs from a single [`StreamTagParser::feed`] call.
+#[derive(Debug, Default)]
+pub struct StreamFeed {
+    /// Clean text with all meta-tag blocks stripped.
+    pub text: String,
+    /// Parsed `<anim>{…}</anim>` blocks.
+    pub anim_commands: Vec<AnimationCommand>,
+    /// Parsed `<pose>{…}</pose>` blocks (validated + clamped).
+    pub pose_frames: Vec<LlmPoseFrame>,
+}
+
+/// Which meta-tag block the parser is currently inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockKind {
+    Anim,
+    Pose,
+}
+
+impl BlockKind {
+    fn open_tag(self) -> &'static str {
+        match self {
+            BlockKind::Anim => "<anim>",
+            BlockKind::Pose => "<pose>",
+        }
+    }
+    fn close_tag(self) -> &'static str {
+        match self {
+            BlockKind::Anim => "</anim>",
+            BlockKind::Pose => "</pose>",
+        }
+    }
+}
+
+const ALL_BLOCKS: &[BlockKind] = &[BlockKind::Anim, BlockKind::Pose];
+
+/// State-machine parser that extracts `<anim>{…}</anim>` and
+/// `<pose>{…}</pose>` blocks from a stream of text chunks. Returns
+/// clean text plus typed payloads — no regex needed on the frontend.
 struct StreamTagParser {
     buffer: String,
-    in_anim_block: bool,
-    anim_buffer: String,
+    in_block: Option<BlockKind>,
+    block_buffer: String,
     strip_next_newline: bool,
 }
 
@@ -53,17 +89,17 @@ impl StreamTagParser {
     fn new() -> Self {
         Self {
             buffer: String::new(),
-            in_anim_block: false,
-            anim_buffer: String::new(),
+            in_block: None,
+            block_buffer: String::new(),
             strip_next_newline: false,
         }
     }
 
-    /// Feed a chunk of text. Returns `(clean_text, animation_commands)`.
-    fn feed(&mut self, chunk: &str) -> (String, Vec<AnimationCommand>) {
+    /// Feed a chunk of text. Returns clean text plus any complete blocks.
+    fn feed(&mut self, chunk: &str) -> StreamFeed {
         self.buffer.push_str(chunk);
 
-        // Strip leading newline left over from a previous </anim> boundary.
+        // Strip leading newline left over from a previous </tag> boundary.
         if self.strip_next_newline && !self.buffer.is_empty() {
             if self.buffer.starts_with("\r\n") {
                 self.buffer = self.buffer[2..].to_string();
@@ -73,20 +109,31 @@ impl StreamTagParser {
             self.strip_next_newline = false;
         }
 
-        let mut text_out = String::new();
-        let mut commands: Vec<AnimationCommand> = Vec::new();
+        let mut out = StreamFeed::default();
 
         loop {
-            if self.in_anim_block {
-                if let Some(end) = self.buffer.find("</anim>") {
+            if let Some(kind) = self.in_block {
+                let close = kind.close_tag();
+                if let Some(end) = self.buffer.find(close) {
                     let json_part = self.buffer[..end].to_string();
-                    self.anim_buffer.push_str(&json_part);
-                    if let Ok(cmd) = serde_json::from_str::<AnimationCommand>(self.anim_buffer.trim()) {
-                        commands.push(cmd);
+                    self.block_buffer.push_str(&json_part);
+                    let payload = std::mem::take(&mut self.block_buffer);
+                    match kind {
+                        BlockKind::Anim => {
+                            if let Ok(cmd) =
+                                serde_json::from_str::<AnimationCommand>(payload.trim())
+                            {
+                                out.anim_commands.push(cmd);
+                            }
+                        }
+                        BlockKind::Pose => {
+                            if let Ok(parsed) = parse_pose_payload(payload.trim()) {
+                                out.pose_frames.push(parsed.frame);
+                            }
+                        }
                     }
-                    self.anim_buffer.clear();
-                    self.in_anim_block = false;
-                    self.buffer = self.buffer[end + "</anim>".len()..].to_string();
+                    self.in_block = None;
+                    self.buffer = self.buffer[end + close.len()..].to_string();
                     // Strip one trailing newline so it doesn't leak into chat text.
                     if self.buffer.starts_with('\n') {
                         self.buffer = self.buffer[1..].to_string();
@@ -96,42 +143,66 @@ impl StreamTagParser {
                         self.strip_next_newline = true;
                     }
                 } else {
-                    // End tag not yet seen — hold back any partial `</anim>` prefix.
-                    let hold = partial_prefix_len(&self.buffer, "</anim>");
+                    // Close tag not yet seen — hold back any partial close.
+                    let hold = partial_prefix_len(&self.buffer, close);
                     let safe = self.buffer.len() - hold;
-                    self.anim_buffer.push_str(&self.buffer[..safe]);
+                    self.block_buffer.push_str(&self.buffer[..safe]);
                     self.buffer = self.buffer[safe..].to_string();
                     break;
                 }
-            } else if let Some(start) = self.buffer.find("<anim>") {
-                text_out.push_str(&self.buffer[..start]);
-                self.buffer = self.buffer[start + "<anim>".len()..].to_string();
-                self.in_anim_block = true;
+            } else if let Some((start, kind)) = find_earliest_open(&self.buffer) {
+                out.text.push_str(&self.buffer[..start]);
+                self.buffer = self.buffer[start + kind.open_tag().len()..].to_string();
+                self.in_block = Some(kind);
             } else {
-                // Hold back any partial `<anim>` prefix at the end.
-                let hold = partial_prefix_len(&self.buffer, "<anim>");
+                // Hold back any partial open tag at the end.
+                let hold = ALL_BLOCKS
+                    .iter()
+                    .map(|k| partial_prefix_len(&self.buffer, k.open_tag()))
+                    .max()
+                    .unwrap_or(0);
                 let safe = self.buffer.len() - hold;
-                text_out.push_str(&self.buffer[..safe]);
+                out.text.push_str(&self.buffer[..safe]);
                 self.buffer = self.buffer[safe..].to_string();
                 break;
             }
         }
 
-        (text_out, commands)
+        out
     }
 
     /// Flush remaining buffered content (call when the stream ends).
-    fn flush(&mut self) -> (String, Vec<AnimationCommand>) {
+    fn flush(&mut self) -> StreamFeed {
         let remaining = std::mem::take(&mut self.buffer);
-        let anim_remaining = std::mem::take(&mut self.anim_buffer);
-        self.in_anim_block = false;
+        let block_remaining = std::mem::take(&mut self.block_buffer);
+        let in_block = self.in_block.take();
         self.strip_next_newline = false;
-        // If we were mid-anim-block, the content is malformed — emit as text.
-        if !anim_remaining.is_empty() {
-            return (format!("{anim_remaining}{remaining}"), Vec::new());
+        let mut out = StreamFeed::default();
+        // If we were mid-block, the content is malformed — emit as text
+        // (re-prepend the original opener so the user sees what happened).
+        if !block_remaining.is_empty() || in_block.is_some() {
+            let opener = in_block.map(|k| k.open_tag()).unwrap_or("");
+            out.text = format!("{opener}{block_remaining}{remaining}");
+        } else {
+            out.text = remaining;
         }
-        (remaining, Vec::new())
+        out
     }
+}
+
+/// Find the earliest opening tag in `buffer` and return its byte offset
+/// and which block kind it is. `None` if no opener is present.
+fn find_earliest_open(buffer: &str) -> Option<(usize, BlockKind)> {
+    let mut best: Option<(usize, BlockKind)> = None;
+    for kind in ALL_BLOCKS {
+        if let Some(idx) = buffer.find(kind.open_tag()) {
+            match best {
+                Some((b, _)) if b <= idx => {}
+                _ => best = Some((idx, *kind)),
+            }
+        }
+    }
+    best
 }
 
 /// How many bytes at the end of `buffer` could be the start of `tag`.
@@ -146,21 +217,31 @@ fn partial_prefix_len(buffer: &str, tag: &str) -> usize {
     0
 }
 
-/// Strip `<anim>...</anim>` blocks from a completed response (for storage).
+/// Strip `<anim>...</anim>` and `<pose>...</pose>` blocks from a
+/// completed response (for storage).
 fn strip_anim_blocks(input: &str) -> String {
     let mut result = String::new();
     let mut remaining = input;
-    while let Some(start) = remaining.find("<anim>") {
+    loop {
+        let next = ALL_BLOCKS
+            .iter()
+            .filter_map(|k| remaining.find(k.open_tag()).map(|i| (i, *k)))
+            .min_by_key(|(i, _)| *i);
+        let Some((start, kind)) = next else { break };
         result.push_str(&remaining[..start]);
-        remaining = &remaining[start + "<anim>".len()..];
-        if let Some(end) = remaining.find("</anim>") {
-            remaining = &remaining[end + "</anim>".len()..];
+        remaining = &remaining[start + kind.open_tag().len()..];
+        if let Some(end) = remaining.find(kind.close_tag()) {
+            remaining = &remaining[end + kind.close_tag().len()..];
             // Skip one trailing newline.
             if remaining.starts_with('\n') {
                 remaining = &remaining[1..];
             } else if remaining.starts_with("\r\n") {
                 remaining = &remaining[2..];
             }
+        } else {
+            // Unclosed block — stop and treat the rest as text.
+            result.push_str(remaining);
+            return result.trim().to_string();
         }
     }
     result.push_str(remaining);
@@ -214,12 +295,15 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
     }
 
     // Determine routing: check brain_mode first, then fall back to legacy active_brain
-    let brain_mode: Option<BrainMode> = {
-        state.brain_mode.lock().map_err(|e| e.to_string())?.clone()
-    };
+    let brain_mode: Option<BrainMode> =
+        { state.brain_mode.lock().map_err(|e| e.to_string())?.clone() };
 
     let legacy_model: Option<String> = {
-        state.active_brain.lock().map_err(|e| e.to_string())?.clone()
+        state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
     };
 
     // Build conversation history (last 20 messages)
@@ -234,18 +318,45 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
     };
 
     match brain_mode {
-        Some(BrainMode::FreeApi { provider_id, api_key }) => {
+        Some(BrainMode::FreeApi {
+            provider_id,
+            api_key,
+        }) => {
             // Check rotator for a healthy provider, falling back to configured one
             let effective_provider_id = {
                 let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-                rotator.next_healthy_provider()
+                rotator
+                    .next_healthy_provider()
                     .map(|p| p.id.clone())
                     .unwrap_or(provider_id.clone())
             };
-            stream_openai_api(app_handle, state, &message, &history, &effective_provider_id, api_key.as_deref(), None).await
+            stream_openai_api(
+                app_handle,
+                state,
+                &message,
+                &history,
+                &effective_provider_id,
+                api_key.as_deref(),
+                None,
+            )
+            .await
         }
-        Some(BrainMode::PaidApi { provider: _, api_key, model, base_url }) => {
-            stream_openai_api(app_handle, state, &message, &history, "paid", Some(&api_key), Some((&base_url, &model))).await
+        Some(BrainMode::PaidApi {
+            provider: _,
+            api_key,
+            model,
+            base_url,
+        }) => {
+            stream_openai_api(
+                app_handle,
+                state,
+                &message,
+                &history,
+                "paid",
+                Some(&api_key),
+                Some((&base_url, &model)),
+            )
+            .await
         }
         Some(BrainMode::LocalOllama { model }) => {
             stream_ollama(app_handle, state, &message, &history, &model).await
@@ -318,12 +429,9 @@ async fn stream_openai_api<R: tauri::Runtime>(
     // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
     let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
     let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
-    let query_emb = crate::brain::embed_for_mode(
-        user_query,
-        brain_mode.as_ref(),
-        active_brain.as_deref(),
-    )
-    .await;
+    let query_emb =
+        crate::brain::embed_for_mode(user_query, brain_mode.as_ref(), active_brain.as_deref())
+            .await;
 
     let threshold = state
         .app_settings
@@ -332,9 +440,9 @@ async fn stream_openai_api<R: tauri::Runtime>(
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
     let relevant: Vec<crate::memory::MemoryEntry> = {
         match state.memory_store.lock() {
-            Ok(store) => {
-                store.hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold).unwrap_or_default()
-            }
+            Ok(store) => store
+                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
+                .unwrap_or_default(),
             Err(_) => vec![],
         }
     };
@@ -389,12 +497,21 @@ async fn stream_openai_api<R: tauri::Runtime>(
     let result = client
         .chat_stream(messages, move |chunk_text| {
             let mut p = parser_cb.lock().unwrap();
-            let (clean_text, anim_cmds) = p.feed(chunk_text);
-            if !clean_text.is_empty() {
-                let _ = app.emit("llm-chunk", LlmChunk { text: clean_text, done: false });
+            let feed = p.feed(chunk_text);
+            if !feed.text.is_empty() {
+                let _ = app.emit(
+                    "llm-chunk",
+                    LlmChunk {
+                        text: feed.text,
+                        done: false,
+                    },
+                );
             }
-            for cmd in anim_cmds {
+            for cmd in feed.anim_commands {
                 let _ = app.emit("llm-animation", cmd);
+            }
+            for frame in feed.pose_frames {
+                let _ = app.emit("llm-pose", frame);
             }
         })
         .await;
@@ -404,27 +521,51 @@ async fn stream_openai_api<R: tauri::Runtime>(
             // Flush any remaining buffered content from the parser.
             {
                 let mut p = parser.lock().unwrap();
-                let (remaining_text, remaining_cmds) = p.flush();
-                if !remaining_text.is_empty() {
-                    let _ = app_handle.emit("llm-chunk", LlmChunk { text: remaining_text, done: false });
+                let feed = p.flush();
+                if !feed.text.is_empty() {
+                    let _ = app_handle.emit(
+                        "llm-chunk",
+                        LlmChunk {
+                            text: feed.text,
+                            done: false,
+                        },
+                    );
                 }
-                for cmd in remaining_cmds {
+                for cmd in feed.anim_commands {
                     let _ = app_handle.emit("llm-animation", cmd);
                 }
+                for frame in feed.pose_frames {
+                    let _ = app_handle.emit("llm-pose", frame);
+                }
             }
-            let _ = app_handle.emit("llm-chunk", LlmChunk { text: String::new(), done: true });
+            let _ = app_handle.emit(
+                "llm-chunk",
+                LlmChunk {
+                    text: String::new(),
+                    done: true,
+                },
+            );
             // Record successful request in rotator
             {
                 let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-                rotator.providers.entry(provider_id.to_string()).and_modify(|s| {
-                    s.requests_sent += 1;
-                });
+                rotator
+                    .providers
+                    .entry(provider_id.to_string())
+                    .and_modify(|s| {
+                        s.requests_sent += 1;
+                    });
             }
             store_assistant_message(state, &strip_anim_blocks(&full_response), &model)?;
             Ok(())
         }
         Err(e) => {
-            let _ = app_handle.emit("llm-chunk", LlmChunk { text: String::new(), done: true });
+            let _ = app_handle.emit(
+                "llm-chunk",
+                LlmChunk {
+                    text: String::new(),
+                    done: true,
+                },
+            );
             // Record rate limit if applicable
             let err_lower = e.to_string().to_lowercase();
             if err_lower.contains("429") || err_lower.contains("rate limit") {
@@ -471,7 +612,9 @@ async fn stream_ollama<R: tauri::Runtime>(
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
     let relevant: Vec<crate::memory::MemoryEntry> = {
         match state.memory_store.lock() {
-            Ok(store) => store.hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold).unwrap_or_default(),
+            Ok(store) => store
+                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
+                .unwrap_or_default(),
             Err(_) => vec![],
         }
     };
@@ -553,32 +696,47 @@ async fn stream_ollama<R: tauri::Runtime>(
                 if let Some(msg) = &parsed.message {
                     if !msg.content.is_empty() {
                         full_response.push_str(&msg.content);
-                        let (clean_text, anim_cmds) = parser.feed(&msg.content);
-                        if !clean_text.is_empty() {
+                        let feed = parser.feed(&msg.content);
+                        if !feed.text.is_empty() {
                             let _ = app_handle.emit(
                                 "llm-chunk",
-                                LlmChunk { text: clean_text, done: false },
+                                LlmChunk {
+                                    text: feed.text,
+                                    done: false,
+                                },
                             );
                         }
-                        for cmd in anim_cmds {
+                        for cmd in feed.anim_commands {
                             let _ = app_handle.emit("llm-animation", cmd);
+                        }
+                        for frame in feed.pose_frames {
+                            let _ = app_handle.emit("llm-pose", frame);
                         }
                     }
                 }
                 if parsed.done {
-                    let (remaining_text, remaining_cmds) = parser.flush();
-                    if !remaining_text.is_empty() {
+                    let feed = parser.flush();
+                    if !feed.text.is_empty() {
                         let _ = app_handle.emit(
                             "llm-chunk",
-                            LlmChunk { text: remaining_text, done: false },
+                            LlmChunk {
+                                text: feed.text,
+                                done: false,
+                            },
                         );
                     }
-                    for cmd in remaining_cmds {
+                    for cmd in feed.anim_commands {
                         let _ = app_handle.emit("llm-animation", cmd);
+                    }
+                    for frame in feed.pose_frames {
+                        let _ = app_handle.emit("llm-pose", frame);
                     }
                     let _ = app_handle.emit(
                         "llm-chunk",
-                        LlmChunk { text: String::new(), done: true },
+                        LlmChunk {
+                            text: String::new(),
+                            done: true,
+                        },
                     );
                 }
             }
@@ -596,8 +754,20 @@ fn emit_stub_response<R: tauri::Runtime>(
     message: &str,
 ) -> Result<(), String> {
     let stub_text = format!("I hear you! You said: \"{message}\". I'm still learning, but I'm always here to listen and help!");
-    let _ = app_handle.emit("llm-chunk", LlmChunk { text: stub_text.clone(), done: false });
-    let _ = app_handle.emit("llm-chunk", LlmChunk { text: String::new(), done: true });
+    let _ = app_handle.emit(
+        "llm-chunk",
+        LlmChunk {
+            text: stub_text.clone(),
+            done: false,
+        },
+    );
+    let _ = app_handle.emit(
+        "llm-chunk",
+        LlmChunk {
+            text: String::new(),
+            done: true,
+        },
+    );
 
     let assistant_msg = crate::commands::chat::Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -777,83 +947,145 @@ mod tests {
     #[test]
     fn stream_tag_parser_basic() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) = parser.feed(r#"<anim>{"emotion":"happy"}</anim>Hello!"#);
-        assert_eq!(text, "Hello!");
-        assert_eq!(cmds.len(), 1);
-        assert_eq!(cmds[0].emotion, Some("happy".to_string()));
+        let f = parser.feed(r#"<anim>{"emotion":"happy"}</anim>Hello!"#);
+        assert_eq!(f.text, "Hello!");
+        assert_eq!(f.anim_commands.len(), 1);
+        assert_eq!(f.anim_commands[0].emotion, Some("happy".to_string()));
     }
 
     #[test]
     fn stream_tag_parser_no_anim() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) = parser.feed("Just plain text");
-        assert_eq!(text, "Just plain text");
-        assert!(cmds.is_empty());
+        let f = parser.feed("Just plain text");
+        assert_eq!(f.text, "Just plain text");
+        assert!(f.anim_commands.is_empty());
+        assert!(f.pose_frames.is_empty());
     }
 
     #[test]
     fn stream_tag_parser_split_across_chunks() {
         let mut parser = StreamTagParser::new();
-        let (t1, c1) = parser.feed(r#"<anim>{"emot"#);
-        assert_eq!(t1, "");
-        assert!(c1.is_empty());
+        let f1 = parser.feed(r#"<anim>{"emot"#);
+        assert_eq!(f1.text, "");
+        assert!(f1.anim_commands.is_empty());
 
-        let (t2, c2) = parser.feed(r#"ion":"happy"}</anim>Hi!"#);
-        assert_eq!(t2, "Hi!");
-        assert_eq!(c2.len(), 1);
-        assert_eq!(c2[0].emotion, Some("happy".to_string()));
+        let f2 = parser.feed(r#"ion":"happy"}</anim>Hi!"#);
+        assert_eq!(f2.text, "Hi!");
+        assert_eq!(f2.anim_commands.len(), 1);
+        assert_eq!(f2.anim_commands[0].emotion, Some("happy".to_string()));
     }
 
     #[test]
     fn stream_tag_parser_partial_open_tag() {
         let mut parser = StreamTagParser::new();
-        let (t1, c1) = parser.feed("Hello <ani");
-        assert_eq!(t1, "Hello ");
-        assert!(c1.is_empty());
+        let f1 = parser.feed("Hello <ani");
+        assert_eq!(f1.text, "Hello ");
+        assert!(f1.anim_commands.is_empty());
 
-        let (t2, _) = parser.flush();
-        assert_eq!(t2, "<ani");
+        let f2 = parser.flush();
+        assert_eq!(f2.text, "<ani");
     }
 
     #[test]
     fn stream_tag_parser_flush_mid_anim() {
         let mut parser = StreamTagParser::new();
         parser.feed(r#"<anim>{"emotion":"ha"#);
-        let (flushed, cmds) = parser.flush();
-        assert!(flushed.contains("emotion"));
-        assert!(cmds.is_empty());
+        let f = parser.flush();
+        assert!(f.text.contains("emotion"));
+        assert!(f.anim_commands.is_empty());
     }
 
     #[test]
     fn stream_tag_parser_mixed_text_and_anim() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) = parser.feed(
-            r#"Before <anim>{"emotion":"sad","motion":"nod"}</anim>After"#,
-        );
-        assert_eq!(text, "Before After");
-        assert_eq!(cmds.len(), 1);
-        assert_eq!(cmds[0].emotion, Some("sad".to_string()));
-        assert_eq!(cmds[0].motion, Some("nod".to_string()));
+        let f = parser.feed(r#"Before <anim>{"emotion":"sad","motion":"nod"}</anim>After"#);
+        assert_eq!(f.text, "Before After");
+        assert_eq!(f.anim_commands.len(), 1);
+        assert_eq!(f.anim_commands[0].emotion, Some("sad".to_string()));
+        assert_eq!(f.anim_commands[0].motion, Some("nod".to_string()));
     }
 
     #[test]
     fn stream_tag_parser_strips_newline_after_anim() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) =
-            parser.feed("<anim>{\"emotion\":\"happy\"}</anim>\nHello!");
-        assert_eq!(text, "Hello!");
-        assert_eq!(cmds.len(), 1);
+        let f = parser.feed("<anim>{\"emotion\":\"happy\"}</anim>\nHello!");
+        assert_eq!(f.text, "Hello!");
+        assert_eq!(f.anim_commands.len(), 1);
     }
 
     #[test]
     fn stream_tag_parser_strips_newline_across_chunks() {
         let mut parser = StreamTagParser::new();
-        let (t1, c1) = parser.feed("<anim>{\"emotion\":\"happy\"}</anim>");
-        assert_eq!(t1, "");
-        assert_eq!(c1.len(), 1);
+        let f1 = parser.feed("<anim>{\"emotion\":\"happy\"}</anim>");
+        assert_eq!(f1.text, "");
+        assert_eq!(f1.anim_commands.len(), 1);
 
-        let (t2, _) = parser.feed("\nHello!");
-        assert_eq!(t2, "Hello!");
+        let f2 = parser.feed("\nHello!");
+        assert_eq!(f2.text, "Hello!");
+    }
+
+    // ── <pose> tag tests (Chunk 14.16b2) ──────────────────────────────────────
+
+    #[test]
+    fn stream_tag_parser_pose_basic() {
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed(r#"Hi! <pose>{"head":[0.1,0,0],"spine":[0,0,0.05]}</pose> done."#);
+        assert_eq!(f.text, "Hi!  done.");
+        assert_eq!(f.pose_frames.len(), 1);
+        let frame = &f.pose_frames[0];
+        assert_eq!(frame.bones["head"], [0.1, 0.0, 0.0]);
+        assert_eq!(frame.bones["spine"], [0.0, 0.0, 0.05]);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_split_across_chunks() {
+        let mut parser = StreamTagParser::new();
+        let f1 = parser.feed(r#"<pose>{"head":[0.2,"#);
+        assert_eq!(f1.text, "");
+        assert!(f1.pose_frames.is_empty());
+        let f2 = parser.feed(r#"0,0]}</pose>OK"#);
+        assert_eq!(f2.text, "OK");
+        assert_eq!(f2.pose_frames.len(), 1);
+        assert_eq!(f2.pose_frames[0].bones["head"], [0.2, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_clamps_out_of_range() {
+        // 5.0 rad must be clamped down to ±0.5 by parse_pose_payload.
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed(r#"<pose>{"head":[5.0,0,0]}</pose>"#);
+        assert_eq!(f.pose_frames.len(), 1);
+        assert_eq!(f.pose_frames[0].bones["head"][0], 0.5);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_drops_invalid_payload() {
+        // Garbage JSON inside <pose> must NOT crash the stream — the
+        // block is silently dropped and surrounding text passes through.
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed("Before <pose>not json</pose>After");
+        assert_eq!(f.text, "Before After");
+        assert!(f.pose_frames.is_empty());
+    }
+
+    #[test]
+    fn stream_tag_parser_anim_and_pose_in_same_chunk() {
+        let mut parser = StreamTagParser::new();
+        let f =
+            parser.feed(r#"<anim>{"emotion":"happy"}</anim><pose>{"head":[0.1,0,0]}</pose>Hi!"#);
+        assert_eq!(f.text, "Hi!");
+        assert_eq!(f.anim_commands.len(), 1);
+        assert_eq!(f.pose_frames.len(), 1);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_partial_open_held_back() {
+        let mut parser = StreamTagParser::new();
+        let f1 = parser.feed("Hello <pos");
+        assert_eq!(f1.text, "Hello ");
+        let f2 = parser.feed("e>{\"head\":[0,0,0]}</pose>");
+        assert!(f2.text.is_empty());
+        assert_eq!(f2.pose_frames.len(), 1);
     }
 
     // ── strip_anim_blocks tests ───────────────────────────────────────────────
@@ -919,242 +1151,249 @@ mod tests {
         use tauri::{Listener, Manager};
         use tokio::net::TcpListener;
 
-    /// SSE handler that streams a representative OpenAI-compatible response
-    /// (simplified shape — not byte-for-byte production output) containing
-    /// an `<anim>` block, two text deltas, and an end-of-stream `[DONE]`
-    /// sentinel. This is the same envelope shape Groq/OpenAI/Pollinations
-    /// use for `/v1/chat/completions` streaming.
-    async fn mock_openai_sse_handler(
-    ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
-        let chunks: Vec<&'static str> = vec![
-            r#"{"choices":[{"delta":{"content":"<anim>"}}]}"#,
-            r#"{"choices":[{"delta":{"content":"{\"emotion\":\"happy\",\"motion\":\"wave\"}"}}]}"#,
-            r#"{"choices":[{"delta":{"content":"</anim>"}}]}"#,
-            r#"{"choices":[{"delta":{"content":"Hello"}}]}"#,
-            r#"{"choices":[{"delta":{"content":", world!"}}]}"#,
-            "[DONE]",
-        ];
-        let s = stream::iter(
-            chunks
-                .into_iter()
-                .map(|c| Ok::<_, Infallible>(Event::default().data(c))),
-        );
-        Sse::new(s).keep_alive(KeepAlive::default())
-    }
-
-    /// Spawn an axum mock LLM server on a random port and return its base URL
-    /// (e.g. `http://127.0.0.1:34567`). The `/v1/chat/completions` endpoint
-    /// streams the canned response. The listener is bound *before* this
-    /// function returns, so connections are immediately accepted — no sleep
-    /// needed.
-    async fn spawn_mock_openai_server() -> String {
-        let app = Router::new().route("/v1/chat/completions", post(mock_openai_sse_handler));
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let port = listener.local_addr().unwrap().port();
-        tokio::spawn(async move {
-            let _ = axum::serve(listener, app).await;
-        });
-        format!("http://127.0.0.1:{port}")
-    }
-
-    /// Wait for `done_signal` to fire or fail with a clear timeout error
-    /// after `Duration`. Replaces non-deterministic `sleep`-based waits in
-    /// the streaming tests.
-    async fn await_done(notify: &tokio::sync::Notify, timeout: Duration) -> Result<(), &'static str> {
-        tokio::select! {
-            _ = notify.notified() => Ok(()),
-            _ = tokio::time::sleep(timeout) => Err("timed out waiting for done:true llm-chunk"),
+        /// SSE handler that streams a representative OpenAI-compatible response
+        /// (simplified shape — not byte-for-byte production output) containing
+        /// an `<anim>` block, two text deltas, and an end-of-stream `[DONE]`
+        /// sentinel. This is the same envelope shape Groq/OpenAI/Pollinations
+        /// use for `/v1/chat/completions` streaming.
+        async fn mock_openai_sse_handler(
+        ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+            let chunks: Vec<&'static str> = vec![
+                r#"{"choices":[{"delta":{"content":"<anim>"}}]}"#,
+                r#"{"choices":[{"delta":{"content":"{\"emotion\":\"happy\",\"motion\":\"wave\"}"}}]}"#,
+                r#"{"choices":[{"delta":{"content":"</anim>"}}]}"#,
+                r#"{"choices":[{"delta":{"content":"Hello"}}]}"#,
+                r#"{"choices":[{"delta":{"content":", world!"}}]}"#,
+                "[DONE]",
+            ];
+            let s = stream::iter(
+                chunks
+                    .into_iter()
+                    .map(|c| Ok::<_, Infallible>(Event::default().data(c))),
+            );
+            Sse::new(s).keep_alive(KeepAlive::default())
         }
-    }
 
-    /// End-to-end verification that the OpenAI-compatible streaming path
-    /// emits the three event streams the frontend expects:
-    ///   1. `llm-chunk` deltas with clean text (no `<anim>` blocks)
-    ///   2. `llm-animation` typed AnimationCommand events
-    ///   3. final `llm-chunk` with `done: true`
-    /// and that the assistant message is persisted into `state.conversation`
-    /// with `<anim>` blocks stripped.
-    #[tokio::test]
-    async fn headless_openai_stream_emits_three_streams() {
-        // 1. Spawn the mock LLM server.
-        let base_url = spawn_mock_openai_server().await;
-
-        // 2. Build a Tauri app on the MockRuntime — no GTK/WebKit needed.
-        let app = mock_builder()
-            .build(mock_context(noop_assets()))
-            .expect("mock_builder build");
-        let handle = app.handle().clone();
-
-        // 3. Manage an `AppState` configured for PaidApi against the mock URL.
-        let state = AppState::for_test();
-        {
-            let mut mode = state.brain_mode.lock().unwrap();
-            *mode = Some(BrainMode::PaidApi {
-                provider: "mock".to_string(),
-                api_key: "sk-test".to_string(),
-                model: "mock-model".to_string(),
-                base_url: base_url.clone(),
+        /// Spawn an axum mock LLM server on a random port and return its base URL
+        /// (e.g. `http://127.0.0.1:34567`). The `/v1/chat/completions` endpoint
+        /// streams the canned response. The listener is bound *before* this
+        /// function returns, so connections are immediately accepted — no sleep
+        /// needed.
+        async fn spawn_mock_openai_server() -> String {
+            let app = Router::new().route("/v1/chat/completions", post(mock_openai_sse_handler));
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let port = listener.local_addr().unwrap().port();
+            tokio::spawn(async move {
+                let _ = axum::serve(listener, app).await;
             });
+            format!("http://127.0.0.1:{port}")
         }
-        handle.manage(state);
 
-        // 4. Subscribe to the three event streams. A Notify fires the moment
-        //    we observe the `done:true` sentinel — replaces sleep-based waits.
-        let chunks: Arc<StdMutex<Vec<LlmChunk>>> = Arc::new(StdMutex::new(Vec::new()));
-        let anims: Arc<StdMutex<Vec<AnimationCommand>>> = Arc::new(StdMutex::new(Vec::new()));
-        let done_signal = Arc::new(tokio::sync::Notify::new());
-        let chunks_cb = Arc::clone(&chunks);
-        let done_cb = Arc::clone(&done_signal);
-        handle.listen("llm-chunk", move |event| {
-            if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
-                let is_done = c.done;
-                chunks_cb.lock().unwrap().push(c);
-                if is_done {
-                    done_cb.notify_one();
+        /// Wait for `done_signal` to fire or fail with a clear timeout error
+        /// after `Duration`. Replaces non-deterministic `sleep`-based waits in
+        /// the streaming tests.
+        async fn await_done(
+            notify: &tokio::sync::Notify,
+            timeout: Duration,
+        ) -> Result<(), &'static str> {
+            tokio::select! {
+                _ = notify.notified() => Ok(()),
+                _ = tokio::time::sleep(timeout) => Err("timed out waiting for done:true llm-chunk"),
+            }
+        }
+
+        /// End-to-end verification that the OpenAI-compatible streaming path
+        /// emits the three event streams the frontend expects:
+        ///   1. `llm-chunk` deltas with clean text (no `<anim>` blocks)
+        ///   2. `llm-animation` typed AnimationCommand events
+        ///   3. final `llm-chunk` with `done: true`
+        /// and that the assistant message is persisted into `state.conversation`
+        /// with `<anim>` blocks stripped.
+        #[tokio::test]
+        async fn headless_openai_stream_emits_three_streams() {
+            // 1. Spawn the mock LLM server.
+            let base_url = spawn_mock_openai_server().await;
+
+            // 2. Build a Tauri app on the MockRuntime — no GTK/WebKit needed.
+            let app = mock_builder()
+                .build(mock_context(noop_assets()))
+                .expect("mock_builder build");
+            let handle = app.handle().clone();
+
+            // 3. Manage an `AppState` configured for PaidApi against the mock URL.
+            let state = AppState::for_test();
+            {
+                let mut mode = state.brain_mode.lock().unwrap();
+                *mode = Some(BrainMode::PaidApi {
+                    provider: "mock".to_string(),
+                    api_key: "sk-test".to_string(),
+                    model: "mock-model".to_string(),
+                    base_url: base_url.clone(),
+                });
+            }
+            handle.manage(state);
+
+            // 4. Subscribe to the three event streams. A Notify fires the moment
+            //    we observe the `done:true` sentinel — replaces sleep-based waits.
+            let chunks: Arc<StdMutex<Vec<LlmChunk>>> = Arc::new(StdMutex::new(Vec::new()));
+            let anims: Arc<StdMutex<Vec<AnimationCommand>>> = Arc::new(StdMutex::new(Vec::new()));
+            let done_signal = Arc::new(tokio::sync::Notify::new());
+            let chunks_cb = Arc::clone(&chunks);
+            let done_cb = Arc::clone(&done_signal);
+            handle.listen("llm-chunk", move |event| {
+                if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                    let is_done = c.done;
+                    chunks_cb.lock().unwrap().push(c);
+                    if is_done {
+                        done_cb.notify_one();
+                    }
                 }
-            }
-        });
-        let anims_cb = Arc::clone(&anims);
-        handle.listen("llm-animation", move |event| {
-            if let Ok(a) = serde_json::from_str::<AnimationCommand>(event.payload()) {
-                anims_cb.lock().unwrap().push(a);
-            }
-        });
-
-        // 5. Drive the full pipeline through the headless entry point.
-        let state_ref: tauri::State<'_, AppState> = handle.state();
-        run_chat_stream("hello".to_string(), &handle, state_ref.inner())
-            .await
-            .expect("run_chat_stream");
-
-        // Block deterministically until the `done:true` chunk has been
-        // dispatched to the listener thread.
-        await_done(&done_signal, Duration::from_secs(5))
-            .await
-            .expect("done sentinel");
-
-        // 6. Assertions.
-        let chunks_snap = chunks.lock().unwrap().clone();
-        let anims_snap = anims.lock().unwrap().clone();
-
-        // ── Stream 1: text deltas ────────────────────────────────────────────
-        let text_chunks: Vec<&LlmChunk> =
-            chunks_snap.iter().filter(|c| !c.done).collect();
-        assert!(
-            !text_chunks.is_empty(),
-            "expected at least one text llm-chunk, got none"
-        );
-        let concatenated: String = text_chunks.iter().map(|c| c.text.as_str()).collect();
-        assert!(
-            concatenated.contains("Hello, world!"),
-            "expected concatenated text to contain 'Hello, world!', got {concatenated:?}"
-        );
-        assert!(
-            !concatenated.contains("<anim>") && !concatenated.contains("</anim>"),
-            "anim blocks must be stripped from text stream, got {concatenated:?}"
-        );
-
-        // ── Stream 2: animation events ───────────────────────────────────────
-        assert!(
-            !anims_snap.is_empty(),
-            "expected at least one llm-animation event"
-        );
-        let happy = anims_snap
-            .iter()
-            .find(|a| a.emotion.as_deref() == Some("happy"))
-            .expect("expected an llm-animation with emotion=happy");
-        assert_eq!(happy.motion.as_deref(), Some("wave"));
-
-        // ── Stream 3: completion sentinel ────────────────────────────────────
-        let last = chunks_snap.last().expect("at least one chunk");
-        assert!(
-            last.done && last.text.is_empty(),
-            "last chunk should be done=true with empty text, got {last:?}"
-        );
-
-        // ── Persistence side-effects ─────────────────────────────────────────
-        let state_ref: tauri::State<'_, AppState> = handle.state();
-        let conv = state_ref.conversation.lock().unwrap();
-        assert_eq!(conv.len(), 2, "expected user + assistant message");
-        assert_eq!(conv[0].role, "user");
-        assert_eq!(conv[0].content, "hello");
-        assert_eq!(conv[1].role, "assistant");
-        assert!(
-            conv[1].content.contains("Hello, world!"),
-            "stored assistant content should contain reply text, got {:?}",
-            conv[1].content
-        );
-        assert!(
-            !conv[1].content.contains("<anim>"),
-            "stored assistant content must have anim blocks stripped"
-        );
-    }
-
-    /// Verifies that an empty message is rejected before any IO happens —
-    /// guarding the one early-return branch of `run_chat_stream`.
-    #[tokio::test]
-    async fn headless_empty_message_is_rejected() {
-        let app = mock_builder()
-            .build(mock_context(noop_assets()))
-            .expect("mock_builder build");
-        let handle = app.handle().clone();
-        let state = AppState::for_test();
-        handle.manage(state);
-        let state_ref: tauri::State<'_, AppState> = handle.state();
-        let err = run_chat_stream("   ".to_string(), &handle, state_ref.inner())
-            .await
-            .expect_err("empty message should error");
-        assert!(err.contains("empty"), "got: {err}");
-        let state_ref: tauri::State<'_, AppState> = handle.state();
-        assert!(
-            state_ref.conversation.lock().unwrap().is_empty(),
-            "no user message should be stored on early reject"
-        );
-    }
-
-    /// When no `BrainMode` is configured and no legacy brain is active, the
-    /// pipeline must fall through to the stub agent and still emit the same
-    /// three-stream contract (so the frontend renders identically).
-    #[tokio::test]
-    async fn headless_stub_fallback_emits_three_streams() {
-        let app = mock_builder()
-            .build(mock_context(noop_assets()))
-            .expect("mock_builder build");
-        let handle = app.handle().clone();
-        let state = AppState::for_test();
-        handle.manage(state);
-
-        let chunks: Arc<StdMutex<Vec<LlmChunk>>> = Arc::new(StdMutex::new(Vec::new()));
-        let done_signal = Arc::new(tokio::sync::Notify::new());
-        let chunks_cb = Arc::clone(&chunks);
-        let done_cb = Arc::clone(&done_signal);
-        handle.listen("llm-chunk", move |event| {
-            if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
-                let is_done = c.done;
-                chunks_cb.lock().unwrap().push(c);
-                if is_done {
-                    done_cb.notify_one();
+            });
+            let anims_cb = Arc::clone(&anims);
+            handle.listen("llm-animation", move |event| {
+                if let Ok(a) = serde_json::from_str::<AnimationCommand>(event.payload()) {
+                    anims_cb.lock().unwrap().push(a);
                 }
-            }
-        });
+            });
 
-        let state_ref: tauri::State<'_, AppState> = handle.state();
-        run_chat_stream("ping".to_string(), &handle, state_ref.inner())
-            .await
-            .expect("run_chat_stream");
-        await_done(&done_signal, Duration::from_secs(5))
-            .await
-            .expect("done sentinel");
+            // 5. Drive the full pipeline through the headless entry point.
+            let state_ref: tauri::State<'_, AppState> = handle.state();
+            run_chat_stream("hello".to_string(), &handle, state_ref.inner())
+                .await
+                .expect("run_chat_stream");
 
-        let chunks_snap = chunks.lock().unwrap().clone();
-        assert!(
-            chunks_snap.iter().any(|c| !c.done && c.text.contains("ping")),
-            "stub should echo the user message back in a non-done chunk"
-        );
-        assert!(
-            chunks_snap.last().map(|c| c.done && c.text.is_empty()).unwrap_or(false),
-            "stub must terminate with done=true sentinel"
-        );
-    }
+            // Block deterministically until the `done:true` chunk has been
+            // dispatched to the listener thread.
+            await_done(&done_signal, Duration::from_secs(5))
+                .await
+                .expect("done sentinel");
+
+            // 6. Assertions.
+            let chunks_snap = chunks.lock().unwrap().clone();
+            let anims_snap = anims.lock().unwrap().clone();
+
+            // ── Stream 1: text deltas ────────────────────────────────────────────
+            let text_chunks: Vec<&LlmChunk> = chunks_snap.iter().filter(|c| !c.done).collect();
+            assert!(
+                !text_chunks.is_empty(),
+                "expected at least one text llm-chunk, got none"
+            );
+            let concatenated: String = text_chunks.iter().map(|c| c.text.as_str()).collect();
+            assert!(
+                concatenated.contains("Hello, world!"),
+                "expected concatenated text to contain 'Hello, world!', got {concatenated:?}"
+            );
+            assert!(
+                !concatenated.contains("<anim>") && !concatenated.contains("</anim>"),
+                "anim blocks must be stripped from text stream, got {concatenated:?}"
+            );
+
+            // ── Stream 2: animation events ───────────────────────────────────────
+            assert!(
+                !anims_snap.is_empty(),
+                "expected at least one llm-animation event"
+            );
+            let happy = anims_snap
+                .iter()
+                .find(|a| a.emotion.as_deref() == Some("happy"))
+                .expect("expected an llm-animation with emotion=happy");
+            assert_eq!(happy.motion.as_deref(), Some("wave"));
+
+            // ── Stream 3: completion sentinel ────────────────────────────────────
+            let last = chunks_snap.last().expect("at least one chunk");
+            assert!(
+                last.done && last.text.is_empty(),
+                "last chunk should be done=true with empty text, got {last:?}"
+            );
+
+            // ── Persistence side-effects ─────────────────────────────────────────
+            let state_ref: tauri::State<'_, AppState> = handle.state();
+            let conv = state_ref.conversation.lock().unwrap();
+            assert_eq!(conv.len(), 2, "expected user + assistant message");
+            assert_eq!(conv[0].role, "user");
+            assert_eq!(conv[0].content, "hello");
+            assert_eq!(conv[1].role, "assistant");
+            assert!(
+                conv[1].content.contains("Hello, world!"),
+                "stored assistant content should contain reply text, got {:?}",
+                conv[1].content
+            );
+            assert!(
+                !conv[1].content.contains("<anim>"),
+                "stored assistant content must have anim blocks stripped"
+            );
+        }
+
+        /// Verifies that an empty message is rejected before any IO happens —
+        /// guarding the one early-return branch of `run_chat_stream`.
+        #[tokio::test]
+        async fn headless_empty_message_is_rejected() {
+            let app = mock_builder()
+                .build(mock_context(noop_assets()))
+                .expect("mock_builder build");
+            let handle = app.handle().clone();
+            let state = AppState::for_test();
+            handle.manage(state);
+            let state_ref: tauri::State<'_, AppState> = handle.state();
+            let err = run_chat_stream("   ".to_string(), &handle, state_ref.inner())
+                .await
+                .expect_err("empty message should error");
+            assert!(err.contains("empty"), "got: {err}");
+            let state_ref: tauri::State<'_, AppState> = handle.state();
+            assert!(
+                state_ref.conversation.lock().unwrap().is_empty(),
+                "no user message should be stored on early reject"
+            );
+        }
+
+        /// When no `BrainMode` is configured and no legacy brain is active, the
+        /// pipeline must fall through to the stub agent and still emit the same
+        /// three-stream contract (so the frontend renders identically).
+        #[tokio::test]
+        async fn headless_stub_fallback_emits_three_streams() {
+            let app = mock_builder()
+                .build(mock_context(noop_assets()))
+                .expect("mock_builder build");
+            let handle = app.handle().clone();
+            let state = AppState::for_test();
+            handle.manage(state);
+
+            let chunks: Arc<StdMutex<Vec<LlmChunk>>> = Arc::new(StdMutex::new(Vec::new()));
+            let done_signal = Arc::new(tokio::sync::Notify::new());
+            let chunks_cb = Arc::clone(&chunks);
+            let done_cb = Arc::clone(&done_signal);
+            handle.listen("llm-chunk", move |event| {
+                if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                    let is_done = c.done;
+                    chunks_cb.lock().unwrap().push(c);
+                    if is_done {
+                        done_cb.notify_one();
+                    }
+                }
+            });
+
+            let state_ref: tauri::State<'_, AppState> = handle.state();
+            run_chat_stream("ping".to_string(), &handle, state_ref.inner())
+                .await
+                .expect("run_chat_stream");
+            await_done(&done_signal, Duration::from_secs(5))
+                .await
+                .expect("done sentinel");
+
+            let chunks_snap = chunks.lock().unwrap().clone();
+            assert!(
+                chunks_snap
+                    .iter()
+                    .any(|c| !c.done && c.text.contains("ping")),
+                "stub should echo the user message back in a non-done chunk"
+            );
+            assert!(
+                chunks_snap
+                    .last()
+                    .map(|c| c.done && c.text.is_empty())
+                    .unwrap_or(false),
+                "stub must terminate with done=true sentinel"
+            );
+        }
     } // end mod headless_linux
 }

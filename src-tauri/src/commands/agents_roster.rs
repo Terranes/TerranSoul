@@ -166,10 +166,7 @@ pub async fn roster_get_ram_cap(state: State<'_, AppState>) -> Result<AgentRamCa
         .collect();
     let free_mb = free_ram_mb();
     let cap = compute_max_concurrent_agents(free_mb, &footprints);
-    Ok(AgentRamCapReport {
-        cap,
-        footprints,
-    })
+    Ok(AgentRamCapReport { cap, footprints })
 }
 
 /// Public result shape for [`get_agent_ram_cap`].
@@ -222,12 +219,7 @@ pub async fn roster_start_cli_workflow<R: Runtime>(
 
     // Enforce the RAM cap at the moment of activation.
     let report = roster_get_ram_cap(state.clone()).await?;
-    let active_workflows = state
-        .workflow_engine
-        .lock()
-        .await
-        .attached_count()
-        .await;
+    let active_workflows = state.workflow_engine.lock().await.attached_count().await;
     if active_workflows >= report.cap.cap {
         return Err(format!(
             "RAM cap reached — {} workflows already running (cap: {}). Cancel one before starting a new workflow.",
@@ -314,7 +306,11 @@ async fn drive_cli_workflow<R: Runtime>(
                         &workflow_id,
                         Some(format!(
                             "{}: {}",
-                            if *stream == CliStream::Stderr { "stderr" } else { "stdout" },
+                            if *stream == CliStream::Stderr {
+                                "stderr"
+                            } else {
+                                "stdout"
+                            },
                             truncate(text, MAX_HEARTBEAT_MESSAGE_LEN)
                         )),
                     )
@@ -334,10 +330,7 @@ async fn drive_cli_workflow<R: Runtime>(
     match child_exit_code {
         Some(0) => {
             let _ = engine
-                .complete(
-                    &workflow_id,
-                    serde_json::json!({"exit_code": 0}),
-                )
+                .complete(&workflow_id, serde_json::json!({"exit_code": 0}))
                 .await;
         }
         Some(code) => {
@@ -375,9 +368,10 @@ pub async fn roster_query_workflow(
     state: State<'_, AppState>,
 ) -> Result<WorkflowStatusReport, String> {
     let engine = state.workflow_engine.lock().await;
-    let status = engine.status(&workflow_id).await?.ok_or_else(|| {
-        format!("workflow {workflow_id} not found")
-    })?;
+    let status = engine
+        .status(&workflow_id)
+        .await?
+        .ok_or_else(|| format!("workflow {workflow_id} not found"))?;
     let history = engine.history(&workflow_id).await?;
     Ok(WorkflowStatusReport { status, history })
 }
@@ -397,10 +391,7 @@ pub async fn roster_cancel_workflow(
 ) -> Result<(), String> {
     let engine = state.workflow_engine.lock().await;
     engine
-        .cancel(
-            &workflow_id,
-            reason.as_deref().unwrap_or("user cancelled"),
-        )
+        .cancel(&workflow_id, reason.as_deref().unwrap_or("user cancelled"))
         .await
 }
 

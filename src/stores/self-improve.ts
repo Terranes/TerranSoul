@@ -89,6 +89,14 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     last_error: null,
     last_error_chunk: null,
     last_error_at_ms: 0,
+    total_prompt_tokens: 0,
+    total_completion_tokens: 0,
+    total_cost_usd: 0,
+    rolling_7d_runs: 0,
+    rolling_7d_prompt_tokens: 0,
+    rolling_7d_completion_tokens: 0,
+    rolling_7d_cost_usd: 0,
+    cost_by_provider: {},
   });
   /** Most-recent persisted run records (newest first). */
   const runs = ref<SelfImproveRun[]>([]);

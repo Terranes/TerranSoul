@@ -246,7 +246,8 @@ impl TaskManager {
                 && task.status == TaskStatus::Running
             {
                 task.status = TaskStatus::Paused;
-                task.error = Some("Auto-paused: exceeded 30-minute limit. Resume to continue.".to_string());
+                task.error =
+                    Some("Auto-paused: exceeded 30-minute limit. Resume to continue.".to_string());
             }
 
             let snapshot = task.clone();
@@ -365,29 +366,38 @@ impl TaskManager {
 
     /// Check if any task of a given kind is currently running.
     pub fn has_running_task(&self, kind: &TaskKind) -> Option<String> {
-        self.active.values()
+        self.active
+            .values()
             .find(|t| t.kind == *kind && t.status == TaskStatus::Running)
             .map(|t| t.id.clone())
     }
 
     /// Check if the agent is busy with any running task.
     pub fn is_busy(&self) -> bool {
-        self.active.values().any(|t| t.status == TaskStatus::Running)
+        self.active
+            .values()
+            .any(|t| t.status == TaskStatus::Running)
     }
 
     /// Remove completed/cancelled/failed tasks older than `max_age_ms`.
     pub fn cleanup(&mut self, max_age_ms: u64) {
         let now = now_ms();
-        let to_remove: Vec<String> = self.active.iter()
+        let to_remove: Vec<String> = self
+            .active
+            .iter()
             .filter(|(_, t)| {
-                matches!(t.status, TaskStatus::Completed | TaskStatus::Cancelled | TaskStatus::Failed)
-                    && now - t.updated_at > max_age_ms
+                matches!(
+                    t.status,
+                    TaskStatus::Completed | TaskStatus::Cancelled | TaskStatus::Failed
+                ) && now - t.updated_at > max_age_ms
             })
             .map(|(id, _)| id.clone())
             .collect();
         for id in &to_remove {
             self.active.remove(id);
-            let _ = self.conn.execute("DELETE FROM tasks WHERE id = ?1", params![id]);
+            let _ = self
+                .conn
+                .execute("DELETE FROM tasks WHERE id = ?1", params![id]);
         }
     }
 

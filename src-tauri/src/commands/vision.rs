@@ -67,7 +67,10 @@ pub async fn analyze_screen(frame: ScreenFrame) -> Result<VisionAnalysis, String
     Ok(VisionAnalysis {
         description: format!(
             "User is working in {} ({}×{})",
-            frame.active_window_title.as_deref().unwrap_or("unknown app"),
+            frame
+                .active_window_title
+                .as_deref()
+                .unwrap_or("unknown app"),
             frame.width,
             frame.height
         ),

@@ -1,8 +1,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::brain::{
-    self, ModelRecommendation, OllamaStatus, SystemInfo,
-    BrainMode, FreeProvider, IntentDecision,
+    self, BrainMode, FreeProvider, IntentDecision, ModelRecommendation, OllamaStatus, SystemInfo,
 };
 use crate::AppState;
 
@@ -74,10 +73,25 @@ pub async fn recommend_brain_models(app: AppHandle) -> Vec<ModelRecommendation> 
         }
     }
 
-    // 2. Try the bundled design doc.
+    // 2. Try the bundled design doc (works in production builds).
     if let Ok(resource_dir) = app.path().resource_dir() {
         let doc_path = resource_dir.join("docs").join("brain-advanced-design.md");
         if let Ok(markdown) = std::fs::read_to_string(&doc_path) {
+            if let Some(catalogue) = brain::parse_catalogue(&markdown) {
+                return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
+            }
+        }
+    }
+
+    // 2b. Dev fallback: check workspace root (resource_dir points to target/
+    //     during `cargo tauri dev`, but docs/ lives at the project root).
+    {
+        let dev_doc = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("docs")
+            .join("brain-advanced-design.md");
+        if let Ok(markdown) = std::fs::read_to_string(&dev_doc) {
             if let Some(catalogue) = brain::parse_catalogue(&markdown) {
                 return brain::recommend_from_catalogue(info.total_ram_mb, &catalogue);
             }
@@ -110,6 +124,33 @@ pub async fn refresh_model_catalogue(app: AppHandle) -> Result<usize, String> {
 pub async fn check_ollama_status(state: State<'_, AppState>) -> Result<OllamaStatus, String> {
     let client = &state.ollama_client;
     Ok(brain::check_status(client, brain::ollama_agent::OLLAMA_BASE_URL).await)
+}
+
+/// Detect Ollama installation status (binary on disk + service responding).
+#[tauri::command]
+pub async fn detect_ollama_install() -> brain::ollama_lifecycle::OllamaInstallStatus {
+    brain::ollama_lifecycle::detect_ollama().await
+}
+
+/// Try to start the Ollama service if it's installed but not running.
+/// Polls for up to `timeout_secs` (default 15) for the API to respond.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn start_ollama_service(timeout_secs: Option<u64>) -> Result<bool, String> {
+    brain::ollama_lifecycle::start_ollama(timeout_secs.unwrap_or(15)).await
+}
+
+/// Download and install Ollama from the official site.
+/// Emits `ollama-install-progress` events with `{ phase: string, percent: u32 }`.
+#[tauri::command]
+pub async fn install_ollama(app: AppHandle) -> Result<String, String> {
+    let app_for_progress = app.clone();
+    brain::ollama_lifecycle::install_ollama(move |phase, percent| {
+        let _ = app_for_progress.emit(
+            "ollama-install-progress",
+            serde_json::json!({ "phase": phase, "percent": percent }),
+        );
+    })
+    .await
 }
 
 /// List all Ollama models installed on this machine.
@@ -272,10 +313,7 @@ pub async fn get_brain_mode(state: State<'_, AppState>) -> Result<Option<BrainMo
 /// Set the brain mode (free API, paid API, or local Ollama).
 /// Persists to disk and updates in-memory state.
 #[tauri::command]
-pub async fn set_brain_mode(
-    mode: BrainMode,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn set_brain_mode(mode: BrainMode, state: State<'_, AppState>) -> Result<(), String> {
     brain::brain_config::save(&state.data_dir, &mode)?;
 
     // Also update the legacy active_brain field for backwards compatibility
@@ -343,23 +381,25 @@ pub async fn health_check_providers(
     state: State<'_, AppState>,
 ) -> Result<Vec<ProviderHealthInfo>, String> {
     let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-    Ok(rotator.providers.values().map(|s| ProviderHealthInfo {
-        id: s.provider.id.clone(),
-        display_name: s.provider.display_name.clone(),
-        is_healthy: s.is_healthy,
-        is_rate_limited: s.is_rate_limited,
-        requests_sent: s.requests_sent,
-        remaining_requests: s.remaining_requests,
-        remaining_tokens: s.remaining_tokens,
-        latency_ms: s.latency.map(|d| d.as_millis() as u64),
-    }).collect())
+    Ok(rotator
+        .providers
+        .values()
+        .map(|s| ProviderHealthInfo {
+            id: s.provider.id.clone(),
+            display_name: s.provider.display_name.clone(),
+            is_healthy: s.is_healthy,
+            is_rate_limited: s.is_rate_limited,
+            requests_sent: s.requests_sent,
+            remaining_requests: s.remaining_requests,
+            remaining_tokens: s.remaining_tokens,
+            latency_ms: s.latency.map(|d| d.as_millis() as u64),
+        })
+        .collect())
 }
 
 /// Return the next healthy, non-rate-limited provider id (fastest first).
 #[tauri::command]
-pub async fn get_next_provider(
-    state: State<'_, AppState>,
-) -> Result<Option<String>, String> {
+pub async fn get_next_provider(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
     Ok(rotator.next_healthy_provider().map(|p| p.id.clone()))
 }
@@ -380,11 +420,17 @@ pub async fn get_brain_selection(
     // (1) Provider — read brain_mode + legacy fallback + ask the rotator
     // who it would currently pick (without committing to a request).
     let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
-    let legacy_active_brain = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let legacy_active_brain = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
 
     let rotator_pick: Option<(String, bool)> = {
         let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-        rotator.next_healthy_provider().map(|p| (p.id.clone(), true))
+        rotator
+            .next_healthy_provider()
+            .map(|p| (p.id.clone(), true))
     };
 
     // (2) Embedding — only meaningful in Local Ollama mode. Use the
@@ -476,9 +522,7 @@ pub async fn classify_intent(
 /// the first-launch state.
 /// This is irreversible — the frontend must confirm with the user.
 #[tauri::command]
-pub async fn factory_reset_brain(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn factory_reset_brain(state: State<'_, AppState>) -> Result<(), String> {
     // Read which components were auto-configured.
     let auto_configured: Vec<String> = {
         let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
@@ -536,7 +580,8 @@ pub async fn factory_reset_brain(
         if !models_to_remove.is_empty() {
             let client = &state.ollama_client;
             for model in &models_to_remove {
-                let _ = brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, model).await;
+                let _ =
+                    brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, model).await;
             }
         }
     }
@@ -610,10 +655,8 @@ pub async fn check_model_updates(
     state: State<'_, AppState>,
 ) -> Result<ModelUpdateInfo, String> {
     // Refresh catalogue (best-effort — falls back to cached/bundled).
-    let _ = brain::fetch_online_catalogue(
-        &app.path().app_cache_dir().map_err(|e| e.to_string())?,
-    )
-    .await;
+    let _ = brain::fetch_online_catalogue(&app.path().app_cache_dir().map_err(|e| e.to_string())?)
+        .await;
 
     let info = brain::collect_system_info();
 

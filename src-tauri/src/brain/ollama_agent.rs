@@ -240,7 +240,9 @@ impl OllamaAgent {
         let msgs = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You extract typed relationships between memories. Reply with JSON lines only.".to_string(),
+                content:
+                    "You extract typed relationships between memories. Reply with JSON lines only."
+                        .to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -282,7 +284,11 @@ impl OllamaAgent {
             .lines()
             .filter_map(|line| {
                 let trimmed = line.trim().trim_start_matches("- ").trim();
-                if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
             })
             .collect()
     }
@@ -297,7 +303,9 @@ impl OllamaAgent {
         let msgs = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You are a concise summarizer. Summarize conversations into 1-3 sentences.".to_string(),
+                content:
+                    "You are a concise summarizer. Summarize conversations into 1-3 sentences."
+                        .to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -307,7 +315,11 @@ impl OllamaAgent {
 
         let (reply, _) = self.call(msgs).await;
         let clean = reply.trim().to_string();
-        if clean.is_empty() { None } else { Some(clean) }
+        if clean.is_empty() {
+            None
+        } else {
+            Some(clean)
+        }
     }
 
     /// Generate a **hypothetical answer** for a HyDE retrieval query.
@@ -327,8 +339,14 @@ impl OllamaAgent {
         }
         let (system, user) = crate::memory::hyde::build_hyde_prompt(query);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::hyde::clean_hyde_reply(&reply)
@@ -355,8 +373,14 @@ impl OllamaAgent {
         }
         let (system, user) = crate::memory::reranker::build_rerank_prompt(query, document);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::reranker::parse_rerank_score(&reply)
@@ -392,13 +416,17 @@ impl OllamaAgent {
         snippets: &[crate::persona::extract::PromptSnippet],
         prosody_hints: Option<&str>,
     ) -> Option<crate::persona::extract::PersonaCandidate> {
-        let (system, user) = crate::persona::extract::build_persona_prompt_with_hints(
-            snippets,
-            prosody_hints,
-        );
+        let (system, user) =
+            crate::persona::extract::build_persona_prompt_with_hints(snippets, prosody_hints);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::persona::extract::parse_persona_reply(&reply)
@@ -417,8 +445,14 @@ impl OllamaAgent {
         let (system, user) =
             crate::persona::drift::build_drift_prompt(persona_json, personal_memories);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::persona::drift::parse_drift_reply(&reply)
@@ -437,8 +471,14 @@ impl OllamaAgent {
         let (system, user) =
             crate::memory::conflicts::build_contradiction_prompt(content_a, content_b);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::conflicts::parse_contradiction_reply(&reply)
@@ -480,10 +520,7 @@ impl OllamaAgent {
 
         // 3. Bound every embed call so a hung daemon can't stall the chat
         //    pipeline forever.
-        let client = match Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-        {
+        let client = match Client::builder().timeout(Duration::from_secs(15)).build() {
             Ok(c) => c,
             Err(_) => return None,
         };
@@ -518,17 +555,21 @@ impl OllamaAgent {
         let json: serde_json::Value = resp.json().await.ok()?;
         // Ollama returns { "embeddings": [[...]] }
         let arr = json.get("embeddings")?.as_array()?.first()?.as_array()?;
-        let vec: Vec<f32> = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
-        if vec.is_empty() { None } else { Some(vec) }
+        let vec: Vec<f32> = arr
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+        if vec.is_empty() {
+            None
+        } else {
+            Some(vec)
+        }
     }
 
     /// Check if a model name is available locally in Ollama.
     /// Result is cached for 60 s by [`resolve_embed_model`].
     async fn model_exists(name: &str) -> bool {
-        let client = match Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-        {
+        let client = match Client::builder().timeout(Duration::from_secs(5)).build() {
             Ok(c) => c,
             Err(_) => return false,
         };
@@ -589,7 +630,9 @@ impl OllamaAgent {
         let msgs = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You select the most relevant memories from a list. Reply with numbers only.".to_string(),
+                content:
+                    "You select the most relevant memories from a list. Reply with numbers only."
+                        .to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -636,6 +679,21 @@ struct EmbedModelChoice {
 const EMBED_MODEL_TTL: Duration = Duration::from_secs(60);
 const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
 
+/// Ordered fallback chain of dedicated embedding models, tried in this order
+/// when [`PREFERRED_EMBED_MODEL`] is unavailable. Per
+/// `docs/brain-advanced-design.md` §4 resilience notes (Chunk 16.9b).
+///
+/// Each entry must be the **bare model name** as published in the Ollama
+/// library (no `:tag` suffix) — `model_exists` matches by name prefix.
+/// Order is from most-recommended (768d, fast, well-tested) → larger /
+/// alternative (1024d, slower) → tiny last-resort.
+const EMBED_MODEL_FALLBACKS: &[&str] = &[
+    "mxbai-embed-large",      // 1024d, strong general-purpose
+    "snowflake-arctic-embed", // 1024d / 768d depending on tag
+    "bge-m3",                 // 1024d, multilingual
+    "all-minilm",             // 384d, tiny last-resort
+];
+
 fn embed_model_cache() -> &'static Mutex<Option<EmbedModelChoice>> {
     static CACHE: OnceLock<Mutex<Option<EmbedModelChoice>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
@@ -647,10 +705,21 @@ fn unsupported_models() -> &'static Mutex<HashSet<String>> {
 }
 
 /// Resolve which model to pass to `/api/embed`, caching the choice for
-/// 60 seconds. Prefers `nomic-embed-text` when it's installed locally;
-/// otherwise falls back to the chat-model hint (which may itself be
-/// unsupported — in which case `embed_text` will mark it as such on the
-/// next call and refuse to retry).
+/// 60 seconds.
+///
+/// Resolution chain (Chunk 16.9b — embedding-model fallback):
+///
+/// 1. **`nomic-embed-text`** — preferred (768d, fast, well-tested).
+/// 2. **Fallback chain** in [`EMBED_MODEL_FALLBACKS`] order — `mxbai`,
+///    `snowflake-arctic`, `bge-m3`, `all-minilm`. The first one present
+///    in `/api/tags` wins. Models already in the unsupported set are
+///    skipped.
+/// 3. **`model_hint`** — the active chat model (probably non-embedding;
+///    `embed_text` will mark it unsupported on the first call).
+///
+/// When every dedicated embedder is unavailable AND the chat model can't
+/// embed either, the caller (memory store) falls back to keyword-only
+/// search — see `docs/brain-advanced-design.md` §4.
 async fn resolve_embed_model(model_hint: &str) -> String {
     let cache = embed_model_cache();
     {
@@ -662,12 +731,8 @@ async fn resolve_embed_model(model_hint: &str) -> String {
         }
     }
 
-    // Cache miss / expired → probe once.
-    let chosen = if OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await {
-        PREFERRED_EMBED_MODEL.to_string()
-    } else {
-        model_hint.to_string()
-    };
+    // Cache miss / expired → walk the fallback chain.
+    let chosen = pick_embed_model(model_hint).await;
 
     let mut guard = cache.lock().await;
     *guard = Some(EmbedModelChoice {
@@ -675,6 +740,29 @@ async fn resolve_embed_model(model_hint: &str) -> String {
         chosen_at: Instant::now(),
     });
     chosen
+}
+
+/// Walk the embed-model resolution chain. Pure helper so tests can drive
+/// it without mocking the cache layer.
+async fn pick_embed_model(model_hint: &str) -> String {
+    // Preferred first.
+    if !is_known_unsupported(PREFERRED_EMBED_MODEL).await
+        && OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await
+    {
+        return PREFERRED_EMBED_MODEL.to_string();
+    }
+    // Then dedicated fallbacks.
+    for candidate in EMBED_MODEL_FALLBACKS {
+        if is_known_unsupported(candidate).await {
+            continue;
+        }
+        if OllamaAgent::model_exists(candidate).await {
+            return (*candidate).to_string();
+        }
+    }
+    // Last resort — the active chat model. Likely won't support embed,
+    // but we let `embed_text` discover that and mark it unsupported.
+    model_hint.to_string()
 }
 
 async fn is_known_unsupported(model: &str) -> bool {
@@ -716,12 +804,7 @@ pub struct EmbedCacheSnapshot {
 
 pub async fn embed_cache_snapshot() -> EmbedCacheSnapshot {
     let chosen = embed_model_cache().lock().await.clone();
-    let unsupported: Vec<String> = unsupported_models()
-        .lock()
-        .await
-        .iter()
-        .cloned()
-        .collect();
+    let unsupported: Vec<String> = unsupported_models().lock().await.iter().cloned().collect();
     EmbedCacheSnapshot {
         chosen_model: chosen.as_ref().map(|c| c.model.clone()),
         chosen_age_secs: chosen.as_ref().map(|c| c.chosen_at.elapsed().as_secs()),
@@ -861,10 +944,7 @@ where
         .map_err(|e| format!("Ollama not reachable: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!(
-            "Ollama pull failed with status {}",
-            resp.status()
-        ));
+        return Err(format!("Ollama pull failed with status {}", resp.status()));
     }
 
     // Track per-layer progress so we can compute an overall percentage.
@@ -901,17 +981,13 @@ where
 
             // Update per-layer tracking.
             if !parsed.digest.is_empty() && parsed.total > 0 {
-                layer_totals.insert(
-                    parsed.digest.clone(),
-                    (parsed.total, parsed.completed),
-                );
+                layer_totals.insert(parsed.digest.clone(), (parsed.total, parsed.completed));
             }
 
             // Compute overall percentage across all known layers.
-            let (sum_total, sum_done) =
-                layer_totals.values().fold((0u64, 0u64), |(t, d), (lt, ld)| {
-                    (t + lt, d + ld)
-                });
+            let (sum_total, sum_done) = layer_totals
+                .values()
+                .fold((0u64, 0u64), |(t, d), (lt, ld)| (t + lt, d + ld));
             let percent = if sum_total > 0 {
                 ((sum_done as f64 / sum_total as f64) * 100.0).min(100.0) as u8
             } else if parsed.status == "success" {
@@ -931,11 +1007,9 @@ where
     }
 
     if !saw_success {
-        return Err(
-            "Ollama pull stream ended without a success status — \
+        return Err("Ollama pull stream ended without a success status — \
              the download may have been interrupted or the model may not exist"
-                .to_string(),
-        );
+            .to_string());
     }
 
     Ok(())
@@ -1085,7 +1159,9 @@ mod tests {
         // empty messages can't accidentally hammer /api/embed.
         clear_embed_caches().await;
         assert!(OllamaAgent::embed_text("", "gemma3:4b").await.is_none());
-        assert!(OllamaAgent::embed_text("   \n\t  ", "gemma3:4b").await.is_none());
+        assert!(OllamaAgent::embed_text("   \n\t  ", "gemma3:4b")
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -1100,11 +1176,9 @@ mod tests {
         mark_unsupported("fake-model:1b", 501).await;
 
         // embed_text must short-circuit and never hit the network.
-        assert!(
-            OllamaAgent::embed_text("hello world", "fake-model:1b")
-                .await
-                .is_none()
-        );
+        assert!(OllamaAgent::embed_text("hello world", "fake-model:1b")
+            .await
+            .is_none());
 
         // Snapshot exposes the unsupported model.
         let snap = embed_cache_snapshot().await;
@@ -1147,6 +1221,71 @@ mod tests {
         // Must round-trip through serde for the Tauri command surface.
         let json = serde_json::to_string(&snap).expect("snapshot serializes");
         assert!(json.contains("snap-test:3b"));
+        clear_embed_caches().await;
+    }
+
+    // ---- Chunk 16.9b — fallback chain tests ------------------------------
+
+    #[tokio::test]
+    async fn fallback_chain_falls_through_to_hint_when_nothing_installed() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // No Ollama daemon (or none of the embed models present) —
+        // resolution should yield the model_hint as the last resort.
+        let chosen = pick_embed_model("my-chat-model:7b").await;
+        assert_eq!(chosen, "my-chat-model:7b");
+    }
+
+    #[tokio::test]
+    async fn fallback_chain_skips_known_unsupported_preferred() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // Mark the preferred model as unsupported. Resolution must NOT
+        // pick it even if it's somehow reachable.
+        mark_unsupported(PREFERRED_EMBED_MODEL, 501).await;
+        let chosen = pick_embed_model("hint-model:7b").await;
+        // Without a real Ollama, all fallbacks miss → returns hint.
+        assert_eq!(chosen, "hint-model:7b");
+        // The preferred model must never have been picked.
+        assert_ne!(chosen, PREFERRED_EMBED_MODEL);
+        clear_embed_caches().await;
+    }
+
+    #[tokio::test]
+    async fn fallback_chain_constants_are_well_formed() {
+        // Enforce the contract: every fallback is a bare model name (no
+        // `:tag`, no whitespace) and the preferred model isn't duplicated.
+        for name in EMBED_MODEL_FALLBACKS {
+            assert!(!name.is_empty(), "fallback name must not be empty");
+            assert!(!name.contains(':'), "fallback {name} must not include :tag");
+            assert!(
+                !name.chars().any(char::is_whitespace),
+                "fallback {name} must not contain whitespace"
+            );
+            assert_ne!(
+                *name, PREFERRED_EMBED_MODEL,
+                "fallback list must not contain the preferred model"
+            );
+        }
+        // De-duplication.
+        let mut seen: HashSet<&&str> = HashSet::new();
+        for name in EMBED_MODEL_FALLBACKS {
+            assert!(seen.insert(name), "duplicate fallback model: {name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn fallback_chain_skips_unsupported_fallbacks() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // Mark every fallback as unsupported. Resolution must walk past
+        // them all and land on the chat-model hint.
+        mark_unsupported(PREFERRED_EMBED_MODEL, 501).await;
+        for name in EMBED_MODEL_FALLBACKS {
+            mark_unsupported(name, 501).await;
+        }
+        let chosen = pick_embed_model("hint-only:7b").await;
+        assert_eq!(chosen, "hint-only:7b");
         clear_embed_caches().await;
     }
 }

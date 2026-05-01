@@ -20,14 +20,12 @@
 
 #![cfg(feature = "mssql")]
 
-use tiberius::{Client, Config, AuthMethod, Row};
+use tiberius::{AuthMethod, Client, Config, Row};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 use super::backend::{StorageBackend, StorageError, StorageResult};
-use super::store::{
-    MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory,
-};
+use super::store::{MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory};
 
 /// SQL Server storage backend.
 pub struct MssqlBackend {
@@ -73,9 +71,7 @@ impl MssqlBackend {
     where
         F: std::future::Future<Output = StorageResult<T>>,
     {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fut)
-        })
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
     }
 
     fn row_to_entry(row: &Row) -> MemoryEntry {
@@ -84,16 +80,12 @@ impl MssqlBackend {
             content: row.get::<&str, _>("content").unwrap_or("").to_string(),
             tags: row.get::<&str, _>("tags").unwrap_or("").to_string(),
             importance: row.get::<i32, _>("importance").unwrap_or(3) as i64,
-            memory_type: MemoryType::from_str(
-                row.get::<&str, _>("memory_type").unwrap_or("fact"),
-            ),
+            memory_type: MemoryType::from_str(row.get::<&str, _>("memory_type").unwrap_or("fact")),
             created_at: row.get::<i64, _>("created_at").unwrap_or(0),
             last_accessed: row.get::<i64, _>("last_accessed"),
             access_count: row.get::<i32, _>("access_count").unwrap_or(0) as i64,
             embedding: None,
-            tier: MemoryTier::from_str(
-                row.get::<&str, _>("tier").unwrap_or("long"),
-            ),
+            tier: MemoryTier::from_str(row.get::<&str, _>("tier").unwrap_or("long")),
             decay_score: row.get::<f64, _>("decay_score").unwrap_or(1.0),
             session_id: row.get::<&str, _>("session_id").map(|s| s.to_string()),
             parent_id: row.get::<i64, _>("parent_id"),
@@ -112,19 +104,23 @@ impl StorageBackend for MssqlBackend {
             let mut client = self.client.lock().await;
 
             // Create schema_version table
-            client.execute(
-                "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'schema_version')
+            client
+                .execute(
+                    "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'schema_version')
                  CREATE TABLE schema_version (
                      version     BIGINT PRIMARY KEY,
                      description NVARCHAR(MAX) NOT NULL,
                      applied_at  BIGINT NOT NULL
                  )",
-                &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
 
             // Create memories table
-            client.execute(
-                "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'memories')
+            client
+                .execute(
+                    "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'memories')
                  CREATE TABLE memories (
                      id            BIGINT IDENTITY(1,1) PRIMARY KEY,
                      content       NVARCHAR(MAX) NOT NULL,
@@ -144,8 +140,10 @@ impl StorageBackend for MssqlBackend {
                      parent_id     BIGINT NULL REFERENCES memories(id),
                      token_count   INT NOT NULL DEFAULT 0
                  )",
-                &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
 
             // Create indexes
             for idx_sql in &[
@@ -160,7 +158,8 @@ impl StorageBackend for MssqlBackend {
                 "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_memories_decay')
                  CREATE INDEX idx_memories_decay ON memories (decay_score DESC)",
             ] {
-                client.execute(*idx_sql, &[])
+                client
+                    .execute(*idx_sql, &[])
                     .await
                     .map_err(|e| StorageError::Mssql(e.to_string()))?;
             }
@@ -172,15 +171,20 @@ impl StorageBackend for MssqlBackend {
     fn schema_version(&self) -> StorageResult<i64> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let row = client.query(
-                "SELECT ISNULL(MAX(version), 0) AS ver FROM schema_version",
-                &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?
-             .into_row()
-             .await
-             .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let row = client
+                .query(
+                    "SELECT ISNULL(MAX(version), 0) AS ver FROM schema_version",
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?
+                .into_row()
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
 
-            Ok(row.map(|r| r.get::<i64, _>("ver").unwrap_or(0)).unwrap_or(0))
+            Ok(row
+                .map(|r| r.get::<i64, _>("ver").unwrap_or(0))
+                .unwrap_or(0))
         })
     }
 
@@ -189,11 +193,18 @@ impl StorageBackend for MssqlBackend {
     }
 
     fn add_to_tier(
-        &self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>,
+        &self,
+        m: NewMemory,
+        tier: MemoryTier,
+        session_id: Option<&str>,
     ) -> StorageResult<MemoryEntry> {
         let now = Self::now_ms();
         let token_count = (m.content.len() / 4) as i32;
-        let importance = if m.importance == 0 { 3i32 } else { m.importance as i32 };
+        let importance = if m.importance == 0 {
+            3i32
+        } else {
+            m.importance as i32
+        };
         let content = m.content.clone();
         let tags = m.tags.clone();
         let mtype = m.memory_type.as_str().to_string();
@@ -205,21 +216,33 @@ impl StorageBackend for MssqlBackend {
 
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let result = client.query(
-                "INSERT INTO memories
+            let result = client
+                .query(
+                    "INSERT INTO memories
                     (content, tags, importance, memory_type, created_at, access_count,
                      tier, decay_score, session_id, token_count,
                      source_url, source_hash, expires_at)
                  OUTPUT INSERTED.*
                  VALUES (@P1, @P2, @P3, @P4, @P5, 0, @P6, 1.0, @P7, @P8, @P9, @P10, @P11)",
-                &[
-                    &content, &tags, &importance, &mtype, &now,
-                    &tier_str, &sess, &token_count,
-                    &src_url, &src_hash, &expires,
-                ],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+                    &[
+                        &content,
+                        &tags,
+                        &importance,
+                        &mtype,
+                        &now,
+                        &tier_str,
+                        &sess,
+                        &token_count,
+                        &src_url,
+                        &src_hash,
+                        &expires,
+                    ],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
 
-            let row = result.into_row()
+            let row = result
+                .into_row()
                 .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?
                 .ok_or_else(|| StorageError::Mssql("No row returned from INSERT".into()))?;
@@ -231,8 +254,10 @@ impl StorageBackend for MssqlBackend {
     fn get_by_id(&self, id: i64) -> StorageResult<MemoryEntry> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let row = client.query("SELECT * FROM memories WHERE id = @P1", &[&id])
-                .await.map_err(|e| StorageError::Mssql(e.to_string()))?
+            let row = client
+                .query("SELECT * FROM memories WHERE id = @P1", &[&id])
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?
                 .into_row()
                 .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?
@@ -244,12 +269,16 @@ impl StorageBackend for MssqlBackend {
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT * FROM memories ORDER BY importance DESC, created_at DESC",
-                &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let stream = client
+                .query(
+                    "SELECT * FROM memories ORDER BY importance DESC, created_at DESC",
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
 
-            let rows = stream.into_first_result()
+            let rows = stream
+                .into_first_result()
                 .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(rows.iter().map(Self::row_to_entry).collect())
@@ -260,11 +289,16 @@ impl StorageBackend for MssqlBackend {
         let tier_str = tier.as_str().to_string();
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT * FROM memories WHERE tier = @P1 ORDER BY created_at DESC",
-                &[&tier_str],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+            let stream = client
+                .query(
+                    "SELECT * FROM memories WHERE tier = @P1 ORDER BY created_at DESC",
+                    &[&tier_str],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let rows = stream
+                .into_first_result()
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(rows.iter().map(Self::row_to_entry).collect())
         })
@@ -273,12 +307,17 @@ impl StorageBackend for MssqlBackend {
     fn get_persistent(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT * FROM memories WHERE tier IN ('working', 'long')
+            let stream = client
+                .query(
+                    "SELECT * FROM memories WHERE tier IN ('working', 'long')
                  ORDER BY importance DESC, created_at DESC",
-                &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let rows = stream
+                .into_first_result()
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(rows.iter().map(Self::row_to_entry).collect())
         })
@@ -287,19 +326,25 @@ impl StorageBackend for MssqlBackend {
     fn count(&self) -> StorageResult<i64> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let row = client.query("SELECT COUNT(*) AS cnt FROM memories", &[])
-                .await.map_err(|e| StorageError::Mssql(e.to_string()))?
-                .into_row().await
+            let row = client
+                .query("SELECT COUNT(*) AS cnt FROM memories", &[])
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?
+                .into_row()
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
-            Ok(row.map(|r| r.get::<i64, _>("cnt").unwrap_or(0)).unwrap_or(0))
+            Ok(row
+                .map(|r| r.get::<i64, _>("cnt").unwrap_or(0))
+                .unwrap_or(0))
         })
     }
 
     fn stats(&self) -> StorageResult<MemoryStats> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let row = client.query(
-                "SELECT
+            let row = client
+                .query(
+                    "SELECT
                     COUNT(*) AS total,
                     SUM(CASE WHEN tier = 'short' THEN 1 ELSE 0 END) AS short_cnt,
                     SUM(CASE WHEN tier = 'working' THEN 1 ELSE 0 END) AS working_cnt,
@@ -308,11 +353,14 @@ impl StorageBackend for MssqlBackend {
                     ISNULL(SUM(token_count), 0) AS total_tokens,
                     ISNULL(AVG(CAST(decay_score AS FLOAT)), 1.0) AS avg_decay
                  FROM memories",
-                &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?
-             .into_row().await
-             .map_err(|e| StorageError::Mssql(e.to_string()))?
-             .ok_or_else(|| StorageError::Mssql("No stats row".into()))?;
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?
+                .into_row()
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?
+                .ok_or_else(|| StorageError::Mssql("No stats row".into()))?;
 
             Ok(MemoryStats {
                 total: row.get::<i64, _>("total").unwrap_or(0),
@@ -330,11 +378,16 @@ impl StorageBackend for MssqlBackend {
         let pattern = format!("%{query}%");
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT * FROM memories WHERE content LIKE @P1 OR tags LIKE @P1",
-                &[&pattern],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+            let stream = client
+                .query(
+                    "SELECT * FROM memories WHERE content LIKE @P1 OR tags LIKE @P1",
+                    &[&pattern],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let rows = stream
+                .into_first_result()
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(rows.iter().map(Self::row_to_entry).collect())
         })
@@ -344,17 +397,25 @@ impl StorageBackend for MssqlBackend {
         let pattern = format!("%{}%", message.split_whitespace().next().unwrap_or(""));
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                &format!(
-                    "SELECT TOP {limit} content FROM memories
+            let stream = client
+                .query(
+                    &format!(
+                        "SELECT TOP {limit} content FROM memories
                      WHERE content LIKE @P1 OR tags LIKE @P1
                      ORDER BY importance DESC"
-                ),
-                &[&pattern],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+                    ),
+                    &[&pattern],
+                )
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
-            Ok(rows.iter().map(|r| r.get::<&str, _>("content").unwrap_or("").to_string()).collect())
+            let rows = stream
+                .into_first_result()
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            Ok(rows
+                .iter()
+                .map(|r| r.get::<&str, _>("content").unwrap_or("").to_string())
+                .collect())
         })
     }
 
@@ -362,10 +423,13 @@ impl StorageBackend for MssqlBackend {
         let url = url.to_string();
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT * FROM memories WHERE source_url = @P1", &[&url],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+            let stream = client
+                .query("SELECT * FROM memories WHERE source_url = @P1", &[&url])
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let rows = stream
+                .into_first_result()
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(rows.iter().map(Self::row_to_entry).collect())
         })
@@ -375,11 +439,16 @@ impl StorageBackend for MssqlBackend {
         let hash = hash.to_string();
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let row = client.query(
-                "SELECT TOP 1 * FROM memories WHERE source_hash = @P1", &[&hash],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?
-             .into_row().await
-             .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let row = client
+                .query(
+                    "SELECT TOP 1 * FROM memories WHERE source_hash = @P1",
+                    &[&hash],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?
+                .into_row()
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(row.as_ref().map(Self::row_to_entry))
         })
     }
@@ -387,33 +456,50 @@ impl StorageBackend for MssqlBackend {
     fn get_with_embeddings(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT * FROM memories WHERE embedding IS NOT NULL", &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+            let stream = client
+                .query("SELECT * FROM memories WHERE embedding IS NOT NULL", &[])
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
-            Ok(rows.iter().map(|r| {
-                let mut entry = Self::row_to_entry(r);
-                if let Some(blob) = r.get::<&[u8], _>("embedding") {
-                    entry.embedding = Some(super::store::bytes_to_embedding(blob));
-                }
-                entry
-            }).collect())
+            let rows = stream
+                .into_first_result()
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            Ok(rows
+                .iter()
+                .map(|r| {
+                    let mut entry = Self::row_to_entry(r);
+                    if let Some(blob) = r.get::<&[u8], _>("embedding") {
+                        entry.embedding = Some(super::store::bytes_to_embedding(blob));
+                    }
+                    entry
+                })
+                .collect())
         })
     }
 
     fn unembedded_ids(&self) -> StorageResult<Vec<(i64, String)>> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let stream = client.query(
-                "SELECT id, content FROM memories WHERE embedding IS NULL", &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+            let stream = client
+                .query(
+                    "SELECT id, content FROM memories WHERE embedding IS NULL",
+                    &[],
+                )
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
-            Ok(rows.iter().map(|r| (
-                r.get::<i64, _>("id").unwrap_or(0),
-                r.get::<&str, _>("content").unwrap_or("").to_string(),
-            )).collect())
+            let rows = stream
+                .into_first_result()
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            Ok(rows
+                .iter()
+                .map(|r| {
+                    (
+                        r.get::<i64, _>("id").unwrap_or(0),
+                        r.get::<&str, _>("content").unwrap_or("").to_string(),
+                    )
+                })
+                .collect())
         })
     }
 
@@ -421,16 +507,21 @@ impl StorageBackend for MssqlBackend {
         let bytes = super::store::embedding_to_bytes(embedding);
         self.block_on(async {
             let mut client = self.client.lock().await;
-            client.execute(
-                "UPDATE memories SET embedding = @P1 WHERE id = @P2",
-                &[&bytes.as_slice(), &id],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            client
+                .execute(
+                    "UPDATE memories SET embedding = @P1 WHERE id = @P2",
+                    &[&bytes.as_slice(), &id],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(())
         })
     }
 
     fn vector_search(
-        &self, query_embedding: &[f32], limit: usize,
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         // In-process cosine similarity (same as Postgres backend)
         let all = self.get_with_embeddings()?;
@@ -449,7 +540,9 @@ impl StorageBackend for MssqlBackend {
     }
 
     fn find_duplicate(
-        &self, query_embedding: &[f32], threshold: f32,
+        &self,
+        query_embedding: &[f32],
+        threshold: f32,
     ) -> StorageResult<Option<i64>> {
         let all = self.get_with_embeddings()?;
         let mut best: Option<(f32, i64)> = None;
@@ -465,7 +558,10 @@ impl StorageBackend for MssqlBackend {
     }
 
     fn hybrid_search(
-        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         // Same 6-signal scoring as other backends
         let all = self.get_with_embeddings()?;
@@ -476,18 +572,25 @@ impl StorageBackend for MssqlBackend {
             .into_iter()
             .map(|entry| {
                 let vector_score = query_embedding
-                    .and_then(|qe| entry.embedding.as_ref().map(|ee| {
-                        super::store::cosine_similarity(qe, ee) as f64
-                    }))
+                    .and_then(|qe| {
+                        entry
+                            .embedding
+                            .as_ref()
+                            .map(|ee| super::store::cosine_similarity(qe, ee) as f64)
+                    })
                     .unwrap_or(0.0);
-                let keyword_hits = query_words.iter()
+                let keyword_hits = query_words
+                    .iter()
                     .filter(|w| {
                         entry.content.to_lowercase().contains(&w.to_lowercase())
                             || entry.tags.to_lowercase().contains(&w.to_lowercase())
                     })
                     .count() as f64;
-                let keyword_score = if query_words.is_empty() { 0.0 }
-                    else { keyword_hits / query_words.len() as f64 };
+                let keyword_score = if query_words.is_empty() {
+                    0.0
+                } else {
+                    keyword_hits / query_words.len() as f64
+                };
                 let age_hours = (now - entry.created_at) as f64 / 3_600_000.0;
                 let recency_score = (-age_hours / 24.0_f64).exp();
                 let importance_score = entry.importance as f64 / 5.0;
@@ -516,16 +619,23 @@ impl StorageBackend for MssqlBackend {
         let content = upd.content.unwrap_or(existing.content);
         let tags = upd.tags.unwrap_or(existing.tags);
         let importance = upd.importance.unwrap_or(existing.importance) as i32;
-        let mtype = upd.memory_type.unwrap_or(existing.memory_type).as_str().to_string();
+        let mtype = upd
+            .memory_type
+            .unwrap_or(existing.memory_type)
+            .as_str()
+            .to_string();
         let token_count = (content.len() / 4) as i32;
 
         self.block_on(async {
             let mut client = self.client.lock().await;
-            client.execute(
-                "UPDATE memories SET content = @P1, tags = @P2, importance = @P3,
+            client
+                .execute(
+                    "UPDATE memories SET content = @P1, tags = @P2, importance = @P3,
                  memory_type = @P4, token_count = @P5 WHERE id = @P6",
-                &[&content, &tags, &importance, &mtype, &token_count, &id],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+                    &[&content, &tags, &importance, &mtype, &token_count, &id],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             drop(client);
             self.get_by_id(id)
         })
@@ -535,10 +645,13 @@ impl StorageBackend for MssqlBackend {
         let tier_str = new_tier.as_str().to_string();
         self.block_on(async {
             let mut client = self.client.lock().await;
-            client.execute(
-                "UPDATE memories SET tier = @P1 WHERE id = @P2",
-                &[&tier_str, &id],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            client
+                .execute(
+                    "UPDATE memories SET tier = @P1 WHERE id = @P2",
+                    &[&tier_str, &id],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(())
         })
     }
@@ -546,8 +659,10 @@ impl StorageBackend for MssqlBackend {
     fn delete(&self, id: i64) -> StorageResult<()> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            client.execute("DELETE FROM memories WHERE id = @P1", &[&id])
-                .await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            client
+                .execute("DELETE FROM memories WHERE id = @P1", &[&id])
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(())
         })
     }
@@ -556,9 +671,10 @@ impl StorageBackend for MssqlBackend {
         let url = url.to_string();
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let result = client.execute(
-                "DELETE FROM memories WHERE source_url = @P1", &[&url],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let result = client
+                .execute("DELETE FROM memories WHERE source_url = @P1", &[&url])
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(result.rows_affected().iter().sum::<u64>() as usize)
         })
     }
@@ -567,10 +683,13 @@ impl StorageBackend for MssqlBackend {
         let now = Self::now_ms();
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let result = client.execute(
-                "DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < @P1",
-                &[&now],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let result = client
+                .execute(
+                    "DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < @P1",
+                    &[&now],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(result.rows_affected().iter().sum::<u64>() as usize)
         })
     }
@@ -578,9 +697,10 @@ impl StorageBackend for MssqlBackend {
     fn delete_all(&self) -> StorageResult<usize> {
         self.block_on(async {
             let mut client = self.client.lock().await;
-            let result = client.execute(
-                "DELETE FROM memories", &[],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let result = client
+                .execute("DELETE FROM memories", &[])
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
             Ok(result.rows_affected().iter().sum::<u64>() as usize)
         })
     }
@@ -612,18 +732,26 @@ impl StorageBackend for MssqlBackend {
         self.block_on(async {
             let mut client = self.client.lock().await;
             // Fetch then delete (SQL Server doesn't have DELETE ... RETURNING)
-            let stream = client.query(
-                "SELECT * FROM memories WHERE tier = 'short' AND session_id = @P1",
-                &[&sess],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
-            let rows = stream.into_first_result().await
+            let stream = client
+                .query(
+                    "SELECT * FROM memories WHERE tier = 'short' AND session_id = @P1",
+                    &[&sess],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            let rows = stream
+                .into_first_result()
+                .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
             let entries: Vec<MemoryEntry> = rows.iter().map(Self::row_to_entry).collect();
 
-            client.execute(
-                "DELETE FROM memories WHERE tier = 'short' AND session_id = @P1",
-                &[&sess],
-            ).await.map_err(|e| StorageError::Mssql(e.to_string()))?;
+            client
+                .execute(
+                    "DELETE FROM memories WHERE tier = 'short' AND session_id = @P1",
+                    &[&sess],
+                )
+                .await
+                .map_err(|e| StorageError::Mssql(e.to_string()))?;
 
             Ok(entries)
         })
@@ -640,5 +768,7 @@ impl StorageBackend for MssqlBackend {
         })
     }
 
-    fn backend_name(&self) -> &'static str { "SQL Server" }
+    fn backend_name(&self) -> &'static str {
+        "SQL Server"
+    }
 }

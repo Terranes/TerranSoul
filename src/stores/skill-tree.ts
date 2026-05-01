@@ -1425,7 +1425,9 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       case 'whisper-asr':
         return voice.config.asr_provider === 'groq-whisper' || voice.config.asr_provider === 'whisper-api';
       case 'avatar':
-        return true; // Always loaded by default
+        // Requires manual completion — the user should explore the avatar
+        // panel at least once. Always-true made quests look pre-completed.
+        return false;
       // ── Persona main chain (docs/persona-design.md § 10.2) ──────────────
       case 'soul-mirror': {
         // Active once the persona panel has been opened at least once and
@@ -1499,17 +1501,17 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         return false;
       case 'pet-mode':
         return false;
-      // Windows-specific features
+      // Windows-specific features — require manual completion so they don't
+      // show as "completed" on first launch. The user should discover and
+      // acknowledge them through the skill tree.
       case 'windows-notifications':
-        return currentPlatform.value === 'windows';
+        return false;
       case 'windows-shortcuts':
-        return currentPlatform.value === 'windows';
+        return false;
       case 'windows-taskbar':
-        return currentPlatform.value === 'windows';
+        return false;
       case 'windows-startup':
-        // Active on any Windows install. A future "auto-start at login"
-        // toggle in settings can refine this to only count when enabled.
-        return currentPlatform.value === 'windows';
+        return false;
       default:
         return false;
     }

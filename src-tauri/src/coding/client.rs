@@ -109,9 +109,7 @@ mod tests {
 
         // Stub handler returns a single-message chat-completion response
         // matching the OpenAI v1 schema that `OpenAiClient::chat` expects.
-        async fn chat_handler(
-            Json(_body): Json<serde_json::Value>,
-        ) -> Json<serde_json::Value> {
+        async fn chat_handler(Json(_body): Json<serde_json::Value>) -> Json<serde_json::Value> {
             Json(serde_json::json!({
                 "choices": [
                     { "message": { "role": "assistant", "content": "ok" } }

@@ -334,23 +334,47 @@ them. The roadmap, in priority order:
    sub-task with `OutputShape::BareFileContents`, write through
    `coding::workflow::apply_file` (does not yet exist) using the same
    atomic-write contract as configs.
-2. **Reviewer sub-agent.** Feed the produced diff back into a third
-   workflow with `OutputShape::StrictJson { schema_description: "{ ok: bool, issues: string[] }" }`.
-3. **Orchestrator wiring.** Connect `crate::orchestrator` so chat
-   messages can dispatch coding workflows just like the brain queries
-   today.
-4. **Multi-agent fan-out.** Mirror Copilot `/fleet` — parallelise
-   independent chunks, serialise dependent ones via a small DAG runner.
-5. **Sandboxed test runs.** Before committing, run `cargo test` and
-   `vitest` in a child process and gate the diff on a green run.
-6. **GitHub PR flow.** Already partially implemented in
-   `coding::github`; finish the OAuth device flow and per-chunk PR
-   creation.
-7. **Cost / token telemetry.** Extend `RunRecord` with token counts so
-   the metrics panel can show cost-per-chunk by provider.
-8. **Persistent task queue.** Move from "read milestones.md every
-   cycle" to a real SQLite-backed queue so external tools (MCP, CLI)
-   can enqueue tasks.
+2. **Reviewer sub-agent.** ✅ **Chunk 28.1 shipped (2026-04-30):**
+   `src-tauri/src/coding/reviewer.rs` — pure types + prompt builders +
+   JSON parser + `decide()` verdict logic. 18 tests. Uses
+   `OutputShape::StrictJson` with schema `{ ok: bool, issues: [{ severity, file, line, msg }] }`.
+   Wiring into the orchestrator (so it actually gates `apply_file`
+   commits) is a follow-up (28.2).
+3. **Orchestrator wiring.** ✅ **Chunk 28.2 shipped (2026-04-30):**
+   `src-tauri/src/orchestrator/coding_router.rs` — intent detection +
+   capability-aware routing for chat-driven coding tasks. 18 tests.
+4. **Multi-agent fan-out.** ✅ **Chunk 28.3 shipped (2026-04-30):**
+   `src-tauri/src/coding/dag_runner.rs` — Kahn's-algorithm topological
+   layering, parallel within layers, sequential across layers, cycle
+   detection. 21 tests.
+5. **Sandboxed test runs.** ✅ **Chunk 28.4 shipped (2026-04-30):**
+   `src-tauri/src/coding/test_runner.rs` runs `cargo test` and
+   `vitest run` (or any `Custom` suite) in isolated `tokio::process`
+   children with stripped env (`RUST_LOG`, `CARGO_TARGET_DIR`,
+   `NODE_OPTIONS`), per-suite timeout (default 5 min), retry-once for
+   flaky-test detection (fail → pass on retry → `Flaky` status, still
+   green for the gate), and 4 KiB stdout/stderr tail capture. Returns
+   `TestRunResult { suites, all_green, total_duration_ms, flaky_suites }`
+   that the orchestrator gates the commit on. 15 unit tests covering
+   pass/fail/flaky/timeout/spawn-error/mixed/serde. Wiring into the
+   orchestrator (so it actually gates `apply_file` commits) is a
+   follow-up.
+6. **GitHub PR flow.** ✅ **Chunk 28.5 shipped (2026-04-30):**
+   `src-tauri/src/coding/github.rs` — OAuth device flow
+   (`request_device_code`, `poll_for_token`) + per-chunk PR generation
+   (`build_chunk_pr_title`, `build_chunk_pr_body`, `chunk_branch_name`).
+7. **Cost / token telemetry.** ✅ **Chunk 28.7 shipped (2026-04-30):**
+   `RunRecord` now captures real token usage from each provider; the
+   metrics panel surfaces cost-per-chunk by provider.
+8. **Persistent task queue.** ✅ **Chunk 28.6 shipped (2026-04-30):**
+   SQLite-backed queue at `<data>/tasks.sqlite` so external tools
+   (MCP, CLI) can enqueue tasks without parsing milestones.md.
+9. **Long-session context handoff.** ✅ **Chunks 28.8 + 28.9 + 28.10 +
+   27.2 shipped (2026-04-30):** session-handoff codec, persistent
+   handoff, context budget manager, and budget-aware document
+   assembly bridge `context_budget` ↔ `prompting`. The full pipeline
+   for "very long coding will make out of memory or too much context"
+   from `promt/devstress.md`.
 
 Each item lands as one chunk in [`rules/milestones.md`](../rules/milestones.md)
 under Phase 25, with the same enforcement contract as every other

@@ -96,8 +96,7 @@ fn validate_id(id: &str) -> Result<(), String> {
 /// extension.
 fn atomic_write(dest: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
     let file_name = dest
         .file_name()
@@ -287,8 +286,8 @@ fn list_assets(dir: &Path) -> Result<Vec<LearnedAsset>, String> {
 }
 
 fn save_asset(dir: &Path, json: &str) -> Result<(), String> {
-    let parsed: LearnedAsset = serde_json::from_str(json)
-        .map_err(|e| format!("Invalid learned asset JSON: {e}"))?;
+    let parsed: LearnedAsset =
+        serde_json::from_str(json).map_err(|e| format!("Invalid learned asset JSON: {e}"))?;
     validate_id(&parsed.id)?;
     let path = dir.join(format!("{}.json", parsed.id));
     atomic_write(&path, json)
@@ -332,27 +331,19 @@ pub async fn delete_learned_expression(
 // ── learned motions ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn list_learned_motions(
-    state: State<'_, AppState>,
-) -> Result<Vec<LearnedAsset>, String> {
+pub async fn list_learned_motions(state: State<'_, AppState>) -> Result<Vec<LearnedAsset>, String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     list_assets(&dir)
 }
 
 #[tauri::command]
-pub async fn save_learned_motion(
-    json: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn save_learned_motion(json: String, state: State<'_, AppState>) -> Result<(), String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     save_asset(&dir, &json)
 }
 
 #[tauri::command]
-pub async fn delete_learned_motion(
-    id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn delete_learned_motion(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     delete_asset(&dir, &id)
 }
@@ -439,6 +430,235 @@ pub async fn extract_persona_from_brain(state: State<'_, AppState>) -> Result<St
     }
 }
 
+// ── LLM-as-Animator: motion-clip generation (Chunk 14.16c2) ────────────────
+
+/// Result envelope for [`generate_motion_from_text`].
+///
+/// Carries the generated `LearnedMotion` JSON (frontend-ready, never
+/// auto-saved) plus parser diagnostics so the UI can surface "we had
+/// to clean N frames" hints in the preview panel. Mirrors the
+/// "preview-before-save" contract that `extract_persona_from_brain`
+/// already follows — the frontend calls `save_learned_motion` after
+/// the user clicks Accept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratedMotionEnvelope {
+    /// Pretty-printed JSON of the generated motion clip, ready to drop
+    /// straight into `save_learned_motion` if the user accepts.
+    pub motion_json: String,
+    /// Slugged trigger word the parser produced from the user's
+    /// description (`"learned-<slug>"`).
+    pub trigger: String,
+    /// Frames the parser dropped (invalid / unknown bones / bad shape).
+    pub dropped_frames: usize,
+    /// Bone components clamped into the safe rotation range.
+    pub clamped_components: usize,
+    /// Whether the parser had to repair non-monotonic timestamps.
+    pub repaired_timestamps: bool,
+    /// Whether the parser had to renormalise an over/undershooting duration.
+    pub repaired_duration: bool,
+}
+
+/// Ask the active brain to generate a multi-frame VRM motion clip from
+/// a short text description. Returns the parsed clip as a JSON string
+/// the frontend previews (and saves on user accept) via the existing
+/// `save_learned_motion` command — **nothing is written to disk here.**
+///
+/// Routes through `memory::brain_memory::complete_via_mode` so it works
+/// across all four brain modes (Free / Paid / Local Ollama / LM Studio)
+/// without bespoke per-mode wiring. When no `brain_mode` is configured
+/// it falls back to the legacy `active_brain` Ollama model so users on
+/// the old single-mode setup still get the feature.
+///
+/// Returns `Err` only on hard configuration / network failures; LLM
+/// reply parse errors are surfaced as a typed message the UI shows in
+/// the "couldn't generate, try again" toast.
+#[tauri::command]
+pub async fn generate_motion_from_text(
+    description: String,
+    duration_s: Option<f32>,
+    fps: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<GeneratedMotionEnvelope, String> {
+    use crate::persona::motion_clip::{
+        build_motion_prompt_with_hint, parse_motion_payload, slugify_trigger, MotionRequest,
+        DEFAULT_DURATION_S, DEFAULT_FPS,
+    };
+
+    let trimmed = description.trim();
+    if trimmed.is_empty() {
+        return Err("Description must not be empty".to_string());
+    }
+    if trimmed.len() > 500 {
+        return Err("Description too long (max 500 chars)".to_string());
+    }
+
+    let request = MotionRequest {
+        description: trimmed.to_string(),
+        duration_s: duration_s.unwrap_or(DEFAULT_DURATION_S),
+        fps: fps.unwrap_or(DEFAULT_FPS),
+    }
+    .sanitised();
+
+    // Self-improve hint (Chunk 14.16e): pull the trusted-trigger
+    // leaderboard from the feedback log so the brain can match the
+    // user's preferred movement vocabulary. Empty when the user has
+    // never accepted a generated motion before — the hint is a no-op
+    // in that case.
+    let hint = {
+        let log_path = motion_feedback_path(&state.data_dir)?;
+        let entries = crate::persona::motion_feedback::load_entries(&log_path).unwrap_or_default();
+        let stats = crate::persona::motion_feedback::aggregate_stats(&entries);
+        crate::persona::motion_feedback::render_prompt_hint(&stats)
+    };
+
+    let (system_prompt, user_prompt) = build_motion_prompt_with_hint(&request, &hint);
+
+    // Resolve brain mode → fall back to legacy `active_brain` Ollama.
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .map_err(|e| format!("brain_mode lock: {e}"))?
+        .clone();
+    let legacy_model = state
+        .active_brain
+        .lock()
+        .map_err(|e| format!("active_brain lock: {e}"))?
+        .clone();
+
+    let effective_mode = match brain_mode {
+        Some(m) => m,
+        None => {
+            let model = legacy_model
+                .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+            crate::brain::BrainMode::LocalOllama { model }
+        }
+    };
+
+    let reply = crate::memory::brain_memory::complete_via_mode(
+        &effective_mode,
+        &system_prompt,
+        &user_prompt,
+        &state.provider_rotator,
+    )
+    .await
+    .map_err(|e| format!("Brain request failed: {e}"))?;
+
+    let trigger = slugify_trigger(trimmed);
+    let id = format!("motion-{}", uuid::Uuid::new_v4());
+    let name = trimmed.chars().take(60).collect::<String>();
+    let learned_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let (motion, diag) = parse_motion_payload(
+        &reply,
+        id,
+        name,
+        trigger.clone(),
+        request.fps,
+        request.duration_s,
+        learned_at,
+    )
+    .map_err(|e| format!("Failed to parse motion clip from brain reply: {e}"))?;
+
+    let motion_json = serde_json::to_string_pretty(&motion)
+        .map_err(|e| format!("Failed to serialise generated motion: {e}"))?;
+
+    Ok(GeneratedMotionEnvelope {
+        motion_json,
+        trigger,
+        dropped_frames: diag.dropped_frames,
+        clamped_components: diag.clamped_components,
+        repaired_timestamps: diag.repaired_timestamps,
+        repaired_duration: diag.repaired_duration,
+    })
+}
+
+// ── motion-feedback log (Chunk 14.16e — self-improve loop) ─────────────────
+
+/// Filename of the motion-feedback log under the persona root.
+const MOTION_FEEDBACK_FILE: &str = "motion_feedback.jsonl";
+
+/// Resolve the on-disk path of the motion-feedback log, ensuring the
+/// persona root exists. Pure helper so the generator command + the
+/// feedback commands stay DRY.
+fn motion_feedback_path(data_dir: &Path) -> Result<PathBuf, String> {
+    Ok(persona_root(data_dir)?.join(MOTION_FEEDBACK_FILE))
+}
+
+/// Frontend payload mirror of
+/// [`crate::persona::motion_feedback::MotionFeedbackEntry`]. Lives here
+/// so we can derive `Deserialize` for the Tauri argument without
+/// requiring the frontend to know about backend filenames or to set
+/// the `at` timestamp itself (we stamp it server-side).
+#[derive(Debug, Clone, Deserialize)]
+pub struct MotionFeedbackPayload {
+    pub description: String,
+    pub trigger: String,
+    pub verdict: crate::persona::motion_feedback::FeedbackVerdict,
+    #[serde(default)]
+    pub duration_s: f32,
+    #[serde(default)]
+    pub fps: u32,
+    #[serde(default)]
+    pub dropped_frames: usize,
+    #[serde(default)]
+    pub clamped_components: usize,
+}
+
+/// Append a single accept/reject event to the motion-feedback log.
+///
+/// Called by `PersonaMotionGenerator.vue` whenever the user clicks
+/// Accept or Discard on a generated motion candidate. The log feeds
+/// the "trusted triggers" hint that
+/// [`generate_motion_from_text`] splices into the system prompt next
+/// time, closing the self-improve loop.
+#[tauri::command]
+pub async fn record_motion_feedback(
+    payload: MotionFeedbackPayload,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if payload.description.trim().is_empty() {
+        return Err("description must not be empty".to_string());
+    }
+    if payload.trigger.trim().is_empty() {
+        return Err("trigger must not be empty".to_string());
+    }
+    if payload.description.len() > 500 {
+        return Err("description too long (>500 chars)".to_string());
+    }
+    let entry = crate::persona::motion_feedback::MotionFeedbackEntry {
+        description: payload.description,
+        trigger: payload.trigger,
+        verdict: payload.verdict,
+        duration_s: payload.duration_s,
+        fps: payload.fps,
+        dropped_frames: payload.dropped_frames,
+        clamped_components: payload.clamped_components,
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0),
+    };
+    let path = motion_feedback_path(&state.data_dir)?;
+    crate::persona::motion_feedback::append_entry(&path, &entry)
+        .map_err(|e| format!("Failed to record motion feedback: {e}"))
+}
+
+/// Read aggregated stats over the motion-feedback log. Powers the
+/// "you've taught me N motions" UI pill in the persona panel and the
+/// trusted-trigger leaderboard.
+#[tauri::command]
+pub async fn get_motion_feedback_stats(
+    state: State<'_, AppState>,
+) -> Result<crate::persona::motion_feedback::MotionFeedbackStats, String> {
+    let path = motion_feedback_path(&state.data_dir)?;
+    let entries = crate::persona::motion_feedback::load_entries(&path)
+        .map_err(|e| format!("Failed to load motion feedback: {e}"))?;
+    Ok(crate::persona::motion_feedback::aggregate_stats(&entries))
+}
+
 // ── persona drift detection (Chunk 14.8) ────────────────────────────────────
 
 /// Compare the active persona traits against the user's `personal:*`
@@ -467,8 +687,7 @@ pub async fn check_persona_drift(
     // Read the active persona traits from disk.
     let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
     let persona_json = if traits_path.exists() {
-        std::fs::read_to_string(&traits_path)
-            .map_err(|e| format!("Failed to read persona: {e}"))?
+        std::fs::read_to_string(&traits_path).map_err(|e| format!("Failed to read persona: {e}"))?
     } else {
         default_persona_json().to_string()
     };
@@ -533,8 +752,7 @@ pub async fn export_persona_pack(
     // Traits → JSON value (preserves unknown fields for forward-compat).
     let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
     let traits_raw = if traits_path.exists() {
-        std::fs::read_to_string(&traits_path)
-            .map_err(|e| format!("Failed to read persona: {e}"))?
+        std::fs::read_to_string(&traits_path).map_err(|e| format!("Failed to read persona: {e}"))?
     } else {
         default_persona_json().to_string()
     };
@@ -584,11 +802,7 @@ fn list_assets_as_values(dir: &Path) -> Vec<serde_json::Value> {
     }
     // Stable ordering for deterministic round-trips: by `learnedAt`
     // ascending, which matches the on-disk creation order.
-    out.sort_by_key(|v| {
-        v.get("learnedAt")
-            .and_then(|x| x.as_i64())
-            .unwrap_or(0)
-    });
+    out.sort_by_key(|v| v.get("learnedAt").and_then(|x| x.as_i64()).unwrap_or(0));
     out
 }
 
@@ -606,7 +820,9 @@ pub async fn import_persona_pack(
     json: String,
     state: State<'_, AppState>,
 ) -> Result<crate::persona::pack::ImportReport, String> {
-    use crate::persona::pack::{note_skip, parse_pack, validate_asset, ImportReport};
+    use crate::persona::pack::{
+        note_motion_provenance, note_skip, parse_pack, validate_asset, ImportReport,
+    };
 
     let pack = parse_pack(&json)?;
     let mut report = ImportReport::default();
@@ -636,7 +852,10 @@ pub async fn import_persona_pack(
         let body = match serde_json::to_string_pretty(asset) {
             Ok(s) => s,
             Err(e) => {
-                note_skip(&mut report, format!("expression {id}: serialise failed: {e}"));
+                note_skip(
+                    &mut report,
+                    format!("expression {id}: serialise failed: {e}"),
+                );
                 continue;
             }
         };
@@ -670,6 +889,7 @@ pub async fn import_persona_pack(
             continue;
         }
         report.motions_accepted += 1;
+        note_motion_provenance(&mut report, asset);
     }
 
     Ok(report)
@@ -683,7 +903,9 @@ pub async fn import_persona_pack(
 pub async fn preview_persona_pack(
     json: String,
 ) -> Result<crate::persona::pack::ImportReport, String> {
-    use crate::persona::pack::{note_skip, parse_pack, validate_asset, ImportReport};
+    use crate::persona::pack::{
+        note_motion_provenance, note_skip, parse_pack, validate_asset, ImportReport,
+    };
 
     let pack = parse_pack(&json)?;
     let mut report = ImportReport {
@@ -698,7 +920,10 @@ pub async fn preview_persona_pack(
     }
     for (idx, asset) in pack.motions.iter().enumerate() {
         match validate_asset(asset, "motion") {
-            Ok(_) => report.motions_accepted += 1,
+            Ok(_) => {
+                report.motions_accepted += 1;
+                note_motion_provenance(&mut report, asset);
+            }
             Err(e) => note_skip(&mut report, format!("motion #{idx}: {e}")),
         }
     }
@@ -762,7 +987,10 @@ mod tests {
         let assets = list_assets(dir.path()).unwrap();
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].id, "lex_AAA");
-        assert_eq!(assets[0].rest.get("trigger").and_then(|v| v.as_str()), Some("smug"));
+        assert_eq!(
+            assets[0].rest.get("trigger").and_then(|v| v.as_str()),
+            Some("smug")
+        );
     }
 
     #[test]

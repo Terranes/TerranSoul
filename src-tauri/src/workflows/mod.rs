@@ -17,8 +17,7 @@ pub mod engine;
 pub mod resilience;
 
 pub use engine::{
-    WorkflowEngine, WorkflowEvent, WorkflowEventKind, WorkflowId, WorkflowStatus,
-    WorkflowSummary,
+    WorkflowEngine, WorkflowEvent, WorkflowEventKind, WorkflowId, WorkflowStatus, WorkflowSummary,
 };
 
 pub use resilience::{

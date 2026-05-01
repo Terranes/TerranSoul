@@ -78,10 +78,7 @@ mod tests {
 
     #[test]
     fn equal_paths_match() {
-        assert!(paths_equal(
-            Path::new("/a/b/c"),
-            Path::new("/a/b/c")
-        ));
+        assert!(paths_equal(Path::new("/a/b/c"), Path::new("/a/b/c")));
     }
 
     #[test]
@@ -95,39 +92,24 @@ mod tests {
 
     #[test]
     fn ancestor_matches_child() {
-        assert!(target_inside_root(
-            Path::new("/a/b"),
-            Path::new("/a/b/c/d")
-        ));
+        assert!(target_inside_root(Path::new("/a/b"), Path::new("/a/b/c/d")));
     }
 
     #[test]
     fn unrelated_paths_dont_match() {
-        assert!(!target_inside_root(
-            Path::new("/a/b"),
-            Path::new("/x/y")
-        ));
+        assert!(!target_inside_root(Path::new("/a/b"), Path::new("/x/y")));
     }
 
     #[test]
     fn equal_paths_dont_match_as_ancestor_of_child() {
         // target_inside_root accepts equality (subset semantics)
-        assert!(target_inside_root(
-            Path::new("/a/b"),
-            Path::new("/a/b")
-        ));
+        assert!(target_inside_root(Path::new("/a/b"), Path::new("/a/b")));
     }
 
     #[test]
     fn depth_below_basic() {
-        assert_eq!(
-            depth_below(Path::new("/a/b"), Path::new("/a/b/c/d")),
-            2
-        );
-        assert_eq!(
-            depth_below(Path::new("/a/b"), Path::new("/a/b")),
-            0
-        );
+        assert_eq!(depth_below(Path::new("/a/b"), Path::new("/a/b/c/d")), 2);
+        assert_eq!(depth_below(Path::new("/a/b"), Path::new("/a/b")), 0);
         assert_eq!(
             depth_below(Path::new("/a/b"), Path::new("/x/y")),
             usize::MAX

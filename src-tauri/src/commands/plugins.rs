@@ -2,9 +2,10 @@
 
 use tauri::State;
 
+use crate::plugins::host::CommandResult;
 use crate::plugins::{
-    self, InstalledPlugin, PluginHostStatus, PluginManifest,
-    CommandEntry, SlashCommandEntry, ContributedTheme,
+    self, CommandEntry, ContributedTheme, InstalledPlugin, PluginHostStatus, PluginManifest,
+    SlashCommandEntry,
 };
 use crate::AppState;
 
@@ -42,9 +43,7 @@ pub async fn plugin_uninstall(
 }
 
 #[tauri::command]
-pub async fn plugin_list(
-    app_state: State<'_, AppState>,
-) -> Result<Vec<InstalledPlugin>, String> {
+pub async fn plugin_list(app_state: State<'_, AppState>) -> Result<Vec<InstalledPlugin>, String> {
     Ok(app_state.plugin_host.list_plugins().await)
 }
 
@@ -103,8 +102,35 @@ pub async fn plugin_host_status(
 }
 
 #[tauri::command]
-pub async fn plugin_parse_manifest(
-    json: String,
-) -> Result<PluginManifest, String> {
+pub async fn plugin_parse_manifest(json: String) -> Result<PluginManifest, String> {
     plugins::parse_plugin_manifest(&json).map_err(|e| e.to_string())
+}
+
+/// Invoke a contributed command by id (Chunk 22.4).
+///
+/// Returns a [`CommandResult`] echoing the command's metadata. Full
+/// execution lands in Chunk 22.7.
+#[tauri::command]
+pub async fn plugin_invoke_command(
+    command_id: String,
+    args: Option<serde_json::Value>,
+    app_state: State<'_, AppState>,
+) -> Result<CommandResult, String> {
+    app_state
+        .plugin_host
+        .invoke_command(&command_id, args)
+        .await
+}
+
+/// Invoke a slash-command by its name (without `/`) (Chunk 22.4).
+#[tauri::command]
+pub async fn plugin_invoke_slash_command(
+    name: String,
+    args: Option<serde_json::Value>,
+    app_state: State<'_, AppState>,
+) -> Result<CommandResult, String> {
+    app_state
+        .plugin_host
+        .invoke_slash_command(&name, args)
+        .await
 }

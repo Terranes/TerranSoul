@@ -300,7 +300,10 @@ mod tests {
     fn records_remaining_requests_header() {
         let mut rotator = make_rotator_with(&["groq"]);
         let mut headers = HeaderMap::new();
-        headers.insert("x-ratelimit-remaining-requests", HeaderValue::from_static("42"));
+        headers.insert(
+            "x-ratelimit-remaining-requests",
+            HeaderValue::from_static("42"),
+        );
         rotator.record_response_headers("groq", &headers);
 
         let s = rotator.providers.get("groq").unwrap();
@@ -313,7 +316,10 @@ mod tests {
     fn records_remaining_tokens_header() {
         let mut rotator = make_rotator_with(&["groq"]);
         let mut headers = HeaderMap::new();
-        headers.insert("x-ratelimit-remaining-tokens", HeaderValue::from_static("5000"));
+        headers.insert(
+            "x-ratelimit-remaining-tokens",
+            HeaderValue::from_static("5000"),
+        );
         rotator.record_response_headers("groq", &headers);
 
         let s = rotator.providers.get("groq").unwrap();
@@ -335,7 +341,10 @@ mod tests {
     fn auto_rate_limits_when_remaining_zero() {
         let mut rotator = make_rotator_with(&["groq"]);
         let mut headers = HeaderMap::new();
-        headers.insert("x-ratelimit-remaining-requests", HeaderValue::from_static("0"));
+        headers.insert(
+            "x-ratelimit-remaining-requests",
+            HeaderValue::from_static("0"),
+        );
         rotator.record_response_headers("groq", &headers);
 
         let s = rotator.providers.get("groq").unwrap();
@@ -431,8 +440,7 @@ mod tests {
 
         // Rate-limit groq with a reset time far in the future
         rotator.record_rate_limit("groq");
-        rotator.providers.get_mut("groq").unwrap().rate_limit_reset =
-            Some(u64::MAX);
+        rotator.providers.get_mut("groq").unwrap().rate_limit_reset = Some(u64::MAX);
 
         let p = rotator.next_healthy_provider().unwrap();
         assert_eq!(p.id, "cerebras", "groq should still be skipped");
@@ -504,8 +512,14 @@ mod tests {
     fn multiple_headers_parsed_together() {
         let mut rotator = make_rotator_with(&["groq"]);
         let mut headers = HeaderMap::new();
-        headers.insert("x-ratelimit-remaining-requests", HeaderValue::from_static("10"));
-        headers.insert("x-ratelimit-remaining-tokens", HeaderValue::from_static("3000"));
+        headers.insert(
+            "x-ratelimit-remaining-requests",
+            HeaderValue::from_static("10"),
+        );
+        headers.insert(
+            "x-ratelimit-remaining-tokens",
+            HeaderValue::from_static("3000"),
+        );
         headers.insert("x-ratelimit-reset", HeaderValue::from_static("1700000000"));
         rotator.record_response_headers("groq", &headers);
 

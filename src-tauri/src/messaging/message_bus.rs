@@ -62,10 +62,7 @@ impl MessageBus {
 
     /// Subscribe an agent to a topic.
     pub fn subscribe(&mut self, agent_name: &str, topic: &str) {
-        let subscribers = self
-            .subscriptions
-            .entry(topic.to_string())
-            .or_default();
+        let subscribers = self.subscriptions.entry(topic.to_string()).or_default();
         if !subscribers.contains(&agent_name.to_string()) {
             subscribers.push(agent_name.to_string());
         }
@@ -82,7 +79,12 @@ impl MessageBus {
     }
 
     /// Publish a message to a topic. Fans out to all subscribers except the sender.
-    pub fn publish(&mut self, sender: &str, topic: &str, payload: serde_json::Value) -> AgentMessage {
+    pub fn publish(
+        &mut self,
+        sender: &str,
+        topic: &str,
+        payload: serde_json::Value,
+    ) -> AgentMessage {
         let msg = AgentMessage::new(sender, topic, payload);
 
         if let Some(subscribers) = self.subscriptions.get(topic) {
@@ -105,17 +107,12 @@ impl MessageBus {
 
     /// Get and drain unread messages for an agent.
     pub fn get_messages(&mut self, agent_name: &str) -> Vec<AgentMessage> {
-        self.inboxes
-            .remove(agent_name)
-            .unwrap_or_default()
+        self.inboxes.remove(agent_name).unwrap_or_default()
     }
 
     /// Peek at messages without draining.
     pub fn peek_messages(&self, agent_name: &str) -> Vec<AgentMessage> {
-        self.inboxes
-            .get(agent_name)
-            .cloned()
-            .unwrap_or_default()
+        self.inboxes.get(agent_name).cloned().unwrap_or_default()
     }
 
     /// List all subscriptions for an agent.
@@ -134,18 +131,12 @@ impl MessageBus {
 
     /// List all subscribers for a topic.
     pub fn subscribers_for(&self, topic: &str) -> Vec<String> {
-        self.subscriptions
-            .get(topic)
-            .cloned()
-            .unwrap_or_default()
+        self.subscriptions.get(topic).cloned().unwrap_or_default()
     }
 
     /// Get total pending message count for an agent.
     pub fn pending_count(&self, agent_name: &str) -> usize {
-        self.inboxes
-            .get(agent_name)
-            .map(|v| v.len())
-            .unwrap_or(0)
+        self.inboxes.get(agent_name).map(|v| v.len()).unwrap_or(0)
     }
 }
 

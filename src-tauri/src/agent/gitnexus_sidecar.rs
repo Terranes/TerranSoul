@@ -32,8 +32,8 @@
 //!
 //! See `docs/brain-advanced-design.md` § Phase 13 — GitNexus Code-Intelligence.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -226,10 +226,11 @@ impl GitNexusSidecar {
             },
         });
         let result = self.call_raw("initialize", Some(params)).await?;
-        let parsed: InitializeResult = serde_json::from_value(result)
-            .map_err(|e| GitNexusError::Handshake(e.to_string()))?;
+        let parsed: InitializeResult =
+            serde_json::from_value(result).map_err(|e| GitNexusError::Handshake(e.to_string()))?;
         // Send the spec-mandated `notifications/initialized` follow-up.
-        self.send_notification("notifications/initialized", None).await?;
+        self.send_notification("notifications/initialized", None)
+            .await?;
         *self.initialized.lock().await = true;
         Ok(parsed)
     }
@@ -275,11 +276,8 @@ impl GitNexusSidecar {
         from_ref: &str,
         to_ref: &str,
     ) -> Result<Value, GitNexusError> {
-        self.call_tool(
-            "detect_changes",
-            json!({ "from": from_ref, "to": to_ref }),
-        )
-        .await
+        self.call_tool("detect_changes", json!({ "from": from_ref, "to": to_ref }))
+            .await
     }
 
     /// `graph` — export the structured knowledge graph (nodes + typed
@@ -355,8 +353,8 @@ impl GitNexusSidecar {
             method,
             params,
         };
-        let line = serde_json::to_string(&notif)
-            .map_err(|e| GitNexusError::InvalidJson(e.to_string()))?;
+        let line =
+            serde_json::to_string(&notif).map_err(|e| GitNexusError::InvalidJson(e.to_string()))?;
         let mut transport = self.transport.lock().await;
         transport.send_line(&line).await
     }
@@ -484,9 +482,10 @@ pub mod mock {
 
         /// Queue a JSON-RPC response object.
         pub async fn push_response(&self, id: u64, result: Value) {
-            self.incoming.lock().await.push_back(
-                json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string(),
-            );
+            self.incoming
+                .lock()
+                .await
+                .push_back(json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string());
         }
 
         /// Queue a JSON-RPC error response.
@@ -556,27 +555,42 @@ mod tests {
         // Simpler: build a fresh mock with pre-queued responses.
         let mock = MockTransport::new();
         mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {"name": "gitnexus", "version": "1.6.0"} })).await;
-        mock.push_response(2, json!({ "answer": "fn parse() lives in src/parser.rs:42" })).await;
+        mock.push_response(
+            2,
+            json!({ "answer": "fn parse() lives in src/parser.rs:42" }),
+        )
+        .await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;
         let result = bridge.query("where is parse?").await.unwrap();
         assert_eq!(result["answer"], "fn parse() lives in src/parser.rs:42");
         // Sanity check we sent exactly: initialize, notifications/initialized, tools/call.
         let sent = sent.lock().await;
-        assert!(sent.is_empty(), "first bridge's `sent` is empty after dropping it");
+        assert!(
+            sent.is_empty(),
+            "first bridge's `sent` is empty after dropping it"
+        );
     }
 
     #[tokio::test]
     async fn initialize_handshake_sends_three_lines() {
         let mock = MockTransport::new();
         let (sent, _) = mock.handles();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         mock.push_response(2, json!({ "answer": "ok" })).await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;
         let _ = bridge.query("hi").await.unwrap();
         let sent = sent.lock().await;
-        assert_eq!(sent.len(), 3, "initialize + initialized notification + tools/call");
+        assert_eq!(
+            sent.len(),
+            3,
+            "initialize + initialized notification + tools/call"
+        );
         assert!(sent[0].contains("\"method\":\"initialize\""));
         assert!(sent[1].contains("\"method\":\"notifications/initialized\""));
         assert!(sent[2].contains("\"method\":\"tools/call\""));
@@ -587,7 +601,11 @@ mod tests {
     async fn second_call_skips_initialize() {
         let mock = MockTransport::new();
         let (sent, _) = mock.handles();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         mock.push_response(2, json!({ "first": true })).await;
         mock.push_response(3, json!({ "second": true })).await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
@@ -604,7 +622,11 @@ mod tests {
     #[tokio::test]
     async fn rpc_error_is_surfaced() {
         let mock = MockTransport::new();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         mock.push_error(2, -32601, "tool not found").await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;
@@ -622,7 +644,11 @@ mod tests {
     async fn notifications_are_skipped() {
         let mock = MockTransport::new();
         // Sidecar emits a stray log notification before its real reply.
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         mock.push_raw(&json!({ "jsonrpc": "2.0", "method": "notifications/log", "params": { "msg": "indexing..." } }).to_string()).await;
         mock.push_response(2, json!({ "ok": true })).await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
@@ -634,7 +660,11 @@ mod tests {
     #[tokio::test]
     async fn id_mismatch_is_skipped_then_matched() {
         let mock = MockTransport::new();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         // Stale response with a wrong id (e.g. left over from a cancelled call)
         // is followed by the real response.
         mock.push_response(99, json!({ "stale": true })).await;
@@ -648,7 +678,11 @@ mod tests {
     #[tokio::test]
     async fn closed_pipe_returns_io_error() {
         let mock = MockTransport::new();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         // No queued response for the tool call → mock will return Ok(None) → EOF.
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;
@@ -659,7 +693,11 @@ mod tests {
     #[tokio::test]
     async fn invalid_json_is_surfaced() {
         let mock = MockTransport::new();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         mock.push_raw("not-a-json-line").await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;
@@ -671,7 +709,11 @@ mod tests {
     async fn query_arguments_are_forwarded_correctly() {
         let mock = MockTransport::new();
         let (sent, _) = mock.handles();
-        mock.push_response(1, json!({ "protocolVersion": "2024-11-05", "serverInfo": {} })).await;
+        mock.push_response(
+            1,
+            json!({ "protocolVersion": "2024-11-05", "serverInfo": {} }),
+        )
+        .await;
         mock.push_response(2, json!({})).await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;

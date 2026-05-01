@@ -484,6 +484,8 @@ import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader'
 import { CharacterAnimator } from '../renderer/character-animator';
 import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender, SITTING_ANIMATION_PATHS } from '../renderer/vrma-manager';
 import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
+import { PoseAnimator, type LlmPoseFrame } from '../renderer/pose-animator';
+import { EmotionPoseBias, type BiasEmotion } from '../renderer/emotion-pose-bias';
 import { createSittingProps, type SittingProps } from '../renderer/props';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
@@ -803,6 +805,8 @@ let currentVrmScene: THREE.Object3D | null = null;
 const animator = new CharacterAnimator();
 const vrmaManager = new VrmaManager();
 const motionPlayer = new LearnedMotionPlayer(vrmaManager);
+const poseAnimator = new PoseAnimator();
+const emotionBias = new EmotionPoseBias();
 let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Sitting chair prop ───────────────────────────────────────────────
@@ -811,6 +815,7 @@ let sittingProps: SittingProps | null = null;
 // Wire VRMA playback state to the animator + toggle chair visibility
 vrmaManager.onPlaybackChange((playing) => {
   animator.setVrmaPlaying(playing);
+  poseAnimator.setVrmaPlaying(playing);
 
   // Show the chair when a sitting animation plays, hide it otherwise.
   if (sittingProps) {
@@ -880,6 +885,18 @@ defineExpose({
       clearExpressionPreview(vrm);
       expressionPreviewTimer = null;
     }, 3000);
+  },
+  /**
+   * Apply an LLM-generated pose frame (chunk 14.16b3). The frame is
+   * additively layered on top of the procedural idle animation; a
+   * VRMA-driven body animation, when active, wins automatically.
+   */
+  playPose(frame: LlmPoseFrame) {
+    poseAnimator.applyFrame(frame);
+  },
+  /** Clear any in-flight LLM pose and fade back to procedural idle. */
+  clearPose() {
+    poseAnimator.reset();
   },
 });
 
@@ -1087,6 +1104,18 @@ onMounted(async () => {
     // Tick VRMA animation mixer (must be before animator.update which calls vrm.update)
     vrmaManager.update(delta);
     animator.update(delta);
+    // Layer the LLM-as-Animator pose blender on top of the procedural
+    // bones written by `animator.update`. Runs after so its additive
+    // offsets sit on the most recent rotation values.
+    poseAnimator.apply(vrmaManager.vrm, delta);
+    // Emotion-reactive procedural pose bias (Chunk 14.16d). Yields
+    // when a baked VRMA clip or an LLM pose is in charge so it never
+    // fights the higher-priority animation source.
+    emotionBias.apply(
+      vrmaManager.vrm,
+      delta,
+      vrmaManager.isPlaying || poseAnimator.isActive,
+    );
     ctx.renderer.render(ctx.scene, ctx.camera);
 
     if (showDebug.value && getRendererInfo) {
@@ -1119,6 +1148,20 @@ watch(
   () => characterStore.state,
   (newState) => {
     animator.setState(newState);
+    // Drive the emotion-reactive procedural pose bias (Chunk 14.16d).
+    // `thinking` / `talking` are body states with no postural mood —
+    // map them to neutral so we don't double-stack with talking gestures.
+    const biasMap: Record<typeof newState, BiasEmotion> = {
+      idle: 'neutral',
+      thinking: 'neutral',
+      talking: 'neutral',
+      happy: 'happy',
+      sad: 'sad',
+      angry: 'angry',
+      relaxed: 'relaxed',
+      surprised: 'surprised',
+    };
+    emotionBias.setEmotion(biasMap[newState] ?? 'neutral', 1);
     // Skip mood auto-play when an explicit motion is active (e.g. LLM said "clapping")
     if (vrmaManager.isMoodSuppressed) return;
     // Idle special-case: use character-gender weighted loop selection.

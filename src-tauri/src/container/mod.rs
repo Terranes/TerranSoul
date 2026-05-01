@@ -128,9 +128,7 @@ pub async fn detect_runtimes() -> RuntimeDetection {
 
 /// Resolve a concrete runtime from a user preference, returning a clear
 /// error if the chosen runtime is unavailable.
-pub async fn resolve_runtime(
-    preference: RuntimePreference,
-) -> Result<ContainerRuntime, String> {
+pub async fn resolve_runtime(preference: RuntimePreference) -> Result<ContainerRuntime, String> {
     let detection = detect_runtimes().await;
     match preference {
         RuntimePreference::Docker => {
@@ -223,7 +221,10 @@ mod tests {
 
     #[test]
     fn preference_to_optional_runtime() {
-        assert_eq!(Option::<ContainerRuntime>::from(RuntimePreference::Auto), None);
+        assert_eq!(
+            Option::<ContainerRuntime>::from(RuntimePreference::Auto),
+            None
+        );
         assert_eq!(
             Option::<ContainerRuntime>::from(RuntimePreference::Docker),
             Some(ContainerRuntime::Docker)

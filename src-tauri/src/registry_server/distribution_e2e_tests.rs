@@ -55,11 +55,7 @@ async fn spawn_upstream_host(
             .get(&name)
             .cloned()
             .ok_or(StatusCode::NOT_FOUND)?;
-        Ok((
-            [(header::CONTENT_TYPE, "application/octet-stream")],
-            bytes,
-        )
-            .into_response())
+        Ok(([(header::CONTENT_TYPE, "application/octet-stream")], bytes).into_response())
     }
 
     let app = Router::new()

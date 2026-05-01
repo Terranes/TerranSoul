@@ -53,7 +53,8 @@ pub fn parse_chunks(markdown: &str) -> Vec<ChunkRow> {
 
 /// First chunk whose status is `not-started`.
 pub fn next_not_started(rows: &[ChunkRow]) -> Option<&ChunkRow> {
-    rows.iter().find(|r| r.status.eq_ignore_ascii_case("not-started"))
+    rows.iter()
+        .find(|r| r.status.eq_ignore_ascii_case("not-started"))
 }
 
 #[cfg(test)]

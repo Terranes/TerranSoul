@@ -140,9 +140,7 @@ impl AnnIndex {
     /// Remove a vector by memory ID.  No-op if the ID is not in the index.
     pub fn remove(&self, id: i64) -> Result<(), String> {
         if self.index.contains(id as u64) {
-            self.index
-                .remove(id as u64)
-                .map_err(|e| e.to_string())?;
+            self.index.remove(id as u64).map_err(|e| e.to_string())?;
             self.bump_dirty();
         }
         Ok(())
@@ -195,9 +193,7 @@ impl AnnIndex {
             self.index
                 .reserve(self.index.size() + 1)
                 .map_err(|e| e.to_string())?;
-            self.index
-                .add(id as u64, emb)
-                .map_err(|e| e.to_string())?;
+            self.index.add(id as u64, emb).map_err(|e| e.to_string())?;
             count += 1;
         }
         self.save()?;
@@ -317,20 +313,16 @@ mod tests {
     #[test]
     fn detect_dimensions_empty_db() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE memories (id INTEGER PRIMARY KEY, embedding BLOB);",
-        )
-        .unwrap();
+        conn.execute_batch("CREATE TABLE memories (id INTEGER PRIMARY KEY, embedding BLOB);")
+            .unwrap();
         assert_eq!(detect_dimensions(&conn), None);
     }
 
     #[test]
     fn detect_dimensions_from_db() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE memories (id INTEGER PRIMARY KEY, embedding BLOB);",
-        )
-        .unwrap();
+        conn.execute_batch("CREATE TABLE memories (id INTEGER PRIMARY KEY, embedding BLOB);")
+            .unwrap();
         // Insert a 4-dim embedding (16 bytes).
         let bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
             .iter()

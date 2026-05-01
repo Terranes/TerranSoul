@@ -38,9 +38,14 @@ pub const CURATED_PREFIXES: &[&str] = &[
 /// debt item to be migrated to a `<prefix>:<value>` shape.
 pub const LEGACY_ALLOW_LIST: &[&str] = &[
     // Phase 0–4 seed tags
-    "user", "assistant", "system",
+    "user",
+    "assistant",
+    "system",
     // Common short tags from the early ingest fixtures
-    "fact", "preference", "todo", "summary",
+    "fact",
+    "preference",
+    "todo",
+    "summary",
 ];
 
 /// Verdict for a single tag. Always informational — never rejects writes.
@@ -81,16 +86,23 @@ impl TagValidation {
 pub fn validate(tag: &str) -> TagValidation {
     let trimmed = tag.trim();
     if trimmed.is_empty() {
-        return TagValidation::NonConforming { reason: NonConformingReason::Empty };
+        return TagValidation::NonConforming {
+            reason: NonConformingReason::Empty,
+        };
     }
 
     // Legacy allow-list (case-insensitive whole-tag match).
-    if LEGACY_ALLOW_LIST.iter().any(|legacy| legacy.eq_ignore_ascii_case(trimmed)) {
+    if LEGACY_ALLOW_LIST
+        .iter()
+        .any(|legacy| legacy.eq_ignore_ascii_case(trimmed))
+    {
         return TagValidation::Legacy;
     }
 
     match trimmed.split_once(':') {
-        None => TagValidation::NonConforming { reason: NonConformingReason::MissingPrefix },
+        None => TagValidation::NonConforming {
+            reason: NonConformingReason::MissingPrefix,
+        },
         Some((prefix, value)) => {
             let prefix_lc = prefix.trim().to_ascii_lowercase();
             // `&'static str` lookup — return the *canonical* casing from the
@@ -106,7 +118,9 @@ pub fn validate(tag: &str) -> TagValidation {
                 Some(p) => {
                     if value.trim().is_empty() {
                         TagValidation::NonConforming {
-                            reason: NonConformingReason::EmptyValue { prefix: p.to_string() },
+                            reason: NonConformingReason::EmptyValue {
+                                prefix: p.to_string(),
+                            },
                         }
                     } else {
                         TagValidation::Curated { prefix: p }
@@ -177,7 +191,11 @@ pub fn category_decay_multiplier(tags_csv: &str) -> f64 {
             }
         }
     }
-    if saw_curated { min_mult } else { DEFAULT }
+    if saw_curated {
+        min_mult
+    } else {
+        DEFAULT
+    }
 }
 
 #[cfg(test)]
@@ -221,7 +239,9 @@ mod tests {
     #[test]
     fn unknown_prefix_is_non_conforming() {
         match validate("color:blue") {
-            TagValidation::NonConforming { reason: NonConformingReason::UnknownPrefix(p) } => {
+            TagValidation::NonConforming {
+                reason: NonConformingReason::UnknownPrefix(p),
+            } => {
                 assert_eq!(p, "color");
             }
             other => panic!("expected UnknownPrefix, got {other:?}"),
@@ -232,14 +252,18 @@ mod tests {
     fn no_separator_and_not_in_allow_list_is_non_conforming() {
         assert!(matches!(
             validate("randomtag"),
-            TagValidation::NonConforming { reason: NonConformingReason::MissingPrefix }
+            TagValidation::NonConforming {
+                reason: NonConformingReason::MissingPrefix
+            }
         ));
     }
 
     #[test]
     fn empty_value_is_non_conforming() {
         match validate("personal:") {
-            TagValidation::NonConforming { reason: NonConformingReason::EmptyValue { prefix } } => {
+            TagValidation::NonConforming {
+                reason: NonConformingReason::EmptyValue { prefix },
+            } => {
                 assert_eq!(prefix, "personal");
             }
             other => panic!("expected EmptyValue, got {other:?}"),
@@ -247,14 +271,26 @@ mod tests {
         // Whitespace value also empty.
         assert!(matches!(
             validate("personal:   "),
-            TagValidation::NonConforming { reason: NonConformingReason::EmptyValue { .. } }
+            TagValidation::NonConforming {
+                reason: NonConformingReason::EmptyValue { .. }
+            }
         ));
     }
 
     #[test]
     fn empty_or_whitespace_tag_is_non_conforming() {
-        assert_eq!(validate(""), TagValidation::NonConforming { reason: NonConformingReason::Empty });
-        assert_eq!(validate("   "), TagValidation::NonConforming { reason: NonConformingReason::Empty });
+        assert_eq!(
+            validate(""),
+            TagValidation::NonConforming {
+                reason: NonConformingReason::Empty
+            }
+        );
+        assert_eq!(
+            validate("   "),
+            TagValidation::NonConforming {
+                reason: NonConformingReason::Empty
+            }
+        );
     }
 
     #[test]

@@ -124,8 +124,7 @@ impl SelfLaunchedRegistry {
             version: FORMAT_VERSION,
             windows: self.windows.clone(),
         };
-        let pretty = serde_json::to_string_pretty(&on_disk)
-            .map_err(std::io::Error::other)?;
+        let pretty = serde_json::to_string_pretty(&on_disk).map_err(std::io::Error::other)?;
         let tmp = self.path.with_extension("tmp");
         std::fs::write(&tmp, pretty.as_bytes())?;
         std::fs::rename(&tmp, &self.path)?;
@@ -218,8 +217,7 @@ mod tests {
     #[test]
     fn corrupt_file_yields_empty_registry() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join(REGISTRY_FILE), "not json")
-            .unwrap();
+        std::fs::write(dir.path().join(REGISTRY_FILE), "not json").unwrap();
         let reg = SelfLaunchedRegistry::load(dir.path());
         assert!(reg.windows().is_empty());
     }

@@ -4,7 +4,7 @@
 /// Ties are broken by site_ord (higher wins).
 use serde::{Deserialize, Serialize};
 
-use super::{CrdtState, SyncOp, HLC, SiteId};
+use super::{CrdtState, SiteId, SyncOp, HLC};
 
 /// A timestamped value.
 #[derive(Debug, Clone, Serialize, Deserialize)]

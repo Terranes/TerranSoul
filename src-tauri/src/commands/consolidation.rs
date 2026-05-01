@@ -31,9 +31,7 @@ pub fn get_idle_status(
     state: tauri::State<'_, AppState>,
     threshold_ms: Option<i64>,
 ) -> Result<serde_json::Value, String> {
-    let threshold = threshold_ms.unwrap_or(
-        crate::memory::consolidation::DEFAULT_IDLE_THRESHOLD_MS,
-    );
+    let threshold = threshold_ms.unwrap_or(crate::memory::consolidation::DEFAULT_IDLE_THRESHOLD_MS);
     Ok(serde_json::json!({
         "idle_ms": state.activity_tracker.idle_ms(),
         "is_idle": state.activity_tracker.is_idle(threshold),

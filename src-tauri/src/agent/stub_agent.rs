@@ -29,17 +29,26 @@ impl StubAgent {
             )
         } else if lower.contains("sad") || lower.contains("bad") || lower.contains("hate") {
             (
-                format!("I'm sorry to hear that. I understand you said: '{}'. I'm here for you!", message),
+                format!(
+                    "I'm sorry to hear that. I understand you said: '{}'. I'm here for you!",
+                    message
+                ),
                 Sentiment::Sad,
             )
         } else if lower.contains("happy") || lower.contains("great") || lower.contains("awesome") {
             (
-                format!("That's wonderful! You said: '{}'. I'm glad things are going well!", message),
+                format!(
+                    "That's wonderful! You said: '{}'. I'm glad things are going well!",
+                    message
+                ),
                 Sentiment::Happy,
             )
         } else {
             (
-                format!("I understand you said: '{}'. I'm still learning, but I'm here to help!", message),
+                format!(
+                    "I understand you said: '{}'. I'm still learning, but I'm here to help!",
+                    message
+                ),
                 Sentiment::Neutral,
             )
         }

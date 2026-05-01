@@ -22,9 +22,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use tauri::State;
 
-use crate::agent::gitnexus_sidecar::{
-    GitNexusError, GitNexusSidecar, SidecarConfig,
-};
+use crate::agent::gitnexus_sidecar::{GitNexusError, GitNexusSidecar, SidecarConfig};
 use crate::memory::gitnexus_mirror::{self, KgPayload, MirrorReport};
 use crate::sandbox::Capability;
 use crate::AppState;
@@ -110,10 +108,7 @@ pub struct SidecarStatus {
 
 /// `gitnexus_query` — natural-language code-intelligence query.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn gitnexus_query(
-    prompt: String,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
+pub async fn gitnexus_query(prompt: String, state: State<'_, AppState>) -> Result<Value, String> {
     let bridge = ensure_bridge(&state).await.map_err(stringify)?;
     bridge.query(&prompt).await.map_err(stringify)
 }
@@ -134,10 +129,7 @@ pub async fn gitnexus_context(
 
 /// `gitnexus_impact` — compute the blast-radius of changing a symbol.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn gitnexus_impact(
-    symbol: String,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
+pub async fn gitnexus_impact(symbol: String, state: State<'_, AppState>) -> Result<Value, String> {
     let bridge = ensure_bridge(&state).await.map_err(stringify)?;
     bridge.impact(&symbol).await.map_err(stringify)
 }
@@ -222,9 +214,8 @@ pub async fn gitnexus_sync(
         None => {
             let bridge = ensure_bridge(&state).await.map_err(stringify)?;
             let raw = bridge.graph(&repo_label).await.map_err(stringify)?;
-            extract_kg_payload(&raw).map_err(|e| {
-                format!("gitnexus_sync: could not parse `graph` response: {e}")
-            })?
+            extract_kg_payload(&raw)
+                .map_err(|e| format!("gitnexus_sync: could not parse `graph` response: {e}"))?
         }
     };
 
@@ -316,13 +307,11 @@ pub async fn gitnexus_list_mirrors(
 fn extract_kg_payload(raw: &Value) -> Result<KgPayload, String> {
     // Shape 1.
     if raw.get("nodes").is_some() || raw.get("edges").is_some() {
-        return serde_json::from_value(raw.clone())
-            .map_err(|e| e.to_string());
+        return serde_json::from_value(raw.clone()).map_err(|e| e.to_string());
     }
     // Shape 2.
     if let Some(graph) = raw.get("graph") {
-        return serde_json::from_value(graph.clone())
-            .map_err(|e| e.to_string());
+        return serde_json::from_value(graph.clone()).map_err(|e| e.to_string());
     }
     // Shape 3 — MCP-standard text content.
     if let Some(arr) = raw.get("content").and_then(|c| c.as_array()) {
@@ -379,8 +368,11 @@ mod tests {
     async fn context_passes_max_results_argument() {
         let mock = MockTransport::new();
         let (sent, _) = mock.handles();
-        mock.push_response(1, json!({"protocolVersion": "2024-11-05", "serverInfo": {}}))
-            .await;
+        mock.push_response(
+            1,
+            json!({"protocolVersion": "2024-11-05", "serverInfo": {}}),
+        )
+        .await;
         mock.push_response(2, json!({"snippets": []})).await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;
@@ -393,8 +385,11 @@ mod tests {
     #[tokio::test]
     async fn impact_propagates_rpc_error() {
         let mock = MockTransport::new();
-        mock.push_response(1, json!({"protocolVersion": "2024-11-05", "serverInfo": {}}))
-            .await;
+        mock.push_response(
+            1,
+            json!({"protocolVersion": "2024-11-05", "serverInfo": {}}),
+        )
+        .await;
         mock.push_error(2, -32602, "missing argument: symbol").await;
         let bridge = GitNexusSidecar::new(Box::new(mock));
         bridge.set_capability(true).await;

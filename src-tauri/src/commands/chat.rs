@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::agent::stub_agent::{Sentiment, StubAgent};
 use crate::agent::AgentProvider;
-use crate::brain::OllamaAgent;
 use crate::brain::brain_config::BrainMode;
 use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
+use crate::brain::OllamaAgent;
 use crate::AppState;
 
 /// System prompt used by `send_message_stream` (streaming LLM).
@@ -28,6 +28,13 @@ Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thi
 Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
 Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
 Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
+
+Body pose (advanced): For subtle posture cues that a VRMA clip cannot express, you may also emit a `<pose>` block:
+<pose>{"head":[0.1,0,0],"spine":[0,0,0.05]}</pose>
+Bones: head, neck, spine, chest, hips, leftUpperArm, rightUpperArm, leftLowerArm, rightLowerArm, leftShoulder, rightShoulder.
+Values are Euler XYZ angles in radians; use small numbers (±0.3 max). The renderer hard-clamps anything beyond ±0.5 rad.
+Optional fields: `duration_s` (0.05–10s, default 2), `easing` ("linear" | "ease-in-out" | "spring", default "spring"), `expression` (face weights 0–1).
+Use `<pose>` only when no `<anim>` motion fits — they don't combine.
 
 Keep responses concise and warm."#;
 
@@ -59,6 +66,70 @@ fn sentiment_str(s: &Sentiment) -> &'static str {
     }
 }
 
+/// Apply the Phase-27 [`crate::brain::context_budget`] budgeter to a
+/// chat prompt: persona is kept verbatim, retrieved memories are
+/// trimmed by score, and old history turns are dropped to stay within
+/// the per-mode token budget. Returns the assembled system prompt
+/// (persona + `[LONG-TERM MEMORY]` block) and the trimmed history.
+///
+/// `relevant` is assumed to be sorted best-first (as
+/// [`crate::memory::MemoryStore::hybrid_search`] returns) — we
+/// synthesise descending scores so the budgeter preserves that order
+/// when it has to drop tail entries.
+pub(super) fn build_budgeted_prompt(
+    base_system: &str,
+    history: &[(String, String)],
+    relevant: &[crate::memory::MemoryEntry],
+    config: &crate::brain::context_budget::BudgetConfig,
+) -> (String, Vec<(String, String)>) {
+    use crate::brain::context_budget::{fit, BudgetInputs, HistoryTurn, RetrievedChunk};
+
+    let total = relevant.len();
+    let inputs = BudgetInputs {
+        persona: base_system.to_string(),
+        history: history
+            .iter()
+            .map(|(r, c)| HistoryTurn {
+                role: r.clone(),
+                content: c.clone(),
+            })
+            .collect(),
+        retrieval: relevant
+            .iter()
+            .enumerate()
+            .map(|(i, e)| RetrievedChunk {
+                content: format!("- [{}] {}", e.tier.as_str(), e.content),
+                // hybrid_search returns best-first; synthesise a
+                // descending score so the budgeter keeps that order
+                // when it has to drop tail entries.
+                score: (total - i) as f64,
+            })
+            .collect(),
+        tools: String::new(),
+    };
+    let result = fit(&inputs, config);
+
+    let mut system = result.persona;
+    if !result.retrieval.is_empty() {
+        let mem_block: String = result
+            .retrieval
+            .iter()
+            .map(|c| c.content.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        system.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
+    let trimmed_history: Vec<(String, String)> = result
+        .history
+        .into_iter()
+        .map(|t| (t.role, t.content))
+        .collect();
+    (system, trimmed_history)
+}
+
 pub async fn process_message(
     message: &str,
     agent_id: Option<&str>,
@@ -85,12 +156,20 @@ pub async fn process_message(
 
     // Clone model name before any await so the MutexGuard is not held across .await.
     let model_opt: Option<String> = {
-        app_state.active_brain.lock().map_err(|e| e.to_string())?.clone()
+        app_state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
     };
 
     // Read brain_mode for free/paid API routing.
     let brain_mode: Option<BrainMode> = {
-        app_state.brain_mode.lock().map_err(|e| e.to_string())?.clone()
+        app_state
+            .brain_mode
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
     };
 
     // Build conversation history (needed for all LLM paths).
@@ -106,11 +185,18 @@ pub async fn process_message(
 
     // Route through the configured brain mode, then legacy active_brain, then stub.
     let (agent_name, content, sentiment) = match brain_mode {
-        Some(BrainMode::FreeApi { provider_id, api_key }) => {
+        Some(BrainMode::FreeApi {
+            provider_id,
+            api_key,
+        }) => {
             // Use the free provider's OpenAI-compatible API (non-streaming).
             let effective_provider_id = {
-                let mut rotator = app_state.provider_rotator.lock().map_err(|e| e.to_string())?;
-                rotator.next_healthy_provider()
+                let mut rotator = app_state
+                    .provider_rotator
+                    .lock()
+                    .map_err(|e| e.to_string())?;
+                rotator
+                    .next_healthy_provider()
                     .map(|p| p.id.clone())
                     .unwrap_or(provider_id)
             };
@@ -119,52 +205,71 @@ pub async fn process_message(
             let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
 
             // RAG: hybrid search (keyword + recency + importance + decay)
-            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
             let relevant: Vec<crate::memory::MemoryEntry> = {
                 match app_state.memory_store.lock() {
                     Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
                     Err(_) => vec![],
                 }
             };
-            if !relevant.is_empty() {
-                let mem_block: String = relevant.iter().map(|e| format!("- [{}] {}", e.tier.as_str(), e.content)).collect::<Vec<_>>().join("\n");
-                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
-            }
+            let (system, history) = build_budgeted_prompt(
+                SYSTEM_PROMPT_FOR_STREAMING,
+                &history,
+                &relevant,
+                &crate::brain::context_budget::BudgetConfig::for_free_mode(),
+            );
 
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
                 content: system,
             }];
             for (role, c) in &history {
-                msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
+                msgs.push(OpenAiMessage {
+                    role: role.clone(),
+                    content: c.clone(),
+                });
             }
-            let text = client.chat(msgs).await.map_err(|e| format!("Free API error: {e}"))?;
+            let text = client
+                .chat(msgs)
+                .await
+                .map_err(|e| format!("Free API error: {e}"))?;
             ("TerranSoul".to_string(), text, Sentiment::Neutral)
         }
-        Some(BrainMode::PaidApi { api_key, model, base_url, .. }) => {
+        Some(BrainMode::PaidApi {
+            api_key,
+            model,
+            base_url,
+            ..
+        }) => {
             let client = OpenAiClient::new(&base_url, &model, Some(&api_key));
 
             // RAG: hybrid search (keyword + recency + importance + decay)
-            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
             let relevant: Vec<crate::memory::MemoryEntry> = {
                 match app_state.memory_store.lock() {
                     Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
                     Err(_) => vec![],
                 }
             };
-            if !relevant.is_empty() {
-                let mem_block: String = relevant.iter().map(|e| format!("- [{}] {}", e.tier.as_str(), e.content)).collect::<Vec<_>>().join("\n");
-                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
-            }
+            let (system, history) = build_budgeted_prompt(
+                SYSTEM_PROMPT_FOR_STREAMING,
+                &history,
+                &relevant,
+                &crate::brain::context_budget::BudgetConfig::for_paid_mode(),
+            );
 
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
                 content: system,
             }];
             for (role, c) in &history {
-                msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
+                msgs.push(OpenAiMessage {
+                    role: role.clone(),
+                    content: c.clone(),
+                });
             }
-            let text = client.chat(msgs).await.map_err(|e| format!("Paid API error: {e}"))?;
+            let text = client
+                .chat(msgs)
+                .await
+                .map_err(|e| format!("Paid API error: {e}"))?;
             ("TerranSoul".to_string(), text, Sentiment::Neutral)
         }
         Some(BrainMode::LocalLmStudio {
@@ -175,7 +280,6 @@ pub async fn process_message(
         }) => {
             let client = OpenAiClient::new(&base_url, &model, api_key.as_deref());
 
-            let mut system = SYSTEM_PROMPT_FOR_STREAMING.to_string();
             let query_emb = crate::brain::embed_for_mode(
                 message,
                 Some(&BrainMode::LocalLmStudio {
@@ -195,14 +299,12 @@ pub async fn process_message(
                     Err(_) => vec![],
                 }
             };
-            if !relevant.is_empty() {
-                let mem_block: String = relevant
-                    .iter()
-                    .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                system.push_str(&format!("\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"));
-            }
+            let (system, history) = build_budgeted_prompt(
+                SYSTEM_PROMPT_FOR_STREAMING,
+                &history,
+                &relevant,
+                &crate::brain::context_budget::BudgetConfig::for_local_mode(),
+            );
 
             let mut msgs = vec![OpenAiMessage {
                 role: "system".to_string(),
@@ -225,12 +327,16 @@ pub async fn process_message(
                 let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
                 mem_store.get_all().unwrap_or_default()
             };
-            let memories: Vec<String> =
-                crate::memory::brain_memory::semantic_search_entries(&model, message, &memory_entries, 5)
-                    .await
-                    .into_iter()
-                    .map(|e| e.content)
-                    .collect();
+            let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
+                &model,
+                message,
+                &memory_entries,
+                5,
+            )
+            .await
+            .into_iter()
+            .map(|e| e.content)
+            .collect();
             let agent = OllamaAgent::new(&model);
             let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
             (agent.name().to_string(), text, sent)
@@ -242,12 +348,16 @@ pub async fn process_message(
                     let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
                     mem_store.get_all().unwrap_or_default()
                 };
-                let memories: Vec<String> =
-                    crate::memory::brain_memory::semantic_search_entries(model, message, &memory_entries, 5)
-                        .await
-                        .into_iter()
-                        .map(|e| e.content)
-                        .collect();
+                let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
+                    model,
+                    message,
+                    &memory_entries,
+                    5,
+                )
+                .await
+                .into_iter()
+                .map(|e| e.content)
+                .collect();
                 let agent = OllamaAgent::new(model);
                 let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
                 (agent.name().to_string(), text, sent)
@@ -307,8 +417,7 @@ pub async fn get_conversation(state: State<'_, AppState>) -> Result<Vec<Message>
 #[tauri::command]
 pub async fn export_chat_log(state: State<'_, AppState>) -> Result<String, String> {
     let conversation = state.conversation.lock().map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&*conversation)
-        .map_err(|e| format!("Failed to serialize: {e}"))
+    serde_json::to_string_pretty(&*conversation).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 #[cfg(test)]

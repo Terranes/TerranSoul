@@ -176,10 +176,9 @@ pub fn write_vscode_config(
     Ok(SetupResult {
         success: true,
         config_path: path.display().to_string(),
-        message:
-            "VS Code MCP config written. Restart VS Code to activate. \
+        message: "VS Code MCP config written. Restart VS Code to activate. \
              Test with: @workspace use terransoul-brain to search memories"
-                .to_string(),
+            .to_string(),
     })
 }
 
@@ -195,9 +194,8 @@ pub fn write_vscode_stdio_config(
     Ok(SetupResult {
         success: true,
         config_path: path.display().to_string(),
-        message:
-            "VS Code MCP config written (stdio transport). Restart VS Code to activate."
-                .to_string(),
+        message: "VS Code MCP config written (stdio transport). Restart VS Code to activate."
+            .to_string(),
     })
 }
 
@@ -205,8 +203,8 @@ pub fn write_vscode_stdio_config(
 ///
 /// Merges into existing config, preserving other MCP servers.
 pub fn write_claude_config(url: &str, token: &str) -> Result<SetupResult, String> {
-    let path = claude_desktop_config_path()
-        .ok_or("could not determine Claude Desktop config path")?;
+    let path =
+        claude_desktop_config_path().ok_or("could not determine Claude Desktop config path")?;
     upsert_entry(&path, "mcpServers", build_claude_entry(url, token))?;
     Ok(SetupResult {
         success: true,
@@ -217,8 +215,8 @@ pub fn write_claude_config(url: &str, token: &str) -> Result<SetupResult, String
 
 /// Write the Claude Desktop config using the **stdio** transport.
 pub fn write_claude_stdio_config(exe_path: &str) -> Result<SetupResult, String> {
-    let path = claude_desktop_config_path()
-        .ok_or("could not determine Claude Desktop config path")?;
+    let path =
+        claude_desktop_config_path().ok_or("could not determine Claude Desktop config path")?;
     upsert_entry(&path, "mcpServers", build_claude_stdio_entry(exe_path))?;
     Ok(SetupResult {
         success: true,
@@ -230,8 +228,7 @@ pub fn write_claude_stdio_config(exe_path: &str) -> Result<SetupResult, String> 
 
 /// Write the Codex CLI config.
 pub fn write_codex_config(url: &str, token: &str) -> Result<SetupResult, String> {
-    let path =
-        codex_config_path().ok_or("could not determine Codex config path")?;
+    let path = codex_config_path().ok_or("could not determine Codex config path")?;
     upsert_entry(&path, "mcpServers", build_codex_entry(url, token))?;
     Ok(SetupResult {
         success: true,
@@ -242,8 +239,7 @@ pub fn write_codex_config(url: &str, token: &str) -> Result<SetupResult, String>
 
 /// Write the Codex CLI config using the **stdio** transport.
 pub fn write_codex_stdio_config(exe_path: &str) -> Result<SetupResult, String> {
-    let path =
-        codex_config_path().ok_or("could not determine Codex config path")?;
+    let path = codex_config_path().ok_or("could not determine Codex config path")?;
     upsert_entry(&path, "mcpServers", build_codex_stdio_entry(exe_path))?;
     Ok(SetupResult {
         success: true,
@@ -262,15 +258,14 @@ pub fn remove_vscode_config(workspace_root: &Path) -> Result<SetupResult, String
 
 /// Remove the terransoul-brain entry from Claude Desktop config.
 pub fn remove_claude_config() -> Result<SetupResult, String> {
-    let path = claude_desktop_config_path()
-        .ok_or("could not determine Claude Desktop config path")?;
+    let path =
+        claude_desktop_config_path().ok_or("could not determine Claude Desktop config path")?;
     remove_entry_from_json(&path, &["mcpServers", entry_name()])
 }
 
 /// Remove the terransoul-brain entry from Codex CLI config.
 pub fn remove_codex_config() -> Result<SetupResult, String> {
-    let path =
-        codex_config_path().ok_or("could not determine Codex config path")?;
+    let path = codex_config_path().ok_or("could not determine Codex config path")?;
     remove_entry_from_json(&path, &["mcpServers", entry_name()])
 }
 
@@ -281,12 +276,11 @@ fn read_json_or_empty(path: &Path) -> Result<Value, String> {
     if !path.exists() {
         return Ok(json!({}));
     }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    let raw =
+        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
     // Strip JSON comments (VS Code supports JSONC)
     let stripped = strip_json_comments(&raw);
-    serde_json::from_str(&stripped)
-        .map_err(|e| format!("failed to parse {}: {e}", path.display()))
+    serde_json::from_str(&stripped).map_err(|e| format!("failed to parse {}: {e}", path.display()))
 }
 
 /// Write JSON to a file atomically (temp file + rename).
@@ -302,8 +296,13 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<(), String> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, pretty.as_bytes())
         .map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, path)
-        .map_err(|e| format!("failed to rename {} → {}: {e}", tmp.display(), path.display()))?;
+    fs::rename(&tmp, path).map_err(|e| {
+        format!(
+            "failed to rename {} → {}: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
 
     Ok(())
 }
@@ -577,7 +576,10 @@ mod tests {
         assert_eq!(entry["type"], "stdio");
         assert_eq!(entry["command"], TEST_EXE);
         assert!(entry.get("url").is_none(), "stale http url leaked: {entry}");
-        assert!(entry.get("headers").is_none(), "stale headers leaked: {entry}");
+        assert!(
+            entry.get("headers").is_none(),
+            "stale headers leaked: {entry}"
+        );
     }
 
     #[test]
@@ -690,7 +692,10 @@ mod tests {
         write_vscode_config(tmp.path(), TEST_URL, TEST_TOKEN).unwrap();
 
         let statuses = list_client_status(tmp.path());
-        let vscode = statuses.iter().find(|s| s.client.contains("VS Code")).unwrap();
+        let vscode = statuses
+            .iter()
+            .find(|s| s.client.contains("VS Code"))
+            .unwrap();
         assert!(vscode.configured);
     }
 
@@ -698,7 +703,10 @@ mod tests {
     fn list_client_status_detects_unconfigured() {
         let tmp = TempDir::new().unwrap();
         let statuses = list_client_status(tmp.path());
-        let vscode = statuses.iter().find(|s| s.client.contains("VS Code")).unwrap();
+        let vscode = statuses
+            .iter()
+            .find(|s| s.client.contains("VS Code"))
+            .unwrap();
         assert!(!vscode.configured);
     }
 
@@ -716,8 +724,7 @@ mod tests {
         config["mcpServers"][entry_name()] = build_claude_entry(TEST_URL, TEST_TOKEN);
         atomic_write_json(&path, &config).unwrap();
 
-        let read_back: Value =
-            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let read_back: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(read_back["mcpServers"][entry_name()]["url"], TEST_URL);
     }
 

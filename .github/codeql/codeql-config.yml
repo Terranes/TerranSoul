@@ -1,0 +1,17 @@
+name: "TerranSoul CodeQL config"
+
+# Restrict analysis to actual source directories so the Rust job does not
+# crawl generated/compiled output (target/, dist/, node_modules/) and
+# avoids the "stuck autobuild" symptom seen with the Advanced Security
+# default setup on Tauri projects.
+paths:
+  - src
+  - src-tauri/src
+
+paths-ignore:
+  - node_modules
+  - dist
+  - src-tauri/target
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
+  - "**/*.test.rs"

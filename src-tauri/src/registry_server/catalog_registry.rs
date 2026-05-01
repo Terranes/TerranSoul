@@ -15,9 +15,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 use super::catalog;
-use crate::package_manager::{
-    AgentManifest, RegistryError, RegistrySource,
-};
+use crate::package_manager::{AgentManifest, RegistryError, RegistrySource};
 
 /// In-process registry source backed by the static catalog.
 pub struct CatalogRegistry {
@@ -76,8 +74,7 @@ impl RegistrySource for CatalogRegistry {
             self.manifests
                 .values()
                 .filter(|m| {
-                    m.name.to_lowercase().contains(&q)
-                        || m.description.to_lowercase().contains(&q)
+                    m.name.to_lowercase().contains(&q) || m.description.to_lowercase().contains(&q)
                 })
                 .cloned()
                 .collect()
@@ -96,7 +93,10 @@ mod tests {
     async fn empty_query_returns_full_catalog() {
         let reg = CatalogRegistry::new();
         let results = reg.search("").await.unwrap();
-        assert!(results.len() >= 3, "catalog should contain at least 3 agents");
+        assert!(
+            results.len() >= 3,
+            "catalog should contain at least 3 agents"
+        );
         let names: Vec<_> = results.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"stub-agent"));
         assert!(names.contains(&"openclaw-bridge"));
@@ -140,7 +140,10 @@ mod tests {
         // instead of opaque placeholder bytes.
         let reg = CatalogRegistry::new();
         let bytes = reg.download_binary("stub-agent", "1.0.0").await.unwrap();
-        assert!(bytes.is_empty(), "built-in agents have no downloadable binary");
+        assert!(
+            bytes.is_empty(),
+            "built-in agents have no downloadable binary"
+        );
     }
 
     #[tokio::test]

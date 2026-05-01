@@ -50,8 +50,8 @@ pub fn save(data_dir: &Path, settings: &AppSettings) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::CURRENT_SCHEMA_VERSION;
+    use super::*;
     use tempfile::tempdir;
 
     #[test]
@@ -82,12 +82,17 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -131,12 +136,17 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -165,12 +175,17 @@ mod tests {
             relevance_threshold: crate::settings::DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         save(dir.path(), &s).unwrap();
 
@@ -197,11 +212,17 @@ mod tests {
         let mut positions = std::collections::HashMap::new();
         positions.insert(
             "shinra".to_string(),
-            super::super::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+            super::super::ModelCameraPosition {
+                azimuth: 0.5,
+                distance: 3.0,
+            },
         );
         positions.insert(
             "komori".to_string(),
-            super::super::ModelCameraPosition { azimuth: 1.2, distance: 2.5 },
+            super::super::ModelCameraPosition {
+                azimuth: 1.2,
+                distance: 2.5,
+            },
         );
         let s = AppSettings {
             model_camera_positions: positions,

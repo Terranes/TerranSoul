@@ -298,6 +298,67 @@ DROP TABLE IF EXISTS memory_conflicts;
 ALTER TABLE memories DROP COLUMN valid_to;
 "#,
     },
+    // ── V10: Obsidian sync metadata (Chunk 17.7b) ──────────────────────
+    //
+    // Adds bidirectional-sync tracking columns to `memories`:
+    //
+    // - `obsidian_path` — the relative path of the Markdown file inside
+    //   the user's Obsidian vault (e.g. `daily/2026-04-30.md`). NULL
+    //   means the entry has never been exported.
+    // - `last_exported` — Unix-ms timestamp of the most recent successful
+    //   write to the vault. NULL means never exported. Used together
+    //   with the file-watcher in chunk 17.7 (bidirectional sync) for LWW
+    //   conflict resolution: if the .md file's mtime > `last_exported`,
+    //   the file was edited externally and the memory should be updated
+    //   from disk.
+    //
+    // No new index — `obsidian_path` is queried by the export pass on a
+    // small (<1 % of memories) subset; full-table-scan is acceptable.
+    //
+    // See `docs/brain-advanced-design.md` §8 (On-Disk Schema & Storage
+    // Layout) and Chunk 17.7 (bidirectional Obsidian sync).
+    Migration {
+        version: 10,
+        description: "obsidian sync metadata: obsidian_path + last_exported on memories",
+        up: r#"
+ALTER TABLE memories ADD COLUMN obsidian_path TEXT;
+ALTER TABLE memories ADD COLUMN last_exported INTEGER;
+"#,
+        down: r#"
+ALTER TABLE memories DROP COLUMN last_exported;
+ALTER TABLE memories DROP COLUMN obsidian_path;
+"#,
+    },
+    // ── V11: Category column for taxonomy enforcement (Chunk 17.8) ─────
+    //
+    // Adds a dedicated `category` TEXT column to `memories` (vs the
+    // current convention of encoding category as a `category:` tag
+    // prefix). The column is nullable to keep the migration cheap and
+    // back-compatible — entries without a category continue to rely on
+    // tag-prefix lookup. New entries written through `add_memory_v2`
+    // (chunk 17.8 follow-up) will populate the column.
+    //
+    // The companion index `idx_memories_category` makes
+    // "all memories in category X" a B-tree range scan.
+    //
+    // No backfill in this migration — that runs lazily on first read
+    // (or via a one-shot Rust pass triggered from the brain
+    // maintenance scheduler).
+    //
+    // See `docs/brain-advanced-design.md` §3 "Proposed Category
+    // Taxonomy".
+    Migration {
+        version: 11,
+        description: "taxonomy enforcement: category column + index on memories",
+        up: r#"
+ALTER TABLE memories ADD COLUMN category TEXT;
+CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_memories_category;
+ALTER TABLE memories DROP COLUMN category;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -461,20 +522,16 @@ mod tests {
 
         // New columns should exist and default to NULL.
         let emb: Option<Vec<u8>> = conn
-            .query_row(
-                "SELECT embedding FROM memories WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT embedding FROM memories WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(emb.is_none());
 
         let src: Option<String> = conn
-            .query_row(
-                "SELECT source_url FROM memories WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT source_url FROM memories WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(src.is_none());
     }
@@ -498,21 +555,17 @@ mod tests {
 
         // Data still there.
         let content: String = conn
-            .query_row(
-                "SELECT content FROM memories WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT content FROM memories WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(content, "important");
 
         // embedding column should not exist.
         let has_embedding = conn
-            .query_row(
-                "SELECT embedding FROM memories WHERE id = 1",
-                [],
-                |r| r.get::<_, Option<Vec<u8>>>(0),
-            )
+            .query_row("SELECT embedding FROM memories WHERE id = 1", [], |r| {
+                r.get::<_, Option<Vec<u8>>>(0)
+            })
             .is_ok();
         assert!(!has_embedding);
     }
@@ -550,7 +603,7 @@ mod tests {
 
         let status = migration_status(&conn).unwrap();
         assert_eq!(status.len(), MIGRATIONS.len());
-        assert!(status[0].2);  // V1 applied
+        assert!(status[0].2); // V1 applied
         assert!(!status[1].2); // V2 not yet
     }
 
@@ -577,16 +630,23 @@ mod tests {
     #[test]
     fn migrations_are_sequential() {
         for (i, m) in MIGRATIONS.iter().enumerate() {
-            assert_eq!(m.version, (i + 1) as i64, "migration versions must be sequential");
+            assert_eq!(
+                m.version,
+                (i + 1) as i64,
+                "migration versions must be sequential"
+            );
         }
     }
 
     #[test]
-    fn target_version_is_v9() {
+    fn target_version_is_v11() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
-        assert_eq!(TARGET_VERSION, 9, "V9 is the current contradiction-resolution schema");
+        assert_eq!(
+            TARGET_VERSION, 11,
+            "V11 is the current category-column schema"
+        );
     }
 
     #[test]
@@ -602,10 +662,8 @@ mod tests {
         downgrade_to(&conn, 7).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 7);
 
-        conn.execute_batch(
-            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
-        )
-        .unwrap();
+        conn.execute_batch("INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);")
+            .unwrap();
         conn.execute(
             "INSERT INTO memory_edges
                 (src_id, dst_id, rel_type, confidence, source, created_at,
@@ -626,11 +684,9 @@ mod tests {
         downgrade_to(&conn, 6).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 6);
         let n: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM memory_edges WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(n, 1, "edge row must survive V7→V6 downgrade");
 
@@ -661,43 +717,202 @@ mod tests {
         assert_eq!(get_version(&conn).unwrap(), 6);
 
         // Need two memories first (FK).
-        conn.execute_batch(
-            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
-        ).unwrap();
+        conn.execute_batch("INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);")
+            .unwrap();
         conn.execute(
             "INSERT INTO memory_edges
                 (src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to)
              VALUES (1, 2, 'rel', 1.0, 'user', 0, 100, 200);",
             [],
-        ).unwrap();
-        let (vf, vt): (Option<i64>, Option<i64>) = conn.query_row(
-            "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).unwrap();
+        )
+        .unwrap();
+        let (vf, vt): (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!(vf, Some(100));
         assert_eq!(vt, Some(200));
 
         // Downgrade to V5: drop columns, the underlying edge row must survive.
         downgrade_to(&conn, 5).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 5);
-        let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_edges WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(n, 1, "edge row must survive V6→V5 downgrade");
 
         // Re-upgrade: V6 columns return as NULL on the existing row
         // (default for ALTER TABLE … ADD COLUMN with no default).
         migrate_to_latest(&conn).unwrap();
         assert_eq!(get_version(&conn).unwrap(), TARGET_VERSION);
-        let (vf2, vt2): (Option<i64>, Option<i64>) = conn.query_row(
-            "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).unwrap();
+        let (vf2, vt2): (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!(vf2, None, "ALTER ADD COLUMN should default to NULL");
         assert_eq!(vt2, None);
+    }
+
+    // ── V10: Obsidian sync metadata (Chunk 17.7b) ──────────────────────
+
+    #[test]
+    fn v10_adds_obsidian_sync_columns() {
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        assert!(get_version(&conn).unwrap() >= 10);
+
+        // Both columns must exist and accept NULL + non-NULL values.
+        conn.execute(
+            "INSERT INTO memories
+                (content, created_at, obsidian_path, last_exported)
+             VALUES ('exported', 1000, 'daily/2026-04-30.md', 1700000000000)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memories
+                (content, created_at, obsidian_path, last_exported)
+             VALUES ('not-exported', 2000, NULL, NULL)",
+            [],
+        )
+        .unwrap();
+
+        let (path, ts): (Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT obsidian_path, last_exported FROM memories WHERE content = 'exported'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(path.as_deref(), Some("daily/2026-04-30.md"));
+        assert_eq!(ts, Some(1_700_000_000_000));
+    }
+
+    #[test]
+    fn v10_round_trip_drops_columns_and_preserves_rows() {
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        // Insert with V10 columns populated.
+        conn.execute(
+            "INSERT INTO memories
+                (content, created_at, obsidian_path, last_exported)
+             VALUES ('a', 1, 'inbox/a.md', 100)",
+            [],
+        )
+        .unwrap();
+        // Down to V9 — columns dropped, row survives.
+        downgrade_to(&conn, 9).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 9);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memories WHERE content = 'a'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "row survives V10→V9 downgrade");
+        // Re-upgrade — columns return as NULL on the existing row.
+        migrate_to_latest(&conn).unwrap();
+        let (path, ts): (Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT obsidian_path, last_exported FROM memories WHERE content = 'a'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            path, None,
+            "ALTER ADD COLUMN defaults to NULL on re-upgrade"
+        );
+        assert_eq!(ts, None);
+    }
+
+    // ── V11: Category column (Chunk 17.8) ──────────────────────────────
+
+    #[test]
+    fn v11_adds_category_column_and_index() {
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        assert!(get_version(&conn).unwrap() >= 11);
+
+        // Column accepts values.
+        conn.execute(
+            "INSERT INTO memories (content, created_at, category)
+             VALUES ('vietnamese-law-fact', 100, 'law')",
+            [],
+        )
+        .unwrap();
+        let cat: Option<String> = conn
+            .query_row(
+                "SELECT category FROM memories WHERE content = 'vietnamese-law-fact'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cat.as_deref(), Some("law"));
+
+        // Index exists — using EXPLAIN QUERY PLAN to confirm it's used.
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM memories WHERE category = 'law'",
+                [],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(
+            plan.contains("idx_memories_category"),
+            "category lookup should hit the index: plan was {plan}"
+        );
+    }
+
+    #[test]
+    fn v11_round_trip_drops_column_and_index() {
+        let conn = fresh_conn();
+        migrate_to_latest(&conn).unwrap();
+        // Insert with category populated.
+        conn.execute(
+            "INSERT INTO memories (content, created_at, category)
+             VALUES ('a', 1, 'preference')",
+            [],
+        )
+        .unwrap();
+        // Down to V10 — column + index dropped, row survives.
+        downgrade_to(&conn, 10).unwrap();
+        assert_eq!(get_version(&conn).unwrap(), 10);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memories WHERE content = 'a'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "row survives V11→V10 downgrade");
+        // The index must also be gone — no row in sqlite_master.
+        let idx: Option<String> = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_memories_category'",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
+        assert!(idx.is_none(), "category index dropped on V11→V10 downgrade");
+        // Re-upgrade — column returns as NULL.
+        migrate_to_latest(&conn).unwrap();
+        let cat: Option<String> = conn
+            .query_row(
+                "SELECT category FROM memories WHERE content = 'a'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cat, None);
     }
 }

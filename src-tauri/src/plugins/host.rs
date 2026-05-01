@@ -7,11 +7,11 @@
 //! - WASM plugins run inside the existing `WasmRunner` sandbox.
 //! - The host persists installed plugin state to `<data_dir>/plugins/`.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 use super::manifest::{
     ActivationEvent, ContributedCommand, ContributedSlashCommand, ContributedTheme,
@@ -268,7 +268,11 @@ impl PluginHost {
         let mut to_activate = Vec::new();
         for (id, plugin) in &inner.plugins {
             if plugin.state == PluginState::Installed
-                && plugin.manifest.activation_events.iter().any(|e| matches_event(e, event))
+                && plugin
+                    .manifest
+                    .activation_events
+                    .iter()
+                    .any(|e| matches_event(e, event))
             {
                 to_activate.push(id.clone());
             }
@@ -299,6 +303,61 @@ impl PluginHost {
             total_slash_commands: inner.slash_commands.len(),
             total_themes: inner.themes.len(),
         }
+    }
+
+    /// Invoke a contributed command by its `command_id`.
+    ///
+    /// **Chunk 22.4** — for now this resolves the `command_id` to a
+    /// `CommandEntry` and returns the command's metadata as a
+    /// [`CommandResult`] success payload. The full execution path
+    /// (sidecar / WASM / native) lands in Chunk 22.7. Until then this
+    /// gives the frontend a stable IPC surface and lets ChatView
+    /// surface plugin slash-commands without crashing.
+    ///
+    /// Returns `Err` if the command is not registered (i.e. no active
+    /// plugin contributes it).
+    pub async fn invoke_command(
+        &self,
+        command_id: &str,
+        args: Option<serde_json::Value>,
+    ) -> Result<CommandResult, String> {
+        let inner = self.inner.read().await;
+        let entry = inner
+            .commands
+            .get(command_id)
+            .ok_or_else(|| format!("unknown command: {command_id}"))?;
+        // Stub execution: echo the command's title and any args back.
+        let mut output = format!("[{}] {}", entry.plugin_id, entry.command.title,);
+        if let Some(a) = args {
+            output.push_str(&format!(" — args: {a}"));
+        }
+        Ok(CommandResult {
+            success: true,
+            output: Some(output),
+            error: None,
+        })
+    }
+
+    /// Invoke a slash-command by its bare name (without `/`).
+    ///
+    /// Resolves the name → `SlashCommandEntry` → `command_id` → calls
+    /// [`Self::invoke_command`]. Returns `Err` when the name is not
+    /// registered by any active plugin.
+    pub async fn invoke_slash_command(
+        &self,
+        name: &str,
+        args: Option<serde_json::Value>,
+    ) -> Result<CommandResult, String> {
+        // Hold the read lock only long enough to resolve the name.
+        let command_id = {
+            let inner = self.inner.read().await;
+            inner
+                .slash_commands
+                .get(name)
+                .map(|e| e.slash_command.command_id.clone())
+                .ok_or_else(|| format!("unknown slash-command: /{name}"))?
+        };
+        self.invoke_command(&command_id, args).await
     }
 }
 
@@ -351,22 +410,17 @@ fn unregister_contributions(inner: &mut HostInner, plugin_id: &str) {
 fn matches_event(declared: &ActivationEvent, fired: &ActivationEvent) -> bool {
     match (declared, fired) {
         (ActivationEvent::OnStartup, ActivationEvent::OnStartup) => true,
-        (
-            ActivationEvent::OnCommand { command: a },
-            ActivationEvent::OnCommand { command: b },
-        ) => a == b,
-        (
-            ActivationEvent::OnView { view_id: a },
-            ActivationEvent::OnView { view_id: b },
-        ) => a == b,
+        (ActivationEvent::OnCommand { command: a }, ActivationEvent::OnCommand { command: b }) => {
+            a == b
+        }
+        (ActivationEvent::OnView { view_id: a }, ActivationEvent::OnView { view_id: b }) => a == b,
         (
             ActivationEvent::OnChatMessage { pattern: a },
             ActivationEvent::OnChatMessage { pattern: b },
         ) => b.contains(a.as_str()),
-        (
-            ActivationEvent::OnMemoryTag { tag: a },
-            ActivationEvent::OnMemoryTag { tag: b },
-        ) => a == b,
+        (ActivationEvent::OnMemoryTag { tag: a }, ActivationEvent::OnMemoryTag { tag: b }) => {
+            a == b
+        }
         (ActivationEvent::OnMarketplace, ActivationEvent::OnMarketplace) => true,
         (ActivationEvent::OnBrainModeChange, ActivationEvent::OnBrainModeChange) => true,
         (
@@ -413,8 +467,8 @@ fn now_secs() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::manifest::*;
+    use super::*;
     use crate::package_manager::manifest::InstallMethod;
 
     fn test_manifest(id: &str) -> PluginManifest {
@@ -641,5 +695,102 @@ mod tests {
         // Commands should be restored for active plugins
         let cmds = host2.list_commands().await;
         assert_eq!(cmds.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn invoke_command_resolves_active_command() {
+        let host = PluginHost::in_memory();
+        let mut m = test_manifest("inv");
+        m.contributes.commands.push(ContributedCommand {
+            id: "inv.greet".into(),
+            title: "Greet".into(),
+            icon: None,
+            keybinding: None,
+            category: None,
+        });
+        host.install(m).await.unwrap();
+        host.activate("inv").await.unwrap();
+        let result = host.invoke_command("inv.greet", None).await.unwrap();
+        assert!(result.success);
+        let out = result.output.unwrap();
+        assert!(out.contains("inv"));
+        assert!(out.contains("Greet"));
+    }
+
+    #[tokio::test]
+    async fn invoke_command_unknown_id_errors() {
+        let host = PluginHost::in_memory();
+        let err = host
+            .invoke_command("does.not.exist", None)
+            .await
+            .unwrap_err();
+        assert!(err.contains("unknown command"));
+    }
+
+    #[tokio::test]
+    async fn invoke_command_includes_args_in_output() {
+        let host = PluginHost::in_memory();
+        let mut m = test_manifest("argp");
+        m.contributes.commands.push(ContributedCommand {
+            id: "argp.run".into(),
+            title: "Run".into(),
+            icon: None,
+            keybinding: None,
+            category: None,
+        });
+        host.install(m).await.unwrap();
+        host.activate("argp").await.unwrap();
+        let args = serde_json::json!({"text": "hello"});
+        let r = host.invoke_command("argp.run", Some(args)).await.unwrap();
+        assert!(r.output.unwrap().contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn invoke_slash_command_resolves_to_command() {
+        let host = PluginHost::in_memory();
+        let mut m = test_manifest("sl");
+        m.contributes.commands.push(ContributedCommand {
+            id: "sl.translate".into(),
+            title: "Translate".into(),
+            icon: None,
+            keybinding: None,
+            category: None,
+        });
+        m.contributes.slash_commands.push(ContributedSlashCommand {
+            name: "translate".into(),
+            description: "Translate text".into(),
+            command_id: "sl.translate".into(),
+        });
+        host.install(m).await.unwrap();
+        host.activate("sl").await.unwrap();
+        let r = host.invoke_slash_command("translate", None).await.unwrap();
+        assert!(r.success);
+        assert!(r.output.unwrap().contains("Translate"));
+    }
+
+    #[tokio::test]
+    async fn invoke_slash_command_unknown_name_errors() {
+        let host = PluginHost::in_memory();
+        let err = host.invoke_slash_command("nope", None).await.unwrap_err();
+        assert!(err.contains("unknown slash-command"));
+    }
+
+    #[tokio::test]
+    async fn invoke_command_disabled_plugin_errors() {
+        let host = PluginHost::in_memory();
+        let mut m = test_manifest("dis");
+        m.contributes.commands.push(ContributedCommand {
+            id: "dis.x".into(),
+            title: "X".into(),
+            icon: None,
+            keybinding: None,
+            category: None,
+        });
+        host.install(m).await.unwrap();
+        host.activate("dis").await.unwrap();
+        host.deactivate("dis").await.unwrap();
+        // After deactivation, command should no longer be invokable.
+        let err = host.invoke_command("dis.x", None).await.unwrap_err();
+        assert!(err.contains("unknown command"));
     }
 }

@@ -283,6 +283,7 @@ async function saveMotion(): Promise<void> {
     duration_s: durationS,
     frames: motionFrames.value,
     learnedAt: Date.now(),
+    provenance: 'camera',
   };
 
   try {

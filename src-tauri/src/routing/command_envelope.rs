@@ -101,7 +101,12 @@ mod tests {
 
     #[test]
     fn envelope_new_has_pending_status() {
-        let env = CommandEnvelope::new("phone", "pc", "send_message", serde_json::json!({"text": "hi"}));
+        let env = CommandEnvelope::new(
+            "phone",
+            "pc",
+            "send_message",
+            serde_json::json!({"text": "hi"}),
+        );
         assert_eq!(env.status, CommandStatus::PendingApproval);
         assert_eq!(env.origin_device, "phone");
         assert_eq!(env.target_device, "pc");
@@ -156,7 +161,10 @@ mod tests {
     fn result_denied() {
         let result = CommandResult::denied("cmd-2", "first remote command not approved");
         assert_eq!(result.status, CommandStatus::Denied);
-        assert_eq!(result.payload["reason"], "first remote command not approved");
+        assert_eq!(
+            result.payload["reason"],
+            "first remote command not approved"
+        );
     }
 
     #[test]

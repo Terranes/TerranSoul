@@ -208,8 +208,8 @@ const VSCODE_OPEN_PREFIXES: &[&str] = &[
 ];
 
 const VSCODE_OPEN_WITH_PATH: &[&str] = &[
-    "open ",          // "open <path> in vs code"
-    "code on ",       // "let me code on <path>"
+    "open ",    // "open <path> in vs code"
+    "code on ", // "let me code on <path>"
 ];
 
 fn match_vscode_open(input: &str) -> Option<AiIntegrationIntent> {
@@ -254,7 +254,10 @@ fn matches_any(input: &str, phrases: &[&str]) -> bool {
 /// Detect explicit transport hints in the utterance. Defaults to
 /// **stdio** because 15.9 made it the canonical MCP transport.
 fn detect_transport(input: &str) -> McpTransport {
-    if input.contains(" via http") || input.contains(" over http") || input.contains("http transport") {
+    if input.contains(" via http")
+        || input.contains(" over http")
+        || input.contains("http transport")
+    {
         McpTransport::Http
     } else {
         McpTransport::Stdio
@@ -362,10 +365,7 @@ mod tests {
             "which vs code windows do you know about?",
             AiIntegrationIntent::VscodeListKnown,
         );
-        assert_match(
-            "list vscode windows",
-            AiIntegrationIntent::VscodeListKnown,
-        );
+        assert_match("list vscode windows", AiIntegrationIntent::VscodeListKnown);
     }
 
     // ── Auto-setup writers ────────────────────────────────────────

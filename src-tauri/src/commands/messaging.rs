@@ -1,6 +1,6 @@
+use crate::AppState;
 use serde::Serialize;
 use tauri::State;
-use crate::AppState;
 
 /// Frontend-facing agent message.
 #[derive(Debug, Clone, Serialize)]

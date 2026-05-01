@@ -437,9 +437,24 @@ pub async fn learn_from_user_message(
 /// progress events are emitted, so it is safe to call from tests, ad-hoc
 /// chat actions, or background agents without touching the self-improve
 /// metrics log.
+///
+/// ## Long-session handoff (Chunk 28.9)
+///
+/// When `handoffSessionId` is `Some`, the command:
+/// 1. Loads any prior [`coding::HandoffState`] from
+///    `<data_dir>/coding_workflow/sessions/<id>.json` and injects it as
+///    a `[RESUMING SESSION]` block at the head of the prompt.
+/// 2. Asks the model to emit a fresh `<next_session_seed>` JSON payload.
+/// 3. Parses the seed from the reply (if present) and atomically writes
+///    it back to the same on-disk slot for the next call.
+///
+/// The resulting [`coding::CodingTaskResult::next_handoff`] echoes the
+/// freshly persisted state so the UI can render a "Session resumed"
+/// chip without an extra round-trip.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn run_coding_task(
     mut task: coding::CodingTask,
+    handoff_session_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<coding::CodingTaskResult, String> {
     let cfg = state
@@ -464,7 +479,84 @@ pub async fn run_coding_task(
         .map_err(|e| e.to_string())?
         .clone();
 
-    coding::run_coding_task(&cfg, &task, Some(&workflow_cfg)).await
+    // Load prior handoff before invoking the model. A bad/corrupt
+    // snapshot is non-fatal — we proceed without injection rather than
+    // blocking the user on disk state.
+    if let Some(id) = handoff_session_id.as_deref() {
+        if task.prior_handoff.is_none() {
+            match coding::load_handoff(&state.data_dir, id) {
+                Ok(prior) => task.prior_handoff = prior,
+                Err(e) => {
+                    eprintln!("[coding-handoff] load {id} failed: {e}");
+                }
+            }
+        }
+    }
+
+    let result = coding::run_coding_task(&cfg, &task, Some(&workflow_cfg)).await?;
+
+    // Persist any freshly emitted seed under the caller-supplied id (or
+    // the seed's own id when the caller did not supply one).
+    if let Some(next) = &result.next_handoff {
+        let target = handoff_session_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(next.session_id.as_str());
+        let mut to_save = next.clone();
+        to_save.session_id = target.to_string();
+        if to_save.created_at == 0 {
+            to_save.created_at = coding::handoff_store::now_unix_ms();
+        }
+        if let Err(e) = coding::save_handoff(&state.data_dir, &to_save) {
+            eprintln!("[coding-handoff] save {target} failed: {e}");
+        }
+    }
+
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Coding session handoff persistence (Chunk 28.9)
+// ---------------------------------------------------------------------------
+
+/// Manually persist a [`coding::HandoffState`] snapshot. The frontend
+/// uses this when the user explicitly bookmarks a session before
+/// stepping away (e.g. closing the laptop) so the next launch can
+/// resume from a known-good seed even if the LLM did not produce one.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn coding_session_save_handoff(
+    handoff: coding::HandoffState,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    coding::save_handoff(&state.data_dir, &handoff)
+}
+
+/// Load the persisted [`coding::HandoffState`] for `sessionId`.
+/// Returns `None` when no snapshot exists.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn coding_session_load_handoff(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<coding::HandoffState>, String> {
+    coding::load_handoff(&state.data_dir, &session_id)
+}
+
+/// List every persisted handoff snapshot, newest first.
+#[tauri::command]
+pub async fn coding_session_list_handoffs(
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::HandoffSummary>, String> {
+    coding::list_handoffs(&state.data_dir)
+}
+
+/// Delete the persisted snapshot for `sessionId`. Returns `true` when
+/// a file was removed, `false` when no snapshot existed (idempotent).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn coding_session_clear_handoff(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    coding::clear_handoff(&state.data_dir, &session_id)
 }
 
 // ---------------------------------------------------------------------------

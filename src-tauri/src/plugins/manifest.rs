@@ -20,9 +20,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::package_manager::manifest::{
-    Capability, InstallMethod, SystemRequirements,
-};
+use crate::package_manager::manifest::{Capability, InstallMethod, SystemRequirements};
 
 // ── Plugin Manifest ──────────────────────────────────────────────────────
 
@@ -226,7 +224,9 @@ pub enum SettingValueType {
     Number,
     Boolean,
     /// Enum: list of allowed string values.
-    Enum { values: Vec<String> },
+    Enum {
+        values: Vec<String>,
+    },
 }
 
 /// A CSS theme contributed by a plugin.
@@ -336,10 +336,16 @@ impl std::fmt::Display for PluginManifestError {
             Self::EmptyDescription => write!(f, "plugin manifest: description is empty"),
             Self::EmptyDisplayName => write!(f, "plugin manifest: display_name is empty"),
             Self::UnsupportedApiVersion(v) => {
-                write!(f, "plugin manifest: unsupported api_version {v} (supported: 1)")
+                write!(
+                    f,
+                    "plugin manifest: unsupported api_version {v} (supported: 1)"
+                )
             }
             Self::InvalidCommandId(id) => {
-                write!(f, "plugin manifest: invalid command id '{id}' (must contain a dot)")
+                write!(
+                    f,
+                    "plugin manifest: invalid command id '{id}' (must contain a dot)"
+                )
             }
             Self::InvalidDependency(d) => {
                 write!(f, "plugin manifest: invalid dependency: {d}")
@@ -353,8 +359,8 @@ pub const PLUGIN_API_VERSION: u32 = 1;
 
 /// Parse a JSON string into a `PluginManifest`.
 pub fn parse_plugin_manifest(json: &str) -> Result<PluginManifest, PluginManifestError> {
-    let manifest: PluginManifest = serde_json::from_str(json)
-        .map_err(|e| PluginManifestError::ParseError(e.to_string()))?;
+    let manifest: PluginManifest =
+        serde_json::from_str(json).map_err(|e| PluginManifestError::ParseError(e.to_string()))?;
     validate_plugin_manifest(&manifest)?;
     Ok(manifest)
 }
@@ -368,7 +374,11 @@ pub fn validate_plugin_manifest(m: &PluginManifest) -> Result<(), PluginManifest
             m.id.len()
         )));
     }
-    if !m.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !m
+        .id
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(PluginManifestError::InvalidId(
             "id must be lowercase alphanumeric and hyphens".into(),
         ));
@@ -612,13 +622,23 @@ mod tests {
     fn all_activation_events_roundtrip() {
         let events = vec![
             ActivationEvent::OnStartup,
-            ActivationEvent::OnCommand { command: "x.y".into() },
-            ActivationEvent::OnView { view_id: "v".into() },
-            ActivationEvent::OnChatMessage { pattern: "hello".into() },
-            ActivationEvent::OnMemoryTag { tag: "personal".into() },
+            ActivationEvent::OnCommand {
+                command: "x.y".into(),
+            },
+            ActivationEvent::OnView {
+                view_id: "v".into(),
+            },
+            ActivationEvent::OnChatMessage {
+                pattern: "hello".into(),
+            },
+            ActivationEvent::OnMemoryTag {
+                tag: "personal".into(),
+            },
             ActivationEvent::OnMarketplace,
             ActivationEvent::OnBrainModeChange,
-            ActivationEvent::OnCapabilityGranted { capability: "network".into() },
+            ActivationEvent::OnCapabilityGranted {
+                capability: "network".into(),
+            },
         ];
         for event in events {
             let json = serde_json::to_string(&event).unwrap();

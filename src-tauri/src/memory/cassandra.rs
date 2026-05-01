@@ -15,14 +15,12 @@
 
 #![cfg(feature = "cassandra")]
 
+use scylla::frame::response::result::CqlValue;
 use scylla::transport::session::{CurrentDeserializationApi, GenericSession};
 use scylla::{Session, SessionBuilder};
-use scylla::frame::response::result::CqlValue;
 
 use super::backend::{StorageBackend, StorageError, StorageResult};
-use super::store::{
-    MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory,
-};
+use super::store::{MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory};
 
 /// CassandraDB storage backend.
 pub struct CassandraBackend {
@@ -92,9 +90,7 @@ impl CassandraBackend {
     where
         F: std::future::Future<Output = StorageResult<T>>,
     {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fut)
-        })
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
     }
 
     /// Generate a unique ID using timestamp + random component.
@@ -166,8 +162,7 @@ impl CassandraBackend {
     }
 
     /// Helper columns list for consistent SELECT ordering.
-    const COLS: &'static str =
-        "id, content, tags, importance, memory_type, created_at, \
+    const COLS: &'static str = "id, content, tags, importance, memory_type, created_at, \
          last_accessed, access_count, embedding, tier, decay_score, \
          session_id, parent_id, token_count, source_url, source_hash, expires_at";
 }
@@ -254,7 +249,8 @@ impl StorageBackend for CassandraBackend {
 
     fn schema_version(&self) -> StorageResult<i64> {
         self.block_on(async {
-            let result = self.session
+            let result = self
+                .session
                 .query_unpaged(
                     format!("SELECT MAX(version) FROM {}.schema_version", self.keyspace),
                     &[],
@@ -262,10 +258,12 @@ impl StorageBackend for CassandraBackend {
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            let rows = result.into_rows_result()
+            let rows = result
+                .into_rows_result()
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            if let Some(first_row) = rows.rows::<(Option<i64>,)>()
+            if let Some(first_row) = rows
+                .rows::<(Option<i64>,)>()
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?
                 .next()
             {
@@ -282,12 +280,19 @@ impl StorageBackend for CassandraBackend {
     }
 
     fn add_to_tier(
-        &self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>,
+        &self,
+        m: NewMemory,
+        tier: MemoryTier,
+        session_id: Option<&str>,
     ) -> StorageResult<MemoryEntry> {
         let id = Self::next_id();
         let now = Self::now_ms();
         let token_count = (m.content.len() / 4) as i32;
-        let importance = if m.importance == 0 { 3i32 } else { m.importance as i32 };
+        let importance = if m.importance == 0 {
+            3i32
+        } else {
+            m.importance as i32
+        };
 
         self.block_on(async {
             self.session
@@ -301,9 +306,18 @@ impl StorageBackend for CassandraBackend {
                         self.keyspace
                     ),
                     (
-                        id, &m.content, &m.tags, importance, m.memory_type.as_str(),
-                        now, tier.as_str(), session_id.unwrap_or(""),
-                        token_count, &m.source_url, &m.source_hash, m.expires_at,
+                        id,
+                        &m.content,
+                        &m.tags,
+                        importance,
+                        m.memory_type.as_str(),
+                        now,
+                        tier.as_str(),
+                        session_id.unwrap_or(""),
+                        token_count,
+                        &m.source_url,
+                        &m.source_hash,
+                        m.expires_at,
                     ),
                 )
                 .await
@@ -334,26 +348,35 @@ impl StorageBackend for CassandraBackend {
 
     fn get_by_id(&self, id: i64) -> StorageResult<MemoryEntry> {
         self.block_on(async {
-            let result = self.session
+            let result = self
+                .session
                 .query_unpaged(
-                    format!("SELECT {} FROM {}.memories WHERE id = ?", Self::COLS, self.keyspace),
+                    format!(
+                        "SELECT {} FROM {}.memories WHERE id = ?",
+                        Self::COLS,
+                        self.keyspace
+                    ),
                     (id,),
                 )
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            let rows_result = result.into_rows_result()
+            let rows_result = result
+                .into_rows_result()
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
             // CQL doesn't give direct row access the same way — use typed deserialization
             // For simplicity, we return Other error if not found
-            Err(StorageError::Other(format!("Memory {id} not found (Cassandra query)")))
+            Err(StorageError::Other(format!(
+                "Memory {id} not found (Cassandra query)"
+            )))
         })
     }
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let result = self.session
+            let result = self
+                .session
                 .query_unpaged(
                     format!("SELECT {} FROM {}.memories", Self::COLS, self.keyspace),
                     &[],
@@ -369,11 +392,13 @@ impl StorageBackend for CassandraBackend {
 
     fn get_by_tier(&self, tier: &MemoryTier) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let _result = self.session
+            let _result = self
+                .session
                 .query_unpaged(
                     format!(
                         "SELECT {} FROM {}.memories WHERE tier = ? ALLOW FILTERING",
-                        Self::COLS, self.keyspace
+                        Self::COLS,
+                        self.keyspace
                     ),
                     (tier.as_str(),),
                 )
@@ -401,7 +426,8 @@ impl StorageBackend for CassandraBackend {
 
     fn count(&self) -> StorageResult<i64> {
         self.block_on(async {
-            let result = self.session
+            let result = self
+                .session
                 .query_unpaged(
                     format!("SELECT COUNT(*) FROM {}.memories", self.keyspace),
                     &[],
@@ -409,10 +435,12 @@ impl StorageBackend for CassandraBackend {
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            let rows_result = result.into_rows_result()
+            let rows_result = result
+                .into_rows_result()
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            if let Some(first_row) = rows_result.rows::<(i64,)>()
+            if let Some(first_row) = rows_result
+                .rows::<(i64,)>()
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?
                 .next()
             {
@@ -443,20 +471,29 @@ impl StorageBackend for CassandraBackend {
         // For production, use Solr/Elasticsearch integration or SASI indexes
         let all = self.get_all()?;
         let q = query.to_lowercase();
-        Ok(all.into_iter().filter(|e| {
-            e.content.to_lowercase().contains(&q) || e.tags.to_lowercase().contains(&q)
-        }).collect())
+        Ok(all
+            .into_iter()
+            .filter(|e| e.content.to_lowercase().contains(&q) || e.tags.to_lowercase().contains(&q))
+            .collect())
     }
 
     fn relevant_for(&self, message: &str, limit: usize) -> StorageResult<Vec<String>> {
         let all = self.get_all()?;
-        let words: Vec<String> = message.split_whitespace().map(|w| w.to_lowercase()).collect();
-        let mut scored: Vec<(usize, String)> = all.into_iter().map(|e| {
-            let hits = words.iter()
-                .filter(|w| e.content.to_lowercase().contains(w.as_str()))
-                .count();
-            (hits, e.content)
-        }).filter(|(h, _)| *h > 0).collect();
+        let words: Vec<String> = message
+            .split_whitespace()
+            .map(|w| w.to_lowercase())
+            .collect();
+        let mut scored: Vec<(usize, String)> = all
+            .into_iter()
+            .map(|e| {
+                let hits = words
+                    .iter()
+                    .filter(|w| e.content.to_lowercase().contains(w.as_str()))
+                    .count();
+                (hits, e.content)
+            })
+            .filter(|(h, _)| *h > 0)
+            .collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0));
         scored.truncate(limit);
         Ok(scored.into_iter().map(|(_, c)| c).collect())
@@ -464,11 +501,13 @@ impl StorageBackend for CassandraBackend {
 
     fn find_by_source_url(&self, url: &str) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let _result = self.session
+            let _result = self
+                .session
                 .query_unpaged(
                     format!(
                         "SELECT {} FROM {}.memories WHERE source_url = ? ALLOW FILTERING",
-                        Self::COLS, self.keyspace
+                        Self::COLS,
+                        self.keyspace
                     ),
                     (url,),
                 )
@@ -480,11 +519,13 @@ impl StorageBackend for CassandraBackend {
 
     fn find_by_source_hash(&self, hash: &str) -> StorageResult<Option<MemoryEntry>> {
         self.block_on(async {
-            let _result = self.session
+            let _result = self
+                .session
                 .query_unpaged(
                     format!(
                         "SELECT {} FROM {}.memories WHERE source_hash = ? ALLOW FILTERING",
-                        Self::COLS, self.keyspace
+                        Self::COLS,
+                        self.keyspace
                     ),
                     (hash,),
                 )
@@ -521,7 +562,9 @@ impl StorageBackend for CassandraBackend {
     }
 
     fn vector_search(
-        &self, _query_embedding: &[f32], _limit: usize,
+        &self,
+        _query_embedding: &[f32],
+        _limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         // Cassandra doesn't support vector search natively
         // ScyllaDB 6.0+ has ANN indexes — future upgrade path
@@ -529,13 +572,18 @@ impl StorageBackend for CassandraBackend {
     }
 
     fn find_duplicate(
-        &self, _query_embedding: &[f32], _threshold: f32,
+        &self,
+        _query_embedding: &[f32],
+        _threshold: f32,
     ) -> StorageResult<Option<i64>> {
         Ok(None)
     }
 
     fn hybrid_search(
-        &self, query: &str, _query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        _query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         // Keyword-only fallback for Cassandra
         let results = self.search(query)?;
@@ -551,10 +599,22 @@ impl StorageBackend for CassandraBackend {
             let mut has_importance = false;
             let mut has_type = false;
 
-            if upd.content.is_some() { sets.push("content = ?"); has_content = true; }
-            if upd.tags.is_some() { sets.push("tags = ?"); has_tags = true; }
-            if upd.importance.is_some() { sets.push("importance = ?"); has_importance = true; }
-            if upd.memory_type.is_some() { sets.push("memory_type = ?"); has_type = true; }
+            if upd.content.is_some() {
+                sets.push("content = ?");
+                has_content = true;
+            }
+            if upd.tags.is_some() {
+                sets.push("tags = ?");
+                has_tags = true;
+            }
+            if upd.importance.is_some() {
+                sets.push("importance = ?");
+                has_importance = true;
+            }
+            if upd.memory_type.is_some() {
+                sets.push("memory_type = ?");
+                has_type = true;
+            }
 
             if sets.is_empty() {
                 return self.get_by_id(id);
@@ -674,7 +734,8 @@ impl StorageBackend for CassandraBackend {
 
     fn evict_short_term(&self, session_id: &str) -> StorageResult<Vec<MemoryEntry>> {
         let all = self.get_all()?;
-        let evicted: Vec<MemoryEntry> = all.into_iter()
+        let evicted: Vec<MemoryEntry> = all
+            .into_iter()
             .filter(|e| e.tier == MemoryTier::Short && e.session_id.as_deref() == Some(session_id))
             .collect();
         for entry in &evicted {
@@ -687,7 +748,10 @@ impl StorageBackend for CassandraBackend {
         let all = self.get_all()?;
         let mut count = 0;
         for entry in all {
-            if entry.tier == MemoryTier::Long && entry.decay_score < threshold && entry.importance <= 2 {
+            if entry.tier == MemoryTier::Long
+                && entry.decay_score < threshold
+                && entry.importance <= 2
+            {
                 self.delete(entry.id)?;
                 count += 1;
             }
@@ -695,5 +759,7 @@ impl StorageBackend for CassandraBackend {
         Ok(count)
     }
 
-    fn backend_name(&self) -> &'static str { "CassandraDB" }
+    fn backend_name(&self) -> &'static str {
+        "CassandraDB"
+    }
 }

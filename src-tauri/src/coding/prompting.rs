@@ -294,7 +294,9 @@ mod tests {
             output: OutputShape::NumberedPlan { max_steps: 5 },
             example: None,
             assistant_prefill: Some("<analysis>".to_string()),
-            error_handling: vec!["If the task is ambiguous, ask one clarifying question and stop.".to_string()],
+            error_handling: vec![
+                "If the task is ambiguous, ask one clarifying question and stop.".to_string(),
+            ],
         }
     }
 

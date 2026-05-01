@@ -1045,7 +1045,7 @@ right now" — never "the camera is on but you can't tell".
 | 11 | **EMOTalk-3D / FaceFormer** (2022–2024) | Audio-conditioned 3D facial animation | 🔵 | §15 — would replace the band-energy viseme path (`lip-sync.ts`) with a phoneme-aware model |
 | 12 | **OmniHuman-1** ([ByteDance, Feb 2025](https://omnihuman-lab.github.io/)) | Conditioning-mixed end-to-end human video generation | ⚪ | Same posture as #10. Out of scope for a local desktop pet. |
 | 13 | **Persona / character cards** (open-source LLM community, 2023–2026) | Structured prompt block defining LLM character (name, traits, examples) | 🟡 | We ship traits in §2 + prompt block in §9.1; we do not yet ship an example-dialogue field. §15 |
-| 14 | **Reflective-prompt persona drift detection** (industry, 2025) | Periodically check that LLM responses still match declared persona; nudge with corrective prompt | 🔵 | §15 — pairs naturally with the auto-learn cadence (memory: auto-learn cadence) |
+| 14 | **Reflective-prompt persona drift detection** (industry, 2025) | Periodically check that LLM responses still match declared persona; nudge with corrective prompt | ✅ | Shipped Chunk 14.8 (2026-04-26) — `OllamaAgent::check_persona_drift` + `check_persona_drift` Tauri command + auto-learn task hook |
 | 15 | **Sharable persona format** (industry, 2024–2026; e.g. Tavern / Silly cards, V2) | Standard JSON for portable personas | 🔵 | §15 — our `persona/` folder is already JSON; need export/import + a schema spec |
 | 16 | **Federated motion learning** (research, 2025) | Multiple users contribute learned motion clips to a shared library without sharing raw video | ⚪ | Tempting but rejected for v1: requires social/identity infrastructure we don't have. |
 

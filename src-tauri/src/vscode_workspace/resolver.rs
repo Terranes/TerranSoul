@@ -168,10 +168,7 @@ mod tests {
 
     #[test]
     fn deepest_ancestor_wins() {
-        let windows = vec![
-            win(99, ROOT_GIT, 1000),
-            win(42, ROOT_TS, 500),
-        ];
+        let windows = vec![win(99, ROOT_GIT, 1000), win(42, ROOT_TS, 500)];
         let choice = pick_window(Path::new(TARGET_TS_SRC), &windows, always_alive);
         match choice {
             WindowChoice::Ancestor { pid, .. } => assert_eq!(pid, 42),
@@ -203,8 +200,8 @@ mod tests {
     #[test]
     fn dead_exact_falls_through_to_live_ancestor() {
         let windows = vec![
-            win(42, ROOT_TS, 1000),  // dead exact
-            win(99, ROOT_GIT, 500),  // live ancestor
+            win(42, ROOT_TS, 1000), // dead exact
+            win(99, ROOT_GIT, 500), // live ancestor
         ];
         let choice = pick_window(Path::new(TARGET_TS), &windows, |pid| pid == 99);
         match choice {
@@ -222,20 +219,14 @@ mod tests {
 
     #[test]
     fn duplicate_exact_picks_more_recent() {
-        let windows = vec![
-            win(1, ROOT_TS, 100),
-            win(2, ROOT_TS, 200),
-        ];
+        let windows = vec![win(1, ROOT_TS, 100), win(2, ROOT_TS, 200)];
         let choice = pick_window(Path::new(TARGET_TS), &windows, always_alive);
         assert_eq!(choice, WindowChoice::Exact { pid: 2 });
     }
 
     #[test]
     fn tie_in_specificity_picks_more_recent_ancestor() {
-        let windows = vec![
-            win(1, ROOT_GIT, 100),
-            win(2, ROOT_GIT, 200),
-        ];
+        let windows = vec![win(1, ROOT_GIT, 100), win(2, ROOT_GIT, 200)];
         let choice = pick_window(Path::new(TARGET_TS_SRC), &windows, always_alive);
         match choice {
             WindowChoice::Ancestor { pid, .. } => assert_eq!(pid, 2),
@@ -246,8 +237,8 @@ mod tests {
     #[test]
     fn exact_beats_ancestor_even_when_ancestor_is_more_recent() {
         let windows = vec![
-            win(1, ROOT_TS, 100),    // exact, older
-            win(2, ROOT_GIT, 9999),  // ancestor, newer
+            win(1, ROOT_TS, 100),   // exact, older
+            win(2, ROOT_GIT, 9999), // ancestor, newer
         ];
         let choice = pick_window(Path::new(TARGET_TS), &windows, always_alive);
         assert_eq!(choice, WindowChoice::Exact { pid: 1 });

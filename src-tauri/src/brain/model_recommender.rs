@@ -179,7 +179,8 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
         candidates.push(ModelRecommendation {
             model_tag: "tinyllama".to_string(),
             display_name: "TinyLlama".to_string(),
-            description: "Minimal 1.1B model. The only option for very limited hardware.".to_string(),
+            description: "Minimal 1.1B model. The only option for very limited hardware."
+                .to_string(),
             required_ram_mb: 2_048,
             download_size_mb: 638,
             is_top_pick: true,
@@ -289,7 +290,11 @@ mod tests {
         for ram_mb in [4_096u64, 8_192, 16_384, 32_768, 65_536] {
             let recs = recommend(ram_mb);
             let top_count = recs.iter().filter(|m| m.is_top_pick).count();
-            assert_eq!(top_count, 1, "Expected exactly one top pick for {} MB", ram_mb);
+            assert_eq!(
+                top_count, 1,
+                "Expected exactly one top pick for {} MB",
+                ram_mb
+            );
         }
     }
 }

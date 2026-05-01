@@ -561,7 +561,7 @@
           <dt>Status</dt>
           <dd>{{ autoLearnStatusLine }}</dd>
         </dl>
-        <div style="display:flex;gap:8px;margin-top:8px;">
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <button
             class="bv-link"
             data-testid="bv-autolearn-force"
@@ -569,7 +569,25 @@
           >
             Extract now →
           </button>
+          <button
+            class="bv-link"
+            data-testid="bv-autolearn-replay"
+            :disabled="replayState.running"
+            @click="replayHistoryNow"
+          >
+            {{ replayState.running
+              ? `Replaying ${replayState.processed}/${replayState.total}…`
+              : 'Replay history →' }}
+          </button>
         </div>
+        <p
+          v-if="replayState.lastResultLine"
+          class="bv-cog-desc"
+          data-testid="bv-autolearn-replay-result"
+          style="margin-top:6px;"
+        >
+          {{ replayState.lastResultLine }}
+        </p>
       </template>
     </section>
 
@@ -693,6 +711,22 @@
       <CodeKnowledgePanel />
     </section>
 
+    <!-- ── Plugins — Phase 22 ─────────────────────────────────────────────── -->
+    <section
+      class="bv-plugins-section"
+      data-testid="bv-plugins-section"
+    >
+      <PluginsView />
+    </section>
+
+    <!-- ── AI Coding Integrations — Phase 15.4 ────────────────────────────── -->
+    <section
+      class="bv-aiv-section"
+      data-testid="bv-aiv-section"
+    >
+      <AICodingIntegrationsView />
+    </section>
+
     <!-- ── Persona panel (data storage & management) ──────────────────────── -->
     <section class="bv-persona-section">
       <PersonaPanel />
@@ -781,6 +815,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useConversationStore } from '../stores/conversation';
@@ -793,6 +828,8 @@ import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
 import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
+import PluginsView from './PluginsView.vue';
+import AICodingIntegrationsView from './AICodingIntegrationsView.vue';
 import type { MemoryEntry } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';
@@ -1497,6 +1534,65 @@ async function forceExtractNow() {
     await memory.getStats();
   } catch (err) {
     console.warn('[BrainView] force extract_memories_from_session failed:', err);
+  }
+}
+
+// ── Replay-from-history backfill (Chunk 26.4) ──────────────────────────────
+interface ReplayProgressEvent {
+  processed: number;
+  total: number;
+  new_memories: number;
+  current_summary_created_at: number | null;
+  current_summary_id: number | null;
+  done: boolean;
+}
+
+const replayState = ref({
+  running: false,
+  processed: 0,
+  total: 0,
+  newMemories: 0,
+  lastResultLine: '',
+});
+
+let replayUnlisten: (() => void) | null = null;
+
+async function replayHistoryNow() {
+  if (replayState.value.running) return;
+  replayState.value.running = true;
+  replayState.value.processed = 0;
+  replayState.value.total = 0;
+  replayState.value.newMemories = 0;
+  replayState.value.lastResultLine = '';
+
+  if (!replayUnlisten) {
+    replayUnlisten = await listen<ReplayProgressEvent>(
+      'brain-replay-progress',
+      (e) => {
+        const p = e.payload;
+        replayState.value.processed = p.processed;
+        replayState.value.total = p.total;
+        replayState.value.newMemories = p.new_memories;
+      },
+    );
+  }
+
+  try {
+    const final = await invoke<ReplayProgressEvent>('replay_extract_history', {
+      sinceTimestampMs: null,
+      dryRun: false,
+      maxSummaries: null,
+    });
+    replayState.value.lastResultLine = final.total === 0
+      ? 'No session summaries to replay.'
+      : `Replayed ${final.processed} session summaries · ${final.new_memories} new memories saved.`;
+    await memory.fetchAll();
+    await memory.getStats();
+  } catch (err) {
+    console.warn('[BrainView] replay_extract_history failed:', err);
+    replayState.value.lastResultLine = `Replay failed: ${String(err)}`;
+  } finally {
+    replayState.value.running = false;
   }
 }
 

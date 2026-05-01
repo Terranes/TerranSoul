@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::package_manager::{AgentManifest, RegistryError, RegistrySource};
+use async_trait::async_trait;
 
 pub struct HttpRegistry {
     base_url: String,

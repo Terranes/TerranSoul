@@ -10,17 +10,15 @@
 //!
 //! See `docs/plugin-development.md` for the full developer guide.
 
-pub mod manifest;
 pub mod host;
+pub mod manifest;
 
 pub use manifest::{
-    ActivationEvent, ContributedCommand, ContributedMemoryHook, ContributedSetting,
-    ContributedSlashCommand, ContributedTheme, ContributedView, Contributions,
-    InstalledPlugin, MemoryHookStage, PluginDependency, PluginKind, PluginManifest,
-    PluginManifestError, PluginState, SettingValueType, ViewLocation,
-    parse_plugin_manifest, validate_plugin_manifest, PLUGIN_API_VERSION,
+    parse_plugin_manifest, validate_plugin_manifest, ActivationEvent, ContributedCommand,
+    ContributedMemoryHook, ContributedSetting, ContributedSlashCommand, ContributedTheme,
+    ContributedView, Contributions, InstalledPlugin, MemoryHookStage, PluginDependency, PluginKind,
+    PluginManifest, PluginManifestError, PluginState, SettingValueType, ViewLocation,
+    PLUGIN_API_VERSION,
 };
 
-pub use host::{
-    CommandEntry, CommandResult, PluginHost, PluginHostStatus, SlashCommandEntry,
-};
+pub use host::{CommandEntry, CommandResult, PluginHost, PluginHostStatus, SlashCommandEntry};

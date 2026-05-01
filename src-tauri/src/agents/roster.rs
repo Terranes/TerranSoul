@@ -184,9 +184,7 @@ fn validate_id(id: &str) -> Result<(), String> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !ok {
-        return Err(
-            "agent id may only contain ASCII letters, digits, '-' or '_'".to_string(),
-        );
+        return Err("agent id may only contain ASCII letters, digits, '-' or '_'".to_string());
     }
     Ok(())
 }
@@ -305,10 +303,8 @@ impl AgentRoster {
         if !self.profile_path(id).exists() {
             return Err(format!("agent '{id}' does not exist"));
         }
-        let json = serde_json::to_vec_pretty(&CurrentAgent {
-            id: id.to_string(),
-        })
-        .map_err(|e| e.to_string())?;
+        let json = serde_json::to_vec_pretty(&CurrentAgent { id: id.to_string() })
+            .map_err(|e| e.to_string())?;
         fs::write(self.current_path(), json).map_err(|e| e.to_string())
     }
 
@@ -492,7 +488,10 @@ mod tests {
         if let BrainBackend::ExternalCli { binary, .. } = &mut p.brain_backend {
             *binary = "claude".into();
         }
-        assert!(p.validate().is_err(), "kind=Codex with binary=claude must fail");
+        assert!(
+            p.validate().is_err(),
+            "kind=Codex with binary=claude must fail"
+        );
     }
 
     #[test]

@@ -301,6 +301,9 @@
       </p>
     </div>
 
+    <!-- ── LLM-as-Animator: generate motion from text (Chunk 14.16c3) ─ -->
+    <PersonaMotionGenerator />
+
     <!-- ── Persona pack: export / import (Chunk 14.7) ─────────────────── -->
     <PersonaPackPanel @imported="onPackImported" />
 
@@ -321,6 +324,7 @@ import {
 import { buildPersonaBlock } from '../utils/persona-prompt';
 import PersonaListEditor from './PersonaListEditor.vue';
 import PersonaPackPanel from './PersonaPackPanel.vue';
+import PersonaMotionGenerator from './PersonaMotionGenerator.vue';
 
 const store = usePersonaStore();
 

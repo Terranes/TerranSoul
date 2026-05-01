@@ -155,6 +155,31 @@ pub struct AppSettings {
     #[serde(default)]
     pub contextual_retrieval: bool,
 
+    /// When `true` (default), every successful `extract_memories_from_session`
+    /// run is followed by an automatic `extract_edges_via_brain` pass over the
+    /// freshly-grown memory store, so newly-learned facts immediately
+    /// participate in the typed-edge knowledge graph instead of waiting for
+    /// the user to manually trigger edge extraction. Disabling skips the
+    /// follow-up call (saves one LLM round-trip per learn cycle but leaves
+    /// the graph stale until manual extraction runs).
+    ///
+    /// Maps to `docs/brain-advanced-design.md` §21.7 roadmap item
+    /// "auto-fire edge extraction" (chunk 26.3).
+    #[serde(default = "default_true")]
+    pub auto_extract_edges: bool,
+
+    /// Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
+    /// (Chunk 27.3). Default `false` — the camera mirror routes through
+    /// the 6-preset baseline (`mapBlendshapesToVRM`) so every VRM works.
+    /// When `true`, the live mirror **also** writes each of the 52
+    /// ARKit shapes directly to the VRM's `expressionManager` by name
+    /// (`mouthSmileLeft`, `browInnerUp`, …); rigs that don't ship those
+    /// channels silently no-op via `applyExpandedBlendshapes`. See
+    /// `docs/persona-design.md` §6.3 "Mask of a Thousand Faces —
+    /// Expanded".
+    #[serde(default)]
+    pub expanded_blendshapes: bool,
+
     /// Set to `true` after the first-launch wizard completes (recommended
     /// or manual path).  The frontend uses this flag to decide whether to
     /// show the welcome wizard on startup.
@@ -193,10 +218,44 @@ pub struct AppSettings {
     /// update check. Used to throttle the check to once per calendar day.
     #[serde(default)]
     pub last_update_check_date: String,
+
+    /// When `true` (default), the brain background-maintenance scheduler
+    /// (`brain::maintenance_runtime`) dispatches its four jobs (decay,
+    /// GC, promotion, edge-extract) on its tick loop. Set to `false` to
+    /// completely suppress automatic maintenance. Maps to Chunk 26.1.
+    #[serde(default = "default_true")]
+    pub background_maintenance_enabled: bool,
+
+    /// Cool-down (in hours) between successive runs of each
+    /// brain-maintenance job. Default `24` (one run per day per job),
+    /// clamped to `1..=168` (one hour to one week). Read on every
+    /// scheduler tick, so live-edits take effect on the next tick
+    /// without restart. Maps to Chunk 26.1.
+    #[serde(default = "default_maintenance_interval_hours")]
+    pub maintenance_interval_hours: u32,
+
+    /// Idle-guard threshold (minutes). When > 0, the scheduler skips a
+    /// tick if the user has interacted with the app within the last N
+    /// minutes — avoids fighting an active chat session. `0` (default)
+    /// disables the guard. Maps to Chunk 26.1.
+    #[serde(default)]
+    pub maintenance_idle_minimum_minutes: u32,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// Default `maintenance_interval_hours` — once per day per job.
+/// Matches the 23h-cooldown convention in [`crate::brain::maintenance_scheduler::MaintenanceConfig`].
+pub const DEFAULT_MAINTENANCE_INTERVAL_HOURS: u32 = 24;
+
+/// Min/max guardrails for `AppSettings::maintenance_interval_hours`.
+pub const MIN_MAINTENANCE_INTERVAL_HOURS: u32 = 1;
+pub const MAX_MAINTENANCE_INTERVAL_HOURS: u32 = 168;
+
+fn default_maintenance_interval_hours() -> u32 {
+    DEFAULT_MAINTENANCE_INTERVAL_HOURS
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -245,13 +304,34 @@ impl Default for AppSettings {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         }
+    }
+}
+
+impl AppSettings {
+    /// Returns the per-job cool-down (in milliseconds) the
+    /// brain-maintenance scheduler should use, derived from
+    /// `maintenance_interval_hours`. Clamped to
+    /// `MIN_MAINTENANCE_INTERVAL_HOURS..=MAX_MAINTENANCE_INTERVAL_HOURS`
+    /// so a corrupt settings file can't disable maintenance entirely
+    /// (set `background_maintenance_enabled = false` for that).
+    pub fn maintenance_cooldown_ms(&self) -> u64 {
+        let hours = self.maintenance_interval_hours.clamp(
+            MIN_MAINTENANCE_INTERVAL_HOURS,
+            MAX_MAINTENANCE_INTERVAL_HOURS,
+        ) as u64;
+        hours.saturating_mul(60 * 60 * 1000)
     }
 }
 
@@ -345,7 +425,13 @@ mod tests {
     #[test]
     fn roundtrip_serde() {
         let mut positions = HashMap::new();
-        positions.insert("shinra".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        positions.insert(
+            "shinra".to_string(),
+            ModelCameraPosition {
+                azimuth: 0.5,
+                distance: 3.0,
+            },
+        );
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
             selected_model_id: "komori".into(),
@@ -361,12 +447,17 @@ mod tests {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -391,6 +482,96 @@ mod tests {
         assert_eq!(parsed.bgm_track_id, DEFAULT_BGM_TRACK_ID);
     }
 
+    /// Chunk 26.3 — `auto_extract_edges` defaults to `true` so newly-learned
+    /// facts auto-participate in the typed-edge graph without requiring the
+    /// user to opt in. Persisted-config files that pre-date this field must
+    /// also deserialise with `auto_extract_edges = true` (forward-compat).
+    #[test]
+    fn default_auto_extract_edges_is_on() {
+        let s = AppSettings::default();
+        assert!(
+            s.auto_extract_edges,
+            "auto_extract_edges must default to true (Chunk 26.3)"
+        );
+    }
+
+    #[test]
+    fn serde_fills_auto_extract_edges_default_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(
+            parsed.auto_extract_edges,
+            "missing auto_extract_edges must deserialise to true for forward-compat"
+        );
+    }
+
+    #[test]
+    fn auto_extract_edges_roundtrips_through_serde() {
+        let s = AppSettings {
+            auto_extract_edges: false,
+            ..AppSettings::default()
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let parsed: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(!parsed.auto_extract_edges);
+    }
+
+    /// Chunk 26.1 — `background_maintenance_enabled` defaults to `true`
+    /// and `maintenance_interval_hours` defaults to 24h so a fresh install
+    /// runs the brain-maintenance jobs automatically. Pre-existing config
+    /// files (without the new fields) must deserialise to the same defaults.
+    #[test]
+    fn default_background_maintenance_is_on() {
+        let s = AppSettings::default();
+        assert!(s.background_maintenance_enabled);
+        assert_eq!(
+            s.maintenance_interval_hours,
+            DEFAULT_MAINTENANCE_INTERVAL_HOURS
+        );
+        assert_eq!(s.maintenance_idle_minimum_minutes, 0);
+    }
+
+    #[test]
+    fn serde_fills_maintenance_defaults_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(parsed.background_maintenance_enabled);
+        assert_eq!(
+            parsed.maintenance_interval_hours,
+            DEFAULT_MAINTENANCE_INTERVAL_HOURS
+        );
+        assert_eq!(parsed.maintenance_idle_minimum_minutes, 0);
+    }
+
+    /// `maintenance_cooldown_ms` clamps to the documented 1h..168h
+    /// range so a corrupt config file (`= 0` or `= u32::MAX`) cannot
+    /// either disable maintenance entirely or push it out forever.
+    #[test]
+    fn maintenance_cooldown_clamps_below_minimum() {
+        let s = AppSettings {
+            maintenance_interval_hours: 0,
+            ..AppSettings::default()
+        };
+        // Clamps up to MIN (1h).
+        assert_eq!(s.maintenance_cooldown_ms(), 60 * 60 * 1000);
+    }
+
+    #[test]
+    fn maintenance_cooldown_clamps_above_maximum() {
+        let s = AppSettings {
+            maintenance_interval_hours: 1_000,
+            ..AppSettings::default()
+        };
+        // Clamps down to MAX (168h = 1 week).
+        assert_eq!(s.maintenance_cooldown_ms(), 168 * 60 * 60 * 1000);
+    }
+
+    #[test]
+    fn maintenance_cooldown_default_is_24h() {
+        let s = AppSettings::default();
+        assert_eq!(s.maintenance_cooldown_ms(), 24 * 60 * 60 * 1000);
+    }
+
     #[test]
     fn default_model_camera_positions_is_empty() {
         let s = AppSettings::default();
@@ -399,7 +580,10 @@ mod tests {
 
     #[test]
     fn model_camera_position_serde_roundtrip() {
-        let pos = ModelCameraPosition { azimuth: 1.23, distance: 4.5 };
+        let pos = ModelCameraPosition {
+            azimuth: 1.23,
+            distance: 4.5,
+        };
         let json = serde_json::to_string(&pos).unwrap();
         let parsed: ModelCameraPosition = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, pos);
@@ -408,8 +592,20 @@ mod tests {
     #[test]
     fn model_camera_positions_independent_per_model() {
         let mut s = AppSettings::default();
-        s.model_camera_positions.insert("shinra".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
-        s.model_camera_positions.insert("komori".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
+        s.model_camera_positions.insert(
+            "shinra".into(),
+            ModelCameraPosition {
+                azimuth: 0.5,
+                distance: 3.0,
+            },
+        );
+        s.model_camera_positions.insert(
+            "komori".into(),
+            ModelCameraPosition {
+                azimuth: 1.2,
+                distance: 2.0,
+            },
+        );
 
         assert_eq!(s.model_camera_positions.len(), 2);
         assert!((s.model_camera_positions["shinra"].azimuth - 0.5).abs() < 0.001);
