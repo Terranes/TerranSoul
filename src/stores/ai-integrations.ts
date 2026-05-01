@@ -78,9 +78,10 @@ export const useAiIntegrationsStore = defineStore('ai-integrations', () => {
   async function refreshClients(workspaceRoot: string): Promise<void> {
     error.value = null;
     try {
-      clientStatuses.value = await invoke<ClientStatus[]>('list_mcp_clients', {
+      const clients = await invoke<ClientStatus[]>('list_mcp_clients', {
         workspaceRoot,
       });
+      clientStatuses.value = Array.isArray(clients) ? clients : [];
     } catch (e) {
       error.value = String(e);
     }
@@ -89,9 +90,10 @@ export const useAiIntegrationsStore = defineStore('ai-integrations', () => {
   async function refreshVscodeWindows(): Promise<void> {
     error.value = null;
     try {
-      vscodeWindows.value = await invoke<VsCodeWindow[]>(
+      const windows = await invoke<VsCodeWindow[]>(
         'vscode_list_known_windows',
       );
+      vscodeWindows.value = Array.isArray(windows) ? windows : [];
     } catch (e) {
       error.value = String(e);
     }

@@ -233,9 +233,11 @@ mod tests {
     fn job_recently_run_does_not_fire() {
         let cfg = MaintenanceConfig::default();
         let now = 100_000_000_000u64;
-        let mut state = MaintenanceState::default();
         // Decay ran 1 hour ago — should NOT fire (cooldown is 23h).
-        state.last_decay_ms = now - (60 * 60 * 1000);
+        let state = MaintenanceState {
+            last_decay_ms: now - (60 * 60 * 1000),
+            ..Default::default()
+        };
         let due = jobs_due(&state, &cfg, now);
         assert!(!due.contains(&MaintenanceJob::Decay));
         // The other three (never run) should still fire.
@@ -246,8 +248,10 @@ mod tests {
     fn job_at_exact_cooldown_fires() {
         let cfg = MaintenanceConfig::default();
         let now = 100_000_000_000u64;
-        let mut state = MaintenanceState::default();
-        state.last_decay_ms = now - cfg.decay_cooldown_ms;
+        let state = MaintenanceState {
+            last_decay_ms: now - cfg.decay_cooldown_ms,
+            ..Default::default()
+        };
         // 23h+ → exactly at threshold → should fire.
         assert!(is_due(&state, &cfg, now, MaintenanceJob::Decay));
     }
@@ -256,8 +260,10 @@ mod tests {
     fn job_one_ms_short_of_cooldown_does_not_fire() {
         let cfg = MaintenanceConfig::default();
         let now = 100_000_000_000u64;
-        let mut state = MaintenanceState::default();
-        state.last_decay_ms = now - cfg.decay_cooldown_ms + 1;
+        let state = MaintenanceState {
+            last_decay_ms: now - cfg.decay_cooldown_ms + 1,
+            ..Default::default()
+        };
         assert!(!is_due(&state, &cfg, now, MaintenanceJob::Decay));
     }
 
@@ -277,9 +283,11 @@ mod tests {
         // ORDER (Decay → GC → Promote → Edge).
         let cfg = MaintenanceConfig::default();
         let now = 100_000_000_000u64;
-        let mut state = MaintenanceState::default();
         // Decay is recent; the other three are never-run.
-        state.last_decay_ms = now - 1000;
+        let state = MaintenanceState {
+            last_decay_ms: now - 1000,
+            ..Default::default()
+        };
         let due = jobs_due(&state, &cfg, now);
         assert_eq!(
             due,

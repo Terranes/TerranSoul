@@ -2,6 +2,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
+export type PluginSettingValueType =
+  | string
+  | { enum?: { values: string[] }; Enum?: { values: string[] } }
+
 /**
  * Plugin manifest as returned by the Rust backend.
  * Mirrors `plugins::manifest::PluginManifest`.
@@ -18,7 +22,7 @@ export interface PluginManifest {
   contributes: {
     commands: { id: string; title: string; icon?: string; keybinding?: string; category?: string }[]
     views: { id: string; label: string; location: string; icon?: string }[]
-    settings: { key: string; label: string; description: string; default_value: unknown; value_type: string }[]
+    settings: { key: string; label: string; description: string; default_value: unknown; value_type: PluginSettingValueType }[]
     themes: { id: string; label: string; tokens: Record<string, string> }[]
     slash_commands: { name: string; description: string; command_id: string }[]
     memory_hooks: { id: string; stage: string; description: string }[]
@@ -88,10 +92,10 @@ export const usePluginStore = defineStore('plugins', () => {
         invoke<{ id: string; label: string; tokens: Record<string, string> }[]>('plugin_list_themes'),
         invoke<PluginHostStatus>('plugin_host_status'),
       ])
-      plugins.value = p
-      commands.value = c
-      slashCommands.value = sc
-      themes.value = th
+      plugins.value = Array.isArray(p) ? p : []
+      commands.value = Array.isArray(c) ? c : []
+      slashCommands.value = Array.isArray(sc) ? sc : []
+      themes.value = Array.isArray(th) ? th : []
       status.value = st
     } catch (e) {
       error.value = String(e)

@@ -376,7 +376,7 @@ mod tests {
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let deser: McpAutoSpawnConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.enabled, false);
+        assert!(!deser.enabled);
         assert_eq!(deser.port_override, 9999);
     }
 

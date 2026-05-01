@@ -226,7 +226,7 @@ mod tests {
         };
         let result = budget_aware_assembly(prompt, vec![], &config);
         // The large doc should be pruned, small might survive.
-        assert!(result.budget.pruned.len() >= 1);
+        assert!(!result.budget.pruned.is_empty());
     }
 
     #[test]

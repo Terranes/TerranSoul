@@ -12,6 +12,7 @@ pub mod agent;
 pub mod agents;
 pub mod ai_integrations;
 pub mod brain;
+pub mod coding;
 pub mod commands;
 pub mod container;
 pub mod identity;
