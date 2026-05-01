@@ -50,8 +50,8 @@ pub fn save(data_dir: &Path, settings: &AppSettings) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::CURRENT_SCHEMA_VERSION;
+    use super::*;
     use tempfile::tempdir;
 
     #[test]
@@ -212,11 +212,17 @@ mod tests {
         let mut positions = std::collections::HashMap::new();
         positions.insert(
             "shinra".to_string(),
-            super::super::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+            super::super::ModelCameraPosition {
+                azimuth: 0.5,
+                distance: 3.0,
+            },
         );
         positions.insert(
             "komori".to_string(),
-            super::super::ModelCameraPosition { azimuth: 1.2, distance: 2.5 },
+            super::super::ModelCameraPosition {
+                azimuth: 1.2,
+                distance: 2.5,
+            },
         );
         let s = AppSettings {
             model_camera_positions: positions,

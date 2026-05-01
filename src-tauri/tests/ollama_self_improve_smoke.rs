@@ -96,11 +96,25 @@ async fn ollama_real_metrics_log_records_outcome() {
 
     match &outcome {
         Ok(reply) => log.record_outcome(
-            started, "smoke.1", "Smoke test", "custom", &cfg.model, true, reply.len(), None,
+            started,
+            "smoke.1",
+            "Smoke test",
+            "custom",
+            &cfg.model,
+            true,
+            reply.len(),
+            None,
             terransoul_lib::coding::metrics::TokenUsage::default(),
         ),
         Err(e) => log.record_outcome(
-            started, "smoke.1", "Smoke test", "custom", &cfg.model, false, 0, Some(e),
+            started,
+            "smoke.1",
+            "Smoke test",
+            "custom",
+            &cfg.model,
+            false,
+            0,
+            Some(e),
             terransoul_lib::coding::metrics::TokenUsage::default(),
         ),
     }

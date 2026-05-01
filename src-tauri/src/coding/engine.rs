@@ -174,10 +174,7 @@ fn planner_prompt(
         task: user_task,
         negative_constraints: {
             let mut c = crate::coding::workflow::default_negative_constraints();
-            c.push(
-                "Do not produce code in this reply — output the plan only."
-                    .to_string(),
-            );
+            c.push("Do not produce code in this reply — output the plan only.".to_string());
             c
         },
         documents: load_planner_context(repo, workflow_cfg),
@@ -224,9 +221,12 @@ async fn plan_one_chunk<R: Runtime>(
 
     emit(
         app,
-        ProgressEvent::info("plan", format!("Planning chunk {}: {}", chunk.id, chunk.title))
-            .with_chunk(&chunk.id)
-            .with_progress(10),
+        ProgressEvent::info(
+            "plan",
+            format!("Planning chunk {}: {}", chunk.id, chunk.title),
+        )
+        .with_chunk(&chunk.id)
+        .with_progress(10),
     );
 
     let target_branch = feature_branch_name(&chunk.id);
@@ -311,7 +311,10 @@ pub async fn start<R: Runtime>(
     repo_hint: PathBuf,
 ) {
     if engine.running.swap(true, Ordering::Relaxed) {
-        emit(&app, ProgressEvent::info("idle", "Loop already running — ignoring start request"));
+        emit(
+            &app,
+            ProgressEvent::info("idle", "Loop already running — ignoring start request"),
+        );
         return;
     }
     engine.cancel.store(false, Ordering::Relaxed);
@@ -366,11 +369,8 @@ pub async fn start<R: Runtime>(
                 .unwrap_or_else(|| "main".to_string());
             emit(
                 &app,
-                ProgressEvent::info(
-                    "pull",
-                    format!("Pulling latest origin/{base_branch}…"),
-                )
-                .with_progress(8),
+                ProgressEvent::info("pull", format!("Pulling latest origin/{base_branch}…"))
+                    .with_progress(8),
             );
             let pull = git_ops::pull_main(&repo_root, &base_branch, Some(&config)).await;
             if pull.merged {
@@ -379,10 +379,7 @@ pub async fn start<R: Runtime>(
                     ProgressEvent::success("pull", pull.message.clone()).with_progress(12),
                 );
             } else {
-                emit(
-                    &app,
-                    ProgressEvent::error("pull", pull.message.clone()),
-                );
+                emit(&app, ProgressEvent::error("pull", pull.message.clone()));
             }
         }
 
@@ -390,7 +387,10 @@ pub async fn start<R: Runtime>(
 
         for cycle in 0..MAX_CYCLES {
             if cancel.load(Ordering::Relaxed) {
-                emit(&app, ProgressEvent::info("stopped", "Self-improve disabled — exiting loop"));
+                emit(
+                    &app,
+                    ProgressEvent::info("stopped", "Self-improve disabled — exiting loop"),
+                );
                 break;
             }
 
@@ -472,7 +472,10 @@ pub async fn start<R: Runtime>(
             sleep_cancellable(&cancel, IDLE_SLEEP_SECS).await;
         }
 
-        emit(&app, ProgressEvent::info("exit", "Self-improve loop exited"));
+        emit(
+            &app,
+            ProgressEvent::info("exit", "Self-improve loop exited"),
+        );
         // `data_dir` retained for future use (per-loop state files);
         // the conversation_learning hook fires from the chat command
         // pipeline, not inside this loop.
@@ -505,7 +508,10 @@ async fn try_open_completion_pr<R: Runtime>(
     let head_branch = match git_ops::current_branch(repo_root) {
         Some(b) => b,
         None => {
-            emit(app, ProgressEvent::error("pr", "Cannot open PR from detached HEAD"));
+            emit(
+                app,
+                ProgressEvent::error("pr", "Cannot open PR from detached HEAD"),
+            );
             return;
         }
     };
@@ -584,7 +590,11 @@ mod tests {
             title: "Autonomous loop MVP".to_string(),
             status: "not-started".to_string(),
         };
-        let msgs = planner_prompt(&repo, &chunk, &crate::coding::CodingWorkflowConfig::default());
+        let msgs = planner_prompt(
+            &repo,
+            &chunk,
+            &crate::coding::CodingWorkflowConfig::default(),
+        );
         // system + user + assistant-prefill (rule 6 from prompting-rules).
         assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].role, "system");
@@ -628,7 +638,9 @@ mod tests {
 
     #[test]
     fn with_chunk_and_progress_chain() {
-        let e = ProgressEvent::info("p", "m").with_chunk("25.4").with_progress(75);
+        let e = ProgressEvent::info("p", "m")
+            .with_chunk("25.4")
+            .with_progress(75);
         assert_eq!(e.chunk_id.as_deref(), Some("25.4"));
         assert_eq!(e.progress, 75);
     }

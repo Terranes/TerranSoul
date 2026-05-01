@@ -1,17 +1,18 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tauri::Manager;
-use tauri::Emitter;
+use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri::Emitter;
+use tauri::Manager;
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
 pub mod agents;
 pub mod ai_integrations;
 pub mod brain;
+pub mod coding;
 pub mod commands;
 pub mod container;
 pub mod identity;
@@ -38,20 +39,25 @@ use commands::{
     agents_roster::{
         roster_cancel_workflow, roster_create, roster_delete, roster_get_current,
         roster_get_ram_cap, roster_list, roster_list_pending_workflows, roster_list_workflows,
-        roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow,
-        roster_switch,
+        roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow, roster_switch,
+    },
+    auto_setup::{
+        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_vscode_mcp, setup_claude_mcp,
+        setup_claude_mcp_stdio, setup_codex_mcp, setup_codex_mcp_stdio, setup_vscode_mcp,
+        setup_vscode_mcp_stdio,
     },
     brain::{
         check_lm_studio_status, check_ollama_status, classify_intent, clear_active_brain,
         download_lm_studio_model, factory_reset_brain, get_active_brain, get_brain_mode,
-        get_brain_selection,
-        get_embed_cache_status, get_lm_studio_download_status, get_lm_studio_models,
-        get_next_provider, get_ollama_models, get_system_info, health_check_providers,
-        list_free_providers, load_lm_studio_model, pull_ollama_model, recommend_brain_models,
-        reset_embed_cache, set_active_brain, set_brain_mode, unload_lm_studio_model,
+        get_brain_selection, get_embed_cache_status, get_lm_studio_download_status,
+        get_lm_studio_models, get_next_provider, get_ollama_models, get_system_info,
+        health_check_providers, list_free_providers, load_lm_studio_model, pull_ollama_model,
+        recommend_brain_models, reset_embed_cache, set_active_brain, set_brain_mode,
+        unload_lm_studio_model,
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
+    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
@@ -67,96 +73,78 @@ use commands::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
     },
+    ingest::{cancel_ingest_task, get_all_tasks, ingest_document, resume_ingest_task},
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
-    ingest::{ingest_document, cancel_ingest_task, resume_ingest_task, get_all_tasks},
+    mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
-        close_memory_edge,
-        count_memory_conflicts, delete_memory, delete_memory_edge, dismiss_memory_conflict,
-        evaluate_auto_learn, export_to_obsidian,
-        extract_edges_via_brain, extract_memories_from_session, gc_memories,
-        get_auto_learn_policy, get_edge_stats, get_edges_for_memory, get_memories,
-        get_memories_by_tier, get_memory_history, get_memory_stats, get_relevant_memories,
-        get_schema_info, get_short_term_memory, hybrid_search_memories,
-        hybrid_search_memories_rrf, hyde_search_memories,
-        list_memory_conflicts, list_memory_edges, list_relation_types,
-        matryoshka_search_memories,
-        multi_hop_search_memories, promote_memory, rerank_search_memories,
-        resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
-        set_auto_learn_policy, summarize_session,
-        temporal_query, update_memory,
+        close_memory_edge, count_memory_conflicts, delete_memory, delete_memory_edge,
+        dismiss_memory_conflict, evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
+        extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
+        get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
+        get_memory_stats, get_relevant_memories, get_schema_info, get_short_term_memory,
+        hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories,
+        list_memory_conflicts, list_memory_edges, list_relation_types, matryoshka_search_memories,
+        multi_hop_search_memories, promote_memory, rerank_search_memories, resolve_memory_conflict,
+        scan_edge_conflicts, search_memories, semantic_search_memories, set_auto_learn_policy,
+        summarize_session, temporal_query, update_memory,
     },
     messaging::{
-        get_agent_messages, list_agent_subscriptions, publish_agent_message,
-        subscribe_agent_topic, unsubscribe_agent_topic,
+        get_agent_messages, list_agent_subscriptions, publish_agent_message, subscribe_agent_topic,
+        unsubscribe_agent_topic,
     },
     package::{
         get_ipc_protocol_range, install_agent, list_installed_agents, parse_agent_manifest,
         remove_agent, update_agent, validate_agent_manifest,
     },
     persona::{
-        check_persona_drift, delete_learned_expression, delete_learned_motion,
-        export_persona_pack, extract_persona_from_brain, generate_motion_from_text,
-        get_handoff_block, get_motion_feedback_stats, get_persona, get_persona_block,
-        import_persona_pack, list_learned_expressions, list_learned_motions,
-        preview_persona_pack, record_motion_feedback, save_learned_expression,
-        save_learned_motion, save_persona, set_handoff_block, set_persona_block,
+        check_persona_drift, delete_learned_expression, delete_learned_motion, export_persona_pack,
+        extract_persona_from_brain, generate_motion_from_text, get_handoff_block,
+        get_motion_feedback_stats, get_persona, get_persona_block, import_persona_pack,
+        list_learned_expressions, list_learned_motions, preview_persona_pack,
+        record_motion_feedback, save_learned_expression, save_learned_motion, save_persona,
+        set_handoff_block, set_persona_block,
     },
+    plugins::{
+        plugin_activate, plugin_deactivate, plugin_get, plugin_get_setting, plugin_host_status,
+        plugin_install, plugin_list, plugin_list_commands, plugin_list_slash_commands,
+        plugin_list_themes, plugin_parse_manifest, plugin_set_setting, plugin_uninstall,
+    },
+    quest::{get_quest_tracker, save_quest_tracker},
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
     },
     routing::{
-        approve_remote_command, deny_remote_command, get_device_permissions,
-        list_pending_commands, match_ai_integration_intent, set_device_permission,
+        approve_remote_command, deny_remote_command, get_device_permissions, list_pending_commands,
+        match_ai_integration_intent, set_device_permission,
     },
     sandbox::{
         clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
         revoke_agent_capability, run_agent_in_sandbox,
     },
-    window::{
-        get_all_monitors, get_window_mode, set_cursor_passthrough, set_pet_mode_bounds,
-        set_window_mode, start_window_drag, set_pet_window_size, toggle_window_mode,
-        start_pet_cursor_poll, stop_pet_cursor_poll, exit_app, is_dev_build,
-        open_panel_window, close_panel_window,
+    settings::{
+        get_app_settings, get_model_camera_positions, save_app_settings, save_model_camera_position,
     },
     streaming::send_message_stream,
-    translation::{list_languages, translate_text, detect_language},
-    settings::{get_app_settings, save_app_settings, get_model_camera_positions, save_model_camera_position},
+    translation::{detect_language, list_languages, translate_text},
     user_models::{
         delete_user_model, import_user_model, list_user_models, read_user_model_bytes,
         update_user_model,
     },
-    vision::{capture_screen, analyze_screen},
+    vision::{analyze_screen, capture_screen},
     voice::{
         add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
-        get_voice_config, list_asr_providers, list_tts_providers, remove_hotword,
-        set_asr_provider, set_tts_provider, set_tts_prosody, set_tts_voice, set_voice_api_key, set_voice_endpoint,
+        get_voice_config, list_asr_providers, list_tts_providers, remove_hotword, set_asr_provider,
+        set_tts_prosody, set_tts_provider, set_tts_voice, set_voice_api_key, set_voice_endpoint,
         synthesize_tts, transcribe_audio,
     },
-    quest::{
-        get_quest_tracker, save_quest_tracker,
-    },
-    mcp::{
-        mcp_server_start, mcp_server_stop, mcp_server_status, mcp_regenerate_token,
-    },
-    auto_setup::{
-        setup_vscode_mcp, setup_claude_mcp, setup_codex_mcp,
-        setup_vscode_mcp_stdio, setup_claude_mcp_stdio, setup_codex_mcp_stdio,
-        remove_vscode_mcp, remove_claude_mcp, remove_codex_mcp,
-        list_mcp_clients,
-    },
-    consolidation::{
-        run_sleep_consolidation, touch_activity, get_idle_status,
-    },
-    vscode::{
-        vscode_open_project, vscode_list_known_windows, vscode_forget_window,
-    },
-    plugins::{
-        plugin_install, plugin_activate, plugin_deactivate, plugin_uninstall,
-        plugin_list, plugin_get, plugin_list_commands, plugin_list_slash_commands,
-        plugin_list_themes, plugin_get_setting, plugin_set_setting,
-        plugin_host_status, plugin_parse_manifest,
+    vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
+    window::{
+        close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build,
+        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
+        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
+        toggle_window_mode,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -292,12 +280,13 @@ impl AppState {
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
             workflow_engine: TokioMutex::new(
-                workflows::WorkflowEngine::open(&data_dir.join("workflows.sqlite"))
-                    .unwrap_or_else(|e| {
+                workflows::WorkflowEngine::open(&data_dir.join("workflows.sqlite")).unwrap_or_else(
+                    |e| {
                         eprintln!("[workflows] failed to open durable log: {e}; using in-memory");
                         workflows::WorkflowEngine::open(std::path::Path::new(":memory:"))
                             .expect("in-memory workflow engine must open")
-                    }),
+                    },
+                ),
             ),
             persona_block: Mutex::new(String::new()),
             handoff_block: Mutex::new(String::new()),
@@ -686,8 +675,7 @@ pub fn run() {
                 if dev_dir.exists() {
                     let _ = std::fs::remove_dir_all(&dev_dir);
                 }
-                std::fs::create_dir_all(&dev_dir)
-                    .expect("failed to create dev data directory");
+                std::fs::create_dir_all(&dev_dir).expect("failed to create dev data directory");
                 dev_dir
             } else {
                 base_data_dir
@@ -704,12 +692,12 @@ pub fn run() {
             let devices = load_trusted_devices(&data_dir);
             *state.trusted_devices.lock().unwrap() = devices;
 
-            *state.command_router.blocking_lock() =
-                routing::CommandRouter::new(&device_id);
+            *state.command_router.blocking_lock() = routing::CommandRouter::new(&device_id);
 
             // System tray with Show/Hide + Window/Pet toggle + Quit
             let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
-            let mode_toggle = MenuItem::with_id(app, "mode_toggle", "Switch to Pet Mode", true, None::<&str>)?;
+            let mode_toggle =
+                MenuItem::with_id(app, "mode_toggle", "Switch to Pet Mode", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
 
@@ -733,8 +721,12 @@ pub fn run() {
                             let state = app.state::<AppState>();
                             let previous = { *state.window_mode.lock().unwrap() };
                             let new_mode = match previous {
-                                commands::window::WindowMode::Window => commands::window::WindowMode::Pet,
-                                commands::window::WindowMode::Pet => commands::window::WindowMode::Window,
+                                commands::window::WindowMode::Window => {
+                                    commands::window::WindowMode::Pet
+                                }
+                                commands::window::WindowMode::Pet => {
+                                    commands::window::WindowMode::Window
+                                }
                             };
                             // Mirror the save/restore behaviour from the
                             // commands so a tray-driven toggle also restores

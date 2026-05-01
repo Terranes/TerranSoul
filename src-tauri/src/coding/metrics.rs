@@ -113,7 +113,9 @@ pub struct MetricsLog {
 
 impl MetricsLog {
     pub fn new(data_dir: &Path) -> Self {
-        Self { path: data_dir.join(LOG_FILE) }
+        Self {
+            path: data_dir.join(LOG_FILE),
+        }
     }
 
     /// Append a `running` row when a plan cycle begins. Returns the
@@ -172,7 +174,11 @@ impl MetricsLog {
             finished_at_ms: finished,
             chunk_id: chunk_id.to_string(),
             chunk_title: chunk_title.to_string(),
-            outcome: if success { "success".to_string() } else { "failure".to_string() },
+            outcome: if success {
+                "success".to_string()
+            } else {
+                "failure".to_string()
+            },
             duration_ms: finished.saturating_sub(started_at_ms),
             provider: provider.to_string(),
             model: model.to_string(),
@@ -290,12 +296,10 @@ pub fn summarise_with_now(records: &[RunRecord], now_epoch_ms: u64) -> MetricsSu
         if r.finished_at_ms >= cutoff {
             s.rolling_7d_runs += 1;
             if let Some(p) = r.prompt_tokens {
-                s.rolling_7d_prompt_tokens =
-                    s.rolling_7d_prompt_tokens.saturating_add(p);
+                s.rolling_7d_prompt_tokens = s.rolling_7d_prompt_tokens.saturating_add(p);
             }
             if let Some(c) = r.completion_tokens {
-                s.rolling_7d_completion_tokens =
-                    s.rolling_7d_completion_tokens.saturating_add(c);
+                s.rolling_7d_completion_tokens = s.rolling_7d_completion_tokens.saturating_add(c);
             }
             if let Some(c) = r.cost_usd {
                 s.rolling_7d_cost_usd += c;
@@ -468,10 +472,7 @@ mod tests {
 
     #[test]
     fn summary_ignores_running_rows() {
-        let recs = vec![
-            rec("running", "x", None, 0),
-            rec("success", "x", None, 100),
-        ];
+        let recs = vec![rec("running", "x", None, 0), rec("success", "x", None, 100)];
         let s = summarise(&recs);
         assert_eq!(s.total_runs, 1);
     }
@@ -561,7 +562,9 @@ mod tests {
     #[test]
     fn token_usage_cost_anthropic_sonnet() {
         let usage = TokenUsage::new(1_000_000, 0);
-        let cost = usage.cost_usd_for("anthropic", "claude-sonnet-4-5").unwrap();
+        let cost = usage
+            .cost_usd_for("anthropic", "claude-sonnet-4-5")
+            .unwrap();
         // 1M prompt @ $3.00/M = $3.00
         assert!((cost - 3.00).abs() < 1e-6);
     }
@@ -569,16 +572,45 @@ mod tests {
     #[test]
     fn token_usage_cost_returns_none_when_prompt_missing() {
         let usage = TokenUsage::default();
-        assert!(usage.cost_usd_for("anthropic", "claude-sonnet-4-5").is_none());
+        assert!(usage
+            .cost_usd_for("anthropic", "claude-sonnet-4-5")
+            .is_none());
     }
 
     #[test]
     fn summary_aggregates_total_tokens_and_cost() {
         let now = 10_000_000_000u64;
         let recs = vec![
-            rec_with_usage("success", "a", "anthropic", "claude-sonnet-4-5", 1000, 500, 0.0105, now),
-            rec_with_usage("success", "b", "anthropic", "claude-sonnet-4-5", 2000, 1000, 0.021, now - 1000),
-            rec_with_usage("failure", "c", "openai", "gpt-4o-mini", 500, 100, 0.000135, now - 2000),
+            rec_with_usage(
+                "success",
+                "a",
+                "anthropic",
+                "claude-sonnet-4-5",
+                1000,
+                500,
+                0.0105,
+                now,
+            ),
+            rec_with_usage(
+                "success",
+                "b",
+                "anthropic",
+                "claude-sonnet-4-5",
+                2000,
+                1000,
+                0.021,
+                now - 1000,
+            ),
+            rec_with_usage(
+                "failure",
+                "c",
+                "openai",
+                "gpt-4o-mini",
+                500,
+                100,
+                0.000135,
+                now - 2000,
+            ),
         ];
         let s = summarise_with_now(&recs, now);
         assert_eq!(s.total_runs, 3);
@@ -599,9 +631,27 @@ mod tests {
         let day_ms = 24 * 60 * 60 * 1000;
         let recs = vec![
             // Inside window.
-            rec_with_usage("success", "new", "anthropic", "claude-sonnet-4-5", 1000, 500, 0.01, now - day_ms),
+            rec_with_usage(
+                "success",
+                "new",
+                "anthropic",
+                "claude-sonnet-4-5",
+                1000,
+                500,
+                0.01,
+                now - day_ms,
+            ),
             // Outside window (10 days old).
-            rec_with_usage("success", "old", "anthropic", "claude-sonnet-4-5", 9999, 9999, 99.99, now - 10 * day_ms),
+            rec_with_usage(
+                "success",
+                "old",
+                "anthropic",
+                "claude-sonnet-4-5",
+                9999,
+                9999,
+                99.99,
+                now - 10 * day_ms,
+            ),
         ];
         let s = summarise_with_now(&recs, now);
         // Both runs counted in totals.
@@ -617,7 +667,16 @@ mod tests {
         // Mix old-format (no usage) and new-format records.
         let recs = vec![
             rec("success", "old1", None, 100),
-            rec_with_usage("success", "new1", "anthropic", "claude-haiku", 100, 50, 0.0003, 5_000_000),
+            rec_with_usage(
+                "success",
+                "new1",
+                "anthropic",
+                "claude-haiku",
+                100,
+                50,
+                0.0003,
+                5_000_000,
+            ),
         ];
         let s = summarise_with_now(&recs, 5_000_000);
         assert_eq!(s.total_runs, 2);

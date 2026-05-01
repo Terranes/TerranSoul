@@ -11,10 +11,10 @@
 //! Maps to `docs/brain-advanced-design.md` §16 Phase 2 row
 //! "Auto-categorise via LLM on insert" (chunk 18.1).
 
-use crate::brain::{BrainMode, OllamaAgent, OpenAiClient};
 use crate::brain::ollama_agent::ChatMessage;
 use crate::brain::openai_client::OpenAiMessage;
-use crate::memory::tag_vocabulary::{CURATED_PREFIXES, validate_csv, TagValidation};
+use crate::brain::{BrainMode, OllamaAgent, OpenAiClient};
+use crate::memory::tag_vocabulary::{validate_csv, TagValidation, CURATED_PREFIXES};
 
 /// Build the system prompt for the auto-tagger.
 fn system_prompt() -> String {
@@ -104,16 +104,15 @@ pub async fn auto_tag_content(content: &str, brain_mode: &BrainMode) -> Vec<Stri
             let (response, _) = agent.call(msgs).await;
             response
         }
-        BrainMode::FreeApi { provider_id, api_key } => {
+        BrainMode::FreeApi {
+            provider_id,
+            api_key,
+        } => {
             let provider = match crate::brain::get_free_provider(provider_id) {
                 Some(p) => p,
                 None => return vec![],
             };
-            let client = OpenAiClient::new(
-                &provider.base_url,
-                &provider.model,
-                api_key.as_deref(),
-            );
+            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
             let msgs = vec![
                 OpenAiMessage {
                     role: "system".to_string(),
@@ -129,7 +128,12 @@ pub async fn auto_tag_content(content: &str, brain_mode: &BrainMode) -> Vec<Stri
                 Err(_) => return vec![],
             }
         }
-        BrainMode::PaidApi { provider: _, api_key, model, base_url } => {
+        BrainMode::PaidApi {
+            provider: _,
+            api_key,
+            model,
+            base_url,
+        } => {
             let client = OpenAiClient::new(base_url, model, Some(api_key));
             let msgs = vec![
                 OpenAiMessage {

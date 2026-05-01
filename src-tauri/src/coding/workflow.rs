@@ -414,10 +414,7 @@ fn read_truncated(path: &Path, label: &str, cfg: &CodingWorkflowConfig) -> Optio
     let body = std::fs::read_to_string(path).ok()?;
     let truncated = if body.chars().count() > cfg.max_file_chars {
         let head: String = body.chars().take(cfg.max_file_chars).collect();
-        format!(
-            "{head}\n… [file truncated to {} chars]",
-            cfg.max_file_chars
-        )
+        format!("{head}\n… [file truncated to {} chars]", cfg.max_file_chars)
     } else {
         body
     };
@@ -581,10 +578,7 @@ mod tests {
     fn is_excluded_matches_basename_and_full_path() {
         assert!(is_excluded("rules/foo.md", &["foo.md".to_string()]));
         assert!(is_excluded("foo.md", &["foo.md".to_string()]));
-        assert!(is_excluded(
-            "rules/foo.md",
-            &["rules/foo.md".to_string()]
-        ));
+        assert!(is_excluded("rules/foo.md", &["rules/foo.md".to_string()]));
         assert!(!is_excluded("rules/bar.md", &["foo.md".to_string()]));
     }
 

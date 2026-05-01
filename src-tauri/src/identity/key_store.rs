@@ -20,7 +20,9 @@ pub fn load_or_generate_identity(data_dir: &Path) -> Result<DeviceIdentity, Stri
     if key_path.exists() {
         let contents = fs::read_to_string(&key_path).map_err(|e| e.to_string())?;
         let stored: StoredKey = serde_json::from_str(&contents).map_err(|e| e.to_string())?;
-        let key_bytes = BASE64.decode(&stored.signing_key_b64).map_err(|e| e.to_string())?;
+        let key_bytes = BASE64
+            .decode(&stored.signing_key_b64)
+            .map_err(|e| e.to_string())?;
         DeviceIdentity::from_bytes(stored.device_id, &key_bytes)
     } else {
         let identity = DeviceIdentity::generate();

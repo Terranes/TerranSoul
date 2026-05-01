@@ -61,14 +61,10 @@ pub enum AutoLearnDecision {
     /// Don't fire — auto-learn is disabled in settings.
     SkipDisabled,
     /// Don't fire — fewer than `every_n_turns` since the last run.
-    SkipBelowThreshold {
-        turns_until_next: u32,
-    },
+    SkipBelowThreshold { turns_until_next: u32 },
     /// Don't fire — the cooldown after the previous auto-run hasn't
     /// elapsed yet.
-    SkipCooldown {
-        turns_remaining: u32,
-    },
+    SkipCooldown { turns_remaining: u32 },
 }
 
 /// Decide whether to fire the auto-learner.
@@ -178,10 +174,7 @@ mod tests {
     fn disabled_policy_never_fires() {
         let mut p = enabled();
         p.enabled = false;
-        assert_eq!(
-            evaluate(p, 9999, Some(0)),
-            AutoLearnDecision::SkipDisabled
-        );
+        assert_eq!(evaluate(p, 9999, Some(0)), AutoLearnDecision::SkipDisabled);
     }
 
     #[test]
@@ -253,10 +246,7 @@ mod tests {
             every_n_turns: 1,
             min_cooldown_turns: 1,
         };
-        assert_eq!(
-            evaluate(p, u32::MAX, None),
-            AutoLearnDecision::SkipDisabled
-        );
+        assert_eq!(evaluate(p, u32::MAX, None), AutoLearnDecision::SkipDisabled);
     }
 
     #[test]
@@ -282,8 +272,10 @@ mod tests {
         assert!(!disabled.should_fire);
         assert_eq!(disabled.reason, "disabled");
 
-        let below: AutoLearnDecisionDto =
-            AutoLearnDecision::SkipBelowThreshold { turns_until_next: 4 }.into();
+        let below: AutoLearnDecisionDto = AutoLearnDecision::SkipBelowThreshold {
+            turns_until_next: 4,
+        }
+        .into();
         assert!(!below.should_fire);
         assert_eq!(below.reason, "below_threshold");
         assert_eq!(below.turns_remaining, Some(4));

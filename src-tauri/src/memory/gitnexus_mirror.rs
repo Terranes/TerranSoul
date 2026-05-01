@@ -329,17 +329,45 @@ mod tests {
     fn small_payload() -> KgPayload {
         KgPayload {
             nodes: vec![
-                KgNode { id: "n1".into(), label: "module::A".into(), kind: Some("module".into()) },
-                KgNode { id: "n2".into(), label: "module::A::foo".into(), kind: Some("function".into()) },
-                KgNode { id: "n3".into(), label: "module::B::bar".into(), kind: Some("function".into()) },
+                KgNode {
+                    id: "n1".into(),
+                    label: "module::A".into(),
+                    kind: Some("module".into()),
+                },
+                KgNode {
+                    id: "n2".into(),
+                    label: "module::A::foo".into(),
+                    kind: Some("function".into()),
+                },
+                KgNode {
+                    id: "n3".into(),
+                    label: "module::B::bar".into(),
+                    kind: Some("function".into()),
+                },
             ],
             edges: vec![
-                KgEdge { src: "n1".into(), dst: "n2".into(), rel_type: "CONTAINS".into() },
-                KgEdge { src: "n2".into(), dst: "n3".into(), rel_type: "CALLS".into() },
+                KgEdge {
+                    src: "n1".into(),
+                    dst: "n2".into(),
+                    rel_type: "CONTAINS".into(),
+                },
+                KgEdge {
+                    src: "n2".into(),
+                    dst: "n3".into(),
+                    rel_type: "CALLS".into(),
+                },
                 // Self-loop — must be skipped.
-                KgEdge { src: "n3".into(), dst: "n3".into(), rel_type: "CALLS".into() },
+                KgEdge {
+                    src: "n3".into(),
+                    dst: "n3".into(),
+                    rel_type: "CALLS".into(),
+                },
                 // Dangling reference — must be skipped.
-                KgEdge { src: "missing".into(), dst: "n2".into(), rel_type: "CALLS".into() },
+                KgEdge {
+                    src: "missing".into(),
+                    dst: "n2".into(),
+                    rel_type: "CALLS".into(),
+                },
             ],
         }
     }

@@ -61,7 +61,11 @@ pub struct SegmenterConfig {
 
 impl Default for SegmenterConfig {
     fn default() -> Self {
-        Self { stddev_k: 1.0, min_segment_size: 2, summary_max_chars: 80 }
+        Self {
+            stddev_k: 1.0,
+            min_segment_size: 2,
+            summary_max_chars: 80,
+        }
     }
 }
 
@@ -185,15 +189,14 @@ fn one_segment(
     config: &SegmenterConfig,
 ) -> TopicSegment {
     let summary = summarise_segment(turns, start, end, config.summary_max_chars);
-    TopicSegment { start, end, summary }
+    TopicSegment {
+        start,
+        end,
+        summary,
+    }
 }
 
-fn summarise_segment(
-    turns: &[SegTurn<'_>],
-    start: usize,
-    end: usize,
-    max_chars: usize,
-) -> String {
+fn summarise_segment(turns: &[SegTurn<'_>], start: usize, end: usize, max_chars: usize) -> String {
     // Prefer the first user turn for the summary — it's the most
     // indicative of the topic. Fall back to the first turn of any role
     // if none is present.
@@ -231,12 +234,7 @@ fn merge_small_segments(
             prev.end = seg.end;
             // Re-derive summary from the (now wider) merged range so
             // the summary still reflects the segment's content.
-            prev.summary = summarise_segment(
-                turns,
-                prev.start,
-                prev.end,
-                config.summary_max_chars,
-            );
+            prev.summary = summarise_segment(turns, prev.start, prev.end, config.summary_max_chars);
         } else {
             out.push(seg);
         }
@@ -354,14 +352,22 @@ mod tests {
     fn uniform_topic_yields_single_segment() {
         // All turns embed to the same axis → zero distances → no
         // boundaries.
-        let turns: Vec<SegTurn> = (0..5).map(|i| if i % 2 == 0 {
-            turn("user", "cooking")
-        } else {
-            turn("assistant", "yum")
-        }).collect();
+        let turns: Vec<SegTurn> = (0..5)
+            .map(|i| {
+                if i % 2 == 0 {
+                    turn("user", "cooking")
+                } else {
+                    turn("assistant", "yum")
+                }
+            })
+            .collect();
         let embs: Vec<Vec<f32>> = (0..5).map(|_| axis_emb(0)).collect();
         let segments = segment(&turns, &embs, &SegmenterConfig::default());
-        assert_eq!(segments.len(), 1, "uniform topic must collapse to 1 segment");
+        assert_eq!(
+            segments.len(),
+            1,
+            "uniform topic must collapse to 1 segment"
+        );
         assert_eq!(segments[0].start, 0);
         assert_eq!(segments[0].end, 5);
     }
@@ -379,8 +385,12 @@ mod tests {
         ];
         // First three on axis 0 (cooking), next three on axis 1 (rust).
         let embs: Vec<Vec<f32>> = vec![
-            axis_emb(0), axis_emb(0), axis_emb(0),
-            axis_emb(1), axis_emb(1), axis_emb(1),
+            axis_emb(0),
+            axis_emb(0),
+            axis_emb(0),
+            axis_emb(1),
+            axis_emb(1),
+            axis_emb(1),
         ];
         let segments = segment(&turns, &embs, &SegmenterConfig::default());
         assert_eq!(segments.len(), 2, "one shift must yield 2 segments");
@@ -403,7 +413,9 @@ mod tests {
             turn("user", "topic A 5"),
         ];
         let embs: Vec<Vec<f32>> = vec![
-            axis_emb(0), axis_emb(0), axis_emb(0),
+            axis_emb(0),
+            axis_emb(0),
+            axis_emb(0),
             axis_emb(2), // outlier
             axis_emb(0),
         ];
@@ -411,18 +423,29 @@ mod tests {
         // Outlier may or may not trigger a boundary, but the result
         // must never have a singleton segment per `min_segment_size=2`.
         for s in &segments {
-            assert!(s.len() >= 2 || segments.len() == 1, "segment {:?} too small", s);
+            assert!(
+                s.len() >= 2 || segments.len() == 1,
+                "segment {:?} too small",
+                s
+            );
         }
     }
 
     #[test]
     fn segments_cover_full_transcript_without_gaps() {
         // Every turn must belong to exactly one segment.
-        let turns: Vec<SegTurn> = (0..6).map(|i| turn("user", match i {
-            0..=1 => "a",
-            2..=3 => "b",
-            _ => "c",
-        })).collect();
+        let turns: Vec<SegTurn> = (0..6)
+            .map(|i| {
+                turn(
+                    "user",
+                    match i {
+                        0..=1 => "a",
+                        2..=3 => "b",
+                        _ => "c",
+                    },
+                )
+            })
+            .collect();
         let embs: Vec<Vec<f32>> = (0..6).map(|i| axis_emb(i / 2)).collect();
         let segments = segment(&turns, &embs, &SegmenterConfig::default());
         // Coverage check: end of segment N == start of segment N+1.
@@ -445,7 +468,11 @@ mod tests {
         let embs = vec![axis_emb(0), axis_emb(0)];
         let segments = segment(&turns, &embs, &SegmenterConfig::default());
         assert_eq!(segments.len(), 1);
-        assert!(segments[0].summary.contains("Rust"), "got: {}", segments[0].summary);
+        assert!(
+            segments[0].summary.contains("Rust"),
+            "got: {}",
+            segments[0].summary
+        );
     }
 
     #[test]
@@ -453,7 +480,10 @@ mod tests {
         let long = "x".repeat(500);
         let turns = vec![turn("user", &long)];
         let embs = vec![axis_emb(0)];
-        let cfg = SegmenterConfig { summary_max_chars: 20, ..SegmenterConfig::default() };
+        let cfg = SegmenterConfig {
+            summary_max_chars: 20,
+            ..SegmenterConfig::default()
+        };
         let segments = segment(&turns, &embs, &cfg);
         assert!(segments[0].summary.chars().count() <= 21); // 20 + ellipsis
         assert!(segments[0].summary.ends_with('…'));
@@ -465,11 +495,21 @@ mod tests {
         // must produce ≤ segments than the lower one.
         let turns: Vec<SegTurn> = (0..6).map(|_| turn("user", "msg")).collect();
         let embs: Vec<Vec<f32>> = vec![
-            axis_emb(0), axis_emb(0), axis_emb(1),
-            axis_emb(0), axis_emb(2), axis_emb(0),
+            axis_emb(0),
+            axis_emb(0),
+            axis_emb(1),
+            axis_emb(0),
+            axis_emb(2),
+            axis_emb(0),
         ];
-        let strict = SegmenterConfig { stddev_k: 0.0, ..SegmenterConfig::default() };
-        let lenient = SegmenterConfig { stddev_k: 5.0, ..SegmenterConfig::default() };
+        let strict = SegmenterConfig {
+            stddev_k: 0.0,
+            ..SegmenterConfig::default()
+        };
+        let lenient = SegmenterConfig {
+            stddev_k: 5.0,
+            ..SegmenterConfig::default()
+        };
         let s_strict = segment(&turns, &embs, &strict);
         let s_lenient = segment(&turns, &embs, &lenient);
         assert!(
@@ -490,7 +530,11 @@ mod tests {
 
     #[test]
     fn topic_segment_round_trip() {
-        let s = TopicSegment { start: 0, end: 3, summary: "hi".to_string() };
+        let s = TopicSegment {
+            start: 0,
+            end: 3,
+            summary: "hi".to_string(),
+        };
         let json = serde_json::to_string(&s).unwrap();
         let back: TopicSegment = serde_json::from_str(&json).unwrap();
         assert_eq!(s, back);
@@ -505,15 +549,18 @@ mod tests {
             turn("user", "OUTLIER"),
             turn("user", "a"),
         ];
-        let embs: Vec<Vec<f32>> = vec![
-            axis_emb(0), axis_emb(0), axis_emb(2), axis_emb(0),
-        ];
-        let cfg = SegmenterConfig { min_segment_size: 1, ..SegmenterConfig::default() };
+        let embs: Vec<Vec<f32>> = vec![axis_emb(0), axis_emb(0), axis_emb(2), axis_emb(0)];
+        let cfg = SegmenterConfig {
+            min_segment_size: 1,
+            ..SegmenterConfig::default()
+        };
         let segments = segment(&turns, &embs, &cfg);
         // No assertion on count (algorithm-dependent), but we must not
         // panic and every turn must be covered.
         let mut total = 0;
-        for s in &segments { total += s.len(); }
+        for s in &segments {
+            total += s.len();
+        }
         assert_eq!(total, turns.len());
     }
 }

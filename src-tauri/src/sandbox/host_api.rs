@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use super::capability::{Capability, CapabilityStore};
+use std::sync::{Arc, Mutex};
 
 pub struct HostContext {
     pub agent_name: String,

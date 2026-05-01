@@ -292,7 +292,6 @@ Integration test with VRM playback.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 15.2 | **gRPC server** — `tonic` + mTLS on `127.0.0.1:7422`, `brain.v1.proto`, streaming search. | not-started | ~700 LOC + tests. |
 | 15.4 | **Control Panel** — `AICodingIntegrationsView.vue` + `ai-integrations.ts` store. Server status, clients, auto-setup buttons, LAN toggle. | not-started | ~500 LOC + tests. |
 | 15.7 | **VS Code Copilot incremental-indexing QA** — e2e test: cold/warm calls, fingerprint cache, file-watcher invalidation. | not-started | Depends on 15.1 + 15.3 + 15.6. |
 | 15.8 | **Doc finalisation** — replace all "Planned" sections in `docs/AI-coding-integrations.md` with as-built reality. | not-started | Final QA gate for Phase 15. |
@@ -481,7 +480,7 @@ swaps to Agent B, exchanges 5 more turns, swaps back to Agent A.
 |---|---|---|---|
 | 24.1b | **LAN bind config + OS probe wrapper.** Add `local-ip-address` (or `if-addrs`) crate; thin `discover_lan_addresses() -> Vec<LanAddress>` wrapper that calls the OS interface enumerator and feeds it through 24.1a. New `--lan` Tauri config flag (and `AppSettings.lan_enabled`) flips MCP server bind from `127.0.0.1` to `0.0.0.0` — gated behind explicit user opt-in (clear UI warning). Tauri command `list_lan_addresses` for the pairing-UI. ~120 LOC + integration tests. | not-started | Depends on 24.1a. The bind switch must default off — never silently expose a brain server to the LAN. |
 | 24.2b | **mTLS pairing flow + persistent device registry.** Generate self-signed CA on first LAN-enable via `rcgen` (already a dep); issue per-device client certs at pairing time; persist `(device_id, cert_fingerprint, display_name, paired_at, last_seen_at)` to a new `paired_devices` SQLite table. Tauri commands `start_pairing` (returns QR payload), `confirm_pairing(device_id)`, `revoke_device(device_id)`, `list_paired_devices`. 5-minute pairing window enforced server-side. ~400 LOC + 10 integration tests. | not-started | Depends on 24.1b + 24.2a. Database migration adds `paired_devices` table. |
-| 24.3 | **Land Chunk 15.2 — gRPC server (`tonic` + `brain.v1.proto`).** Existing milestones row 15.2 promoted into this phase since it's the prerequisite transport. Bind to `0.0.0.0:7422` when `lan_enabled`, else `127.0.0.1:7422`. mTLS layer reads CA + per-device certs from 24.2b. ~700 LOC + tests. | not-started | Existing row from Phase 15. Sequencing constraint: must land after 24.2b so it has the cert store to authenticate against. |
+| 24.3 | **LAN gRPC activation + paired-device mTLS enforcement.** Wire the shipped Chunk 15.2 `brain.v1` tonic transport into the Phase 24 LAN mode: bind to `0.0.0.0:7422` when `lan_enabled`, else keep loopback, and require CA + per-device certs from 24.2b for non-loopback clients. ~350 LOC + tests. | not-started | Depends on 24.2b. Chunk 15.2 transport foundation is shipped; this row is only the LAN/runtime activation layer. |
 | 24.4 | **Phone-control RPC surface (`phone_control.v1.proto`).** New proto in addition to `brain.v1`: `GetSystemStatus` (CPU/RAM/active-models), `ListVsCodeWorkspaces`, `GetCopilotSessionStatus { workspace }`, `ListWorkflowRuns`, `GetWorkflowProgress { run_id }`, `ContinueWorkflow { run_id }`, `SendChatMessage / StreamChat`, `ListPairedDevices`. Capability-gated per-RPC (declared in `paired_devices.capabilities` JSON column added in 24.2b). ~500 LOC + tests. | not-started | Depends on 24.3. Pure proto + handlers; no iOS code yet. |
 | 24.5b | **VS Code / Copilot session probe — FS wrapper.** Now that the pure parser `network::vscode_log::summarise_log` is shipped (24.5a), wire `tokio::fs::read_to_string` of `<user-data>/logs/<latest-date>/window<N>/exthost/GitHub.copilot-chat/Copilot-Chat.log` plus `state.vscdb` SQLite open. Resolves `<user-data>` per-OS (Windows `%APPDATA%/Code/User`, macOS `~/Library/Application Support/Code/User`, Linux `~/.config/Code/User`). Tauri command `get_copilot_session_status` returning `CopilotLogSummary`. ~250 LOC + integration tests. | not-started | Pure parser (24.5a) shipped — this chunk is the I/O wrapper + Tauri surface. |
 | 24.6 | **Tauri iOS target + shared frontend.** Add `[targets.ios]` to `tauri.conf.json`; mobile layout via existing `viewport` breakpoints; iOS Keychain for pairing token storage via `tauri-plugin-stronghold` or `tauri-plugin-keyring`. Cargo `cargo tauri ios init` + first build pipeline. ~300 LOC + iOS-CI smoke job. | not-started | Heavy chunk — splits into 24.6a (iOS init + smoke build) and 24.6b (mobile layout pass) at implementation time. |
@@ -514,26 +513,34 @@ User on the same Wi-Fi as the desktop:
 
 ---
 
-### Phase 26 — Brain Background Maintenance & Auto-Learn Completion
+### Phase 27 — Agentic RAG, Context Engineering & Persona Roadmap Gaps
 
-> **Why this phase exists.** `docs/brain-advanced-design.md` §21.7 lists
-> four roadmap items required to close the auto-learn loop. They are not
-> tracked anywhere in milestones today.
-
-| # | Chunk | Status | Notes |
-|---|---|---|---|
-
-> **Why this phase exists.** `docs/brain-advanced-design.md` §19.2
-> tracker rows 14 and 15 are still 🟡 partial — they need to land.
+> **Why this phase exists.** `docs/brain-advanced-design.md` §19.2 rows
+> 14 and 15 (Agentic RAG + Context Engineering) are tracked here; chunks
+> 27.1 and 27.2 have shipped and are archived in `completion-log.md`.
+> The remaining rows are roadmap gaps mentioned in `docs/persona-design.md`
+> §6.3, §7.2, and §14.2 that were not yet represented in this milestones file.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 27.3 | **Blendshape passthrough — expanded ARKit rig support.** Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs (beyond the 6-preset baseline). Per `docs/persona-design.md` §6.3 "Mask of a Thousand Faces — Expanded". | not-started | Frontend-heavy; gated by `AppSettings.expanded_blendshapes`. |
+| 27.4 | **MoMask-style full-body reconstruction research spike.** Evaluate whether a permissively licensed, locally runnable sparse-keypoint → full-body-pose model can improve the existing BlazePose retarget path without requiring cloud inference. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 row 5. Research + thin integration plan first; do not vendor model weights. |
+| 27.5 | **Offline recorded-motion polish pass.** Design an explicit-user-trigger background workflow for smoothing / enhancing saved teach-session clips, informed by Hunyuan-Motion, MimicMotion, and MagicAnimate research references. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 rows 4, 6, 7. Must remain optional, GPU-aware, and license-clean. |
+| 27.6 | **Neural audio-to-face upgrade evaluation.** Compare the shipped phoneme-aware viseme path against Audio2Face, EMOTalk, and FaceFormer-class approaches and define an optional backend if a local, license-clean model is viable. | not-started | Derived from `docs/persona-design.md` §14.2 rows 9 and 11. Do not add NVIDIA ACE or cloud-only dependencies without an explicit opt-in design. |
+| 27.7 | **Persona example-dialogue field.** Extend the persona schema and prompt assembly with optional character-card-style example dialogue while preserving existing packs and UI defaults. | not-started | Derived from `docs/persona-design.md` §14.2 row 13. Needs backward-compatible pack load/save tests. |
+| 27.8 | **Persona pack schema spec.** Publish a stable `.terransoul-persona` schema document and compatibility/versioning contract for sharable persona packs. | not-started | Derived from `docs/persona-design.md` §14.2 row 15. Builds on shipped chunk 14.7 export/import; mostly docs + schema validation tests. |
 
-> **Why this phase exists.** `docs/coding-workflow-design.md` §5
-> ("Roadmap & gaps") lists six unimplemented items beyond what landed in
-> chunks 25.x.
+---
+
+### Phase 28 — Self-Improve Loop Maturation Follow-ups
+
+> **Why this phase exists.** `docs/coding-workflow-design.md` §5 documents
+> the self-improve roadmap. Chunks 28.1–28.10 plus 25.10 are archived as
+> shipped, but the live engine is still planner-only and some shipped
+> primitives are not wired into the autonomous execution path.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
+| 28.11 | **Apply/review/test execution gate for self-improve.** Wire `coding::apply_file`, `coding::reviewer`, and `coding::test_runner` into the autonomous engine after planner approval so generated changes are applied only when review and tests pass. | not-started | Derived from `docs/coding-workflow-design.md` §5 items 1, 2, and 5 plus `coding::engine` planner-only comments. Must keep safe stop/cancel semantics. |
+| 28.12 | **Multi-agent coding DAG orchestration wiring.** Connect `coding::dag_runner` to self-improve coding tasks so planner/coder/reviewer/tester nodes can run in dependency order with bounded parallelism. | not-started | Derived from `docs/coding-workflow-design.md` capability matrix + §5 item 4. The pure DAG runner exists; this chunk wires it to real coding tasks. |
 

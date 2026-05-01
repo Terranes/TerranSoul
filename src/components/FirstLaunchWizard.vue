@@ -361,11 +361,6 @@ const doneMessage = computed(() => {
   return 'Your companion is ready to chat. Explore quests at your own pace!';
 });
 
-// Foundation quest IDs to auto-accept on "recommended" path.
-const FOUNDATION_QUESTS = ['free-brain', 'avatar', 'tts', 'bgm'];
-// Advanced brain/memory quests that the recommended flow also activates.
-const RECOMMENDED_QUESTS = ['memory', 'rag-knowledge', 'asr'];
-
 // ── Setup: progress event listener ────────────────────────────────────
 /** Start listening to Ollama pull progress events from the Tauri backend. */
 async function startPullProgressListener() {

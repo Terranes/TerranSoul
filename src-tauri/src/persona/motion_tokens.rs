@@ -124,11 +124,7 @@ fn default_range_for_bone(bone: &str) -> [[f64; 2]; 3] {
             [-PI / 6.0, PI / 6.0],
             [-PI / 8.0, PI / 8.0],
         ],
-        "leftUpperArm" | "rightUpperArm" => [
-            [-PI, PI],
-            [-PI, PI],
-            [-PI / 2.0, PI / 2.0],
-        ],
+        "leftUpperArm" | "rightUpperArm" => [[-PI, PI], [-PI, PI], [-PI / 2.0, PI / 2.0]],
         "leftLowerArm" | "rightLowerArm" => [
             [-PI * 0.9, 0.1],
             [-PI / 4.0, PI / 4.0],
@@ -139,11 +135,7 @@ fn default_range_for_bone(bone: &str) -> [[f64; 2]; 3] {
             [-PI / 4.0, PI / 4.0],
             [-PI / 6.0, PI / 6.0],
         ],
-        "leftLowerLeg" | "rightLowerLeg" => [
-            [0.0, PI * 0.8],
-            [-0.1, 0.1],
-            [-0.1, 0.1],
-        ],
+        "leftLowerLeg" | "rightLowerLeg" => [[0.0, PI * 0.8], [-0.1, 0.1], [-0.1, 0.1]],
         _ => [[-PI, PI], [-PI, PI], [-PI, PI]],
     }
 }
@@ -189,7 +181,11 @@ impl MotionTokenCodec {
 
         for bone_name in &self.config.bones {
             let euler = bones.get(bone_name).copied().unwrap_or([0.0; 3]);
-            let range = self.ranges.get(bone_name).copied().unwrap_or([[-PI, PI]; 3]);
+            let range = self
+                .ranges
+                .get(bone_name)
+                .copied()
+                .unwrap_or([[-PI, PI]; 3]);
 
             let tokens = [
                 self.encode_value(euler[0], range[0][0], range[0][1]),
@@ -213,7 +209,11 @@ impl MotionTokenCodec {
                 break;
             }
             let tokens = frame.bones[i];
-            let range = self.ranges.get(bone_name).copied().unwrap_or([[-PI, PI]; 3]);
+            let range = self
+                .ranges
+                .get(bone_name)
+                .copied()
+                .unwrap_or([[-PI, PI]; 3]);
 
             let euler = [
                 self.decode_value(tokens[0], range[0][0], range[0][1]),
@@ -232,8 +232,10 @@ impl MotionTokenCodec {
         fps: f64,
         frames: &[(f64, HashMap<String, [f64; 3]>)],
     ) -> EncodedMotion {
-        let encoded_frames: Vec<TokenFrame> =
-            frames.iter().map(|(_, bones)| self.encode_frame(bones)).collect();
+        let encoded_frames: Vec<TokenFrame> = frames
+            .iter()
+            .map(|(_, bones)| self.encode_frame(bones))
+            .collect();
 
         EncodedMotion {
             fps,
@@ -320,9 +322,7 @@ impl MotionTokenCodec {
             }
 
             if !bone_tokens.is_empty() {
-                frames.push(TokenFrame {
-                    bones: bone_tokens,
-                });
+                frames.push(TokenFrame { bones: bone_tokens });
             }
         }
 

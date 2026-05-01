@@ -31,25 +31,31 @@ impl AgentOrchestrator {
         self.agents.get(agent_id).cloned()
     }
 
-    pub async fn dispatch(&self, agent_id: &str, message: &str) -> Result<(String, String), String> {
+    pub async fn dispatch(
+        &self,
+        agent_id: &str,
+        message: &str,
+    ) -> Result<(String, String), String> {
         let id = if agent_id.is_empty() || agent_id == "auto" {
             &self.default_agent_id
         } else {
             agent_id
         };
 
-        let agent = self.agents.get(id).ok_or_else(|| {
-            format!("Agent '{}' not found", id)
-        })?;
+        let agent = self
+            .agents
+            .get(id)
+            .ok_or_else(|| format!("Agent '{}' not found", id))?;
 
         let (content, _sentiment) = agent.respond(message).await;
         Ok((agent.name().to_string(), content))
     }
 
     pub async fn health_check(&self, agent_id: &str) -> Result<bool, String> {
-        let agent = self.agents.get(agent_id).ok_or_else(|| {
-            format!("Agent '{}' not found", agent_id)
-        })?;
+        let agent = self
+            .agents
+            .get(agent_id)
+            .ok_or_else(|| format!("Agent '{}' not found", agent_id))?;
         Ok(agent.health_check().await)
     }
 

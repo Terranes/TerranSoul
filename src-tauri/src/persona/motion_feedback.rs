@@ -107,10 +107,7 @@ pub fn append_entry(path: &Path, entry: &MotionFeedbackEntry) -> Result<(), Moti
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
     let line = serde_json::to_string(entry).map_err(MotionFeedbackError::Serialise)?;
     f.write_all(line.as_bytes())?;
     f.write_all(b"\n")?;
@@ -192,11 +189,8 @@ pub fn aggregate_stats(entries: &[MotionFeedbackEntry]) -> MotionFeedbackStats {
         .map(|(d, (_, r))| (d, r))
         .collect();
     discouraged.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    let discouraged_descriptions: Vec<String> = discouraged
-        .into_iter()
-        .take(20)
-        .map(|(d, _)| d)
-        .collect();
+    let discouraged_descriptions: Vec<String> =
+        discouraged.into_iter().take(20).map(|(d, _)| d).collect();
 
     MotionFeedbackStats {
         total: accepted + rejected,
@@ -251,7 +245,11 @@ mod tests {
     fn append_and_load_roundtrip() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("motion_feedback.jsonl");
-        let e = entry("wave hello", "learned-wave-hello", FeedbackVerdict::Accepted);
+        let e = entry(
+            "wave hello",
+            "learned-wave-hello",
+            FeedbackVerdict::Accepted,
+        );
         append_entry(&path, &e).unwrap();
         let loaded = load_entries(&path).unwrap();
         assert_eq!(loaded.len(), 1);
@@ -377,7 +375,11 @@ mod tests {
     fn aggregate_caps_trusted_at_50() {
         let mut entries = Vec::new();
         for i in 0..70usize {
-            entries.push(entry(&format!("d{i}"), &format!("learned-{i:03}"), FeedbackVerdict::Accepted));
+            entries.push(entry(
+                &format!("d{i}"),
+                &format!("learned-{i:03}"),
+                FeedbackVerdict::Accepted,
+            ));
         }
         let s = aggregate_stats(&entries);
         assert_eq!(s.trusted_triggers.len(), 50);

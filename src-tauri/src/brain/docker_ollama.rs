@@ -230,9 +230,7 @@ pub async fn remove_ollama_container() -> Result<String, String> {
 }
 
 /// Variant of [`remove_ollama_container`] that targets a specific runtime.
-pub async fn remove_ollama_container_for(
-    runtime: ContainerRuntime,
-) -> Result<String, String> {
+pub async fn remove_ollama_container_for(runtime: ContainerRuntime) -> Result<String, String> {
     let bin = runtime.binary();
     let mut steps: Vec<String> = Vec::new();
 
@@ -242,7 +240,9 @@ pub async fn remove_ollama_container_for(
     // Remove the container.
     match run_command(bin, &["rm", "-f", CONTAINER_NAME]).await {
         Ok(_) => steps.push(format!("Removed container '{CONTAINER_NAME}'")),
-        Err(_) => steps.push(format!("Container '{CONTAINER_NAME}' not found (already removed)")),
+        Err(_) => steps.push(format!(
+            "Container '{CONTAINER_NAME}' not found (already removed)"
+        )),
     }
 
     // Remove the named volume.
@@ -263,9 +263,7 @@ pub async fn ensure_ollama_container() -> Result<String, String> {
 
 /// Variant of [`ensure_ollama_container`] that targets a specific runtime.
 /// Both Docker and Podman accept the same `run / start / -d` arguments.
-pub async fn ensure_ollama_container_for(
-    runtime: ContainerRuntime,
-) -> Result<String, String> {
+pub async fn ensure_ollama_container_for(runtime: ContainerRuntime) -> Result<String, String> {
     let bin = runtime.binary();
     // If already running and API reachable, nothing to do
     let status = check_ollama_container_for(runtime).await;
@@ -290,11 +288,16 @@ pub async fn ensure_ollama_container_for(
     // Container doesn't exist — create and run
     let has_gpu = detect_nvidia_gpu().await;
     let mut args = vec![
-        "run", "-d",
-        "--name", CONTAINER_NAME,
-        "-p", "11434:11434",
-        "-v", "ollama_data:/root/.ollama",
-        "--restart", "unless-stopped",
+        "run",
+        "-d",
+        "--name",
+        CONTAINER_NAME,
+        "-p",
+        "11434:11434",
+        "-v",
+        "ollama_data:/root/.ollama",
+        "--restart",
+        "unless-stopped",
     ];
     if has_gpu {
         // Both Docker and Podman accept `--gpus all` (Podman ≥ 4.1 with the
@@ -329,7 +332,11 @@ pub async fn docker_pull_model_for(
     model: &str,
 ) -> Result<String, String> {
     // Validate model name: alphanumeric, hyphens, underscores, colons, slashes, dots
-    if model.is_empty() || !model.chars().all(|c| c.is_alphanumeric() || "-_:/.".contains(c)) {
+    if model.is_empty()
+        || !model
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-_:/.".contains(c))
+    {
         return Err("Invalid model name".to_string());
     }
 
@@ -394,7 +401,11 @@ pub async fn auto_setup_local_llm_with(
     steps.push(msg);
 
     // Step 3: Validate + pull the model
-    if model.is_empty() || !model.chars().all(|c| c.is_alphanumeric() || "-_:/.".contains(c)) {
+    if model.is_empty()
+        || !model
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-_:/.".contains(c))
+    {
         return Err("Invalid model name".to_string());
     }
     let pull_msg = docker_pull_model_for(runtime, model).await?;

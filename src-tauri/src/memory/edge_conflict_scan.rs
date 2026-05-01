@@ -52,10 +52,7 @@ pub struct ScanCandidates {
 
 /// Collect candidate edge pairs for contradiction checking.
 /// Call while holding the MutexGuard, then release before LLM calls.
-pub fn collect_scan_candidates(
-    store: &MemoryStore,
-    max_pairs: usize,
-) -> ScanCandidates {
+pub fn collect_scan_candidates(store: &MemoryStore, max_pairs: usize) -> ScanCandidates {
     let mut candidates = ScanCandidates {
         pairs: Vec::new(),
         skipped: 0,
@@ -68,10 +65,7 @@ pub fn collect_scan_candidates(
 
     let filtered: Vec<_> = edges
         .into_iter()
-        .filter(|e| {
-            e.valid_to.is_none()
-                && POSITIVE_REL_TYPES.contains(&e.rel_type.as_str())
-        })
+        .filter(|e| e.valid_to.is_none() && POSITIVE_REL_TYPES.contains(&e.rel_type.as_str()))
         .collect();
 
     for edge in filtered.iter() {
@@ -94,7 +88,9 @@ pub fn collect_scan_candidates(
         // Load the content of both memories.
         match (store.get_by_id(edge.src_id), store.get_by_id(edge.dst_id)) {
             (Ok(a), Ok(b)) => {
-                candidates.pairs.push((edge.src_id, edge.dst_id, a.content, b.content));
+                candidates
+                    .pairs
+                    .push((edge.src_id, edge.dst_id, a.content, b.content));
             }
             _ => {
                 candidates.skipped += 1;
@@ -107,12 +103,7 @@ pub fn collect_scan_candidates(
 
 /// Record a contradiction found by the LLM: insert a "contradicts" edge
 /// and open a MemoryConflict row. Call while holding the MutexGuard.
-pub fn record_contradiction(
-    store: &MemoryStore,
-    src_id: i64,
-    dst_id: i64,
-    reason: &str,
-) {
+pub fn record_contradiction(store: &MemoryStore, src_id: i64, dst_id: i64, reason: &str) {
     let _ = store.add_edge(NewMemoryEdge {
         src_id,
         dst_id,
@@ -143,12 +134,11 @@ fn has_contradicts_edge(store: &MemoryStore, a: i64, b: i64) -> bool {
 /// Check whether an open MemoryConflict already exists for this pair
 /// (in either direction).
 fn has_open_conflict(store: &MemoryStore, a: i64, b: i64) -> bool {
-    if let Ok(conflicts) = store.list_conflicts(Some(
-        &crate::memory::conflicts::ConflictStatus::Open,
-    )) {
+    if let Ok(conflicts) =
+        store.list_conflicts(Some(&crate::memory::conflicts::ConflictStatus::Open))
+    {
         conflicts.iter().any(|c| {
-            (c.entry_a_id == a && c.entry_b_id == b)
-                || (c.entry_a_id == b && c.entry_b_id == a)
+            (c.entry_a_id == a && c.entry_b_id == b) || (c.entry_a_id == b && c.entry_b_id == a)
         })
     } else {
         false

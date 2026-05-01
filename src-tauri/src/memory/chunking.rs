@@ -61,9 +61,7 @@ pub fn split_markdown(text: &str, max_chars: usize) -> Vec<Chunk> {
                 return None;
             }
             // Find the chunk's start offset in the original text.
-            let offset = text
-                .find(trimmed)
-                .unwrap_or(0);
+            let offset = text.find(trimmed).unwrap_or(0);
             let heading = heading_at_offset(&headings, offset);
 
             Some(Chunk {
@@ -179,14 +177,14 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         let chunks = split_text(&text, 256);
-        assert!(
-            chunks.len() > 1,
-            "expected >1 chunk, got {}",
-            chunks.len()
-        );
+        assert!(chunks.len() > 1, "expected >1 chunk, got {}", chunks.len());
         // Every chunk should be within the capacity (roughly).
         for c in &chunks {
-            assert!(c.text.len() <= 300, "chunk too large: {} chars", c.text.len());
+            assert!(
+                c.text.len() <= 300,
+                "chunk too large: {} chars",
+                c.text.len()
+            );
         }
     }
 
@@ -198,10 +196,7 @@ mod tests {
         assert!(!chunks.is_empty());
         // The heading should be captured.
         let first = &chunks[0];
-        assert!(
-            first.heading.is_some(),
-            "expected a heading, got None"
-        );
+        assert!(first.heading.is_some(), "expected a heading, got None");
     }
 
     #[test]
@@ -227,9 +222,24 @@ mod tests {
     #[test]
     fn dedup_removes_duplicates() {
         let chunks = vec![
-            Chunk { index: 0, text: "duplicate".into(), hash: sha256_hex("duplicate"), heading: None },
-            Chunk { index: 1, text: "unique".into(), hash: sha256_hex("unique"), heading: None },
-            Chunk { index: 2, text: "duplicate".into(), hash: sha256_hex("duplicate"), heading: None },
+            Chunk {
+                index: 0,
+                text: "duplicate".into(),
+                hash: sha256_hex("duplicate"),
+                heading: None,
+            },
+            Chunk {
+                index: 1,
+                text: "unique".into(),
+                hash: sha256_hex("unique"),
+                heading: None,
+            },
+            Chunk {
+                index: 2,
+                text: "duplicate".into(),
+                hash: sha256_hex("duplicate"),
+                heading: None,
+            },
         ];
         let deduped = dedup_chunks(chunks);
         assert_eq!(deduped.len(), 2);

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State, WebviewWindow};
 use tauri::webview::Color;
 #[cfg(target_os = "windows")]
 use tauri::Emitter;
+use tauri::{Manager, State, WebviewWindow};
 
 use crate::AppState;
 use std::sync::atomic::Ordering;
@@ -114,9 +114,7 @@ pub async fn set_window_mode(
 
 /// Get the current window mode.
 #[tauri::command]
-pub async fn get_window_mode(
-    state: State<'_, AppState>,
-) -> Result<WindowMode, String> {
+pub async fn get_window_mode(state: State<'_, AppState>) -> Result<WindowMode, String> {
     let mode = state.window_mode.lock().map_err(|e| e.to_string())?;
     Ok(*mode)
 }
@@ -168,15 +166,11 @@ pub async fn set_cursor_passthrough(
 /// Initiate a window drag operation from the frontend.
 /// Call this from a mousedown handler so the OS takes over dragging.
 #[tauri::command]
-pub async fn start_window_drag(
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn start_window_drag(app_handle: tauri::AppHandle) -> Result<(), String> {
     let window = app_handle
         .get_webview_window("main")
         .ok_or("Main window not found")?;
-    window
-        .start_dragging()
-        .map_err(|e| e.to_string())
+    window.start_dragging().map_err(|e| e.to_string())
 }
 
 /// Set the pet-mode window to a compact size centred on its current position.
@@ -208,9 +202,7 @@ pub struct MonitorInfo {
 
 /// Get all available monitors and their positions/sizes.
 #[tauri::command]
-pub async fn get_all_monitors(
-    app_handle: tauri::AppHandle,
-) -> Result<Vec<MonitorInfo>, String> {
+pub async fn get_all_monitors(app_handle: tauri::AppHandle) -> Result<Vec<MonitorInfo>, String> {
     let window = app_handle
         .get_webview_window("main")
         .ok_or("Main window not found")?;
@@ -234,9 +226,7 @@ pub async fn get_all_monitors(
 
 /// Set the window bounds to span all monitors (for pet mode).
 #[tauri::command]
-pub async fn set_pet_mode_bounds(
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn set_pet_mode_bounds(app_handle: tauri::AppHandle) -> Result<(), String> {
     let window = app_handle
         .get_webview_window("main")
         .ok_or("Main window not found")?;
@@ -359,9 +349,7 @@ pub async fn start_pet_cursor_poll(
 
 /// Stop the cursor-position polling loop started by `start_pet_cursor_poll`.
 #[tauri::command]
-pub async fn stop_pet_cursor_poll(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn stop_pet_cursor_poll(state: State<'_, AppState>) -> Result<(), String> {
     state.pet_cursor_active.store(false, Ordering::SeqCst);
     Ok(())
 }
@@ -403,10 +391,7 @@ const ALLOWED_PANELS: &[&str] = &["brain", "memory", "skills", "marketplace", "v
 /// The window loads the same frontend URL with `?panel=<id>` so the
 /// frontend can render only that panel without the navigation shell.
 #[tauri::command]
-pub async fn open_panel_window(
-    panel: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn open_panel_window(panel: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     if !ALLOWED_PANELS.contains(&panel.as_str()) {
         return Err(format!("Unknown panel: {panel}"));
     }
@@ -455,10 +440,7 @@ pub async fn open_panel_window(
 
 /// Close a panel window that was opened via `open_panel_window`.
 #[tauri::command]
-pub async fn close_panel_window(
-    panel: String,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn close_panel_window(panel: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     let label = format!("panel-{panel}");
     if let Some(window) = app_handle.get_webview_window(&label) {
         window.close().map_err(|e| e.to_string())?;
@@ -503,10 +485,7 @@ mod tests {
     #[test]
     fn allowed_panels_contains_expected_ids() {
         for id in &["brain", "memory", "skills", "marketplace", "voice"] {
-            assert!(
-                ALLOWED_PANELS.contains(id),
-                "Missing panel: {id}"
-            );
+            assert!(ALLOWED_PANELS.contains(id), "Missing panel: {id}");
         }
     }
 

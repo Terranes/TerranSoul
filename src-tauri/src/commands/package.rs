@@ -81,8 +81,7 @@ impl From<&package_manager::InstalledAgent> for InstalledAgentInfo {
 /// Parse and validate a manifest JSON string, returning a summary for the frontend.
 #[tauri::command]
 pub async fn parse_agent_manifest(json: String) -> Result<ManifestInfo, String> {
-    let manifest =
-        package_manager::parse_manifest(&json).map_err(|e| e.to_string())?;
+    let manifest = package_manager::parse_manifest(&json).map_err(|e| e.to_string())?;
     Ok(ManifestInfo::from(&manifest))
 }
 
@@ -134,14 +133,9 @@ pub async fn update_agent(
 
 /// Remove an installed agent.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn remove_agent(
-    agent_name: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn remove_agent(agent_name: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut installer = state.package_installer.lock().await;
-    installer
-        .remove(&agent_name)
-        .map_err(|e| e.to_string())
+    installer.remove(&agent_name).map_err(|e| e.to_string())
 }
 
 /// List all installed agents.

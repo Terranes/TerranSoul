@@ -1,11 +1,13 @@
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use sha2::{Sha256, Digest};
-use tauri::{AppHandle, Emitter, Manager, State};
-use crate::AppState;
 use crate::memory::{MemoryType, NewMemory};
-use crate::tasks::manager::{TaskKind, TaskStatus, TaskProgressEvent, CrawlCheckpoint, IngestCheckpoint};
+use crate::tasks::manager::{
+    CrawlCheckpoint, IngestCheckpoint, TaskKind, TaskProgressEvent, TaskStatus,
+};
+use crate::AppState;
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Result of starting an ingestion task.
 #[derive(Debug, serde::Serialize, Clone)]
@@ -38,33 +40,51 @@ pub async fn ingest_document(
     };
 
     let description = match source_type {
-        "crawl" => format!("Crawling {}", source_trimmed.strip_prefix("crawl:").unwrap_or(&source_trimmed)),
+        "crawl" => format!(
+            "Crawling {}",
+            source_trimmed
+                .strip_prefix("crawl:")
+                .unwrap_or(&source_trimmed)
+        ),
         "url" => format!("Importing {}", source_trimmed),
-        _ => format!("Reading {}", std::path::Path::new(&source_trimmed).file_name()
-            .and_then(|n| n.to_str()).unwrap_or(&source_trimmed)),
+        _ => format!(
+            "Reading {}",
+            std::path::Path::new(&source_trimmed)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&source_trimmed)
+        ),
     };
 
-    let kind = if source_type == "crawl" { TaskKind::Crawl } else { TaskKind::Ingest };
+    let kind = if source_type == "crawl" {
+        TaskKind::Crawl
+    } else {
+        TaskKind::Ingest
+    };
 
     let task_id = {
         let mut mgr = state.task_manager.lock().await;
         mgr.create_task(kind.clone(), &description, &source_trimmed)
     };
 
-    let _ = app_handle.emit("task-progress", TaskProgressEvent {
-        id: task_id.clone(),
-        kind: kind.clone(),
-        status: TaskStatus::Running,
-        progress: 0,
-        description: description.clone(),
-        processed_items: 0,
-        total_items: 0,
-        error: None,
-    });
+    let _ = app_handle.emit(
+        "task-progress",
+        TaskProgressEvent {
+            id: task_id.clone(),
+            kind: kind.clone(),
+            status: TaskStatus::Running,
+            progress: 0,
+            description: description.clone(),
+            processed_items: 0,
+            total_items: 0,
+            error: None,
+        },
+    );
 
     let cancel_flag = {
         let mgr = state.task_manager.lock().await;
-        mgr.get_cancel_flag(&task_id).unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))
+        mgr.get_cancel_flag(&task_id)
+            .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))
     };
 
     let task_id_clone = task_id.clone();
@@ -75,53 +95,82 @@ pub async fn ingest_document(
     tokio::spawn(async move {
         let app_state = app.state::<AppState>();
         let result = run_ingest_task(
-            &task_id_clone, &source_clone, &tags, importance,
-            &cancel_flag, &app, &app_state,
-        ).await;
+            &task_id_clone,
+            &source_clone,
+            &tags,
+            importance,
+            &cancel_flag,
+            &app,
+            &app_state,
+        )
+        .await;
 
         let mut mgr = app_state.task_manager.lock().await;
         match result {
             Ok((chunks, total_chars)) => {
                 mgr.complete_task(&task_id_clone);
-                let _ = app.emit("task-progress", TaskProgressEvent {
-                    id: task_id_clone,
-                    kind: kind_clone,
-                    status: TaskStatus::Completed,
-                    progress: 100,
-                    description: format!("Done! {} chunks from {} chars", chunks, total_chars),
-                    processed_items: chunks,
-                    total_items: chunks,
-                    error: None,
-                });
+                let _ = app.emit(
+                    "task-progress",
+                    TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Completed,
+                        progress: 100,
+                        description: format!("Done! {} chunks from {} chars", chunks, total_chars),
+                        processed_items: chunks,
+                        total_items: chunks,
+                        error: None,
+                    },
+                );
             }
             Err(e) => {
                 if e.contains("cancelled") {
                     // Already handled
                 } else if e.contains("Auto-paused") {
                     mgr.pause_task(&task_id_clone);
-                    let prog = mgr.get_task(&task_id_clone).map(|t| t.progress).unwrap_or(0);
-                    let _ = app.emit("task-progress", TaskProgressEvent {
-                        id: task_id_clone, kind: kind_clone,
-                        status: TaskStatus::Paused, progress: prog,
-                        description: "Paused — exceeded 30 min. Resume to continue.".to_string(),
-                        processed_items: 0, total_items: 0,
-                        error: Some(e),
-                    });
+                    let prog = mgr
+                        .get_task(&task_id_clone)
+                        .map(|t| t.progress)
+                        .unwrap_or(0);
+                    let _ = app.emit(
+                        "task-progress",
+                        TaskProgressEvent {
+                            id: task_id_clone,
+                            kind: kind_clone,
+                            status: TaskStatus::Paused,
+                            progress: prog,
+                            description: "Paused — exceeded 30 min. Resume to continue."
+                                .to_string(),
+                            processed_items: 0,
+                            total_items: 0,
+                            error: Some(e),
+                        },
+                    );
                 } else {
                     mgr.fail_task(&task_id_clone, &e);
-                    let _ = app.emit("task-progress", TaskProgressEvent {
-                        id: task_id_clone, kind: kind_clone,
-                        status: TaskStatus::Failed, progress: 0,
-                        description: "Failed".to_string(),
-                        processed_items: 0, total_items: 0,
-                        error: Some(e),
-                    });
+                    let _ = app.emit(
+                        "task-progress",
+                        TaskProgressEvent {
+                            id: task_id_clone,
+                            kind: kind_clone,
+                            status: TaskStatus::Failed,
+                            progress: 0,
+                            description: "Failed".to_string(),
+                            processed_items: 0,
+                            total_items: 0,
+                            error: Some(e),
+                        },
+                    );
                 }
             }
         }
     });
 
-    Ok(IngestStartResult { task_id, source: source_trimmed, source_type: source_type.to_string() })
+    Ok(IngestStartResult {
+        task_id,
+        source: source_trimmed,
+        source_type: source_type.to_string(),
+    })
 }
 
 /// Cancel a running ingest/crawl task.
@@ -132,7 +181,8 @@ pub async fn cancel_ingest_task(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut mgr = state.task_manager.lock().await;
-    let task = mgr.cancel_task(&task_id)
+    let task = mgr
+        .cancel_task(&task_id)
         .ok_or_else(|| format!("Task {} not found", task_id))?;
     let _ = app_handle.emit("task-progress", TaskProgressEvent::from(&task));
     Ok(())
@@ -147,7 +197,8 @@ pub async fn resume_ingest_task(
 ) -> Result<(), String> {
     let (source, kind) = {
         let mut mgr = state.task_manager.lock().await;
-        let task = mgr.resume_task(&task_id)
+        let task = mgr
+            .resume_task(&task_id)
             .ok_or_else(|| format!("Task {} not found", task_id))?;
         let _ = app_handle.emit("task-progress", TaskProgressEvent::from(&task));
         (task.source, task.kind)
@@ -155,7 +206,8 @@ pub async fn resume_ingest_task(
 
     let cancel_flag = {
         let mgr = state.task_manager.lock().await;
-        mgr.get_cancel_flag(&task_id).unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))
+        mgr.get_cancel_flag(&task_id)
+            .unwrap_or_else(|| Arc::new(std::sync::atomic::AtomicBool::new(false)))
     };
 
     let task_id_clone = task_id.clone();
@@ -165,30 +217,50 @@ pub async fn resume_ingest_task(
     tokio::spawn(async move {
         let app_state = app.state::<AppState>();
         let result = run_ingest_task(
-            &task_id_clone, &source, "imported", 4,
-            &cancel_flag, &app, &app_state,
-        ).await;
+            &task_id_clone,
+            &source,
+            "imported",
+            4,
+            &cancel_flag,
+            &app,
+            &app_state,
+        )
+        .await;
 
         let mut mgr = app_state.task_manager.lock().await;
         match result {
             Ok((chunks, total_chars)) => {
                 mgr.complete_task(&task_id_clone);
-                let _ = app.emit("task-progress", TaskProgressEvent {
-                    id: task_id_clone, kind: kind_clone,
-                    status: TaskStatus::Completed, progress: 100,
-                    description: format!("Done! {} chunks from {} chars", chunks, total_chars),
-                    processed_items: chunks, total_items: chunks, error: None,
-                });
+                let _ = app.emit(
+                    "task-progress",
+                    TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Completed,
+                        progress: 100,
+                        description: format!("Done! {} chunks from {} chars", chunks, total_chars),
+                        processed_items: chunks,
+                        total_items: chunks,
+                        error: None,
+                    },
+                );
             }
             Err(e) => {
                 if !e.contains("cancelled") {
                     mgr.fail_task(&task_id_clone, &e);
-                    let _ = app.emit("task-progress", TaskProgressEvent {
-                        id: task_id_clone, kind: kind_clone,
-                        status: TaskStatus::Failed, progress: 0,
-                        description: "Failed".to_string(),
-                        processed_items: 0, total_items: 0, error: Some(e),
-                    });
+                    let _ = app.emit(
+                        "task-progress",
+                        TaskProgressEvent {
+                            id: task_id_clone,
+                            kind: kind_clone,
+                            status: TaskStatus::Failed,
+                            progress: 0,
+                            description: "Failed".to_string(),
+                            processed_items: 0,
+                            total_items: 0,
+                            error: Some(e),
+                        },
+                    );
                 }
             }
         }
@@ -209,9 +281,13 @@ pub async fn get_all_tasks(
 // ── Core ingestion logic (runs in background) ──────────────────────────────────
 
 async fn run_ingest_task(
-    task_id: &str, source: &str, tags: &str, importance: i64,
+    task_id: &str,
+    source: &str,
+    tags: &str,
+    importance: i64,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
-    app: &AppHandle, state: &State<'_, AppState>,
+    app: &AppHandle,
+    state: &State<'_, AppState>,
 ) -> Result<(usize, usize), String> {
     emit_progress(app, task_id, 5, "Fetching content…", 0, 0);
 
@@ -221,7 +297,8 @@ async fn run_ingest_task(
 
     let (text, source_url) = if source.starts_with("crawl:") {
         let url = source.strip_prefix("crawl:").unwrap().trim();
-        let crawled = crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, app, state).await?;
+        let crawled =
+            crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, app, state).await?;
         (crawled, url.to_string())
     } else if source.starts_with("http://") || source.starts_with("https://") {
         let text = fetch_url(source, state).await?;
@@ -281,7 +358,14 @@ async fn run_ingest_task(
         .map(|c| (c.text, c.heading))
         .collect();
 
-    emit_progress(app, task_id, 30, &format!("Chunked into {} pieces", chunk_count), 0, chunk_count);
+    emit_progress(
+        app,
+        task_id,
+        30,
+        &format!("Chunked into {} pieces", chunk_count),
+        0,
+        chunk_count,
+    );
 
     // ── Contextual Retrieval (Anthropic 2024, Chunk 16.2) ──────────────
     // When enabled, generate a document summary once, then prepend a
@@ -295,7 +379,14 @@ async fn run_ingest_task(
     let doc_summary = if contextual_retrieval_enabled {
         let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
         if let Some(mode) = brain_mode {
-            emit_progress(app, task_id, 32, "Generating document summary for contextual retrieval…", 0, chunk_count);
+            emit_progress(
+                app,
+                task_id,
+                32,
+                "Generating document summary for contextual retrieval…",
+                0,
+                chunk_count,
+            );
             crate::memory::contextualize::generate_doc_summary(&text, &mode).await
         } else {
             None
@@ -320,13 +411,16 @@ async fn run_ingest_task(
             if let Some(task) = mgr.update_progress(task_id, progress, i, chunk_count) {
                 if task.status == TaskStatus::Paused {
                     let plain: Vec<String> = chunks.iter().map(|(t, _)| t.clone()).collect();
-                    save_ingest_checkpoint(state, task_id, source, tags, importance, &plain, i).await;
+                    save_ingest_checkpoint(state, task_id, source, tags, importance, &plain, i)
+                        .await;
                     return Err("Auto-paused: exceeded 30-minute limit".to_string());
                 }
             }
         }
 
-        if chunk_text.trim().len() < 10 { continue; }
+        if chunk_text.trim().len() < 10 {
+            continue;
+        }
         let mut chunk_tags = if chunk_count > 1 {
             format!("{},chunk-{}/{}", tags, i + 1, chunk_count)
         } else {
@@ -334,8 +428,15 @@ async fn run_ingest_task(
         };
         // Propagate Markdown heading as a tag when available.
         if let Some(heading) = chunk_heading {
-            let slug: String = heading.chars()
-                .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+            let slug: String = heading
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() {
+                        c.to_ascii_lowercase()
+                    } else {
+                        '-'
+                    }
+                })
                 .collect::<String>();
             let slug = slug.trim_matches('-');
             if !slug.is_empty() {
@@ -347,7 +448,10 @@ async fn run_ingest_task(
         let final_content = if let Some(ref summary) = doc_summary {
             let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
             if let Some(mode) = brain_mode {
-                if let Some(ctx) = crate::memory::contextualize::contextualise_chunk(summary, chunk_text, &mode).await {
+                if let Some(ctx) =
+                    crate::memory::contextualize::contextualise_chunk(summary, chunk_text, &mode)
+                        .await
+                {
                     crate::memory::contextualize::prepend_context(&ctx, chunk_text)
                 } else {
                     chunk_text.clone()
@@ -362,21 +466,39 @@ async fn run_ingest_task(
         let result = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
             store.add(NewMemory {
-                content: final_content, tags: chunk_tags,
-                importance, memory_type: MemoryType::Fact,
+                content: final_content,
+                tags: chunk_tags,
+                importance,
+                memory_type: MemoryType::Fact,
                 source_url: Some(source_url.clone()),
                 source_hash: Some(source_hash.clone()),
                 ..Default::default()
             })
         };
-        if result.is_ok() { created += 1; }
+        if result.is_ok() {
+            created += 1;
+        }
 
         let progress = (30 + ((i + 1) * 50 / chunk_count.max(1))) as u8;
-        emit_progress(app, task_id, progress, &format!("Stored {}/{} chunks", i + 1, chunk_count), i + 1, chunk_count);
+        emit_progress(
+            app,
+            task_id,
+            progress,
+            &format!("Stored {}/{} chunks", i + 1, chunk_count),
+            i + 1,
+            chunk_count,
+        );
     }
 
     // Embed (best effort)
-    emit_progress(app, task_id, 85, "Generating embeddings…", created, chunk_count);
+    emit_progress(
+        app,
+        task_id,
+        85,
+        "Generating embeddings…",
+        created,
+        chunk_count,
+    );
 
     // Chunk 16.9: use cloud embedding when brain mode is FreeApi/PaidApi.
     let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
@@ -384,21 +506,37 @@ async fn run_ingest_task(
     if brain_mode.is_some() || active_brain.is_some() {
         let recent: Vec<crate::memory::MemoryEntry> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            store.get_all().unwrap_or_default().into_iter().take(created).collect()
+            store
+                .get_all()
+                .unwrap_or_default()
+                .into_iter()
+                .take(created)
+                .collect()
         };
         for (i, entry) in recent.iter().enumerate() {
-            if cancel_flag.load(Ordering::Relaxed) { break; }
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
             if let Some(emb) = crate::brain::embed_for_mode(
                 &entry.content,
                 brain_mode.as_ref(),
                 active_brain.as_deref(),
-            ).await {
+            )
+            .await
+            {
                 if let Ok(s) = state.memory_store.lock() {
                     let _ = s.set_embedding(entry.id, &emb);
                 }
             }
             let progress = (85 + ((i + 1) * 15 / recent.len().max(1))) as u8;
-            emit_progress(app, task_id, progress, &format!("Embedded {}/{}", i + 1, recent.len()), i + 1, recent.len());
+            emit_progress(
+                app,
+                task_id,
+                progress,
+                &format!("Embedded {}/{}", i + 1, recent.len()),
+                i + 1,
+                recent.len(),
+            );
         }
     }
 
@@ -406,25 +544,47 @@ async fn run_ingest_task(
 }
 
 async fn save_ingest_checkpoint(
-    state: &State<'_, AppState>, task_id: &str,
-    source: &str, tags: &str, importance: i64,
-    chunks: &[String], next_index: usize,
+    state: &State<'_, AppState>,
+    task_id: &str,
+    source: &str,
+    tags: &str,
+    importance: i64,
+    chunks: &[String],
+    next_index: usize,
 ) {
     let checkpoint = serde_json::to_string(&IngestCheckpoint {
-        source: source.to_string(), tags: tags.to_string(),
-        importance, chunks: chunks[next_index..].to_vec(), next_chunk_index: next_index,
-    }).unwrap_or_default();
+        source: source.to_string(),
+        tags: tags.to_string(),
+        importance,
+        chunks: chunks[next_index..].to_vec(),
+        next_chunk_index: next_index,
+    })
+    .unwrap_or_default();
     let mut mgr = state.task_manager.lock().await;
     mgr.save_checkpoint(task_id, &checkpoint);
 }
 
-fn emit_progress(app: &AppHandle, task_id: &str, progress: u8, desc: &str, processed: usize, total: usize) {
-    let _ = app.emit("task-progress", TaskProgressEvent {
-        id: task_id.to_string(), kind: TaskKind::Ingest,
-        status: TaskStatus::Running, progress,
-        description: desc.to_string(),
-        processed_items: processed, total_items: total, error: None,
-    });
+fn emit_progress(
+    app: &AppHandle,
+    task_id: &str,
+    progress: u8,
+    desc: &str,
+    processed: usize,
+    total: usize,
+) {
+    let _ = app.emit(
+        "task-progress",
+        TaskProgressEvent {
+            id: task_id.to_string(),
+            kind: TaskKind::Ingest,
+            status: TaskStatus::Running,
+            progress,
+            description: desc.to_string(),
+            processed_items: processed,
+            total_items: total,
+            error: None,
+        },
+    );
 }
 
 // ── File reading ───────────────────────────────────────────────────────────────
@@ -434,7 +594,11 @@ fn read_local_file(path: &str) -> Result<String, String> {
     if !path.exists() {
         return Err(format!("File not found: {}", path.display()));
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     match ext.as_str() {
         "md" | "txt" | "csv" | "json" | "xml" | "html" | "htm" | "log" | "rst" | "adoc" => {
             std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))
@@ -455,15 +619,21 @@ fn extract_pdf_text(path: &std::path::Path) -> Result<String, String> {
             for part in block.split('(') {
                 if let Some(end) = part.find(')') {
                     let text = &part[..end];
-                    let clean: String = text.chars()
-                        .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace()).collect();
-                    if !clean.trim().is_empty() { text_parts.push(clean); }
+                    let clean: String = text
+                        .chars()
+                        .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
+                        .collect();
+                    if !clean.trim().is_empty() {
+                        text_parts.push(clean);
+                    }
                 }
             }
         }
     }
     if text_parts.is_empty() {
-        return Err("Could not extract text from PDF. The PDF may use image-based content.".to_string());
+        return Err(
+            "Could not extract text from PDF. The PDF may use image-based content.".to_string(),
+        );
     }
     Ok(text_parts.join(" "))
 }
@@ -472,15 +642,26 @@ fn extract_pdf_text(path: &std::path::Path) -> Result<String, String> {
 
 async fn fetch_url(url: &str, state: &State<'_, AppState>) -> Result<String, String> {
     validate_url(url)?;
-    let response = state.ollama_client
-        .get(url).header("User-Agent", "TerranSoul/0.1 DocumentIngester")
-        .send().await.map_err(|e| format!("Failed to fetch URL: {e}"))?;
+    let response = state
+        .ollama_client
+        .get(url)
+        .header("User-Agent", "TerranSoul/0.1 DocumentIngester")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch URL: {e}"))?;
     if !response.status().is_success() {
         return Err(format!("HTTP {}: {}", response.status(), url));
     }
-    let ct = response.headers().get("content-type")
-        .and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
-    let body = response.text().await.map_err(|e| format!("Failed to read body: {e}"))?;
+    let ct = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read body: {e}"))?;
     if ct.contains("text/html") || ct.contains("application/xhtml") {
         Ok(extract_text_from_html(&body))
     } else {
@@ -493,13 +674,18 @@ async fn fetch_url(url: &str, state: &State<'_, AppState>) -> Result<String, Str
 fn extract_text_from_html(html: &str) -> String {
     use scraper::{Html, Selector};
     let document = Html::parse_document(html);
-    let skip_set: HashSet<&str> = ["script", "style", "noscript", "nav", "footer", "header"].iter().copied().collect();
+    let skip_set: HashSet<&str> = ["script", "style", "noscript", "nav", "footer", "header"]
+        .iter()
+        .copied()
+        .collect();
     let mut text_parts: Vec<String> = Vec::new();
     for sel_str in &["article", "main", "[role=main]", ".content", "#content"] {
         if let Ok(selector) = Selector::parse(sel_str) {
             for element in document.select(&selector) {
                 let text: String = element.text().collect::<Vec<_>>().join(" ");
-                if text.len() > 100 { text_parts.push(text); }
+                if text.len() > 100 {
+                    text_parts.push(text);
+                }
             }
         }
     }
@@ -531,8 +717,16 @@ fn extract_text_from_html(html: &str) -> String {
     let mut prev_nl = false;
     for line in raw.lines() {
         let t = line.trim();
-        if t.is_empty() { if !prev_nl { result.push('\n'); prev_nl = true; } }
-        else { result.push_str(t); result.push('\n'); prev_nl = false; }
+        if t.is_empty() {
+            if !prev_nl {
+                result.push('\n');
+                prev_nl = true;
+            }
+        } else {
+            result.push_str(t);
+            result.push('\n');
+            prev_nl = false;
+        }
     }
     result.trim().to_string()
 }
@@ -540,31 +734,49 @@ fn extract_text_from_html(html: &str) -> String {
 // ── Web crawling with progress ─────────────────────────────────────────────────
 
 async fn crawl_website_with_progress(
-    start_url: &str, max_depth: usize, max_pages: usize,
-    task_id: &str, cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
-    app: &AppHandle, state: &State<'_, AppState>,
+    start_url: &str,
+    max_depth: usize,
+    max_pages: usize,
+    task_id: &str,
+    cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
+    app: &AppHandle,
+    state: &State<'_, AppState>,
 ) -> Result<String, String> {
     use scraper::{Html, Selector};
     use std::collections::VecDeque;
 
     validate_url(start_url)?;
     let base_url = url::Url::parse(start_url).map_err(|e| format!("Invalid URL: {e}"))?;
-    let base_domain = base_url.host_str()
-        .ok_or_else(|| "Cannot determine domain".to_string())?.to_string();
+    let base_domain = base_url
+        .host_str()
+        .ok_or_else(|| "Cannot determine domain".to_string())?
+        .to_string();
 
     let mut visited: HashSet<String> = HashSet::new();
     let mut queue: VecDeque<(String, usize)> = VecDeque::new();
     let mut all_text: Vec<String> = Vec::new();
     queue.push_back((start_url.to_string(), 0));
 
-    let link_selector = Selector::parse("a[href]")
-        .map_err(|_| "Failed to create link selector".to_string())?;
+    let link_selector =
+        Selector::parse("a[href]").map_err(|_| "Failed to create link selector".to_string())?;
 
     while let Some((url, depth)) = queue.pop_front() {
-        if visited.len() >= max_pages || visited.contains(&url) { continue; }
+        if visited.len() >= max_pages || visited.contains(&url) {
+            continue;
+        }
 
         if cancel_flag.load(Ordering::Relaxed) {
-            save_crawl_checkpoint(state, task_id, &visited, &queue, &all_text, &base_domain, max_depth, max_pages).await;
+            save_crawl_checkpoint(
+                state,
+                task_id,
+                &visited,
+                &queue,
+                &all_text,
+                &base_domain,
+                max_depth,
+                max_pages,
+            )
+            .await;
             return Err("Task cancelled".to_string());
         }
 
@@ -574,7 +786,17 @@ async fn crawl_website_with_progress(
             let progress = ((visited.len() * 25) / max_pages.max(1)) as u8;
             if let Some(task) = mgr.update_progress(task_id, progress, visited.len(), max_pages) {
                 if task.status == TaskStatus::Paused {
-                    save_crawl_checkpoint(state, task_id, &visited, &queue, &all_text, &base_domain, max_depth, max_pages).await;
+                    save_crawl_checkpoint(
+                        state,
+                        task_id,
+                        &visited,
+                        &queue,
+                        &all_text,
+                        &base_domain,
+                        max_depth,
+                        max_pages,
+                    )
+                    .await;
                     return Err("Auto-paused: exceeded 30-minute limit".to_string());
                 }
             }
@@ -582,19 +804,34 @@ async fn crawl_website_with_progress(
 
         visited.insert(url.clone());
 
-        emit_progress(app, task_id,
+        emit_progress(
+            app,
+            task_id,
             ((visited.len() * 25) / max_pages.max(1)) as u8,
-            &format!("Crawling {}/{}: {}", visited.len(), max_pages, truncate_url(&url)),
-            visited.len(), max_pages);
+            &format!(
+                "Crawling {}/{}: {}",
+                visited.len(),
+                max_pages,
+                truncate_url(&url)
+            ),
+            visited.len(),
+            max_pages,
+        );
 
-        let response = match state.ollama_client
-            .get(&url).header("User-Agent", "TerranSoul/0.1 WebCrawler")
-            .send().await
+        let response = match state
+            .ollama_client
+            .get(&url)
+            .header("User-Agent", "TerranSoul/0.1 WebCrawler")
+            .send()
+            .await
         {
             Ok(r) if r.status().is_success() => r,
             _ => continue,
         };
-        let body = match response.text().await { Ok(b) => b, Err(_) => continue };
+        let body = match response.text().await {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
         let page_text = extract_text_from_html(&body);
         if !page_text.is_empty() {
             all_text.push(format!("--- Source: {} ---\n{}", url, page_text));
@@ -625,23 +862,34 @@ async fn crawl_website_with_progress(
 
 #[allow(clippy::too_many_arguments)]
 async fn save_crawl_checkpoint(
-    state: &State<'_, AppState>, task_id: &str,
-    visited: &HashSet<String>, queue: &std::collections::VecDeque<(String, usize)>,
-    collected_text: &[String], base_domain: &str, max_depth: usize, max_pages: usize,
+    state: &State<'_, AppState>,
+    task_id: &str,
+    visited: &HashSet<String>,
+    queue: &std::collections::VecDeque<(String, usize)>,
+    collected_text: &[String],
+    base_domain: &str,
+    max_depth: usize,
+    max_pages: usize,
 ) {
     let checkpoint = serde_json::to_string(&CrawlCheckpoint {
         visited: visited.iter().cloned().collect(),
         queue: queue.iter().cloned().collect(),
         collected_text: collected_text.to_vec(),
         base_domain: base_domain.to_string(),
-        max_depth, max_pages,
-    }).unwrap_or_default();
+        max_depth,
+        max_pages,
+    })
+    .unwrap_or_default();
     let mut mgr = state.task_manager.lock().await;
     mgr.save_checkpoint(task_id, &checkpoint);
 }
 
 fn truncate_url(url: &str) -> String {
-    if url.len() > 60 { format!("{}…", &url[..57]) } else { url.to_string() }
+    if url.len() > 60 {
+        format!("{}…", &url[..57])
+    } else {
+        url.to_string()
+    }
 }
 
 // ── URL validation (SSRF prevention) ───────────────────────────────────────────
@@ -649,23 +897,34 @@ fn truncate_url(url: &str) -> String {
 fn validate_url(url: &str) -> Result<(), String> {
     let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
-        return Err(format!("Only http/https URLs are supported, got: {}", parsed.scheme()));
+        return Err(format!(
+            "Only http/https URLs are supported, got: {}",
+            parsed.scheme()
+        ));
     }
-    let host = parsed.host_str().ok_or_else(|| "URL has no host".to_string())?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
     let blocked = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "169.254."];
     for b in &blocked {
         if host.starts_with(b) {
-            return Err(format!("Access to internal/private addresses is blocked: {host}"));
+            return Err(format!(
+                "Access to internal/private addresses is blocked: {host}"
+            ));
         }
     }
     if host.starts_with("10.") || host.starts_with("192.168.") {
-        return Err(format!("Access to private network addresses is blocked: {host}"));
+        return Err(format!(
+            "Access to private network addresses is blocked: {host}"
+        ));
     }
     if host.starts_with("172.") {
         if let Some(second) = host.split('.').nth(1) {
             if let Ok(n) = second.parse::<u8>() {
                 if (16..=31).contains(&n) {
-                    return Err(format!("Access to private network addresses is blocked: {host}"));
+                    return Err(format!(
+                        "Access to private network addresses is blocked: {host}"
+                    ));
                 }
             }
         }
@@ -681,13 +940,17 @@ fn validate_url(url: &str) -> Result<(), String> {
 #[allow(dead_code)]
 fn chunk_text(text: &str, target_words: usize, overlap_words: usize) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() <= target_words { return vec![text.to_string()]; }
+    if words.len() <= target_words {
+        return vec![text.to_string()];
+    }
     let mut chunks = Vec::new();
     let mut start = 0;
     while start < words.len() {
         let end = (start + target_words).min(words.len());
         chunks.push(words[start..end].join(" "));
-        if end >= words.len() { break; }
+        if end >= words.len() {
+            break;
+        }
         start = end.saturating_sub(overlap_words);
     }
     chunks
@@ -704,7 +967,10 @@ mod tests {
 
     #[test]
     fn chunk_text_splits() {
-        let text = (0..100).map(|i| format!("w{i}")).collect::<Vec<_>>().join(" ");
+        let text = (0..100)
+            .map(|i| format!("w{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         assert!(chunk_text(&text, 30, 5).len() > 1);
     }
 
@@ -743,7 +1009,7 @@ mod tests {
 
     #[test]
     fn sha256_hash_deterministic() {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let text = "Rule 14.3: Family law filings require 30-day notice.";
         let hash1 = hex::encode(Sha256::digest(text.as_bytes()));
         let hash2 = hex::encode(Sha256::digest(text.as_bytes()));
@@ -753,7 +1019,7 @@ mod tests {
 
     #[test]
     fn sha256_hash_changes_with_content() {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let hash_v1 = hex::encode(Sha256::digest(b"30-day deadline"));
         let hash_v2 = hex::encode(Sha256::digest(b"21-day deadline"));
         assert_ne!(hash_v1, hash_v2);

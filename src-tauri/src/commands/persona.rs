@@ -96,8 +96,7 @@ fn validate_id(id: &str) -> Result<(), String> {
 /// extension.
 fn atomic_write(dest: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory: {e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
     let file_name = dest
         .file_name()
@@ -287,8 +286,8 @@ fn list_assets(dir: &Path) -> Result<Vec<LearnedAsset>, String> {
 }
 
 fn save_asset(dir: &Path, json: &str) -> Result<(), String> {
-    let parsed: LearnedAsset = serde_json::from_str(json)
-        .map_err(|e| format!("Invalid learned asset JSON: {e}"))?;
+    let parsed: LearnedAsset =
+        serde_json::from_str(json).map_err(|e| format!("Invalid learned asset JSON: {e}"))?;
     validate_id(&parsed.id)?;
     let path = dir.join(format!("{}.json", parsed.id));
     atomic_write(&path, json)
@@ -332,27 +331,19 @@ pub async fn delete_learned_expression(
 // ── learned motions ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn list_learned_motions(
-    state: State<'_, AppState>,
-) -> Result<Vec<LearnedAsset>, String> {
+pub async fn list_learned_motions(state: State<'_, AppState>) -> Result<Vec<LearnedAsset>, String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     list_assets(&dir)
 }
 
 #[tauri::command]
-pub async fn save_learned_motion(
-    json: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn save_learned_motion(json: String, state: State<'_, AppState>) -> Result<(), String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     save_asset(&dir, &json)
 }
 
 #[tauri::command]
-pub async fn delete_learned_motion(
-    id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn delete_learned_motion(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     delete_asset(&dir, &id)
 }
@@ -515,8 +506,7 @@ pub async fn generate_motion_from_text(
     // in that case.
     let hint = {
         let log_path = motion_feedback_path(&state.data_dir)?;
-        let entries = crate::persona::motion_feedback::load_entries(&log_path)
-            .unwrap_or_default();
+        let entries = crate::persona::motion_feedback::load_entries(&log_path).unwrap_or_default();
         let stats = crate::persona::motion_feedback::aggregate_stats(&entries);
         crate::persona::motion_feedback::render_prompt_hint(&stats)
     };
@@ -538,9 +528,8 @@ pub async fn generate_motion_from_text(
     let effective_mode = match brain_mode {
         Some(m) => m,
         None => {
-            let model = legacy_model.ok_or_else(|| {
-                "No brain configured. Set up a brain first.".to_string()
-            })?;
+            let model = legacy_model
+                .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
             crate::brain::BrainMode::LocalOllama { model }
         }
     };
@@ -698,8 +687,7 @@ pub async fn check_persona_drift(
     // Read the active persona traits from disk.
     let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
     let persona_json = if traits_path.exists() {
-        std::fs::read_to_string(&traits_path)
-            .map_err(|e| format!("Failed to read persona: {e}"))?
+        std::fs::read_to_string(&traits_path).map_err(|e| format!("Failed to read persona: {e}"))?
     } else {
         default_persona_json().to_string()
     };
@@ -764,8 +752,7 @@ pub async fn export_persona_pack(
     // Traits → JSON value (preserves unknown fields for forward-compat).
     let traits_path = persona_root(&state.data_dir)?.join(TRAITS_FILE);
     let traits_raw = if traits_path.exists() {
-        std::fs::read_to_string(&traits_path)
-            .map_err(|e| format!("Failed to read persona: {e}"))?
+        std::fs::read_to_string(&traits_path).map_err(|e| format!("Failed to read persona: {e}"))?
     } else {
         default_persona_json().to_string()
     };
@@ -815,11 +802,7 @@ fn list_assets_as_values(dir: &Path) -> Vec<serde_json::Value> {
     }
     // Stable ordering for deterministic round-trips: by `learnedAt`
     // ascending, which matches the on-disk creation order.
-    out.sort_by_key(|v| {
-        v.get("learnedAt")
-            .and_then(|x| x.as_i64())
-            .unwrap_or(0)
-    });
+    out.sort_by_key(|v| v.get("learnedAt").and_then(|x| x.as_i64()).unwrap_or(0));
     out
 }
 
@@ -837,7 +820,9 @@ pub async fn import_persona_pack(
     json: String,
     state: State<'_, AppState>,
 ) -> Result<crate::persona::pack::ImportReport, String> {
-    use crate::persona::pack::{note_motion_provenance, note_skip, parse_pack, validate_asset, ImportReport};
+    use crate::persona::pack::{
+        note_motion_provenance, note_skip, parse_pack, validate_asset, ImportReport,
+    };
 
     let pack = parse_pack(&json)?;
     let mut report = ImportReport::default();
@@ -867,7 +852,10 @@ pub async fn import_persona_pack(
         let body = match serde_json::to_string_pretty(asset) {
             Ok(s) => s,
             Err(e) => {
-                note_skip(&mut report, format!("expression {id}: serialise failed: {e}"));
+                note_skip(
+                    &mut report,
+                    format!("expression {id}: serialise failed: {e}"),
+                );
                 continue;
             }
         };
@@ -915,7 +903,9 @@ pub async fn import_persona_pack(
 pub async fn preview_persona_pack(
     json: String,
 ) -> Result<crate::persona::pack::ImportReport, String> {
-    use crate::persona::pack::{note_motion_provenance, note_skip, parse_pack, validate_asset, ImportReport};
+    use crate::persona::pack::{
+        note_motion_provenance, note_skip, parse_pack, validate_asset, ImportReport,
+    };
 
     let pack = parse_pack(&json)?;
     let mut report = ImportReport {
@@ -997,7 +987,10 @@ mod tests {
         let assets = list_assets(dir.path()).unwrap();
         assert_eq!(assets.len(), 1);
         assert_eq!(assets[0].id, "lex_AAA");
-        assert_eq!(assets[0].rest.get("trigger").and_then(|v| v.as_str()), Some("smug"));
+        assert_eq!(
+            assets[0].rest.get("trigger").and_then(|v| v.as_str()),
+            Some("smug")
+        );
     }
 
     #[test]

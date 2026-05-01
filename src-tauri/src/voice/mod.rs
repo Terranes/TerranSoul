@@ -320,8 +320,14 @@ mod tests {
             api_key: None,
             endpoint_url: None,
             hotwords: vec![
-                Hotword { phrase: "Zeratul".into(), boost: 8.0 },
-                Hotword { phrase: "Protoss".into(), boost: 5.0 },
+                Hotword {
+                    phrase: "Zeratul".into(),
+                    boost: 8.0,
+                },
+                Hotword {
+                    phrase: "Protoss".into(),
+                    boost: 5.0,
+                },
             ],
         };
         let json = serde_json::to_string(&cfg).unwrap();
@@ -331,7 +337,8 @@ mod tests {
 
     #[test]
     fn voice_config_deserializes_without_hotwords_field() {
-        let json = r#"{"asr_provider":"stub","tts_provider":null,"api_key":null,"endpoint_url":null}"#;
+        let json =
+            r#"{"asr_provider":"stub","tts_provider":null,"api_key":null,"endpoint_url":null}"#;
         let cfg: VoiceConfig = serde_json::from_str(json).unwrap();
         assert!(cfg.hotwords.is_empty());
     }

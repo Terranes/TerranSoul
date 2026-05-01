@@ -9,7 +9,11 @@ pub trait RegistrySource: Send + Sync {
     async fn fetch_manifest(&self, agent_name: &str) -> Result<AgentManifest, RegistryError>;
 
     /// Download the agent binary and return the raw bytes.
-    async fn download_binary(&self, agent_name: &str, version: &str) -> Result<Vec<u8>, RegistryError>;
+    async fn download_binary(
+        &self,
+        agent_name: &str,
+        version: &str,
+    ) -> Result<Vec<u8>, RegistryError>;
 
     /// Search for agents matching a query string.
     async fn search(&self, query: &str) -> Result<Vec<AgentManifest>, RegistryError>;
@@ -68,7 +72,8 @@ impl MockRegistry {
 
     /// Register an agent with its manifest JSON and binary data.
     pub fn add_agent(&mut self, name: &str, manifest_json: &str, binary: Vec<u8>) {
-        self.manifests.insert(name.to_string(), manifest_json.to_string());
+        self.manifests
+            .insert(name.to_string(), manifest_json.to_string());
         self.binaries.insert(name.to_string(), binary);
     }
 }
@@ -84,7 +89,11 @@ impl RegistrySource for MockRegistry {
         Ok(manifest)
     }
 
-    async fn download_binary(&self, agent_name: &str, _version: &str) -> Result<Vec<u8>, RegistryError> {
+    async fn download_binary(
+        &self,
+        agent_name: &str,
+        _version: &str,
+    ) -> Result<Vec<u8>, RegistryError> {
         self.binaries
             .get(agent_name)
             .cloned()
@@ -96,7 +105,9 @@ impl RegistrySource for MockRegistry {
         let mut results = Vec::new();
         for json in self.manifests.values() {
             if let Ok(m) = parse_manifest(json) {
-                if m.name.contains(&query_lower) || m.description.to_lowercase().contains(&query_lower) {
+                if m.name.contains(&query_lower)
+                    || m.description.to_lowercase().contains(&query_lower)
+                {
                     results.push(m);
                 }
             }
@@ -126,7 +137,11 @@ mod tests {
     #[tokio::test]
     async fn test_mock_registry_fetch_manifest_success() {
         let mut registry = MockRegistry::new();
-        registry.add_agent("test-agent", &sample_manifest_json("test-agent"), vec![1, 2, 3]);
+        registry.add_agent(
+            "test-agent",
+            &sample_manifest_json("test-agent"),
+            vec![1, 2, 3],
+        );
         let manifest = registry.fetch_manifest("test-agent").await.unwrap();
         assert_eq!(manifest.name, "test-agent");
     }
@@ -141,8 +156,15 @@ mod tests {
     #[tokio::test]
     async fn test_mock_registry_download_binary() {
         let mut registry = MockRegistry::new();
-        registry.add_agent("test-agent", &sample_manifest_json("test-agent"), vec![0xDE, 0xAD]);
-        let binary = registry.download_binary("test-agent", "1.0.0").await.unwrap();
+        registry.add_agent(
+            "test-agent",
+            &sample_manifest_json("test-agent"),
+            vec![0xDE, 0xAD],
+        );
+        let binary = registry
+            .download_binary("test-agent", "1.0.0")
+            .await
+            .unwrap();
         assert_eq!(binary, vec![0xDE, 0xAD]);
     }
 

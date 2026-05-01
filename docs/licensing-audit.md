@@ -31,7 +31,7 @@ zero-network libraries over SaaS integrations.
 | `@ricky0123/vad-web` | MIT | Voice-activity detection (ONNX, runs in-browser via WebAssembly) |
 | `vite`, `@vitejs/plugin-vue` | MIT | Bundler |
 | ESLint / TypeScript-ESLint / typescript / globals | MIT / Apache-2.0 | Tooling |
-| `vitest`, `jsdom`, `@playwright/test`, `cypress` | MIT | Testing |
+| `vitest`, `jsdom`, `@playwright/test` | MIT | Testing |
 
 ### Rust crates
 

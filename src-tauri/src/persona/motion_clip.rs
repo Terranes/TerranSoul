@@ -293,9 +293,7 @@ pub fn parse_motion_payload(
     }
 
     // Repair non-monotonic timestamps by sorting in-place.
-    let was_monotonic = frames
-        .windows(2)
-        .all(|w| w[0].t <= w[1].t + f32::EPSILON);
+    let was_monotonic = frames.windows(2).all(|w| w[0].t <= w[1].t + f32::EPSILON);
     if !was_monotonic {
         frames.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
         diagnostics.repaired_timestamps = true;
@@ -521,15 +519,7 @@ mod tests {
     #[test]
     fn rejects_below_minimum_frames() {
         let payload = r#"{"frames":[{"t":0,"bones":{"head":[0,0,0]}}]}"#;
-        let r = parse_motion_payload(
-            payload,
-            "id".into(),
-            "n".into(),
-            "t".into(),
-            30,
-            2.0,
-            0,
-        );
+        let r = parse_motion_payload(payload, "id".into(), "n".into(), "t".into(), 30, 2.0, 0);
         assert!(matches!(
             r,
             Err(MotionParseError::NotEnoughFrames { min: MIN_FRAMES })
@@ -543,20 +533,10 @@ mod tests {
             if i > 0 {
                 frames.push(',');
             }
-            frames.push_str(&format!(
-                "{{\"t\":{i},\"bones\":{{\"head\":[0,0,0]}}}}"
-            ));
+            frames.push_str(&format!("{{\"t\":{i},\"bones\":{{\"head\":[0,0,0]}}}}"));
         }
         frames.push_str("]}");
-        let r = parse_motion_payload(
-            &frames,
-            "id".into(),
-            "n".into(),
-            "t".into(),
-            30,
-            2.0,
-            0,
-        );
+        let r = parse_motion_payload(&frames, "id".into(), "n".into(), "t".into(), 30, 2.0, 0);
         assert!(matches!(
             r,
             Err(MotionParseError::TooManyFrames { max: MAX_FRAMES })
@@ -565,15 +545,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_json() {
-        let r = parse_motion_payload(
-            "not json",
-            "id".into(),
-            "n".into(),
-            "t".into(),
-            30,
-            2.0,
-            0,
-        );
+        let r = parse_motion_payload("not json", "id".into(), "n".into(), "t".into(), 30, 2.0, 0);
         assert!(matches!(r, Err(MotionParseError::InvalidJson(_))));
     }
 
@@ -647,7 +619,16 @@ mod tests {
         ]}"#;
         let (clip, _) = parse_ok(payload);
         let json = serde_json::to_value(&clip).unwrap();
-        for k in &["id", "kind", "name", "trigger", "fps", "duration_s", "frames", "learnedAt"] {
+        for k in &[
+            "id",
+            "kind",
+            "name",
+            "trigger",
+            "fps",
+            "duration_s",
+            "frames",
+            "learnedAt",
+        ] {
             assert!(json.get(*k).is_some(), "missing field {k}");
         }
         assert_eq!(json["kind"], "motion");

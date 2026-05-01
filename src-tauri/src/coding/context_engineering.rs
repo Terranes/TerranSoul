@@ -146,10 +146,7 @@ pub fn infer_priority(label: &str) -> SectionPriority {
 
 /// Convenience: auto-prioritise a list of plain `DocSnippet`s based on
 /// their labels, then apply the budget.
-pub fn auto_budget_assembly(
-    prompt: CodingPrompt,
-    config: &BudgetConfig,
-) -> AssemblyResult {
+pub fn auto_budget_assembly(prompt: CodingPrompt, config: &BudgetConfig) -> AssemblyResult {
     // Move existing docs into prioritised form using label heuristics.
     let prioritised: Vec<PrioritisedDoc> = prompt
         .documents
@@ -219,14 +216,14 @@ mod tests {
             big_doc("large", 400), // ~100 tokens
         ]);
         let config = BudgetConfig {
-            max_tokens: 50,          // very tight
+            max_tokens: 50, // very tight
             response_reserve: 0,
             summary_max_tokens: 100,
             generate_summaries: true,
         };
         let result = budget_aware_assembly(prompt, vec![], &config);
         // The large doc should be pruned, small might survive.
-        assert!(result.budget.pruned.len() >= 1);
+        assert!(!result.budget.pruned.is_empty());
     }
 
     #[test]
@@ -242,11 +239,7 @@ mod tests {
         // Even with impossible budget, the role/task content is preserved
         // (System priority is never pruned by fit_to_budget).
         // The "huge" doc should be pruned.
-        assert!(result
-            .budget
-            .pruned
-            .iter()
-            .any(|p| p.label == "huge"));
+        assert!(result.budget.pruned.iter().any(|p| p.label == "huge"));
     }
 
     #[test]
@@ -284,17 +277,16 @@ mod tests {
         };
         let result = budget_aware_assembly(prompt, extra, &config);
         // Errors (higher priority) should survive over background docs.
-        let has_errors = result
-            .prompt
-            .documents
-            .iter()
-            .any(|d| d.label == "errors");
+        let has_errors = result.prompt.documents.iter().any(|d| d.label == "errors");
         assert!(has_errors);
     }
 
     #[test]
     fn infer_priority_error_label() {
-        assert_eq!(infer_priority("build-errors.log"), SectionPriority::RecentErrors);
+        assert_eq!(
+            infer_priority("build-errors.log"),
+            SectionPriority::RecentErrors
+        );
     }
 
     #[test]
@@ -314,12 +306,18 @@ mod tests {
 
     #[test]
     fn infer_priority_history_label() {
-        assert_eq!(infer_priority("completed-history"), SectionPriority::CompletedSteps);
+        assert_eq!(
+            infer_priority("completed-history"),
+            SectionPriority::CompletedSteps
+        );
     }
 
     #[test]
     fn infer_priority_generic_label() {
-        assert_eq!(infer_priority("some-doc.md"), SectionPriority::Documentation);
+        assert_eq!(
+            infer_priority("some-doc.md"),
+            SectionPriority::Documentation
+        );
     }
 
     #[test]

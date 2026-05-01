@@ -104,17 +104,13 @@ pub fn compute_max_concurrent_agents(free_mb: u64, agents: &[AgentFootprint]) ->
     let cap = raw_cap.clamp(MIN_CAP, MAX_CAP);
 
     let reasoning = if free_mb <= RESERVE_MB {
-        format!(
-            "Only {free_mb} MB free RAM (≤ {RESERVE_MB} MB reserve). Forcing cap to {MIN_CAP}."
-        )
+        format!("Only {free_mb} MB free RAM (≤ {RESERVE_MB} MB reserve). Forcing cap to {MIN_CAP}.")
     } else if raw_cap > MAX_CAP {
         format!(
             "System has plenty of headroom ({usable} MB usable); capping at hard ceiling {MAX_CAP}."
         )
     } else {
-        format!(
-            "{usable} MB usable / {mean_per_agent_mb} MB per agent = {cap} concurrent."
-        )
+        format!("{usable} MB usable / {mean_per_agent_mb} MB per agent = {cap} concurrent.")
     };
 
     RamCap {
@@ -149,24 +145,21 @@ mod tests {
 
     #[test]
     fn plenty_of_ram_capped_at_max() {
-        let out = compute_max_concurrent_agents(64_000, &[fp("a", 200, AgentBackendKind::NativeApi)]);
+        let out =
+            compute_max_concurrent_agents(64_000, &[fp("a", 200, AgentBackendKind::NativeApi)]);
         assert_eq!(out.cap, MAX_CAP);
     }
 
     #[test]
     fn mid_ram_uses_floor_division() {
         // 10_000 free − 1_500 reserve = 8_500 usable ; mean = 600 MB ; floor(8500/600) = 14 -> clamped to 8.
-        let out = compute_max_concurrent_agents(
-            10_000,
-            &[fp("a", 600, AgentBackendKind::ExternalCli)],
-        );
+        let out =
+            compute_max_concurrent_agents(10_000, &[fp("a", 600, AgentBackendKind::ExternalCli)]);
         assert_eq!(out.cap, MAX_CAP);
 
         // 5_000 free − 1_500 = 3_500 usable ; mean = 2_200 (local ollama + 2 GB model) ; floor = 1 -> clamped to 1.
-        let out = compute_max_concurrent_agents(
-            5_000,
-            &[fp("a", 2_200, AgentBackendKind::LocalOllama)],
-        );
+        let out =
+            compute_max_concurrent_agents(5_000, &[fp("a", 2_200, AgentBackendKind::LocalOllama)]);
         assert_eq!(out.cap, 1);
     }
 
@@ -205,7 +198,9 @@ mod tests {
 
     #[test]
     fn cap_never_below_min_never_above_max() {
-        for free in [0_u64, 100, 500, 1_000, 1_500, 2_000, 4_000, 8_000, 32_000, 128_000] {
+        for free in [
+            0_u64, 100, 500, 1_000, 1_500, 2_000, 4_000, 8_000, 32_000, 128_000,
+        ] {
             for mb in [100_u64, 200, 600, 2_200, 8_000] {
                 let out = compute_max_concurrent_agents(
                     free,

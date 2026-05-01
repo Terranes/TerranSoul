@@ -35,12 +35,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::AppState;
 use crate::brain::OllamaAgent;
 use crate::memory::edges::{EdgeDirection, MemoryEdge};
-use crate::memory::{MemoryEntry, MemoryType};
 #[cfg(test)]
 use crate::memory::MemoryTier;
+use crate::memory::{MemoryEntry, MemoryType};
+use crate::AppState;
 
 // ─── Errors ─────────────────────────────────────────────────────────────────
 
@@ -222,8 +222,12 @@ pub struct KgRequest {
     pub direction: String,
 }
 
-fn default_depth() -> u8 { 1 }
-fn default_direction() -> String { "both".to_string() }
+fn default_depth() -> u8 {
+    1
+}
+fn default_direction() -> String {
+    "both".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KgNeighbor {
@@ -365,11 +369,7 @@ pub trait BrainGateway: Send + Sync {
     ) -> Result<Vec<SearchHit>, GatewayError>;
 
     /// `brain.get_entry` — full memory entry by id.
-    async fn get_entry(
-        &self,
-        caps: &GatewayCaps,
-        id: i64,
-    ) -> Result<MemoryEntry, GatewayError>;
+    async fn get_entry(&self, caps: &GatewayCaps, id: i64) -> Result<MemoryEntry, GatewayError>;
 
     /// `brain.list_recent` — last N memories with optional filters.
     async fn list_recent(
@@ -430,14 +430,20 @@ impl AppStateGateway {
     /// [`GatewayError::NotConfigured`]. Use this for read-only deployments
     /// or in unit tests where the ingest path isn't exercised.
     pub fn new(state: AppState) -> Self {
-        Self { state, ingest: None }
+        Self {
+            state,
+            ingest: None,
+        }
     }
 
     /// Build a gateway with an ingest sink. The transport (15.1 / 15.2)
     /// constructs this with an `AppHandleIngestSink` once the Control
     /// Panel chunk lands.
     pub fn with_ingest(state: AppState, ingest: Arc<dyn IngestSink>) -> Self {
-        Self { state, ingest: Some(ingest) }
+        Self {
+            state,
+            ingest: Some(ingest),
+        }
     }
 
     /// Snapshot of the active brain model — released *before* any
@@ -498,7 +504,11 @@ impl BrainGateway for AppStateGateway {
         };
 
         // Step 2: dispatch to the right store method.
-        let store = self.state.memory_store.lock().map_err(GatewayError::from_lock)?;
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
         let entries = match req.mode {
             SearchMode::Hybrid => store
                 .hybrid_search(&req.query, query_emb.as_deref(), limit)
@@ -526,21 +536,19 @@ impl BrainGateway for AppStateGateway {
             .collect())
     }
 
-    async fn get_entry(
-        &self,
-        caps: &GatewayCaps,
-        id: i64,
-    ) -> Result<MemoryEntry, GatewayError> {
+    async fn get_entry(&self, caps: &GatewayCaps, id: i64) -> Result<MemoryEntry, GatewayError> {
         require_read(caps)?;
-        let store = self.state.memory_store.lock().map_err(GatewayError::from_lock)?;
-        store
-            .get_by_id(id)
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => {
-                    GatewayError::NotFound(format!("memory id {id}"))
-                }
-                other => GatewayError::Storage(other.to_string()),
-            })
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+        store.get_by_id(id).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                GatewayError::NotFound(format!("memory id {id}"))
+            }
+            other => GatewayError::Storage(other.to_string()),
+        })
     }
 
     async fn list_recent(
@@ -551,7 +559,11 @@ impl BrainGateway for AppStateGateway {
         require_read(caps)?;
         let limit = req.limit.unwrap_or(20).clamp(1, 200);
 
-        let store = self.state.memory_store.lock().map_err(GatewayError::from_lock)?;
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
         let mut all = store
             .get_all()
             .map_err(|e| GatewayError::Storage(e.to_string()))?;
@@ -562,10 +574,12 @@ impl BrainGateway for AppStateGateway {
         // `MemoryStats.total` which the brain-tier UI already polls; for
         // realistic personal-use sizes (<=10k entries) this is cheap.
         let kind_filter = req.kind.as_deref().map(parse_memory_type);
-        let tag_filter = req
-            .tag
-            .as_deref()
-            .map(|t| t.split([',', ' ']).map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect::<Vec<_>>());
+        let tag_filter = req.tag.as_deref().map(|t| {
+            t.split([',', ' '])
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        });
 
         let filtered: Vec<MemoryEntry> = all
             .into_iter()
@@ -577,7 +591,9 @@ impl BrainGateway for AppStateGateway {
             .filter(|e| match &tag_filter {
                 Some(needles) if !needles.is_empty() => {
                     let hay = e.tags.to_lowercase();
-                    needles.iter().any(|n| hay.split(',').any(|t| t.trim() == n))
+                    needles
+                        .iter()
+                        .any(|n| hay.split(',').any(|t| t.trim() == n))
                 }
                 _ => true,
             })
@@ -606,7 +622,11 @@ impl BrainGateway for AppStateGateway {
             _ => EdgeDirection::Both,
         };
 
-        let store = self.state.memory_store.lock().map_err(GatewayError::from_lock)?;
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
         let center = store.get_by_id(req.id).map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => {
                 GatewayError::NotFound(format!("memory id {}", req.id))
@@ -621,7 +641,11 @@ impl BrainGateway for AppStateGateway {
         let neighbors = edges
             .into_iter()
             .map(|edge| {
-                let other_id = if edge.src_id == req.id { edge.dst_id } else { edge.src_id };
+                let other_id = if edge.src_id == req.id {
+                    edge.dst_id
+                } else {
+                    edge.src_id
+                };
                 let entry = store.get_by_id(other_id).ok();
                 KgNeighbor { edge, entry }
             })
@@ -646,7 +670,11 @@ impl BrainGateway for AppStateGateway {
         let ids = req.memory_ids.clone().unwrap_or_default();
         let mut resolved = Vec::with_capacity(ids.len());
         if !ids.is_empty() {
-            let store = self.state.memory_store.lock().map_err(GatewayError::from_lock)?;
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
             for id in &ids {
                 if let Ok(entry) = store.get_by_id(*id) {
                     resolved.push(entry.content);
@@ -672,10 +700,17 @@ impl BrainGateway for AppStateGateway {
         // Run the brain (or degrade gracefully when none).
         let model_opt = self.active_brain()?;
         let summary = match model_opt {
-            Some(model) => OllamaAgent::new(&model).summarize_conversation(&input).await,
+            Some(model) => {
+                OllamaAgent::new(&model)
+                    .summarize_conversation(&input)
+                    .await
+            }
             None => None,
         };
-        Ok(SummarizeResponse { summary, resolved_count })
+        Ok(SummarizeResponse {
+            summary,
+            resolved_count,
+        })
     }
 
     async fn suggest_context(
@@ -691,11 +726,19 @@ impl BrainGateway for AppStateGateway {
 
         // Step 1: search using the best mode the brain supports.
         let model_opt = self.active_brain()?;
-        let mode = if model_opt.is_some() { SearchMode::Hyde } else { SearchMode::Rrf };
+        let mode = if model_opt.is_some() {
+            SearchMode::Hyde
+        } else {
+            SearchMode::Rrf
+        };
         let hits = self
             .search(
                 caps,
-                SearchRequest { query: req.query.clone(), limit: Some(limit), mode },
+                SearchRequest {
+                    query: req.query.clone(),
+                    limit: Some(limit),
+                    mode,
+                },
             )
             .await?;
 
@@ -703,7 +746,11 @@ impl BrainGateway for AppStateGateway {
         let kg = if let Some(top) = hits.first() {
             self.kg_neighbors(
                 caps,
-                KgRequest { id: top.id, depth: 1, direction: "both".into() },
+                KgRequest {
+                    id: top.id,
+                    depth: 1,
+                    direction: "both".into(),
+                },
             )
             .await
             .ok()
@@ -729,7 +776,12 @@ impl BrainGateway for AppStateGateway {
 
         let brain = model_opt.as_deref().unwrap_or("none");
         let fingerprint = Self::fingerprint(brain, &hits);
-        Ok(SuggestContextPack { hits, kg, summary, fingerprint })
+        Ok(SuggestContextPack {
+            hits,
+            kg,
+            summary,
+            fingerprint,
+        })
     }
 
     async fn ingest_url(
@@ -769,14 +821,22 @@ impl BrainGateway for AppStateGateway {
         };
 
         let (memory_total, rag_quality_pct) = {
-            let store = self.state.memory_store.lock().map_err(GatewayError::from_lock)?;
-            let stats = store.stats().map_err(|e| GatewayError::Storage(e.to_string()))?;
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            let stats = store
+                .stats()
+                .map_err(|e| GatewayError::Storage(e.to_string()))?;
             // RAG quality heuristic: ratio of embedded long-tier memories
             // to long-tier total — matches what BrainSelection surfaces
             // to the UI but cheaper (no hardware probe). 100 % when
             // there are no long-tier memories yet (no negative signal).
             let pct = if stats.long > 0 {
-                ((stats.embedded as f64 / stats.long as f64) * 100.0).round().clamp(0.0, 100.0) as u8
+                ((stats.embedded as f64 / stats.long as f64) * 100.0)
+                    .round()
+                    .clamp(0.0, 100.0) as u8
             } else {
                 100
             };
@@ -834,7 +894,11 @@ mod tests {
     }
 
     impl RecordingIngestSink {
-        fn new() -> Self { Self { calls: StdMutex::new(Vec::new()) } }
+        fn new() -> Self {
+            Self {
+                calls: StdMutex::new(Vec::new()),
+            }
+        }
         fn calls(&self) -> Vec<RecordedCall> {
             self.calls.lock().unwrap().clone()
         }
@@ -848,7 +912,10 @@ mod tests {
             tags: Option<String>,
             importance: Option<i64>,
         ) -> Result<IngestUrlResponse, GatewayError> {
-            self.calls.lock().unwrap().push((source.clone(), tags.clone(), importance));
+            self.calls
+                .lock()
+                .unwrap()
+                .push((source.clone(), tags.clone(), importance));
             Ok(IngestUrlResponse {
                 task_id: "task-test-1".into(),
                 source,
@@ -889,11 +956,18 @@ mod tests {
         let err = gw
             .search(
                 &GatewayCaps::NONE,
-                SearchRequest { query: "rust".into(), limit: None, mode: SearchMode::Rrf },
+                SearchRequest {
+                    query: "rust".into(),
+                    limit: None,
+                    mode: SearchMode::Rrf,
+                },
             )
             .await
             .unwrap_err();
-        assert!(matches!(err, GatewayError::PermissionDenied("brain_read")), "got {err:?}");
+        assert!(
+            matches!(err, GatewayError::PermissionDenied("brain_read")),
+            "got {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -904,12 +978,22 @@ mod tests {
         let err = gw
             .ingest_url(
                 &GatewayCaps::default(),
-                IngestUrlRequest { url: "https://example.com".into(), tags: None, importance: None },
+                IngestUrlRequest {
+                    url: "https://example.com".into(),
+                    tags: None,
+                    importance: None,
+                },
             )
             .await
             .unwrap_err();
-        assert!(matches!(err, GatewayError::PermissionDenied("brain_write")), "got {err:?}");
-        assert!(sink.calls().is_empty(), "sink must not be invoked when caps reject");
+        assert!(
+            matches!(err, GatewayError::PermissionDenied("brain_write")),
+            "got {err:?}"
+        );
+        assert!(
+            sink.calls().is_empty(),
+            "sink must not be invoked when caps reject"
+        );
     }
 
     #[tokio::test]
@@ -941,7 +1025,11 @@ mod tests {
         let err = gw
             .ingest_url(
                 &GatewayCaps::READ_WRITE,
-                IngestUrlRequest { url: "https://example.com".into(), tags: None, importance: None },
+                IngestUrlRequest {
+                    url: "https://example.com".into(),
+                    tags: None,
+                    importance: None,
+                },
             )
             .await
             .unwrap_err();
@@ -954,11 +1042,18 @@ mod tests {
         let err = gw
             .search(
                 &GatewayCaps::default(),
-                SearchRequest { query: "   ".into(), limit: None, mode: SearchMode::Rrf },
+                SearchRequest {
+                    query: "   ".into(),
+                    limit: None,
+                    mode: SearchMode::Rrf,
+                },
             )
             .await
             .unwrap_err();
-        assert!(matches!(err, GatewayError::InvalidArgument(_)), "got {err:?}");
+        assert!(
+            matches!(err, GatewayError::InvalidArgument(_)),
+            "got {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -967,20 +1062,30 @@ mod tests {
         let hits = gw
             .search(
                 &GatewayCaps::default(),
-                SearchRequest { query: "rust".into(), limit: Some(5), mode: SearchMode::Rrf },
+                SearchRequest {
+                    query: "rust".into(),
+                    limit: Some(5),
+                    mode: SearchMode::Rrf,
+                },
             )
             .await
             .unwrap();
         // Positional scores are strictly non-increasing.
         for pair in hits.windows(2) {
-            assert!(pair[0].score >= pair[1].score, "scores must be non-increasing");
+            assert!(
+                pair[0].score >= pair[1].score,
+                "scores must be non-increasing"
+            );
         }
     }
 
     #[tokio::test]
     async fn get_entry_returns_not_found_for_missing_id() {
         let gw = AppStateGateway::new(seed_state());
-        let err = gw.get_entry(&GatewayCaps::default(), 999_999).await.unwrap_err();
+        let err = gw
+            .get_entry(&GatewayCaps::default(), 999_999)
+            .await
+            .unwrap_err();
         assert!(matches!(err, GatewayError::NotFound(_)), "got {err:?}");
     }
 
@@ -1029,7 +1134,11 @@ mod tests {
         let nb = gw
             .kg_neighbors(
                 &GatewayCaps::default(),
-                KgRequest { id, depth: 3, direction: "both".into() },
+                KgRequest {
+                    id,
+                    depth: 3,
+                    direction: "both".into(),
+                },
             )
             .await
             .unwrap();
@@ -1043,11 +1152,17 @@ mod tests {
         let err = gw
             .summarize(
                 &GatewayCaps::default(),
-                SummarizeRequest { text: None, memory_ids: None },
+                SummarizeRequest {
+                    text: None,
+                    memory_ids: None,
+                },
             )
             .await
             .unwrap_err();
-        assert!(matches!(err, GatewayError::InvalidArgument(_)), "got {err:?}");
+        assert!(
+            matches!(err, GatewayError::InvalidArgument(_)),
+            "got {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -1061,7 +1176,10 @@ mod tests {
         let resp = gw
             .summarize(
                 &GatewayCaps::default(),
-                SummarizeRequest { text: None, memory_ids: Some(ids.clone()) },
+                SummarizeRequest {
+                    text: None,
+                    memory_ids: Some(ids.clone()),
+                },
             )
             .await
             .unwrap();
@@ -1081,9 +1199,18 @@ mod tests {
             query: "rust ownership".into(),
             limit: Some(5),
         };
-        let a = gw.suggest_context(&GatewayCaps::default(), req.clone()).await.unwrap();
-        let b = gw.suggest_context(&GatewayCaps::default(), req).await.unwrap();
-        assert_eq!(a.fingerprint, b.fingerprint, "identical input must yield identical fingerprint");
+        let a = gw
+            .suggest_context(&GatewayCaps::default(), req.clone())
+            .await
+            .unwrap();
+        let b = gw
+            .suggest_context(&GatewayCaps::default(), req)
+            .await
+            .unwrap();
+        assert_eq!(
+            a.fingerprint, b.fingerprint,
+            "identical input must yield identical fingerprint"
+        );
         assert_eq!(a.hits.len(), b.hits.len());
         for (x, y) in a.hits.iter().zip(b.hits.iter()) {
             assert_eq!(x.id, y.id, "hit order must be stable");
@@ -1101,12 +1228,18 @@ mod tests {
             query: "rust".into(),
             limit: Some(5),
         };
-        let a = gw.suggest_context(&GatewayCaps::default(), req.clone()).await.unwrap();
+        let a = gw
+            .suggest_context(&GatewayCaps::default(), req.clone())
+            .await
+            .unwrap();
         // Flip the active brain to a different model identifier — same
         // memories, different brain ⇒ different fingerprint (the
         // editor-cache contract).
         *state.active_brain.lock().unwrap() = Some("gemma3:4b-different".into());
-        let b = gw.suggest_context(&GatewayCaps::default(), req).await.unwrap();
+        let b = gw
+            .suggest_context(&GatewayCaps::default(), req)
+            .await
+            .unwrap();
         assert_ne!(a.fingerprint, b.fingerprint);
     }
 
@@ -1159,9 +1292,18 @@ mod tests {
     #[test]
     fn parse_memory_type_is_tolerant() {
         assert!(matches!(parse_memory_type("Fact"), Some(MemoryType::Fact)));
-        assert!(matches!(parse_memory_type("preference"), Some(MemoryType::Preference)));
-        assert!(matches!(parse_memory_type("CONTEXT"), Some(MemoryType::Context)));
-        assert!(matches!(parse_memory_type("summary"), Some(MemoryType::Summary)));
+        assert!(matches!(
+            parse_memory_type("preference"),
+            Some(MemoryType::Preference)
+        ));
+        assert!(matches!(
+            parse_memory_type("CONTEXT"),
+            Some(MemoryType::Context)
+        ));
+        assert!(matches!(
+            parse_memory_type("summary"),
+            Some(MemoryType::Summary)
+        ));
         assert!(parse_memory_type("nonsense").is_none());
     }
 }

@@ -72,7 +72,12 @@ pub fn current_branch(repo_root: &Path) -> Option<String> {
 /// List of files in the unmerged (conflict) state.
 pub fn conflicted_files(repo_root: &Path) -> Vec<String> {
     run_git(repo_root, &["diff", "--name-only", "--diff-filter=U"])
-        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .map(|s| {
+            s.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -250,8 +255,14 @@ fn build_conflict_prompt(path: &str, raw: &str) -> Vec<OpenAiMessage> {
         "File: {path}\n\nConflicted contents follow between <<<FILE>>>:\n\n<<<FILE>>>\n{raw}\n<<<FILE>>>"
     );
     vec![
-        OpenAiMessage { role: "system".to_string(), content: system.to_string() },
-        OpenAiMessage { role: "user".to_string(), content: user },
+        OpenAiMessage {
+            role: "system".to_string(),
+            content: system.to_string(),
+        },
+        OpenAiMessage {
+            role: "user".to_string(),
+            content: user,
+        },
     ]
 }
 

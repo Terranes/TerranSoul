@@ -114,8 +114,7 @@ pub fn save_handoff(data_dir: &Path, state: &HandoffState) -> Result<(), String>
 
     {
         let mut f = fs::File::create(&tmp).map_err(|e| format!("create tmp: {e}"))?;
-        f.write_all(&body)
-            .map_err(|e| format!("write tmp: {e}"))?;
+        f.write_all(&body).map_err(|e| format!("write tmp: {e}"))?;
         f.sync_all().map_err(|e| format!("sync tmp: {e}"))?;
     }
 

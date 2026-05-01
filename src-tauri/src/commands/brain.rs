@@ -1,8 +1,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::brain::{
-    self, ModelRecommendation, OllamaStatus, SystemInfo,
-    BrainMode, FreeProvider, IntentDecision,
+    self, BrainMode, FreeProvider, IntentDecision, ModelRecommendation, OllamaStatus, SystemInfo,
 };
 use crate::AppState;
 
@@ -314,10 +313,7 @@ pub async fn get_brain_mode(state: State<'_, AppState>) -> Result<Option<BrainMo
 /// Set the brain mode (free API, paid API, or local Ollama).
 /// Persists to disk and updates in-memory state.
 #[tauri::command]
-pub async fn set_brain_mode(
-    mode: BrainMode,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn set_brain_mode(mode: BrainMode, state: State<'_, AppState>) -> Result<(), String> {
     brain::brain_config::save(&state.data_dir, &mode)?;
 
     // Also update the legacy active_brain field for backwards compatibility
@@ -385,23 +381,25 @@ pub async fn health_check_providers(
     state: State<'_, AppState>,
 ) -> Result<Vec<ProviderHealthInfo>, String> {
     let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-    Ok(rotator.providers.values().map(|s| ProviderHealthInfo {
-        id: s.provider.id.clone(),
-        display_name: s.provider.display_name.clone(),
-        is_healthy: s.is_healthy,
-        is_rate_limited: s.is_rate_limited,
-        requests_sent: s.requests_sent,
-        remaining_requests: s.remaining_requests,
-        remaining_tokens: s.remaining_tokens,
-        latency_ms: s.latency.map(|d| d.as_millis() as u64),
-    }).collect())
+    Ok(rotator
+        .providers
+        .values()
+        .map(|s| ProviderHealthInfo {
+            id: s.provider.id.clone(),
+            display_name: s.provider.display_name.clone(),
+            is_healthy: s.is_healthy,
+            is_rate_limited: s.is_rate_limited,
+            requests_sent: s.requests_sent,
+            remaining_requests: s.remaining_requests,
+            remaining_tokens: s.remaining_tokens,
+            latency_ms: s.latency.map(|d| d.as_millis() as u64),
+        })
+        .collect())
 }
 
 /// Return the next healthy, non-rate-limited provider id (fastest first).
 #[tauri::command]
-pub async fn get_next_provider(
-    state: State<'_, AppState>,
-) -> Result<Option<String>, String> {
+pub async fn get_next_provider(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
     Ok(rotator.next_healthy_provider().map(|p| p.id.clone()))
 }
@@ -422,11 +420,17 @@ pub async fn get_brain_selection(
     // (1) Provider — read brain_mode + legacy fallback + ask the rotator
     // who it would currently pick (without committing to a request).
     let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
-    let legacy_active_brain = state.active_brain.lock().map_err(|e| e.to_string())?.clone();
+    let legacy_active_brain = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
 
     let rotator_pick: Option<(String, bool)> = {
         let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-        rotator.next_healthy_provider().map(|p| (p.id.clone(), true))
+        rotator
+            .next_healthy_provider()
+            .map(|p| (p.id.clone(), true))
     };
 
     // (2) Embedding — only meaningful in Local Ollama mode. Use the
@@ -518,9 +522,7 @@ pub async fn classify_intent(
 /// the first-launch state.
 /// This is irreversible — the frontend must confirm with the user.
 #[tauri::command]
-pub async fn factory_reset_brain(
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn factory_reset_brain(state: State<'_, AppState>) -> Result<(), String> {
     // Read which components were auto-configured.
     let auto_configured: Vec<String> = {
         let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
@@ -578,7 +580,8 @@ pub async fn factory_reset_brain(
         if !models_to_remove.is_empty() {
             let client = &state.ollama_client;
             for model in &models_to_remove {
-                let _ = brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, model).await;
+                let _ =
+                    brain::delete_model(client, brain::ollama_agent::OLLAMA_BASE_URL, model).await;
             }
         }
     }
@@ -652,10 +655,8 @@ pub async fn check_model_updates(
     state: State<'_, AppState>,
 ) -> Result<ModelUpdateInfo, String> {
     // Refresh catalogue (best-effort — falls back to cached/bundled).
-    let _ = brain::fetch_online_catalogue(
-        &app.path().app_cache_dir().map_err(|e| e.to_string())?,
-    )
-    .await;
+    let _ = brain::fetch_online_catalogue(&app.path().app_cache_dir().map_err(|e| e.to_string())?)
+        .await;
 
     let info = brain::collect_system_info();
 

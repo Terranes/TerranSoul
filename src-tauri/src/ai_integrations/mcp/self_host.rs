@@ -105,11 +105,7 @@ impl DynamicToolRegistry {
     }
 
     /// Invoke a dynamic tool by name. Returns `None` if the tool doesn't exist.
-    pub async fn invoke(
-        &self,
-        name: &str,
-        _params: &serde_json::Value,
-    ) -> Option<ToolResult> {
+    pub async fn invoke(&self, name: &str, _params: &serde_json::Value) -> Option<ToolResult> {
         let map = self.tools.read().await;
         let tool = map.get(name)?;
         // For now, return the static response or a default success.
@@ -152,7 +148,9 @@ pub async fn register_self_improve_tools(registry: &DynamicToolRegistry) {
         .register(
             DynamicTool {
                 name: "self_improve_status".to_owned(),
-                description: "Get the current status of the self-improve engine (running, chunk, progress)".to_owned(),
+                description:
+                    "Get the current status of the self-improve engine (running, chunk, progress)"
+                        .to_owned(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {},
@@ -186,7 +184,9 @@ pub async fn register_self_improve_tools(registry: &DynamicToolRegistry) {
         .register(
             DynamicTool {
                 name: "self_improve_metrics".to_owned(),
-                description: "Get aggregate self-improve metrics (success rate, costs, token usage)".to_owned(),
+                description:
+                    "Get aggregate self-improve metrics (success rate, costs, token usage)"
+                        .to_owned(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {},
@@ -316,7 +316,10 @@ mod tests {
     #[tokio::test]
     async fn registry_invoke_nonexistent_returns_none() {
         let reg = DynamicToolRegistry::new();
-        assert!(reg.invoke("missing", &serde_json::json!({})).await.is_none());
+        assert!(reg
+            .invoke("missing", &serde_json::json!({}))
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -376,7 +379,7 @@ mod tests {
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let deser: McpAutoSpawnConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deser.enabled, false);
+        assert!(!deser.enabled);
         assert_eq!(deser.port_override, 9999);
     }
 

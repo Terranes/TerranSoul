@@ -59,7 +59,10 @@ mod tests {
     fn get_app_settings_returns_defaults_from_state() {
         let state = crate::AppState::for_test();
         let settings = state.app_settings.lock().unwrap();
-        assert_eq!(settings.selected_model_id, crate::settings::DEFAULT_MODEL_ID);
+        assert_eq!(
+            settings.selected_model_id,
+            crate::settings::DEFAULT_MODEL_ID
+        );
         assert!(settings.is_valid_schema());
     }
 
@@ -148,7 +151,10 @@ mod tests {
             let mut settings = state.app_settings.lock().unwrap();
             settings.model_camera_positions.insert(
                 "shinra".into(),
-                crate::settings::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+                crate::settings::ModelCameraPosition {
+                    azimuth: 0.5,
+                    distance: 3.0,
+                },
             );
         }
         let settings = state.app_settings.lock().unwrap();
@@ -164,11 +170,17 @@ mod tests {
             let mut settings = state.app_settings.lock().unwrap();
             settings.model_camera_positions.insert(
                 "shinra".into(),
-                crate::settings::ModelCameraPosition { azimuth: 0.5, distance: 3.0 },
+                crate::settings::ModelCameraPosition {
+                    azimuth: 0.5,
+                    distance: 3.0,
+                },
             );
             settings.model_camera_positions.insert(
                 "komori".into(),
-                crate::settings::ModelCameraPosition { azimuth: 1.2, distance: 2.0 },
+                crate::settings::ModelCameraPosition {
+                    azimuth: 1.2,
+                    distance: 2.0,
+                },
             );
         }
         let settings = state.app_settings.lock().unwrap();

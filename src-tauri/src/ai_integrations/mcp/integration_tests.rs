@@ -134,8 +134,7 @@ mod tests {
         let content = &body["result"]["content"][0];
         assert_eq!(content["type"], "text");
         // Parse the text as JSON and check health fields.
-        let health: Value =
-            serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
+        let health: Value = serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
         assert!(health["version"].is_string());
         assert!(health["brain_provider"].is_string());
 
@@ -165,8 +164,7 @@ mod tests {
         let content = &body["result"]["content"][0];
         assert_eq!(content["type"], "text");
         // Empty brain returns empty array.
-        let results: Vec<Value> =
-            serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
+        let results: Vec<Value> = serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
         assert!(results.is_empty());
 
         handle.stop();
@@ -301,11 +299,7 @@ mod tests {
 
         // Stop the server.
         handle.stop();
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            handle.task,
-        )
-        .await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
 
         // Server should no longer accept connections.
         let client = reqwest::Client::new();

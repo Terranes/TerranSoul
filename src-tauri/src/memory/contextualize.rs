@@ -17,9 +17,9 @@
 //!
 //! Maps to `docs/brain-advanced-design.md` §19.2 row 3 (chunk 16.2).
 
-use crate::brain::{BrainMode, OllamaAgent, OpenAiClient};
 use crate::brain::ollama_agent::ChatMessage;
 use crate::brain::openai_client::OpenAiMessage;
+use crate::brain::{BrainMode, OllamaAgent, OpenAiClient};
 
 /// Build the system prompt for the contextualiser.
 fn system_prompt() -> &'static str {
@@ -60,7 +60,11 @@ pub async fn generate_doc_summary(text: &str, brain_mode: &BrainMode) -> Option<
     }
 
     // Use at most the first 2000 chars to avoid blowing context windows.
-    let preview = if text.len() > 2000 { &text[..2000] } else { text };
+    let preview = if text.len() > 2000 {
+        &text[..2000]
+    } else {
+        text
+    };
 
     let sys = "You are a document summariser. Given the beginning of a document, \
                write a 1–2 sentence summary that captures the document's title, \
@@ -113,8 +117,7 @@ async fn call_llm(system: &str, user: &str, brain_mode: &BrainMode) -> Option<St
             api_key,
         } => {
             let provider = crate::brain::get_free_provider(provider_id)?;
-            let client =
-                OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
             let msgs = vec![
                 OpenAiMessage {
                     role: "system".to_string(),

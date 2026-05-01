@@ -14,7 +14,8 @@ use super::{LinkMessage, LinkStatus, LinkTransport, PeerAddr};
 
 /// Generate a self-signed certificate + private key for TLS.
 /// Used for local-network QUIC where we trust via device pairing, not PKI.
-pub fn generate_self_signed_cert() -> Result<(Vec<CertificateDer<'static>>, PrivatePkcs8KeyDer<'static>), String> {
+pub fn generate_self_signed_cert(
+) -> Result<(Vec<CertificateDer<'static>>, PrivatePkcs8KeyDer<'static>), String> {
     let cert = rcgen::generate_simple_self_signed(vec!["terransoul.local".to_string()])
         .map_err(|e| format!("cert generation failed: {e}"))?;
 
@@ -48,8 +49,7 @@ pub fn build_client_config() -> ClientConfig {
         .with_no_client_auth();
 
     ClientConfig::new(Arc::new(
-        quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
-            .expect("QUIC client config"),
+        quinn::crypto::rustls::QuicClientConfig::try_from(crypto).expect("QUIC client config"),
     ))
 }
 
@@ -156,7 +156,9 @@ impl LinkTransport for QuicTransport {
 
     async fn listen(&self, port: u16) -> Result<u16, String> {
         let server_config = build_server_config()?;
-        let addr: SocketAddr = format!("0.0.0.0:{port}").parse().map_err(|e: std::net::AddrParseError| e.to_string())?;
+        let addr: SocketAddr = format!("0.0.0.0:{port}")
+            .parse()
+            .map_err(|e: std::net::AddrParseError| e.to_string())?;
         let endpoint = Endpoint::server(server_config, addr).map_err(|e| e.to_string())?;
         let bound_port = endpoint.local_addr().map_err(|e| e.to_string())?.port();
         *self.endpoint.lock().await = Some(endpoint);
@@ -167,10 +169,14 @@ impl LinkTransport for QuicTransport {
     async fn connect(&self, addr: &PeerAddr) -> Result<(), String> {
         *self.status.lock().await = LinkStatus::Connecting;
 
-        let mut endpoint = Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(|e| e.to_string())?;
+        let mut endpoint =
+            Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(|e| e.to_string())?;
         endpoint.set_default_client_config(build_client_config());
 
-        let remote: SocketAddr = addr.to_string().parse().map_err(|e: std::net::AddrParseError| e.to_string())?;
+        let remote: SocketAddr = addr
+            .to_string()
+            .parse()
+            .map_err(|e: std::net::AddrParseError| e.to_string())?;
         let connection = endpoint
             .connect(remote, "terransoul.local")
             .map_err(|e| e.to_string())?

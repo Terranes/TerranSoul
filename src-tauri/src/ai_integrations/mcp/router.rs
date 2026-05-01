@@ -94,7 +94,11 @@ pub(crate) async fn dispatch_method(
 ) -> JsonRpcResponse {
     match method {
         "initialize" => {
-            let build_mode = if super::is_dev_build() { "dev" } else { "release" };
+            let build_mode = if super::is_dev_build() {
+                "dev"
+            } else {
+                "release"
+            };
             let server_name = if super::is_dev_build() {
                 "terransoul-brain-dev"
             } else {
@@ -144,11 +148,7 @@ pub(crate) async fn dispatch_method(
 
         "ping" => JsonRpcResponse::ok(id, json!({})),
 
-        _ => JsonRpcResponse::err(
-            id,
-            -32601,
-            format!("method not found: {method}"),
-        ),
+        _ => JsonRpcResponse::err(id, -32601, format!("method not found: {method}")),
     }
 }
 
@@ -172,11 +172,7 @@ async fn handle_request(
     let req: JsonRpcRequest = match serde_json::from_str(&body) {
         Ok(r) => r,
         Err(e) => {
-            let resp = JsonRpcResponse::err(
-                Value::Null,
-                -32700,
-                format!("parse error: {e}"),
-            );
+            let resp = JsonRpcResponse::err(Value::Null, -32700, format!("parse error: {e}"));
             return (StatusCode::OK, Json(resp)).into_response();
         }
     };
@@ -196,14 +192,7 @@ async fn handle_request(
 
     let params = req.params.unwrap_or(Value::Null);
 
-    let resp = dispatch_method(
-        state.gw.as_ref(),
-        &state.caps,
-        &req.method,
-        params,
-        id,
-    )
-    .await;
+    let resp = dispatch_method(state.gw.as_ref(), &state.caps, &req.method, params, id).await;
 
     (StatusCode::OK, Json(resp)).into_response()
 }

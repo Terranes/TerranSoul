@@ -129,7 +129,10 @@ impl OpenAiClient {
             req = req.bearer_auth(key);
         }
 
-        let resp = req.send().await.map_err(|e| format!("request failed: {e}"))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("request failed: {e}"))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -173,7 +176,10 @@ impl OpenAiClient {
             req = req.bearer_auth(key);
         }
 
-        let resp = req.send().await.map_err(|e| format!("request failed: {e}"))?;
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| format!("request failed: {e}"))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -247,8 +253,7 @@ mod tests {
 
     #[test]
     fn completions_url_strips_trailing_slash() {
-        let client =
-            OpenAiClient::new("https://api.groq.com/openai/", "llama-3.3-70b", None);
+        let client = OpenAiClient::new("https://api.groq.com/openai/", "llama-3.3-70b", None);
         assert_eq!(
             client.completions_url(),
             "https://api.groq.com/openai/v1/chat/completions"
@@ -312,10 +317,7 @@ mod tests {
         let json = r#"{"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}"#;
         let parsed: SseChunkResponse = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.choices.len(), 1);
-        assert_eq!(
-            parsed.choices[0].delta.content.as_deref(),
-            Some("Hello")
-        );
+        assert_eq!(parsed.choices[0].delta.content.as_deref(), Some("Hello"));
     }
 
     #[test]

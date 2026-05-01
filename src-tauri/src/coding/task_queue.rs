@@ -197,11 +197,7 @@ impl TaskQueue {
     }
 
     /// Test-friendly variant that takes the timestamp explicitly.
-    pub fn enqueue_with_now(
-        &self,
-        task: NewTask,
-        now_ms: i64,
-    ) -> Result<String, QueueError> {
+    pub fn enqueue_with_now(&self, task: NewTask, now_ms: i64) -> Result<String, QueueError> {
         let id = Uuid::new_v4().to_string();
         self.conn.execute(
             "INSERT INTO coding_tasks (id, description, output_shape, priority,
@@ -229,15 +225,14 @@ impl TaskQueue {
         self.claim_next_with_now(now_unix_ms())
     }
 
-    pub fn claim_next_with_now(
-        &self,
-        now_ms: i64,
-    ) -> Result<Option<TaskRow>, QueueError> {
+    pub fn claim_next_with_now(&self, now_ms: i64) -> Result<Option<TaskRow>, QueueError> {
         // SQLite's UPDATE … RETURNING makes the claim atomic under
         // WAL: the row is locked for the duration of the update and
         // any racing caller sees the new status before considering it.
-        let row = self.conn.query_row(
-            "UPDATE coding_tasks
+        let row = self
+            .conn
+            .query_row(
+                "UPDATE coding_tasks
              SET status      = 'in_progress',
                  started_at  = ?1,
                  attempts    = attempts + 1
@@ -250,19 +245,15 @@ impl TaskQueue {
              RETURNING id, description, output_shape, priority, status,
                        attempts, max_attempts, enqueued_at, started_at,
                        finished_at, error, result, enqueued_by",
-            params![now_ms],
-            row_to_task,
-        )
-        .optional()?;
+                params![now_ms],
+                row_to_task,
+            )
+            .optional()?;
         Ok(row)
     }
 
     /// Mark a claimed task as completed successfully.
-    pub fn complete(
-        &self,
-        id: &str,
-        result: Option<&str>,
-    ) -> Result<(), QueueError> {
+    pub fn complete(&self, id: &str, result: Option<&str>) -> Result<(), QueueError> {
         self.complete_with_now(id, result, now_unix_ms())
     }
 
@@ -306,13 +297,21 @@ impl TaskQueue {
         // window between them is harmless — only the worker that
         // claimed this row is supposed to call `fail`/`complete`, so
         // there is no race against another claimer.
-        let (attempts, max_attempts, status) = self.conn.query_row(
-            "SELECT attempts, max_attempts, status FROM coding_tasks WHERE id = ?1",
-            params![id],
-            |r| Ok((r.get::<_, u32>(0)?, r.get::<_, u32>(1)?, r.get::<_, String>(2)?)),
-        )
-        .optional()?
-        .ok_or_else(|| QueueError::NotFound(id.to_string()))?;
+        let (attempts, max_attempts, status) = self
+            .conn
+            .query_row(
+                "SELECT attempts, max_attempts, status FROM coding_tasks WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok((
+                        r.get::<_, u32>(0)?,
+                        r.get::<_, u32>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| QueueError::NotFound(id.to_string()))?;
 
         if status != "in_progress" {
             return Err(QueueError::InvalidTransition(format!(
@@ -359,15 +358,17 @@ impl TaskQueue {
     }
 
     pub fn get(&self, id: &str) -> Result<Option<TaskRow>, QueueError> {
-        let row = self.conn.query_row(
-            "SELECT id, description, output_shape, priority, status,
+        let row = self
+            .conn
+            .query_row(
+                "SELECT id, description, output_shape, priority, status,
                     attempts, max_attempts, enqueued_at, started_at,
                     finished_at, error, result, enqueued_by
              FROM coding_tasks WHERE id = ?1",
-            params![id],
-            row_to_task,
-        )
-        .optional()?;
+                params![id],
+                row_to_task,
+            )
+            .optional()?;
         Ok(row)
     }
 
@@ -401,12 +402,10 @@ impl TaskQueue {
     /// Number of rows in each status. Useful for the Brain panel
     /// "queue depth" display and for tests.
     pub fn counts_by_status(&self) -> Result<std::collections::BTreeMap<String, i64>, QueueError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT status, COUNT(*) FROM coding_tasks GROUP BY status",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-        })?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT status, COUNT(*) FROM coding_tasks GROUP BY status")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = std::collections::BTreeMap::new();
         for r in rows {
             let (k, v) = r?;
@@ -559,13 +558,15 @@ mod tests {
     #[test]
     fn fail_retries_until_max_attempts() {
         let q = TaskQueue::open_in_memory().unwrap();
-        let id = q.enqueue(NewTask {
-            description: "a".into(),
-            output_shape: "text".into(),
-            priority: 0,
-            max_attempts: 2,
-            enqueued_by: "test".into(),
-        }).unwrap();
+        let id = q
+            .enqueue(NewTask {
+                description: "a".into(),
+                output_shape: "text".into(),
+                priority: 0,
+                max_attempts: 2,
+                enqueued_by: "test".into(),
+            })
+            .unwrap();
 
         // Attempt 1 — re-queue.
         let _ = q.claim_next().unwrap().unwrap();

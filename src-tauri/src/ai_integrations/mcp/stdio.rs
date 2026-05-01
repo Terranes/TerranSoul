@@ -76,11 +76,7 @@ where
         let req: JsonRpcRequest = match serde_json::from_str(trimmed) {
             Ok(r) => r,
             Err(e) => {
-                let resp = JsonRpcResponse::err(
-                    Value::Null,
-                    -32700,
-                    format!("parse error: {e}"),
-                );
+                let resp = JsonRpcResponse::err(Value::Null, -32700, format!("parse error: {e}"));
                 write_response(&mut writer, &resp).await?;
                 continue;
             }
@@ -192,10 +188,7 @@ mod tests {
         assert_eq!(resps.len(), 1);
         let tools = resps[0]["result"]["tools"].as_array().expect("tools array");
         assert!(!tools.is_empty(), "expected at least one tool");
-        let names: Vec<&str> = tools
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"brain_search"));
         assert!(names.contains(&"brain_health"));
     }
@@ -319,8 +312,7 @@ mod tests {
 
         // Drop client_tx after writing so the server sees EOF.
         let mut client_tx = client_tx;
-        let req =
-            br#"{"jsonrpc":"2.0","id":42,"method":"ping"}
+        let req = br#"{"jsonrpc":"2.0","id":42,"method":"ping"}
 "#;
         client_tx.write_all(req).await.unwrap();
         drop(client_tx);

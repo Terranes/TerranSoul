@@ -204,8 +204,13 @@ fn atomic_write(path: &Path, content: &str) -> Result<usize, String> {
     f.flush()
         .map_err(|e| format!("flush tmp `{}`: {e}", tmp_path.display()))?;
     drop(f);
-    std::fs::rename(&tmp_path, path)
-        .map_err(|e| format!("rename `{}` → `{}`: {e}", tmp_path.display(), path.display()))?;
+    std::fs::rename(&tmp_path, path).map_err(|e| {
+        format!(
+            "rename `{}` → `{}`: {e}",
+            tmp_path.display(),
+            path.display()
+        )
+    })?;
     Ok(content.len())
 }
 
@@ -216,7 +221,9 @@ fn git_add(repo_root: &Path, file: &Path) -> bool {
     // On Windows, canonicalize can return a \\?\ path that doesn't
     // match the tempdir root. Fall back to using the path relative to
     // `repo_root` if strip_prefix fails after canonicalizing both.
-    let root_canon = repo_root.canonicalize().unwrap_or_else(|_| repo_root.to_path_buf());
+    let root_canon = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.to_path_buf());
     let file_canon = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
     let rel = match file_canon.strip_prefix(&root_canon) {
         Ok(r) => r.to_string_lossy().to_string(),
@@ -241,11 +248,7 @@ fn git_add(repo_root: &Path, file: &Path) -> bool {
 /// `git_stage`: when `true`, each successfully written file is staged
 /// via `git add`. When `false`, files are written but not staged (e.g.
 /// for dry-run / preview use cases).
-pub fn apply_blocks(
-    repo_root: &Path,
-    blocks: &[FileBlock],
-    git_stage: bool,
-) -> ApplySummary {
+pub fn apply_blocks(repo_root: &Path, blocks: &[FileBlock], git_stage: bool) -> ApplySummary {
     let mut applied = Vec::new();
     let mut rejected = Vec::new();
 
@@ -290,11 +293,7 @@ pub fn apply_blocks(
 /// Convenience: parse + apply in one call. Typical path after
 /// receiving a model reply with `BareFileContents` output shape or
 /// a multi-file "implement this chunk" response.
-pub fn apply_from_reply(
-    repo_root: &Path,
-    reply: &str,
-    git_stage: bool,
-) -> ApplySummary {
+pub fn apply_from_reply(repo_root: &Path, reply: &str, git_stage: bool) -> ApplySummary {
     let blocks = parse_file_blocks(reply);
     apply_blocks(repo_root, &blocks, git_stage)
 }
@@ -484,9 +483,6 @@ fn it_works() { assert_eq!(2 + 2, 4); }
         let summary = apply_blocks(dir.path(), &blocks, false);
         assert_eq!(summary.applied.len(), 1);
         assert!(!summary.applied[0].created, "should report overwrite");
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "new content"
-        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new content");
     }
 }

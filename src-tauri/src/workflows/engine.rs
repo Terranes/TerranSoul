@@ -50,10 +50,7 @@ pub enum WorkflowEventKind {
         output: serde_json::Value,
     },
     /// A sub-task failed.
-    ActivityFailed {
-        activity_id: String,
-        error: String,
-    },
+    ActivityFailed { activity_id: String, error: String },
     /// Liveness marker so the UI can show "still running". Optional
     /// `message` lets the activity push human-readable progress.
     Heartbeat { message: Option<String> },
@@ -193,11 +190,7 @@ impl WorkflowEngine {
 
     /// Start a new workflow and record its `Started` event. Returns the
     /// fresh `WorkflowId`.
-    pub async fn start(
-        &self,
-        name: &str,
-        input: serde_json::Value,
-    ) -> Result<WorkflowId, String> {
+    pub async fn start(&self, name: &str, input: serde_json::Value) -> Result<WorkflowId, String> {
         let id = uuid::Uuid::new_v4().simple().to_string();
         self.append(
             &id,
@@ -603,9 +596,7 @@ impl WorkflowResilienceConfig {
     /// Build a [`crate::workflows::resilience::ResilientRunner`] from
     /// this config. Cheap — runners are just three policy structs.
     pub fn build_runner(&self) -> crate::workflows::resilience::ResilientRunner {
-        use crate::workflows::resilience::{
-            CircuitBreaker, ResilientRunner, TimeoutPolicy,
-        };
+        use crate::workflows::resilience::{CircuitBreaker, ResilientRunner, TimeoutPolicy};
         use std::time::Duration;
         ResilientRunner::new(
             self.retry.clone(),
@@ -688,7 +679,10 @@ mod tests {
         let id = e.start("term", serde_json::json!({})).await.unwrap();
         e.fail(&id, "boom").await.unwrap();
         let err = e.heartbeat(&id, None).await.unwrap_err();
-        assert!(err.contains("failed") || err.contains("cannot"), "got: {err}");
+        assert!(
+            err.contains("failed") || err.contains("cannot"),
+            "got: {err}"
+        );
     }
 
     #[tokio::test]
@@ -828,7 +822,10 @@ mod tests {
             WorkflowEventKind::ActivityScheduled { .. }
         ));
         match &hist[2].kind {
-            WorkflowEventKind::ActivityCompleted { activity_id, output } => {
+            WorkflowEventKind::ActivityCompleted {
+                activity_id,
+                output,
+            } => {
                 assert_eq!(activity_id, "act-1");
                 assert_eq!(output, &serde_json::json!(7));
             }
@@ -841,15 +838,13 @@ mod tests {
         let e = new_engine().await;
         let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
         let cfg = fast_config();
-        let attempts =
-            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let attempts_clone = attempts.clone();
         let result: i32 = e
             .run_activity_resilient(&id, "act-r", "transient", &cfg, move || {
                 let attempts = attempts_clone.clone();
                 async move {
-                    let n =
-                        attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let n = attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if n < 2 {
                         Err("transient blip".to_string())
                     } else {
@@ -877,8 +872,7 @@ mod tests {
         let e = new_engine().await;
         let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
         let cfg = fast_config();
-        let attempts =
-            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let attempts_clone = attempts.clone();
         let result: Result<i32, String> = e
             .run_activity_resilient(&id, "act-f", "always_fails", &cfg, move || {
@@ -908,8 +902,7 @@ mod tests {
         let e = new_engine().await;
         let id = e.start("test_wf", serde_json::json!({})).await.unwrap();
         let cfg = fast_config(); // includes "fatal" as non-retryable
-        let attempts =
-            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let attempts_clone = attempts.clone();
         let result: Result<i32, String> = e
             .run_activity_resilient(&id, "act-nr", "fatal_only", &cfg, move || {
@@ -967,9 +960,7 @@ mod tests {
         // resilient helper must surface that instead of swallowing it.
         let cfg = fast_config();
         let result: Result<i32, String> = e
-            .run_activity_resilient(&id, "act-x", "after_terminal", &cfg, || async {
-                Ok(0_i32)
-            })
+            .run_activity_resilient(&id, "act-x", "after_terminal", &cfg, || async { Ok(0_i32) })
             .await;
         assert!(result.is_err());
     }

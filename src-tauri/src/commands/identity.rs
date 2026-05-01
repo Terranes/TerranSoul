@@ -12,7 +12,9 @@ use crate::{
 
 /// Return the public identity of this device (device_id, public key, name).
 #[tauri::command]
-pub async fn get_device_identity(state: State<'_, AppState>) -> Result<crate::identity::DeviceInfo, String> {
+pub async fn get_device_identity(
+    state: State<'_, AppState>,
+) -> Result<crate::identity::DeviceInfo, String> {
     let identity = state.device_identity.lock().map_err(|e| e.to_string())?;
     match identity.as_ref() {
         Some(id) => Ok(id.device_info(&device_name())),
@@ -32,7 +34,9 @@ pub async fn get_pairing_qr(state: State<'_, AppState>) -> Result<String, String
 
 /// Return the list of trusted (paired) devices.
 #[tauri::command]
-pub async fn list_trusted_devices(state: State<'_, AppState>) -> Result<Vec<TrustedDevice>, String> {
+pub async fn list_trusted_devices(
+    state: State<'_, AppState>,
+) -> Result<Vec<TrustedDevice>, String> {
     Ok(state
         .trusted_devices
         .lock()

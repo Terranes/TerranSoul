@@ -100,8 +100,16 @@ fn try_between(lower: &str) -> Option<TimeRange> {
     let date_a = rest[..and_idx].trim();
     let date_b = rest[and_idx + 5..].trim();
     // Take only the first 10 chars (YYYY-MM-DD) from each
-    let a_str = if date_a.len() >= 10 { &date_a[..10] } else { date_a };
-    let b_str = if date_b.len() >= 10 { &date_b[..10] } else { date_b };
+    let a_str = if date_a.len() >= 10 {
+        &date_a[..10]
+    } else {
+        date_a
+    };
+    let b_str = if date_b.len() >= 10 {
+        &date_b[..10]
+    } else {
+        date_b
+    };
     let a = parse_ymd(a_str)?;
     let b = parse_ymd(b_str)?;
     Some(TimeRange {
@@ -115,7 +123,11 @@ fn try_since(lower: &str, now_ms: i64) -> Option<TimeRange> {
     let rest = &lower[idx + 6..];
     let raw = rest.split_whitespace().next()?;
     let date_str = strip_punct(raw);
-    let d_str = if date_str.len() >= 10 { &date_str[..10] } else { date_str };
+    let d_str = if date_str.len() >= 10 {
+        &date_str[..10]
+    } else {
+        date_str
+    };
 
     // Try "since april", "since march" etc.
     if let Some(month_ms) = try_month_name(d_str, now_ms) {
@@ -137,7 +149,11 @@ fn try_before(lower: &str) -> Option<TimeRange> {
     let rest = &lower[idx + 7..];
     let raw = rest.split_whitespace().next()?;
     let date_str = strip_punct(raw);
-    let d_str = if date_str.len() >= 10 { &date_str[..10] } else { date_str };
+    let d_str = if date_str.len() >= 10 {
+        &date_str[..10]
+    } else {
+        date_str
+    };
     let end = parse_ymd(d_str)?;
     Some(TimeRange {
         start_ms: 0,

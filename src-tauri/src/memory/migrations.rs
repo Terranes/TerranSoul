@@ -522,20 +522,16 @@ mod tests {
 
         // New columns should exist and default to NULL.
         let emb: Option<Vec<u8>> = conn
-            .query_row(
-                "SELECT embedding FROM memories WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT embedding FROM memories WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(emb.is_none());
 
         let src: Option<String> = conn
-            .query_row(
-                "SELECT source_url FROM memories WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT source_url FROM memories WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(src.is_none());
     }
@@ -559,21 +555,17 @@ mod tests {
 
         // Data still there.
         let content: String = conn
-            .query_row(
-                "SELECT content FROM memories WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT content FROM memories WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(content, "important");
 
         // embedding column should not exist.
         let has_embedding = conn
-            .query_row(
-                "SELECT embedding FROM memories WHERE id = 1",
-                [],
-                |r| r.get::<_, Option<Vec<u8>>>(0),
-            )
+            .query_row("SELECT embedding FROM memories WHERE id = 1", [], |r| {
+                r.get::<_, Option<Vec<u8>>>(0)
+            })
             .is_ok();
         assert!(!has_embedding);
     }
@@ -611,7 +603,7 @@ mod tests {
 
         let status = migration_status(&conn).unwrap();
         assert_eq!(status.len(), MIGRATIONS.len());
-        assert!(status[0].2);  // V1 applied
+        assert!(status[0].2); // V1 applied
         assert!(!status[1].2); // V2 not yet
     }
 
@@ -638,7 +630,11 @@ mod tests {
     #[test]
     fn migrations_are_sequential() {
         for (i, m) in MIGRATIONS.iter().enumerate() {
-            assert_eq!(m.version, (i + 1) as i64, "migration versions must be sequential");
+            assert_eq!(
+                m.version,
+                (i + 1) as i64,
+                "migration versions must be sequential"
+            );
         }
     }
 
@@ -666,10 +662,8 @@ mod tests {
         downgrade_to(&conn, 7).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 7);
 
-        conn.execute_batch(
-            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
-        )
-        .unwrap();
+        conn.execute_batch("INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);")
+            .unwrap();
         conn.execute(
             "INSERT INTO memory_edges
                 (src_id, dst_id, rel_type, confidence, source, created_at,
@@ -690,11 +684,9 @@ mod tests {
         downgrade_to(&conn, 6).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 6);
         let n: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM memory_edges WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(n, 1, "edge row must survive V7→V6 downgrade");
 
@@ -725,42 +717,46 @@ mod tests {
         assert_eq!(get_version(&conn).unwrap(), 6);
 
         // Need two memories first (FK).
-        conn.execute_batch(
-            "INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);",
-        ).unwrap();
+        conn.execute_batch("INSERT INTO memories (content, created_at) VALUES ('a', 1), ('b', 2);")
+            .unwrap();
         conn.execute(
             "INSERT INTO memory_edges
                 (src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to)
              VALUES (1, 2, 'rel', 1.0, 'user', 0, 100, 200);",
             [],
-        ).unwrap();
-        let (vf, vt): (Option<i64>, Option<i64>) = conn.query_row(
-            "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).unwrap();
+        )
+        .unwrap();
+        let (vf, vt): (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!(vf, Some(100));
         assert_eq!(vt, Some(200));
 
         // Downgrade to V5: drop columns, the underlying edge row must survive.
         downgrade_to(&conn, 5).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 5);
-        let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM memory_edges WHERE id = 1",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_edges WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(n, 1, "edge row must survive V6→V5 downgrade");
 
         // Re-upgrade: V6 columns return as NULL on the existing row
         // (default for ALTER TABLE … ADD COLUMN with no default).
         migrate_to_latest(&conn).unwrap();
         assert_eq!(get_version(&conn).unwrap(), TARGET_VERSION);
-        let (vf2, vt2): (Option<i64>, Option<i64>) = conn.query_row(
-            "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        ).unwrap();
+        let (vf2, vt2): (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT valid_from, valid_to FROM memory_edges WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
         assert_eq!(vf2, None, "ALTER ADD COLUMN should default to NULL");
         assert_eq!(vt2, None);
     }
@@ -816,9 +812,11 @@ mod tests {
         downgrade_to(&conn, 9).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 9);
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memories WHERE content = 'a'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM memories WHERE content = 'a'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, 1, "row survives V10→V9 downgrade");
         // Re-upgrade — columns return as NULL on the existing row.
@@ -830,7 +828,10 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        assert_eq!(path, None, "ALTER ADD COLUMN defaults to NULL on re-upgrade");
+        assert_eq!(
+            path, None,
+            "ALTER ADD COLUMN defaults to NULL on re-upgrade"
+        );
         assert_eq!(ts, None);
     }
 
@@ -887,9 +888,11 @@ mod tests {
         downgrade_to(&conn, 10).unwrap();
         assert_eq!(get_version(&conn).unwrap(), 10);
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memories WHERE content = 'a'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM memories WHERE content = 'a'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, 1, "row survives V11→V10 downgrade");
         // The index must also be gone — no row in sqlite_master.

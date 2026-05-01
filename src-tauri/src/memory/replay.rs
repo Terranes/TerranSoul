@@ -97,10 +97,7 @@ pub fn synthetic_history_from_summary(summary: &str) -> Vec<(String, String)> {
         // arbitrary character-window splits.
         return vec![("user".to_string(), summary.to_string())];
     }
-    parts
-        .into_iter()
-        .map(|p| ("user".to_string(), p))
-        .collect()
+    parts.into_iter().map(|p| ("user".to_string(), p)).collect()
 }
 
 /// Compute the next [`ReplayProgress`] snapshot. Pure helper extracted so
@@ -175,14 +172,12 @@ mod tests {
 
     #[test]
     fn select_summaries_keeps_only_summary_type() {
-        let entries = vec![
-            summary(1, 100, "s1"),
-            fact(2, 150),
-            summary(3, 200, "s2"),
-        ];
+        let entries = vec![summary(1, 100, "s1"), fact(2, 150), summary(3, 200, "s2")];
         let selected = select_summaries(&entries, &ReplayConfig::default());
         assert_eq!(selected.len(), 2);
-        assert!(selected.iter().all(|m| matches!(m.memory_type, MemoryType::Summary)));
+        assert!(selected
+            .iter()
+            .all(|m| matches!(m.memory_type, MemoryType::Summary)));
     }
 
     #[test]
@@ -212,7 +207,10 @@ mod tests {
             summary(2, 500, "middle"),
         ];
         let selected = select_summaries(&entries, &ReplayConfig::default());
-        assert_eq!(selected.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert_eq!(
+            selected.iter().map(|s| s.id).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
     }
 
     #[test]

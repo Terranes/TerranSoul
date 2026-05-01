@@ -162,10 +162,7 @@ pub async fn dispatch(
             let req = KgRequest {
                 id,
                 depth: args["depth"].as_u64().map(|n| n as u8).unwrap_or(1),
-                direction: args["direction"]
-                    .as_str()
-                    .unwrap_or("both")
-                    .to_string(),
+                direction: args["direction"].as_str().unwrap_or("both").to_string(),
             };
             gw.kg_neighbors(caps, req)
                 .await
@@ -188,10 +185,7 @@ pub async fn dispatch(
                 .map_err(|e| e.to_string())
         }
         "brain_suggest_context" => {
-            let query = args["query"]
-                .as_str()
-                .unwrap_or_default()
-                .to_string();
+            let query = args["query"].as_str().unwrap_or_default().to_string();
             let req = SuggestContextRequest {
                 query,
                 file_path: args["file_path"].as_str().map(String::from),
@@ -253,10 +247,7 @@ mod tests {
     #[test]
     fn tool_names_match_dispatch_arms() {
         let defs = definitions();
-        let names: Vec<&str> = defs
-            .iter()
-            .map(|d| d["name"].as_str().unwrap())
-            .collect();
+        let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
         let expected = [
             "brain_search",
             "brain_get_entry",

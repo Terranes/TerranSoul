@@ -35,8 +35,10 @@ pub struct ModelPrice {
 }
 
 impl ModelPrice {
-    pub const FREE: ModelPrice =
-        ModelPrice { prompt_per_m: 0.0, completion_per_m: 0.0 };
+    pub const FREE: ModelPrice = ModelPrice {
+        prompt_per_m: 0.0,
+        completion_per_m: 0.0,
+    };
 }
 
 /// Look up a price entry by `(provider, model)`. Returns `ModelPrice::FREE`
@@ -74,40 +76,76 @@ pub fn estimate_cost_usd(
 fn anthropic_price(model: &str) -> ModelPrice {
     let m = model.to_ascii_lowercase();
     if m.contains("opus") {
-        ModelPrice { prompt_per_m: 15.0, completion_per_m: 75.0 }
+        ModelPrice {
+            prompt_per_m: 15.0,
+            completion_per_m: 75.0,
+        }
     } else if m.contains("sonnet") {
-        ModelPrice { prompt_per_m: 3.0, completion_per_m: 15.0 }
+        ModelPrice {
+            prompt_per_m: 3.0,
+            completion_per_m: 15.0,
+        }
     } else if m.contains("haiku") {
-        ModelPrice { prompt_per_m: 0.80, completion_per_m: 4.0 }
+        ModelPrice {
+            prompt_per_m: 0.80,
+            completion_per_m: 4.0,
+        }
     } else {
         // Cheapest known fallback for the family.
-        ModelPrice { prompt_per_m: 0.80, completion_per_m: 4.0 }
+        ModelPrice {
+            prompt_per_m: 0.80,
+            completion_per_m: 4.0,
+        }
     }
 }
 
 fn openai_price(model: &str) -> ModelPrice {
     let m = model.to_ascii_lowercase();
     if m.contains("gpt-4o-mini") || m.contains("4o-mini") {
-        ModelPrice { prompt_per_m: 0.15, completion_per_m: 0.60 }
+        ModelPrice {
+            prompt_per_m: 0.15,
+            completion_per_m: 0.60,
+        }
     } else if m.contains("gpt-4o") || m.contains("4o") {
-        ModelPrice { prompt_per_m: 2.50, completion_per_m: 10.0 }
+        ModelPrice {
+            prompt_per_m: 2.50,
+            completion_per_m: 10.0,
+        }
     } else if m.contains("gpt-4-turbo") {
-        ModelPrice { prompt_per_m: 10.0, completion_per_m: 30.0 }
+        ModelPrice {
+            prompt_per_m: 10.0,
+            completion_per_m: 30.0,
+        }
     } else if m.contains("gpt-3.5") {
-        ModelPrice { prompt_per_m: 0.50, completion_per_m: 1.50 }
+        ModelPrice {
+            prompt_per_m: 0.50,
+            completion_per_m: 1.50,
+        }
     } else {
-        ModelPrice { prompt_per_m: 0.15, completion_per_m: 0.60 }
+        ModelPrice {
+            prompt_per_m: 0.15,
+            completion_per_m: 0.60,
+        }
     }
 }
 
 fn deepseek_price(model: &str) -> ModelPrice {
     let m = model.to_ascii_lowercase();
     if m.contains("coder") {
-        ModelPrice { prompt_per_m: 0.14, completion_per_m: 0.28 }
+        ModelPrice {
+            prompt_per_m: 0.14,
+            completion_per_m: 0.28,
+        }
     } else if m.contains("reasoner") {
-        ModelPrice { prompt_per_m: 0.55, completion_per_m: 2.19 }
+        ModelPrice {
+            prompt_per_m: 0.55,
+            completion_per_m: 2.19,
+        }
     } else {
-        ModelPrice { prompt_per_m: 0.14, completion_per_m: 0.28 }
+        ModelPrice {
+            prompt_per_m: 0.14,
+            completion_per_m: 0.28,
+        }
     }
 }
 
@@ -117,12 +155,7 @@ mod tests {
 
     #[test]
     fn local_custom_is_always_free() {
-        let cost = estimate_cost_usd(
-            &CodingLlmProvider::Custom,
-            "gemma3:4b",
-            10_000,
-            5_000,
-        );
+        let cost = estimate_cost_usd(&CodingLlmProvider::Custom, "gemma3:4b", 10_000, 5_000);
         assert_eq!(cost, 0.0);
     }
 
@@ -173,12 +206,7 @@ mod tests {
 
     #[test]
     fn estimate_cost_against_openai_gpt4o() {
-        let cost = estimate_cost_usd(
-            &CodingLlmProvider::Openai,
-            "gpt-4o",
-            0,
-            0,
-        );
+        let cost = estimate_cost_usd(&CodingLlmProvider::Openai, "gpt-4o", 0, 0);
         assert_eq!(cost, 0.0);
     }
 }

@@ -241,7 +241,8 @@ mod tests {
 
     #[test]
     fn strip_tool_call_removes_block() {
-        let reply = "Prefix text\n<tool_call name=\"retrieve_memory\"><query>q</query></tool_call>\nSuffix";
+        let reply =
+            "Prefix text\n<tool_call name=\"retrieve_memory\"><query>q</query></tool_call>\nSuffix";
         let stripped = strip_tool_call(reply);
         assert!(stripped.contains("Prefix text"), "got: {stripped}");
         assert!(stripped.contains("Suffix"), "got: {stripped}");
@@ -293,8 +294,14 @@ mod tests {
             retrieval_count: 2,
             capped: false,
             history: vec![
-                LoopTurn { role: "user".into(), content: "q".into() },
-                LoopTurn { role: "assistant".into(), content: "a".into() },
+                LoopTurn {
+                    role: "user".into(),
+                    content: "q".into(),
+                },
+                LoopTurn {
+                    role: "assistant".into(),
+                    content: "a".into(),
+                },
             ],
         };
         assert_eq!(result.retrieval_count, 2);

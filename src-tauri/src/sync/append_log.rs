@@ -5,7 +5,7 @@
 /// This is idempotent — re-applying an already-seen entry is a no-op.
 use serde::{Deserialize, Serialize};
 
-use super::{CrdtState, SyncOp, HLC, SiteId};
+use super::{CrdtState, SiteId, SyncOp, HLC};
 
 /// A single entry in the append-only log.
 #[derive(Debug, Clone, Serialize, Deserialize)]

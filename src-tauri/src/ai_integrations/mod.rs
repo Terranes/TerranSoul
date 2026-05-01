@@ -9,8 +9,8 @@
 //! ```text
 //! ai_integrations/
 //! ├── gateway.rs   — the typed BrainGateway trait + AppStateGateway adapter
-//! ├── mcp/         — MCP transport (Chunk 15.1, not yet shipped)
-//! └── grpc/        — gRPC transport (Chunk 15.2, not yet shipped)
+//! ├── mcp/         — MCP transport (Chunk 15.1)
+//! └── grpc/        — gRPC transport (Chunk 15.2)
 //! ```
 //!
 //! Both transports route to a single [`gateway::BrainGateway`] trait so the
@@ -19,6 +19,7 @@
 //! Chunk reference: **15.3** in `rules/milestones.md`.
 
 pub mod gateway;
+pub mod grpc;
 pub mod mcp;
 
 pub use gateway::{

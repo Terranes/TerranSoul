@@ -327,10 +327,10 @@ impl AppSettings {
     /// so a corrupt settings file can't disable maintenance entirely
     /// (set `background_maintenance_enabled = false` for that).
     pub fn maintenance_cooldown_ms(&self) -> u64 {
-        let hours = self
-            .maintenance_interval_hours
-            .clamp(MIN_MAINTENANCE_INTERVAL_HOURS, MAX_MAINTENANCE_INTERVAL_HOURS)
-            as u64;
+        let hours = self.maintenance_interval_hours.clamp(
+            MIN_MAINTENANCE_INTERVAL_HOURS,
+            MAX_MAINTENANCE_INTERVAL_HOURS,
+        ) as u64;
         hours.saturating_mul(60 * 60 * 1000)
     }
 }
@@ -425,7 +425,13 @@ mod tests {
     #[test]
     fn roundtrip_serde() {
         let mut positions = HashMap::new();
-        positions.insert("shinra".to_string(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
+        positions.insert(
+            "shinra".to_string(),
+            ModelCameraPosition {
+                azimuth: 0.5,
+                distance: 3.0,
+            },
+        );
         let s = AppSettings {
             version: CURRENT_SCHEMA_VERSION,
             selected_model_id: "komori".into(),
@@ -483,7 +489,10 @@ mod tests {
     #[test]
     fn default_auto_extract_edges_is_on() {
         let s = AppSettings::default();
-        assert!(s.auto_extract_edges, "auto_extract_edges must default to true (Chunk 26.3)");
+        assert!(
+            s.auto_extract_edges,
+            "auto_extract_edges must default to true (Chunk 26.3)"
+        );
     }
 
     #[test]
@@ -498,7 +507,10 @@ mod tests {
 
     #[test]
     fn auto_extract_edges_roundtrips_through_serde() {
-        let s = AppSettings { auto_extract_edges: false, ..AppSettings::default() };
+        let s = AppSettings {
+            auto_extract_edges: false,
+            ..AppSettings::default()
+        };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
         assert!(!parsed.auto_extract_edges);
@@ -512,7 +524,10 @@ mod tests {
     fn default_background_maintenance_is_on() {
         let s = AppSettings::default();
         assert!(s.background_maintenance_enabled);
-        assert_eq!(s.maintenance_interval_hours, DEFAULT_MAINTENANCE_INTERVAL_HOURS);
+        assert_eq!(
+            s.maintenance_interval_hours,
+            DEFAULT_MAINTENANCE_INTERVAL_HOURS
+        );
         assert_eq!(s.maintenance_idle_minimum_minutes, 0);
     }
 
@@ -521,7 +536,10 @@ mod tests {
         let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(parsed.background_maintenance_enabled);
-        assert_eq!(parsed.maintenance_interval_hours, DEFAULT_MAINTENANCE_INTERVAL_HOURS);
+        assert_eq!(
+            parsed.maintenance_interval_hours,
+            DEFAULT_MAINTENANCE_INTERVAL_HOURS
+        );
         assert_eq!(parsed.maintenance_idle_minimum_minutes, 0);
     }
 
@@ -530,14 +548,20 @@ mod tests {
     /// either disable maintenance entirely or push it out forever.
     #[test]
     fn maintenance_cooldown_clamps_below_minimum() {
-        let s = AppSettings { maintenance_interval_hours: 0, ..AppSettings::default() };
+        let s = AppSettings {
+            maintenance_interval_hours: 0,
+            ..AppSettings::default()
+        };
         // Clamps up to MIN (1h).
         assert_eq!(s.maintenance_cooldown_ms(), 60 * 60 * 1000);
     }
 
     #[test]
     fn maintenance_cooldown_clamps_above_maximum() {
-        let s = AppSettings { maintenance_interval_hours: 1_000, ..AppSettings::default() };
+        let s = AppSettings {
+            maintenance_interval_hours: 1_000,
+            ..AppSettings::default()
+        };
         // Clamps down to MAX (168h = 1 week).
         assert_eq!(s.maintenance_cooldown_ms(), 168 * 60 * 60 * 1000);
     }
@@ -556,7 +580,10 @@ mod tests {
 
     #[test]
     fn model_camera_position_serde_roundtrip() {
-        let pos = ModelCameraPosition { azimuth: 1.23, distance: 4.5 };
+        let pos = ModelCameraPosition {
+            azimuth: 1.23,
+            distance: 4.5,
+        };
         let json = serde_json::to_string(&pos).unwrap();
         let parsed: ModelCameraPosition = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, pos);
@@ -565,8 +592,20 @@ mod tests {
     #[test]
     fn model_camera_positions_independent_per_model() {
         let mut s = AppSettings::default();
-        s.model_camera_positions.insert("shinra".into(), ModelCameraPosition { azimuth: 0.5, distance: 3.0 });
-        s.model_camera_positions.insert("komori".into(), ModelCameraPosition { azimuth: 1.2, distance: 2.0 });
+        s.model_camera_positions.insert(
+            "shinra".into(),
+            ModelCameraPosition {
+                azimuth: 0.5,
+                distance: 3.0,
+            },
+        );
+        s.model_camera_positions.insert(
+            "komori".into(),
+            ModelCameraPosition {
+                azimuth: 1.2,
+                distance: 2.0,
+            },
+        );
 
         assert_eq!(s.model_camera_positions.len(), 2);
         assert!((s.model_camera_positions["shinra"].azimuth - 0.5).abs() < 0.001);

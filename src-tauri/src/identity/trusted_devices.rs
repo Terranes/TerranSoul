@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{fs, path::Path};
 
 const DEVICES_FILE: &str = "trusted_devices.json";
 
@@ -19,7 +19,12 @@ impl TrustedDevice {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        TrustedDevice { device_id, name, public_key_b64, paired_at }
+        TrustedDevice {
+            device_id,
+            name,
+            public_key_b64,
+            paired_at,
+        }
     }
 }
 

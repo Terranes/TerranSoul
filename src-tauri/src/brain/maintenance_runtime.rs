@@ -35,9 +35,7 @@ use std::time::Duration;
 
 use tokio::sync::Mutex as TokioMutex;
 
-use super::maintenance_scheduler::{
-    jobs_due, MaintenanceConfig, MaintenanceJob, MaintenanceState,
-};
+use super::maintenance_scheduler::{jobs_due, MaintenanceConfig, MaintenanceJob, MaintenanceState};
 
 /// Filename inside `data_dir` where the per-job timestamps are
 /// persisted. Versioned via the JSON shape itself (serde additive
@@ -83,8 +81,7 @@ impl MaintenanceRuntime {
     /// previous state.
     async fn persist(&self) -> std::io::Result<()> {
         let snapshot = { self.state.lock().await.clone() };
-        let json = serde_json::to_string_pretty(&snapshot)
-            .map_err(std::io::Error::other)?;
+        let json = serde_json::to_string_pretty(&snapshot).map_err(std::io::Error::other)?;
         if let Some(parent) = self.state_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -228,10 +225,7 @@ pub fn spawn(
             for job in due {
                 let result = dispatch_job(job, &state_arc).await;
                 if let Err(e) = result {
-                    eprintln!(
-                        "[maintenance] job {} failed: {e}",
-                        job.as_str()
-                    );
+                    eprintln!("[maintenance] job {} failed: {e}", job.as_str());
                 }
                 runtime_clone.record_finished(job, now_ms()).await;
             }
@@ -243,10 +237,7 @@ pub fn spawn(
 /// Run a single maintenance job. Returns `Ok(human_readable_summary)`
 /// or `Err(error_string)`. Outcomes are surfaced via stderr (logging
 /// pipeline TBD) and via the persisted timestamp.
-async fn dispatch_job(
-    job: MaintenanceJob,
-    state: &crate::AppState,
-) -> Result<String, String> {
+async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<String, String> {
     match job {
         MaintenanceJob::Decay => {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -274,11 +265,7 @@ async fn dispatch_job(
             // active brain is configured rather than failing. The
             // scheduler will retry on the next tick once a brain is
             // configured.
-            let model = state
-                .active_brain
-                .lock()
-                .ok()
-                .and_then(|g| g.clone());
+            let model = state.active_brain.lock().ok().and_then(|g| g.clone());
             let Some(model) = model else {
                 return Ok("edge_extract: skipped (no active brain)".to_string());
             };
@@ -295,8 +282,7 @@ async fn dispatch_job(
             if entries.len() < 2 {
                 return Ok("edge_extract: skipped (<2 memories)".to_string());
             }
-            let known_ids: std::collections::HashSet<i64> =
-                entries.iter().map(|e| e.id).collect();
+            let known_ids: std::collections::HashSet<i64> = entries.iter().map(|e| e.id).collect();
             let agent = crate::brain::OllamaAgent::new(&model);
             let chunk = 25usize;
             let mut total_inserted = 0usize;
@@ -306,8 +292,7 @@ async fn dispatch_job(
                 if reply.trim().eq_ignore_ascii_case("NONE") {
                     continue;
                 }
-                let new_edges =
-                    crate::memory::parse_llm_edges(&reply, &known_ids);
+                let new_edges = crate::memory::parse_llm_edges(&reply, &known_ids);
                 if new_edges.is_empty() {
                     continue;
                 }
@@ -350,8 +335,7 @@ mod tests {
 
         // Reload from disk into a fresh runtime — the timestamps must
         // survive the process boundary.
-        let reloaded =
-            MaintenanceRuntime::load(dir.path(), MaintenanceConfig::default());
+        let reloaded = MaintenanceRuntime::load(dir.path(), MaintenanceConfig::default());
         let state = reloaded.snapshot().await;
         assert_eq!(state.last_decay_ms, 1_700_000_000_000);
         assert_eq!(state.last_garbage_collect_ms, 1_700_000_001_000);

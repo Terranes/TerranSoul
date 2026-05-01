@@ -16,7 +16,9 @@ pub struct PendingCommandInfo {
 
 /// List pending commands that need user approval.
 #[tauri::command]
-pub async fn list_pending_commands(state: State<'_, AppState>) -> Result<Vec<PendingCommandInfo>, String> {
+pub async fn list_pending_commands(
+    state: State<'_, AppState>,
+) -> Result<Vec<PendingCommandInfo>, String> {
     let router = state.command_router.lock().await;
     let pending: Vec<PendingCommandInfo> = router
         .pending_commands()
