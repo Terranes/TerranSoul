@@ -47,9 +47,19 @@ rand = { version = "0.9", optional = true }
 
 # Distributed database backends (optional)
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"], optional = true }
-tiberius = { version = "0.12", features = ["tds73"], optional = true }
+# default-features = false disables the "winauth" default feature (Windows NTLM auth via
+# winauth 0.0.4 → rand 0.7.3). We only need TDS 7.3 protocol; NTLM auth is not used.
+# GHSA advisory: rand 0.7.3 unsoundness (RUSTSEC-2021-0145) — fixed by removing winauth dep.
+tiberius = { version = "0.12", features = ["tds73"], default-features = false, optional = true }
 tokio-util = { version = "0.7", features = ["compat"], optional = true }
 scylla = { version = "0.14", optional = true }
+# ── Security notes ──────────────────────────────────────────────────────────────────────────
+# glib 0.18.5 (GHSA-cf7g-cm7q-rq7q): VariantStrIter unsoundness fixed in glib 0.20.0.
+# glib 0.20.0 is part of the gtk4-rs ecosystem and is SemVer-incompatible with gtk3 0.18.x.
+# Tauri 2.x depends on gtk3 0.18.x on Linux; upgrading glib requires Tauri to migrate to
+# gtk4-rs first. This advisory is BLOCKED BY UPSTREAM and cannot be resolved here.
+# Track: https://github.com/tauri-apps/tauri/issues (upgrade gtk-rs to 0.20+).
+# ────────────────────────────────────────────────────────────────────────────────────────────
 usearch = "2"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }
 tonic-prost = "0.14.5"
