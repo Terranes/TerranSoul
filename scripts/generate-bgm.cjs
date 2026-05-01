@@ -492,7 +492,7 @@ function generatePromisedLand() {
   ];
 
   function parseNote(s) {
-    const m = s.match(/^([A-Gb#]+?)(\d)$/);
+    const m = s.match(/^([A-G][b#]?)(\d)$/);
     return noteFreq(m[1], parseInt(m[2]));
   }
 
