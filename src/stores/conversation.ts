@@ -1231,7 +1231,10 @@ function flipTranslatorDirection(mode: TranslatorModeState): void {
   mode.nextDirection = mode.nextDirection === 'source_to_target' ? 'target_to_source' : 'source_to_target';
 }
 
-function hasAccurateTranslatorBrain(brain: ReturnType<typeof useBrainStore>): boolean {
+function hasTranslatorBrain(brain: ReturnType<typeof useBrainStore>): boolean {
+  if (brain.brainMode?.mode === 'free_api') {
+    return Boolean(brain.brainMode.api_key?.trim());
+  }
   return brain.brainMode?.mode === 'paid_api' ||
     brain.brainMode?.mode === 'local_ollama' ||
     brain.brainMode?.mode === 'local_lm_studio' ||
@@ -1243,19 +1246,17 @@ function createTranslatorBrainRequiredMessage(): Message {
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      `🌍 Translator mode needs a **paid API or local LLM brain** for accurate direct translation. ` +
-      `Free LLM mode is intentionally not used for two-person client conversations.\n\n` +
-      `Please switch to a paid API, Local Ollama, or LM Studio, then ask again: ` +
-      `“become a translator between English and Vietnamese”.`,
+      `🌍 Translator mode needs a **free cloud LLM with an API key** or a **local LLM** for direct two-person translation.\n\n` +
+      `The no-key Pollinations fallback is not used for translator mode. Configure a keyed free provider such as Groq/Cerebras, or use Local Ollama / LM Studio, then ask again.`,
     agentName: 'Translator Mode',
     sentiment: 'neutral',
     timestamp: Date.now(),
     questChoices: [
-      { label: 'Configure Paid API', value: 'navigate:brain-setup', icon: '⚡' },
+      { label: 'Configure Free API Key', value: 'navigate:brain-setup', icon: '🔑' },
       { label: 'Install Local LLM', value: 'navigate:brain-setup', icon: '🏰' },
       { label: 'Dismiss', value: 'dismiss', icon: '💤' },
     ],
-    questId: 'paid-brain',
+    questId: 'free-brain',
   };
 }
 
@@ -1569,7 +1570,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
     const translatorRequest = detectTranslatorModeRequest(content);
     if (translatorRequest) {
-      if (!hasAccurateTranslatorBrain(brain)) {
+      if (!hasTranslatorBrain(brain)) {
         messages.value.push(createTranslatorBrainRequiredMessage());
         isThinking.value = false;
         generationActive.value = false;
@@ -1600,7 +1601,7 @@ export const useConversationStore = defineStore('conversation', () => {
         role: 'assistant',
         content:
           `🌍 Translator mode is on for **${translatorRequest.source.name} ↔ ${translatorRequest.target.name}**.\n\n` +
-          `Send one person's message at a time. I'll translate the next message **${translatorRequest.source.name} → ${translatorRequest.target.name}**, then alternate directions. Type **stop translator mode** to exit.`,
+          `Send one person's spoken transcript or typed message at a time. I'll translate the next message **${translatorRequest.source.name} → ${translatorRequest.target.name}**, then alternate directions. Type **stop translator mode** to exit.`,
         agentName: 'Translator Mode',
         sentiment: 'happy',
         timestamp: Date.now(),
@@ -1641,7 +1642,7 @@ export const useConversationStore = defineStore('conversation', () => {
     const translatorPromptForTurn = translatorMode.value
       ? translatorPrompt(content, translatorMode.value)
       : null;
-    if (translatorPromptForTurn && !hasAccurateTranslatorBrain(brain)) {
+    if (translatorPromptForTurn && !hasTranslatorBrain(brain)) {
       translatorMode.value = null;
       messages.value.push(createTranslatorBrainRequiredMessage());
       isThinking.value = false;

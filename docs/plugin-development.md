@@ -415,8 +415,8 @@ TerranSoul ships a built-in reference plugin named `terransoul-translator`. It d
 1. Declare a normal command (`terransoul-translator.start`) plus a slash command (`/translator`).
 2. Use an `OnChatMessage` activation event so natural language like “become a translator to help me translate between English and Vietnamese” can activate the feature.
 3. Keep plugin state in the host app (`translatorMode` in the conversation store) while the plugin command remains the stable extension point.
-4. Require a paid API, Local Ollama, or LM Studio brain for accuracy. Free LLM mode is deliberately rejected for client-facing direct translation.
-5. Route the actual work through existing host capabilities instead of inventing a separate framework: ASR transcripts or typed turns enter the normal chat pipeline, and the configured non-free LLM receives a strict “translate only” prompt.
+4. Require either a free cloud LLM provider with an API key (for example Groq/Cerebras) or a local LLM (Local Ollama / LM Studio). The no-key Pollinations fallback is intentionally not used for translator mode.
+5. Route the actual work through existing host capabilities instead of inventing a separate framework: ASR transcripts or typed turns enter the normal chat pipeline, and the active keyed/local brain receives a strict “translate only” prompt.
 
 ```json
 {

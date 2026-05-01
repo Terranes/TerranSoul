@@ -93,12 +93,12 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.isThinking).toBe(false);
   });
 
-  it('does not activate translator mode without a paid or local brain', async () => {
+  it('does not activate translator mode without a keyed free provider or local brain', async () => {
     const store = useConversationStore();
     await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
     expect(store.translatorMode).toBeNull();
     expect(store.messages[1].agentName).toBe('Translator Mode');
-    expect(store.messages[1].content).toContain('paid API or local LLM brain');
+    expect(store.messages[1].content).toContain('free cloud LLM with an API key');
   });
 });
 
@@ -193,9 +193,10 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.isThinking).toBe(false);
   });
 
-  it('activates translator mode only with a local or paid brain and translates direct turns', async () => {
+  it('translates direct turns with a keyed free cloud provider', async () => {
     const brain = useBrainStore();
-    brain.brainMode = { mode: 'local_ollama', model: 'llama3.2' };
+    brain.autoConfigureFreeApi();
+    brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
 
     mockStreamChat.mockImplementation(
       (_baseUrl: string, _model: string, _apiKey: string | null, history: Array<{ role: string; content: string }>, callbacks: { onDone: (text: string) => void }) => {
@@ -221,7 +222,8 @@ describe('conversation store — brain configured (browser-side free API)', () =
 
   it('stops translator mode from normal chat', async () => {
     const brain = useBrainStore();
-    brain.brainMode = { mode: 'local_ollama', model: 'llama3.2' };
+    brain.autoConfigureFreeApi();
+    brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
     const store = useConversationStore();
     await store.sendMessage('translate between English and Japanese');
     await store.sendMessage('stop translator mode');
