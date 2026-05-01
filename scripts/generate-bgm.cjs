@@ -145,8 +145,7 @@ function createReverb(params) {
   return (x) => {
     let wet = 0;
     for (const tap of taps) {
-      const readPos = ((tap.writePos - tap.buf.length) % tap.buf.length + tap.buf.length) % tap.buf.length;
-      const delayed = tap.buf[readPos];
+      const delayed = tap.buf[tap.writePos];
       tap.buf[tap.writePos] = x + delayed * tap.feedback;
       tap.writePos = (tap.writePos + 1) % tap.buf.length;
       wet += delayed * tap.mix;
