@@ -5,7 +5,7 @@
 //! - Notifications (no `id` field) return 202 Accepted
 //! - Bearer-token authentication on every request
 //!
-//! Reference: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http>
+//! Reference: <https://modelcontextprotocol.io/specification/2025-11-05/basic/transports#streamable-http>
 
 use std::sync::Arc;
 
