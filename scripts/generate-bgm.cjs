@@ -492,7 +492,7 @@ function generatePromisedLand() {
 
   function parseNote(s) {
     const m = s.match(/^([A-G][b#]?)(\d)$/);
-    return noteFreq(m[1], parseInt(m[2]));
+    const m = s.match(/^([A-G][b#]?)(\d)$/);
   }
 
   // Build pad timeline
