@@ -17,6 +17,14 @@ Try to teach your AI with our software by configuring it, giving it tasks, and e
 If you have any personal enquiries, please contact the owner of this repo via: **darren.bui@terransoul.com**
 
 [![TerranSoul CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
+[![CodeQL](https://github.com/Terranes/TerranSoul/actions/workflows/codeql.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app/)
+[![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
+[![ESLint](https://img.shields.io/badge/ESLint-passing-4B32C3?logo=eslint&logoColor=white)](https://eslint.org/)
+[![Vitest](https://img.shields.io/badge/Tests-1475_passing-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 ---
 
