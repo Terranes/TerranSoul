@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.5b — CRAG query-rewrite + web-search fallback](#chunk-165b--crag-query-rewrite--web-search-fallback) | 2026-05-02 |
 | [Chunk 16.4b — Self-RAG orchestrator loop](#chunk-164b--self-rag-orchestrator-loop) | 2026-05-02 |
 | [Chunk 27.8 — Persona pack schema spec document](#chunk-278--persona-pack-schema-spec-document) | 2026-05-02 |
 | [Chunk 27.7 — Persona example-dialogue field](#chunk-277--persona-example-dialogue-field) | 2026-05-02 |
@@ -234,6 +235,33 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.5b — CRAG query-rewrite + web-search fallback
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+
+**Summary:** Wired the CRAG evaluator (16.5a) into a full orchestrator command `crag_retrieve` that implements the Corrective RAG pipeline:
+1. Retrieves memories via hybrid search
+2. Evaluates each memory with LLM-based CRAG classifier (`CORRECT`/`AMBIGUOUS`/`INCORRECT`)
+3. On `Ambiguous` → rewrites the query via LLM prompt + retries retrieval
+4. On `Incorrect` → falls back to DuckDuckGo HTML scraping (gated by `web_search_enabled` setting)
+5. Returns quality-assessed memories with metadata (quality, rewrite status, web fallback used)
+
+Also added query rewriter prompts + parser + web-search URL builder to `memory::crag` module, with 5 new tests.
+
+**Files changed:**
+- `src-tauri/src/commands/crag.rs` (NEW, ~290 LOC) — `crag_retrieve` Tauri command + `run_crag_retrieve` testable entry point, `evaluate_document`, `rewrite_query`, `try_web_fallback`, `extract_search_snippets`, `filter_by_verdicts` + 3 tests
+- `src-tauri/src/memory/crag.rs` — added `build_rewriter_prompts`, `parse_rewritten_query`, `build_web_search_url` + 5 tests
+- `src-tauri/src/settings/mod.rs` — added `web_search_enabled: bool` field (default false, capability gate)
+- `src-tauri/src/settings/config_store.rs` — added `web_search_enabled` to test fixtures
+- `src-tauri/src/commands/settings.rs` — added `web_search_enabled` to test fixtures
+- `src-tauri/src/commands/mod.rs` — registered `pub mod crag`
+- `src-tauri/src/lib.rs` — imported + registered `crag_retrieve` command
+
+**Testing:** 22 CRAG tests pass, cargo clippy clean, all cargo tests pass, 1480 Vitest tests pass.
 
 ---
 

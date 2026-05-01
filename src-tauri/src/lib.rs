@@ -58,6 +58,7 @@ use commands::{
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
     consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
+    crag::crag_retrieve,
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
@@ -643,6 +644,8 @@ pub fn run() {
             run_sleep_consolidation,
             touch_activity,
             get_idle_status,
+            // CRAG retrieval (Chunk 16.5b)
+            crag_retrieve,
             // VS Code workspace surfacing — Chunk 15.10 (Phase 15)
             vscode_open_project,
             vscode_list_known_windows,

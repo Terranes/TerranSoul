@@ -302,7 +302,6 @@ Integration test with VRM playback.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 16.3b | **Late chunking — ingest integration** — wire `memory::late_chunking::pool_chunks` into `run_ingest_task` behind an `AppSettings.late_chunking` flag, calling a long-context Ollama embedder that returns per-token vectors. (16.3a — pure pooling utility — shipped.) | not-started | Needs long-context embedding model in Ollama catalogue that exposes per-token embeddings. |
-| 16.5b | **CRAG query-rewrite + web-search fallback** — wire `crag::aggregate` (16.5a) into a Tauri command: on `RetrievalQuality::Ambiguous` run an LLM rewrite + retry; on `Incorrect` fall through to web fetch (gated by crawl capability). | not-started | Depends on 16.5a (shipped). Web-search only when crawl capability is granted. |
 | 16.6 | **GraphRAG / LightRAG community summaries** — Leiden community detection over `memory_edges`, LLM summaries, dual-level retrieval + RRF. | not-started | Heavy chunk; background workflow job. |
 
 ---

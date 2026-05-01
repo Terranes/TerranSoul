@@ -155,6 +155,14 @@ pub struct AppSettings {
     #[serde(default)]
     pub contextual_retrieval: bool,
 
+    /// When `true`, CRAG's web-search fallback is allowed to fetch
+    /// results from DuckDuckGo when local retrieval is rated `Incorrect`.
+    /// Default off — requires explicit user opt-in (capability gate).
+    ///
+    /// Maps to Chunk 16.5b (CRAG query-rewrite + web-search fallback).
+    #[serde(default)]
+    pub web_search_enabled: bool,
+
     /// When `true` (default), every successful `extract_memories_from_session`
     /// run is followed by an automatic `extract_edges_via_brain` pass over the
     /// freshly-grown memory store, so newly-learned facts immediately
@@ -304,6 +312,7 @@ impl Default for AppSettings {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            web_search_enabled: false,
             auto_extract_edges: true,
             expanded_blendshapes: false,
             first_launch_complete: false,
@@ -447,6 +456,7 @@ mod tests {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            web_search_enabled: false,
             auto_extract_edges: true,
             expanded_blendshapes: false,
             first_launch_complete: false,
