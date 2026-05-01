@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
-import { useConversationStore } from './conversation';
+import { detectTranslatorModeRequest, isStopTranslatorModeRequest, useConversationStore } from './conversation';
 import { useBrainStore } from './brain';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import type { Message } from '../types';
@@ -92,6 +92,27 @@ describe('conversation store — no brain (persona fallback)', () => {
     await promise;
     expect(store.isThinking).toBe(false);
   });
+
+  it('does not activate translator mode without a keyed free provider or local brain', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
+    expect(store.translatorMode).toBeNull();
+    expect(store.messages[1].agentName).toBe('Translator Mode');
+    expect(store.messages[1].content).toContain('free cloud LLM with an API key');
+  });
+});
+
+describe('translator mode intent helpers', () => {
+  it('detects become-translator requests with language aliases', () => {
+    const result = detectTranslatorModeRequest('Please become a translator to help me translate between en and Vietnamese');
+    expect(result?.source).toEqual({ code: 'en', name: 'English' });
+    expect(result?.target).toEqual({ code: 'vi', name: 'Vietnamese' });
+  });
+
+  it('detects stop-translator requests', () => {
+    expect(isStopTranslatorModeRequest('stop translator mode')).toBe(true);
+    expect(isStopTranslatorModeRequest('hello translator')).toBe(false);
+  });
 });
 
 describe('conversation store — brain configured (browser-side free API)', () => {
@@ -170,6 +191,45 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.messages[2].agentName).toBe('System');
     expect(store.messages[2].content).toContain('Could not reach the AI provider');
     expect(store.isThinking).toBe(false);
+  });
+
+  it('translates direct turns with a keyed free cloud provider', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
+
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, history: Array<{ role: string; content: string }>, callbacks: { onDone: (text: string) => void }) => {
+        expect(history[history.length - 1].content).toContain('Translate the user\'s message from English (en) to Vietnamese (vi)');
+        callbacks.onDone('xin chào');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
+    expect(store.translatorMode?.active).toBe(true);
+    expect(store.messages[1].content).toContain('English ↔ Vietnamese');
+
+    await store.sendMessage('hello');
+
+    expect(mockStreamChat).toHaveBeenCalled();
+    expect(store.messages[3].agentName).toBe('Translator Mode');
+    expect(store.messages[3].content).toContain('English → Vietnamese');
+    expect(store.messages[3].content).toContain('xin chào');
+    expect(store.translatorMode?.nextDirection).toBe('target_to_source');
+  });
+
+  it('stops translator mode from normal chat', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
+    const store = useConversationStore();
+    await store.sendMessage('translate between English and Japanese');
+    await store.sendMessage('stop translator mode');
+
+    expect(store.translatorMode).toBeNull();
+    expect(store.messages[store.messages.length - 1]?.content).toContain('Translator mode stopped');
   });
 });
 

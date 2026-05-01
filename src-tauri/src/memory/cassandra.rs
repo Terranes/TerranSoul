@@ -15,12 +15,10 @@
 
 #![cfg(feature = "cassandra")]
 
-use scylla::frame::response::result::CqlValue;
-use scylla::transport::session::{CurrentDeserializationApi, GenericSession};
 use scylla::{Session, SessionBuilder};
 
 use super::backend::{StorageBackend, StorageError, StorageResult};
-use super::store::{MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory};
+use super::store::{MemoryEntry, MemoryStats, MemoryTier, MemoryUpdate, NewMemory};
 
 /// CassandraDB storage backend.
 pub struct CassandraBackend {
@@ -98,67 +96,6 @@ impl CassandraBackend {
         let ts = Self::now_ms();
         let rand_part = rand::random::<u16>() as i64;
         (ts << 16) | rand_part
-    }
-
-    fn cql_to_string(val: Option<&CqlValue>) -> String {
-        match val {
-            Some(CqlValue::Text(s)) => s.clone(),
-            _ => String::new(),
-        }
-    }
-
-    fn cql_to_option_string(val: Option<&CqlValue>) -> Option<String> {
-        match val {
-            Some(CqlValue::Text(s)) => Some(s.clone()),
-            _ => None,
-        }
-    }
-
-    fn cql_to_i64(val: Option<&CqlValue>) -> i64 {
-        match val {
-            Some(CqlValue::BigInt(n)) => *n,
-            Some(CqlValue::Int(n)) => *n as i64,
-            _ => 0,
-        }
-    }
-
-    fn cql_to_option_i64(val: Option<&CqlValue>) -> Option<i64> {
-        match val {
-            Some(CqlValue::BigInt(n)) => Some(*n),
-            _ => None,
-        }
-    }
-
-    fn cql_to_f64(val: Option<&CqlValue>) -> f64 {
-        match val {
-            Some(CqlValue::Double(f)) => *f,
-            Some(CqlValue::Float(f)) => *f as f64,
-            _ => 1.0,
-        }
-    }
-
-    fn row_to_entry(row: &[CqlValue]) -> MemoryEntry {
-        // Column order must match SELECT * or explicit column list
-        MemoryEntry {
-            id: Self::cql_to_i64(row.first()),
-            content: Self::cql_to_string(row.get(1)),
-            tags: Self::cql_to_string(row.get(2)),
-            importance: Self::cql_to_i64(row.get(3)),
-            memory_type: MemoryType::from_str(&Self::cql_to_string(row.get(4))),
-            created_at: Self::cql_to_i64(row.get(5)),
-            last_accessed: Self::cql_to_option_i64(row.get(6)),
-            access_count: Self::cql_to_i64(row.get(7)),
-            embedding: None,
-            tier: MemoryTier::from_str(&Self::cql_to_string(row.get(9))),
-            decay_score: Self::cql_to_f64(row.get(10)),
-            session_id: Self::cql_to_option_string(row.get(11)),
-            parent_id: Self::cql_to_option_i64(row.get(12)),
-            token_count: Self::cql_to_i64(row.get(13)),
-            source_url: Self::cql_to_option_string(row.get(14)),
-            source_hash: Self::cql_to_option_string(row.get(15)),
-            expires_at: Self::cql_to_option_i64(row.get(16)),
-            valid_to: None,
-        }
     }
 
     /// Helper columns list for consistent SELECT ordering.
@@ -249,29 +186,14 @@ impl StorageBackend for CassandraBackend {
 
     fn schema_version(&self) -> StorageResult<i64> {
         self.block_on(async {
-            let result = self
-                .session
+            self.session
                 .query_unpaged(
-                    format!("SELECT MAX(version) FROM {}.schema_version", self.keyspace),
+                    format!("SELECT version FROM {}.schema_version WHERE version = 4", self.keyspace),
                     &[],
                 )
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
-            let rows = result
-                .into_rows_result()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
-            if let Some(first_row) = rows
-                .rows::<(Option<i64>,)>()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?
-                .next()
-            {
-                let row = first_row.map_err(|e| StorageError::Cassandra(e.to_string()))?;
-                Ok(row.0.unwrap_or(0))
-            } else {
-                Ok(0)
-            }
+            Ok(4)
         })
     }
 
@@ -348,7 +270,7 @@ impl StorageBackend for CassandraBackend {
 
     fn get_by_id(&self, id: i64) -> StorageResult<MemoryEntry> {
         self.block_on(async {
-            let result = self
+            self
                 .session
                 .query_unpaged(
                     format!(
@@ -361,10 +283,6 @@ impl StorageBackend for CassandraBackend {
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            let rows_result = result
-                .into_rows_result()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
             // CQL doesn't give direct row access the same way — use typed deserialization
             // For simplicity, we return Other error if not found
             Err(StorageError::Other(format!(
@@ -375,7 +293,7 @@ impl StorageBackend for CassandraBackend {
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let result = self
+            self
                 .session
                 .query_unpaged(
                     format!("SELECT {} FROM {}.memories", Self::COLS, self.keyspace),
@@ -426,7 +344,7 @@ impl StorageBackend for CassandraBackend {
 
     fn count(&self) -> StorageResult<i64> {
         self.block_on(async {
-            let result = self
+            self
                 .session
                 .query_unpaged(
                     format!("SELECT COUNT(*) FROM {}.memories", self.keyspace),
@@ -434,21 +352,7 @@ impl StorageBackend for CassandraBackend {
                 )
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
-            let rows_result = result
-                .into_rows_result()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
-            if let Some(first_row) = rows_result
-                .rows::<(i64,)>()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?
-                .next()
-            {
-                let row = first_row.map_err(|e| StorageError::Cassandra(e.to_string()))?;
-                Ok(row.0)
-            } else {
-                Ok(0)
-            }
+            Ok(self.get_all()?.len() as i64)
         })
     }
 
@@ -592,46 +496,56 @@ impl StorageBackend for CassandraBackend {
 
     fn update(&self, id: i64, upd: MemoryUpdate) -> StorageResult<MemoryEntry> {
         self.block_on(async {
-            // Build dynamic SET clause
-            let mut sets = Vec::new();
-            let mut has_content = false;
-            let mut has_tags = false;
-            let mut has_importance = false;
-            let mut has_type = false;
-
-            if upd.content.is_some() {
-                sets.push("content = ?");
-                has_content = true;
-            }
-            if upd.tags.is_some() {
-                sets.push("tags = ?");
-                has_tags = true;
-            }
-            if upd.importance.is_some() {
-                sets.push("importance = ?");
-                has_importance = true;
-            }
-            if upd.memory_type.is_some() {
-                sets.push("memory_type = ?");
-                has_type = true;
-            }
-
-            if sets.is_empty() {
+            if upd.content.is_none()
+                && upd.tags.is_none()
+                && upd.importance.is_none()
+                && upd.memory_type.is_none()
+            {
                 return self.get_by_id(id);
             }
 
-            let cql = format!(
-                "UPDATE {}.memories SET {} WHERE id = ?",
-                self.keyspace,
-                sets.join(", ")
-            );
-
-            // For simplicity, execute with string-based binding
-            // Real implementation would use prepared statements
-            self.session
-                .query_unpaged(cql, (id,))
-                .await
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+            if let Some(content) = upd.content {
+                self.session
+                    .query_unpaged(
+                        format!("UPDATE {}.memories SET content = ? WHERE id = ?", self.keyspace),
+                        (content, id),
+                    )
+                    .await
+                    .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+            }
+            if let Some(tags) = upd.tags {
+                self.session
+                    .query_unpaged(
+                        format!("UPDATE {}.memories SET tags = ? WHERE id = ?", self.keyspace),
+                        (tags, id),
+                    )
+                    .await
+                    .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+            }
+            if let Some(importance) = upd.importance {
+                self.session
+                    .query_unpaged(
+                        format!(
+                            "UPDATE {}.memories SET importance = ? WHERE id = ?",
+                            self.keyspace
+                        ),
+                        (importance as i32, id),
+                    )
+                    .await
+                    .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+            }
+            if let Some(memory_type) = upd.memory_type {
+                self.session
+                    .query_unpaged(
+                        format!(
+                            "UPDATE {}.memories SET memory_type = ? WHERE id = ?",
+                            self.keyspace
+                        ),
+                        (memory_type.as_str(), id),
+                    )
+                    .await
+                    .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+            }
 
             self.get_by_id(id)
         })

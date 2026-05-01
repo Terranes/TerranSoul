@@ -1,6 +1,7 @@
 /**
  * Tests for emotion-pose-bias.ts (Chunk 14.16d).
  */
+/* eslint-disable prefer-spread */
 import { describe, it, expect } from 'vitest';
 import {
   emotionTargetBias,

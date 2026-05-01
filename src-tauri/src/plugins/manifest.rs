@@ -367,7 +367,7 @@ pub fn parse_plugin_manifest(json: &str) -> Result<PluginManifest, PluginManifes
 
 /// Validate an already-deserialized plugin manifest.
 pub fn validate_plugin_manifest(m: &PluginManifest) -> Result<(), PluginManifestError> {
-    // ID: 1-64 chars, lowercase alphanumeric + hyphens
+    // ID: 1-64 chars, lowercase alphanumeric + dots + hyphens
     if m.id.is_empty() || m.id.len() > 64 {
         return Err(PluginManifestError::InvalidId(format!(
             "id must be 1–64 chars, got {}",
@@ -377,10 +377,10 @@ pub fn validate_plugin_manifest(m: &PluginManifest) -> Result<(), PluginManifest
     if !m
         .id
         .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.')
     {
         return Err(PluginManifestError::InvalidId(
-            "id must be lowercase alphanumeric and hyphens".into(),
+            "id must be lowercase alphanumeric, dots, and hyphens".into(),
         ));
     }
     if m.display_name.trim().is_empty() {
@@ -475,6 +475,13 @@ mod tests {
             validate_plugin_manifest(&m),
             Err(PluginManifestError::InvalidId(_))
         ));
+    }
+
+    #[test]
+    fn dotted_id_accepted() {
+        let mut m = minimal_manifest();
+        m.id = "my-org.translator".into();
+        assert!(validate_plugin_manifest(&m).is_ok());
     }
 
     #[test]

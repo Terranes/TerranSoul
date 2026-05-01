@@ -14,8 +14,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::manifest::{
-    ActivationEvent, ContributedCommand, ContributedSlashCommand, ContributedTheme,
-    InstalledPlugin, PluginManifest, PluginState,
+    ActivationEvent, ContributedCommand, ContributedSlashCommand, ContributedTheme, Contributions,
+    InstalledPlugin, PluginKind, PluginManifest, PluginState,
 };
 
 // ── Plugin Host ──────────────────────────────────────────────────────────
@@ -83,29 +83,55 @@ impl PluginHost {
     /// Create a new plugin host with the given data directory.
     pub fn new(data_dir: &Path) -> Self {
         let plugins_dir = data_dir.join("plugins");
+        Self::from_inner(HostInner {
+            plugins_dir,
+            plugins: HashMap::new(),
+            commands: HashMap::new(),
+            slash_commands: HashMap::new(),
+            themes: HashMap::new(),
+            settings: HashMap::new(),
+        })
+    }
+
+    /// Create a production plugin host and pre-register built-in reference plugins.
+    pub fn with_builtin_plugins(data_dir: &Path) -> Self {
+        let host = Self::new(data_dir);
+        host.register_builtin_plugins();
+        host
+    }
+
+    fn from_inner(inner: HostInner) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(HostInner {
-                plugins_dir,
-                plugins: HashMap::new(),
-                commands: HashMap::new(),
-                slash_commands: HashMap::new(),
-                themes: HashMap::new(),
-                settings: HashMap::new(),
-            })),
+            inner: Arc::new(RwLock::new(inner)),
         }
     }
 
     /// Create an in-memory plugin host for testing.
     pub fn in_memory() -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(HostInner {
-                plugins_dir: PathBuf::from(":memory:"),
-                plugins: HashMap::new(),
-                commands: HashMap::new(),
-                slash_commands: HashMap::new(),
-                themes: HashMap::new(),
-                settings: HashMap::new(),
-            })),
+        Self::from_inner(HostInner {
+            plugins_dir: PathBuf::from(":memory:"),
+            plugins: HashMap::new(),
+            commands: HashMap::new(),
+            slash_commands: HashMap::new(),
+            themes: HashMap::new(),
+            settings: HashMap::new(),
+        })
+    }
+
+    fn register_builtin_plugins(&self) {
+        let Ok(mut inner) = self.inner.try_write() else {
+            return;
+        };
+        for manifest in builtin_manifests() {
+            let id = manifest.id.clone();
+            let installed = InstalledPlugin {
+                manifest: manifest.clone(),
+                state: PluginState::Active,
+                installed_at: 0,
+                last_active_at: Some(0),
+            };
+            register_contributions(&mut inner, &manifest);
+            inner.plugins.entry(id).or_insert(installed);
         }
     }
 
@@ -326,6 +352,9 @@ impl PluginHost {
             .commands
             .get(command_id)
             .ok_or_else(|| format!("unknown command: {command_id}"))?;
+        if entry.plugin_id == TRANSLATOR_PLUGIN_ID {
+            return Ok(invoke_builtin_translator(command_id, args));
+        }
         // Stub execution: echo the command's title and any args back.
         let mut output = format!("[{}] {}", entry.plugin_id, entry.command.title,);
         if let Some(a) = args {
@@ -401,10 +430,116 @@ fn unregister_contributions(inner: &mut HostInner, plugin_id: &str) {
     inner.themes.retain(|_, t| {
         // Theme IDs should be prefixed with plugin ID, but we check the
         // commands map pattern for safety.
-        t.id.starts_with(plugin_id)
+        !t.id.starts_with(plugin_id)
     });
     let prefix = format!("{plugin_id}.");
     inner.settings.retain(|k, _| !k.starts_with(&prefix));
+}
+
+pub const TRANSLATOR_PLUGIN_ID: &str = "terransoul-translator";
+
+fn builtin_manifests() -> Vec<PluginManifest> {
+    vec![translator_manifest()]
+}
+
+fn translator_manifest() -> PluginManifest {
+    use crate::package_manager::manifest::InstallMethod;
+
+    PluginManifest {
+        id: TRANSLATOR_PLUGIN_ID.into(),
+        display_name: "Translator Mode".into(),
+        version: "1.0.0".into(),
+        description: "Reference built-in plugin that turns TerranSoul into a two-person translator.".into(),
+        kind: PluginKind::Tool,
+        install_method: InstallMethod::BuiltIn,
+        capabilities: vec![],
+        activation_events: vec![ActivationEvent::OnChatMessage {
+            pattern: "translator".into(),
+        }],
+        contributes: Contributions {
+            commands: vec![
+                ContributedCommand {
+                    id: "terransoul-translator.start".into(),
+                    title: "Start Translator Mode".into(),
+                    icon: Some("🌍".into()),
+                    keybinding: None,
+                    category: Some("Translation".into()),
+                },
+                ContributedCommand {
+                    id: "terransoul-translator.stop".into(),
+                    title: "Stop Translator Mode".into(),
+                    icon: Some("🛑".into()),
+                    keybinding: None,
+                    category: Some("Translation".into()),
+                },
+                ContributedCommand {
+                    id: "terransoul-translator.status".into(),
+                    title: "Translator Mode Status".into(),
+                    icon: Some("ℹ️".into()),
+                    keybinding: None,
+                    category: Some("Translation".into()),
+                },
+            ],
+            slash_commands: vec![ContributedSlashCommand {
+                name: "translator".into(),
+                description: "Start translator mode, e.g. /translator English Vietnamese".into(),
+                command_id: "terransoul-translator.start".into(),
+            }],
+            ..Contributions::default()
+        },
+        system_requirements: None,
+        api_version: 1,
+        homepage: Some("docs/plugin-development.md#translator-mode-reference-plugin".into()),
+        license: Some("MIT".into()),
+        author: Some("TerranSoul".into()),
+        icon: Some("🌍".into()),
+        publisher: Some("terransoul".into()),
+        signature: None,
+        sha256: None,
+        dependencies: vec![],
+    }
+}
+
+fn invoke_builtin_translator(
+    command_id: &str,
+    args: Option<serde_json::Value>,
+) -> CommandResult {
+    match command_id {
+        "terransoul-translator.start" => {
+            let source = args
+                .as_ref()
+                .and_then(|v| v.get("source"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("first language");
+            let target = args
+                .as_ref()
+                .and_then(|v| v.get("target"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("second language");
+            CommandResult {
+                success: true,
+                output: Some(format!(
+                    "Translator mode ready between {source} and {target}."
+                )),
+                error: None,
+            }
+        }
+        "terransoul-translator.stop" => CommandResult {
+            success: true,
+            output: Some("Translator mode stopped.".into()),
+            error: None,
+        },
+        "terransoul-translator.status" => CommandResult {
+            success: true,
+            output: Some("Translator mode is available as a built-in reference plugin.".into()),
+            error: None,
+        },
+        _ => CommandResult {
+            success: false,
+            output: None,
+            error: Some(format!("unsupported translator command: {command_id}")),
+        },
+    }
 }
 
 fn matches_event(declared: &ActivationEvent, fired: &ActivationEvent) -> bool {
@@ -595,6 +730,41 @@ mod tests {
         let themes = host.list_themes().await;
         assert_eq!(themes.len(), 1);
         assert_eq!(themes[0].tokens["--ts-accent"], "#ff0000");
+    }
+
+    #[tokio::test]
+    async fn deactivate_removes_themes_for_plugin() {
+        let host = PluginHost::in_memory();
+        let mut m = test_manifest("theme-plugin");
+        m.contributes.themes.push(ContributedTheme {
+            id: "theme-plugin.red".into(),
+            label: "Red Theme".into(),
+            tokens: std::collections::HashMap::new(),
+        });
+        host.install(m).await.unwrap();
+        host.activate("theme-plugin").await.unwrap();
+        assert_eq!(host.list_themes().await.len(), 1);
+        host.deactivate("theme-plugin").await.unwrap();
+        assert!(host.list_themes().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn production_host_registers_translator_plugin() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let host = PluginHost::with_builtin_plugins(tmp.path());
+        let translator = host.get_plugin(TRANSLATOR_PLUGIN_ID).await.unwrap();
+        assert_eq!(translator.state, PluginState::Active);
+        let slash = host.list_slash_commands().await;
+        assert!(slash.iter().any(|s| s.slash_command.name == "translator"));
+        let result = host
+            .invoke_command(
+                "terransoul-translator.start",
+                Some(serde_json::json!({ "source": "English", "target": "Vietnamese" })),
+            )
+            .await
+            .unwrap();
+        assert!(result.success);
+        assert!(result.output.unwrap().contains("English and Vietnamese"));
     }
 
     #[tokio::test]

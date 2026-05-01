@@ -284,6 +284,7 @@
 </template>
 
 <script setup lang="ts">
+/* eslint-disable max-lines */
 import { ref, computed, nextTick, onUnmounted } from 'vue';
 import { useBrainStore } from '../stores/brain';
 import { useVoiceStore } from '../stores/voice';

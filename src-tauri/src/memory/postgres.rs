@@ -436,10 +436,8 @@ impl StorageBackend for PostgresBackend {
         for entry in &all {
             if let Some(emb) = &entry.embedding {
                 let sim = super::store::cosine_similarity(query_embedding, emb);
-                if sim >= threshold {
-                    if best.map_or(true, |(s, _)| sim > s) {
-                        best = Some((sim, entry.id));
-                    }
+                if sim >= threshold && best.is_none_or(|(s, _)| sim > s) {
+                    best = Some((sim, entry.id));
                 }
             }
         }
