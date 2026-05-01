@@ -503,6 +503,7 @@ const selectedBrain = ref('');
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
+let unlistenLlmPose: (() => void) | null = null;
 let unlistenProvidersExhausted: (() => void) | null = null;
 let streamTtsActive = false;
 
@@ -1297,6 +1298,12 @@ async function setupTauriEventListener() {
     });
     unlistenLlmAnimation = unlistenAnim;
 
+    // Pose stream — LLM-as-Animator <pose> tags (Chunk 14.16b3).
+    const unlistenPose = await listen<import('../renderer/pose-animator').LlmPoseFrame>('llm-pose', (event) => {
+      viewportRef.value?.playPose?.(event.payload);
+    });
+    unlistenLlmPose = unlistenPose;
+
     // Provider exhaustion — show upgrade quest
     const unlistenExhausted = await listen('providers-exhausted', () => {
       conversationStore.pushProviderWarning();
@@ -1436,6 +1443,10 @@ onUnmounted(() => {
   if (unlistenLlmAnimation) {
     unlistenLlmAnimation();
     unlistenLlmAnimation = null;
+  }
+  if (unlistenLlmPose) {
+    unlistenLlmPose();
+    unlistenLlmPose = null;
   }
   if (unlistenProvidersExhausted) {
     unlistenProvidersExhausted();

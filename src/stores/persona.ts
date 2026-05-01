@@ -257,6 +257,156 @@ export const usePersonaStore = defineStore('persona', () => {
     return candidate;
   }
 
+  /**
+   * Ask the active brain to generate a multi-frame motion clip from a
+   * short text description (Chunk 14.16c2 — LLM-as-Animator). Returns
+   * a parsed-but-not-saved [`LearnedMotion`] candidate plus parser
+   * diagnostics so the UI can show "we cleaned N frames" hints.
+   *
+   * **Does not auto-save.** The caller previews the candidate (e.g.
+   * via `requestMotionPreview`) and only commits via `saveLearnedMotion`
+   * after the user clicks Accept — same human-in-the-loop contract as
+   * `suggestPersonaFromBrain`.
+   *
+   * Returns `null` when no brain is configured / Tauri is unavailable.
+   * Throws when the brain reply could not be parsed; caller surfaces
+   * the message in a "couldn't generate, try again" toast.
+   */
+  async function generateMotionFromText(
+    description: string,
+    opts?: { durationS?: number; fps?: number },
+  ): Promise<{
+    motion: LearnedMotion;
+    diagnostics: {
+      droppedFrames: number;
+      clampedComponents: number;
+      repairedTimestamps: boolean;
+      repairedDuration: boolean;
+    };
+  } | null> {
+    interface BackendEnvelope {
+      motion_json: string;
+      trigger: string;
+      dropped_frames: number;
+      clamped_components: number;
+      repaired_timestamps: boolean;
+      repaired_duration: boolean;
+    }
+    let envelope: BackendEnvelope;
+    try {
+      envelope = await invoke<BackendEnvelope>('generate_motion_from_text', {
+        description,
+        durationS: opts?.durationS ?? null,
+        fps: opts?.fps ?? null,
+      });
+    } catch (e) {
+      // Surface configuration / network failures as throws so the UI
+      // toast knows what to say. Returning null is reserved for the
+      // "no brain configured" case which the underlying command
+      // already returns as an Err — re-throw uniformly.
+      throw new Error(typeof e === 'string' ? e : String(e));
+    }
+    let motion: LearnedMotion;
+    try {
+      motion = JSON.parse(envelope.motion_json) as LearnedMotion;
+    } catch (e) {
+      throw new Error(`Generated motion JSON was unreadable: ${String(e)}`);
+    }
+    return {
+      motion,
+      diagnostics: {
+        droppedFrames: envelope.dropped_frames,
+        clampedComponents: envelope.clamped_components,
+        repairedTimestamps: envelope.repaired_timestamps,
+        repairedDuration: envelope.repaired_duration,
+      },
+    };
+  }
+
+  /**
+   * Persist a [`LearnedMotion`] (typically one returned by
+   * [`generateMotionFromText`] after the user clicked Accept) to disk
+   * and append it to the in-memory library. Mirrors the
+   * `saveLearnedExpression` / `saveLearnedMotion` flow used by
+   * `PersonaTeacher.vue` so callers don't need to duplicate the
+   * `invoke('save_learned_motion', ...)` plumbing.
+   */
+  async function saveLearnedMotion(motion: LearnedMotion): Promise<void> {
+    await invoke('save_learned_motion', { json: JSON.stringify(motion) });
+    learnedMotions.value = [
+      motion,
+      ...learnedMotions.value.filter((m) => m.id !== motion.id),
+    ];
+  }
+
+  /**
+   * Record an accept/reject verdict on a generated motion clip
+   * (Chunk 14.16e — self-improve loop). The backend appends a JSONL
+   * entry to `<persona-root>/motion_feedback.jsonl` and the next
+   * `generateMotionFromText` call uses the trusted-trigger leaderboard
+   * to nudge the brain toward the user's preferred vocabulary.
+   *
+   * Best-effort: failures are logged but never thrown — the user
+   * shouldn't see a save error just because the feedback couldn't be
+   * persisted.
+   */
+  async function recordMotionFeedback(args: {
+    description: string;
+    trigger: string;
+    verdict: 'accepted' | 'rejected';
+    durationS?: number;
+    fps?: number;
+    droppedFrames?: number;
+    clampedComponents?: number;
+  }): Promise<void> {
+    try {
+      await invoke('record_motion_feedback', {
+        payload: {
+          description: args.description,
+          trigger: args.trigger,
+          verdict: args.verdict,
+          duration_s: args.durationS ?? 0,
+          fps: args.fps ?? 0,
+          dropped_frames: args.droppedFrames ?? 0,
+          clamped_components: args.clampedComponents ?? 0,
+        },
+      });
+    } catch (e) {
+      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+        console.debug('[persona] record_motion_feedback failed:', e);
+      }
+    }
+  }
+
+  /** Frontend mirror of `crate::persona::motion_feedback::TrustedTrigger`. */
+  interface TrustedTrigger {
+    trigger: string;
+    accepted: number;
+    rejected: number;
+  }
+
+  /** Frontend mirror of `crate::persona::motion_feedback::MotionFeedbackStats`. */
+  interface MotionFeedbackStats {
+    total: number;
+    accepted: number;
+    rejected: number;
+    trusted_triggers: TrustedTrigger[];
+    discouraged_descriptions: string[];
+  }
+
+  /**
+   * Read the motion-feedback aggregate stats. Returns `null` when
+   * Tauri is unavailable (browser-only test harness) so the UI can
+   * hide the leaderboard gracefully.
+   */
+  async function fetchMotionFeedbackStats(): Promise<MotionFeedbackStats | null> {
+    try {
+      return await invoke<MotionFeedbackStats>('get_motion_feedback_stats');
+    } catch {
+      return null;
+    }
+  }
+
   // ── Persona pack export / import (Chunk 14.7) ──────────────────────
 
   /**
@@ -267,6 +417,8 @@ export const usePersonaStore = defineStore('persona', () => {
     traits_applied: boolean;
     expressions_accepted: number;
     motions_accepted: number;
+    motions_generated: number;
+    motions_camera: number;
     skipped: string[];
   }
 
@@ -375,6 +527,10 @@ export const usePersonaStore = defineStore('persona', () => {
     resetToDefault,
     recordBrainExtraction,
     suggestPersonaFromBrain,
+    generateMotionFromText,
+    saveLearnedMotion,
+    recordMotionFeedback,
+    fetchMotionFeedbackStats,
     exportPack,
     previewImportPack,
     importPack,

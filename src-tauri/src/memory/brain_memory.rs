@@ -181,7 +181,12 @@ pub async fn summarize_any_mode(
 }
 
 /// Route a single prompt through the configured brain mode.
-async fn complete_via_mode(
+///
+/// Public so other modules (e.g. persona motion-clip generation,
+/// Chunk 14.16c2) can dispatch a one-shot non-streaming completion
+/// through the active brain without re-implementing the per-mode
+/// fan-out.
+pub async fn complete_via_mode(
     brain_mode: &BrainMode,
     system: &str,
     user_prompt: &str,

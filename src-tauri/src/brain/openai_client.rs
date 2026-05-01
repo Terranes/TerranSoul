@@ -41,10 +41,23 @@ struct NonStreamChoice {
     message: OpenAiMessage,
 }
 
+/// Token usage block returned by OpenAI-compatible providers under
+/// the `usage` key. All fields are optional — local providers (Ollama,
+/// LM Studio) often omit one or both.
+#[derive(Debug, Default, Deserialize, Clone, Copy)]
+pub struct ChatCompletionUsage {
+    #[serde(default)]
+    pub prompt_tokens: Option<u64>,
+    #[serde(default)]
+    pub completion_tokens: Option<u64>,
+}
+
 /// Non-streaming full response.
 #[derive(Debug, Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<NonStreamChoice>,
+    #[serde(default)]
+    usage: Option<ChatCompletionUsage>,
 }
 
 /// A generic OpenAI-compatible chat client that works with any provider
@@ -90,6 +103,21 @@ impl OpenAiClient {
 
     /// Send a non-streaming chat completion request and return the full reply.
     pub async fn chat(&self, messages: Vec<OpenAiMessage>) -> Result<String, String> {
+        self.chat_with_usage(messages).await.map(|(reply, _)| reply)
+    }
+
+    /// Send a non-streaming chat completion request and return both the
+    /// reply and any token usage the provider reported. Returns
+    /// `Ok((reply, None))` for providers that don't expose usage
+    /// metadata (most local servers).
+    ///
+    /// Used by the self-improve metrics path (Chunk 28.7) to record
+    /// real per-run token counts and dollar cost. Plain [`Self::chat`]
+    /// forwards to this and discards the usage block.
+    pub async fn chat_with_usage(
+        &self,
+        messages: Vec<OpenAiMessage>,
+    ) -> Result<(String, Option<ChatCompletionUsage>), String> {
         let body = ChatCompletionRequest {
             model: self.model.clone(),
             messages,
@@ -114,11 +142,13 @@ impl OpenAiClient {
             .await
             .map_err(|e| format!("failed to parse response: {e}"))?;
 
-        parsed
+        let usage = parsed.usage;
+        let reply = parsed
             .choices
             .first()
             .map(|c| c.message.content.clone())
-            .ok_or_else(|| "no choices in response".to_string())
+            .ok_or_else(|| "no choices in response".to_string())?;
+        Ok((reply, usage))
     }
 
     /// Stream a chat completion, calling `on_chunk` for each text delta.

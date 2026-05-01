@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod brain_maintenance;
 pub mod brain_memory;
 pub mod ann_index;
 pub mod auto_learn;
@@ -6,6 +7,7 @@ pub mod auto_tag;
 pub mod chunking;
 pub mod code_rag;
 pub mod cognitive_kind;
+pub mod query_intent;
 pub mod conflicts;
 pub mod consolidation;
 pub mod contextualize;

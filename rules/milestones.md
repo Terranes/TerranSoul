@@ -41,22 +41,11 @@ Pick the next `not-started` item from the tables below or from `rules/backlog.md
 
 ## Active Chunks
 
-### Phase 12 — Brain Advanced Design (Documentation & QA)
-
-| # | Chunk | Status | Notes |
-|---|---|---|---|
-| 1.1 | Brain Advanced Design — QA screenshots | in-progress | All agent work done; waiting on user to capture scenario-specific screenshots on a real Tauri build with Vietnamese content loaded. |
-
----
-
 ### Phase 14 — Persona, Self-Learning Animation & Master-Mirror
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 14.13 | **Hunyuan-Motion / MimicMotion offline polish** — research chunk, feature-flagged. ML pass smooths recorded motion clips. | not-started | Deferred until 3+ user requests. |
-| 14.14 | **MoMask full-body retarget from sparse keypoints** — research chunk. SMPL-X reconstruction from 33 PoseLandmarker keypoints. | not-started | Research, off by default. |
-| 14.15 | **MotionGPT motion token generation** — research chunk. Brain generates motion tokens → `LearnedMotionPlayer` playback. | not-started | Furthest-out research chunk. |
-| 14.16 | **LLM-Driven 3D Animation — Research, Implement & Self-Improve** — Full pipeline: LLM generates per-frame VRM bone poses from conversation context, emotion, and motion intent. Integrates with self-improve loop for continuous animation learning. See detailed spec below. | not-started | Large chunk — can be split into sub-chunks 14.16a–14.16f. |
+| 14.16 | **LLM-Driven 3D Animation — Research, Implement & Self-Improve** — Full pipeline: LLM generates per-frame VRM bone poses from conversation context, emotion, and motion intent. Integrates with self-improve loop for continuous animation learning. See detailed spec below. (Sub-chunks 14.16a–f shipped 2026-05-01..02 — see `completion-log.md`. Optional GPU-required 14.16g remains.) | in-progress | Only optional 14.16g (MotionGPT / T2M-GPT) remains. |
 
 ---
 
@@ -93,6 +82,30 @@ generates structured animation data alongside its text response.
 
 **New stream tag:** `<pose>{ "head": [0.1, -0.05, 0], "spine": [0.03, 0, 0], ... }</pose>`
 
+> **Sub-chunk 14.16b1 shipped 2026-05-02** — pure-Rust pose-frame parser
+> + clamp foundation in `src-tauri/src/persona/pose_frame.rs` (canonical
+> 11-bone rig, ±0.5 rad clamp, forgiving JSON parser, case-insensitive
+> `<pose>` extractor, 24 tests). The frontend `PoseAnimator` and the
+> `StreamTagParser` extension still need wiring — that is the remainder
+> of 14.16b.
+>
+> **Sub-chunk 14.16b2 shipped 2026-05-02** — Rust `StreamTagParser`
+> now recognises `<pose>` alongside `<anim>` (multi-tag state machine,
+> `StreamFeed` return type, 6 new tests). The streaming pipeline
+> emits `llm-pose` Tauri events with validated `LlmPoseFrame` payloads,
+> and the system prompt advertises the pose schema. Remaining work is
+> the frontend `PoseAnimator` class + `CharacterViewport` wiring
+> (sub-chunk 14.16b3).
+>
+> **Sub-chunk 14.16b3 shipped 2026-05-02** — frontend
+> `PoseAnimator` (`src/renderer/pose-animator.ts`, damped-spring
+> blender with fade-in/hold/fade-out phases) wired into
+> `CharacterViewport.vue` (per-frame `apply` + `playPose` /
+> `clearPose` methods) and both `ChatView.vue` + `PetOverlayView.vue`
+> (`llm-pose` event listeners). 14 new vitest tests; full LLM-as-
+> Animator pipeline now runs end-to-end. **Chunk 14.16b is
+> complete — ready to remove from `in-progress`.**
+
 Implementation:
 1. **Extend `StreamTagParser`** to recognise `<pose>...</pose>` tags (like existing `<anim>` tags).
 2. **New type `LlmPoseFrame`** in `persona-types.ts`:
@@ -125,6 +138,16 @@ parser tests for `<pose>` tag extraction. Vitest + vue-tsc clean.
 
 ##### 14.16c — Motion Library: LLM-Generated Clip Catalogue
 
+> **✅ Shipped 2026-05-02** — sub-chunk 14.16c1 landed the pure-Rust
+> motion-clip parser/validator (`src-tauri/src/persona/motion_clip.rs`,
+> 18 tests). Sub-chunks 14.16c2 + 14.16c3 followed the same day with
+> the `generate_motion_from_text` Tauri command (routes through
+> `memory::brain_memory::complete_via_mode` so all four brain modes
+> work) and the `PersonaMotionGenerator.vue` UI in `PersonaPanel`
+> (text → generate → preview → accept/discard). Chunk 14.16c is
+> complete — ready to remove from `in-progress` once 14.16d / e / f
+> ship.
+
 Let the brain generate reusable `LearnedMotion` clips from text descriptions.
 
 1. **New Tauri command `generate_motion_from_text`**:
@@ -150,6 +173,13 @@ generation flow. End-to-end validation that baked clip plays on VRM.
 
 ##### 14.16d — Emotion-Reactive Procedural Blending
 
+> **✅ Shipped 2026-05-02** — `EmotionPoseBias` in
+> `src/renderer/emotion-pose-bias.ts` adds tiny additive postural
+> offsets driven by `characterStore.state` (±0.18 rad cap, λ=4
+> damping). Yields automatically to baked VRMA clips and active
+> `PoseAnimator` poses. Wired in `CharacterViewport.vue` per-frame
+> loop after `animator.update`. 14 new vitest cases.
+
 Replace the current 6 static idle poses with an emotion-weighted blend system
 inspired by AI4Animation's expert blending architecture.
 
@@ -172,6 +202,14 @@ inspired by AI4Animation's expert blending architecture.
 Tests: Animator unit tests for blend weights, energy mapping, micro-gestures.
 
 ##### 14.16e — Self-Improve Animation Learning Loop
+
+> **✅ Shipped 2026-05-02** — motion-feedback log
+> (`<persona-root>/motion_feedback.jsonl`) records every accept/reject
+> verdict; `motion_feedback::render_prompt_hint` splices the
+> trusted-trigger leaderboard into the next `generate_motion_from_text`
+> system prompt. New Tauri commands `record_motion_feedback` +
+> `get_motion_feedback_stats`; 11 new Rust tests; UI footer in
+> `PersonaMotionGenerator.vue` shows "You've taught me N motions".
 
 Integrate animation generation with the self-improve system so the companion
 autonomously discovers and learns new animations.
@@ -201,7 +239,17 @@ autonomously discovers and learns new animations.
 Tests: Engine task type routing tests. Quality scoring tests. Skill tree
 activation test.
 
-##### 14.16f — MotionGPT / T2M-GPT Inference (Optional, GPU-Required)
+##### 14.16f — Pack-import provenance markers
+
+> **✅ Shipped 2026-05-02** — `LearnedMotion.provenance` field
+> (`'generated' | 'camera'`) now stamped at every save site;
+> `ImportReport` carries `motions_generated` + `motions_camera`
+> counters; `PersonaPackPanel` renders a "X motions (N generated, M
+> camera)" breakdown so packs reveal the origin of each clip. Older
+> clips without the field are simply unattributed — no migration. 4 new
+> Rust tests in `persona::pack`.
+
+##### 14.16g — MotionGPT / T2M-GPT Inference (Optional, GPU-Required)
 
 For users with capable GPUs, run a dedicated motion generation model locally.
 
@@ -235,9 +283,8 @@ Integration test with VRM playback.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 25.10 | **Diff application + PR opening** — extend the planner-mode engine to apply LLM-produced patches to a feature branch, run the CI gate, commit, and open a PR via GitHub API. Currently gated behind explicit feature flag. | not-started | Depends on 25.2-25.9. Use `octocrab` for PR. Must keep "branch-only, never push master" invariant. |
-| 25.11 | **MCP server self-host & self-improve** — auto-spawn local MCP server, allow loop to extend its own tools. | not-started | Builds on existing `ai_integrations::mcp`. |
-| 25.12 | **Brain data migration & optimisation** — autonomous loop runs schema migrations + ANN index rebuilds per `docs/brain-advanced-design.md`. | not-started | Brain doc sync required (rule 10). |
+
+
 
 ---
 
@@ -268,7 +315,7 @@ Integration test with VRM playback.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 17.5 | **Cross-device memory merge via CRDT sync** — wire `MemoryStore` into Soul Link. LWW-Map CRDT keyed on `(content_hash, source_url)`. | not-started | Hardest chunk — may split into 17.5a (schema) + 17.5b (delta sync). |
-| 17.7 | **Bidirectional Obsidian sync** — extend one-way export to bidirectional via `notify` file-watcher. LWW conflict resolution. | not-started | Depends on 18.5 (shipped). |
+| 17.7 | **Bidirectional Obsidian sync** — extend one-way export to bidirectional via `notify` file-watcher. LWW conflict resolution. Schema columns now in place (V10, chunk 17.7b shipped). | not-started | Depends on 18.5 (shipped) + 17.7b (shipped). |
 
 ---
 
@@ -313,24 +360,6 @@ Integration test with VRM playback.
 - Two consecutive `cargo tauri dev` launches: agent roster, workflow log, memory store all empty on second launch. No residue under `dev/` from prior session. Release data dir untouched.
 - Installed release build: workflow started in run A appears as `Resuming` in run B; agents + memory survive restart. Existing users' data still loads from the unchanged release path.
 - Ollama dev container/volume can be wiped without affecting release container/volume and vice-versa.
-
----
-
-### Phase 21 — Doc & Completion-Log Hygiene (QA Audit 2026-04-25)
-
-> Surfaced by a full QA pass over `docs/`, `rules/completion-log.md`,
-> `rules/milestones.md`, and `rules/backlog.md`. Every row here is a
-> small completable doc / log fix — no new code, no design decisions.
-> The two heavier audit findings (plugin-system completion + multi-agent
-> resilience wiring) escalated to dedicated phases below (Phase 22 and
-> Phase 23) because they are real not-shipped feature work, not paperwork.
-> The deferred MCP stdio transport escalated to Chunk 15.9 in Phase 15
-> because deep-analysis decided it is not optional polish.
-
-> **Status — 2026-04-30:** All four hygiene rows (21.1–21.4) shipped as
-> a single bundle. See `rules/completion-log.md` →
-> `Phase 21.1–21.4 — Doc & Completion-Log Hygiene Bundle`. This phase
-> is now closed; remaining audit-surfaced work lives in Phase 22 / 23.
 
 ---
 
@@ -493,25 +522,13 @@ User on the same Wi-Fi as the desktop:
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 26.1 | **Daily background maintenance scheduler (`tasks::manager::TaskManager`).** Today the Step-5 maintenance jobs (importance recalc, decay sweep, sleep-time consolidation, drift check) only fire when the user manually triggers them. Add a single Tokio-backed scheduler that runs once per `AppSettings.maintenance_interval_hours` (default 24, configurable 1–168), gated behind `AppSettings.background_maintenance_enabled` (default true), with a "skip if app idle < N minutes" guard so it does not fight active chat. Survives restart by persisting `last_run_at` in `app_settings.json`. ~250 LOC + tests. | not-started | Brain doc sync (§21.7 item 1). Lives in `src-tauri/src/tasks/manager.rs`. |
-| 26.2 | **Conversation-aware (segmented) extraction.** Today `extract_facts` sees the whole session as one blob; long sessions miss topic-shifted facts. Add `memory::segmentation::topic_segments(messages, threshold)` — pure function that segments by embedding-distance peaks (cosine drop > `threshold`, default 0.35). Run extraction once per segment instead of once per session. ~200 LOC + tests. | not-started | Brain doc sync (§21.7 item 2). Pure utility; wires into `auto_learn::run_extraction`. |
-| 26.3 | **Edge auto-extraction after `extract_facts`.** `extract_edges_via_brain` is manual today. Auto-fire it after each successful `extract_facts` when ≥2 facts were created. Gated behind `AutoLearnPolicy.auto_edges` (default true). ~120 LOC + tests. | not-started | Brain doc sync (§21.7 item 3). Plugs into the existing auto-learn loop. |
-| 26.4 | **Replay-from-history rebuild command.** New Tauri command `rebuild_memories_from_history(start_ts, end_ts)` re-runs `extract_facts` over saved chat logs. Surfaces progress event `memory-rebuild-progress` and writes new memories with `source_url = "rebuild:<run_id>"`. Capability-gated. ~250 LOC + tests. | not-started | Brain doc sync (§21.7 item 4). Backfills memories for sessions that pre-date auto-learn. |
-
----
-
-### Phase 27 — Agentic RAG & Context Engineering
 
 > **Why this phase exists.** `docs/brain-advanced-design.md` §19.2
 > tracker rows 14 and 15 are still 🟡 partial — they need to land.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 27.1 | **Agentic RAG: retrieve-as-tool inside the agent loop.** Wire `retrieve_memory` as an explicit LLM tool inside the orchestrator (`src-tauri/src/orchestrator/`) so the agent can plan → retrieve → reflect → re-retrieve. Tool schema mirrors existing brain `search_memory` command. Loop-cap of 5 iterations. ~350 LOC + tests for the plan/retrieve/reflect cycle. | not-started | Brain doc sync. Replaces the static "retrieve once at start" pattern. |
-
----
-
-### Phase 28 — Self-Improve Loop Maturation
+| 27.3 | **Blendshape passthrough — expanded ARKit rig support.** Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs (beyond the 6-preset baseline). Per `docs/persona-design.md` §6.3 "Mask of a Thousand Faces — Expanded". | not-started | Frontend-heavy; gated by `AppSettings.expanded_blendshapes`. |
 
 > **Why this phase exists.** `docs/coding-workflow-design.md` §5
 > ("Roadmap & gaps") lists six unimplemented items beyond what landed in
@@ -519,10 +536,4 @@ User on the same Wi-Fi as the desktop:
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 28.1 | **Reviewer sub-agent.** Feed the LLM-produced diff into a third workflow with `OutputShape::StrictJson` `{ ok: bool, issues: Vec<{ severity, file, line, msg }> }`. Reject the diff if `ok == false` or any `severity == "error"` issue. ~250 LOC + tests. | not-started | Coding workflow doc sync. Depends on 25.10 (apply_file). Lives in `src-tauri/src/coding_workflow/reviewer.rs`. |
-| 28.2 | **Orchestrator → coding-workflow wiring.** Connect `crate::orchestrator` so chat messages like "implement chunk 28.5" dispatch coding workflows the same way they currently dispatch brain queries. Capability-gated. ~200 LOC + tests. | not-started | Depends on 27.1 (agentic RAG retrieve-as-tool) so the orchestrator already knows how to call workflow tools. |
-| 28.3 | **Multi-agent fan-out / DAG runner.** Mirror Copilot's `/fleet`: parallelise independent chunks, serialise dependents via a small DAG runner. Inputs: a `WorkflowGraph { nodes, edges }`. ~400 LOC + tests for diamond + linear + parallel cases. | not-started | Depends on 28.1 (each parallel run still needs reviewer gate). |
-| 28.5 | **GitHub PR flow polish — OAuth device flow + per-chunk PRs.** Finish the partially-implemented `coding::github` module: complete the OAuth device-code flow, persist tokens via `tauri-plugin-stronghold`, open one PR per applied chunk with auto-generated title/body from `RunRecord` + `MetricsSummary`. Capability-gated. ~350 LOC + tests with mocked GitHub API. | not-started | Coding workflow doc sync (§5 item 6). Depends on 25.10 (apply_file). |
-| 28.6 | **Persistent SQLite task queue.** Replace "read milestones.md every cycle" with a SQLite-backed queue (`coding_tasks` table) so MCP / CLI / phone (Phase 24) can enqueue tasks. Queue worker pops + dispatches. ~350 LOC + tests for FIFO + priority + retry-on-fail. | not-started | Coding workflow doc sync. Unblocks the phone "continue next step" UX from Phase 24. |
-| 28.7 | **Cost / token telemetry per chunk.** Extend `RunRecord` with `prompt_tokens`, `completion_tokens`, `est_cost_usd` (per-provider rate table). Aggregate per-provider in `MetricsSummary`. Surface in the metrics panel as a stacked bar by provider × chunk. ~200 LOC + tests. | not-started | Coding workflow doc sync (§5 item 7). Pure additive; no breaking schema. |
 

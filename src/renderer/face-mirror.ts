@@ -171,6 +171,20 @@ export class FaceMirror {
   private smoothed = zeroWeights();
   private _running = false;
   private _lastTimestamp = -1;
+  /**
+   * Most-recent raw ARKit scores (52-channel) seen on the last
+   * processed video frame. Empty until `update()` has produced at
+   * least one detection. Exposed for the opt-in expanded-blendshape
+   * passthrough (Chunk 27.3) — consumers feed this into
+   * `applyExpandedBlendshapes` when `AppSettings.expanded_blendshapes`
+   * is on.
+   */
+  private _lastRawScores: Map<string, number> = new Map();
+
+  /** Read-only snapshot of the latest ARKit blendshape coefficients. */
+  get lastRawScores(): ReadonlyMap<string, number> {
+    return this._lastRawScores;
+  }
 
   get running(): boolean { return this._running; }
 
@@ -223,6 +237,7 @@ export class FaceMirror {
       for (const cat of categories) {
         scores.set(cat.categoryName, cat.score);
       }
+      this._lastRawScores = scores;
       const raw = mapBlendshapesToVRM(scores);
       smoothWeights(this.smoothed, raw, lambda, dt);
     }
@@ -238,5 +253,6 @@ export class FaceMirror {
       this.landmarker = null;
     }
     this.smoothed = zeroWeights();
+    this._lastRawScores = new Map();
   }
 }

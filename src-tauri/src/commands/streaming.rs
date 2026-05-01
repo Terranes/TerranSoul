@@ -4,6 +4,7 @@ use crate::AppState;
 use crate::brain::ollama_agent::{ChatMessage, OLLAMA_BASE_URL};
 use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
 use crate::brain::brain_config::BrainMode;
+use crate::persona::pose_frame::{parse_pose_payload, LlmPoseFrame};
 
 /// A single streamed chunk emitted via Tauri events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,13 +40,48 @@ struct OllamaStreamMessage {
 
 // ── Streaming tag parser ──────────────────────────────────────────────────────
 
-/// State-machine parser that extracts `<anim>{"emotion":"happy"}</anim>` blocks
-/// from a stream of text chunks. Returns clean text and deserialized
-/// [`AnimationCommand`]s — no regex needed on the frontend.
+/// Outputs from a single [`StreamTagParser::feed`] call.
+#[derive(Debug, Default)]
+pub struct StreamFeed {
+    /// Clean text with all meta-tag blocks stripped.
+    pub text: String,
+    /// Parsed `<anim>{…}</anim>` blocks.
+    pub anim_commands: Vec<AnimationCommand>,
+    /// Parsed `<pose>{…}</pose>` blocks (validated + clamped).
+    pub pose_frames: Vec<LlmPoseFrame>,
+}
+
+/// Which meta-tag block the parser is currently inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockKind {
+    Anim,
+    Pose,
+}
+
+impl BlockKind {
+    fn open_tag(self) -> &'static str {
+        match self {
+            BlockKind::Anim => "<anim>",
+            BlockKind::Pose => "<pose>",
+        }
+    }
+    fn close_tag(self) -> &'static str {
+        match self {
+            BlockKind::Anim => "</anim>",
+            BlockKind::Pose => "</pose>",
+        }
+    }
+}
+
+const ALL_BLOCKS: &[BlockKind] = &[BlockKind::Anim, BlockKind::Pose];
+
+/// State-machine parser that extracts `<anim>{…}</anim>` and
+/// `<pose>{…}</pose>` blocks from a stream of text chunks. Returns
+/// clean text plus typed payloads — no regex needed on the frontend.
 struct StreamTagParser {
     buffer: String,
-    in_anim_block: bool,
-    anim_buffer: String,
+    in_block: Option<BlockKind>,
+    block_buffer: String,
     strip_next_newline: bool,
 }
 
@@ -53,17 +89,17 @@ impl StreamTagParser {
     fn new() -> Self {
         Self {
             buffer: String::new(),
-            in_anim_block: false,
-            anim_buffer: String::new(),
+            in_block: None,
+            block_buffer: String::new(),
             strip_next_newline: false,
         }
     }
 
-    /// Feed a chunk of text. Returns `(clean_text, animation_commands)`.
-    fn feed(&mut self, chunk: &str) -> (String, Vec<AnimationCommand>) {
+    /// Feed a chunk of text. Returns clean text plus any complete blocks.
+    fn feed(&mut self, chunk: &str) -> StreamFeed {
         self.buffer.push_str(chunk);
 
-        // Strip leading newline left over from a previous </anim> boundary.
+        // Strip leading newline left over from a previous </tag> boundary.
         if self.strip_next_newline && !self.buffer.is_empty() {
             if self.buffer.starts_with("\r\n") {
                 self.buffer = self.buffer[2..].to_string();
@@ -73,20 +109,31 @@ impl StreamTagParser {
             self.strip_next_newline = false;
         }
 
-        let mut text_out = String::new();
-        let mut commands: Vec<AnimationCommand> = Vec::new();
+        let mut out = StreamFeed::default();
 
         loop {
-            if self.in_anim_block {
-                if let Some(end) = self.buffer.find("</anim>") {
+            if let Some(kind) = self.in_block {
+                let close = kind.close_tag();
+                if let Some(end) = self.buffer.find(close) {
                     let json_part = self.buffer[..end].to_string();
-                    self.anim_buffer.push_str(&json_part);
-                    if let Ok(cmd) = serde_json::from_str::<AnimationCommand>(self.anim_buffer.trim()) {
-                        commands.push(cmd);
+                    self.block_buffer.push_str(&json_part);
+                    let payload = std::mem::take(&mut self.block_buffer);
+                    match kind {
+                        BlockKind::Anim => {
+                            if let Ok(cmd) =
+                                serde_json::from_str::<AnimationCommand>(payload.trim())
+                            {
+                                out.anim_commands.push(cmd);
+                            }
+                        }
+                        BlockKind::Pose => {
+                            if let Ok(parsed) = parse_pose_payload(payload.trim()) {
+                                out.pose_frames.push(parsed.frame);
+                            }
+                        }
                     }
-                    self.anim_buffer.clear();
-                    self.in_anim_block = false;
-                    self.buffer = self.buffer[end + "</anim>".len()..].to_string();
+                    self.in_block = None;
+                    self.buffer = self.buffer[end + close.len()..].to_string();
                     // Strip one trailing newline so it doesn't leak into chat text.
                     if self.buffer.starts_with('\n') {
                         self.buffer = self.buffer[1..].to_string();
@@ -96,42 +143,66 @@ impl StreamTagParser {
                         self.strip_next_newline = true;
                     }
                 } else {
-                    // End tag not yet seen — hold back any partial `</anim>` prefix.
-                    let hold = partial_prefix_len(&self.buffer, "</anim>");
+                    // Close tag not yet seen — hold back any partial close.
+                    let hold = partial_prefix_len(&self.buffer, close);
                     let safe = self.buffer.len() - hold;
-                    self.anim_buffer.push_str(&self.buffer[..safe]);
+                    self.block_buffer.push_str(&self.buffer[..safe]);
                     self.buffer = self.buffer[safe..].to_string();
                     break;
                 }
-            } else if let Some(start) = self.buffer.find("<anim>") {
-                text_out.push_str(&self.buffer[..start]);
-                self.buffer = self.buffer[start + "<anim>".len()..].to_string();
-                self.in_anim_block = true;
+            } else if let Some((start, kind)) = find_earliest_open(&self.buffer) {
+                out.text.push_str(&self.buffer[..start]);
+                self.buffer = self.buffer[start + kind.open_tag().len()..].to_string();
+                self.in_block = Some(kind);
             } else {
-                // Hold back any partial `<anim>` prefix at the end.
-                let hold = partial_prefix_len(&self.buffer, "<anim>");
+                // Hold back any partial open tag at the end.
+                let hold = ALL_BLOCKS
+                    .iter()
+                    .map(|k| partial_prefix_len(&self.buffer, k.open_tag()))
+                    .max()
+                    .unwrap_or(0);
                 let safe = self.buffer.len() - hold;
-                text_out.push_str(&self.buffer[..safe]);
+                out.text.push_str(&self.buffer[..safe]);
                 self.buffer = self.buffer[safe..].to_string();
                 break;
             }
         }
 
-        (text_out, commands)
+        out
     }
 
     /// Flush remaining buffered content (call when the stream ends).
-    fn flush(&mut self) -> (String, Vec<AnimationCommand>) {
+    fn flush(&mut self) -> StreamFeed {
         let remaining = std::mem::take(&mut self.buffer);
-        let anim_remaining = std::mem::take(&mut self.anim_buffer);
-        self.in_anim_block = false;
+        let block_remaining = std::mem::take(&mut self.block_buffer);
+        let in_block = self.in_block.take();
         self.strip_next_newline = false;
-        // If we were mid-anim-block, the content is malformed — emit as text.
-        if !anim_remaining.is_empty() {
-            return (format!("{anim_remaining}{remaining}"), Vec::new());
+        let mut out = StreamFeed::default();
+        // If we were mid-block, the content is malformed — emit as text
+        // (re-prepend the original opener so the user sees what happened).
+        if !block_remaining.is_empty() || in_block.is_some() {
+            let opener = in_block.map(|k| k.open_tag()).unwrap_or("");
+            out.text = format!("{opener}{block_remaining}{remaining}");
+        } else {
+            out.text = remaining;
         }
-        (remaining, Vec::new())
+        out
     }
+}
+
+/// Find the earliest opening tag in `buffer` and return its byte offset
+/// and which block kind it is. `None` if no opener is present.
+fn find_earliest_open(buffer: &str) -> Option<(usize, BlockKind)> {
+    let mut best: Option<(usize, BlockKind)> = None;
+    for kind in ALL_BLOCKS {
+        if let Some(idx) = buffer.find(kind.open_tag()) {
+            match best {
+                Some((b, _)) if b <= idx => {}
+                _ => best = Some((idx, *kind)),
+            }
+        }
+    }
+    best
 }
 
 /// How many bytes at the end of `buffer` could be the start of `tag`.
@@ -146,21 +217,31 @@ fn partial_prefix_len(buffer: &str, tag: &str) -> usize {
     0
 }
 
-/// Strip `<anim>...</anim>` blocks from a completed response (for storage).
+/// Strip `<anim>...</anim>` and `<pose>...</pose>` blocks from a
+/// completed response (for storage).
 fn strip_anim_blocks(input: &str) -> String {
     let mut result = String::new();
     let mut remaining = input;
-    while let Some(start) = remaining.find("<anim>") {
+    loop {
+        let next = ALL_BLOCKS
+            .iter()
+            .filter_map(|k| remaining.find(k.open_tag()).map(|i| (i, *k)))
+            .min_by_key(|(i, _)| *i);
+        let Some((start, kind)) = next else { break };
         result.push_str(&remaining[..start]);
-        remaining = &remaining[start + "<anim>".len()..];
-        if let Some(end) = remaining.find("</anim>") {
-            remaining = &remaining[end + "</anim>".len()..];
+        remaining = &remaining[start + kind.open_tag().len()..];
+        if let Some(end) = remaining.find(kind.close_tag()) {
+            remaining = &remaining[end + kind.close_tag().len()..];
             // Skip one trailing newline.
             if remaining.starts_with('\n') {
                 remaining = &remaining[1..];
             } else if remaining.starts_with("\r\n") {
                 remaining = &remaining[2..];
             }
+        } else {
+            // Unclosed block — stop and treat the rest as text.
+            result.push_str(remaining);
+            return result.trim().to_string();
         }
     }
     result.push_str(remaining);
@@ -339,17 +420,30 @@ async fn stream_openai_api<R: tauri::Runtime>(
         }
     };
 
-    // ── Persona block (see docs/persona-design.md § 9.1) — appended to
-    // the persona text *before* budgeting so it stays in the
-    // never-truncated section.
+    if !relevant.is_empty() {
+        let memory_block: String = relevant
+            .iter()
+            .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        system_prompt.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
+    // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
+    // Pushed from the frontend persona store via `set_persona_block`.
+    // Empty string means no persona injection.
     if let Ok(persona) = state.persona_block.lock() {
         if !persona.is_empty() {
             system_prompt.push_str(persona.as_str());
         }
     }
 
-    // ── Handoff block (Chunk 23.2b) — one-shot read-and-clear so the
-    // new agent is briefed exactly once.
+    // ── Handoff block (Chunk 23.2b) ──────────────────────────────────
+    // Pushed from the frontend agent-roster store on agent switch.
+    // **One-shot**: read-and-clear so the new agent is briefed exactly
+    // once, then operates on its own thread for subsequent turns.
     if let Ok(mut handoff) = state.handoff_block.lock() {
         if !handoff.is_empty() {
             system_prompt.push_str(handoff.as_str());
@@ -357,27 +451,12 @@ async fn stream_openai_api<R: tauri::Runtime>(
         }
     }
 
-    // Apply the Phase-27 budgeter (Chunk 27.2b). Persona is kept whole;
-    // retrieved memory is trimmed by score; old history turns are
-    // dropped to fit the per-mode budget.
-    let budget_config = if paid_override.is_some() {
-        crate::brain::context_budget::BudgetConfig::for_paid_mode()
-    } else {
-        crate::brain::context_budget::BudgetConfig::for_free_mode()
-    };
-    let (system_prompt, history) = super::chat::build_budgeted_prompt(
-        &system_prompt,
-        history,
-        &relevant,
-        &budget_config,
-    );
-
     // Build OpenAI message array
     let mut messages = vec![OpenAiMessage {
         role: "system".to_string(),
         content: system_prompt,
     }];
-    for (role, content) in &history {
+    for (role, content) in history {
         messages.push(OpenAiMessage {
             role: role.clone(),
             content: content.clone(),
@@ -391,12 +470,15 @@ async fn stream_openai_api<R: tauri::Runtime>(
     let result = client
         .chat_stream(messages, move |chunk_text| {
             let mut p = parser_cb.lock().unwrap();
-            let (clean_text, anim_cmds) = p.feed(chunk_text);
-            if !clean_text.is_empty() {
-                let _ = app.emit("llm-chunk", LlmChunk { text: clean_text, done: false });
+            let feed = p.feed(chunk_text);
+            if !feed.text.is_empty() {
+                let _ = app.emit("llm-chunk", LlmChunk { text: feed.text, done: false });
             }
-            for cmd in anim_cmds {
+            for cmd in feed.anim_commands {
                 let _ = app.emit("llm-animation", cmd);
+            }
+            for frame in feed.pose_frames {
+                let _ = app.emit("llm-pose", frame);
             }
         })
         .await;
@@ -406,12 +488,15 @@ async fn stream_openai_api<R: tauri::Runtime>(
             // Flush any remaining buffered content from the parser.
             {
                 let mut p = parser.lock().unwrap();
-                let (remaining_text, remaining_cmds) = p.flush();
-                if !remaining_text.is_empty() {
-                    let _ = app_handle.emit("llm-chunk", LlmChunk { text: remaining_text, done: false });
+                let feed = p.flush();
+                if !feed.text.is_empty() {
+                    let _ = app_handle.emit("llm-chunk", LlmChunk { text: feed.text, done: false });
                 }
-                for cmd in remaining_cmds {
+                for cmd in feed.anim_commands {
                     let _ = app_handle.emit("llm-animation", cmd);
+                }
+                for frame in feed.pose_frames {
+                    let _ = app_handle.emit("llm-pose", frame);
                 }
             }
             let _ = app_handle.emit("llm-chunk", LlmChunk { text: String::new(), done: true });
@@ -478,13 +563,26 @@ async fn stream_ollama<R: tauri::Runtime>(
         }
     };
 
-    // Persona + handoff are appended *before* budgeting so they stay
-    // in the never-truncated section (Chunk 27.2b).
+    if !relevant.is_empty() {
+        let memory_block: String = relevant
+            .iter()
+            .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        system_prompt.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
+    // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
     if let Ok(persona) = state.persona_block.lock() {
         if !persona.is_empty() {
             system_prompt.push_str(persona.as_str());
         }
     }
+
+    // ── Handoff block (Chunk 23.2b) ──────────────────────────────────
+    // One-shot read-and-clear; same pattern as the OpenAI path above.
     if let Ok(mut handoff) = state.handoff_block.lock() {
         if !handoff.is_empty() {
             system_prompt.push_str(handoff.as_str());
@@ -492,23 +590,13 @@ async fn stream_ollama<R: tauri::Runtime>(
         }
     }
 
-    // Apply the Phase-27 budgeter (Chunk 27.2b) with the local-mode
-    // preset — tokens are free on local Ollama so retrieval gets the
-    // lion's share.
-    let (system_prompt, history) = super::chat::build_budgeted_prompt(
-        &system_prompt,
-        history,
-        &relevant,
-        &crate::brain::context_budget::BudgetConfig::for_local_mode(),
-    );
-
     // Build Ollama message array
     let system_msg = ChatMessage {
         role: "system".to_string(),
         content: system_prompt,
     };
     let mut messages = vec![system_msg];
-    for (role, content) in &history {
+    for (role, content) in history {
         messages.push(ChatMessage {
             role: role.clone(),
             content: content.clone(),
@@ -552,28 +640,34 @@ async fn stream_ollama<R: tauri::Runtime>(
                 if let Some(msg) = &parsed.message {
                     if !msg.content.is_empty() {
                         full_response.push_str(&msg.content);
-                        let (clean_text, anim_cmds) = parser.feed(&msg.content);
-                        if !clean_text.is_empty() {
+                        let feed = parser.feed(&msg.content);
+                        if !feed.text.is_empty() {
                             let _ = app_handle.emit(
                                 "llm-chunk",
-                                LlmChunk { text: clean_text, done: false },
+                                LlmChunk { text: feed.text, done: false },
                             );
                         }
-                        for cmd in anim_cmds {
+                        for cmd in feed.anim_commands {
                             let _ = app_handle.emit("llm-animation", cmd);
+                        }
+                        for frame in feed.pose_frames {
+                            let _ = app_handle.emit("llm-pose", frame);
                         }
                     }
                 }
                 if parsed.done {
-                    let (remaining_text, remaining_cmds) = parser.flush();
-                    if !remaining_text.is_empty() {
+                    let feed = parser.flush();
+                    if !feed.text.is_empty() {
                         let _ = app_handle.emit(
                             "llm-chunk",
-                            LlmChunk { text: remaining_text, done: false },
+                            LlmChunk { text: feed.text, done: false },
                         );
                     }
-                    for cmd in remaining_cmds {
+                    for cmd in feed.anim_commands {
                         let _ = app_handle.emit("llm-animation", cmd);
+                    }
+                    for frame in feed.pose_frames {
+                        let _ = app_handle.emit("llm-pose", frame);
                     }
                     let _ = app_handle.emit(
                         "llm-chunk",
@@ -776,83 +870,150 @@ mod tests {
     #[test]
     fn stream_tag_parser_basic() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) = parser.feed(r#"<anim>{"emotion":"happy"}</anim>Hello!"#);
-        assert_eq!(text, "Hello!");
-        assert_eq!(cmds.len(), 1);
-        assert_eq!(cmds[0].emotion, Some("happy".to_string()));
+        let f = parser.feed(r#"<anim>{"emotion":"happy"}</anim>Hello!"#);
+        assert_eq!(f.text, "Hello!");
+        assert_eq!(f.anim_commands.len(), 1);
+        assert_eq!(f.anim_commands[0].emotion, Some("happy".to_string()));
     }
 
     #[test]
     fn stream_tag_parser_no_anim() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) = parser.feed("Just plain text");
-        assert_eq!(text, "Just plain text");
-        assert!(cmds.is_empty());
+        let f = parser.feed("Just plain text");
+        assert_eq!(f.text, "Just plain text");
+        assert!(f.anim_commands.is_empty());
+        assert!(f.pose_frames.is_empty());
     }
 
     #[test]
     fn stream_tag_parser_split_across_chunks() {
         let mut parser = StreamTagParser::new();
-        let (t1, c1) = parser.feed(r#"<anim>{"emot"#);
-        assert_eq!(t1, "");
-        assert!(c1.is_empty());
+        let f1 = parser.feed(r#"<anim>{"emot"#);
+        assert_eq!(f1.text, "");
+        assert!(f1.anim_commands.is_empty());
 
-        let (t2, c2) = parser.feed(r#"ion":"happy"}</anim>Hi!"#);
-        assert_eq!(t2, "Hi!");
-        assert_eq!(c2.len(), 1);
-        assert_eq!(c2[0].emotion, Some("happy".to_string()));
+        let f2 = parser.feed(r#"ion":"happy"}</anim>Hi!"#);
+        assert_eq!(f2.text, "Hi!");
+        assert_eq!(f2.anim_commands.len(), 1);
+        assert_eq!(f2.anim_commands[0].emotion, Some("happy".to_string()));
     }
 
     #[test]
     fn stream_tag_parser_partial_open_tag() {
         let mut parser = StreamTagParser::new();
-        let (t1, c1) = parser.feed("Hello <ani");
-        assert_eq!(t1, "Hello ");
-        assert!(c1.is_empty());
+        let f1 = parser.feed("Hello <ani");
+        assert_eq!(f1.text, "Hello ");
+        assert!(f1.anim_commands.is_empty());
 
-        let (t2, _) = parser.flush();
-        assert_eq!(t2, "<ani");
+        let f2 = parser.flush();
+        assert_eq!(f2.text, "<ani");
     }
 
     #[test]
     fn stream_tag_parser_flush_mid_anim() {
         let mut parser = StreamTagParser::new();
         parser.feed(r#"<anim>{"emotion":"ha"#);
-        let (flushed, cmds) = parser.flush();
-        assert!(flushed.contains("emotion"));
-        assert!(cmds.is_empty());
+        let f = parser.flush();
+        assert!(f.text.contains("emotion"));
+        assert!(f.anim_commands.is_empty());
     }
 
     #[test]
     fn stream_tag_parser_mixed_text_and_anim() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) = parser.feed(
+        let f = parser.feed(
             r#"Before <anim>{"emotion":"sad","motion":"nod"}</anim>After"#,
         );
-        assert_eq!(text, "Before After");
-        assert_eq!(cmds.len(), 1);
-        assert_eq!(cmds[0].emotion, Some("sad".to_string()));
-        assert_eq!(cmds[0].motion, Some("nod".to_string()));
+        assert_eq!(f.text, "Before After");
+        assert_eq!(f.anim_commands.len(), 1);
+        assert_eq!(f.anim_commands[0].emotion, Some("sad".to_string()));
+        assert_eq!(f.anim_commands[0].motion, Some("nod".to_string()));
     }
 
     #[test]
     fn stream_tag_parser_strips_newline_after_anim() {
         let mut parser = StreamTagParser::new();
-        let (text, cmds) =
-            parser.feed("<anim>{\"emotion\":\"happy\"}</anim>\nHello!");
-        assert_eq!(text, "Hello!");
-        assert_eq!(cmds.len(), 1);
+        let f = parser.feed("<anim>{\"emotion\":\"happy\"}</anim>\nHello!");
+        assert_eq!(f.text, "Hello!");
+        assert_eq!(f.anim_commands.len(), 1);
     }
 
     #[test]
     fn stream_tag_parser_strips_newline_across_chunks() {
         let mut parser = StreamTagParser::new();
-        let (t1, c1) = parser.feed("<anim>{\"emotion\":\"happy\"}</anim>");
-        assert_eq!(t1, "");
-        assert_eq!(c1.len(), 1);
+        let f1 = parser.feed("<anim>{\"emotion\":\"happy\"}</anim>");
+        assert_eq!(f1.text, "");
+        assert_eq!(f1.anim_commands.len(), 1);
 
-        let (t2, _) = parser.feed("\nHello!");
-        assert_eq!(t2, "Hello!");
+        let f2 = parser.feed("\nHello!");
+        assert_eq!(f2.text, "Hello!");
+    }
+
+    // ── <pose> tag tests (Chunk 14.16b2) ──────────────────────────────────────
+
+    #[test]
+    fn stream_tag_parser_pose_basic() {
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed(
+            r#"Hi! <pose>{"head":[0.1,0,0],"spine":[0,0,0.05]}</pose> done."#,
+        );
+        assert_eq!(f.text, "Hi!  done.");
+        assert_eq!(f.pose_frames.len(), 1);
+        let frame = &f.pose_frames[0];
+        assert_eq!(frame.bones["head"], [0.1, 0.0, 0.0]);
+        assert_eq!(frame.bones["spine"], [0.0, 0.0, 0.05]);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_split_across_chunks() {
+        let mut parser = StreamTagParser::new();
+        let f1 = parser.feed(r#"<pose>{"head":[0.2,"#);
+        assert_eq!(f1.text, "");
+        assert!(f1.pose_frames.is_empty());
+        let f2 = parser.feed(r#"0,0]}</pose>OK"#);
+        assert_eq!(f2.text, "OK");
+        assert_eq!(f2.pose_frames.len(), 1);
+        assert_eq!(f2.pose_frames[0].bones["head"], [0.2, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_clamps_out_of_range() {
+        // 5.0 rad must be clamped down to ±0.5 by parse_pose_payload.
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed(r#"<pose>{"head":[5.0,0,0]}</pose>"#);
+        assert_eq!(f.pose_frames.len(), 1);
+        assert_eq!(f.pose_frames[0].bones["head"][0], 0.5);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_drops_invalid_payload() {
+        // Garbage JSON inside <pose> must NOT crash the stream — the
+        // block is silently dropped and surrounding text passes through.
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed("Before <pose>not json</pose>After");
+        assert_eq!(f.text, "Before After");
+        assert!(f.pose_frames.is_empty());
+    }
+
+    #[test]
+    fn stream_tag_parser_anim_and_pose_in_same_chunk() {
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed(
+            r#"<anim>{"emotion":"happy"}</anim><pose>{"head":[0.1,0,0]}</pose>Hi!"#,
+        );
+        assert_eq!(f.text, "Hi!");
+        assert_eq!(f.anim_commands.len(), 1);
+        assert_eq!(f.pose_frames.len(), 1);
+    }
+
+    #[test]
+    fn stream_tag_parser_pose_partial_open_held_back() {
+        let mut parser = StreamTagParser::new();
+        let f1 = parser.feed("Hello <pos");
+        assert_eq!(f1.text, "Hello ");
+        let f2 = parser.feed("e>{\"head\":[0,0,0]}</pose>");
+        assert!(f2.text.is_empty());
+        assert_eq!(f2.pose_frames.len(), 1);
     }
 
     // ── strip_anim_blocks tests ───────────────────────────────────────────────

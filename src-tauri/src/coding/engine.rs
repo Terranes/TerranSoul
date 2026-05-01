@@ -239,8 +239,15 @@ async fn plan_one_chunk<R: Runtime>(
 
     let openai = client::client_from(config);
     let messages = planner_prompt(repo, chunk, workflow_cfg);
-    match openai.chat(messages).await {
-        Ok(plan) => {
+    match openai.chat_with_usage(messages).await {
+        Ok((plan, usage)) => {
+            let token_usage = match usage {
+                Some(u) => crate::coding::metrics::TokenUsage {
+                    prompt_tokens: u.prompt_tokens,
+                    completion_tokens: u.completion_tokens,
+                },
+                None => crate::coding::metrics::TokenUsage::default(),
+            };
             metrics.record_outcome(
                 started_at,
                 &chunk.id,
@@ -250,7 +257,7 @@ async fn plan_one_chunk<R: Runtime>(
                 true,
                 plan.len(),
                 None,
-                crate::coding::metrics::TokenUsage::default(),
+                token_usage,
             );
             emit(
                 app,

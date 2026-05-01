@@ -26,6 +26,14 @@ export interface AppSettings {
   auto_tag?: boolean;
   /** When true, ingest prepends document-level context to each chunk before embedding (Anthropic 2024). */
   contextual_retrieval?: boolean;
+  /**
+   * Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
+   * (Chunk 27.3). When true, the camera mirror also writes the raw 52
+   * ARKit shapes by name; rigs without those channels are silent
+   * no-ops via `applyExpandedBlendshapes`. See
+   * `docs/persona-design.md` § 6.3.
+   */
+  expanded_blendshapes?: boolean;
   /** Set to true after the first-launch wizard completes (recommended or manual). */
   first_launch_complete?: boolean;
   /** When true, hide the 3D character and show a clean chatbox-only layout. */

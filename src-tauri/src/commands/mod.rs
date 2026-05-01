@@ -4,7 +4,6 @@ pub mod auto_setup;
 pub mod brain;
 pub mod character;
 pub mod chat;
-pub mod coding;
 pub mod consolidation;
 pub mod ingest;
 pub mod docker;

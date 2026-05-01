@@ -1022,6 +1022,177 @@ impl MemoryStore {
         Ok(top)
     }
 
+    /// Query-intent–aware variant of [`hybrid_search_rrf`] (Chunk 16.6c).
+    ///
+    /// Runs the same RRF fusion as `hybrid_search_rrf`, then applies
+    /// per-doc multiplicative score boosts derived from the user's
+    /// **query intent** (procedural / episodic / factual / semantic /
+    /// unknown). The boost for each doc is looked up from
+    /// [`crate::memory::query_intent::IntentClassification::kind_boosts`]
+    /// using the doc's classified [`CognitiveKind`].
+    ///
+    /// When the classifier returns `Unknown` (no signal) all boosts are
+    /// 1.0, so this method becomes equivalent to `hybrid_search_rrf` —
+    /// callers can use it unconditionally.
+    ///
+    /// Per `docs/brain-advanced-design.md` §3.5.6.
+    pub fn hybrid_search_rrf_with_intent(
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
+    ) -> SqlResult<Vec<MemoryEntry>> {
+        use crate::memory::cognitive_kind::classify as classify_kind;
+        use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
+        use crate::memory::query_intent::classify_query;
+        use std::collections::HashMap;
+
+        if limit == 0 {
+            return Ok(vec![]);
+        }
+
+        // Classify intent up-front. If the classifier returns Unknown
+        // with neutral boosts we can skip the rerank cleanly.
+        let intent = classify_query(query);
+        let needs_rerank = !matches!(
+            intent.intent,
+            crate::memory::query_intent::QueryIntent::Unknown
+        );
+
+        let now = now_ms();
+        let hour_ms: f64 = 3_600_000.0;
+
+        let all = if query_embedding.is_some() {
+            self.get_with_embeddings()?
+        } else {
+            self.get_all()?
+        };
+        if all.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let by_id: HashMap<i64, MemoryEntry> =
+            all.iter().map(|e| (e.id, e.clone())).collect();
+
+        // ── (1) Vector ranking ────────────────────────────────────────
+        let mut vector_rank: Vec<i64> = Vec::new();
+        if let Some(qe) = query_embedding {
+            let mut scored: Vec<(f32, i64)> = all
+                .iter()
+                .filter_map(|e| {
+                    let emb = e.embedding.as_ref()?;
+                    Some((cosine_similarity(qe, emb), e.id))
+                })
+                .collect();
+            scored.sort_by(|a, b| {
+                b.0.partial_cmp(&a.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+            vector_rank = scored.into_iter().map(|(_, id)| id).collect();
+        }
+
+        // ── (2) Keyword ranking ───────────────────────────────────────
+        let words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(String::from)
+            .collect();
+
+        let mut keyword_rank: Vec<i64> = Vec::new();
+        if !words.is_empty() {
+            let mut scored: Vec<(usize, i64)> = all
+                .iter()
+                .filter_map(|e| {
+                    let lower_content = e.content.to_lowercase();
+                    let lower_tags = e.tags.to_lowercase();
+                    let hits = words
+                        .iter()
+                        .filter(|w| {
+                            lower_content.contains(w.as_str())
+                                || lower_tags.contains(w.as_str())
+                        })
+                        .count();
+                    if hits > 0 { Some((hits, e.id)) } else { None }
+                })
+                .collect();
+            scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+            keyword_rank = scored.into_iter().map(|(_, id)| id).collect();
+        }
+
+        // ── (3) Freshness composite ───────────────────────────────────
+        let mut freshness_scored: Vec<(f64, i64)> = all
+            .iter()
+            .map(|e| {
+                let age_hours = (now - e.created_at) as f64 / hour_ms;
+                let recency = (-age_hours / 24.0).exp();
+                let importance = e.importance as f64 / 5.0;
+                let tier_boost = match e.tier {
+                    MemoryTier::Working => 1.0,
+                    MemoryTier::Long => 0.5,
+                    MemoryTier::Short => 0.3,
+                };
+                let score = recency + importance + e.decay_score + tier_boost;
+                (score, e.id)
+            })
+            .collect();
+        freshness_scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        });
+        let freshness_rank: Vec<i64> =
+            freshness_scored.into_iter().map(|(_, id)| id).collect();
+
+        // ── Fuse with RRF ─────────────────────────────────────────────
+        let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
+        if !vector_rank.is_empty() {
+            rankings.push(&vector_rank);
+        }
+        if !keyword_rank.is_empty() {
+            rankings.push(&keyword_rank);
+        }
+        rankings.push(&freshness_rank);
+
+        let mut fused = reciprocal_rank_fuse(&rankings, DEFAULT_RRF_K);
+
+        // ── (4) Intent-aware kind boosting ────────────────────────────
+        if needs_rerank {
+            // Multiply each fused score by the per-kind boost for the
+            // doc's classified cognitive kind, then re-sort.
+            for (id, score) in fused.iter_mut() {
+                if let Some(entry) = by_id.get(id) {
+                    let kind =
+                        classify_kind(&entry.memory_type, &entry.tags, &entry.content);
+                    let boost = intent.kind_boosts.for_kind(kind) as f64;
+                    *score *= boost;
+                }
+            }
+            // Stable re-sort by boosted score (descending), id tie-break.
+            fused.sort_by(|a, b| {
+                b.1.partial_cmp(&a.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
+            });
+        }
+
+        let top: Vec<MemoryEntry> = fused
+            .into_iter()
+            .take(limit)
+            .filter_map(|(id, _)| by_id.get(&id).cloned())
+            .collect();
+
+        for e in &top {
+            let _ = self.conn.execute(
+                "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                params![now, e.id],
+            );
+        }
+
+        Ok(top)
+    }
+
     // ── Tier management ────────────────────────────────────────────────────
 
     /// Promote a memory to a higher tier.
@@ -2005,6 +2176,103 @@ mod tests {
         let ids = |v: &[MemoryEntry]| v.iter().map(|e| e.id).collect::<Vec<_>>();
         assert_eq!(ids(&r1), ids(&r2));
         assert_eq!(ids(&r2), ids(&r3));
+    }
+
+    // ── Chunk 16.6c: query-intent–aware RRF ────────────────────────────
+
+    #[test]
+    fn hybrid_search_rrf_with_intent_unknown_matches_plain_rrf() {
+        // For a query with no detectable intent, the intent-aware
+        // variant must produce identical ids to plain RRF.
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("alpha")).unwrap();
+        store.add(new_memory("beta")).unwrap();
+        store.add(new_memory("gamma")).unwrap();
+
+        let plain = store.hybrid_search_rrf("alpha", None, 3).unwrap();
+        let intent = store.hybrid_search_rrf_with_intent("alpha", None, 3).unwrap();
+        let ids = |v: &[MemoryEntry]| v.iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(ids(&plain), ids(&intent));
+    }
+
+    #[test]
+    fn hybrid_search_rrf_with_intent_zero_limit_returns_empty() {
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("anything")).unwrap();
+        let r = store
+            .hybrid_search_rrf_with_intent("How to install?", None, 0)
+            .unwrap();
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn hybrid_search_rrf_with_intent_empty_store_returns_empty() {
+        let store = MemoryStore::in_memory();
+        let r = store
+            .hybrid_search_rrf_with_intent("How to install?", None, 5)
+            .unwrap();
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn hybrid_search_rrf_with_intent_boosts_procedural_kind() {
+        // Insert a procedural how-to memory and a generic semantic
+        // factoid that share a common keyword. Plain RRF will rank by
+        // hit count + freshness; with a procedural query intent, the
+        // procedural entry must move to the top via the kind boost.
+        let store = MemoryStore::in_memory();
+
+        // Generic factoid (no procedural cues) — semantic kind by default.
+        store
+            .add(NewMemory {
+                content: "Coffee originated in Ethiopia in the 9th century."
+                    .to_string(),
+                tags: "coffee,history".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Procedural how-to entry (procedural verbs trigger
+        // cognitive_kind::classify → Procedural).
+        store
+            .add(NewMemory {
+                content: "How to brew coffee: Step 1 grind beans. Step 2 \
+                          heat water. Step 3 pour over filter. Procedure \
+                          for pour-over coffee."
+                    .to_string(),
+                tags: "coffee,how-to".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results = store
+            .hybrid_search_rrf_with_intent(
+                "How do I brew coffee step by step?",
+                None,
+                2,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 2);
+        // Procedural entry must lead the results once kind-boost is applied.
+        assert!(
+            results[0].content.contains("How to brew"),
+            "procedural intent should boost the how-to entry to top: got {:?}",
+            results[0].content
+        );
+    }
+
+    #[test]
+    fn hybrid_search_rrf_with_intent_deterministic() {
+        let store = MemoryStore::in_memory();
+        store.add(new_memory("how to install ollama")).unwrap();
+        store.add(new_memory("step by step setup guide")).unwrap();
+        store.add(new_memory("ollama is a thing")).unwrap();
+
+        let q = "How to install ollama?";
+        let r1 = store.hybrid_search_rrf_with_intent(q, None, 3).unwrap();
+        let r2 = store.hybrid_search_rrf_with_intent(q, None, 3).unwrap();
+        let ids = |v: &[MemoryEntry]| v.iter().map(|e| e.id).collect::<Vec<_>>();
+        assert_eq!(ids(&r1), ids(&r2));
     }
 
     #[test]

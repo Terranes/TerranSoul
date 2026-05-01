@@ -636,6 +636,21 @@ struct EmbedModelChoice {
 const EMBED_MODEL_TTL: Duration = Duration::from_secs(60);
 const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
 
+/// Ordered fallback chain of dedicated embedding models, tried in this order
+/// when [`PREFERRED_EMBED_MODEL`] is unavailable. Per
+/// `docs/brain-advanced-design.md` §4 resilience notes (Chunk 16.9b).
+///
+/// Each entry must be the **bare model name** as published in the Ollama
+/// library (no `:tag` suffix) — `model_exists` matches by name prefix.
+/// Order is from most-recommended (768d, fast, well-tested) → larger /
+/// alternative (1024d, slower) → tiny last-resort.
+const EMBED_MODEL_FALLBACKS: &[&str] = &[
+    "mxbai-embed-large",      // 1024d, strong general-purpose
+    "snowflake-arctic-embed", // 1024d / 768d depending on tag
+    "bge-m3",                 // 1024d, multilingual
+    "all-minilm",             // 384d, tiny last-resort
+];
+
 fn embed_model_cache() -> &'static Mutex<Option<EmbedModelChoice>> {
     static CACHE: OnceLock<Mutex<Option<EmbedModelChoice>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
@@ -647,10 +662,21 @@ fn unsupported_models() -> &'static Mutex<HashSet<String>> {
 }
 
 /// Resolve which model to pass to `/api/embed`, caching the choice for
-/// 60 seconds. Prefers `nomic-embed-text` when it's installed locally;
-/// otherwise falls back to the chat-model hint (which may itself be
-/// unsupported — in which case `embed_text` will mark it as such on the
-/// next call and refuse to retry).
+/// 60 seconds.
+///
+/// Resolution chain (Chunk 16.9b — embedding-model fallback):
+///
+/// 1. **`nomic-embed-text`** — preferred (768d, fast, well-tested).
+/// 2. **Fallback chain** in [`EMBED_MODEL_FALLBACKS`] order — `mxbai`,
+///    `snowflake-arctic`, `bge-m3`, `all-minilm`. The first one present
+///    in `/api/tags` wins. Models already in the unsupported set are
+///    skipped.
+/// 3. **`model_hint`** — the active chat model (probably non-embedding;
+///    `embed_text` will mark it unsupported on the first call).
+///
+/// When every dedicated embedder is unavailable AND the chat model can't
+/// embed either, the caller (memory store) falls back to keyword-only
+/// search — see `docs/brain-advanced-design.md` §4.
 async fn resolve_embed_model(model_hint: &str) -> String {
     let cache = embed_model_cache();
     {
@@ -662,12 +688,8 @@ async fn resolve_embed_model(model_hint: &str) -> String {
         }
     }
 
-    // Cache miss / expired → probe once.
-    let chosen = if OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await {
-        PREFERRED_EMBED_MODEL.to_string()
-    } else {
-        model_hint.to_string()
-    };
+    // Cache miss / expired → walk the fallback chain.
+    let chosen = pick_embed_model(model_hint).await;
 
     let mut guard = cache.lock().await;
     *guard = Some(EmbedModelChoice {
@@ -675,6 +697,29 @@ async fn resolve_embed_model(model_hint: &str) -> String {
         chosen_at: Instant::now(),
     });
     chosen
+}
+
+/// Walk the embed-model resolution chain. Pure helper so tests can drive
+/// it without mocking the cache layer.
+async fn pick_embed_model(model_hint: &str) -> String {
+    // Preferred first.
+    if !is_known_unsupported(PREFERRED_EMBED_MODEL).await
+        && OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await
+    {
+        return PREFERRED_EMBED_MODEL.to_string();
+    }
+    // Then dedicated fallbacks.
+    for candidate in EMBED_MODEL_FALLBACKS {
+        if is_known_unsupported(candidate).await {
+            continue;
+        }
+        if OllamaAgent::model_exists(candidate).await {
+            return (*candidate).to_string();
+        }
+    }
+    // Last resort — the active chat model. Likely won't support embed,
+    // but we let `embed_text` discover that and mark it unsupported.
+    model_hint.to_string()
 }
 
 async fn is_known_unsupported(model: &str) -> bool {
@@ -1147,6 +1192,71 @@ mod tests {
         // Must round-trip through serde for the Tauri command surface.
         let json = serde_json::to_string(&snap).expect("snapshot serializes");
         assert!(json.contains("snap-test:3b"));
+        clear_embed_caches().await;
+    }
+
+    // ---- Chunk 16.9b — fallback chain tests ------------------------------
+
+    #[tokio::test]
+    async fn fallback_chain_falls_through_to_hint_when_nothing_installed() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // No Ollama daemon (or none of the embed models present) —
+        // resolution should yield the model_hint as the last resort.
+        let chosen = pick_embed_model("my-chat-model:7b").await;
+        assert_eq!(chosen, "my-chat-model:7b");
+    }
+
+    #[tokio::test]
+    async fn fallback_chain_skips_known_unsupported_preferred() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // Mark the preferred model as unsupported. Resolution must NOT
+        // pick it even if it's somehow reachable.
+        mark_unsupported(PREFERRED_EMBED_MODEL, 501).await;
+        let chosen = pick_embed_model("hint-model:7b").await;
+        // Without a real Ollama, all fallbacks miss → returns hint.
+        assert_eq!(chosen, "hint-model:7b");
+        // The preferred model must never have been picked.
+        assert_ne!(chosen, PREFERRED_EMBED_MODEL);
+        clear_embed_caches().await;
+    }
+
+    #[tokio::test]
+    async fn fallback_chain_constants_are_well_formed() {
+        // Enforce the contract: every fallback is a bare model name (no
+        // `:tag`, no whitespace) and the preferred model isn't duplicated.
+        for name in EMBED_MODEL_FALLBACKS {
+            assert!(!name.is_empty(), "fallback name must not be empty");
+            assert!(!name.contains(':'), "fallback {name} must not include :tag");
+            assert!(
+                !name.chars().any(char::is_whitespace),
+                "fallback {name} must not contain whitespace"
+            );
+            assert_ne!(
+                *name, PREFERRED_EMBED_MODEL,
+                "fallback list must not contain the preferred model"
+            );
+        }
+        // De-duplication.
+        let mut seen: HashSet<&&str> = HashSet::new();
+        for name in EMBED_MODEL_FALLBACKS {
+            assert!(seen.insert(name), "duplicate fallback model: {name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn fallback_chain_skips_unsupported_fallbacks() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // Mark every fallback as unsupported. Resolution must walk past
+        // them all and land on the chat-model hint.
+        mark_unsupported(PREFERRED_EMBED_MODEL, 501).await;
+        for name in EMBED_MODEL_FALLBACKS {
+            mark_unsupported(name, 501).await;
+        }
+        let chosen = pick_embed_model("hint-only:7b").await;
+        assert_eq!(chosen, "hint-only:7b");
         clear_embed_caches().await;
     }
 }

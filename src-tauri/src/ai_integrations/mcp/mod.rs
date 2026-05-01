@@ -17,6 +17,7 @@
 pub mod auth;
 pub mod auto_setup;
 pub mod router;
+pub mod self_host;
 pub mod stdio;
 pub mod tools;
 

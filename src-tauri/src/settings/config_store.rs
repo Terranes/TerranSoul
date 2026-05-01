@@ -83,12 +83,16 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -133,12 +137,16 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -168,12 +176,16 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         save(dir.path(), &s).unwrap();
 

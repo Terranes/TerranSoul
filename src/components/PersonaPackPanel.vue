@@ -122,6 +122,8 @@
       traits {{ importReport.traits_applied ? 'applied' : 'unchanged' }},
       {{ importReport.expressions_accepted }} expression{{ importReport.expressions_accepted === 1 ? '' : 's' }},
       {{ importReport.motions_accepted }} motion{{ importReport.motions_accepted === 1 ? '' : 's' }}<span
+        v-if="motionProvenanceLabel"
+      > ({{ motionProvenanceLabel }})</span><span
         v-if="importReport.skipped.length"
       >, {{ importReport.skipped.length }} skipped</span>.
       <ul
@@ -140,13 +142,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { usePersonaStore } from '../stores/persona';
 
 interface ImportReport {
   traits_applied: boolean;
   expressions_accepted: number;
   motions_accepted: number;
+  motions_generated: number;
+  motions_camera: number;
   skipped: string[];
 }
 
@@ -163,6 +167,21 @@ const isImporting = ref(false);
 const importReport = ref<ImportReport | null>(null);
 const importReportTitle = ref<string>('Import preview');
 const importError = ref<string | null>(null);
+
+/**
+ * Human-readable provenance summary for the import-report line, e.g.
+ * `"3 generated, 2 camera"`. Empty string when neither marker is
+ * present (older packs without the field, or expression-only packs)
+ * so the rendered sentence stays unchanged on legacy imports.
+ */
+const motionProvenanceLabel = computed(() => {
+  const r = importReport.value;
+  if (!r) return '';
+  const parts: string[] = [];
+  if (r.motions_generated > 0) parts.push(`${r.motions_generated} generated`);
+  if (r.motions_camera > 0) parts.push(`${r.motions_camera} camera`);
+  return parts.join(', ');
+});
 
 async function exportPack(): Promise<void> {
   if (isExporting.value) return;

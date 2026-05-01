@@ -102,6 +102,19 @@ impl MaintenanceRuntime {
         jobs_due(&state, &self.config, now_ms)
     }
 
+    /// Same as [`jobs_due_now`] but evaluates against a caller-supplied
+    /// override config — used by the tick loop so live changes to
+    /// `AppSettings.maintenance_interval_hours` take effect without
+    /// restart.
+    pub async fn jobs_due_with(
+        &self,
+        config: &MaintenanceConfig,
+        now_ms: u64,
+    ) -> Vec<MaintenanceJob> {
+        let state = self.state.lock().await;
+        jobs_due(&state, config, now_ms)
+    }
+
     /// Mark a job as "just finished" and persist. Called by the tick
     /// loop after each successful or failed dispatch — both outcomes
     /// reset the cool-down so a permanently-broken job doesn't burn
@@ -173,8 +186,45 @@ pub fn spawn(
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
+
+            // Chunk 26.1 final — honour live AppSettings on every
+            // tick: if the user disabled background maintenance, or
+            // we're inside the idle-minimum guard window, skip
+            // dispatch entirely (we still ran the tick so live
+            // re-enables take effect on the next interval).
+            let (enabled, cooldown_ms, idle_min_minutes) = {
+                let guard = state_arc.app_settings.lock().ok();
+                match guard {
+                    Some(s) => (
+                        s.background_maintenance_enabled,
+                        s.maintenance_cooldown_ms(),
+                        s.maintenance_idle_minimum_minutes,
+                    ),
+                    None => (true, 23 * 60 * 60 * 1000, 0),
+                }
+            };
+            if !enabled {
+                continue;
+            }
+            if idle_min_minutes > 0 {
+                let idle_threshold_ms = (idle_min_minutes as i64).saturating_mul(60_000);
+                if !state_arc.activity_tracker.is_idle(idle_threshold_ms) {
+                    // User is actively chatting — defer to next tick.
+                    continue;
+                }
+            }
+
+            // Re-derive due-list using the live cooldown so users can
+            // tighten or relax the schedule without restart.
             let now = now_ms();
-            let due = runtime_clone.jobs_due_now(now).await;
+            let live_config = MaintenanceConfig {
+                decay_cooldown_ms: cooldown_ms,
+                garbage_collect_cooldown_ms: cooldown_ms,
+                promote_tier_cooldown_ms: cooldown_ms,
+                edge_extract_cooldown_ms: cooldown_ms,
+            };
+            let due = runtime_clone.jobs_due_with(&live_config, now).await;
+
             for job in due {
                 let result = dispatch_job(job, &state_arc).await;
                 if let Err(e) = result {

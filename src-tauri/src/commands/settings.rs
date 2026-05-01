@@ -82,12 +82,16 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -121,12 +125,16 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

@@ -168,6 +168,18 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub auto_extract_edges: bool,
 
+    /// Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
+    /// (Chunk 27.3). Default `false` — the camera mirror routes through
+    /// the 6-preset baseline (`mapBlendshapesToVRM`) so every VRM works.
+    /// When `true`, the live mirror **also** writes each of the 52
+    /// ARKit shapes directly to the VRM's `expressionManager` by name
+    /// (`mouthSmileLeft`, `browInnerUp`, …); rigs that don't ship those
+    /// channels silently no-op via `applyExpandedBlendshapes`. See
+    /// `docs/persona-design.md` §6.3 "Mask of a Thousand Faces —
+    /// Expanded".
+    #[serde(default)]
+    pub expanded_blendshapes: bool,
+
     /// Set to `true` after the first-launch wizard completes (recommended
     /// or manual path).  The frontend uses this flag to decide whether to
     /// show the welcome wizard on startup.
@@ -206,10 +218,44 @@ pub struct AppSettings {
     /// update check. Used to throttle the check to once per calendar day.
     #[serde(default)]
     pub last_update_check_date: String,
+
+    /// When `true` (default), the brain background-maintenance scheduler
+    /// (`brain::maintenance_runtime`) dispatches its four jobs (decay,
+    /// GC, promotion, edge-extract) on its tick loop. Set to `false` to
+    /// completely suppress automatic maintenance. Maps to Chunk 26.1.
+    #[serde(default = "default_true")]
+    pub background_maintenance_enabled: bool,
+
+    /// Cool-down (in hours) between successive runs of each
+    /// brain-maintenance job. Default `24` (one run per day per job),
+    /// clamped to `1..=168` (one hour to one week). Read on every
+    /// scheduler tick, so live-edits take effect on the next tick
+    /// without restart. Maps to Chunk 26.1.
+    #[serde(default = "default_maintenance_interval_hours")]
+    pub maintenance_interval_hours: u32,
+
+    /// Idle-guard threshold (minutes). When > 0, the scheduler skips a
+    /// tick if the user has interacted with the app within the last N
+    /// minutes — avoids fighting an active chat session. `0` (default)
+    /// disables the guard. Maps to Chunk 26.1.
+    #[serde(default)]
+    pub maintenance_idle_minimum_minutes: u32,
 }
 
 fn default_true() -> bool {
     true
+}
+
+/// Default `maintenance_interval_hours` — once per day per job.
+/// Matches the 23h-cooldown convention in [`crate::brain::maintenance_scheduler::MaintenanceConfig`].
+pub const DEFAULT_MAINTENANCE_INTERVAL_HOURS: u32 = 24;
+
+/// Min/max guardrails for `AppSettings::maintenance_interval_hours`.
+pub const MIN_MAINTENANCE_INTERVAL_HOURS: u32 = 1;
+pub const MAX_MAINTENANCE_INTERVAL_HOURS: u32 = 168;
+
+fn default_maintenance_interval_hours() -> u32 {
+    DEFAULT_MAINTENANCE_INTERVAL_HOURS
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -259,13 +305,33 @@ impl Default for AppSettings {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         }
+    }
+}
+
+impl AppSettings {
+    /// Returns the per-job cool-down (in milliseconds) the
+    /// brain-maintenance scheduler should use, derived from
+    /// `maintenance_interval_hours`. Clamped to
+    /// `MIN_MAINTENANCE_INTERVAL_HOURS..=MAX_MAINTENANCE_INTERVAL_HOURS`
+    /// so a corrupt settings file can't disable maintenance entirely
+    /// (set `background_maintenance_enabled = false` for that).
+    pub fn maintenance_cooldown_ms(&self) -> u64 {
+        let hours = self
+            .maintenance_interval_hours
+            .clamp(MIN_MAINTENANCE_INTERVAL_HOURS, MAX_MAINTENANCE_INTERVAL_HOURS)
+            as u64;
+        hours.saturating_mul(60 * 60 * 1000)
     }
 }
 
@@ -376,12 +442,16 @@ mod tests {
             auto_tag: false,
             contextual_retrieval: false,
             auto_extract_edges: true,
+            expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
             auto_configured: Vec::new(),
             prefer_local_brain: true,
             dismissed_model_updates: Vec::new(),
             last_update_check_date: String::new(),
+            background_maintenance_enabled: true,
+            maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+            maintenance_idle_minimum_minutes: 0,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -432,6 +502,50 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
         assert!(!parsed.auto_extract_edges);
+    }
+
+    /// Chunk 26.1 — `background_maintenance_enabled` defaults to `true`
+    /// and `maintenance_interval_hours` defaults to 24h so a fresh install
+    /// runs the brain-maintenance jobs automatically. Pre-existing config
+    /// files (without the new fields) must deserialise to the same defaults.
+    #[test]
+    fn default_background_maintenance_is_on() {
+        let s = AppSettings::default();
+        assert!(s.background_maintenance_enabled);
+        assert_eq!(s.maintenance_interval_hours, DEFAULT_MAINTENANCE_INTERVAL_HOURS);
+        assert_eq!(s.maintenance_idle_minimum_minutes, 0);
+    }
+
+    #[test]
+    fn serde_fills_maintenance_defaults_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(parsed.background_maintenance_enabled);
+        assert_eq!(parsed.maintenance_interval_hours, DEFAULT_MAINTENANCE_INTERVAL_HOURS);
+        assert_eq!(parsed.maintenance_idle_minimum_minutes, 0);
+    }
+
+    /// `maintenance_cooldown_ms` clamps to the documented 1h..168h
+    /// range so a corrupt config file (`= 0` or `= u32::MAX`) cannot
+    /// either disable maintenance entirely or push it out forever.
+    #[test]
+    fn maintenance_cooldown_clamps_below_minimum() {
+        let s = AppSettings { maintenance_interval_hours: 0, ..AppSettings::default() };
+        // Clamps up to MIN (1h).
+        assert_eq!(s.maintenance_cooldown_ms(), 60 * 60 * 1000);
+    }
+
+    #[test]
+    fn maintenance_cooldown_clamps_above_maximum() {
+        let s = AppSettings { maintenance_interval_hours: 1_000, ..AppSettings::default() };
+        // Clamps down to MAX (168h = 1 week).
+        assert_eq!(s.maintenance_cooldown_ms(), 168 * 60 * 60 * 1000);
+    }
+
+    #[test]
+    fn maintenance_cooldown_default_is_24h() {
+        let s = AppSettings::default();
+        assert_eq!(s.maintenance_cooldown_ms(), 24 * 60 * 60 * 1000);
     }
 
     #[test]

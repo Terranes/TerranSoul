@@ -29,6 +29,13 @@ Motion triggers a body animation — pick the one that best fits the context. Yo
 Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
 Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
 
+Body pose (advanced): For subtle posture cues that a VRMA clip cannot express, you may also emit a `<pose>` block:
+<pose>{"head":[0.1,0,0],"spine":[0,0,0.05]}</pose>
+Bones: head, neck, spine, chest, hips, leftUpperArm, rightUpperArm, leftLowerArm, rightLowerArm, leftShoulder, rightShoulder.
+Values are Euler XYZ angles in radians; use small numbers (±0.3 max). The renderer hard-clamps anything beyond ±0.5 rad.
+Optional fields: `duration_s` (0.05–10s, default 2), `easing` ("linear" | "ease-in-out" | "spring", default "spring"), `expression` (face weights 0–1).
+Use `<pose>` only when no `<anim>` motion fits — they don't combine.
+
 Keep responses concise and warm."#;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

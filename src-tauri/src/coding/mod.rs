@@ -20,10 +20,14 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+pub mod apply_file;
 pub mod autostart;
 pub mod client;
+pub mod context_budget;
+pub mod context_engineering;
 pub mod conversation_learning;
 pub mod cost;
+pub mod dag_runner;
 pub mod engine;
 pub mod git_ops;
 pub mod github;
@@ -33,6 +37,8 @@ pub mod metrics;
 pub mod milestones;
 pub mod prompting;
 pub mod repo;
+pub mod reviewer;
+pub mod task_queue;
 pub mod test_runner;
 pub mod workflow;
 
