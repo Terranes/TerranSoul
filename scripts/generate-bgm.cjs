@@ -78,16 +78,6 @@ function pluck(phase, brightness) {
   return s * (1 - brightness) + t2 * brightness;
 }
 
-/** Detuned chorus ensemble. */
-function chorus(t, freq, waveform = sine, voices = 3, spreadCents = 6) {
-  let sum = 0;
-  for (let v = 0; v < voices; v++) {
-    const detune = (v - (voices - 1) / 2) * spreadCents;
-    sum += waveform(TAU * freq * Math.pow(2, detune / 1200) * t);
-  }
-  return sum / voices;
-}
-
 /** Stereo chorus with per-voice panning. */
 function stereoChorus(t, freq, waveform, voices, spreadCents) {
   let l = 0, r = 0;
