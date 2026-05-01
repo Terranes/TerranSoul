@@ -76,7 +76,7 @@ pub async fn serve_with_shutdown(
 ) -> Result<(), tonic::transport::Error> {
     let svc = BrainGrpcService::new(gateway, caps).into_server();
     let builder = Server::builder();
-    let builder = if let Some(tls) = tls {
+    let mut builder = if let Some(tls) = tls {
         builder.tls_config(tls)?
     } else {
         builder
