@@ -41,7 +41,6 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/test-utils": "^2.4.6",
     "better-sqlite3": "^12.9.0",
-    "cypress": "^15.14.0",
     "eslint": "^9.39.4",
     "eslint-plugin-vue": "^9.33.0",
     "globals": "^15.15.0",
