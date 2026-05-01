@@ -514,26 +514,34 @@ User on the same Wi-Fi as the desktop:
 
 ---
 
-### Phase 26 — Brain Background Maintenance & Auto-Learn Completion
+### Phase 27 — Agentic RAG, Context Engineering & Persona Roadmap Gaps
 
-> **Why this phase exists.** `docs/brain-advanced-design.md` §21.7 lists
-> four roadmap items required to close the auto-learn loop. They are not
-> tracked anywhere in milestones today.
-
-| # | Chunk | Status | Notes |
-|---|---|---|---|
-
-> **Why this phase exists.** `docs/brain-advanced-design.md` §19.2
-> tracker rows 14 and 15 are still 🟡 partial — they need to land.
+> **Why this phase exists.** `docs/brain-advanced-design.md` §19.2 rows
+> 14 and 15 (Agentic RAG + Context Engineering) are tracked here; chunks
+> 27.1 and 27.2 have shipped and are archived in `completion-log.md`.
+> The remaining rows are roadmap gaps mentioned in `docs/persona-design.md`
+> §6.3, §7.2, and §14.2 that were not yet represented in this milestones file.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 27.3 | **Blendshape passthrough — expanded ARKit rig support.** Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs (beyond the 6-preset baseline). Per `docs/persona-design.md` §6.3 "Mask of a Thousand Faces — Expanded". | not-started | Frontend-heavy; gated by `AppSettings.expanded_blendshapes`. |
+| 27.4 | **MoMask-style full-body reconstruction research spike.** Evaluate whether a permissively licensed, locally runnable sparse-keypoint → full-body-pose model can improve the existing BlazePose retarget path without requiring cloud inference. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 row 5. Research + thin integration plan first; do not vendor model weights. |
+| 27.5 | **Offline recorded-motion polish pass.** Design an explicit-user-trigger background workflow for smoothing / enhancing saved teach-session clips, informed by Hunyuan-Motion, MimicMotion, and MagicAnimate research references. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 rows 4, 6, 7. Must remain optional, GPU-aware, and license-clean. |
+| 27.6 | **Neural audio-to-face upgrade evaluation.** Compare the shipped phoneme-aware viseme path against Audio2Face / EMOTalk / FaceFormer-class approaches and define an optional backend if a local, license-clean model is viable. | not-started | Derived from `docs/persona-design.md` §14.2 rows 9 and 11. Do not add NVIDIA ACE or cloud-only dependencies without an explicit opt-in design. |
+| 27.7 | **Persona example-dialogue field.** Extend the persona schema and prompt assembly with optional character-card-style example dialogue while preserving existing packs and UI defaults. | not-started | Derived from `docs/persona-design.md` §14.2 row 13. Needs backward-compatible pack load/save tests. |
+| 27.8 | **Persona pack schema spec.** Publish a stable `.terransoul-persona` schema document and compatibility/versioning contract for sharable persona packs. | not-started | Derived from `docs/persona-design.md` §14.2 row 15. Builds on shipped chunk 14.7 export/import; mostly docs + schema validation tests. |
 
-> **Why this phase exists.** `docs/coding-workflow-design.md` §5
-> ("Roadmap & gaps") lists six unimplemented items beyond what landed in
-> chunks 25.x.
+---
+
+### Phase 28 — Self-Improve Loop Maturation Follow-ups
+
+> **Why this phase exists.** `docs/coding-workflow-design.md` §5 documents
+> the self-improve roadmap. Chunks 28.1–28.10 plus 25.10 are archived as
+> shipped, but the live engine is still planner-only and some shipped
+> primitives are not wired into the autonomous execution path.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
+| 28.11 | **Apply/review/test execution gate for self-improve.** Wire `coding::apply_file`, `coding::reviewer`, and `coding::test_runner` into the autonomous engine after planner approval so generated changes are applied only when review and tests pass. | not-started | Derived from `docs/coding-workflow-design.md` §5 items 1, 2, and 5 plus `coding::engine` planner-only comments. Must keep safe stop/cancel semantics. |
+| 28.12 | **Multi-agent coding DAG orchestration wiring.** Connect `coding::dag_runner` to self-improve coding tasks so planner/coder/reviewer/tester nodes can run in dependency order with bounded parallelism. | not-started | Derived from `docs/coding-workflow-design.md` capability matrix + §5 item 4. The pure DAG runner exists; this chunk wires it to real coding tasks. |
 
