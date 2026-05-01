@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 24.4 — Phone-control RPC surface](#chunk-244--phone-control-rpc-surface) | 2026-05-02 |
 | [Chunk 24.3 — LAN gRPC activation + paired-device mTLS enforcement](#chunk-243--lan-grpc-activation--paired-device-mtls-enforcement) | 2026-05-02 |
 | [Chunk 24.2b — mTLS pairing flow + persistent device registry](#chunk-242b--mtls-pairing-flow--persistent-device-registry) | 2026-05-02 |
 | [Chunk 24.5b — VS Code / Copilot session probe FS wrapper](#chunk-245b--vs-code--copilot-session-probe-fs-wrapper) | 2026-05-02 |
@@ -240,6 +241,35 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 24.4 — Phone-control RPC surface
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+
+**What was done:**
+- Created `proto/terransoul/phone_control.v1.proto` — 8 RPCs: `GetSystemStatus`, `ListVsCodeWorkspaces`, `GetCopilotSessionStatus`, `ListWorkflowRuns`, `GetWorkflowProgress`, `ContinueWorkflow`, `SendChatMessage`, `ListPairedDevices`.
+- Updated `build.rs` to compile both `brain.v1.proto` and `phone_control.v1.proto`.
+- Created `src/ai_integrations/grpc/phone_control.rs` (~280 LOC) — full tonic service implementation:
+  - `GetSystemStatus` — sysinfo for CPU/RAM, reads brain mode from AppState.
+  - `ListVsCodeWorkspaces` — discovers recent VS Code workspaces from `storage.json`.
+  - `GetCopilotSessionStatus` — delegates to `vscode_probe::probe_copilot_session()`.
+  - `ListWorkflowRuns` / `GetWorkflowProgress` — delegates to workflow engine.
+  - `ContinueWorkflow` — sends heartbeat to workflow engine.
+  - `SendChatMessage` — non-streaming one-shot completion via `OpenAiClient`.
+  - `ListPairedDevices` — reads from paired_devices SQLite table.
+- Modified `grpc/mod.rs` `serve_with_shutdown()` to accept optional `AppState` and register `PhoneControlServer` alongside `BrainServer`.
+- Updated `commands/grpc.rs` to pass `AppState` clone into the gRPC server spawn.
+- All 1904 Rust tests pass, clippy clean, 1480 frontend tests pass.
+
+**Files changed:**
+- `src-tauri/proto/terransoul/phone_control.v1.proto` (new)
+- `src-tauri/build.rs`
+- `src-tauri/src/ai_integrations/grpc/mod.rs`
+- `src-tauri/src/ai_integrations/grpc/phone_control.rs` (new)
+- `src-tauri/src/commands/grpc.rs`
 
 ---
 

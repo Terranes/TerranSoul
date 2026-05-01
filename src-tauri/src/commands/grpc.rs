@@ -102,6 +102,7 @@ pub async fn grpc_server_start(state: State<'_, AppState>) -> Result<GrpcServerS
 
     let gw: Arc<dyn BrainGateway> = Arc::new(AppStateGateway::new(state.inner().clone()));
     let caps = GatewayCaps::default();
+    let app_state_clone = state.inner().clone();
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
@@ -109,7 +110,10 @@ pub async fn grpc_server_start(state: State<'_, AppState>) -> Result<GrpcServerS
         let shutdown_fut = async move {
             let _ = shutdown_rx.wait_for(|v| *v).await;
         };
-        if let Err(e) = grpc::serve_with_shutdown(addr, gw, caps, tls, shutdown_fut).await {
+        if let Err(e) =
+            grpc::serve_with_shutdown(addr, gw, caps, tls, shutdown_fut, Some(app_state_clone))
+                .await
+        {
             eprintln!("[grpc] server error: {e}");
         }
     });
