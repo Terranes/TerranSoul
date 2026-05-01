@@ -31,7 +31,6 @@
  */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
-import assert from 'assert';
 
 const VITE_URL = 'http://localhost:1420';
 const OUT = 'instructions/screenshots';
