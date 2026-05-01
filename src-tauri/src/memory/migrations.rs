@@ -359,6 +359,24 @@ DROP INDEX IF EXISTS idx_memories_category;
 ALTER TABLE memories DROP COLUMN category;
 "#,
     },
+    // ── Phase 24 — Mobile Companion ────────────────────────────────────────────
+    Migration {
+        version: 12,
+        description: "paired_devices table for mTLS device registry (24.2b)",
+        up: r#"
+CREATE TABLE IF NOT EXISTS paired_devices (
+    device_id        TEXT PRIMARY KEY,
+    display_name     TEXT NOT NULL,
+    cert_fingerprint TEXT NOT NULL,
+    capabilities     TEXT NOT NULL DEFAULT '[]',
+    paired_at        INTEGER NOT NULL,
+    last_seen_at     INTEGER
+);
+"#,
+        down: r#"
+DROP TABLE IF EXISTS paired_devices;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -639,13 +657,13 @@ mod tests {
     }
 
     #[test]
-    fn target_version_is_v11() {
+    fn target_version_is_v12() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
         assert_eq!(
-            TARGET_VERSION, 11,
-            "V11 is the current category-column schema"
+            TARGET_VERSION, 12,
+            "V12 is the current paired_devices schema (24.2b)"
         );
     }
 

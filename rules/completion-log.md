@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 24.2b — mTLS pairing flow + persistent device registry](#chunk-242b--mtls-pairing-flow--persistent-device-registry) | 2026-05-02 |
 | [Chunk 24.5b — VS Code / Copilot session probe FS wrapper](#chunk-245b--vs-code--copilot-session-probe-fs-wrapper) | 2026-05-02 |
 | [Chunk 24.1b — LAN bind config + OS probe wrapper](#chunk-241b--lan-bind-config--os-probe-wrapper) | 2026-05-02 |
 | [Chunk 20.1 — Dev/release data-root split (Docker namespacing)](#chunk-201--devrelease-data-root-split-docker-namespacing) | 2026-05-02 |
@@ -238,6 +239,27 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 24.2b — mTLS pairing flow + persistent device registry
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+**Phase:** 24 (Mobile Companion)
+
+**Goal.** Self-signed CA for mTLS device pairing, per-device client cert issuance, persistent device registry in SQLite, Tauri commands for the pairing flow.
+
+**Deliverables:**
+- V12 SQLite migration: `paired_devices` table (`device_id`, `display_name`, `cert_fingerprint`, `capabilities` JSON, `paired_at`, `last_seen_at`).
+- `src-tauri/src/network/pairing.rs` (~310 LOC) — `PairingManager` (CA load/generate, start_pairing, confirm_pairing), `PairedDevice` struct, SQLite CRUD (`insert_paired_device`, `list_paired_devices`, `revoke_device`, `touch_device`, `find_device_by_fingerprint`).
+- CA persisted as PEM files (`pairing_ca_cert.pem`, `pairing_ca_key.pem`) in data dir.
+- 5-minute pairing window enforced server-side, constant-time token comparison.
+- `AppStateInner.pairing_manager: Mutex<Option<PairingManager>>` — lazily initialized on first `start_pairing` call.
+- Tauri commands: `start_pairing`, `confirm_pairing`, `revoke_device`, `list_paired_devices` in `commands/lan.rs`.
+- 10 unit tests in `pairing.rs`.
+
+**Tests:** 1904 Rust tests pass, clippy clean.
 
 ---
 

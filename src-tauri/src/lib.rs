@@ -75,7 +75,7 @@ use commands::{
         remove_trusted_device_cmd,
     },
     ingest::{cancel_ingest_task, get_all_tasks, ingest_document, resume_ingest_task},
-    lan::{get_copilot_session_status, list_lan_addresses},
+    lan::{confirm_pairing, get_copilot_session_status, list_lan_addresses, list_paired_devices, revoke_device, start_pairing},
     link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
     mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
     memory::{
@@ -224,6 +224,9 @@ pub struct AppStateInner {
     /// Running MCP server handle (Chunk 15.1). `None` when the server is
     /// stopped. Start/stop via `mcp_server_start` / `mcp_server_stop`.
     pub mcp_server: TokioMutex<Option<ai_integrations::mcp::McpServerHandle>>,
+    /// Pairing manager for mTLS device registry (Chunk 24.2b). `None` when
+    /// LAN mode is disabled. Initialized on first `lan_enabled = true`.
+    pub pairing_manager: Mutex<Option<network::pairing::PairingManager>>,
     /// Plugin system host — manages plugin lifecycle, contributions, and activation.
     pub plugin_host: plugins::PluginHost,
     /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
@@ -295,6 +298,7 @@ impl AppState {
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
+            pairing_manager: Mutex::new(None),
             plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
         }))
@@ -343,6 +347,7 @@ impl AppState {
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
+            pairing_manager: Mutex::new(None),
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
         }))
@@ -609,6 +614,10 @@ pub fn run() {
             get_all_tasks,
             list_lan_addresses,
             get_copilot_session_status,
+            start_pairing,
+            confirm_pairing,
+            revoke_device,
+            list_paired_devices,
             import_user_model,
             list_user_models,
             delete_user_model,
