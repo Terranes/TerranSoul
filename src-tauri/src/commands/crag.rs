@@ -287,6 +287,8 @@ async fn try_web_fallback(query: &str, state: &AppState) -> Result<CragResult, S
             source_hash: None,
             expires_at: None,
             valid_to: None,
+            obsidian_path: None,
+            last_exported: None,
         })
         .collect();
 
@@ -367,6 +369,8 @@ mod tests {
             source_hash: None,
             expires_at: None,
             valid_to: None,
+        obsidian_path: None,
+        last_exported: None,
         };
         let mems = vec![make_mem("good"), make_mem("bad"), make_mem("meh")];
         let verdicts = vec![

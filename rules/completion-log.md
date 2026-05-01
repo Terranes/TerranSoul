@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 17.7 — Bidirectional Obsidian sync](#chunk-177--bidirectional-obsidian-sync) | 2026-05-02 |
 | [Chunk 24.4 — Phone-control RPC surface](#chunk-244--phone-control-rpc-surface) | 2026-05-02 |
 | [Chunk 24.3 — LAN gRPC activation + paired-device mTLS enforcement](#chunk-243--lan-grpc-activation--paired-device-mtls-enforcement) | 2026-05-02 |
 | [Chunk 24.2b — mTLS pairing flow + persistent device registry](#chunk-242b--mtls-pairing-flow--persistent-device-registry) | 2026-05-02 |
@@ -241,6 +242,25 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 17.7 — Bidirectional Obsidian sync
+
+**Date:** 2026-05-02
+
+**Summary:** Extended the one-way Obsidian export to bidirectional sync using a `notify` file-watcher. Added `obsidian_path` and `last_exported` columns to `MemoryEntry`. Implemented `parse_obsidian_markdown()` for roundtrip frontmatter parsing, `sync_bidirectional()` with LWW conflict resolution, and `ObsidianWatcher` background task with 1-second debounce. Three new Tauri commands: `obsidian_sync` (manual one-shot), `obsidian_sync_start` (background watcher), `obsidian_sync_stop`.
+
+**Files changed:**
+- `src-tauri/src/memory/obsidian_sync.rs` (new, ~420 LOC)
+- `src-tauri/src/memory/store.rs` (schema fields + `set_obsidian_sync` + SELECT updates)
+- `src-tauri/src/memory/mod.rs` (module declaration)
+- `src-tauri/src/commands/memory.rs` (3 new commands)
+- `src-tauri/src/lib.rs` (AppState field + command registration)
+- `src-tauri/Cargo.toml` (notify v7)
+- Various files: added `obsidian_path`/`last_exported` to struct literals
+
+**Tests:** 5 Rust unit tests (roundtrip, import, parse variants)
 
 ---
 

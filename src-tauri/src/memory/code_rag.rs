@@ -196,6 +196,8 @@ fn build_entry(snippet: Snippet, id: i64, now_ms: i64) -> MemoryEntry {
         source_hash: None,
         expires_at: None,
         valid_to: None,
+        obsidian_path: None,
+        last_exported: None,
     }
 }
 
@@ -400,6 +402,8 @@ mod tests {
             source_hash: None,
             expires_at: None,
             valid_to: None,
+        obsidian_path: None,
+        last_exported: None,
         };
         assert!(!is_code_rag_entry(&real));
 

@@ -20,6 +20,7 @@ pub mod late_chunking;
 pub mod matryoshka;
 pub mod migrations;
 pub mod obsidian_export;
+pub mod obsidian_sync;
 pub mod query_intent;
 pub mod replay;
 pub mod reranker;

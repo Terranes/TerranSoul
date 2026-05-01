@@ -224,6 +224,8 @@ mod tests {
             source_hash: Some("abc123".to_string()),
             expires_at: None,
             valid_to: None,
+        obsidian_path: None,
+        last_exported: None,
         }
     }
 

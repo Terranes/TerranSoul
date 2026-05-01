@@ -130,6 +130,10 @@ pub struct MemoryEntry {
     /// Soft-close timestamp (Unix ms). Non-NULL means this memory was superseded
     /// by a contradiction resolution and is no longer active. Never deleted.
     pub valid_to: Option<i64>,
+    /// Relative path within the Obsidian vault (e.g. `TerranSoul/42-hello.md`).
+    pub obsidian_path: Option<String>,
+    /// Unix-ms timestamp of last successful export to Obsidian vault.
+    pub last_exported: Option<i64>,
 }
 
 /// Fields required to create a new memory.
@@ -333,7 +337,7 @@ impl MemoryStore {
     pub fn get_by_id(&self, id: i64) -> SqlResult<MemoryEntry> {
         self.conn.query_row(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories WHERE id = ?1",
             params![id],
             row_to_entry,
@@ -344,7 +348,7 @@ impl MemoryStore {
     pub fn get_all(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories ORDER BY importance DESC, created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
@@ -355,7 +359,7 @@ impl MemoryStore {
     pub fn get_by_tier(&self, tier: &MemoryTier) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories WHERE tier = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![tier.as_str()], row_to_entry)?;
@@ -366,7 +370,7 @@ impl MemoryStore {
     pub fn get_persistent(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories WHERE tier IN ('working', 'long')
              ORDER BY importance DESC, decay_score DESC, created_at DESC",
         )?;
@@ -383,7 +387,7 @@ impl MemoryStore {
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories
              WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
              ORDER BY importance DESC, access_count DESC, created_at DESC",
@@ -530,11 +534,20 @@ impl MemoryStore {
         Ok(())
     }
 
+    /// Record obsidian sync metadata after a successful export/import.
+    pub fn set_obsidian_sync(&self, id: i64, path: &str, exported_at: i64) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE memories SET obsidian_path = ?1, last_exported = ?2 WHERE id = ?3",
+            params![path, exported_at, id],
+        )?;
+        Ok(())
+    }
+
     /// Return all memories that have an embedding stored.
     pub fn get_with_embeddings(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding, obsidian_path, last_exported
              FROM memories WHERE embedding IS NOT NULL",
         )?;
         let rows = stmt.query_map([], row_to_entry_with_embedding)?;
@@ -1269,7 +1282,7 @@ impl MemoryStore {
     pub fn evict_short_term(&self, session_id: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories WHERE tier = 'short' AND session_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_entry)?;
@@ -1423,7 +1436,7 @@ impl MemoryStore {
     pub fn find_by_source_hash(&self, hash: &str) -> SqlResult<Option<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories WHERE source_hash = ?1 LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![hash], row_to_entry)?;
@@ -1438,7 +1451,7 @@ impl MemoryStore {
     pub fn find_by_source_url(&self, url: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported
              FROM memories WHERE source_url = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![url], row_to_entry)?;
@@ -1567,6 +1580,8 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
         source_hash: row.get(14).unwrap_or(None),
         expires_at: row.get(15).unwrap_or(None),
         valid_to: row.get(16).unwrap_or(None),
+        obsidian_path: row.get(17).unwrap_or(None),
+        last_exported: row.get(18).unwrap_or(None),
     })
 }
 
@@ -1594,6 +1609,8 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
         source_hash: row.get(14).unwrap_or(None),
         expires_at: row.get(15).unwrap_or(None),
         valid_to: row.get(16).unwrap_or(None),
+        obsidian_path: row.get(18).unwrap_or(None),
+        last_exported: row.get(19).unwrap_or(None),
     })
 }
 

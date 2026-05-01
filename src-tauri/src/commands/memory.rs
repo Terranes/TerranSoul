@@ -1375,6 +1375,61 @@ pub async fn export_to_obsidian(
     crate::memory::obsidian_export::export_to_vault(path, &entries)
 }
 
+// ── Bidirectional Obsidian sync (Chunk 17.7) ─────────────────────────
+
+/// Run a single bidirectional sync cycle with an Obsidian vault.
+///
+/// Exports new/changed memories → vault and imports vault edits → DB.
+/// LWW conflict resolution: whichever side has the newer timestamp wins.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn obsidian_sync(
+    vault_dir: String,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::obsidian_sync::SyncReport, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(&vault_dir);
+    if !path.exists() {
+        return Err(format!("Vault directory does not exist: {vault_dir}"));
+    }
+    crate::memory::obsidian_sync::sync_bidirectional(path, &store)
+}
+
+/// Start background file-watching for bidirectional Obsidian sync.
+///
+/// Returns immediately. Changes in the vault will be auto-synced with
+/// a 1-second debounce. Call `obsidian_sync_stop` to stop watching.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn obsidian_sync_start(
+    vault_dir: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let path = std::path::PathBuf::from(&vault_dir);
+    if !path.exists() {
+        return Err(format!("Vault directory does not exist: {vault_dir}"));
+    }
+    let app_state = state.inner().clone();
+    let watcher = crate::memory::obsidian_sync::ObsidianWatcher::start_with_state(path, app_state)
+        .map_err(|e| format!("start watcher: {e}"))?;
+    let mut guard = state.obsidian_watcher.lock().await;
+    if let Some(old) = guard.take() {
+        old.stop();
+    }
+    *guard = Some(watcher);
+    Ok(())
+}
+
+/// Stop background Obsidian sync file-watching.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn obsidian_sync_stop(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut guard = state.obsidian_watcher.lock().await;
+    if let Some(watcher) = guard.take() {
+        watcher.stop();
+    }
+    Ok(())
+}
+
 // ── Temporal reasoning queries (Chunk 17.3) ──────────────────────────
 
 /// Result of a temporal query: the parsed time range + matching memories.

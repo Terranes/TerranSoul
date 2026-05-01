@@ -144,6 +144,8 @@ mod tests {
             source_hash: None,
             expires_at: None,
             valid_to: None,
+        obsidian_path: None,
+        last_exported: None,
         }
     }
 
@@ -167,6 +169,8 @@ mod tests {
             source_hash: None,
             expires_at: None,
             valid_to: None,
+        obsidian_path: None,
+        last_exported: None,
         }
     }
 

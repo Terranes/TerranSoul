@@ -83,7 +83,8 @@ use commands::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
         close_memory_edge, count_memory_conflicts, delete_memory, delete_memory_edge,
-        dismiss_memory_conflict, evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
+        dismiss_memory_conflict, evaluate_auto_learn, export_to_obsidian,
+        extract_edges_via_brain, obsidian_sync, obsidian_sync_start, obsidian_sync_stop,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
         get_memory_stats, get_relevant_memories, get_schema_info, get_short_term_memory,
@@ -234,6 +235,8 @@ pub struct AppStateInner {
     pub plugin_host: plugins::PluginHost,
     /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
     pub activity_tracker: memory::consolidation::ActivityTracker,
+    /// Obsidian bidirectional sync watcher (Chunk 17.7). `None` when not watching.
+    pub obsidian_watcher: TokioMutex<Option<memory::obsidian_sync::ObsidianWatcher>>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -305,6 +308,7 @@ impl AppState {
             grpc_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
+            obsidian_watcher: TokioMutex::new(None),
         }))
     }
 
@@ -355,6 +359,7 @@ impl AppState {
             grpc_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
+            obsidian_watcher: TokioMutex::new(None),
         }))
     }
 }
@@ -497,6 +502,10 @@ pub fn run() {
             evaluate_auto_learn,
             // Obsidian vault export (Chunk 18.5)
             export_to_obsidian,
+            // Bidirectional Obsidian sync (Chunk 17.7)
+            obsidian_sync,
+            obsidian_sync_start,
+            obsidian_sync_stop,
             // Temporal reasoning queries (Chunk 17.3)
             temporal_query,
             // Memory versioning (Chunk 16.12)

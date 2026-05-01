@@ -311,7 +311,6 @@ Integration test with VRM playback.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 | 17.5 | **Cross-device memory merge via CRDT sync** — wire `MemoryStore` into Soul Link. LWW-Map CRDT keyed on `(content_hash, source_url)`. | not-started | Hardest chunk — may split into 17.5a (schema) + 17.5b (delta sync). |
-| 17.7 | **Bidirectional Obsidian sync** — extend one-way export to bidirectional via `notify` file-watcher. LWW conflict resolution. Schema columns now in place (V10, chunk 17.7b shipped). | not-started | Depends on 18.5 (shipped) + 17.7b (shipped). |
 
 ---
 
