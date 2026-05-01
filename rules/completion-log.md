@@ -21,6 +21,10 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 27.7 — Persona example-dialogue field](#chunk-277--persona-example-dialogue-field) | 2026-05-02 |
+| [Chunk 15.8 — AI Coding Integrations doc finalisation](#chunk-158--ai-coding-integrations-doc-finalisation) | 2026-05-02 |
+| [Chunk 27.3 — Blendshape passthrough — expanded ARKit rig](#chunk-273--blendshape-passthrough--expanded-arkit-rig) | 2026-05-02 |
+| [Chunk 15.4 — AI Coding Integrations Control Panel](#chunk-154--ai-coding-integrations-control-panel) | 2026-05-02 |
 | [Chunk 15.2 — gRPC `brain.v1` transport foundation](#chunk-152--grpc-brainv1-transport-foundation) | 2026-05-01 |
 | [Chunk 14.16f — Pack-import provenance markers](#chunk-1416f--pack-import-provenance-markers) | 2026-05-02 |
 | [Chunk 14.16e — Self-improve motion-feedback loop](#chunk-1416e--self-improve-motion-feedback-loop) | 2026-05-02 |
@@ -228,6 +232,98 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 27.7 — Persona example-dialogue field
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+
+### Summary
+
+Extended the persona schema with an optional `exampleDialogue: string[]` field
+for character-card-style example exchanges. The field round-trips cleanly
+through the existing Rust backend (which is schema-opaque — `serde_json::Value`)
+and pack export/import without any Rust changes.
+
+### Files Modified
+
+- `src/stores/persona-types.ts` — added `exampleDialogue` to `PersonaTraits`, `defaultPersona()`, `migratePersonaTraits()`
+- `src/utils/persona-prompt.ts` — renders "Example dialogue:" section with up to 4 deduplicated entries
+- `src/utils/persona-prompt.test.ts` — 4 new tests (render, cap at 4, dedup, skip-when-empty)
+- `src/components/PersonaPanel.vue` — new `PersonaListEditor` for example dialogue; `cloneTraits` + `loadSuggestionIntoDraft` updated
+- `src/stores/persona.test.ts` — 1 new round-trip test
+
+### Tests
+
+- 47 persona-related tests passing (20 prompt builder + 27 store)
+- `vue-tsc --noEmit` clean
+- No Rust changes needed (backend is schema-opaque)
+
+---
+
+## Chunk 15.8 — AI Coding Integrations doc finalisation
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+
+### Summary
+
+Replaced all "Planned" sections in `docs/AI-coding-integrations.md` with
+as-built reality. Updated gRPC section (Chunk 15.2 shipped), Control Panel
+section (Chunk 15.4 shipped), and the roadmap table. Only Chunk 15.7
+(incremental-indexing QA) remains not-started.
+
+### Files Modified
+
+- `docs/AI-coding-integrations.md` — status header, gRPC section, Control Panel section, roadmap table all updated
+
+---
+
+## Chunk 27.3 — Blendshape passthrough — expanded ARKit rig
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete (discovered already shipped — archiving)
+
+### Summary
+
+Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs beyond the
+6-preset baseline. Gated by `AppSettings.expanded_blendshapes`.
+
+### Files
+
+- `src/renderer/expanded-blendshapes.ts` (111 LOC) — `applyExpandedBlendshapes`, `clearExpandedBlendshapes`, `ARKIT_BLENDSHAPE_NAMES` (52 shapes)
+- `src/renderer/expanded-blendshapes.test.ts` (111 LOC) — 10 tests (rig-aware writes, baseline overlap skip, clamping, null safety)
+- `src/renderer/face-mirror.ts` — baseline map: 52 ARKit → 6+5+2 VRM channels
+
+### Tests
+
+Vitest: 10 new tests all passing.
+
+---
+
+## Chunk 15.4 — AI Coding Integrations Control Panel
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete (discovered already shipped — archiving)
+
+### Summary
+
+`AICodingIntegrationsView.vue` + `ai-integrations.ts` Pinia store. Server
+status card, start/stop/regenerate, client config cards (VS Code, Claude,
+Codex) with set-up/remove buttons, transport preference toggle, VS Code
+workspace windows list.
+
+### Files
+
+- `src/views/AICodingIntegrationsView.vue` (468 LOC) — full control panel UI
+- `src/stores/ai-integrations.ts` (204 LOC) — Pinia store wrapping Tauri MCP/auto-setup commands
+- `src/stores/ai-integrations.test.ts` (156 LOC) — unit tests
+
+### Tests
+
+Vitest: 156 lines of store tests all passing.
 
 ---
 

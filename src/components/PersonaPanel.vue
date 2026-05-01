@@ -86,6 +86,14 @@
         @update="(items: string[]) => { draft.avoid = items; markDirty(); }"
       />
 
+      <PersonaListEditor
+        label="Example dialogue"
+        placeholder="User: How are you? / Assistant: Splendid, thanks for asking!"
+        :items="draft.exampleDialogue"
+        data-testid="pp-example-dialogue"
+        @update="(items: string[]) => { draft.exampleDialogue = items; markDirty(); }"
+      />
+
       <div class="pp-actions">
         <button
           class="pp-btn pp-btn-primary"
@@ -340,6 +348,7 @@ function cloneTraits(t: PersonaTraits): PersonaTraits {
     tone: [...t.tone],
     quirks: [...t.quirks],
     avoid: [...t.avoid],
+    exampleDialogue: [...(t.exampleDialogue ?? [])],
   };
 }
 
@@ -443,6 +452,7 @@ function loadSuggestionIntoDraft(): void {
     tone: suggestion.value.tone ? [...suggestion.value.tone] : draft.value.tone,
     quirks: suggestion.value.quirks ? [...suggestion.value.quirks] : draft.value.quirks,
     avoid: suggestion.value.avoid ? [...suggestion.value.avoid] : draft.value.avoid,
+    exampleDialogue: suggestion.value.exampleDialogue ? [...suggestion.value.exampleDialogue] : draft.value.exampleDialogue,
   };
   isDirty.value = true;
 }

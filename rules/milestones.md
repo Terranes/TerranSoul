@@ -292,9 +292,8 @@ Integration test with VRM playback.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 15.4 | **Control Panel** — `AICodingIntegrationsView.vue` + `ai-integrations.ts` store. Server status, clients, auto-setup buttons, LAN toggle. | not-started | ~500 LOC + tests. |
+
 | 15.7 | **VS Code Copilot incremental-indexing QA** — e2e test: cold/warm calls, fingerprint cache, file-watcher invalidation. | not-started | Depends on 15.1 + 15.3 + 15.6. |
-| 15.8 | **Doc finalisation** — replace all "Planned" sections in `docs/AI-coding-integrations.md` with as-built reality. | not-started | Final QA gate for Phase 15. |
 
 ---
 
@@ -523,11 +522,10 @@ User on the same Wi-Fi as the desktop:
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 27.3 | **Blendshape passthrough — expanded ARKit rig support.** Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs (beyond the 6-preset baseline). Per `docs/persona-design.md` §6.3 "Mask of a Thousand Faces — Expanded". | not-started | Frontend-heavy; gated by `AppSettings.expanded_blendshapes`. |
+
 | 27.4 | **MoMask-style full-body reconstruction research spike.** Evaluate whether a permissively licensed, locally runnable sparse-keypoint → full-body-pose model can improve the existing BlazePose retarget path without requiring cloud inference. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 row 5. Research + thin integration plan first; do not vendor model weights. |
 | 27.5 | **Offline recorded-motion polish pass.** Design an explicit-user-trigger background workflow for smoothing / enhancing saved teach-session clips, informed by Hunyuan-Motion, MimicMotion, and MagicAnimate research references. | not-started | Derived from `docs/persona-design.md` §7.2 / §14.2 rows 4, 6, 7. Must remain optional, GPU-aware, and license-clean. |
 | 27.6 | **Neural audio-to-face upgrade evaluation.** Compare the shipped phoneme-aware viseme path against Audio2Face, EMOTalk, and FaceFormer-class approaches and define an optional backend if a local, license-clean model is viable. | not-started | Derived from `docs/persona-design.md` §14.2 rows 9 and 11. Do not add NVIDIA ACE or cloud-only dependencies without an explicit opt-in design. |
-| 27.7 | **Persona example-dialogue field.** Extend the persona schema and prompt assembly with optional character-card-style example dialogue while preserving existing packs and UI defaults. | not-started | Derived from `docs/persona-design.md` §14.2 row 13. Needs backward-compatible pack load/save tests. |
 | 27.8 | **Persona pack schema spec.** Publish a stable `.terransoul-persona` schema document and compatibility/versioning contract for sharable persona packs. | not-started | Derived from `docs/persona-design.md` §14.2 row 15. Builds on shipped chunk 14.7 export/import; mostly docs + schema validation tests. |
 
 ---

@@ -29,6 +29,11 @@ export interface PersonaTraits {
   quirks: string[];
   /** Hard "don't" list (negative constraints). */
   avoid: string[];
+  /**
+   * Optional example dialogue lines showing how the persona speaks.
+   * Each entry is a single exchange formatted as "User: ... / Assistant: ...".
+   */
+  exampleDialogue: string[];
   /** Whether the persona block is currently injected into the system prompt. */
   active: boolean;
   /** Last edit timestamp (ms epoch). */
@@ -101,6 +106,7 @@ export function defaultPersona(): PersonaTraits {
     tone: ['warm', 'concise'],
     quirks: [],
     avoid: ['unsolicited medical, legal, or financial advice'],
+    exampleDialogue: [],
     active: true,
     updatedAt: 0,
   };
@@ -122,6 +128,7 @@ export function migratePersonaTraits(raw: unknown): PersonaTraits {
   if (Array.isArray(r.tone)) out.tone = r.tone.filter((x): x is string => typeof x === 'string');
   if (Array.isArray(r.quirks)) out.quirks = r.quirks.filter((x): x is string => typeof x === 'string');
   if (Array.isArray(r.avoid)) out.avoid = r.avoid.filter((x): x is string => typeof x === 'string');
+  if (Array.isArray(r.exampleDialogue)) out.exampleDialogue = r.exampleDialogue.filter((x): x is string => typeof x === 'string');
   if (typeof r.active === 'boolean') out.active = r.active;
   if (typeof r.updatedAt === 'number') out.updatedAt = r.updatedAt;
   return out;

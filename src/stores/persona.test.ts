@@ -60,6 +60,18 @@ describe('usePersonaStore', () => {
     expect(fresh.traitsLoaded).toBe(true);
   });
 
+  it('round-trips exampleDialogue through save and load', async () => {
+    const store = usePersonaStore();
+    await store.saveTraits({
+      exampleDialogue: ['User: Hi / Assistant: Hello there!'],
+    });
+
+    setActivePinia(createPinia());
+    const fresh = usePersonaStore();
+    await fresh.load();
+    expect(fresh.traits.exampleDialogue).toEqual(['User: Hi / Assistant: Hello there!']);
+  });
+
   it('stamps version + updatedAt on every save', async () => {
     const store = usePersonaStore();
     const before = Date.now();

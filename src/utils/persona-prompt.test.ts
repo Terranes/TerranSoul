@@ -137,4 +137,42 @@ describe('buildPersonaBlock', () => {
     expect(block.startsWith('\n\n[PERSONA]')).toBe(true);
     expect(block.endsWith('[/PERSONA]')).toBe(true);
   });
+
+  // ── Example dialogue ────────────────────────────────────────────────
+
+  it('renders example dialogue when provided', () => {
+    const block = buildPersonaBlock(baseTraits({
+      exampleDialogue: [
+        'User: How are you? / Assistant: Splendid, thanks for asking!',
+        'User: Tell me a joke / Assistant: Why did the function break up with the variable? Too many arguments.',
+      ],
+    }));
+    expect(block).toContain('Example dialogue:');
+    expect(block).toContain('- User: How are you? / Assistant: Splendid, thanks for asking!');
+    expect(block).toContain('- User: Tell me a joke');
+  });
+
+  it('caps example dialogue at 4 entries', () => {
+    const exampleDialogue = Array.from({ length: 8 }, (_, i) => `User: q${i} / Assistant: a${i}`);
+    const block = buildPersonaBlock(baseTraits({ exampleDialogue }));
+    const dialogueLines = block.split('\n').filter(l => l.startsWith('- User:'));
+    expect(dialogueLines).toHaveLength(4);
+  });
+
+  it('deduplicates example dialogue entries', () => {
+    const block = buildPersonaBlock(baseTraits({
+      exampleDialogue: [
+        'User: Hello / Assistant: Hi there!',
+        'User: Hello / Assistant: Hi there!',
+        'User: Bye / Assistant: See ya!',
+      ],
+    }));
+    const dialogueLines = block.split('\n').filter(l => l.startsWith('- '));
+    expect(dialogueLines).toHaveLength(2);
+  });
+
+  it('skips example dialogue when array is empty', () => {
+    const block = buildPersonaBlock(baseTraits({ exampleDialogue: [] }));
+    expect(block).not.toContain('Example dialogue');
+  });
 });
