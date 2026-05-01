@@ -96,8 +96,10 @@ impl OpenAiClient {
     /// "https://api.openai.com/v1") — the suffix is stripped so we never
     /// produce a doubled `/v1/v1/chat/completions` URL.
     fn completions_url(&self) -> String {
-        let trimmed = self.base_url.trim_end_matches('/');
-        let normalised = trimmed.strip_suffix("/v1").unwrap_or(trimmed);
+        let mut normalised = self.base_url.trim_end_matches('/');
+        while let Some(stripped) = normalised.strip_suffix("/v1") {
+            normalised = stripped;
+        }
         format!("{normalised}/v1/chat/completions")
     }
 

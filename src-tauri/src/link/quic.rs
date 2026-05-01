@@ -19,7 +19,7 @@ pub fn generate_self_signed_cert(
     let cert = rcgen::generate_simple_self_signed(vec!["terransoul.local".to_string()])
         .map_err(|e| format!("cert generation failed: {e}"))?;
 
-    let key_der = PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der());
+    let key_der = PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der());
     let cert_der = CertificateDer::from(cert.cert.der().to_vec());
 
     Ok((vec![cert_der], key_der))
@@ -42,15 +42,16 @@ pub fn build_server_config() -> Result<ServerConfig, String> {
 
 /// Build a `quinn::ClientConfig` that skips server certificate verification
 /// (trust is established via device pairing, not PKI).
-pub fn build_client_config() -> ClientConfig {
+pub fn build_client_config() -> Result<ClientConfig, String> {
     let crypto = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
         .with_no_client_auth();
 
-    ClientConfig::new(Arc::new(
-        quinn::crypto::rustls::QuicClientConfig::try_from(crypto).expect("QUIC client config"),
-    ))
+    let quic_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(crypto)
+        .map_err(|e| format!("QUIC client config: {e}"))?;
+
+    Ok(ClientConfig::new(Arc::new(quic_crypto)))
 }
 
 /// Certificate verifier that accepts any server cert.
@@ -171,7 +172,7 @@ impl LinkTransport for QuicTransport {
 
         let mut endpoint =
             Endpoint::client("0.0.0.0:0".parse().unwrap()).map_err(|e| e.to_string())?;
-        endpoint.set_default_client_config(build_client_config());
+        endpoint.set_default_client_config(build_client_config()?);
 
         let remote: SocketAddr = addr
             .to_string()
@@ -249,8 +250,8 @@ mod tests {
 
     #[test]
     fn client_config_builds_successfully() {
-        let _config = build_client_config();
-        // No panic = success
+        let result = build_client_config();
+        assert!(result.is_ok());
     }
 
     #[tokio::test]

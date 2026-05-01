@@ -18,7 +18,7 @@
 
 use super::CodingLlmProvider;
 
-/// USD price per 1 000 000 tokens, as of 2026-04-30.
+/// USD price per 1 000 000 tokens.
 ///
 /// Source: each provider's public pricing page. Values are conservative
 /// for older / smaller models — we don't ship guesses for premium tiers
