@@ -11,6 +11,7 @@ pub mod lan;
 pub mod docker;
 pub mod emotion;
 pub mod gitnexus;
+pub mod grpc;
 pub mod identity;
 pub mod link;
 pub mod mcp;

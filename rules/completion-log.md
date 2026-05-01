@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 24.3 — LAN gRPC activation + paired-device mTLS enforcement](#chunk-243--lan-grpc-activation--paired-device-mtls-enforcement) | 2026-05-02 |
 | [Chunk 24.2b — mTLS pairing flow + persistent device registry](#chunk-242b--mtls-pairing-flow--persistent-device-registry) | 2026-05-02 |
 | [Chunk 24.5b — VS Code / Copilot session probe FS wrapper](#chunk-245b--vs-code--copilot-session-probe-fs-wrapper) | 2026-05-02 |
 | [Chunk 24.1b — LAN bind config + OS probe wrapper](#chunk-241b--lan-bind-config--os-probe-wrapper) | 2026-05-02 |
@@ -239,6 +240,26 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 24.3 — LAN gRPC activation + paired-device mTLS enforcement
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+**Phase:** 24 (Mobile Companion)
+
+**Goal.** Wire the shipped brain.v1 gRPC transport into LAN mode with mTLS enforcement when `lan_enabled`.
+
+**Deliverables:**
+- `src-tauri/src/commands/grpc.rs` — `GrpcServerHandle`, Tauri commands `grpc_server_start`, `grpc_server_stop`, `grpc_server_status`.
+- When `lan_enabled`: binds `0.0.0.0:7422`, issues server cert from pairing CA, requires mTLS client verification (paired devices only).
+- When loopback: binds `127.0.0.1:7422`, plaintext (safe — existing `PlaintextNonLoopback` guard enforces this).
+- `PairingManager.issue_server_cert()` + internal `issue_server_cert()` function in `network/pairing.rs`.
+- `AppStateInner.grpc_server: TokioMutex<Option<GrpcServerHandle>>`.
+- 1 unit test in `commands/grpc.rs`.
+
+**Tests:** 1905 Rust tests pass, clippy clean.
 
 ---
 

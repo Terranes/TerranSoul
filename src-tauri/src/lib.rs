@@ -70,6 +70,7 @@ use commands::{
         gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
         gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
+    grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
         remove_trusted_device_cmd,
@@ -227,6 +228,8 @@ pub struct AppStateInner {
     /// Pairing manager for mTLS device registry (Chunk 24.2b). `None` when
     /// LAN mode is disabled. Initialized on first `lan_enabled = true`.
     pub pairing_manager: Mutex<Option<network::pairing::PairingManager>>,
+    /// Running gRPC Brain server handle (Chunk 24.3). `None` when stopped.
+    pub grpc_server: TokioMutex<Option<commands::grpc::GrpcServerHandle>>,
     /// Plugin system host — manages plugin lifecycle, contributions, and activation.
     pub plugin_host: plugins::PluginHost,
     /// Idle-detection tracker for sleep-time consolidation (Chunk 16.7).
@@ -299,6 +302,7 @@ impl AppState {
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
             pairing_manager: Mutex::new(None),
+            grpc_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
         }))
@@ -348,6 +352,7 @@ impl AppState {
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
             pairing_manager: Mutex::new(None),
+            grpc_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
         }))
@@ -640,6 +645,10 @@ pub fn run() {
             mcp_server_stop,
             mcp_server_status,
             mcp_regenerate_token,
+            // gRPC Brain server — Chunk 24.3 (Phase 24)
+            grpc_server_start,
+            grpc_server_stop,
+            grpc_server_status,
             // Auto-setup writers — Chunk 15.6 (Phase 15)
             setup_vscode_mcp,
             setup_claude_mcp,

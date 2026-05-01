@@ -108,6 +108,14 @@ impl PairingManager {
         &self.ca_cert_pem
     }
 
+    /// Issue a server certificate signed by the CA (for gRPC mTLS).
+    ///
+    /// Returns `(cert_pem, key_pem)`. The server uses this identity for TLS,
+    /// and paired devices verify it against the CA.
+    pub fn issue_server_cert(&self) -> Result<(String, String), String> {
+        issue_server_cert(&self.ca_key_pem)
+    }
+
     /// Start a new pairing session. Overwrites any active session.
     ///
     /// Returns the `PairPayload` URI for QR display.
@@ -246,6 +254,32 @@ fn issue_client_cert(
         .map_err(|e| format!("sign device cert: {e}"))?;
 
     Ok((client_cert.pem(), client_key.serialize_pem()))
+}
+
+/// Issue a server certificate signed by the CA (for gRPC/MCP TLS).
+fn issue_server_cert(ca_key_pem: &str) -> Result<(String, String), String> {
+    let ca_key = KeyPair::from_pem(ca_key_pem).map_err(|e| format!("parse CA key: {e}"))?;
+    let issuer_params = ca_params();
+    let issuer = Issuer::new(issuer_params, ca_key);
+
+    let mut server_params = CertificateParams::default();
+    server_params.distinguished_name.push(
+        DnType::CommonName,
+        DnValue::Utf8String("TerranSoul Server".to_string()),
+    );
+    server_params.not_after = rcgen::date_time_ymd(2027, 5, 1);
+    server_params.is_ca = IsCa::NoCa;
+    // SAN for local network access.
+    server_params.subject_alt_names = vec![
+        rcgen::SanType::DnsName("terransoul.local".try_into().map_err(|e| format!("{e}"))?),
+    ];
+
+    let server_key = KeyPair::generate().map_err(|e| format!("server keygen: {e}"))?;
+    let server_cert = server_params
+        .signed_by(&server_key, &issuer)
+        .map_err(|e| format!("sign server cert: {e}"))?;
+
+    Ok((server_cert.pem(), server_key.serialize_pem()))
 }
 
 // ── Fingerprinting ─────────────────────────────────────────────────────────────
