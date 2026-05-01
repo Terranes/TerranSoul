@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 24.5b — VS Code / Copilot session probe FS wrapper](#chunk-245b--vs-code--copilot-session-probe-fs-wrapper) | 2026-05-02 |
 | [Chunk 24.1b — LAN bind config + OS probe wrapper](#chunk-241b--lan-bind-config--os-probe-wrapper) | 2026-05-02 |
 | [Chunk 20.1 — Dev/release data-root split (Docker namespacing)](#chunk-201--devrelease-data-root-split-docker-namespacing) | 2026-05-02 |
 | [Chunk 16.5b — CRAG query-rewrite + web-search fallback](#chunk-165b--crag-query-rewrite--web-search-fallback) | 2026-05-02 |
@@ -237,6 +238,23 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 24.5b — VS Code / Copilot session probe FS wrapper
+
+**Date:** 2026-05-02
+**Status:** ✅ Complete
+**Phase:** 24 (Mobile Companion)
+
+**Goal.** Wrap the pure Copilot log parser (24.5a) with real filesystem I/O so the phone companion can query "what's Copilot doing on your desktop?".
+
+**Deliverables:**
+- `src-tauri/src/network/vscode_probe.rs` — `vscode_user_data_dir()` (per-OS path resolution), `find_latest_copilot_log(user_data)` (walks `logs/<date>/window<N>/exthost/GitHub.copilot-chat/Copilot-Chat.log`, picks most-recently modified), `probe_copilot_session()` (async read + summarise).
+- Tauri command `get_copilot_session_status` → `Option<CopilotLogSummary>` in `commands/lan.rs`.
+- 3 unit tests + 1 tokio integration test.
+
+**Tests:** 1894 Rust tests pass, clippy clean.
 
 ---
 
