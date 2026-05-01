@@ -45,17 +45,16 @@ pub mod workflow;
 pub use conversation_learning::{learn_from_message, LearnedChunk};
 pub use engine::{ProgressEvent, SelfImproveEngine};
 pub use git_ops::{pull_main, PullResult};
-pub use handoff::HandoffState;
-pub use handoff_store::{
-    clear_handoff, list_handoffs, load_handoff, save_handoff, HandoffSummary,
-};
-pub use prompting::{CodingPrompt, DocSnippet, OutputShape, PROMPT_SCHEMA_VERSION};
-pub use workflow::{run_coding_task, CodingTask, CodingTaskResult, TaskDocument, TaskOutputKind};pub use github::{
+pub use github::{
     clear_github_config, load_github_config, open_or_update_pr, parse_owner_repo,
     save_github_config, GitHubConfig, PrSummary,
 };
+pub use handoff::HandoffState;
+pub use handoff_store::{clear_handoff, list_handoffs, load_handoff, save_handoff, HandoffSummary};
 pub use metrics::{MetricsLog, MetricsSummary, RunRecord};
+pub use prompting::{CodingPrompt, DocSnippet, OutputShape, PROMPT_SCHEMA_VERSION};
 pub use repo::RepoState;
+pub use workflow::{run_coding_task, CodingTask, CodingTaskResult, TaskDocument, TaskOutputKind};
 
 const CODING_LLM_FILE: &str = "coding_llm_config.json";
 const SELF_IMPROVE_FILE: &str = "self_improve.json";
@@ -204,12 +203,11 @@ pub fn atomic_write_json<T: serde::Serialize>(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create dir for {label}: {e}"))?;
     }
-    let json = serde_json::to_string_pretty(value)
-        .map_err(|e| format!("serialize {label}: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(value).map_err(|e| format!("serialize {label}: {e}"))?;
     let tmp = path.with_extension("json.tmp");
     {
-        let mut f = fs::File::create(&tmp)
-            .map_err(|e| format!("create {label} tmp: {e}"))?;
+        let mut f = fs::File::create(&tmp).map_err(|e| format!("create {label} tmp: {e}"))?;
         f.write_all(json.as_bytes())
             .map_err(|e| format!("write {label} tmp: {e}"))?;
         f.flush().map_err(|e| format!("flush {label} tmp: {e}"))?;
@@ -217,7 +215,8 @@ pub fn atomic_write_json<T: serde::Serialize>(
         // (rare), we still rely on the rename being atomic at the FS
         // layer. Errors here are upgraded to hard failures because
         // the durability contract requires it.
-        f.sync_all().map_err(|e| format!("fsync {label} tmp: {e}"))?;
+        f.sync_all()
+            .map_err(|e| format!("fsync {label} tmp: {e}"))?;
     }
     fs::rename(&tmp, path).map_err(|e| {
         // Clean up the orphaned temp file so retries start clean.

@@ -12,8 +12,14 @@ use tokio_tungstenite::tungstenite::Message as WsMsg;
 
 use super::{LinkMessage, LinkStatus, LinkTransport, PeerAddr};
 
-type WsSinkBox = Box<dyn futures_util::Sink<WsMsg, Error = tokio_tungstenite::tungstenite::Error> + Send + Unpin>;
-type WsStreamBox = Box<dyn futures_util::Stream<Item = Result<WsMsg, tokio_tungstenite::tungstenite::Error>> + Send + Unpin>;
+type WsSinkBox = Box<
+    dyn futures_util::Sink<WsMsg, Error = tokio_tungstenite::tungstenite::Error> + Send + Unpin,
+>;
+type WsStreamBox = Box<
+    dyn futures_util::Stream<Item = Result<WsMsg, tokio_tungstenite::tungstenite::Error>>
+        + Send
+        + Unpin,
+>;
 
 pub struct WsTransport {
     status: Mutex<LinkStatus>,

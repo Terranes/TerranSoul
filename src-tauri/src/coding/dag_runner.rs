@@ -128,11 +128,19 @@ pub enum DagValidationError {
 impl std::fmt::Display for DagValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CycleDetected(nodes) => write!(f, "Cycle detected through: {}", nodes.join(" → ")),
+            Self::CycleDetected(nodes) => {
+                write!(f, "Cycle detected through: {}", nodes.join(" → "))
+            }
             Self::UnknownNode(id) => write!(f, "Edge references unknown node: {id}"),
             Self::DuplicateNodeId(id) => write!(f, "Duplicate node ID: {id}"),
-            Self::MissingCapability { node_id, capability } => {
-                write!(f, "Node {node_id} requires capability '{capability}' not available")
+            Self::MissingCapability {
+                node_id,
+                capability,
+            } => {
+                write!(
+                    f,
+                    "Node {node_id} requires capability '{capability}' not available"
+                )
             }
         }
     }
@@ -165,7 +173,11 @@ pub fn validate_graph(
     }
 
     // Check capabilities.
-    let available: HashSet<&str> = config.available_capabilities.iter().map(|s| s.as_str()).collect();
+    let available: HashSet<&str> = config
+        .available_capabilities
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
     for node in &graph.nodes {
         for cap in &node.capabilities {
             if !available.contains(cap.as_str()) && !config.available_capabilities.is_empty() {
@@ -195,7 +207,9 @@ fn detect_cycle(graph: &WorkflowGraph) -> Result<(), DagValidationError> {
 
     for edge in &graph.edges {
         *in_degree.entry(edge.to.as_str()).or_insert(0) += 1;
-        adj.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+        adj.entry(edge.from.as_str())
+            .or_default()
+            .push(edge.to.as_str());
     }
 
     let mut queue: VecDeque<&str> = in_degree
@@ -249,7 +263,9 @@ pub fn compute_layers(graph: &WorkflowGraph) -> Vec<Vec<String>> {
 
     for edge in &graph.edges {
         *in_degree.entry(edge.to.as_str()).or_insert(0) += 1;
-        adj.entry(edge.from.as_str()).or_default().push(edge.to.as_str());
+        adj.entry(edge.from.as_str())
+            .or_default()
+            .push(edge.to.as_str());
     }
 
     let mut layers: Vec<Vec<String>> = Vec::new();
@@ -410,7 +426,12 @@ mod tests {
     fn valid_diamond_graph() {
         let graph = WorkflowGraph {
             nodes: vec![node("a"), node("b"), node("c"), node("d")],
-            edges: vec![edge("a", "b"), edge("a", "c"), edge("b", "d"), edge("c", "d")],
+            edges: vec![
+                edge("a", "b"),
+                edge("a", "c"),
+                edge("b", "d"),
+                edge("c", "d"),
+            ],
         };
         assert!(validate_graph(&graph, &DagRunnerConfig::default()).is_ok());
     }
@@ -511,7 +532,12 @@ mod tests {
     fn layers_diamond() {
         let graph = WorkflowGraph {
             nodes: vec![node("a"), node("b"), node("c"), node("d")],
-            edges: vec![edge("a", "b"), edge("a", "c"), edge("b", "d"), edge("c", "d")],
+            edges: vec![
+                edge("a", "b"),
+                edge("a", "c"),
+                edge("b", "d"),
+                edge("c", "d"),
+            ],
         };
         let layers = compute_layers(&graph);
         assert_eq!(layers.len(), 3);
@@ -552,7 +578,12 @@ mod tests {
     fn execute_all_success_diamond() {
         let graph = WorkflowGraph {
             nodes: vec![node("a"), node("b"), node("c"), node("d")],
-            edges: vec![edge("a", "b"), edge("a", "c"), edge("b", "d"), edge("c", "d")],
+            edges: vec![
+                edge("a", "b"),
+                edge("a", "c"),
+                edge("b", "d"),
+                edge("c", "d"),
+            ],
         };
         let result = execute_dag_sync(&graph, &DagRunnerConfig::default(), |id| {
             Ok(format!("{id} ok"))
@@ -626,7 +657,12 @@ mod tests {
         // c fails → d skipped, but b still runs.
         let graph = WorkflowGraph {
             nodes: vec![node("a"), node("b"), node("c"), node("d")],
-            edges: vec![edge("a", "b"), edge("a", "c"), edge("b", "d"), edge("c", "d")],
+            edges: vec![
+                edge("a", "b"),
+                edge("a", "c"),
+                edge("b", "d"),
+                edge("c", "d"),
+            ],
         };
         let result = execute_dag_sync(&graph, &DagRunnerConfig::default(), |id| {
             if id == "c" {

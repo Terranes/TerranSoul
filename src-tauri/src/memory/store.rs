@@ -152,7 +152,9 @@ pub struct NewMemory {
     pub expires_at: Option<i64>,
 }
 
-fn default_importance() -> i64 { 3 }
+fn default_importance() -> i64 {
+    3
+}
 
 /// Fields that may be updated on an existing memory.
 #[derive(Debug, Clone, Deserialize)]
@@ -193,18 +195,16 @@ impl MemoryStore {
     /// Runs versioned migrations to bring the schema up to date.
     pub fn new(data_dir: &Path) -> Self {
         auto_backup(data_dir);
-        let conn = Connection::open(data_dir.join("memory.db"))
-            .unwrap_or_else(|_| {
-                Connection::open_in_memory()
-                    .expect("Failed to create in-memory SQLite fallback database")
-            });
+        let conn = Connection::open(data_dir.join("memory.db")).unwrap_or_else(|_| {
+            Connection::open_in_memory()
+                .expect("Failed to create in-memory SQLite fallback database")
+        });
         // WAL mode: crash-safe, concurrent reads, no data loss.
         // foreign_keys=ON is required for ON DELETE CASCADE on memory_edges (V5).
         let _ = conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
         );
-        migrations::migrate_to_latest(&conn)
-            .expect("memory schema migration failed");
+        migrations::migrate_to_latest(&conn).expect("memory schema migration failed");
         MemoryStore {
             conn,
             ann: std::cell::OnceCell::new(),
@@ -214,13 +214,12 @@ impl MemoryStore {
 
     /// Create an in-memory store (for tests).
     pub fn in_memory() -> Self {
-        let conn = Connection::open_in_memory()
-            .expect("Failed to create in-memory SQLite database");
+        let conn =
+            Connection::open_in_memory().expect("Failed to create in-memory SQLite database");
         // foreign_keys=ON keeps test parity with the on-disk store and
         // exercises the V5 memory_edges cascade behaviour.
         let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
-        migrations::migrate_to_latest(&conn)
-            .expect("memory schema migration failed");
+        migrations::migrate_to_latest(&conn).expect("memory schema migration failed");
         MemoryStore {
             conn,
             ann: std::cell::OnceCell::new(),
@@ -312,7 +311,12 @@ impl MemoryStore {
     }
 
     /// Insert a memory into a specific tier (for session management).
-    pub fn add_to_tier(&self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>) -> SqlResult<MemoryEntry> {
+    pub fn add_to_tier(
+        &self,
+        m: NewMemory,
+        tier: MemoryTier,
+        session_id: Option<&str>,
+    ) -> SqlResult<MemoryEntry> {
         let importance = m.importance.clamp(1, 5);
         let now = now_ms();
         let token_count = estimate_tokens(&m.content);
@@ -539,9 +543,9 @@ impl MemoryStore {
 
     /// Return the IDs of entries that have no embedding yet (need processing).
     pub fn unembedded_ids(&self) -> SqlResult<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, content FROM memories WHERE embedding IS NULL",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, content FROM memories WHERE embedding IS NULL")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -640,7 +644,11 @@ impl MemoryStore {
             .filter_map(|e| {
                 let emb = e.embedding.as_ref()?;
                 let sim = cosine_similarity(query_embedding, emb);
-                if sim >= threshold { Some((sim, e.id)) } else { None }
+                if sim >= threshold {
+                    Some((sim, e.id))
+                } else {
+                    None
+                }
             })
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         Ok(best.map(|(_, id)| id))
@@ -742,8 +750,11 @@ impl MemoryStore {
 
                 let lower_content = entry.content.to_lowercase();
                 let lower_tags = entry.tags.to_lowercase();
-                let keyword_hits = words.iter()
-                    .filter(|w| lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str()))
+                let keyword_hits = words
+                    .iter()
+                    .filter(|w| {
+                        lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
+                    })
                     .count();
                 if !words.is_empty() {
                     score += (keyword_hits as f64 / words.len() as f64) * 0.20;
@@ -813,8 +824,11 @@ impl MemoryStore {
                 // (2) Keyword match — weight 0.20
                 let lower_content = entry.content.to_lowercase();
                 let lower_tags = entry.tags.to_lowercase();
-                let keyword_hits = words.iter()
-                    .filter(|w| lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str()))
+                let keyword_hits = words
+                    .iter()
+                    .filter(|w| {
+                        lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
+                    })
                     .count();
                 if !words.is_empty() {
                     score += (keyword_hits as f64 / words.len() as f64) * 0.20;
@@ -912,8 +926,7 @@ impl MemoryStore {
 
         // Index entries by id once so we can rebuild MemoryEntry ordering
         // after fusion without cloning the vector twice.
-        let by_id: HashMap<i64, MemoryEntry> =
-            all.iter().map(|e| (e.id, e.clone())).collect();
+        let by_id: HashMap<i64, MemoryEntry> = all.iter().map(|e| (e.id, e.clone())).collect();
 
         // ── (1) Vector ranking ────────────────────────────────────────────
         let mut vector_rank: Vec<i64> = Vec::new();
@@ -952,11 +965,14 @@ impl MemoryStore {
                     let hits = words
                         .iter()
                         .filter(|w| {
-                            lower_content.contains(w.as_str())
-                                || lower_tags.contains(w.as_str())
+                            lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
                         })
                         .count();
-                    if hits > 0 { Some((hits, e.id)) } else { None }
+                    if hits > 0 {
+                        Some((hits, e.id))
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             // Descending by hit count, deterministic id tie-break.
@@ -986,8 +1002,7 @@ impl MemoryStore {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.1.cmp(&b.1))
         });
-        let freshness_rank: Vec<i64> =
-            freshness_scored.into_iter().map(|(_, id)| id).collect();
+        let freshness_rank: Vec<i64> = freshness_scored.into_iter().map(|(_, id)| id).collect();
 
         // ── Fuse with RRF (k = 60) ────────────────────────────────────────
         // Build the slice-of-slices input. Empty rankings (e.g. no embedding
@@ -1071,8 +1086,7 @@ impl MemoryStore {
             return Ok(vec![]);
         }
 
-        let by_id: HashMap<i64, MemoryEntry> =
-            all.iter().map(|e| (e.id, e.clone())).collect();
+        let by_id: HashMap<i64, MemoryEntry> = all.iter().map(|e| (e.id, e.clone())).collect();
 
         // ── (1) Vector ranking ────────────────────────────────────────
         let mut vector_rank: Vec<i64> = Vec::new();
@@ -1110,11 +1124,14 @@ impl MemoryStore {
                     let hits = words
                         .iter()
                         .filter(|w| {
-                            lower_content.contains(w.as_str())
-                                || lower_tags.contains(w.as_str())
+                            lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
                         })
                         .count();
-                    if hits > 0 { Some((hits, e.id)) } else { None }
+                    if hits > 0 {
+                        Some((hits, e.id))
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
@@ -1142,8 +1159,7 @@ impl MemoryStore {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.1.cmp(&b.1))
         });
-        let freshness_rank: Vec<i64> =
-            freshness_scored.into_iter().map(|(_, id)| id).collect();
+        let freshness_rank: Vec<i64> = freshness_scored.into_iter().map(|(_, id)| id).collect();
 
         // ── Fuse with RRF ─────────────────────────────────────────────
         let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
@@ -1163,8 +1179,7 @@ impl MemoryStore {
             // doc's classified cognitive kind, then re-sort.
             for (id, score) in fused.iter_mut() {
                 if let Some(entry) = by_id.get(id) {
-                    let kind =
-                        classify_kind(&entry.memory_type, &entry.tags, &entry.content);
+                    let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
                     let boost = intent.kind_boosts.for_kind(kind) as f64;
                     *score *= boost;
                 }
@@ -1215,9 +1230,17 @@ impl MemoryStore {
         let mut stmt = self.conn.prepare(
             "SELECT id, last_accessed, decay_score, tags FROM memories WHERE tier = 'long'",
         )?;
-        let rows: Vec<(i64, Option<i64>, f64, String)> = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get::<_, f64>(2)?, row.get::<_, String>(3)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let rows: Vec<(i64, Option<i64>, f64, String)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get::<_, f64>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         let mut updated = 0;
         for (id, last_accessed, current_decay, tags) in &rows {
@@ -1424,10 +1447,9 @@ impl MemoryStore {
 
     /// Delete all memories from a given source URL.  Returns the count deleted.
     pub fn delete_by_source_url(&self, url: &str) -> SqlResult<usize> {
-        let deleted = self.conn.execute(
-            "DELETE FROM memories WHERE source_url = ?1",
-            params![url],
-        )?;
+        let deleted = self
+            .conn
+            .execute("DELETE FROM memories WHERE source_url = ?1", params![url])?;
         Ok(deleted)
     }
 
@@ -1458,11 +1480,13 @@ impl MemoryStore {
     pub fn delete_all(&self) -> SqlResult<usize> {
         // Edges and conflicts cascade via FK, but be explicit for backends
         // that may not enforce FK cascades.
-        self.conn.execute_batch(
-            "DELETE FROM memory_edges;
+        self.conn
+            .execute_batch(
+                "DELETE FROM memory_edges;
              DELETE FROM memory_conflicts;
-             DELETE FROM memory_versions;"
-        ).ok(); // tables may not exist on older schemas — ignore errors
+             DELETE FROM memory_versions;",
+            )
+            .ok(); // tables may not exist on older schemas — ignore errors
         let deleted = self.conn.execute("DELETE FROM memories", [])?;
         // Rebuild ANN index empty.
         if let Some(idx) = self.ann.get() {
@@ -1473,14 +1497,48 @@ impl MemoryStore {
 
     /// Get memory statistics per tier.
     pub fn stats(&self) -> SqlResult<MemoryStats> {
-        let total: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
-        let short: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE tier='short'", [], |r| r.get(0))?;
-        let working: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE tier='working'", [], |r| r.get(0))?;
-        let long: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE tier='long'", [], |r| r.get(0))?;
-        let embedded: i64 = self.conn.query_row("SELECT COUNT(*) FROM memories WHERE embedding IS NOT NULL", [], |r| r.get(0))?;
-        let total_tokens: i64 = self.conn.query_row("SELECT COALESCE(SUM(token_count), 0) FROM memories", [], |r| r.get(0))?;
-        let avg_decay: f64 = self.conn.query_row("SELECT COALESCE(AVG(decay_score), 1.0) FROM memories WHERE tier='long'", [], |r| r.get(0))?;
-        Ok(MemoryStats { total, short, working, long, embedded, total_tokens, avg_decay })
+        let total: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM memories", [], |r| r.get(0))?;
+        let short: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE tier='short'",
+            [],
+            |r| r.get(0),
+        )?;
+        let working: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE tier='working'",
+            [],
+            |r| r.get(0),
+        )?;
+        let long: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM memories WHERE tier='long'", [], |r| {
+                    r.get(0)
+                })?;
+        let embedded: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE embedding IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        let total_tokens: i64 = self.conn.query_row(
+            "SELECT COALESCE(SUM(token_count), 0) FROM memories",
+            [],
+            |r| r.get(0),
+        )?;
+        let avg_decay: f64 = self.conn.query_row(
+            "SELECT COALESCE(AVG(decay_score), 1.0) FROM memories WHERE tier='long'",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(MemoryStats {
+            total,
+            short,
+            working,
+            long,
+            embedded,
+            total_tokens,
+            avg_decay,
+        })
     }
 }
 
@@ -1497,7 +1555,10 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
         last_accessed: row.get(6)?,
         access_count: row.get(7)?,
         embedding: None,
-        tier: MemoryTier::from_str(&row.get::<_, String>(8).unwrap_or_else(|_| "long".to_string())),
+        tier: MemoryTier::from_str(
+            &row.get::<_, String>(8)
+                .unwrap_or_else(|_| "long".to_string()),
+        ),
         decay_score: row.get::<_, f64>(9).unwrap_or(1.0),
         session_id: row.get(10).unwrap_or(None),
         parent_id: row.get(11).unwrap_or(None),
@@ -1521,7 +1582,10 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
         last_accessed: row.get(6)?,
         access_count: row.get(7)?,
         embedding: blob.map(|b| bytes_to_embedding(&b)),
-        tier: MemoryTier::from_str(&row.get::<_, String>(8).unwrap_or_else(|_| "long".to_string())),
+        tier: MemoryTier::from_str(
+            &row.get::<_, String>(8)
+                .unwrap_or_else(|_| "long".to_string()),
+        ),
         decay_score: row.get::<_, f64>(9).unwrap_or(1.0),
         session_id: row.get(10).unwrap_or(None),
         parent_id: row.get(11).unwrap_or(None),
@@ -1559,7 +1623,11 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         nb += y * y;
     }
     let denom = na.sqrt() * nb.sqrt();
-    if denom < 1e-12 { 0.0 } else { (dot / denom) as f32 }
+    if denom < 1e-12 {
+        0.0
+    } else {
+        (dot / denom) as f32
+    }
 }
 
 /// Rough token estimation (~4 chars per token for English text).
@@ -1586,7 +1654,10 @@ impl StorageBackend for MemoryStore {
     }
 
     fn add_to_tier(
-        &self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>,
+        &self,
+        m: NewMemory,
+        tier: MemoryTier,
+        session_id: Option<&str>,
     ) -> StorageResult<MemoryEntry> {
         Ok(self.add_to_tier(m, tier, session_id)?)
     }
@@ -1644,25 +1715,35 @@ impl StorageBackend for MemoryStore {
     }
 
     fn vector_search(
-        &self, query_embedding: &[f32], limit: usize,
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         Ok(self.vector_search(query_embedding, limit)?)
     }
 
     fn find_duplicate(
-        &self, query_embedding: &[f32], threshold: f32,
+        &self,
+        query_embedding: &[f32],
+        threshold: f32,
     ) -> StorageResult<Option<i64>> {
         Ok(self.find_duplicate(query_embedding, threshold)?)
     }
 
     fn hybrid_search(
-        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         Ok(self.hybrid_search(query, query_embedding, limit)?)
     }
 
     fn hybrid_search_rrf(
-        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         Ok(self.hybrid_search_rrf(query, query_embedding, limit)?)
     }
@@ -1703,7 +1784,9 @@ impl StorageBackend for MemoryStore {
         Ok(self.gc_decayed(threshold)?)
     }
 
-    fn backend_name(&self) -> &'static str { "SQLite" }
+    fn backend_name(&self) -> &'static str {
+        "SQLite"
+    }
 }
 
 #[cfg(test)]
@@ -1771,8 +1854,12 @@ mod tests {
     #[test]
     fn search_finds_by_content_keyword() {
         let store = MemoryStore::in_memory();
-        store.add(new_memory("User loves Python programming")).unwrap();
-        store.add(new_memory("User's favourite colour is blue")).unwrap();
+        store
+            .add(new_memory("User loves Python programming"))
+            .unwrap();
+        store
+            .add(new_memory("User's favourite colour is blue"))
+            .unwrap();
         let results = store.search("Python").unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].content.contains("Python"));
@@ -1860,7 +1947,10 @@ mod tests {
     fn cosine_similarity_identical_vectors() {
         let v = vec![1.0, 2.0, 3.0];
         let sim = cosine_similarity(&v, &v);
-        assert!((sim - 1.0).abs() < 1e-5, "identical vectors should have sim ≈ 1.0, got {sim}");
+        assert!(
+            (sim - 1.0).abs() < 1e-5,
+            "identical vectors should have sim ≈ 1.0, got {sim}"
+        );
     }
 
     #[test]
@@ -1868,7 +1958,10 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![0.0, 1.0, 0.0];
         let sim = cosine_similarity(&a, &b);
-        assert!(sim.abs() < 1e-5, "orthogonal vectors should have sim ≈ 0.0, got {sim}");
+        assert!(
+            sim.abs() < 1e-5,
+            "orthogonal vectors should have sim ≈ 0.0, got {sim}"
+        );
     }
 
     #[test]
@@ -1876,7 +1969,10 @@ mod tests {
         let a = vec![1.0, 2.0, 3.0];
         let b = vec![-1.0, -2.0, -3.0];
         let sim = cosine_similarity(&a, &b);
-        assert!((sim + 1.0).abs() < 1e-5, "opposite vectors should have sim ≈ -1.0, got {sim}");
+        assert!(
+            (sim + 1.0).abs() < 1e-5,
+            "opposite vectors should have sim ≈ -1.0, got {sim}"
+        );
     }
 
     #[test]
@@ -2020,7 +2116,13 @@ mod tests {
     #[test]
     fn add_to_tier_creates_working_memory() {
         let store = MemoryStore::in_memory();
-        let entry = store.add_to_tier(new_memory("session fact"), MemoryTier::Working, Some("sess-1")).unwrap();
+        let entry = store
+            .add_to_tier(
+                new_memory("session fact"),
+                MemoryTier::Working,
+                Some("sess-1"),
+            )
+            .unwrap();
         assert_eq!(entry.tier, MemoryTier::Working);
         assert_eq!(entry.session_id.as_deref(), Some("sess-1"));
     }
@@ -2028,8 +2130,12 @@ mod tests {
     #[test]
     fn get_by_tier_filters_correctly() {
         let store = MemoryStore::in_memory();
-        store.add_to_tier(new_memory("short"), MemoryTier::Short, Some("s1")).unwrap();
-        store.add_to_tier(new_memory("working"), MemoryTier::Working, Some("s1")).unwrap();
+        store
+            .add_to_tier(new_memory("short"), MemoryTier::Short, Some("s1"))
+            .unwrap();
+        store
+            .add_to_tier(new_memory("working"), MemoryTier::Working, Some("s1"))
+            .unwrap();
         store.add(new_memory("long")).unwrap();
 
         assert_eq!(store.get_by_tier(&MemoryTier::Short).unwrap().len(), 1);
@@ -2040,8 +2146,12 @@ mod tests {
     #[test]
     fn get_persistent_excludes_short_term() {
         let store = MemoryStore::in_memory();
-        store.add_to_tier(new_memory("ephemeral"), MemoryTier::Short, Some("s1")).unwrap();
-        store.add_to_tier(new_memory("session ctx"), MemoryTier::Working, Some("s1")).unwrap();
+        store
+            .add_to_tier(new_memory("ephemeral"), MemoryTier::Short, Some("s1"))
+            .unwrap();
+        store
+            .add_to_tier(new_memory("session ctx"), MemoryTier::Working, Some("s1"))
+            .unwrap();
         store.add(new_memory("permanent")).unwrap();
 
         let persistent = store.get_persistent().unwrap();
@@ -2052,7 +2162,9 @@ mod tests {
     #[test]
     fn promote_changes_tier() {
         let store = MemoryStore::in_memory();
-        let entry = store.add_to_tier(new_memory("upgradeable"), MemoryTier::Working, Some("s1")).unwrap();
+        let entry = store
+            .add_to_tier(new_memory("upgradeable"), MemoryTier::Working, Some("s1"))
+            .unwrap();
         store.promote(entry.id, MemoryTier::Long).unwrap();
         let updated = store.get_by_id(entry.id).unwrap();
         assert_eq!(updated.tier, MemoryTier::Long);
@@ -2061,9 +2173,19 @@ mod tests {
     #[test]
     fn evict_short_term_clears_session() {
         let store = MemoryStore::in_memory();
-        store.add_to_tier(new_memory("msg1"), MemoryTier::Short, Some("sess-1")).unwrap();
-        store.add_to_tier(new_memory("msg2"), MemoryTier::Short, Some("sess-1")).unwrap();
-        store.add_to_tier(new_memory("other session"), MemoryTier::Short, Some("sess-2")).unwrap();
+        store
+            .add_to_tier(new_memory("msg1"), MemoryTier::Short, Some("sess-1"))
+            .unwrap();
+        store
+            .add_to_tier(new_memory("msg2"), MemoryTier::Short, Some("sess-1"))
+            .unwrap();
+        store
+            .add_to_tier(
+                new_memory("other session"),
+                MemoryTier::Short,
+                Some("sess-2"),
+            )
+            .unwrap();
 
         let evicted = store.evict_short_term("sess-1").unwrap();
         assert_eq!(evicted.len(), 2);
@@ -2073,8 +2195,12 @@ mod tests {
     #[test]
     fn stats_returns_tier_counts() {
         let store = MemoryStore::in_memory();
-        store.add_to_tier(new_memory("s"), MemoryTier::Short, Some("s1")).unwrap();
-        store.add_to_tier(new_memory("w"), MemoryTier::Working, Some("s1")).unwrap();
+        store
+            .add_to_tier(new_memory("s"), MemoryTier::Short, Some("s1"))
+            .unwrap();
+        store
+            .add_to_tier(new_memory("w"), MemoryTier::Working, Some("s1"))
+            .unwrap();
         store.add(new_memory("l1")).unwrap();
         store.add(new_memory("l2")).unwrap();
 
@@ -2088,7 +2214,9 @@ mod tests {
     #[test]
     fn hybrid_search_keyword_ranking() {
         let store = MemoryStore::in_memory();
-        store.add(new_memory("Python programming language")).unwrap();
+        store
+            .add(new_memory("Python programming language"))
+            .unwrap();
         store.add(new_memory("JavaScript for web")).unwrap();
         store.add(new_memory("Rust systems programming")).unwrap();
 
@@ -2101,11 +2229,15 @@ mod tests {
     #[test]
     fn hybrid_search_rrf_keyword_ranking() {
         let store = MemoryStore::in_memory();
-        store.add(new_memory("Python programming language")).unwrap();
+        store
+            .add(new_memory("Python programming language"))
+            .unwrap();
         store.add(new_memory("JavaScript for web")).unwrap();
         store.add(new_memory("Rust systems programming")).unwrap();
 
-        let results = store.hybrid_search_rrf("Python programming", None, 2).unwrap();
+        let results = store
+            .hybrid_search_rrf("Python programming", None, 2)
+            .unwrap();
         assert_eq!(results.len(), 2);
         // RRF may vary top-1 depending on freshness tie-breaking, but Python
         // (2 keyword hits) must still survive into the top-k.
@@ -2190,7 +2322,9 @@ mod tests {
         store.add(new_memory("gamma")).unwrap();
 
         let plain = store.hybrid_search_rrf("alpha", None, 3).unwrap();
-        let intent = store.hybrid_search_rrf_with_intent("alpha", None, 3).unwrap();
+        let intent = store
+            .hybrid_search_rrf_with_intent("alpha", None, 3)
+            .unwrap();
         let ids = |v: &[MemoryEntry]| v.iter().map(|e| e.id).collect::<Vec<_>>();
         assert_eq!(ids(&plain), ids(&intent));
     }
@@ -2225,8 +2359,7 @@ mod tests {
         // Generic factoid (no procedural cues) — semantic kind by default.
         store
             .add(NewMemory {
-                content: "Coffee originated in Ethiopia in the 9th century."
-                    .to_string(),
+                content: "Coffee originated in Ethiopia in the 9th century.".to_string(),
                 tags: "coffee,history".to_string(),
                 ..Default::default()
             })
@@ -2246,11 +2379,7 @@ mod tests {
             .unwrap();
 
         let results = store
-            .hybrid_search_rrf_with_intent(
-                "How do I brew coffee step by step?",
-                None,
-                2,
-            )
+            .hybrid_search_rrf_with_intent("How do I brew coffee step by step?", None, 2)
             .unwrap();
         assert_eq!(results.len(), 2);
         // Procedural entry must lead the results once kind-boost is applied.
@@ -2278,12 +2407,20 @@ mod tests {
     #[test]
     fn gc_decayed_removes_low_importance() {
         let store = MemoryStore::in_memory();
-        let e = store.add(NewMemory { importance: 1, ..new_memory("forgettable") }).unwrap();
+        let e = store
+            .add(NewMemory {
+                importance: 1,
+                ..new_memory("forgettable")
+            })
+            .unwrap();
         // Manually set low decay
-        store.conn.execute(
-            "UPDATE memories SET decay_score = 0.005 WHERE id = ?1",
-            params![e.id],
-        ).unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET decay_score = 0.005 WHERE id = ?1",
+                params![e.id],
+            )
+            .unwrap();
         let removed = store.gc_decayed(0.01).unwrap();
         assert_eq!(removed, 1);
         assert_eq!(store.count(), 0);
@@ -2299,16 +2436,21 @@ mod tests {
     #[test]
     fn add_with_source_fields() {
         let store = MemoryStore::in_memory();
-        let entry = store.add(NewMemory {
-            content: "Rule 14.3: 30-day deadline".to_string(),
-            tags: "law".to_string(),
-            importance: 5,
-            memory_type: MemoryType::Fact,
-            source_url: Some("https://example.com/rules".to_string()),
-            source_hash: Some("abc123".to_string()),
-            expires_at: None,
-        }).unwrap();
-        assert_eq!(entry.source_url.as_deref(), Some("https://example.com/rules"));
+        let entry = store
+            .add(NewMemory {
+                content: "Rule 14.3: 30-day deadline".to_string(),
+                tags: "law".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                source_url: Some("https://example.com/rules".to_string()),
+                source_hash: Some("abc123".to_string()),
+                expires_at: None,
+            })
+            .unwrap();
+        assert_eq!(
+            entry.source_url.as_deref(),
+            Some("https://example.com/rules")
+        );
         assert_eq!(entry.source_hash.as_deref(), Some("abc123"));
         assert!(entry.expires_at.is_none());
     }
@@ -2316,10 +2458,12 @@ mod tests {
     #[test]
     fn find_by_source_hash_returns_match() {
         let store = MemoryStore::in_memory();
-        store.add(NewMemory {
-            source_hash: Some("hash-001".to_string()),
-            ..new_memory("sourced fact")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                source_hash: Some("hash-001".to_string()),
+                ..new_memory("sourced fact")
+            })
+            .unwrap();
         store.add(new_memory("no source")).unwrap();
 
         let found = store.find_by_source_hash("hash-001").unwrap();
@@ -2333,16 +2477,20 @@ mod tests {
     fn find_by_source_url_returns_all() {
         let store = MemoryStore::in_memory();
         let url = "https://example.com/doc";
-        store.add(NewMemory {
-            source_url: Some(url.to_string()),
-            source_hash: Some("h1".to_string()),
-            ..new_memory("chunk 1")
-        }).unwrap();
-        store.add(NewMemory {
-            source_url: Some(url.to_string()),
-            source_hash: Some("h2".to_string()),
-            ..new_memory("chunk 2")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                source_url: Some(url.to_string()),
+                source_hash: Some("h1".to_string()),
+                ..new_memory("chunk 1")
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                source_url: Some(url.to_string()),
+                source_hash: Some("h2".to_string()),
+                ..new_memory("chunk 2")
+            })
+            .unwrap();
         store.add(new_memory("unrelated")).unwrap();
 
         let results = store.find_by_source_url(url).unwrap();
@@ -2353,14 +2501,18 @@ mod tests {
     fn delete_by_source_url_removes_all() {
         let store = MemoryStore::in_memory();
         let url = "https://example.com/stale";
-        store.add(NewMemory {
-            source_url: Some(url.to_string()),
-            ..new_memory("old chunk 1")
-        }).unwrap();
-        store.add(NewMemory {
-            source_url: Some(url.to_string()),
-            ..new_memory("old chunk 2")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                source_url: Some(url.to_string()),
+                ..new_memory("old chunk 1")
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                source_url: Some(url.to_string()),
+                ..new_memory("old chunk 2")
+            })
+            .unwrap();
         store.add(new_memory("keep me")).unwrap();
 
         let removed = store.delete_by_source_url(url).unwrap();
@@ -2372,11 +2524,13 @@ mod tests {
     fn reingest_skip_when_hash_unchanged() {
         let store = MemoryStore::in_memory();
         let hash = "sha256-unchanged";
-        store.add(NewMemory {
-            source_hash: Some(hash.to_string()),
-            source_url: Some("https://example.com/doc".to_string()),
-            ..new_memory("existing content")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                source_hash: Some(hash.to_string()),
+                source_url: Some("https://example.com/doc".to_string()),
+                ..new_memory("existing content")
+            })
+            .unwrap();
 
         // Simulate re-ingest: find_by_source_hash returns Some → skip
         let existing = store.find_by_source_hash(hash).unwrap();
@@ -2387,22 +2541,26 @@ mod tests {
     fn reingest_replaces_when_hash_changed() {
         let store = MemoryStore::in_memory();
         let url = "https://example.com/rule";
-        store.add(NewMemory {
-            source_url: Some(url.to_string()),
-            source_hash: Some("old-hash".to_string()),
-            ..new_memory("old version of rule")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                source_url: Some(url.to_string()),
+                source_hash: Some("old-hash".to_string()),
+                ..new_memory("old version of rule")
+            })
+            .unwrap();
         assert_eq!(store.count(), 1);
 
         // Hash changed → delete old entries by URL, then insert new
         let _ = store.delete_by_source_url(url).unwrap();
         assert_eq!(store.count(), 0);
 
-        store.add(NewMemory {
-            source_url: Some(url.to_string()),
-            source_hash: Some("new-hash".to_string()),
-            ..new_memory("updated version of rule")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                source_url: Some(url.to_string()),
+                source_hash: Some("new-hash".to_string()),
+                ..new_memory("updated version of rule")
+            })
+            .unwrap();
         assert_eq!(store.count(), 1);
 
         let found = store.find_by_source_hash("new-hash").unwrap();
@@ -2414,10 +2572,12 @@ mod tests {
     fn delete_expired_removes_past_entries() {
         let store = MemoryStore::in_memory();
         // Insert with an already-expired timestamp
-        store.add(NewMemory {
-            expires_at: Some(1000), // epoch ms, way in the past
-            ..new_memory("ephemeral")
-        }).unwrap();
+        store
+            .add(NewMemory {
+                expires_at: Some(1000), // epoch ms, way in the past
+                ..new_memory("ephemeral")
+            })
+            .unwrap();
         store.add(new_memory("permanent")).unwrap();
 
         let removed = store.delete_expired().unwrap();
@@ -2461,7 +2621,9 @@ mod tests {
         let backend: &dyn StorageBackend = &store;
 
         backend.add(new_memory("one")).unwrap();
-        backend.add_to_tier(new_memory("two"), MemoryTier::Short, Some("sess")).unwrap();
+        backend
+            .add_to_tier(new_memory("two"), MemoryTier::Short, Some("sess"))
+            .unwrap();
 
         let stats = backend.stats().unwrap();
         assert_eq!(stats.total, 2);
@@ -2478,12 +2640,16 @@ mod tests {
         // existing call site must keep working when the user hasn't
         // tuned the threshold.
         let store = MemoryStore::in_memory();
-        store.add(new_memory("Python programming language")).unwrap();
+        store
+            .add(new_memory("Python programming language"))
+            .unwrap();
         store.add(new_memory("JavaScript for web")).unwrap();
         store.add(new_memory("Rust systems programming")).unwrap();
 
         let legacy = store.hybrid_search("Python programming", None, 2).unwrap();
-        let with_t = store.hybrid_search_with_threshold("Python programming", None, 2, 0.0).unwrap();
+        let with_t = store
+            .hybrid_search_with_threshold("Python programming", None, 2, 0.0)
+            .unwrap();
         assert_eq!(legacy.len(), with_t.len());
         for (a, b) in legacy.iter().zip(with_t.iter()) {
             assert_eq!(a.id, b.id);
@@ -2501,7 +2667,9 @@ mod tests {
         let store = MemoryStore::in_memory();
         store.add(new_memory("alpha")).unwrap();
         store.add(new_memory("beta")).unwrap();
-        let r = store.hybrid_search_with_threshold("totally unrelated topic", None, 5, 0.95).unwrap();
+        let r = store
+            .hybrid_search_with_threshold("totally unrelated topic", None, 5, 0.95)
+            .unwrap();
         assert!(r.is_empty(), "got {} hits", r.len());
     }
 
@@ -2510,8 +2678,12 @@ mod tests {
         // Strong keyword + freshness combo on a low threshold must keep
         // the matching row.
         let store = MemoryStore::in_memory();
-        let e = store.add(new_memory("Python programming language")).unwrap();
-        let r = store.hybrid_search_with_threshold("Python programming", None, 5, 0.10).unwrap();
+        let e = store
+            .add(new_memory("Python programming language"))
+            .unwrap();
+        let r = store
+            .hybrid_search_with_threshold("Python programming", None, 5, 0.10)
+            .unwrap();
         assert!(!r.is_empty());
         assert!(r.iter().any(|m| m.id == e.id));
     }
@@ -2526,13 +2698,21 @@ mod tests {
         let store = MemoryStore::in_memory();
         let a = store.add(new_memory("alpha")).unwrap();
         let b = store.add(new_memory("beta")).unwrap();
-        let r = store.hybrid_search_with_threshold("totally unrelated topic", None, 5, 0.95).unwrap();
+        let r = store
+            .hybrid_search_with_threshold("totally unrelated topic", None, 5, 0.95)
+            .unwrap();
         assert!(r.is_empty(), "high threshold should filter all rows");
 
         let a_after = store.get_by_id(a.id).unwrap();
         let b_after = store.get_by_id(b.id).unwrap();
-        assert_eq!(a_after.access_count, 0, "filtered row a must NOT be touched");
-        assert_eq!(b_after.access_count, 0, "filtered row b must NOT be touched");
+        assert_eq!(
+            a_after.access_count, 0,
+            "filtered row a must NOT be touched"
+        );
+        assert_eq!(
+            b_after.access_count, 0,
+            "filtered row b must NOT be touched"
+        );
     }
 
     #[test]
@@ -2540,9 +2720,13 @@ mod tests {
         // Many strong matches + threshold = 0.0 — the `limit` cap still applies.
         let store = MemoryStore::in_memory();
         for i in 0..10 {
-            store.add(new_memory(&format!("Python programming language {i}"))).unwrap();
+            store
+                .add(new_memory(&format!("Python programming language {i}")))
+                .unwrap();
         }
-        let r = store.hybrid_search_with_threshold("Python programming", None, 3, 0.0).unwrap();
+        let r = store
+            .hybrid_search_with_threshold("Python programming", None, 3, 0.0)
+            .unwrap();
         assert_eq!(r.len(), 3);
     }
 
@@ -2553,7 +2737,8 @@ mod tests {
     /// Helper: force a working-tier row's access_count + last_accessed
     /// to a known state. Tests only.
     fn force_access(store: &MemoryStore, id: i64, count: i64, last_accessed_ms: i64) {
-        store.conn()
+        store
+            .conn()
             .execute(
                 "UPDATE memories SET access_count = ?1, last_accessed = ?2 WHERE id = ?3",
                 params![count, last_accessed_ms, id],
@@ -2564,7 +2749,9 @@ mod tests {
     #[test]
     fn auto_promote_promotes_when_both_thresholds_met() {
         let store = MemoryStore::in_memory();
-        let e = store.add_to_tier(new_memory("hot working entry"), MemoryTier::Working, None).unwrap();
+        let e = store
+            .add_to_tier(new_memory("hot working entry"), MemoryTier::Working, None)
+            .unwrap();
         force_access(&store, e.id, 5, now_ms());
 
         let promoted = store.auto_promote_to_long(5, 7).unwrap();
@@ -2575,18 +2762,25 @@ mod tests {
     #[test]
     fn auto_promote_skips_when_access_count_below_threshold() {
         let store = MemoryStore::in_memory();
-        let e = store.add_to_tier(new_memory("cold working entry"), MemoryTier::Working, None).unwrap();
+        let e = store
+            .add_to_tier(new_memory("cold working entry"), MemoryTier::Working, None)
+            .unwrap();
         force_access(&store, e.id, 4, now_ms()); // one short of the threshold
 
         let promoted = store.auto_promote_to_long(5, 7).unwrap();
-        assert!(promoted.is_empty(), "below-threshold row must not be promoted");
+        assert!(
+            promoted.is_empty(),
+            "below-threshold row must not be promoted"
+        );
         assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Working);
     }
 
     #[test]
     fn auto_promote_skips_when_outside_recency_window() {
         let store = MemoryStore::in_memory();
-        let e = store.add_to_tier(new_memory("stale working entry"), MemoryTier::Working, None).unwrap();
+        let e = store
+            .add_to_tier(new_memory("stale working entry"), MemoryTier::Working, None)
+            .unwrap();
         // last_accessed is well outside a 7-day window
         force_access(&store, e.id, 99, now_ms() - 30 * 86_400_000);
 
@@ -2598,25 +2792,37 @@ mod tests {
     #[test]
     fn auto_promote_ignores_long_and_short_tiers() {
         let store = MemoryStore::in_memory();
-        let l = store.add_to_tier(new_memory("already long"), MemoryTier::Long, None).unwrap();
-        let s = store.add_to_tier(new_memory("short term"), MemoryTier::Short, Some("sess")).unwrap();
+        let l = store
+            .add_to_tier(new_memory("already long"), MemoryTier::Long, None)
+            .unwrap();
+        let s = store
+            .add_to_tier(new_memory("short term"), MemoryTier::Short, Some("sess"))
+            .unwrap();
         force_access(&store, l.id, 100, now_ms());
         force_access(&store, s.id, 100, now_ms());
 
         let promoted = store.auto_promote_to_long(5, 7).unwrap();
-        assert!(promoted.is_empty(), "non-working tiers must not be promoted");
+        assert!(
+            promoted.is_empty(),
+            "non-working tiers must not be promoted"
+        );
     }
 
     #[test]
     fn auto_promote_is_idempotent() {
         let store = MemoryStore::in_memory();
-        let e = store.add_to_tier(new_memory("hot"), MemoryTier::Working, None).unwrap();
+        let e = store
+            .add_to_tier(new_memory("hot"), MemoryTier::Working, None)
+            .unwrap();
         force_access(&store, e.id, 10, now_ms());
 
         let first = store.auto_promote_to_long(5, 7).unwrap();
         let second = store.auto_promote_to_long(5, 7).unwrap();
         assert_eq!(first, vec![e.id]);
-        assert!(second.is_empty(), "second run is a no-op once promoted to long");
+        assert!(
+            second.is_empty(),
+            "second run is a no-op once promoted to long"
+        );
     }
 
     #[test]
@@ -2624,8 +2830,11 @@ mod tests {
         // A working entry that was inserted but never accessed has
         // last_accessed = NULL — must not be promoted regardless of count.
         let store = MemoryStore::in_memory();
-        let e = store.add_to_tier(new_memory("never accessed"), MemoryTier::Working, None).unwrap();
-        store.conn()
+        let e = store
+            .add_to_tier(new_memory("never accessed"), MemoryTier::Working, None)
+            .unwrap();
+        store
+            .conn()
             .execute(
                 "UPDATE memories SET access_count = 50, last_accessed = NULL WHERE id = ?1",
                 params![e.id],
@@ -2633,7 +2842,10 @@ mod tests {
             .unwrap();
 
         let promoted = store.auto_promote_to_long(5, 7).unwrap();
-        assert!(promoted.is_empty(), "NULL last_accessed must be treated as not-recent");
+        assert!(
+            promoted.is_empty(),
+            "NULL last_accessed must be treated as not-recent"
+        );
         assert_eq!(store.get_by_id(e.id).unwrap().tier, MemoryTier::Working);
     }
 
@@ -2654,7 +2866,8 @@ mod tests {
         let e = store.add(m).unwrap();
         // Force last_accessed to ~30 days ago so apply_decay actually moves the score.
         let thirty_days_ago = now_ms() - 30 * 86_400_000;
-        store.conn()
+        store
+            .conn()
             .execute(
                 "UPDATE memories SET last_accessed = ?1, decay_score = 1.0 WHERE id = ?2",
                 params![thirty_days_ago, e.id],
@@ -2701,16 +2914,24 @@ mod tests {
 
     /// Helper: simulate N accesses on a memory by directly bumping access_count.
     fn set_access_count(store: &MemoryStore, id: i64, count: i64) {
-        store.conn.execute(
-            "UPDATE memories SET access_count = ?1, last_accessed = ?2 WHERE id = ?3",
-            params![count, now_ms(), id],
-        ).unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET access_count = ?1, last_accessed = ?2 WHERE id = ?3",
+                params![count, now_ms(), id],
+            )
+            .unwrap();
     }
 
     #[test]
     fn adjust_boosts_hot_entries() {
         let store = MemoryStore::in_memory();
-        let e = store.add(NewMemory { importance: 3, ..new_memory("hot") }).unwrap();
+        let e = store
+            .add(NewMemory {
+                importance: 3,
+                ..new_memory("hot")
+            })
+            .unwrap();
         set_access_count(&store, e.id, 10);
         let (boosted, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
         assert_eq!(boosted, 1);
@@ -2721,7 +2942,12 @@ mod tests {
     #[test]
     fn adjust_caps_at_5() {
         let store = MemoryStore::in_memory();
-        let e = store.add(NewMemory { importance: 5, ..new_memory("maxed") }).unwrap();
+        let e = store
+            .add(NewMemory {
+                importance: 5,
+                ..new_memory("maxed")
+            })
+            .unwrap();
         set_access_count(&store, e.id, 20);
         let (boosted, _) = store.adjust_importance_by_access(10, 30).unwrap();
         // Already at max → no boost
@@ -2732,7 +2958,12 @@ mod tests {
     #[test]
     fn adjust_demotes_cold_entries() {
         let store = MemoryStore::in_memory();
-        let e = store.add(NewMemory { importance: 3, ..new_memory("cold") }).unwrap();
+        let e = store
+            .add(NewMemory {
+                importance: 3,
+                ..new_memory("cold")
+            })
+            .unwrap();
         // access_count stays 0, last_accessed is NULL → cold
         let (_, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
         assert_eq!(demoted, 1);
@@ -2742,7 +2973,12 @@ mod tests {
     #[test]
     fn adjust_floors_at_1() {
         let store = MemoryStore::in_memory();
-        let e = store.add(NewMemory { importance: 1, ..new_memory("min") }).unwrap();
+        let e = store
+            .add(NewMemory {
+                importance: 1,
+                ..new_memory("min")
+            })
+            .unwrap();
         let (_, demoted) = store.adjust_importance_by_access(10, 30).unwrap();
         // Already at min → no demote
         assert_eq!(demoted, 0);
@@ -2756,7 +2992,10 @@ mod tests {
         set_access_count(&store, e.id, 15);
         store.adjust_importance_by_access(10, 30).unwrap();
         let updated = store.get_by_id(e.id).unwrap();
-        assert_eq!(updated.access_count, 0, "access_count should reset after boost");
+        assert_eq!(
+            updated.access_count, 0,
+            "access_count should reset after boost"
+        );
     }
 
     #[test]
@@ -2774,8 +3013,18 @@ mod tests {
     #[test]
     fn adjust_mixed_hot_and_cold() {
         let store = MemoryStore::in_memory();
-        let hot = store.add(NewMemory { importance: 2, ..new_memory("hot one") }).unwrap();
-        let cold = store.add(NewMemory { importance: 4, ..new_memory("cold one") }).unwrap();
+        let hot = store
+            .add(NewMemory {
+                importance: 2,
+                ..new_memory("hot one")
+            })
+            .unwrap();
+        let cold = store
+            .add(NewMemory {
+                importance: 4,
+                ..new_memory("cold one")
+            })
+            .unwrap();
         set_access_count(&store, hot.id, 12);
         // cold stays at access_count=0, last_accessed=NULL
 
@@ -2789,12 +3038,20 @@ mod tests {
     #[test]
     fn adjust_creates_version_audit_trail() {
         let store = MemoryStore::in_memory();
-        let e = store.add(NewMemory { importance: 3, ..new_memory("audited") }).unwrap();
+        let e = store
+            .add(NewMemory {
+                importance: 3,
+                ..new_memory("audited")
+            })
+            .unwrap();
         set_access_count(&store, e.id, 10);
         store.adjust_importance_by_access(10, 30).unwrap();
 
         let history = crate::memory::versioning::get_history(&store.conn, e.id).unwrap();
         assert_eq!(history.len(), 1, "boost should create one version snapshot");
-        assert_eq!(history[0].importance, 3, "snapshot should capture pre-boost value");
+        assert_eq!(
+            history[0].importance, 3,
+            "snapshot should capture pre-boost value"
+        );
     }
 }

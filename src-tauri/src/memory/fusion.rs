@@ -117,14 +117,18 @@ mod tests {
         assert_eq!(ids, vec![10, 20, 30, 40]);
         // Scores must be strictly descending for a single passthrough.
         for w in fused.windows(2) {
-            assert!(w[0].1 > w[1].1, "expected descending scores, got {:?}", fused);
+            assert!(
+                w[0].1 > w[1].1,
+                "expected descending scores, got {:?}",
+                fused
+            );
         }
     }
 
     #[test]
     fn fuses_two_rankings_with_overlap() {
-        let vector_rank: &[i64] = &[1, 2, 3];   // A, B, C
-        let keyword_rank: &[i64] = &[2, 4, 1];  // B, D, A
+        let vector_rank: &[i64] = &[1, 2, 3]; // A, B, C
+        let keyword_rank: &[i64] = &[2, 4, 1]; // B, D, A
         let fused = reciprocal_rank_fuse(&[vector_rank, keyword_rank], DEFAULT_RRF_K);
 
         // Expected fused scores (k = 60):

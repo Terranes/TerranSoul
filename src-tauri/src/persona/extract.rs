@@ -149,9 +149,7 @@ pub fn assemble_snippets(
     history: &[(String, String)],
     memories: &[(String, String)],
 ) -> Vec<PromptSnippet> {
-    let mut out = Vec::with_capacity(
-        PERSONA_PROMPT_HISTORY_TURNS + PERSONA_PROMPT_MEMORY_LIMIT,
-    );
+    let mut out = Vec::with_capacity(PERSONA_PROMPT_HISTORY_TURNS + PERSONA_PROMPT_MEMORY_LIMIT);
 
     // History: take the last N turns so the most-recent context wins.
     let start = history.len().saturating_sub(PERSONA_PROMPT_HISTORY_TURNS);
@@ -171,10 +169,7 @@ pub fn assemble_snippets(
         .take(PERSONA_PROMPT_MEMORY_LIMIT)
         .collect();
     let chosen: Vec<&(String, String)> = if personal.is_empty() {
-        memories
-            .iter()
-            .take(PERSONA_PROMPT_MEMORY_LIMIT)
-            .collect()
+        memories.iter().take(PERSONA_PROMPT_MEMORY_LIMIT).collect()
     } else {
         personal
     };
@@ -218,7 +213,10 @@ fn strip_fences(raw: &str) -> String {
     // Pattern: ```{lang}\n…\n```
     if let Some(stripped) = trimmed.strip_prefix("```") {
         // Drop optional language tag on the first line.
-        let after_first_line = stripped.split_once('\n').map(|(_, rest)| rest).unwrap_or(stripped);
+        let after_first_line = stripped
+            .split_once('\n')
+            .map(|(_, rest)| rest)
+            .unwrap_or(stripped);
         let cleaned = after_first_line
             .trim_end()
             .trim_end_matches("```")
@@ -316,8 +314,14 @@ mod tests {
     #[test]
     fn build_prompt_includes_format_block_and_transcript() {
         let snippets = vec![
-            PromptSnippet { label: "user".into(), body: "I love haiku.".into() },
-            PromptSnippet { label: "assistant".into(), body: "Noted.".into() },
+            PromptSnippet {
+                label: "user".into(),
+                body: "I love haiku.".into(),
+            },
+            PromptSnippet {
+                label: "assistant".into(),
+                body: "Noted.".into(),
+            },
         ];
         let (system, user) = build_persona_prompt(&snippets);
         assert!(system.contains("ONLY the JSON object"));
@@ -336,7 +340,10 @@ mod tests {
 
     #[test]
     fn build_prompt_with_hints_includes_hint_block() {
-        let snippets = vec![PromptSnippet { label: "user".into(), body: "yes".into() }];
+        let snippets = vec![PromptSnippet {
+            label: "user".into(),
+            body: "yes".into(),
+        }];
         let (_s, user) = build_persona_prompt_with_hints(
             &snippets,
             Some("Voice-derived hints: tone: concise · pacing: fast."),
@@ -347,7 +354,10 @@ mod tests {
 
     #[test]
     fn build_prompt_with_none_hints_matches_legacy_output() {
-        let snippets = vec![PromptSnippet { label: "user".into(), body: "yes".into() }];
+        let snippets = vec![PromptSnippet {
+            label: "user".into(),
+            body: "yes".into(),
+        }];
         let (s_a, u_a) = build_persona_prompt(&snippets);
         let (s_b, u_b) = build_persona_prompt_with_hints(&snippets, None);
         assert_eq!(s_a, s_b);
@@ -356,7 +366,10 @@ mod tests {
 
     #[test]
     fn build_prompt_with_blank_hints_is_treated_as_none() {
-        let snippets = vec![PromptSnippet { label: "user".into(), body: "yes".into() }];
+        let snippets = vec![PromptSnippet {
+            label: "user".into(),
+            body: "yes".into(),
+        }];
         let (_s, u_a) = build_persona_prompt(&snippets);
         let (_s, u_b) = build_persona_prompt_with_hints(&snippets, Some("   \n\t  "));
         assert_eq!(u_a, u_b);
@@ -366,8 +379,14 @@ mod tests {
     fn render_snippets_respects_char_budget() {
         let huge = "X".repeat(PERSONA_PROMPT_CHAR_BUDGET + 100);
         let snippets = vec![
-            PromptSnippet { label: "user".into(), body: huge.clone() },
-            PromptSnippet { label: "user".into(), body: "tail".into() },
+            PromptSnippet {
+                label: "user".into(),
+                body: huge.clone(),
+            },
+            PromptSnippet {
+                label: "user".into(),
+                body: "tail".into(),
+            },
         ];
         let rendered = render_snippets(&snippets);
         // Either the huge snippet was the first (over-budget on its own
@@ -380,8 +399,14 @@ mod tests {
     #[test]
     fn render_snippets_skips_empty_bodies() {
         let snippets = vec![
-            PromptSnippet { label: "user".into(), body: "   ".into() },
-            PromptSnippet { label: "user".into(), body: "real".into() },
+            PromptSnippet {
+                label: "user".into(),
+                body: "   ".into(),
+            },
+            PromptSnippet {
+                label: "user".into(),
+                body: "real".into(),
+            },
         ];
         let rendered = render_snippets(&snippets);
         assert_eq!(rendered, "USER: real");
@@ -396,15 +421,27 @@ mod tests {
         assert_eq!(snippets.len(), PERSONA_PROMPT_HISTORY_TURNS);
         // First retained snippet should be the (N+5 - N) = 5th turn.
         assert_eq!(snippets[0].body, "turn-5");
-        assert_eq!(snippets.last().unwrap().body, format!("turn-{}", PERSONA_PROMPT_HISTORY_TURNS + 4));
+        assert_eq!(
+            snippets.last().unwrap().body,
+            format!("turn-{}", PERSONA_PROMPT_HISTORY_TURNS + 4)
+        );
     }
 
     #[test]
     fn assemble_snippets_prefers_personal_tagged_memories() {
         let memories = vec![
-            ("loves coffee".to_string(), "personal:preference".to_string()),
-            ("HTTP/2 was finalised in 2015".to_string(), "general".to_string()),
-            ("speaks Vietnamese".to_string(), "personal:language".to_string()),
+            (
+                "loves coffee".to_string(),
+                "personal:preference".to_string(),
+            ),
+            (
+                "HTTP/2 was finalised in 2015".to_string(),
+                "general".to_string(),
+            ),
+            (
+                "speaks Vietnamese".to_string(),
+                "personal:language".to_string(),
+            ),
         ];
         let snippets = assemble_snippets(&[], &memories);
         let bodies: Vec<&str> = snippets.iter().map(|s| s.body.as_str()).collect();

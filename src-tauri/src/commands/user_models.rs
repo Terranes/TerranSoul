@@ -78,10 +78,12 @@ pub fn import_user_model_inner(
     source_path: &Path,
 ) -> Result<UserModel, String> {
     if !source_path.exists() {
-        return Err(format!("source file does not exist: {}", source_path.display()));
+        return Err(format!(
+            "source file does not exist: {}",
+            source_path.display()
+        ));
     }
-    let metadata = fs::metadata(source_path)
-        .map_err(|e| format!("read source metadata: {e}"))?;
+    let metadata = fs::metadata(source_path).map_err(|e| format!("read source metadata: {e}"))?;
     if !metadata.is_file() {
         return Err("source path is not a regular file".into());
     }
@@ -103,8 +105,7 @@ pub fn import_user_model_inner(
 
     let id = Uuid::new_v4().to_string();
     let dest = user_model_path(data_dir, &id);
-    fs::copy(source_path, &dest)
-        .map_err(|e| format!("copy VRM to {}: {e}", dest.display()))?;
+    fs::copy(source_path, &dest).map_err(|e| format!("copy VRM to {}: {e}", dest.display()))?;
 
     let entry = UserModel {
         id: id.clone(),
@@ -245,8 +246,7 @@ mod tests {
         write_dummy_vrm(&src, b"VRM-fake-bytes");
 
         let mut settings = crate::settings::AppSettings::default();
-        let entry =
-            import_user_model_inner(dir.path(), &mut settings, &src).unwrap();
+        let entry = import_user_model_inner(dir.path(), &mut settings, &src).unwrap();
 
         assert_eq!(entry.original_filename, "source.vrm");
         assert_eq!(entry.name, "source");
@@ -291,8 +291,7 @@ mod tests {
         write_dummy_vrm(&src, b"hello");
 
         let mut settings = crate::settings::AppSettings::default();
-        let entry =
-            import_user_model_inner(dir.path(), &mut settings, &src).unwrap();
+        let entry = import_user_model_inner(dir.path(), &mut settings, &src).unwrap();
         // Drop in-memory settings, reload from disk
         drop(settings);
         let _lock = crate::settings::ENV_MUTEX.lock().unwrap();

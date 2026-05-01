@@ -61,18 +61,48 @@ impl CognitiveKind {
 
 /// Verbs commonly associated with procedural how-to knowledge.
 const PROCEDURAL_VERBS: &[&str] = &[
-    "how to", "how-to", "step ", "steps to", "first,", "next,", "finally,",
-    "procedure", "process for", "workflow:", "recipe", "method:", "algorithm:",
+    "how to",
+    "how-to",
+    "step ",
+    "steps to",
+    "first,",
+    "next,",
+    "finally,",
+    "procedure",
+    "process for",
+    "workflow:",
+    "recipe",
+    "method:",
+    "algorithm:",
 ];
 
 /// Words/punctuation that strongly suggest an episodic (time-anchored) memory.
 const EPISODIC_HINTS: &[&str] = &[
-    "yesterday", "today", "this morning", "this afternoon", "this evening",
-    "last night", "last week", "last month", "earlier today", "just now",
-    "on monday", "on tuesday", "on wednesday", "on thursday", "on friday",
-    "on saturday", "on sunday",
-    " ago", "happened", "occurred", "we met", "i met", "we visited",
-    "i went", "we went",
+    "yesterday",
+    "today",
+    "this morning",
+    "this afternoon",
+    "this evening",
+    "last night",
+    "last week",
+    "last month",
+    "earlier today",
+    "just now",
+    "on monday",
+    "on tuesday",
+    "on wednesday",
+    "on thursday",
+    "on friday",
+    "on saturday",
+    "on sunday",
+    " ago",
+    "happened",
+    "occurred",
+    "we met",
+    "i met",
+    "we visited",
+    "i went",
+    "we went",
 ];
 
 /// Classify the cognitive kind of a memory from `(memory_type, tags, content)`.
@@ -218,13 +248,21 @@ mod tests {
 
     #[test]
     fn fact_with_general_knowledge_is_semantic() {
-        let k = classify(&MemoryType::Fact, "", "Rust uses ownership for memory safety");
+        let k = classify(
+            &MemoryType::Fact,
+            "",
+            "Rust uses ownership for memory safety",
+        );
         assert_eq!(k, CognitiveKind::Semantic);
     }
 
     #[test]
     fn how_to_content_is_procedural() {
-        let k = classify(&MemoryType::Fact, "", "How to ship: bump version, tag, push");
+        let k = classify(
+            &MemoryType::Fact,
+            "",
+            "How to ship: bump version, tag, push",
+        );
         assert_eq!(k, CognitiveKind::Procedural);
     }
 
@@ -246,7 +284,11 @@ mod tests {
 
     #[test]
     fn context_with_no_hints_defaults_to_semantic() {
-        let k = classify(&MemoryType::Context, "", "Working on the marketplace feature");
+        let k = classify(
+            &MemoryType::Context,
+            "",
+            "Working on the marketplace feature",
+        );
         assert_eq!(k, CognitiveKind::Semantic);
     }
 

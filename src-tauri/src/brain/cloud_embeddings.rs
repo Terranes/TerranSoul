@@ -131,7 +131,11 @@ async fn embed_text_openai(
 
     let parsed: EmbeddingResponse = resp.json().await.ok()?;
     let vec = parsed.data.into_iter().next()?.embedding;
-    if vec.is_empty() { None } else { Some(vec) }
+    if vec.is_empty() {
+        None
+    } else {
+        Some(vec)
+    }
 }
 
 // ── Unified dispatcher ────────────────────────────────────────────────────────
@@ -178,13 +182,7 @@ pub async fn embed_for_mode(
             // Only try if this provider has an embed endpoint.
             let embed_model = free_provider_embed_model(provider_id)?;
             let provider = super::get_free_provider(provider_id)?;
-            embed_text_openai(
-                text,
-                &provider.base_url,
-                embed_model,
-                api_key.as_deref(),
-            )
-            .await
+            embed_text_openai(text, &provider.base_url, embed_model, api_key.as_deref()).await
         }
         None => {
             // Legacy fallback: if active_brain is set, use Ollama.
@@ -210,7 +208,10 @@ mod tests {
             free_provider_embed_model("github-models"),
             Some("text-embedding-3-small")
         );
-        assert_eq!(free_provider_embed_model("siliconflow"), Some("BAAI/bge-m3"));
+        assert_eq!(
+            free_provider_embed_model("siliconflow"),
+            Some("BAAI/bge-m3")
+        );
         assert_eq!(
             free_provider_embed_model("nvidia-nim"),
             Some("nvidia/nv-embedqa-e5-v5")

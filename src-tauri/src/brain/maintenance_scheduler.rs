@@ -123,15 +123,9 @@ impl MaintenanceState {
     pub fn record_finished(&mut self, job: MaintenanceJob, finished_at_ms: u64) {
         match job {
             MaintenanceJob::Decay => self.last_decay_ms = finished_at_ms,
-            MaintenanceJob::GarbageCollect => {
-                self.last_garbage_collect_ms = finished_at_ms
-            }
-            MaintenanceJob::PromoteTier => {
-                self.last_promote_tier_ms = finished_at_ms
-            }
-            MaintenanceJob::EdgeExtract => {
-                self.last_edge_extract_ms = finished_at_ms
-            }
+            MaintenanceJob::GarbageCollect => self.last_garbage_collect_ms = finished_at_ms,
+            MaintenanceJob::PromoteTier => self.last_promote_tier_ms = finished_at_ms,
+            MaintenanceJob::EdgeExtract => self.last_edge_extract_ms = finished_at_ms,
         }
     }
 }

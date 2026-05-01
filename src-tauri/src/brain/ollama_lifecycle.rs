@@ -55,7 +55,10 @@ fn find_ollama_binary() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            let p = PathBuf::from(local).join("Programs").join("Ollama").join("ollama.exe");
+            let p = PathBuf::from(local)
+                .join("Programs")
+                .join("Ollama")
+                .join("ollama.exe");
             if p.exists() {
                 return Some(p);
             }
@@ -69,7 +72,10 @@ fn find_ollama_binary() -> Option<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        for candidate in ["/Applications/Ollama.app/Contents/Resources/ollama", "/usr/local/bin/ollama"] {
+        for candidate in [
+            "/Applications/Ollama.app/Contents/Resources/ollama",
+            "/usr/local/bin/ollama",
+        ] {
             let p = PathBuf::from(candidate);
             if p.exists() {
                 return Some(p);
@@ -218,7 +224,9 @@ where
         use tokio::io::AsyncWriteExt;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
-            file.write_all(&chunk).await.map_err(|e| format!("Write error: {e}"))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| format!("Write error: {e}"))?;
             downloaded += chunk.len() as u64;
             if let Some(pct_raw) = (downloaded * 60).checked_div(total) {
                 let pct = pct_raw as u32 + 5; // 5-65%
@@ -232,7 +240,9 @@ where
 
         // Run installer silently. Inno Setup uses /VERYSILENT for no UI.
         let mut cmd = Command::new(&installer_path);
-        cmd.arg("/VERYSILENT").arg("/SUPPRESSMSGBOXES").arg("/NORESTART");
+        cmd.arg("/VERYSILENT")
+            .arg("/SUPPRESSMSGBOXES")
+            .arg("/NORESTART");
         let output = cmd
             .output()
             .await
@@ -247,7 +257,10 @@ where
 
         // Verify the binary now exists.
         if find_ollama_binary().is_none() {
-            return Err("Installation completed but Ollama binary not found on PATH or known locations".to_string());
+            return Err(
+                "Installation completed but Ollama binary not found on PATH or known locations"
+                    .to_string(),
+            );
         }
 
         progress("Ollama installed successfully", 100);

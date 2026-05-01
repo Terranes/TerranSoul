@@ -180,7 +180,12 @@ pub async fn find_open_pr(
     }
     let arr = body.as_array().cloned().unwrap_or_default();
     if let Some(first) = arr.into_iter().next() {
-        return Ok(Some(pr_from_json(&first, head_branch, &cfg.default_base, false)));
+        return Ok(Some(pr_from_json(
+            &first,
+            head_branch,
+            &cfg.default_base,
+            false,
+        )));
     }
     Ok(None)
 }
@@ -307,7 +312,11 @@ pub enum DevicePollResult {
     /// User hasn't authorized yet — keep polling.
     Pending,
     /// User authorized — here's the access token.
-    Success { access_token: String, token_type: String, scope: String },
+    Success {
+        access_token: String,
+        token_type: String,
+        scope: String,
+    },
     /// The device code expired before the user completed auth.
     Expired,
     /// The user denied access.
@@ -518,7 +527,13 @@ pub fn build_chunk_pr_body(record: &RunRecord, metrics: Option<&MetricsSummary>)
 pub fn chunk_branch_name(chunk_id: &str) -> String {
     let sanitized: String = chunk_id
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '.' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     format!("self-improve/{sanitized}")
 }
@@ -632,8 +647,8 @@ mod tests {
     #[tokio::test]
     async fn open_or_update_pr_returns_existing_when_present() {
         use axum::{routing::get, routing::post, Json, Router};
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
 
         let post_count = Arc::new(AtomicU32::new(0));
         let post_count_handler = post_count.clone();
@@ -647,20 +662,19 @@ mod tests {
             }]))
         }
         let app = Router::new()
-            .route("/repos/{owner}/{repo}/pulls", get(list_handler).post(
-                move |Json(_b): Json<serde_json::Value>| {
+            .route(
+                "/repos/{owner}/{repo}/pulls",
+                get(list_handler).post(move |Json(_b): Json<serde_json::Value>| {
                     let c = post_count_handler.clone();
                     async move {
                         c.fetch_add(1, Ordering::SeqCst);
                         Json(serde_json::json!({"number": 99}))
                     }
-                },
-            ))
+                }),
+            )
             .route(
                 "/repos/{owner}/{repo}/pulls/{n}/requested_reviewers",
-                post(|Json(_b): Json<serde_json::Value>| async {
-                    Json(serde_json::json!({}))
-                }),
+                post(|Json(_b): Json<serde_json::Value>| async { Json(serde_json::json!({})) }),
             );
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -811,7 +825,10 @@ mod tests {
     #[test]
     fn chunk_branch_name_sanitizes() {
         assert_eq!(chunk_branch_name("28.5"), "self-improve/28.5");
-        assert_eq!(chunk_branch_name("my chunk/test"), "self-improve/my-chunk-test");
+        assert_eq!(
+            chunk_branch_name("my chunk/test"),
+            "self-improve/my-chunk-test"
+        );
         assert_eq!(chunk_branch_name("14.16a"), "self-improve/14.16a");
     }
 }

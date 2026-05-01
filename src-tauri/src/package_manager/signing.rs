@@ -78,7 +78,10 @@ impl std::fmt::Display for SigningError {
                 write!(f, "signing: signature is not valid hex: {e}")
             }
             SigningError::InvalidSignatureLength(n) => {
-                write!(f, "signing: signature has wrong length (expected 64 bytes, got {n})")
+                write!(
+                    f,
+                    "signing: signature has wrong length (expected 64 bytes, got {n})"
+                )
             }
             SigningError::SignatureMismatch => {
                 write!(f, "signing: signature does not match publisher key")
@@ -163,8 +166,8 @@ pub fn verify_manifest_signature_with(
     let pk_bytes = publisher_key_in(allow_list, publisher)
         .ok_or_else(|| SigningError::UnknownPublisher(publisher.to_string()))?;
 
-    let sig_bytes =
-        hex::decode(signature_hex).map_err(|e| SigningError::InvalidSignatureEncoding(e.to_string()))?;
+    let sig_bytes = hex::decode(signature_hex)
+        .map_err(|e| SigningError::InvalidSignatureEncoding(e.to_string()))?;
     if sig_bytes.len() != 64 {
         return Err(SigningError::InvalidSignatureLength(sig_bytes.len()));
     }

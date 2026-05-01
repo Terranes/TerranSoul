@@ -399,11 +399,7 @@ pub struct ResilientRunner {
 
 impl ResilientRunner {
     /// Create a runner with the given policies.
-    pub fn new(
-        retry: RetryPolicy,
-        timeout: TimeoutPolicy,
-        breaker: CircuitBreaker,
-    ) -> Self {
+    pub fn new(retry: RetryPolicy, timeout: TimeoutPolicy, breaker: CircuitBreaker) -> Self {
         Self {
             retry,
             timeout,
@@ -617,7 +613,10 @@ mod tests {
     async fn watchdog_detects_stale() {
         let wd = HeartbeatWatchdog::new(Duration::from_secs(1));
         // Manually insert an old timestamp
-        wd.last_seen.write().await.insert("wf-1".into(), now_secs() - 10);
+        wd.last_seen
+            .write()
+            .await
+            .insert("wf-1".into(), now_secs() - 10);
         let stale = wd.stale_workflows().await;
         assert_eq!(stale.len(), 1);
         assert_eq!(stale[0].workflow_id, "wf-1");

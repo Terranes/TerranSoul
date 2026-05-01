@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
-use crate::package_manager::AgentManifest;
 use super::catalog;
+use crate::package_manager::AgentManifest;
 
 #[derive(Clone)]
 struct ServerState {
@@ -80,9 +80,7 @@ async fn search_agents(
     let results: Vec<AgentManifest> = state
         .agents
         .values()
-        .filter(|m| {
-            m.name.to_lowercase().contains(&q) || m.description.to_lowercase().contains(&q)
-        })
+        .filter(|m| m.name.to_lowercase().contains(&q) || m.description.to_lowercase().contains(&q))
         .cloned()
         .collect();
     Json(results)
@@ -120,8 +118,8 @@ pub async fn start() -> Result<(u16, tokio::task::JoinHandle<()>), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry_server::http_registry::HttpRegistry;
     use crate::package_manager::RegistrySource;
+    use crate::registry_server::http_registry::HttpRegistry;
 
     #[tokio::test]
     async fn test_catalog_has_four_agents() {

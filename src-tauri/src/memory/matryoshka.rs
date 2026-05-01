@@ -135,7 +135,11 @@ pub fn two_stage_search(
         })
         .collect();
 
-    fast.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    fast.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     fast.truncate(fast_top_k.max(final_top_k));
 
     if fast_top_k <= final_top_k {
@@ -165,7 +169,11 @@ pub fn two_stage_search(
         })
         .collect();
 
-    reranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    reranked.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     reranked.truncate(final_top_k);
     reranked
 }
@@ -181,7 +189,11 @@ fn full_dim_topk(query: &[f32], candidates: &[(i64, Vec<f32>)], top_k: usize) ->
             score: cosine_unnormalised(query, emb),
         })
         .collect();
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(top_k);
     scored
 }

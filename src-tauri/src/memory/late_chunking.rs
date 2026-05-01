@@ -145,10 +145,7 @@ pub fn mean_pool_token_embeddings(
 /// in [`mean_pool_token_embeddings`]). Aligning the result with the
 /// input means the caller can zip with the original chunk metadata
 /// without bookkeeping.
-pub fn pool_chunks(
-    token_embeddings: &[Vec<f32>],
-    spans: &[TokenSpan],
-) -> Vec<Option<Vec<f32>>> {
+pub fn pool_chunks(token_embeddings: &[Vec<f32>], spans: &[TokenSpan]) -> Vec<Option<Vec<f32>>> {
     spans
         .iter()
         .map(|&s| mean_pool_token_embeddings(token_embeddings, s))
@@ -339,10 +336,10 @@ mod tests {
     fn pool_partial_span() {
         // Pool only tokens 1..3 of a 4-token sequence.
         let tokens = vec![
-            vec![10.0, 0.0],   // skipped
+            vec![10.0, 0.0], // skipped
             vec![1.0, 0.0],
             vec![0.0, 1.0],
-            vec![10.0, 10.0],  // skipped
+            vec![10.0, 10.0], // skipped
         ];
         let pooled = mean_pool_token_embeddings(&tokens, TokenSpan::new(1, 3)).unwrap();
         let inv_sqrt2 = 1.0 / 2.0_f32.sqrt();

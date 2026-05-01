@@ -30,10 +30,7 @@ pub enum InstallerError {
     /// The agent is not installed.
     NotInstalled(String),
     /// SHA-256 hash verification failed.
-    HashMismatch {
-        expected: String,
-        actual: String,
-    },
+    HashMismatch { expected: String, actual: String },
     /// A `Binary` / `Wasm` install method was missing the mandatory `sha256` field.
     /// Built-in agents are exempt because they have no downloadable binary.
     MissingSha256(String),
@@ -229,11 +226,7 @@ impl PackageInstaller {
                 name: m.name.clone(),
                 version: m.version.clone(),
                 description: m.description.clone(),
-                install_path: self
-                    .agents_dir
-                    .join(&m.name)
-                    .to_string_lossy()
-                    .to_string(),
+                install_path: self.agents_dir.join(&m.name).to_string_lossy().to_string(),
             })
             .collect()
     }
@@ -403,7 +396,8 @@ impl PackageInstaller {
 
         let agent_dir = self.agents_dir.join(agent_name);
         if agent_dir.exists() {
-            std::fs::remove_dir_all(&agent_dir).map_err(|e| InstallerError::IoError(e.to_string()))?;
+            std::fs::remove_dir_all(&agent_dir)
+                .map_err(|e| InstallerError::IoError(e.to_string()))?;
         }
 
         self.installed.remove(agent_name);
@@ -637,7 +631,10 @@ mod tests {
         assert!(installer.is_installed("builtin-agent"));
 
         let agent_dir = tmp.path().join(AGENTS_DIR).join("builtin-agent");
-        assert!(agent_dir.join(MANIFEST_FILE).exists(), "manifest must be written");
+        assert!(
+            agent_dir.join(MANIFEST_FILE).exists(),
+            "manifest must be written"
+        );
         assert!(
             !agent_dir.join(BINARY_FILE).exists(),
             "no binary file should be written for built-in agents"
@@ -694,7 +691,10 @@ mod tests {
             vec![0xAA, 0xBB],
         );
 
-        let err = installer.install("no-hash-agent", &registry).await.unwrap_err();
+        let err = installer
+            .install("no-hash-agent", &registry)
+            .await
+            .unwrap_err();
         assert!(matches!(err, InstallerError::MissingSha256(ref n) if n == "no-hash-agent"));
         // Nothing should have been persisted.
         assert!(!installer.is_installed("no-hash-agent"));
@@ -730,7 +730,10 @@ mod tests {
         let mut registry = MockRegistry::new();
         registry.add_agent("signed-agent", &manifest_json, binary);
 
-        let err = installer.install("signed-agent", &registry).await.unwrap_err();
+        let err = installer
+            .install("signed-agent", &registry)
+            .await
+            .unwrap_err();
         match err {
             InstallerError::SignatureVerificationFailed(SigningError::UnknownPublisher(p)) => {
                 assert_eq!(p, "totally-unknown-publisher");

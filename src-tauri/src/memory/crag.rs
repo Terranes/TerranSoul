@@ -84,9 +84,7 @@ pub fn build_evaluator_prompts(query: &str, document: &str) -> (String, String) 
         Be strict. A document that merely shares vocabulary with the query but does not address it is INCORRECT, not AMBIGUOUS."
         .to_string();
 
-    let user = format!(
-        "QUERY:\n{query}\n\nDOCUMENT:\n{document}\n\nVERDICT:"
-    );
+    let user = format!("QUERY:\n{query}\n\nDOCUMENT:\n{document}\n\nVERDICT:");
 
     (system, user)
 }
@@ -145,8 +143,7 @@ fn find_token(haystack: &str, needle: &str) -> Option<usize> {
         if &bytes[i..i + nbytes.len()] == nbytes {
             let prev_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
             let next_idx = i + nbytes.len();
-            let next_ok =
-                next_idx == bytes.len() || !bytes[next_idx].is_ascii_alphanumeric();
+            let next_ok = next_idx == bytes.len() || !bytes[next_idx].is_ascii_alphanumeric();
             if prev_ok && next_ok {
                 return Some(i);
             }
@@ -202,10 +199,7 @@ mod tests {
     fn parse_clean_verdicts() {
         assert_eq!(parse_verdict("CORRECT"), Some(DocumentVerdict::Correct));
         assert_eq!(parse_verdict("AMBIGUOUS"), Some(DocumentVerdict::Ambiguous));
-        assert_eq!(
-            parse_verdict("INCORRECT"),
-            Some(DocumentVerdict::Incorrect)
-        );
+        assert_eq!(parse_verdict("INCORRECT"), Some(DocumentVerdict::Incorrect));
     }
 
     #[test]
@@ -253,18 +247,9 @@ mod tests {
 
     #[test]
     fn parse_handles_punctuation_boundaries() {
-        assert_eq!(
-            parse_verdict("(CORRECT)"),
-            Some(DocumentVerdict::Correct)
-        );
-        assert_eq!(
-            parse_verdict("CORRECT."),
-            Some(DocumentVerdict::Correct)
-        );
-        assert_eq!(
-            parse_verdict("CORRECT!"),
-            Some(DocumentVerdict::Correct)
-        );
+        assert_eq!(parse_verdict("(CORRECT)"), Some(DocumentVerdict::Correct));
+        assert_eq!(parse_verdict("CORRECT."), Some(DocumentVerdict::Correct));
+        assert_eq!(parse_verdict("CORRECT!"), Some(DocumentVerdict::Correct));
     }
 
     #[test]
@@ -272,10 +257,7 @@ mod tests {
         // Critical edge case: "INCORRECT" contains "CORRECT" as a
         // substring. The token-boundary check must prefer INCORRECT
         // when the haystack contains it.
-        assert_eq!(
-            parse_verdict("INCORRECT"),
-            Some(DocumentVerdict::Incorrect)
-        );
+        assert_eq!(parse_verdict("INCORRECT"), Some(DocumentVerdict::Incorrect));
     }
 
     // ── Aggregation ──────────────────────────────────────────────

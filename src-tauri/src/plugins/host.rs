@@ -7,11 +7,11 @@
 //! - WASM plugins run inside the existing `WasmRunner` sandbox.
 //! - The host persists installed plugin state to `<data_dir>/plugins/`.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 use super::manifest::{
     ActivationEvent, ContributedCommand, ContributedSlashCommand, ContributedTheme,
@@ -268,7 +268,11 @@ impl PluginHost {
         let mut to_activate = Vec::new();
         for (id, plugin) in &inner.plugins {
             if plugin.state == PluginState::Installed
-                && plugin.manifest.activation_events.iter().any(|e| matches_event(e, event))
+                && plugin
+                    .manifest
+                    .activation_events
+                    .iter()
+                    .any(|e| matches_event(e, event))
             {
                 to_activate.push(id.clone());
             }
@@ -323,10 +327,7 @@ impl PluginHost {
             .get(command_id)
             .ok_or_else(|| format!("unknown command: {command_id}"))?;
         // Stub execution: echo the command's title and any args back.
-        let mut output = format!(
-            "[{}] {}",
-            entry.plugin_id, entry.command.title,
-        );
+        let mut output = format!("[{}] {}", entry.plugin_id, entry.command.title,);
         if let Some(a) = args {
             output.push_str(&format!(" — args: {a}"));
         }
@@ -409,22 +410,17 @@ fn unregister_contributions(inner: &mut HostInner, plugin_id: &str) {
 fn matches_event(declared: &ActivationEvent, fired: &ActivationEvent) -> bool {
     match (declared, fired) {
         (ActivationEvent::OnStartup, ActivationEvent::OnStartup) => true,
-        (
-            ActivationEvent::OnCommand { command: a },
-            ActivationEvent::OnCommand { command: b },
-        ) => a == b,
-        (
-            ActivationEvent::OnView { view_id: a },
-            ActivationEvent::OnView { view_id: b },
-        ) => a == b,
+        (ActivationEvent::OnCommand { command: a }, ActivationEvent::OnCommand { command: b }) => {
+            a == b
+        }
+        (ActivationEvent::OnView { view_id: a }, ActivationEvent::OnView { view_id: b }) => a == b,
         (
             ActivationEvent::OnChatMessage { pattern: a },
             ActivationEvent::OnChatMessage { pattern: b },
         ) => b.contains(a.as_str()),
-        (
-            ActivationEvent::OnMemoryTag { tag: a },
-            ActivationEvent::OnMemoryTag { tag: b },
-        ) => a == b,
+        (ActivationEvent::OnMemoryTag { tag: a }, ActivationEvent::OnMemoryTag { tag: b }) => {
+            a == b
+        }
         (ActivationEvent::OnMarketplace, ActivationEvent::OnMarketplace) => true,
         (ActivationEvent::OnBrainModeChange, ActivationEvent::OnBrainModeChange) => true,
         (
@@ -471,8 +467,8 @@ fn now_secs() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::manifest::*;
+    use super::*;
     use crate::package_manager::manifest::InstallMethod;
 
     fn test_manifest(id: &str) -> PluginManifest {
@@ -724,7 +720,10 @@ mod tests {
     #[tokio::test]
     async fn invoke_command_unknown_id_errors() {
         let host = PluginHost::in_memory();
-        let err = host.invoke_command("does.not.exist", None).await.unwrap_err();
+        let err = host
+            .invoke_command("does.not.exist", None)
+            .await
+            .unwrap_err();
         assert!(err.contains("unknown command"));
     }
 
@@ -772,10 +771,7 @@ mod tests {
     #[tokio::test]
     async fn invoke_slash_command_unknown_name_errors() {
         let host = PluginHost::in_memory();
-        let err = host
-            .invoke_slash_command("nope", None)
-            .await
-            .unwrap_err();
+        let err = host.invoke_slash_command("nope", None).await.unwrap_err();
         assert!(err.contains("unknown slash-command"));
     }
 

@@ -72,12 +72,11 @@ pub fn open_project(data_dir: &Path, target: &Path) -> Result<OpenOutcome, Works
         return Err(WorkspaceError::TargetMissing(target.to_path_buf()));
     }
 
-    let canonical_target = path_norm::canonicalise(target).map_err(|e| {
-        WorkspaceError::CanonicaliseFailed {
+    let canonical_target =
+        path_norm::canonicalise(target).map_err(|e| WorkspaceError::CanonicaliseFailed {
             path: target.to_path_buf(),
             source: e,
-        }
-    })?;
+        })?;
 
     let mut reg = SelfLaunchedRegistry::load(data_dir);
 
@@ -88,11 +87,7 @@ pub fn open_project(data_dir: &Path, target: &Path) -> Result<OpenOutcome, Works
         reg.save().map_err(WorkspaceError::RegistryWrite)?;
     }
 
-    let choice = resolver::pick_window(
-        &canonical_target,
-        reg.windows(),
-        registry::pid_alive,
-    );
+    let choice = resolver::pick_window(&canonical_target, reg.windows(), registry::pid_alive);
 
     match choice {
         WindowChoice::Exact { pid } | WindowChoice::Ancestor { pid, .. } => {

@@ -187,12 +187,20 @@ pub fn check_ann_health(
 }
 
 /// GC eligibility check: how many entries are eligible for removal.
-pub fn gc_eligible_count(total_stale: usize, retention_days: u32, now_ms: u64, entries_valid_to: &[u64]) -> usize {
+pub fn gc_eligible_count(
+    total_stale: usize,
+    retention_days: u32,
+    now_ms: u64,
+    entries_valid_to: &[u64],
+) -> usize {
     if retention_days == 0 || total_stale == 0 {
         return 0;
     }
     let cutoff_ms = now_ms.saturating_sub(retention_days as u64 * 86_400_000);
-    entries_valid_to.iter().filter(|&&ts| ts < cutoff_ms).count()
+    entries_valid_to
+        .iter()
+        .filter(|&&ts| ts < cutoff_ms)
+        .count()
 }
 
 /// Execute a simulated maintenance pass (for testing without real DB).
@@ -242,7 +250,12 @@ pub fn execute_maintenance_pass(
 
     // Step 3: GC.
     if config.auto_gc {
-        report.gc_removed = gc_eligible_count(stale_entries.len(), config.retention_days, now_ms, stale_entries);
+        report.gc_removed = gc_eligible_count(
+            stale_entries.len(),
+            config.retention_days,
+            now_ms,
+            stale_entries,
+        );
     }
 
     report.duration_ms = start.elapsed().as_millis();
@@ -356,11 +369,11 @@ mod tests {
     fn gc_eligible_count_respects_cutoff() {
         let now = 100_000_000u64; // 100,000s in ms
         let retention_days = 1; // 86_400_000 ms
-        // cutoff = now - 86_400_000 = 13_600_000
-        // 1_000 < cutoff (eligible)
-        // 50_000 < cutoff (eligible)
-        // now - 90_000_000 = 10_000_000 < cutoff (eligible)
-        // now - 80_000_000 = 20_000_000 >= cutoff (NOT eligible)
+                                // cutoff = now - 86_400_000 = 13_600_000
+                                // 1_000 < cutoff (eligible)
+                                // 50_000 < cutoff (eligible)
+                                // now - 90_000_000 = 10_000_000 < cutoff (eligible)
+                                // now - 80_000_000 = 20_000_000 >= cutoff (NOT eligible)
         let entries = vec![1_000, 50_000, now - 90_000_000, now - 80_000_000];
         let count = gc_eligible_count(entries.len(), retention_days, now, &entries);
         assert_eq!(count, 3);
@@ -378,15 +391,13 @@ mod tests {
         let stale = vec![1_000, 2_000]; // Very old entries
         let now = 100_000_000_000; // Far in the future
         let report = execute_maintenance_pass(
-            &cfg,
-            7,   // current schema
+            &cfg, 7,   // current schema
             9,   // target schema
             384, // stored dim (wrong)
             768, // expected dim
             50,  // index count
             100, // db count
-            &stale,
-            now,
+            &stale, now,
         );
         assert_eq!(report.migrations_applied, 2);
         assert_eq!(report.schema_version_after, 9);

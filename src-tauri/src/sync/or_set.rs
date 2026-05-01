@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::{CrdtState, SyncOp, HLC, SiteId};
+use super::{CrdtState, SiteId, SyncOp, HLC};
 
 /// A unique tag identifying a specific add operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -38,10 +38,7 @@ impl OrSet {
             hlc,
             site: site.to_string(),
         };
-        self.entries
-            .entry(key.to_string())
-            .or_default()
-            .insert(tag);
+        self.entries.entry(key.to_string()).or_default().insert(tag);
 
         SyncOp {
             crdt_id: self.crdt_id.clone(),
@@ -96,7 +93,10 @@ impl OrSet {
 
     /// Number of distinct elements in the set.
     pub fn len(&self) -> usize {
-        self.entries.values().filter(|tags| !tags.is_empty()).count()
+        self.entries
+            .values()
+            .filter(|tags| !tags.is_empty())
+            .count()
     }
 
     pub fn is_empty(&self) -> bool {

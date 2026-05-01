@@ -49,9 +49,18 @@ impl ProsodyHints {
 /// Filler words / phrases — case-insensitive, whole-word matches. Order
 /// matters only for the human-readable quirk string we emit below.
 const FILLERS: &[&str] = &[
-    "um", "uh", "er", "hmm",
-    "like", "literally", "basically", "actually",
-    "you know", "i mean", "kind of", "sort of",
+    "um",
+    "uh",
+    "er",
+    "hmm",
+    "like",
+    "literally",
+    "basically",
+    "actually",
+    "you know",
+    "i mean",
+    "kind of",
+    "sort of",
 ];
 
 /// Minimum number of utterances to bother analyzing. Below this,
@@ -171,8 +180,7 @@ pub fn analyze_user_utterances(utterances: &[&str]) -> ProsodyHints {
     });
 
     // ── Quirks: surface the strongest filler usage (≥1/3 of utterances). ─
-    let mut filler_sorted: Vec<(&&'static str, &usize)> =
-        filler_hits.iter().collect();
+    let mut filler_sorted: Vec<(&&'static str, &usize)> = filler_hits.iter().collect();
     filler_sorted.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
     for (filler, count) in filler_sorted.iter().take(2) {
         if (**count as f64) / n >= 1.0 / 3.0 {
@@ -235,8 +243,8 @@ fn contains_whole_word(haystack: &str, needle: &str) -> bool {
     while i + nbytes.len() <= bytes.len() {
         if &bytes[i..i + nbytes.len()] == nbytes {
             let before_ok = i == 0 || !is_word_byte(bytes[i - 1]);
-            let after_ok = i + nbytes.len() == bytes.len()
-                || !is_word_byte(bytes[i + nbytes.len()]);
+            let after_ok =
+                i + nbytes.len() == bytes.len() || !is_word_byte(bytes[i + nbytes.len()]);
             if before_ok && after_ok {
                 return true;
             }
@@ -363,12 +371,7 @@ mod tests {
 
     #[test]
     fn frequent_emoji_marks_playful_and_quirk() {
-        let utters = [
-            "love it 😄🎉",
-            "haha 😂😂",
-            "amazing 🔥",
-            "yay 🎈",
-        ];
+        let utters = ["love it 😄🎉", "haha 😂😂", "amazing 🔥", "yay 🎈"];
         let h = analyze_user_utterances(&utters);
         assert!(h.tone.contains(&"playful"));
         assert!(h.quirks.iter().any(|q| q.contains("emoji")));

@@ -149,8 +149,11 @@ pub fn rerank_candidates(
     if limit == 0 || candidates.is_empty() {
         return Vec::new();
     }
-    debug_assert_eq!(candidates.len(), scores.len(),
-        "rerank_candidates: scores must align 1:1 with candidates");
+    debug_assert_eq!(
+        candidates.len(),
+        scores.len(),
+        "rerank_candidates: scores must align 1:1 with candidates"
+    );
 
     // Pair each candidate with (score-or-None, original_index).
     let mut indexed: Vec<(usize, Option<u8>, MemoryEntry)> = candidates
@@ -164,13 +167,11 @@ pub fn rerank_candidates(
 
     // Sort: scored candidates first (descending by score),
     // then unscored, ties broken by original index ascending.
-    indexed.sort_by(|a, b| {
-        match (a.1, b.1) {
-            (Some(sa), Some(sb)) => sb.cmp(&sa).then_with(|| a.0.cmp(&b.0)),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.0.cmp(&b.0),
-        }
+    indexed.sort_by(|a, b| match (a.1, b.1) {
+        (Some(sa), Some(sb)) => sb.cmp(&sa).then_with(|| a.0.cmp(&b.0)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.0.cmp(&b.0),
     });
 
     indexed
@@ -212,7 +213,8 @@ mod tests {
 
     #[test]
     fn build_prompt_includes_query_doc_and_rubric() {
-        let (system, user) = build_rerank_prompt("What is RAG?", "RAG combines retrieval and generation.");
+        let (system, user) =
+            build_rerank_prompt("What is RAG?", "RAG combines retrieval and generation.");
         assert!(system.contains("0 to 10"));
         assert!(system.contains("rubric"));
         assert!(system.contains("ONLY the integer"));
@@ -227,7 +229,10 @@ mod tests {
         let (_system, user) = build_rerank_prompt("q", &long);
         // The document portion must not contain the full 5000 x's.
         let xs = user.matches('x').count();
-        assert!(xs <= 1500, "expected document truncated to <=1500 chars, got {xs}");
+        assert!(
+            xs <= 1500,
+            "expected document truncated to <=1500 chars, got {xs}"
+        );
     }
 
     #[test]
@@ -306,7 +311,11 @@ mod tests {
         // The reranker failed to score id=2; it must NOT be silently
         // dropped — it slots in below every successfully-scored
         // candidate but still appears in the output.
-        let cands = vec![entry(1, "scored low"), entry(2, "unscored"), entry(3, "scored high")];
+        let cands = vec![
+            entry(1, "scored low"),
+            entry(2, "unscored"),
+            entry(3, "scored high"),
+        ];
         let scores = vec![Some(2), None, Some(9)];
         let out = rerank_candidates(cands, &scores, 3);
         assert_eq!(out.iter().map(|e| e.id).collect::<Vec<_>>(), vec![3, 1, 2]);

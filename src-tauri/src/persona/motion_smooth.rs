@@ -165,7 +165,9 @@ pub fn smooth_clip(clip: &MotionClip, config: &SmoothConfig) -> SmoothResult {
     }
 
     let sigma = config.sigma.max(0.1);
-    let radius = config.radius.unwrap_or_else(|| (3.0 * sigma).ceil() as usize);
+    let radius = config
+        .radius
+        .unwrap_or_else(|| (3.0 * sigma).ceil() as usize);
     let kernel = gaussian_kernel(sigma, radius);
 
     // Collect all bone names across all frames

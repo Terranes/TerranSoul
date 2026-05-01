@@ -45,8 +45,7 @@ pub async fn mcp_server_start(state: State<'_, AppState>) -> Result<McpServerSta
 
     let token = mcp::auth::load_or_create(&state.data_dir)?;
     let port = mcp::default_port();
-    let handle =
-        mcp::start_server(state.inner().clone(), port, token).await?;
+    let handle = mcp::start_server(state.inner().clone(), port, token).await?;
 
     let status = McpServerStatus {
         running: true,
@@ -66,11 +65,7 @@ pub async fn mcp_server_stop(state: State<'_, AppState>) -> Result<(), String> {
     if let Some(handle) = guard.take() {
         handle.stop();
         // Give the server a moment to drain, but don't block forever.
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            handle.task,
-        )
-        .await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
     }
     Ok(())
 }

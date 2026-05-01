@@ -60,7 +60,9 @@ pub fn parse_tags(input: &str) -> ParsedChunk {
     let mut search_from = 0;
     while let Some(rel_start) = text[search_from..].find('[') {
         let start = search_from + rel_start;
-        let Some(rel_end) = text[start..].find(']') else { break };
+        let Some(rel_end) = text[start..].find(']') else {
+            break;
+        };
         let end = start + rel_end;
         let tag_content = &text[start + 1..end];
 

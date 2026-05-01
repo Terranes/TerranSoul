@@ -395,9 +395,8 @@ pub fn retarget_pose(landmarks: &[Landmark], config: &RetargetConfig) -> Option<
         });
 
         // Shoulder shrug
-        let shrug = (left_shoulder.y - mid_shoulder.y).atan2(
-            left_shoulder.sub(mid_shoulder).length().max(0.01),
-        );
+        let shrug = (left_shoulder.y - mid_shoulder.y)
+            .atan2(left_shoulder.sub(mid_shoulder).length().max(0.01));
         pose.left_shoulder = Some([0.0, 0.0, shrug]);
     }
 
@@ -419,9 +418,8 @@ pub fn retarget_pose(landmarks: &[Landmark], config: &RetargetConfig) -> Option<
             lower
         });
 
-        let shrug = (right_shoulder.y - mid_shoulder.y).atan2(
-            right_shoulder.sub(mid_shoulder).length().max(0.01),
-        );
+        let shrug = (right_shoulder.y - mid_shoulder.y)
+            .atan2(right_shoulder.sub(mid_shoulder).length().max(0.01));
         pose.right_shoulder = Some([0.0, 0.0, shrug]);
     }
 

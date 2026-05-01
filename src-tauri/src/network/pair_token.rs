@@ -35,8 +35,8 @@
 //! All of those compose `PairPayload` + `gen_token` + `is_expired`
 //! without re-engineering anything.
 
-use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -108,7 +108,11 @@ impl fmt::Display for PairError {
             PairError::UriTooLong => {
                 write!(f, "URI exceeds {} chars (QR-scan limit)", MAX_URI_LEN)
             }
-            PairError::BadByteLength { field, expected, actual } => write!(
+            PairError::BadByteLength {
+                field,
+                expected,
+                actual,
+            } => write!(
                 f,
                 "field `{field}` decoded to {actual} bytes, expected {expected}"
             ),
@@ -355,22 +359,22 @@ mod tests {
     #[test]
     fn from_bytes_rejects_short_token() {
         let err = PairPayload::from_bytes("h", 1, &[0u8; 31], &[0u8; 32], 0).unwrap_err();
-        assert!(matches!(err, PairError::BadByteLength { field: "token", .. }));
+        assert!(matches!(
+            err,
+            PairError::BadByteLength { field: "token", .. }
+        ));
     }
 
     #[test]
     fn from_bytes_rejects_short_fingerprint() {
-        let err = PairPayload::from_bytes(
-            "h",
-            1,
-            &[0u8; TOKEN_BYTE_LEN],
-            &[0u8; 31],
-            0,
-        )
-        .unwrap_err();
+        let err =
+            PairPayload::from_bytes("h", 1, &[0u8; TOKEN_BYTE_LEN], &[0u8; 31], 0).unwrap_err();
         assert!(matches!(
             err,
-            PairError::BadByteLength { field: "fingerprint", .. }
+            PairError::BadByteLength {
+                field: "fingerprint",
+                ..
+            }
         ));
     }
 
@@ -410,8 +414,7 @@ mod tests {
 
     #[test]
     fn decode_rejects_bad_host() {
-        let err =
-            decode_uri("terransoul://other?host=h&port=1&token=a&fp=b&exp=0").unwrap_err();
+        let err = decode_uri("terransoul://other?host=h&port=1&token=a&fp=b&exp=0").unwrap_err();
         assert_eq!(err, PairError::BadHost);
     }
 
@@ -458,10 +461,7 @@ mod tests {
     #[test]
     fn decode_rejects_unparseable_exp() {
         let uri = "terransoul://pair?host=h&port=1&token=AAA&fp=BBB&exp=oops";
-        assert_eq!(
-            decode_uri(uri).unwrap_err(),
-            PairError::InvalidField("exp")
-        );
+        assert_eq!(decode_uri(uri).unwrap_err(), PairError::InvalidField("exp"));
     }
 
     #[test]
@@ -472,7 +472,10 @@ mod tests {
             URL_SAFE_NO_PAD.encode([0u8; 32])
         );
         let err = decode_uri(&uri).unwrap_err();
-        assert!(matches!(err, PairError::BadByteLength { field: "token", .. }));
+        assert!(matches!(
+            err,
+            PairError::BadByteLength { field: "token", .. }
+        ));
     }
 
     #[test]
@@ -486,9 +489,7 @@ mod tests {
     #[test]
     fn decode_rejects_uri_too_long() {
         let long_host = "a".repeat(MAX_URI_LEN + 100);
-        let uri = format!(
-            "terransoul://pair?host={long_host}&port=1&token=AAA&fp=BBB&exp=0"
-        );
+        let uri = format!("terransoul://pair?host={long_host}&port=1&token=AAA&fp=BBB&exp=0");
         assert_eq!(decode_uri(&uri).unwrap_err(), PairError::UriTooLong);
     }
 

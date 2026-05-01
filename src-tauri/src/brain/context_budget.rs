@@ -81,20 +81,38 @@ impl BudgetConfig {
     /// Free / public APIs (Pollinations, free Anthropic tier) — assume
     /// an 8 K context window with 1 K headroom for the reply.
     pub fn for_free_mode() -> Self {
-        Self { total: 7_000, persona: 1_000, history: 3_000, retrieval: 2_500, tools: 500 }
+        Self {
+            total: 7_000,
+            persona: 1_000,
+            history: 3_000,
+            retrieval: 2_500,
+            tools: 500,
+        }
     }
 
     /// Paid cloud APIs — assume 128 K context but stay frugal to
     /// control cost. Retrieval gets a tighter share than free mode
     /// (paradoxically) because every retrieved token costs money.
     pub fn for_paid_mode() -> Self {
-        Self { total: 16_000, persona: 1_500, history: 7_000, retrieval: 6_000, tools: 1_500 }
+        Self {
+            total: 16_000,
+            persona: 1_500,
+            history: 7_000,
+            retrieval: 6_000,
+            tools: 1_500,
+        }
     }
 
     /// Local Ollama — tokens are free (the user already paid for the
     /// hardware), so retrieval gets the lion's share.
     pub fn for_local_mode() -> Self {
-        Self { total: 12_000, persona: 1_500, history: 4_000, retrieval: 5_500, tools: 1_000 }
+        Self {
+            total: 12_000,
+            persona: 1_500,
+            history: 4_000,
+            retrieval: 5_500,
+            tools: 1_000,
+        }
     }
 }
 
@@ -192,9 +210,7 @@ pub fn fit(inputs: &BudgetInputs, config: &BudgetConfig) -> BudgetResult {
     let persona = inputs.persona.clone();
     stats.tokens_persona = estimate_tokens(&persona);
 
-    let mut remaining = config
-        .total
-        .saturating_sub(stats.tokens_persona);
+    let mut remaining = config.total.saturating_sub(stats.tokens_persona);
 
     // Section 2 — retrieved memory. Sort by score descending then drop
     // tail until the section fits its budget AND the total cap.
@@ -208,8 +224,7 @@ pub fn fit(inputs: &BudgetInputs, config: &BudgetConfig) -> BudgetResult {
     // Section 3 — conversation history. Keep newest first, drop oldest
     // turns until it fits.
     let history_budget = config.history.min(remaining);
-    let (history, history_tokens, history_dropped) =
-        fit_history(&inputs.history, history_budget);
+    let (history, history_tokens, history_dropped) = fit_history(&inputs.history, history_budget);
     stats.tokens_history = history_tokens;
     stats.history_turns_dropped = history_dropped;
     remaining = remaining.saturating_sub(history_tokens);
@@ -228,22 +243,27 @@ pub fn fit(inputs: &BudgetInputs, config: &BudgetConfig) -> BudgetResult {
     };
     stats.tokens_tools = if stats.tools_dropped { 0 } else { tools_tokens };
 
-    stats.tokens_total = stats.tokens_persona
-        + stats.tokens_history
-        + stats.tokens_retrieval
-        + stats.tokens_tools;
+    stats.tokens_total =
+        stats.tokens_persona + stats.tokens_history + stats.tokens_retrieval + stats.tokens_tools;
 
-    BudgetResult { persona, history, retrieval, tools, stats }
+    BudgetResult {
+        persona,
+        history,
+        retrieval,
+        tools,
+        stats,
+    }
 }
 
-fn fit_retrieval(
-    chunks: &[RetrievedChunk],
-    budget: usize,
-) -> (Vec<RetrievedChunk>, usize, usize) {
+fn fit_retrieval(chunks: &[RetrievedChunk], budget: usize) -> (Vec<RetrievedChunk>, usize, usize) {
     // Sort by score descending; stable sort so equal-scored chunks keep
     // their incoming order.
     let mut sorted: Vec<RetrievedChunk> = chunks.to_vec();
-    sorted.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut kept = Vec::with_capacity(sorted.len());
     let mut used = 0usize;
@@ -259,10 +279,7 @@ fn fit_retrieval(
     (kept, used, dropped)
 }
 
-fn fit_history(
-    history: &[HistoryTurn],
-    budget: usize,
-) -> (Vec<HistoryTurn>, usize, usize) {
+fn fit_history(history: &[HistoryTurn], budget: usize) -> (Vec<HistoryTurn>, usize, usize) {
     // Walk from the end (newest first) to fit the budget, then reverse
     // back to oldest-first for the caller.
     let mut kept_rev: Vec<HistoryTurn> = Vec::new();
@@ -285,11 +302,17 @@ mod tests {
     use super::*;
 
     fn turn(role: &str, content: &str) -> HistoryTurn {
-        HistoryTurn { role: role.to_string(), content: content.to_string() }
+        HistoryTurn {
+            role: role.to_string(),
+            content: content.to_string(),
+        }
     }
 
     fn chunk(content: &str, score: f64) -> RetrievedChunk {
-        RetrievedChunk { content: content.to_string(), score }
+        RetrievedChunk {
+            content: content.to_string(),
+            score,
+        }
     }
 
     #[test]
@@ -351,9 +374,9 @@ mod tests {
             persona: String::new(),
             history: vec![],
             retrieval: vec![
-                chunk("AAAA", 0.1),  // worst
-                chunk("BBBB", 0.9),  // best
-                chunk("CCCC", 0.5),  // middle
+                chunk("AAAA", 0.1), // worst
+                chunk("BBBB", 0.9), // best
+                chunk("CCCC", 0.5), // middle
             ],
             tools: String::new(),
         };
@@ -367,8 +390,7 @@ mod tests {
         let res = fit(&inputs, &cfg);
         assert_eq!(res.retrieval.len(), 2);
         // Should keep BBBB (0.9) and CCCC (0.5), drop AAAA (0.1).
-        let kept_contents: Vec<&str> =
-            res.retrieval.iter().map(|c| c.content.as_str()).collect();
+        let kept_contents: Vec<&str> = res.retrieval.iter().map(|c| c.content.as_str()).collect();
         assert_eq!(kept_contents, vec!["BBBB", "CCCC"]);
         assert_eq!(res.stats.retrieval_chunks_dropped, 1);
     }
@@ -379,10 +401,10 @@ mod tests {
         let inputs = BudgetInputs {
             persona: String::new(),
             history: vec![
-                turn("user", "OLD1"),  // dropped
-                turn("user", "OLD2"),  // dropped
-                turn("user", "NEW1"),  // kept
-                turn("user", "NEW2"),  // kept
+                turn("user", "OLD1"), // dropped
+                turn("user", "OLD2"), // dropped
+                turn("user", "NEW1"), // kept
+                turn("user", "NEW2"), // kept
             ],
             retrieval: vec![],
             tools: String::new(),
@@ -428,15 +450,15 @@ mod tests {
         // Persona is critical — never truncated, even when its share
         // pushes total over.
         let inputs = BudgetInputs {
-            persona: "x".repeat(40), // 10 tokens
+            persona: "x".repeat(40),                              // 10 tokens
             history: vec![turn("user", "y".repeat(20).as_str())], // 5+1 tokens
-            retrieval: vec![chunk(&"z".repeat(20), 0.5)], // 5 tokens
+            retrieval: vec![chunk(&"z".repeat(20), 0.5)],         // 5 tokens
             tools: String::new(),
         };
         let cfg = BudgetConfig {
             total: 12,
             persona: 10,
-            history: 1, // tight
+            history: 1,   // tight
             retrieval: 1, // tight
             tools: 0,
         };
@@ -449,10 +471,10 @@ mod tests {
     #[test]
     fn fit_total_stats_match_section_sums() {
         let inputs = BudgetInputs {
-            persona: "abcd".to_string(), // 1 token
+            persona: "abcd".to_string(),         // 1 token
             history: vec![turn("user", "abcd")], // 1 + 1 tokens (role+content)
             retrieval: vec![chunk("abcd", 0.9)], // 1 token
-            tools: "abcd".to_string(), // 1 token
+            tools: "abcd".to_string(),           // 1 token
         };
         let cfg = BudgetConfig::for_local_mode();
         let res = fit(&inputs, &cfg);

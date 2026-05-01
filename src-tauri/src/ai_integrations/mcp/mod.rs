@@ -89,7 +89,8 @@ pub async fn start_server(
     port: u16,
     token: String,
 ) -> Result<McpServerHandle, String> {
-    let gw = Arc::new(AppStateGateway::new(state)) as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
+    let gw = Arc::new(AppStateGateway::new(state))
+        as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
     let router_state = McpRouterState {
         gw,
         caps: GatewayCaps::default(),
@@ -130,9 +131,7 @@ pub async fn start_server(
     })?;
 
     if bound_port != port {
-        eprintln!(
-            "[mcp] primary port {port} in use, bound to fallback port {bound_port}"
-        );
+        eprintln!("[mcp] primary port {port} in use, bound to fallback port {bound_port}");
     }
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);

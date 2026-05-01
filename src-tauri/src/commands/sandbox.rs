@@ -1,7 +1,7 @@
+use crate::sandbox::{Capability, CapabilityStore, WasmRunner};
+use crate::AppState;
 use serde::Serialize;
 use tauri::State;
-use crate::AppState;
-use crate::sandbox::{Capability, CapabilityStore, WasmRunner};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ConsentInfo {

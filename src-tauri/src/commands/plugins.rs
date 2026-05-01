@@ -2,11 +2,11 @@
 
 use tauri::State;
 
-use crate::plugins::{
-    self, InstalledPlugin, PluginHostStatus, PluginManifest,
-    CommandEntry, SlashCommandEntry, ContributedTheme,
-};
 use crate::plugins::host::CommandResult;
+use crate::plugins::{
+    self, CommandEntry, ContributedTheme, InstalledPlugin, PluginHostStatus, PluginManifest,
+    SlashCommandEntry,
+};
 use crate::AppState;
 
 #[tauri::command]
@@ -43,9 +43,7 @@ pub async fn plugin_uninstall(
 }
 
 #[tauri::command]
-pub async fn plugin_list(
-    app_state: State<'_, AppState>,
-) -> Result<Vec<InstalledPlugin>, String> {
+pub async fn plugin_list(app_state: State<'_, AppState>) -> Result<Vec<InstalledPlugin>, String> {
     Ok(app_state.plugin_host.list_plugins().await)
 }
 
@@ -104,9 +102,7 @@ pub async fn plugin_host_status(
 }
 
 #[tauri::command]
-pub async fn plugin_parse_manifest(
-    json: String,
-) -> Result<PluginManifest, String> {
+pub async fn plugin_parse_manifest(json: String) -> Result<PluginManifest, String> {
     plugins::parse_plugin_manifest(&json).map_err(|e| e.to_string())
 }
 

@@ -240,7 +240,9 @@ impl OllamaAgent {
         let msgs = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You extract typed relationships between memories. Reply with JSON lines only.".to_string(),
+                content:
+                    "You extract typed relationships between memories. Reply with JSON lines only."
+                        .to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -282,7 +284,11 @@ impl OllamaAgent {
             .lines()
             .filter_map(|line| {
                 let trimmed = line.trim().trim_start_matches("- ").trim();
-                if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
             })
             .collect()
     }
@@ -297,7 +303,9 @@ impl OllamaAgent {
         let msgs = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You are a concise summarizer. Summarize conversations into 1-3 sentences.".to_string(),
+                content:
+                    "You are a concise summarizer. Summarize conversations into 1-3 sentences."
+                        .to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -307,7 +315,11 @@ impl OllamaAgent {
 
         let (reply, _) = self.call(msgs).await;
         let clean = reply.trim().to_string();
-        if clean.is_empty() { None } else { Some(clean) }
+        if clean.is_empty() {
+            None
+        } else {
+            Some(clean)
+        }
     }
 
     /// Generate a **hypothetical answer** for a HyDE retrieval query.
@@ -327,8 +339,14 @@ impl OllamaAgent {
         }
         let (system, user) = crate::memory::hyde::build_hyde_prompt(query);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::hyde::clean_hyde_reply(&reply)
@@ -355,8 +373,14 @@ impl OllamaAgent {
         }
         let (system, user) = crate::memory::reranker::build_rerank_prompt(query, document);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::reranker::parse_rerank_score(&reply)
@@ -392,13 +416,17 @@ impl OllamaAgent {
         snippets: &[crate::persona::extract::PromptSnippet],
         prosody_hints: Option<&str>,
     ) -> Option<crate::persona::extract::PersonaCandidate> {
-        let (system, user) = crate::persona::extract::build_persona_prompt_with_hints(
-            snippets,
-            prosody_hints,
-        );
+        let (system, user) =
+            crate::persona::extract::build_persona_prompt_with_hints(snippets, prosody_hints);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::persona::extract::parse_persona_reply(&reply)
@@ -417,8 +445,14 @@ impl OllamaAgent {
         let (system, user) =
             crate::persona::drift::build_drift_prompt(persona_json, personal_memories);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::persona::drift::parse_drift_reply(&reply)
@@ -437,8 +471,14 @@ impl OllamaAgent {
         let (system, user) =
             crate::memory::conflicts::build_contradiction_prompt(content_a, content_b);
         let msgs = vec![
-            ChatMessage { role: "system".to_string(), content: system },
-            ChatMessage { role: "user".to_string(),   content: user },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user,
+            },
         ];
         let (reply, _) = self.call(msgs).await;
         crate::memory::conflicts::parse_contradiction_reply(&reply)
@@ -480,10 +520,7 @@ impl OllamaAgent {
 
         // 3. Bound every embed call so a hung daemon can't stall the chat
         //    pipeline forever.
-        let client = match Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-        {
+        let client = match Client::builder().timeout(Duration::from_secs(15)).build() {
             Ok(c) => c,
             Err(_) => return None,
         };
@@ -518,17 +555,21 @@ impl OllamaAgent {
         let json: serde_json::Value = resp.json().await.ok()?;
         // Ollama returns { "embeddings": [[...]] }
         let arr = json.get("embeddings")?.as_array()?.first()?.as_array()?;
-        let vec: Vec<f32> = arr.iter().filter_map(|v| v.as_f64().map(|f| f as f32)).collect();
-        if vec.is_empty() { None } else { Some(vec) }
+        let vec: Vec<f32> = arr
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+        if vec.is_empty() {
+            None
+        } else {
+            Some(vec)
+        }
     }
 
     /// Check if a model name is available locally in Ollama.
     /// Result is cached for 60 s by [`resolve_embed_model`].
     async fn model_exists(name: &str) -> bool {
-        let client = match Client::builder()
-            .timeout(Duration::from_secs(5))
-            .build()
-        {
+        let client = match Client::builder().timeout(Duration::from_secs(5)).build() {
             Ok(c) => c,
             Err(_) => return false,
         };
@@ -589,7 +630,9 @@ impl OllamaAgent {
         let msgs = vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "You select the most relevant memories from a list. Reply with numbers only.".to_string(),
+                content:
+                    "You select the most relevant memories from a list. Reply with numbers only."
+                        .to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),
@@ -761,12 +804,7 @@ pub struct EmbedCacheSnapshot {
 
 pub async fn embed_cache_snapshot() -> EmbedCacheSnapshot {
     let chosen = embed_model_cache().lock().await.clone();
-    let unsupported: Vec<String> = unsupported_models()
-        .lock()
-        .await
-        .iter()
-        .cloned()
-        .collect();
+    let unsupported: Vec<String> = unsupported_models().lock().await.iter().cloned().collect();
     EmbedCacheSnapshot {
         chosen_model: chosen.as_ref().map(|c| c.model.clone()),
         chosen_age_secs: chosen.as_ref().map(|c| c.chosen_at.elapsed().as_secs()),
@@ -906,10 +944,7 @@ where
         .map_err(|e| format!("Ollama not reachable: {e}"))?;
 
     if !resp.status().is_success() {
-        return Err(format!(
-            "Ollama pull failed with status {}",
-            resp.status()
-        ));
+        return Err(format!("Ollama pull failed with status {}", resp.status()));
     }
 
     // Track per-layer progress so we can compute an overall percentage.
@@ -946,17 +981,13 @@ where
 
             // Update per-layer tracking.
             if !parsed.digest.is_empty() && parsed.total > 0 {
-                layer_totals.insert(
-                    parsed.digest.clone(),
-                    (parsed.total, parsed.completed),
-                );
+                layer_totals.insert(parsed.digest.clone(), (parsed.total, parsed.completed));
             }
 
             // Compute overall percentage across all known layers.
-            let (sum_total, sum_done) =
-                layer_totals.values().fold((0u64, 0u64), |(t, d), (lt, ld)| {
-                    (t + lt, d + ld)
-                });
+            let (sum_total, sum_done) = layer_totals
+                .values()
+                .fold((0u64, 0u64), |(t, d), (lt, ld)| (t + lt, d + ld));
             let percent = if sum_total > 0 {
                 ((sum_done as f64 / sum_total as f64) * 100.0).min(100.0) as u8
             } else if parsed.status == "success" {
@@ -976,11 +1007,9 @@ where
     }
 
     if !saw_success {
-        return Err(
-            "Ollama pull stream ended without a success status — \
+        return Err("Ollama pull stream ended without a success status — \
              the download may have been interrupted or the model may not exist"
-                .to_string(),
-        );
+            .to_string());
     }
 
     Ok(())
@@ -1130,7 +1159,9 @@ mod tests {
         // empty messages can't accidentally hammer /api/embed.
         clear_embed_caches().await;
         assert!(OllamaAgent::embed_text("", "gemma3:4b").await.is_none());
-        assert!(OllamaAgent::embed_text("   \n\t  ", "gemma3:4b").await.is_none());
+        assert!(OllamaAgent::embed_text("   \n\t  ", "gemma3:4b")
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -1145,11 +1176,9 @@ mod tests {
         mark_unsupported("fake-model:1b", 501).await;
 
         // embed_text must short-circuit and never hit the network.
-        assert!(
-            OllamaAgent::embed_text("hello world", "fake-model:1b")
-                .await
-                .is_none()
-        );
+        assert!(OllamaAgent::embed_text("hello world", "fake-model:1b")
+            .await
+            .is_none());
 
         // Snapshot exposes the unsupported model.
         let snap = embed_cache_snapshot().await;

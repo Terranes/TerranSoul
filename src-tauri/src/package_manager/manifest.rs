@@ -393,7 +393,10 @@ mod tests {
             "ipc_protocol_version": 1
         }"#;
         let manifest = parse_manifest(json).unwrap();
-        assert!(matches!(manifest.install_method, InstallMethod::Wasm { .. }));
+        assert!(matches!(
+            manifest.install_method,
+            InstallMethod::Wasm { .. }
+        ));
     }
 
     #[test]
@@ -601,7 +604,8 @@ mod tests {
     #[test]
     fn test_validate_sha256_non_hex() {
         let mut m = valid_manifest();
-        m.sha256 = Some("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz".to_string());
+        m.sha256 =
+            Some("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz".to_string());
         let result = validate_manifest(&m);
         assert!(matches!(result, Err(ManifestError::InvalidSha256(_))));
     }

@@ -17,12 +17,7 @@ pub fn is_enabled() -> bool {
         // Use the `reg` CLI rather than pulling in `winreg` as a new dep.
         // Costs one process spawn per call but is otherwise stable.
         let out = std::process::Command::new("reg")
-            .args([
-                "query",
-                &format!(r"HKCU\{RUN_KEY}"),
-                "/v",
-                VALUE_NAME,
-            ])
+            .args(["query", &format!(r"HKCU\{RUN_KEY}"), "/v", VALUE_NAME])
             .output();
         match out {
             Ok(o) => o.status.success(),
@@ -107,7 +102,10 @@ mod tests {
         let result = set_enabled(false, "C:/nonexistent/terransoul.exe");
         // On Windows `reg delete` may return Ok or "unable to find" (also
         // mapped to Ok). Either way the call should not fail.
-        assert!(result.is_ok(), "set_enabled(false) should not error: {result:?}");
+        assert!(
+            result.is_ok(),
+            "set_enabled(false) should not error: {result:?}"
+        );
     }
 
     #[test]

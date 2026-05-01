@@ -239,13 +239,7 @@ where
     tokio::spawn(async move {
         let mut lines = BufReader::new(reader).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if tx
-                .send(CliEvent::Line {
-                    stream,
-                    text: line,
-                })
-                .is_err()
-            {
+            if tx.send(CliEvent::Line { stream, text: line }).is_err() {
                 // receiver gone — caller dropped CliWorker
                 break;
             }
@@ -360,9 +354,7 @@ mod tests {
         };
         let events = drain(worker).await;
         assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, CliEvent::Started { .. })),
+            events.iter().any(|e| matches!(e, CliEvent::Started { .. })),
             "missing Started event"
         );
         assert!(

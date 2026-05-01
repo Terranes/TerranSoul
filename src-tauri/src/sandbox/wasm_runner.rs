@@ -1,7 +1,7 @@
-use wasmtime::{Config, Engine, Linker, Module, OptLevel, Store};
 use super::capability::CapabilityStore;
 use super::host_api::HostContext;
 use std::sync::{Arc, Mutex};
+use wasmtime::{Config, Engine, Linker, Module, OptLevel, Store};
 
 pub struct WasmRunner {
     engine: Engine,
@@ -21,8 +21,7 @@ impl WasmRunner {
         agent_name: &str,
         cap_store: Arc<Mutex<CapabilityStore>>,
     ) -> Result<i32, String> {
-        let module =
-            Module::from_binary(&self.engine, wasm_bytes).map_err(|e| e.to_string())?;
+        let module = Module::from_binary(&self.engine, wasm_bytes).map_err(|e| e.to_string())?;
         let ctx = HostContext::new(agent_name, cap_store);
         let mut store = Store::new(&self.engine, ctx);
         let linker: Linker<HostContext> = Linker::new(&self.engine);
@@ -83,8 +82,8 @@ mod tests {
 
     #[test]
     fn test_capability_enforcement_in_host_api() {
-        use super::super::host_api::HostContext;
         use super::super::capability::Capability;
+        use super::super::host_api::HostContext;
         let store = make_cap_store();
         let ctx = HostContext::new("agent", store.clone());
         assert!(ctx.check_capability(&Capability::FileRead).is_err());

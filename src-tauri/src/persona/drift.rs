@@ -192,7 +192,10 @@ mod tests {
     fn build_drift_prompt_includes_persona_and_memories() {
         let persona = r#"{"name":"Soul","role":"playful imp"}"#;
         let memories = vec![
-            ("Likes formal academic writing".into(), "personal:style".into()),
+            (
+                "Likes formal academic writing".into(),
+                "personal:style".into(),
+            ),
             ("Studies Vietnamese law".into(), "personal:interest".into()),
         ];
         let (system, user) = build_drift_prompt(persona, &memories);
@@ -215,7 +218,12 @@ mod tests {
         let persona = r#"{"name":"Soul"}"#;
         // Create 100 large memories to blow the budget
         let memories: Vec<(String, String)> = (0..100)
-            .map(|i| (format!("Memory content {i} {}", "x".repeat(200)), format!("personal:tag{i}")))
+            .map(|i| {
+                (
+                    format!("Memory content {i} {}", "x".repeat(200)),
+                    format!("personal:tag{i}"),
+                )
+            })
             .collect();
         let (_, user) = build_drift_prompt(persona, &memories);
         // Should include some but not all

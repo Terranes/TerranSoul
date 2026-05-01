@@ -91,10 +91,7 @@ pub struct ClassifyOptions {
 ///
 /// The output preserves input order so the UI can display "the
 /// interface listed first by the OS first".
-pub fn classify_addresses(
-    candidates: &[IpAddr],
-    options: ClassifyOptions,
-) -> Vec<LanAddress> {
+pub fn classify_addresses(candidates: &[IpAddr], options: ClassifyOptions) -> Vec<LanAddress> {
     candidates
         .iter()
         .copied()
@@ -357,27 +354,15 @@ mod tests {
 
     #[test]
     fn preserves_input_order() {
-        let addrs = vec![
-            v4(192, 168, 50, 10),
-            v4(10, 0, 0, 1),
-            v4(172, 20, 5, 5),
-        ];
+        let addrs = vec![v4(192, 168, 50, 10), v4(10, 0, 0, 1), v4(172, 20, 5, 5)];
         let out = classify_addresses(&addrs, ClassifyOptions::default());
-        let expected = vec![
-            v4(192, 168, 50, 10),
-            v4(10, 0, 0, 1),
-            v4(172, 20, 5, 5),
-        ];
+        let expected = vec![v4(192, 168, 50, 10), v4(10, 0, 0, 1), v4(172, 20, 5, 5)];
         assert_eq!(out.iter().map(|l| l.addr).collect::<Vec<_>>(), expected);
     }
 
     #[test]
     fn private_lan_addresses_helper_matches_default_options() {
-        let addrs = vec![
-            v4(192, 168, 1, 1),
-            v4(8, 8, 8, 8),
-            v4(127, 0, 0, 1),
-        ];
+        let addrs = vec![v4(192, 168, 1, 1), v4(8, 8, 8, 8), v4(127, 0, 0, 1)];
         let helper = private_lan_addresses(&addrs);
         let manual = classify_addresses(&addrs, ClassifyOptions::default());
         assert_eq!(helper, manual);

@@ -228,7 +228,11 @@ fn parse_useful(response: &str) -> Option<u8> {
     let close = find_close_tag_ci(rest, "</Useful>")?;
     let inner = rest[..close].trim();
     let n: u8 = inner.parse().ok()?;
-    if (1..=5).contains(&n) { Some(n) } else { None }
+    if (1..=5).contains(&n) {
+        Some(n)
+    } else {
+        None
+    }
 }
 
 trait FromStrCi: Sized {
@@ -349,11 +353,9 @@ impl SelfRagController {
         // At the cap: either accept (if at all supported) or reject.
         if self.iteration >= self.max_iterations {
             return match reflection.supported {
-                Some(SupportedToken::Fully) | Some(SupportedToken::Partially) => {
-                    Decision::Accept {
-                        answer: strip_reflection_tokens(response),
-                    }
-                }
+                Some(SupportedToken::Fully) | Some(SupportedToken::Partially) => Decision::Accept {
+                    answer: strip_reflection_tokens(response),
+                },
                 _ => Decision::Reject {
                     reason: RejectReason::MaxIterationsExceeded,
                 },

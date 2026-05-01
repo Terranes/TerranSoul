@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package terransoul.brain.v1;
+
+service Brain {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc StreamSearch(SearchRequest) returns (stream SearchHit);
+  rpc GetEntry(GetEntryRequest) returns (MemoryEntry);
+  rpc ListRecent(RecentRequest) returns (RecentResponse);
+  rpc KgNeighbors(KgRequest) returns (KgNeighborhood);
+  rpc Summarize(SummarizeRequest) returns (SummarizeResponse);
+  rpc SuggestContext(SuggestContextRequest) returns (SuggestContextResponse);
+  rpc IngestUrl(IngestUrlRequest) returns (IngestUrlResponse);
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string version = 1;
+  string brain_provider = 2;
+  optional string brain_model = 3;
+  uint32 rag_quality_pct = 4;
+  int64 memory_total = 5;
+}
+
+message SearchRequest {
+  string query = 1;
+  optional uint32 limit = 2;
+  SearchMode mode = 3;
+}
+
+enum SearchMode {
+  SEARCH_MODE_RRF = 0;
+  SEARCH_MODE_HYBRID = 1;
+  SEARCH_MODE_HYDE = 2;
+}
+
+message SearchHit {
+  int64 id = 1;
+  string content = 2;
+  string tags = 3;
+  int64 importance = 4;
+  double score = 5;
+  optional string source_url = 6;
+  string tier = 7;
+}
+
+message SearchResponse {
+  repeated SearchHit hits = 1;
+}
+
+message GetEntryRequest {
+  int64 id = 1;
+}
+
+message MemoryEntry {
+  int64 id = 1;
+  string content = 2;
+  string tags = 3;
+  int64 importance = 4;
+  string memory_type = 5;
+  int64 created_at = 6;
+  optional int64 last_accessed = 7;
+  int64 access_count = 8;
+  string tier = 9;
+  double decay_score = 10;
+  optional string session_id = 11;
+  optional int64 parent_id = 12;
+  int64 token_count = 13;
+  optional string source_url = 14;
+  optional string source_hash = 15;
+  optional int64 expires_at = 16;
+  optional int64 valid_to = 17;
+}
+
+message RecentRequest {
+  optional uint32 limit = 1;
+  optional string kind = 2;
+  optional string tag = 3;
+  optional int64 since = 4;
+}
+
+message RecentResponse {
+  repeated MemoryEntry entries = 1;
+}
+
+message KgRequest {
+  int64 id = 1;
+  uint32 depth = 2;
+  string direction = 3;
+}
+
+message KgNeighbor {
+  string edge_json = 1;
+  optional MemoryEntry entry = 2;
+}
+
+message KgNeighborhood {
+  MemoryEntry center = 1;
+  repeated KgNeighbor neighbors = 2;
+  bool truncated = 3;
+}
+
+message SummarizeRequest {
+  optional string text = 1;
+  repeated int64 memory_ids = 2;
+}
+
+message SummarizeResponse {
+  optional string summary = 1;
+  uint32 resolved_count = 2;
+}
+
+message SuggestContextRequest {
+  optional string file_path = 1;
+  optional uint64 cursor_offset = 2;
+  optional string selection = 3;
+  string query = 4;
+  optional uint32 limit = 5;
+}
+
+message SuggestContextResponse {
+  repeated SearchHit hits = 1;
+  optional KgNeighborhood kg = 2;
+  optional string summary = 3;
+  string fingerprint = 4;
+}
+
+message IngestUrlRequest {
+  string url = 1;
+  optional string tags = 2;
+  optional int64 importance = 3;
+}
+
+message IngestUrlResponse {
+  string task_id = 1;
+  string source = 2;
+  string source_type = 3;
+}

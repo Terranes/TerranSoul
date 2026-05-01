@@ -88,7 +88,11 @@ pub fn build_pack(
         exported_at: now_ms,
         note: note.and_then(|s| {
             let trimmed = s.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
         }),
         traits,
         expressions,
@@ -101,8 +105,7 @@ pub fn build_pack(
 /// `serde_json` itself fails (essentially unreachable for the known
 /// `PersonaPack` shape).
 pub fn pack_to_string(pack: &PersonaPack) -> Result<String, String> {
-    serde_json::to_string_pretty(pack)
-        .map_err(|e| format!("Failed to serialise persona pack: {e}"))
+    serde_json::to_string_pretty(pack).map_err(|e| format!("Failed to serialise persona pack: {e}"))
 }
 
 /// Parse a user-supplied JSON string into a [`PersonaPack`].
@@ -129,8 +132,8 @@ pub fn parse_pack(raw: &str) -> Result<PersonaPack, String> {
     if trimmed.is_empty() {
         return Err("Pack is empty".to_string());
     }
-    let pack: PersonaPack = serde_json::from_str(trimmed)
-        .map_err(|e| format!("Pack is not valid JSON: {e}"))?;
+    let pack: PersonaPack =
+        serde_json::from_str(trimmed).map_err(|e| format!("Pack is not valid JSON: {e}"))?;
 
     if pack.pack_version > PERSONA_PACK_VERSION {
         return Err(format!(
@@ -217,7 +220,9 @@ pub fn note_skip(report: &mut ImportReport, reason: String) {
     if report.skipped.len() < MAX_SKIPS {
         report.skipped.push(reason);
     } else if report.skipped.len() == MAX_SKIPS {
-        report.skipped.push("…(further skip messages truncated)".to_string());
+        report
+            .skipped
+            .push("…(further skip messages truncated)".to_string());
     }
 }
 

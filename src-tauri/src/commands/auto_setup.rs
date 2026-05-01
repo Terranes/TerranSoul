@@ -30,11 +30,8 @@ pub async fn setup_vscode_mcp(
 ) -> Result<SetupResult, String> {
     let (token, port) = get_mcp_info(&state).await?;
     let url = mcp_url(port);
-    let result = auto_setup::write_vscode_config(
-        std::path::Path::new(&workspace_root),
-        &url,
-        &token,
-    )?;
+    let result =
+        auto_setup::write_vscode_config(std::path::Path::new(&workspace_root), &url, &token)?;
 
     // Track auto-configured MCP entry.
     {
@@ -51,9 +48,7 @@ pub async fn setup_vscode_mcp(
 /// Writes the `mcpServers.terransoul-brain` entry in the platform-specific
 /// Claude Desktop config file.
 #[tauri::command]
-pub async fn setup_claude_mcp(
-    state: State<'_, AppState>,
-) -> Result<SetupResult, String> {
+pub async fn setup_claude_mcp(state: State<'_, AppState>) -> Result<SetupResult, String> {
     let (token, port) = get_mcp_info(&state).await?;
     let url = mcp_url(port);
     let result = auto_setup::write_claude_config(&url, &token)?;
@@ -69,9 +64,7 @@ pub async fn setup_claude_mcp(
 
 /// Set up Codex CLI MCP integration.
 #[tauri::command]
-pub async fn setup_codex_mcp(
-    state: State<'_, AppState>,
-) -> Result<SetupResult, String> {
+pub async fn setup_codex_mcp(state: State<'_, AppState>) -> Result<SetupResult, String> {
     let (token, port) = get_mcp_info(&state).await?;
     let url = mcp_url(port);
     let result = auto_setup::write_codex_config(&url, &token)?;
@@ -139,19 +132,15 @@ pub async fn setup_vscode_mcp_stdio(
     workspace_root: String,
 ) -> Result<SetupResult, String> {
     let exe = current_exe_path()?;
-    let result = auto_setup::write_vscode_stdio_config(
-        std::path::Path::new(&workspace_root),
-        &exe,
-    )?;
+    let result =
+        auto_setup::write_vscode_stdio_config(std::path::Path::new(&workspace_root), &exe)?;
     track_auto_configured(&state, "mcp_vscode_stdio")?;
     Ok(result)
 }
 
 /// Set up Claude Desktop MCP integration over the **stdio** transport.
 #[tauri::command]
-pub async fn setup_claude_mcp_stdio(
-    state: State<'_, AppState>,
-) -> Result<SetupResult, String> {
+pub async fn setup_claude_mcp_stdio(state: State<'_, AppState>) -> Result<SetupResult, String> {
     let exe = current_exe_path()?;
     let result = auto_setup::write_claude_stdio_config(&exe)?;
     track_auto_configured(&state, "mcp_claude_stdio")?;
@@ -160,9 +149,7 @@ pub async fn setup_claude_mcp_stdio(
 
 /// Set up Codex CLI MCP integration over the **stdio** transport.
 #[tauri::command]
-pub async fn setup_codex_mcp_stdio(
-    state: State<'_, AppState>,
-) -> Result<SetupResult, String> {
+pub async fn setup_codex_mcp_stdio(state: State<'_, AppState>) -> Result<SetupResult, String> {
     let exe = current_exe_path()?;
     let result = auto_setup::write_codex_stdio_config(&exe)?;
     track_auto_configured(&state, "mcp_codex_stdio")?;

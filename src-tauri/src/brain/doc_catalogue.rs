@@ -50,8 +50,16 @@ fn estimate_download_size(description: &str, required_ram_mb: u64) -> u64 {
 /// Returns `None` if the required markers are missing or the tables are
 /// unparseable (caller should fall back to the hardcoded catalogue).
 pub fn parse_catalogue(markdown: &str) -> Option<ParsedCatalogue> {
-    let models_block = extract_between(markdown, "<!-- BEGIN MODEL_CATALOGUE -->", "<!-- END MODEL_CATALOGUE -->")?;
-    let picks_block = extract_between(markdown, "<!-- BEGIN TOP_PICKS -->", "<!-- END TOP_PICKS -->")?;
+    let models_block = extract_between(
+        markdown,
+        "<!-- BEGIN MODEL_CATALOGUE -->",
+        "<!-- END MODEL_CATALOGUE -->",
+    )?;
+    let picks_block = extract_between(
+        markdown,
+        "<!-- BEGIN TOP_PICKS -->",
+        "<!-- END TOP_PICKS -->",
+    )?;
 
     let mut local_models = Vec::new();
     let mut cloud_models = Vec::new();
@@ -185,40 +193,40 @@ fn build_http_client() -> Result<reqwest::Client, String> {
 
 /// Known Ollama model tags → approximate RAM required (MB, Q4 quant + OS overhead).
 const KNOWN_RAM_TABLE: &[(&str, u64)] = &[
-    ("tinyllama",          2_048),
-    ("gemma3:1b",          2_048),
-    ("llama3.2:1b",        2_048),
-    ("gemma2:2b",          4_096),
-    ("llama3.2:3b",        4_096),
-    ("phi4-mini",          4_096),
-    ("phi3:mini",          4_096),
-    ("gemma3:4b",          6_144),
-    ("deepseek-r1:1.5b",   3_072),
-    ("deepseek-r1:7b",     8_192),
-    ("deepseek-r1:8b",     8_192),
-    ("deepseek-r1:14b",   16_384),
-    ("deepseek-r1:32b",   32_768),
-    ("deepseek-r1:70b",   49_152),
+    ("tinyllama", 2_048),
+    ("gemma3:1b", 2_048),
+    ("llama3.2:1b", 2_048),
+    ("gemma2:2b", 4_096),
+    ("llama3.2:3b", 4_096),
+    ("phi4-mini", 4_096),
+    ("phi3:mini", 4_096),
+    ("gemma3:4b", 6_144),
+    ("deepseek-r1:1.5b", 3_072),
+    ("deepseek-r1:7b", 8_192),
+    ("deepseek-r1:8b", 8_192),
+    ("deepseek-r1:14b", 16_384),
+    ("deepseek-r1:32b", 32_768),
+    ("deepseek-r1:70b", 49_152),
     ("deepseek-r1:671b", 393_216),
-    ("mistral:7b",         8_192),
-    ("mistral-nemo",      14_336),
-    ("llama3.1:8b",       10_240),
-    ("llama3.3:70b",      49_152),
-    ("qwen2.5:7b",         8_192),
-    ("qwen2.5:14b",       14_336),
-    ("qwen2.5:32b",       32_768),
-    ("qwen2.5:72b",       49_152),
-    ("qwen3:8b",          10_240),
-    ("qwen3:14b",         14_336),
-    ("qwen3:32b",         32_768),
-    ("gemma4:e2b",         8_192),
-    ("gemma4:e4b",        12_288),
-    ("gemma4:26b",        22_528),
-    ("gemma4:31b",        24_576),
-    ("gemma3:12b",        14_336),
-    ("gemma3:27b",        20_480),
-    ("command-r",         16_384),
-    ("command-r-plus",    49_152),
+    ("mistral:7b", 8_192),
+    ("mistral-nemo", 14_336),
+    ("llama3.1:8b", 10_240),
+    ("llama3.3:70b", 49_152),
+    ("qwen2.5:7b", 8_192),
+    ("qwen2.5:14b", 14_336),
+    ("qwen2.5:32b", 32_768),
+    ("qwen2.5:72b", 49_152),
+    ("qwen3:8b", 10_240),
+    ("qwen3:14b", 14_336),
+    ("qwen3:32b", 32_768),
+    ("gemma4:e2b", 8_192),
+    ("gemma4:e4b", 12_288),
+    ("gemma4:26b", 22_528),
+    ("gemma4:31b", 24_576),
+    ("gemma3:12b", 14_336),
+    ("gemma3:27b", 20_480),
+    ("command-r", 16_384),
+    ("command-r-plus", 49_152),
 ];
 
 /// Estimate RAM (MB) for an Ollama model by name.
@@ -227,7 +235,10 @@ fn estimate_ram_mb_for_name(name: &str) -> u64 {
     let lower = name.to_lowercase();
     // Exact or prefix match in the known table.
     for (key, ram) in KNOWN_RAM_TABLE {
-        if lower == *key || lower.starts_with(&format!("{key}-")) || lower.starts_with(&format!("{key}:")) {
+        if lower == *key
+            || lower.starts_with(&format!("{key}-"))
+            || lower.starts_with(&format!("{key}:"))
+        {
             return *ram;
         }
     }
@@ -340,13 +351,13 @@ async fn fetch_from_ollama_library(
 
         let ram = estimate_ram_mb_for_name(name);
         models.push(ModelRecommendation {
-            model_tag:       name.to_string(),
-            display_name:    format_display_name(name),
+            model_tag: name.to_string(),
+            display_name: format_display_name(name),
             download_size_mb: estimate_download_size(&desc, ram),
-            description:     desc,
+            description: desc,
             required_ram_mb: ram,
-            is_top_pick:     false,
-            is_cloud:        false,
+            is_top_pick: false,
+            is_cloud: false,
         });
     }
 
@@ -361,26 +372,26 @@ async fn fetch_from_ollama_library(
 /// Map a HuggingFace model ID to an Ollama-compatible tag, or return `None`.
 fn hf_id_to_ollama_tag(hf_id: &str) -> Option<String> {
     const MAPPINGS: &[(&str, &str)] = &[
-        ("google/gemma-4",             "gemma4"),
-        ("google/gemma-3",             "gemma3"),
-        ("google/gemma-2",             "gemma2"),
-        ("google/gemma",               "gemma"),
-        ("meta-llama/llama-3.3",       "llama3.3"),
-        ("meta-llama/llama-3.2",       "llama3.2"),
-        ("meta-llama/llama-3.1",       "llama3.1"),
-        ("meta-llama/meta-llama-3",    "llama3"),
-        ("microsoft/phi-4-mini",       "phi4-mini"),
-        ("microsoft/phi-4",            "phi4"),
-        ("microsoft/phi-3",            "phi3"),
-        ("qwen/qwen3",                 "qwen3"),
-        ("qwen/qwen2.5",               "qwen2.5"),
-        ("deepseek-ai/deepseek-r1",    "deepseek-r1"),
-        ("deepseek-ai/deepseek-v3",    "deepseek-v3"),
-        ("mistralai/mistral-7b",       "mistral"),
-        ("mistralai/mixtral",          "mixtral"),
-        ("mistralai/mistral-nemo",     "mistral-nemo"),
-        ("cohere",                     "command-r"),
-        ("01-ai/yi",                   "yi"),
+        ("google/gemma-4", "gemma4"),
+        ("google/gemma-3", "gemma3"),
+        ("google/gemma-2", "gemma2"),
+        ("google/gemma", "gemma"),
+        ("meta-llama/llama-3.3", "llama3.3"),
+        ("meta-llama/llama-3.2", "llama3.2"),
+        ("meta-llama/llama-3.1", "llama3.1"),
+        ("meta-llama/meta-llama-3", "llama3"),
+        ("microsoft/phi-4-mini", "phi4-mini"),
+        ("microsoft/phi-4", "phi4"),
+        ("microsoft/phi-3", "phi3"),
+        ("qwen/qwen3", "qwen3"),
+        ("qwen/qwen2.5", "qwen2.5"),
+        ("deepseek-ai/deepseek-r1", "deepseek-r1"),
+        ("deepseek-ai/deepseek-v3", "deepseek-v3"),
+        ("mistralai/mistral-7b", "mistral"),
+        ("mistralai/mixtral", "mixtral"),
+        ("mistralai/mistral-nemo", "mistral-nemo"),
+        ("cohere", "command-r"),
+        ("01-ai/yi", "yi"),
     ];
     let lower = hf_id.to_lowercase();
     for (prefix, base) in MAPPINGS {
@@ -426,7 +437,9 @@ async fn fetch_from_huggingface(
 
     let mut result = Vec::new();
     for m in &models {
-        let Some(ollama_tag) = hf_id_to_ollama_tag(&m.id) else { continue };
+        let Some(ollama_tag) = hf_id_to_ollama_tag(&m.id) else {
+            continue;
+        };
         let is_gguf = m.tags.iter().any(|t| t == "gguf");
         let desc = format!(
             "Trending on HuggingFace{}. {} downloads.",
@@ -435,13 +448,13 @@ async fn fetch_from_huggingface(
         );
         let ram = estimate_ram_mb_for_name(&ollama_tag);
         result.push(ModelRecommendation {
-            model_tag:       ollama_tag.clone(),
-            display_name:    format_display_name(&ollama_tag),
-            description:     desc.clone(),
+            model_tag: ollama_tag.clone(),
+            display_name: format_display_name(&ollama_tag),
+            description: desc.clone(),
             required_ram_mb: ram,
             download_size_mb: estimate_download_size(&desc, ram),
-            is_top_pick:     false,
-            is_cloud:        false,
+            is_top_pick: false,
+            is_cloud: false,
         });
     }
     Ok(result)
@@ -484,7 +497,9 @@ async fn fetch_from_lm_studio(
     let mut result = Vec::new();
     for m in &models {
         let key = if m.id.is_empty() { &m.name } else { &m.id };
-        let Some(ollama_tag) = hf_id_to_ollama_tag(key) else { continue };
+        let Some(ollama_tag) = hf_id_to_ollama_tag(key) else {
+            continue;
+        };
         let desc = if m.description.is_empty() {
             "Curated on LM Studio model catalog.".to_string()
         } else {
@@ -492,13 +507,13 @@ async fn fetch_from_lm_studio(
         };
         let ram = estimate_ram_mb_for_name(&ollama_tag);
         result.push(ModelRecommendation {
-            model_tag:       ollama_tag.clone(),
-            display_name:    format_display_name(&ollama_tag),
-            description:     desc.clone(),
+            model_tag: ollama_tag.clone(),
+            display_name: format_display_name(&ollama_tag),
+            description: desc.clone(),
             required_ram_mb: ram,
             download_size_mb: estimate_download_size(&desc, ram),
-            is_top_pick:     false,
-            is_cloud:        false,
+            is_top_pick: false,
+            is_cloud: false,
         });
     }
     Ok(result)
@@ -516,11 +531,11 @@ fn build_top_picks(local_models: &[ModelRecommendation]) -> HashMap<String, Stri
     // VeryLow is special: floor is 0 but we use 4,095 (the tier's upper
     // bound) so we always produce a pick for the smallest machines.
     const TIERS: &[(&str, u64)] = &[
-        ("VeryLow",  4_095),   // tier spans 0–4095; use ceiling so *something* fits
-        ("Low",      4_096),   // tier floor — gemma3:1b (2048) fits
-        ("Medium",   8_192),   // tier floor — gemma4:e2b (8192) fits
-        ("High",    16_384),   // tier floor — gemma4:e4b (12288) fits
-        ("VeryHigh", 32_768),  // tier floor — gemma4:31b (24576) fits
+        ("VeryLow", 4_095),   // tier spans 0–4095; use ceiling so *something* fits
+        ("Low", 4_096),       // tier floor — gemma3:1b (2048) fits
+        ("Medium", 8_192),    // tier floor — gemma4:e2b (8192) fits
+        ("High", 16_384),     // tier floor — gemma4:e4b (12288) fits
+        ("VeryHigh", 32_768), // tier floor — gemma4:31b (24576) fits
     ];
     let mut picks = HashMap::new();
     for (tier, budget) in TIERS {
@@ -578,9 +593,7 @@ fn catalogue_to_markdown(cat: &ParsedCatalogue) -> String {
 /// Individual source failures are silently ignored. Returns an error only
 /// when all sources fail to return any models.
 /// The merged catalogue is cached to `<cache_dir>/model-catalogue.md`.
-pub async fn fetch_online_catalogue(
-    cache_dir: &Path,
-) -> Result<ParsedCatalogue, String> {
+pub async fn fetch_online_catalogue(cache_dir: &Path) -> Result<ParsedCatalogue, String> {
     let client = build_http_client()?;
 
     // Fetch all three sources concurrently; individual failures are tolerated.
@@ -607,7 +620,9 @@ pub async fn fetch_online_catalogue(
     }
 
     if merged.is_empty() {
-        return Err("all online sources (Ollama, HuggingFace, LM Studio) returned no models".to_string());
+        return Err(
+            "all online sources (Ollama, HuggingFace, LM Studio) returned no models".to_string(),
+        );
     }
 
     // Always include our curated models from the hardcoded catalogue.
@@ -627,11 +642,19 @@ pub async fn fetch_online_catalogue(
     let (local, cloud): (Vec<_>, Vec<_>) = merged.into_iter().partition(|m| !m.is_cloud);
     let top_picks = build_top_picks(&local);
 
-    let catalogue = ParsedCatalogue { local_models: local, cloud_models: cloud, top_picks };
+    let catalogue = ParsedCatalogue {
+        local_models: local,
+        cloud_models: cloud,
+        top_picks,
+    };
 
     // Cache as marker-delimited markdown so `load_cached_catalogue` can read it.
     std::fs::create_dir_all(cache_dir).ok();
-    std::fs::write(cache_dir.join("model-catalogue.md"), catalogue_to_markdown(&catalogue)).ok();
+    std::fs::write(
+        cache_dir.join("model-catalogue.md"),
+        catalogue_to_markdown(&catalogue),
+    )
+    .ok();
 
     Ok(catalogue)
 }
@@ -750,7 +773,9 @@ mod tests {
         let recs = recommend_from_catalogue(1_024, &cat);
         assert!(!recs.is_empty());
         // Should include the smallest model as fallback.
-        assert!(recs.iter().any(|m| m.model_tag == "tinyllama" || m.model_tag == "gemma3:1b"));
+        assert!(recs
+            .iter()
+            .any(|m| m.model_tag == "tinyllama" || m.model_tag == "gemma3:1b"));
     }
 
     #[test]
@@ -779,7 +804,11 @@ mod tests {
         for ram in [4_096u64, 8_192, 16_384, 32_768, 65_536] {
             let recs = recommend_from_catalogue(ram, &cat);
             let top_count = recs.iter().filter(|m| m.is_top_pick).count();
-            assert_eq!(top_count, 1, "Expected 1 top pick for {} MB, got {}", ram, top_count);
+            assert_eq!(
+                top_count, 1,
+                "Expected 1 top pick for {} MB, got {}",
+                ram, top_count
+            );
         }
     }
 
@@ -812,29 +841,49 @@ mod tests {
         // (no explicit TOP_PICKS markers — the function must compute picks).
         let models = vec![
             ModelRecommendation {
-                model_tag: "gemma4:31b".to_string(), display_name: String::new(),
-                description: String::new(), required_ram_mb: 24_576,
-                download_size_mb: 0, is_top_pick: false, is_cloud: false,
+                model_tag: "gemma4:31b".to_string(),
+                display_name: String::new(),
+                description: String::new(),
+                required_ram_mb: 24_576,
+                download_size_mb: 0,
+                is_top_pick: false,
+                is_cloud: false,
             },
             ModelRecommendation {
-                model_tag: "gemma4:e4b".to_string(), display_name: String::new(),
-                description: String::new(), required_ram_mb: 12_288,
-                download_size_mb: 0, is_top_pick: false, is_cloud: false,
+                model_tag: "gemma4:e4b".to_string(),
+                display_name: String::new(),
+                description: String::new(),
+                required_ram_mb: 12_288,
+                download_size_mb: 0,
+                is_top_pick: false,
+                is_cloud: false,
             },
             ModelRecommendation {
-                model_tag: "gemma4:e2b".to_string(), display_name: String::new(),
-                description: String::new(), required_ram_mb: 8_192,
-                download_size_mb: 0, is_top_pick: false, is_cloud: false,
+                model_tag: "gemma4:e2b".to_string(),
+                display_name: String::new(),
+                description: String::new(),
+                required_ram_mb: 8_192,
+                download_size_mb: 0,
+                is_top_pick: false,
+                is_cloud: false,
             },
             ModelRecommendation {
-                model_tag: "gemma3:1b".to_string(), display_name: String::new(),
-                description: String::new(), required_ram_mb: 2_048,
-                download_size_mb: 0, is_top_pick: false, is_cloud: false,
+                model_tag: "gemma3:1b".to_string(),
+                display_name: String::new(),
+                description: String::new(),
+                required_ram_mb: 2_048,
+                download_size_mb: 0,
+                is_top_pick: false,
+                is_cloud: false,
             },
             ModelRecommendation {
-                model_tag: "tinyllama".to_string(), display_name: String::new(),
-                description: String::new(), required_ram_mb: 2_048,
-                download_size_mb: 0, is_top_pick: false, is_cloud: false,
+                model_tag: "tinyllama".to_string(),
+                display_name: String::new(),
+                description: String::new(),
+                required_ram_mb: 2_048,
+                download_size_mb: 0,
+                is_top_pick: false,
+                is_cloud: false,
             },
         ];
         let picks = build_top_picks(&models);

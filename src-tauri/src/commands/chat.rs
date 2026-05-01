@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::agent::stub_agent::{Sentiment, StubAgent};
 use crate::agent::AgentProvider;
-use crate::brain::OllamaAgent;
 use crate::brain::brain_config::BrainMode;
 use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
+use crate::brain::OllamaAgent;
 use crate::AppState;
 
 /// System prompt used by `send_message_stream` (streaming LLM).
@@ -156,12 +156,20 @@ pub async fn process_message(
 
     // Clone model name before any await so the MutexGuard is not held across .await.
     let model_opt: Option<String> = {
-        app_state.active_brain.lock().map_err(|e| e.to_string())?.clone()
+        app_state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
     };
 
     // Read brain_mode for free/paid API routing.
     let brain_mode: Option<BrainMode> = {
-        app_state.brain_mode.lock().map_err(|e| e.to_string())?.clone()
+        app_state
+            .brain_mode
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
     };
 
     // Build conversation history (needed for all LLM paths).
@@ -177,11 +185,18 @@ pub async fn process_message(
 
     // Route through the configured brain mode, then legacy active_brain, then stub.
     let (agent_name, content, sentiment) = match brain_mode {
-        Some(BrainMode::FreeApi { provider_id, api_key }) => {
+        Some(BrainMode::FreeApi {
+            provider_id,
+            api_key,
+        }) => {
             // Use the free provider's OpenAI-compatible API (non-streaming).
             let effective_provider_id = {
-                let mut rotator = app_state.provider_rotator.lock().map_err(|e| e.to_string())?;
-                rotator.next_healthy_provider()
+                let mut rotator = app_state
+                    .provider_rotator
+                    .lock()
+                    .map_err(|e| e.to_string())?;
+                rotator
+                    .next_healthy_provider()
                     .map(|p| p.id.clone())
                     .unwrap_or(provider_id)
             };
@@ -208,12 +223,23 @@ pub async fn process_message(
                 content: system,
             }];
             for (role, c) in &history {
-                msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
+                msgs.push(OpenAiMessage {
+                    role: role.clone(),
+                    content: c.clone(),
+                });
             }
-            let text = client.chat(msgs).await.map_err(|e| format!("Free API error: {e}"))?;
+            let text = client
+                .chat(msgs)
+                .await
+                .map_err(|e| format!("Free API error: {e}"))?;
             ("TerranSoul".to_string(), text, Sentiment::Neutral)
         }
-        Some(BrainMode::PaidApi { api_key, model, base_url, .. }) => {
+        Some(BrainMode::PaidApi {
+            api_key,
+            model,
+            base_url,
+            ..
+        }) => {
             let client = OpenAiClient::new(&base_url, &model, Some(&api_key));
 
             // RAG: hybrid search (keyword + recency + importance + decay)
@@ -235,9 +261,15 @@ pub async fn process_message(
                 content: system,
             }];
             for (role, c) in &history {
-                msgs.push(OpenAiMessage { role: role.clone(), content: c.clone() });
+                msgs.push(OpenAiMessage {
+                    role: role.clone(),
+                    content: c.clone(),
+                });
             }
-            let text = client.chat(msgs).await.map_err(|e| format!("Paid API error: {e}"))?;
+            let text = client
+                .chat(msgs)
+                .await
+                .map_err(|e| format!("Paid API error: {e}"))?;
             ("TerranSoul".to_string(), text, Sentiment::Neutral)
         }
         Some(BrainMode::LocalLmStudio {
@@ -295,12 +327,16 @@ pub async fn process_message(
                 let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
                 mem_store.get_all().unwrap_or_default()
             };
-            let memories: Vec<String> =
-                crate::memory::brain_memory::semantic_search_entries(&model, message, &memory_entries, 5)
-                    .await
-                    .into_iter()
-                    .map(|e| e.content)
-                    .collect();
+            let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
+                &model,
+                message,
+                &memory_entries,
+                5,
+            )
+            .await
+            .into_iter()
+            .map(|e| e.content)
+            .collect();
             let agent = OllamaAgent::new(&model);
             let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
             (agent.name().to_string(), text, sent)
@@ -312,12 +348,16 @@ pub async fn process_message(
                     let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
                     mem_store.get_all().unwrap_or_default()
                 };
-                let memories: Vec<String> =
-                    crate::memory::brain_memory::semantic_search_entries(model, message, &memory_entries, 5)
-                        .await
-                        .into_iter()
-                        .map(|e| e.content)
-                        .collect();
+                let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
+                    model,
+                    message,
+                    &memory_entries,
+                    5,
+                )
+                .await
+                .into_iter()
+                .map(|e| e.content)
+                .collect();
                 let agent = OllamaAgent::new(model);
                 let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
                 (agent.name().to_string(), text, sent)
@@ -377,8 +417,7 @@ pub async fn get_conversation(state: State<'_, AppState>) -> Result<Vec<Message>
 #[tauri::command]
 pub async fn export_chat_log(state: State<'_, AppState>) -> Result<String, String> {
     let conversation = state.conversation.lock().map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&*conversation)
-        .map_err(|e| format!("Failed to serialize: {e}"))
+    serde_json::to_string_pretty(&*conversation).map_err(|e| format!("Failed to serialize: {e}"))
 }
 
 #[cfg(test)]

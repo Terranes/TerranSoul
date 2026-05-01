@@ -96,7 +96,10 @@ pub fn render_markdown(entry: &MemoryEntry) -> String {
         format_iso(entry.created_at)
     ));
     fm.push_str(&format!("importance: {}\n", entry.importance));
-    fm.push_str(&format!("memory_type: \"{}\"\n", entry.memory_type.as_str()));
+    fm.push_str(&format!(
+        "memory_type: \"{}\"\n",
+        entry.memory_type.as_str()
+    ));
     fm.push_str(&format!("tier: \"{}\"\n", entry.tier.as_str()));
 
     if !entry.tags.is_empty() {
@@ -141,10 +144,7 @@ pub struct ExportReport {
 /// Creates `<vault_dir>/TerranSoul/` if it doesn't exist. For each long-tier
 /// memory, writes `<id>-<slug>.md` with YAML frontmatter. Skips files whose
 /// mtime is >= the memory's `last_accessed` (or `created_at` if never accessed).
-pub fn export_to_vault(
-    vault_dir: &Path,
-    entries: &[MemoryEntry],
-) -> Result<ExportReport, String> {
+pub fn export_to_vault(vault_dir: &Path, entries: &[MemoryEntry]) -> Result<ExportReport, String> {
     let output_dir = vault_dir.join("TerranSoul");
     fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
 
@@ -274,7 +274,12 @@ mod tests {
 
     #[test]
     fn render_markdown_includes_frontmatter() {
-        let e = make_entry(1, "User's name is Alice", "personal:name,domain:law", MemoryTier::Long);
+        let e = make_entry(
+            1,
+            "User's name is Alice",
+            "personal:name,domain:law",
+            MemoryTier::Long,
+        );
         let md = render_markdown(&e);
         assert!(md.starts_with("---\n"));
         assert!(md.contains("id: 1"));

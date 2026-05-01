@@ -215,11 +215,7 @@ impl MemoryStore {
 
     /// Resolve a conflict by picking a winner. The loser is soft-closed
     /// via `valid_to`. Returns the updated conflict.
-    pub fn resolve_conflict(
-        &self,
-        conflict_id: i64,
-        winner_id: i64,
-    ) -> SqlResult<MemoryConflict> {
+    pub fn resolve_conflict(&self, conflict_id: i64, winner_id: i64) -> SqlResult<MemoryConflict> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
@@ -310,10 +306,8 @@ mod tests {
 
     #[test]
     fn build_contradiction_prompt_includes_both_statements() {
-        let (system, user) = build_contradiction_prompt(
-            "The sky is blue.",
-            "The sky is always red.",
-        );
+        let (system, user) =
+            build_contradiction_prompt("The sky is blue.", "The sky is always red.");
         assert!(system.contains("fact-checking"));
         assert!(user.contains("The sky is blue"));
         assert!(user.contains("The sky is always red"));
@@ -375,16 +369,22 @@ mod tests {
     #[test]
     fn add_and_list_conflict() {
         let store = test_store();
-        let a = store.add(super::super::NewMemory {
-            content: "The deadline is Monday.".into(),
-            ..Default::default()
-        }).unwrap();
-        let b = store.add(super::super::NewMemory {
-            content: "The deadline is Friday.".into(),
-            ..Default::default()
-        }).unwrap();
+        let a = store
+            .add(super::super::NewMemory {
+                content: "The deadline is Monday.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let b = store
+            .add(super::super::NewMemory {
+                content: "The deadline is Friday.".into(),
+                ..Default::default()
+            })
+            .unwrap();
 
-        let c = store.add_conflict(a.id, b.id, "Disagree about the deadline.").unwrap();
+        let c = store
+            .add_conflict(a.id, b.id, "Disagree about the deadline.")
+            .unwrap();
         assert_eq!(c.status, ConflictStatus::Open);
         assert_eq!(c.entry_a_id, a.id);
         assert_eq!(c.entry_b_id, b.id);
@@ -396,21 +396,27 @@ mod tests {
         let open = store.list_conflicts(Some(&ConflictStatus::Open)).unwrap();
         assert_eq!(open.len(), 1);
 
-        let resolved = store.list_conflicts(Some(&ConflictStatus::Resolved)).unwrap();
+        let resolved = store
+            .list_conflicts(Some(&ConflictStatus::Resolved))
+            .unwrap();
         assert!(resolved.is_empty());
     }
 
     #[test]
     fn resolve_conflict_closes_loser() {
         let store = test_store();
-        let a = store.add(super::super::NewMemory {
-            content: "Earth is flat.".into(),
-            ..Default::default()
-        }).unwrap();
-        let b = store.add(super::super::NewMemory {
-            content: "Earth is round.".into(),
-            ..Default::default()
-        }).unwrap();
+        let a = store
+            .add(super::super::NewMemory {
+                content: "Earth is flat.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let b = store
+            .add(super::super::NewMemory {
+                content: "Earth is round.".into(),
+                ..Default::default()
+            })
+            .unwrap();
 
         let c = store.add_conflict(a.id, b.id, "Shape of Earth").unwrap();
         let resolved = store.resolve_conflict(c.id, b.id).unwrap();
@@ -431,19 +437,25 @@ mod tests {
     #[test]
     fn dismiss_conflict() {
         let store = test_store();
-        let a = store.add(super::super::NewMemory {
-            content: "A".into(),
-            ..Default::default()
-        }).unwrap();
-        let b = store.add(super::super::NewMemory {
-            content: "B".into(),
-            ..Default::default()
-        }).unwrap();
+        let a = store
+            .add(super::super::NewMemory {
+                content: "A".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let b = store
+            .add(super::super::NewMemory {
+                content: "B".into(),
+                ..Default::default()
+            })
+            .unwrap();
 
         let c = store.add_conflict(a.id, b.id, "Maybe a conflict").unwrap();
         store.dismiss_conflict(c.id).unwrap();
 
-        let all = store.list_conflicts(Some(&ConflictStatus::Dismissed)).unwrap();
+        let all = store
+            .list_conflicts(Some(&ConflictStatus::Dismissed))
+            .unwrap();
         assert_eq!(all.len(), 1);
 
         // Neither entry should be closed.
@@ -454,14 +466,18 @@ mod tests {
     #[test]
     fn count_open_conflicts() {
         let store = test_store();
-        let a = store.add(super::super::NewMemory {
-            content: "X".into(),
-            ..Default::default()
-        }).unwrap();
-        let b = store.add(super::super::NewMemory {
-            content: "Y".into(),
-            ..Default::default()
-        }).unwrap();
+        let a = store
+            .add(super::super::NewMemory {
+                content: "X".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let b = store
+            .add(super::super::NewMemory {
+                content: "Y".into(),
+                ..Default::default()
+            })
+            .unwrap();
 
         assert_eq!(store.count_open_conflicts().unwrap(), 0);
         store.add_conflict(a.id, b.id, "test").unwrap();
@@ -471,10 +487,12 @@ mod tests {
     #[test]
     fn close_memory_sets_valid_to() {
         let store = test_store();
-        let e = store.add(super::super::NewMemory {
-            content: "Will be closed.".into(),
-            ..Default::default()
-        }).unwrap();
+        let e = store
+            .add(super::super::NewMemory {
+                content: "Will be closed.".into(),
+                ..Default::default()
+            })
+            .unwrap();
         assert!(e.valid_to.is_none());
 
         store.close_memory(e.id, 1234567890).unwrap();

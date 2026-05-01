@@ -3,9 +3,9 @@
 /// between QUIC (primary) and WebSocket (fallback).
 use tokio::sync::Mutex;
 
-use super::{LinkMessage, LinkPeer, LinkStatus, LinkTransport, PeerAddr};
 use super::quic::QuicTransport;
 use super::ws::WsTransport;
+use super::{LinkMessage, LinkPeer, LinkStatus, LinkTransport, PeerAddr};
 
 /// Which transport back-end to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,8 +134,8 @@ impl Default for LinkManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{LinkMessage, LinkStatus, LinkTransport, PeerAddr};
+    use super::*;
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -183,7 +183,9 @@ mod tests {
 
     #[async_trait]
     impl LinkTransport for MockTransport {
-        fn name(&self) -> &str { "Mock" }
+        fn name(&self) -> &str {
+            "Mock"
+        }
 
         async fn listen(&self, _port: u16) -> Result<u16, String> {
             *self.status.lock().await = LinkStatus::Connecting;
@@ -313,10 +315,8 @@ mod tests {
     #[tokio::test]
     async fn manager_reconnect_fallback_to_ws() {
         // Use a failing transport so all reconnects fail, forcing fallback
-        let mgr = LinkManager::with_transport(
-            Box::new(MockTransport::failing()),
-            TransportKind::Quic,
-        );
+        let mgr =
+            LinkManager::with_transport(Box::new(MockTransport::failing()), TransportKind::Quic);
         // Exhaust QUIC reconnect attempts
         for _ in 0..5 {
             let _ = mgr.reconnect(&test_addr()).await;

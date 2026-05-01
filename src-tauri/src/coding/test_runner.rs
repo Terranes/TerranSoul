@@ -321,7 +321,10 @@ async fn run_one_attempt(suite: &TestSuite, config: &TestRunConfig) -> Attempt {
     }
 }
 
-fn command_for_suite(suite: &TestSuite, default_cwd: &std::path::Path) -> (String, Vec<String>, PathBuf) {
+fn command_for_suite(
+    suite: &TestSuite,
+    default_cwd: &std::path::Path,
+) -> (String, Vec<String>, PathBuf) {
     match suite {
         TestSuite::Cargo => (
             "cargo".to_string(),
@@ -409,10 +412,7 @@ mod tests {
             TestSuite::Custom {
                 name: name.to_string(),
                 program: "cmd".to_string(),
-                args: vec![
-                    "/C".to_string(),
-                    "ping -n 4 127.0.0.1 > NUL".to_string(),
-                ],
+                args: vec!["/C".to_string(), "ping -n 4 127.0.0.1 > NUL".to_string()],
                 cwd: None,
             }
         } else {
@@ -576,7 +576,8 @@ mod tests {
 
     #[test]
     fn command_for_suite_cargo_targets_src_tauri() {
-        let (program, args, cwd) = command_for_suite(&TestSuite::Cargo, std::path::Path::new("/repo"));
+        let (program, args, cwd) =
+            command_for_suite(&TestSuite::Cargo, std::path::Path::new("/repo"));
         assert_eq!(program, "cargo");
         assert_eq!(args, vec!["test".to_string(), "--lib".to_string()]);
         assert!(cwd.ends_with("src-tauri"));

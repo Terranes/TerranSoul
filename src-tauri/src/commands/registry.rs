@@ -1,6 +1,6 @@
+use crate::AppState;
 use serde::Serialize;
 use tauri::State;
-use crate::AppState;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSearchResult {
@@ -55,8 +55,7 @@ pub async fn stop_registry_server(state: State<'_, AppState>) -> Result<(), Stri
     }
     // Restore the in-process catalog registry so the marketplace remains
     // populated after the HTTP server is stopped.
-    *state.package_registry.lock().await =
-        Box::new(crate::registry_server::CatalogRegistry::new());
+    *state.package_registry.lock().await = Box::new(crate::registry_server::CatalogRegistry::new());
     Ok(())
 }
 

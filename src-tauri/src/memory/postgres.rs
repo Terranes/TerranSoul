@@ -24,9 +24,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::Row;
 
 use super::backend::{StorageBackend, StorageError, StorageResult};
-use super::store::{
-    MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory,
-};
+use super::store::{MemoryEntry, MemoryStats, MemoryTier, MemoryType, MemoryUpdate, NewMemory};
 
 /// PostgreSQL storage backend.
 pub struct PostgresBackend {
@@ -62,9 +60,7 @@ impl PostgresBackend {
     /// Run migrations synchronously (blocks current thread).
     fn run_migrations_sync(&self) -> StorageResult<()> {
         tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.run_migrations().await
-            })
+            tokio::runtime::Handle::current().block_on(async { self.run_migrations().await })
         })
     }
 
@@ -76,7 +72,7 @@ impl PostgresBackend {
                 version     BIGINT PRIMARY KEY,
                 description TEXT NOT NULL,
                 applied_at  BIGINT NOT NULL
-            )"
+            )",
         )
         .execute(&self.pool)
         .await
@@ -102,7 +98,7 @@ impl PostgresBackend {
                 session_id    TEXT,
                 parent_id     BIGINT REFERENCES memories(id),
                 token_count   INTEGER NOT NULL DEFAULT 0
-            )"
+            )",
         )
         .execute(&self.pool)
         .await
@@ -132,7 +128,7 @@ impl PostgresBackend {
         sqlx::query(
             "INSERT INTO schema_version (version, description, applied_at)
              VALUES (4, 'PostgreSQL V4 — full schema', $1)
-             ON CONFLICT (version) DO NOTHING"
+             ON CONFLICT (version) DO NOTHING",
         )
         .bind(now_ms)
         .execute(&self.pool)
@@ -147,10 +143,8 @@ impl PostgresBackend {
     where
         F: std::future::Future<Output = Result<T, sqlx::Error>>,
     {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fut)
-        })
-        .map_err(|e| StorageError::Postgres(e.to_string()))
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+            .map_err(|e| StorageError::Postgres(e.to_string()))
     }
 
     fn now_ms() -> i64 {
@@ -191,10 +185,8 @@ impl StorageBackend for PostgresBackend {
 
     fn schema_version(&self) -> StorageResult<i64> {
         let ver = self.block_on(
-            sqlx::query_scalar::<_, i64>(
-                "SELECT COALESCE(MAX(version), 0) FROM schema_version"
-            )
-            .fetch_one(&self.pool)
+            sqlx::query_scalar::<_, i64>("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+                .fetch_one(&self.pool),
         )?;
         Ok(ver)
     }
@@ -204,11 +196,18 @@ impl StorageBackend for PostgresBackend {
     }
 
     fn add_to_tier(
-        &self, m: NewMemory, tier: MemoryTier, session_id: Option<&str>,
+        &self,
+        m: NewMemory,
+        tier: MemoryTier,
+        session_id: Option<&str>,
     ) -> StorageResult<MemoryEntry> {
         let now = Self::now_ms();
         let token_count = (m.content.len() / 4) as i32;
-        let importance = if m.importance == 0 { 3i32 } else { m.importance as i32 };
+        let importance = if m.importance == 0 {
+            3i32
+        } else {
+            m.importance as i32
+        };
 
         let row = self.block_on(
             sqlx::query(
@@ -217,7 +216,7 @@ impl StorageBackend for PostgresBackend {
                      tier, decay_score, session_id, token_count,
                      source_url, source_hash, expires_at)
                  VALUES ($1, $2, $3, $4, $5, 0, $6, 1.0, $7, $8, $9, $10, $11)
-                 RETURNING *"
+                 RETURNING *",
             )
             .bind(&m.content)
             .bind(&m.tags)
@@ -230,7 +229,7 @@ impl StorageBackend for PostgresBackend {
             .bind(&m.source_url)
             .bind(&m.source_hash)
             .bind(m.expires_at)
-            .fetch_one(&self.pool)
+            .fetch_one(&self.pool),
         )?;
 
         Ok(Self::row_to_entry(&row))
@@ -240,17 +239,15 @@ impl StorageBackend for PostgresBackend {
         let row = self.block_on(
             sqlx::query("SELECT * FROM memories WHERE id = $1")
                 .bind(id)
-                .fetch_one(&self.pool)
+                .fetch_one(&self.pool),
         )?;
         Ok(Self::row_to_entry(&row))
     }
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         let rows = self.block_on(
-            sqlx::query(
-                "SELECT * FROM memories ORDER BY importance DESC, created_at DESC"
-            )
-            .fetch_all(&self.pool)
+            sqlx::query("SELECT * FROM memories ORDER BY importance DESC, created_at DESC")
+                .fetch_all(&self.pool),
         )?;
         Ok(rows.iter().map(Self::row_to_entry).collect())
     }
@@ -259,7 +256,7 @@ impl StorageBackend for PostgresBackend {
         let rows = self.block_on(
             sqlx::query("SELECT * FROM memories WHERE tier = $1 ORDER BY created_at DESC")
                 .bind(tier.as_str())
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool),
         )?;
         Ok(rows.iter().map(Self::row_to_entry).collect())
     }
@@ -268,17 +265,16 @@ impl StorageBackend for PostgresBackend {
         let rows = self.block_on(
             sqlx::query(
                 "SELECT * FROM memories WHERE tier IN ('working', 'long')
-                 ORDER BY importance DESC, created_at DESC"
+                 ORDER BY importance DESC, created_at DESC",
             )
-            .fetch_all(&self.pool)
+            .fetch_all(&self.pool),
         )?;
         Ok(rows.iter().map(Self::row_to_entry).collect())
     }
 
     fn count(&self) -> StorageResult<i64> {
         let c = self.block_on(
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM memories")
-                .fetch_one(&self.pool)
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM memories").fetch_one(&self.pool),
         )?;
         Ok(c)
     }
@@ -294,9 +290,9 @@ impl StorageBackend for PostgresBackend {
                     COUNT(embedding) AS embedded,
                     COALESCE(SUM(token_count), 0) AS total_tokens,
                     COALESCE(AVG(decay_score), 1.0) AS avg_decay
-                 FROM memories"
+                 FROM memories",
             )
-            .fetch_one(&self.pool)
+            .fetch_one(&self.pool),
         )?;
         Ok(MemoryStats {
             total: row.get("total"),
@@ -316,7 +312,7 @@ impl StorageBackend for PostgresBackend {
             let rows = sqlx::query(
                 "UPDATE memories SET last_accessed = $1, access_count = access_count + 1
                  WHERE content ILIKE $2 OR tags ILIKE $2
-                 RETURNING *"
+                 RETURNING *",
             )
             .bind(now)
             .bind(&pattern)
@@ -357,7 +353,7 @@ impl StorageBackend for PostgresBackend {
         let rows = self.block_on(
             sqlx::query("SELECT * FROM memories WHERE source_url = $1")
                 .bind(url)
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool),
         )?;
         Ok(rows.iter().map(Self::row_to_entry).collect())
     }
@@ -366,30 +362,35 @@ impl StorageBackend for PostgresBackend {
         let row = self.block_on(
             sqlx::query("SELECT * FROM memories WHERE source_hash = $1 LIMIT 1")
                 .bind(hash)
-                .fetch_optional(&self.pool)
+                .fetch_optional(&self.pool),
         )?;
         Ok(row.as_ref().map(Self::row_to_entry))
     }
 
     fn get_with_embeddings(&self) -> StorageResult<Vec<MemoryEntry>> {
         let rows = self.block_on(
-            sqlx::query("SELECT * FROM memories WHERE embedding IS NOT NULL")
-                .fetch_all(&self.pool)
+            sqlx::query("SELECT * FROM memories WHERE embedding IS NOT NULL").fetch_all(&self.pool),
         )?;
-        Ok(rows.iter().map(|r| {
-            let mut entry = Self::row_to_entry(r);
-            let blob: Option<Vec<u8>> = r.get("embedding");
-            entry.embedding = blob.map(|b| super::store::bytes_to_embedding(&b));
-            entry
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let mut entry = Self::row_to_entry(r);
+                let blob: Option<Vec<u8>> = r.get("embedding");
+                entry.embedding = blob.map(|b| super::store::bytes_to_embedding(&b));
+                entry
+            })
+            .collect())
     }
 
     fn unembedded_ids(&self) -> StorageResult<Vec<(i64, String)>> {
         let rows = self.block_on(
             sqlx::query("SELECT id, content FROM memories WHERE embedding IS NULL")
-                .fetch_all(&self.pool)
+                .fetch_all(&self.pool),
         )?;
-        Ok(rows.iter().map(|r| (r.get("id"), r.get("content"))).collect())
+        Ok(rows
+            .iter()
+            .map(|r| (r.get("id"), r.get("content")))
+            .collect())
     }
 
     fn set_embedding(&self, id: i64, embedding: &[f32]) -> StorageResult<()> {
@@ -398,13 +399,15 @@ impl StorageBackend for PostgresBackend {
             sqlx::query("UPDATE memories SET embedding = $1 WHERE id = $2")
                 .bind(&bytes)
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&self.pool),
         )?;
         Ok(())
     }
 
     fn vector_search(
-        &self, query_embedding: &[f32], limit: usize,
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         // Load all embeddings and do in-process cosine similarity
         // (pgvector native search can be added as an optimization)
@@ -424,7 +427,9 @@ impl StorageBackend for PostgresBackend {
     }
 
     fn find_duplicate(
-        &self, query_embedding: &[f32], threshold: f32,
+        &self,
+        query_embedding: &[f32],
+        threshold: f32,
     ) -> StorageResult<Option<i64>> {
         let all = self.get_with_embeddings()?;
         let mut best: Option<(f32, i64)> = None;
@@ -442,7 +447,10 @@ impl StorageBackend for PostgresBackend {
     }
 
     fn hybrid_search(
-        &self, query: &str, query_embedding: Option<&[f32]>, limit: usize,
+        &self,
+        query: &str,
+        query_embedding: Option<&[f32]>,
+        limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
         // Load all entries with embeddings for scoring
         let all = self.get_with_embeddings()?;
@@ -453,19 +461,26 @@ impl StorageBackend for PostgresBackend {
             .into_iter()
             .map(|entry| {
                 let vector_score = query_embedding
-                    .and_then(|qe| entry.embedding.as_ref().map(|ee| {
-                        super::store::cosine_similarity(qe, ee) as f64
-                    }))
+                    .and_then(|qe| {
+                        entry
+                            .embedding
+                            .as_ref()
+                            .map(|ee| super::store::cosine_similarity(qe, ee) as f64)
+                    })
                     .unwrap_or(0.0);
 
-                let keyword_hits = query_words.iter()
+                let keyword_hits = query_words
+                    .iter()
                     .filter(|w| {
                         entry.content.to_lowercase().contains(&w.to_lowercase())
                             || entry.tags.to_lowercase().contains(&w.to_lowercase())
                     })
                     .count() as f64;
-                let keyword_score = if query_words.is_empty() { 0.0 }
-                    else { keyword_hits / query_words.len() as f64 };
+                let keyword_score = if query_words.is_empty() {
+                    0.0
+                } else {
+                    keyword_hits / query_words.len() as f64
+                };
 
                 let age_hours = (now - entry.created_at) as f64 / 3_600_000.0;
                 let recency_score = (-age_hours / 24.0_f64).exp();
@@ -497,11 +512,11 @@ impl StorageBackend for PostgresBackend {
             let _ = self.block_on(
                 sqlx::query(
                     "UPDATE memories SET last_accessed = $1, access_count = access_count + 1
-                     WHERE id = $2"
+                     WHERE id = $2",
                 )
                 .bind(now)
                 .bind(entry.id)
-                .execute(&self.pool)
+                .execute(&self.pool),
             );
         }
 
@@ -521,7 +536,7 @@ impl StorageBackend for PostgresBackend {
                 "UPDATE memories
                  SET content = $1, tags = $2, importance = $3, memory_type = $4,
                      token_count = $5
-                 WHERE id = $6 RETURNING *"
+                 WHERE id = $6 RETURNING *",
             )
             .bind(&content)
             .bind(&tags)
@@ -529,7 +544,7 @@ impl StorageBackend for PostgresBackend {
             .bind(memory_type.as_str())
             .bind(token_count)
             .bind(id)
-            .fetch_one(&self.pool)
+            .fetch_one(&self.pool),
         )?;
         Ok(Self::row_to_entry(&row))
     }
@@ -539,7 +554,7 @@ impl StorageBackend for PostgresBackend {
             sqlx::query("UPDATE memories SET tier = $1 WHERE id = $2")
                 .bind(new_tier.as_str())
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&self.pool),
         )?;
         Ok(())
     }
@@ -548,7 +563,7 @@ impl StorageBackend for PostgresBackend {
         self.block_on(
             sqlx::query("DELETE FROM memories WHERE id = $1")
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&self.pool),
         )?;
         Ok(())
     }
@@ -557,7 +572,7 @@ impl StorageBackend for PostgresBackend {
         let result = self.block_on(
             sqlx::query("DELETE FROM memories WHERE source_url = $1")
                 .bind(url)
-                .execute(&self.pool)
+                .execute(&self.pool),
         )?;
         Ok(result.rows_affected() as usize)
     }
@@ -565,20 +580,16 @@ impl StorageBackend for PostgresBackend {
     fn delete_expired(&self) -> StorageResult<usize> {
         let now = Self::now_ms();
         let result = self.block_on(
-            sqlx::query(
-                "DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < $1"
-            )
-            .bind(now)
-            .execute(&self.pool)
+            sqlx::query("DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < $1")
+                .bind(now)
+                .execute(&self.pool),
         )?;
         Ok(result.rows_affected() as usize)
     }
 
     fn delete_all(&self) -> StorageResult<usize> {
         // Edges/conflicts/versions cascade via FK.
-        let result = self.block_on(
-            sqlx::query("DELETE FROM memories").execute(&self.pool)
-        )?;
+        let result = self.block_on(sqlx::query("DELETE FROM memories").execute(&self.pool))?;
         Ok(result.rows_affected() as usize)
     }
 
@@ -593,10 +604,10 @@ impl StorageBackend for PostgresBackend {
                           COALESCE(CAST(last_accessed AS DOUBLE PRECISION),
                                    CAST(created_at AS DOUBLE PRECISION)))
                          / 604800000.0))
-                 WHERE tier = 'long'"
+                 WHERE tier = 'long'",
             )
             .bind(now)
-            .execute(&self.pool)
+            .execute(&self.pool),
         )?;
         Ok(result.rows_affected() as usize)
     }
@@ -604,10 +615,10 @@ impl StorageBackend for PostgresBackend {
     fn evict_short_term(&self, session_id: &str) -> StorageResult<Vec<MemoryEntry>> {
         let rows = self.block_on(
             sqlx::query(
-                "DELETE FROM memories WHERE tier = 'short' AND session_id = $1 RETURNING *"
+                "DELETE FROM memories WHERE tier = 'short' AND session_id = $1 RETURNING *",
             )
             .bind(session_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&self.pool),
         )?;
         Ok(rows.iter().map(Self::row_to_entry).collect())
     }
@@ -616,14 +627,18 @@ impl StorageBackend for PostgresBackend {
         let result = self.block_on(
             sqlx::query(
                 "DELETE FROM memories
-                 WHERE tier = 'long' AND decay_score < $1 AND importance <= 2"
+                 WHERE tier = 'long' AND decay_score < $1 AND importance <= 2",
             )
             .bind(threshold)
-            .execute(&self.pool)
+            .execute(&self.pool),
         )?;
         Ok(result.rows_affected() as usize)
     }
 
-    fn backend_name(&self) -> &'static str { "PostgreSQL" }
-    fn supports_native_vector_search(&self) -> bool { false } // pgvector upgrade path exists
+    fn backend_name(&self) -> &'static str {
+        "PostgreSQL"
+    }
+    fn supports_native_vector_search(&self) -> bool {
+        false
+    } // pgvector upgrade path exists
 }

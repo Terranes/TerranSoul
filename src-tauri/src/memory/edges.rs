@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::store::{MemoryEntry, MemoryStore, MemoryType, MemoryTier};
+use super::store::{MemoryEntry, MemoryStore, MemoryTier, MemoryType};
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -167,7 +167,9 @@ pub struct NewMemoryEdge {
     pub edge_source: Option<String>,
 }
 
-fn default_confidence() -> f64 { 1.0 }
+fn default_confidence() -> f64 {
+    1.0
+}
 
 /// Direction of edge traversal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,7 +201,13 @@ pub fn normalise_rel_type(input: &str) -> String {
         .trim()
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_whitespace() || c == '-' { '_' } else { c })
+        .map(|c| {
+            if c.is_whitespace() || c == '-' {
+                '_'
+            } else {
+                c
+            }
+        })
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
         .collect();
     if cleaned.is_empty() {
@@ -261,8 +269,15 @@ impl MemoryStore {
                 let confidence = e.confidence.clamp(0.0, 1.0);
                 let source = e.source.as_str();
                 let n = stmt.execute(params![
-                    e.src_id, e.dst_id, rel, confidence, source, now,
-                    e.valid_from, e.valid_to, e.edge_source,
+                    e.src_id,
+                    e.dst_id,
+                    rel,
+                    confidence,
+                    source,
+                    now,
+                    e.valid_from,
+                    e.valid_to,
+                    e.edge_source,
                 ])?;
                 inserted += n;
             }
@@ -334,10 +349,7 @@ impl MemoryStore {
     /// (`MAX(created_at)`). The pattern is forwarded verbatim so the
     /// caller controls the match — empty / `%` selects every external
     /// mirror across systems.
-    pub fn list_external_mirrors(
-        &self,
-        like_pattern: &str,
-    ) -> SqlResult<Vec<(String, i64, i64)>> {
+    pub fn list_external_mirrors(&self, like_pattern: &str) -> SqlResult<Vec<(String, i64, i64)>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT edge_source, COUNT(*) AS n, MAX(created_at) AS last_at
@@ -528,8 +540,7 @@ impl MemoryStore {
                     }
                 }
             }
-            let refs: Vec<&dyn rusqlite::ToSql> =
-                params_vec.iter().map(|p| p.as_ref()).collect();
+            let refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
             let rows = stmt.query_map(refs.as_slice(), |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
             })?;
@@ -583,10 +594,7 @@ impl MemoryStore {
         // Step 3 — expand each direct hit by `hops` hops in the graph.
         for entry in &direct {
             let neighbours = self.traverse_from(entry.id, hops, None)?;
-            let seed_score = scored
-                .get(&entry.id)
-                .map(|(s, _)| *s)
-                .unwrap_or(1.0);
+            let seed_score = scored.get(&entry.id).map(|(s, _)| *s).unwrap_or(1.0);
             for (nid, hop) in neighbours {
                 let neighbour_score = seed_score / (hop as f64 + 1.0);
                 if let Ok(neighbour_entry) = self.get_by_id(nid) {
@@ -673,7 +681,9 @@ pub fn parse_llm_edges(text: &str, known_ids: &HashSet<i64>) -> Vec<NewMemoryEdg
                 #[serde(default = "default_confidence_raw")]
                 confidence: f64,
             }
-            fn default_confidence_raw() -> f64 { 0.7 }
+            fn default_confidence_raw() -> f64 {
+                0.7
+            }
 
             let parsed: Raw = serde_json::from_str(trimmed).ok()?;
             if parsed.src_id == parsed.dst_id {
@@ -760,7 +770,11 @@ mod tests {
                 dst_id: b,
                 rel_type: "contains".to_string(),
                 confidence: 0.9,
-                source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None })
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
             .unwrap();
         assert_eq!(edge.src_id, a);
         assert_eq!(edge.dst_id, b);
@@ -778,7 +792,11 @@ mod tests {
             dst_id: a,
             rel_type: "related_to".to_string(),
             confidence: 1.0,
-            source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None });
+            source: EdgeSource::User,
+            valid_from: None,
+            valid_to: None,
+            edge_source: None,
+        });
         assert!(res.is_err(), "self-loops must be rejected");
     }
 
@@ -792,7 +810,11 @@ mod tests {
             dst_id: b,
             rel_type: "cites".to_string(),
             confidence: 1.0,
-            source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None };
+            source: EdgeSource::User,
+            valid_from: None,
+            valid_to: None,
+            edge_source: None,
+        };
         let e1 = store.add_edge(new_edge()).unwrap();
         let e2 = store.add_edge(new_edge()).unwrap();
         assert_eq!(e1.id, e2.id, "duplicate insert must return existing edge");
@@ -810,7 +832,11 @@ mod tests {
                 dst_id: b,
                 rel_type: "Mother Of".to_string(), // mixed case + space
                 confidence: 1.0,
-                source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None })
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
             .unwrap();
         assert_eq!(edge.rel_type, "mother_of");
     }
@@ -822,10 +848,46 @@ mod tests {
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
         let edges = vec![
-            NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None, edge_source: None },
-            NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None, edge_source: None },  // dup
-            NewMemoryEdge { src_id: a, dst_id: a, rel_type: "self".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None, edge_source: None }, // self-loop
-            NewMemoryEdge { src_id: b, dst_id: c, rel_type: "rel".into(), confidence: 0.5, source: EdgeSource::Llm, valid_from: None, valid_to: None, edge_source: None },
+            NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            },
+            NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            }, // dup
+            NewMemoryEdge {
+                src_id: a,
+                dst_id: a,
+                rel_type: "self".into(),
+                confidence: 1.0,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            }, // self-loop
+            NewMemoryEdge {
+                src_id: b,
+                dst_id: c,
+                rel_type: "rel".into(),
+                confidence: 0.5,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            },
         ];
         let n = store.add_edges_batch(&edges).unwrap();
         assert_eq!(n, 2, "expected 2 inserts (dup + self-loop dropped)");
@@ -838,8 +900,30 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "r1".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "r2".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "r1".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: b,
+                dst_id: c,
+                rel_type: "r2".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         assert_eq!(store.list_edges().unwrap().len(), 2);
         store.delete(b).unwrap();
         // Both edges incident to b must be cascade-deleted.
@@ -852,11 +936,36 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "r1".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: c, dst_id: b, rel_type: "r2".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "r1".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: c,
+                dst_id: b,
+                rel_type: "r2".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         assert_eq!(store.get_edges_for(b, EdgeDirection::Out).unwrap().len(), 0);
         assert_eq!(store.get_edges_for(b, EdgeDirection::In).unwrap().len(), 2);
-        assert_eq!(store.get_edges_for(b, EdgeDirection::Both).unwrap().len(), 2);
+        assert_eq!(
+            store.get_edges_for(b, EdgeDirection::Both).unwrap().len(),
+            2
+        );
         assert_eq!(store.get_edges_for(a, EdgeDirection::Out).unwrap().len(), 1);
     }
 
@@ -867,20 +976,71 @@ mod tests {
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
         // Two edges in scope #1, one in scope #2, one native (NULL edge_source).
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "contains".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:repo:foo/bar@sha1".into()) }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "depends_on".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:repo:foo/bar@sha1".into()) }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "contains".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:repo:other/repo@sha2".into()) }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: c, dst_id: a, rel_type: "related_to".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "contains".into(),
+                confidence: 1.0,
+                source: EdgeSource::Auto,
+                valid_from: None,
+                valid_to: None,
+                edge_source: Some("gitnexus:repo:foo/bar@sha1".into()),
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: b,
+                dst_id: c,
+                rel_type: "depends_on".into(),
+                confidence: 1.0,
+                source: EdgeSource::Auto,
+                valid_from: None,
+                valid_to: None,
+                edge_source: Some("gitnexus:repo:foo/bar@sha1".into()),
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: c,
+                rel_type: "contains".into(),
+                confidence: 1.0,
+                source: EdgeSource::Auto,
+                valid_from: None,
+                valid_to: None,
+                edge_source: Some("gitnexus:repo:other/repo@sha2".into()),
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: c,
+                dst_id: a,
+                rel_type: "related_to".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         let rows = store.list_external_mirrors("gitnexus:%").unwrap();
-        assert_eq!(rows.len(), 2, "two distinct mirror scopes, native edge ignored");
+        assert_eq!(
+            rows.len(),
+            2,
+            "two distinct mirror scopes, native edge ignored"
+        );
         let by_source: std::collections::HashMap<&str, i64> =
             rows.iter().map(|(s, n, _)| (s.as_str(), *n)).collect();
         assert_eq!(by_source["gitnexus:repo:foo/bar@sha1"], 2);
         assert_eq!(by_source["gitnexus:repo:other/repo@sha2"], 1);
         // Each row carries a non-zero last-sync timestamp.
         for (_, _, last_at) in &rows {
-            assert!(*last_at > 0, "last_synced_at should be the edge's created_at");
+            assert!(
+                *last_at > 0,
+                "last_synced_at should be the edge's created_at"
+            );
         }
     }
 
@@ -889,9 +1049,23 @@ mod tests {
         let store = MemoryStore::in_memory();
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         let rows = store.list_external_mirrors("gitnexus:%").unwrap();
-        assert!(rows.is_empty(), "native-only graph must report zero mirrors");
+        assert!(
+            rows.is_empty(),
+            "native-only graph must report zero mirrors"
+        );
     }
 
     #[test]
@@ -899,13 +1073,40 @@ mod tests {
         let store = MemoryStore::in_memory();
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "contains".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:scope-x".into()) }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: a, rel_type: "depends_on".into(), confidence: 1.0, source: EdgeSource::Auto, valid_from: None, valid_to: None, edge_source: Some("gitnexus:scope-y".into()) }).unwrap();
-        let removed = store.delete_edges_by_edge_source("gitnexus:scope-x").unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "contains".into(),
+                confidence: 1.0,
+                source: EdgeSource::Auto,
+                valid_from: None,
+                valid_to: None,
+                edge_source: Some("gitnexus:scope-x".into()),
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: b,
+                dst_id: a,
+                rel_type: "depends_on".into(),
+                confidence: 1.0,
+                source: EdgeSource::Auto,
+                valid_from: None,
+                valid_to: None,
+                edge_source: Some("gitnexus:scope-y".into()),
+            })
+            .unwrap();
+        let removed = store
+            .delete_edges_by_edge_source("gitnexus:scope-x")
+            .unwrap();
         assert_eq!(removed, 1);
         let remaining = store.list_edges().unwrap();
         assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].edge_source.as_deref(), Some("gitnexus:scope-y"));
+        assert_eq!(
+            remaining[0].edge_source.as_deref(),
+            Some("gitnexus:scope-y")
+        );
     }
 
     #[test]
@@ -916,10 +1117,54 @@ mod tests {
         let c = make_memory(&store, "C");
         let d = make_memory(&store, "D");
         // Chain A → B → C → D, plus a cycle D → A
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: c, dst_id: d, rel_type: "n".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: d, dst_id: a, rel_type: "cycle".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "n".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: b,
+                dst_id: c,
+                rel_type: "n".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: c,
+                dst_id: d,
+                rel_type: "n".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: d,
+                dst_id: a,
+                rel_type: "cycle".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         let one = store.traverse_from(a, 1, None).unwrap();
         // 1-hop neighbours of A are {B, D} (D via the cycle edge).
@@ -941,8 +1186,30 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "good".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "bad".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "good".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: c,
+                rel_type: "bad".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         let filtered = store
             .traverse_from(a, 2, Some(&["good".to_string()]))
             .unwrap();
@@ -957,9 +1224,42 @@ mod tests {
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         let c = make_memory(&store, "C");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "cites".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: c, rel_type: "cites".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None, edge_source: None }).unwrap();
-        store.add_edge(NewMemoryEdge { src_id: b, dst_id: c, rel_type: "related_to".into(), confidence: 1.0, source: EdgeSource::Llm, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "cites".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: c,
+                rel_type: "cites".into(),
+                confidence: 1.0,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: b,
+                dst_id: c,
+                rel_type: "related_to".into(),
+                confidence: 1.0,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         let stats = store.edge_stats().unwrap();
         assert_eq!(stats.total_edges, 3);
@@ -1036,18 +1336,26 @@ not json at all
                 dst_id: neighbour,
                 rel_type: "contains".into(),
                 confidence: 1.0,
-                source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None })
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
             .unwrap();
         let direct = store.hybrid_search("Family Law", None, 1).unwrap();
         assert_eq!(direct.len(), 1);
         assert_eq!(direct[0].id, seed);
         // With graph hops the neighbour should show up even though it doesn't
         // contain "Family Law" anywhere.
-        let with_graph = store.hybrid_search_with_graph("Family Law", None, 5, 1).unwrap();
+        let with_graph = store
+            .hybrid_search_with_graph("Family Law", None, 5, 1)
+            .unwrap();
         let ids: HashSet<i64> = with_graph.iter().map(|e| e.id).collect();
         assert!(ids.contains(&seed));
-        assert!(ids.contains(&neighbour),
-            "graph traversal should pull in the neighbour memory");
+        assert!(
+            ids.contains(&neighbour),
+            "graph traversal should pull in the neighbour memory"
+        );
     }
 
     #[test]
@@ -1059,15 +1367,27 @@ not json at all
         // disappear, but the memory must survive.
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
-        store.add_edge(NewMemoryEdge { src_id: a, dst_id: b, rel_type: "rel".into(), confidence: 1.0, source: EdgeSource::User, valid_from: None, valid_to: None, edge_source: None }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         assert_eq!(store.list_edges().unwrap().len(), 1);
 
         crate::memory::migrations::downgrade_to(store.conn(), 4).unwrap();
         assert_eq!(store.schema_version(), 4);
         // memory_edges no longer exists.
-        let exists: Result<i64, _> = store
-            .conn()
-            .query_row("SELECT COUNT(*) FROM memory_edges", [], |r| r.get(0));
+        let exists: Result<i64, _> =
+            store
+                .conn()
+                .query_row("SELECT COUNT(*) FROM memory_edges", [], |r| r.get(0));
         assert!(exists.is_err(), "memory_edges should not exist at V4");
         // Re-upgrade to latest.
         crate::memory::migrations::migrate_to_latest(store.conn()).unwrap();
@@ -1081,7 +1401,14 @@ not json at all
     fn format_memories_for_extraction_truncates_long_content() {
         let store = MemoryStore::in_memory();
         let long = "x".repeat(500);
-        store.add(NewMemory { content: long, tags: "t".into(), importance: 3, ..Default::default() }).unwrap();
+        store
+            .add(NewMemory {
+                content: long,
+                tags: "t".into(),
+                importance: 3,
+                ..Default::default()
+            })
+            .unwrap();
         let entries = store.get_all().unwrap();
         let s = format_memories_for_extraction(&entries);
         assert!(s.contains('…'));
@@ -1091,18 +1418,26 @@ not json at all
     // ── V6 — Temporal knowledge-graph tests ───────────────────────────
 
     /// Helper: build a temporal edge between two fresh memories.
-    fn add_temporal(store: &MemoryStore, rel: &str,
-                    valid_from: Option<i64>, valid_to: Option<i64>) -> MemoryEdge {
+    fn add_temporal(
+        store: &MemoryStore,
+        rel: &str,
+        valid_from: Option<i64>,
+        valid_to: Option<i64>,
+    ) -> MemoryEdge {
         let a = make_memory(store, &format!("A-{rel}-{:?}-{:?}", valid_from, valid_to));
         let b = make_memory(store, &format!("B-{rel}-{:?}-{:?}", valid_from, valid_to));
-        store.add_edge(NewMemoryEdge {
-            src_id: a, dst_id: b,
-            rel_type: rel.into(),
-            confidence: 1.0,
-            source: EdgeSource::User,
-            valid_from, valid_to,
-            edge_source: None,
-        }).unwrap()
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: rel.into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from,
+                valid_to,
+                edge_source: None,
+            })
+            .unwrap()
     }
 
     #[test]
@@ -1146,7 +1481,7 @@ not json at all
         let e = add_temporal(&store, "loved", Some(1_000), Some(2_000));
         let reloaded = store.get_edge(e.id).unwrap();
         assert_eq!(reloaded.valid_from, Some(1_000));
-        assert_eq!(reloaded.valid_to,   Some(2_000));
+        assert_eq!(reloaded.valid_to, Some(2_000));
     }
 
     #[test]
@@ -1171,20 +1506,34 @@ not json at all
         let d1 = make_memory(&store, "d1");
         let d2 = make_memory(&store, "d2");
         // closed past edge + open present edge
-        store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: d1, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(0), valid_to: Some(100),
-            edge_source: None,
-        }).unwrap();
-        store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: d2, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(100), valid_to: None,
-            edge_source: None,
-        }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: d1,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(0),
+                valid_to: Some(100),
+                edge_source: None,
+            })
+            .unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: d2,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(100),
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         // valid_at = None preserves legacy behaviour: returns both.
-        let all = store.get_edges_for_at(src, EdgeDirection::Out, None).unwrap();
+        let all = store
+            .get_edges_for_at(src, EdgeDirection::Out, None)
+            .unwrap();
         assert_eq!(all.len(), 2);
     }
 
@@ -1196,44 +1545,70 @@ not json at all
         let d2 = make_memory(&store, "d2");
         let d3 = make_memory(&store, "d3");
         // Past closed: [0, 100)
-        let past = store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: d1, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(0), valid_to: Some(100),
-            edge_source: None,
-        }).unwrap();
+        let past = store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: d1,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(0),
+                valid_to: Some(100),
+                edge_source: None,
+            })
+            .unwrap();
         // Present open-ended: [100, ∞)
-        let present = store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: d2, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(100), valid_to: None,
-            edge_source: None,
-        }).unwrap();
+        let present = store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: d2,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(100),
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
         // Always: (-∞, ∞)
-        let always = store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: d3, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: None, valid_to: None,
-            edge_source: None,
-        }).unwrap();
+        let always = store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: d3,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         // Before everything started: only "always" survives.
-        let at_neg = store.get_edges_for_at(src, EdgeDirection::Out, Some(-1)).unwrap();
+        let at_neg = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(-1))
+            .unwrap();
         let ids_neg: HashSet<i64> = at_neg.iter().map(|e| e.id).collect();
         assert_eq!(ids_neg, [always.id].into_iter().collect());
 
         // Mid past window: "past" + "always"; "present" hasn't started.
-        let at_50 = store.get_edges_for_at(src, EdgeDirection::Out, Some(50)).unwrap();
+        let at_50 = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(50))
+            .unwrap();
         let ids_50: HashSet<i64> = at_50.iter().map(|e| e.id).collect();
         assert_eq!(ids_50, [past.id, always.id].into_iter().collect());
 
         // Right at boundary 100: "past" closes (exclusive), "present" opens (inclusive).
-        let at_100 = store.get_edges_for_at(src, EdgeDirection::Out, Some(100)).unwrap();
+        let at_100 = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(100))
+            .unwrap();
         let ids_100: HashSet<i64> = at_100.iter().map(|e| e.id).collect();
         assert_eq!(ids_100, [present.id, always.id].into_iter().collect());
 
         // Far future: "present" + "always".
-        let at_huge = store.get_edges_for_at(src, EdgeDirection::Out, Some(1_000_000)).unwrap();
+        let at_huge = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(1_000_000))
+            .unwrap();
         let ids_huge: HashSet<i64> = at_huge.iter().map(|e| e.id).collect();
         assert_eq!(ids_huge, [present.id, always.id].into_iter().collect());
     }
@@ -1265,15 +1640,23 @@ not json at all
         let store = MemoryStore::in_memory();
         let src = make_memory(&store, "src");
         let dst = make_memory(&store, "dst");
-        let e = store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: dst, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(0), valid_to: None,
-            edge_source: None,
-        }).unwrap();
+        let e = store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: dst,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(0),
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         // Before close: visible at t=500.
-        let before = store.get_edges_for_at(src, EdgeDirection::Out, Some(500)).unwrap();
+        let before = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(500))
+            .unwrap();
         assert_eq!(before.len(), 1);
         assert_eq!(before[0].id, e.id);
 
@@ -1281,10 +1664,21 @@ not json at all
         store.close_edge(e.id, 400).unwrap();
 
         // After close: gone at t=500, still present at t=399.
-        let at_500 = store.get_edges_for_at(src, EdgeDirection::Out, Some(500)).unwrap();
-        assert!(at_500.is_empty(), "closed edge must not appear after valid_to");
-        let at_399 = store.get_edges_for_at(src, EdgeDirection::Out, Some(399)).unwrap();
-        assert_eq!(at_399.len(), 1, "closed edge stays visible inside its window");
+        let at_500 = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(500))
+            .unwrap();
+        assert!(
+            at_500.is_empty(),
+            "closed edge must not appear after valid_to"
+        );
+        let at_399 = store
+            .get_edges_for_at(src, EdgeDirection::Out, Some(399))
+            .unwrap();
+        assert_eq!(
+            at_399.len(),
+            1,
+            "closed edge stays visible inside its window"
+        );
     }
 
     #[test]
@@ -1298,39 +1692,59 @@ not json at all
         let role_new = make_memory(&store, "role:manager");
 
         // Original fact: Alice was engineer from t=100 onwards.
-        let old = store.add_edge(NewMemoryEdge {
-            src_id: person, dst_id: role_old, rel_type: "has_role".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(100), valid_to: None,
-            edge_source: None,
-        }).unwrap();
+        let old = store
+            .add_edge(NewMemoryEdge {
+                src_id: person,
+                dst_id: role_old,
+                rel_type: "has_role".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(100),
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         // At t=500 she was promoted: close old, open new.
         store.close_edge(old.id, 500).unwrap();
-        store.add_edge(NewMemoryEdge {
-            src_id: person, dst_id: role_new, rel_type: "has_role".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(500), valid_to: None,
-            edge_source: None,
-        }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: person,
+                dst_id: role_new,
+                rel_type: "has_role".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(500),
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
 
         // Mid-old: returns engineer.
-        let at_300 = store.get_edges_for_at(person, EdgeDirection::Out, Some(300)).unwrap();
+        let at_300 = store
+            .get_edges_for_at(person, EdgeDirection::Out, Some(300))
+            .unwrap();
         assert_eq!(at_300.len(), 1);
         assert_eq!(at_300[0].dst_id, role_old);
 
         // Boundary at 500: engineer ended (exclusive), manager started (inclusive).
-        let at_500 = store.get_edges_for_at(person, EdgeDirection::Out, Some(500)).unwrap();
+        let at_500 = store
+            .get_edges_for_at(person, EdgeDirection::Out, Some(500))
+            .unwrap();
         assert_eq!(at_500.len(), 1);
         assert_eq!(at_500[0].dst_id, role_new);
 
         // Later: still manager.
-        let at_999 = store.get_edges_for_at(person, EdgeDirection::Out, Some(999)).unwrap();
+        let at_999 = store
+            .get_edges_for_at(person, EdgeDirection::Out, Some(999))
+            .unwrap();
         assert_eq!(at_999.len(), 1);
         assert_eq!(at_999[0].dst_id, role_new);
 
         // Without time filter: both edges visible (full history).
-        let all = store.get_edges_for_at(person, EdgeDirection::Out, None).unwrap();
+        let all = store
+            .get_edges_for_at(person, EdgeDirection::Out, None)
+            .unwrap();
         assert_eq!(all.len(), 2);
     }
 
@@ -1341,12 +1755,18 @@ not json at all
         let store = MemoryStore::in_memory();
         let src = make_memory(&store, "src");
         let dst = make_memory(&store, "dst");
-        store.add_edge(NewMemoryEdge {
-            src_id: src, dst_id: dst, rel_type: "rel".into(),
-            confidence: 1.0, source: EdgeSource::User,
-            valid_from: Some(0), valid_to: Some(1),  // closed in the distant past
-            edge_source: None,
-        }).unwrap();
+        store
+            .add_edge(NewMemoryEdge {
+                src_id: src,
+                dst_id: dst,
+                rel_type: "rel".into(),
+                confidence: 1.0,
+                source: EdgeSource::User,
+                valid_from: Some(0),
+                valid_to: Some(1), // closed in the distant past
+                edge_source: None,
+            })
+            .unwrap();
         let legacy = store.get_edges_for(src, EdgeDirection::Out).unwrap();
         assert_eq!(legacy.len(), 1, "legacy API must ignore temporal bounds");
     }

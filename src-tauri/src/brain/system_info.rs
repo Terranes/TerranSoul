@@ -67,7 +67,7 @@ pub fn collect() -> SystemInfo {
 
     let tier = RamTier::from_mb(total_ram_mb);
     let cpu_cores = sys.cpus().len();
-    
+
     // Get more detailed CPU information
     let cpu_name = sys
         .cpus()
@@ -82,7 +82,12 @@ pub fn collect() -> SystemInfo {
             Some(name) => {
                 let version = System::os_version().unwrap_or_default();
                 if version.starts_with("10.0.") {
-                    let build = version.split('.').nth(2).unwrap_or("0").parse::<u32>().unwrap_or(0);
+                    let build = version
+                        .split('.')
+                        .nth(2)
+                        .unwrap_or("0")
+                        .parse::<u32>()
+                        .unwrap_or(0);
                     if build >= 22000 {
                         "Windows 11".to_string()
                     } else {
@@ -105,7 +110,7 @@ pub fn collect() -> SystemInfo {
     };
 
     let arch = std::env::consts::ARCH.to_string();
-    
+
     // Try to detect GPU - basic detection for now
     let gpu_name = detect_gpu();
 
@@ -198,7 +203,7 @@ fn detect_gpu() -> Option<String> {
         // For now, return None and let the frontend handle it
         None
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         None

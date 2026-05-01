@@ -195,9 +195,8 @@ const WEAK_SIGNALS: &[&str] = &[
 
 /// File extension mentions that suggest coding context.
 const FILE_EXTENSIONS: &[&str] = &[
-    ".rs", ".ts", ".vue", ".js", ".tsx", ".jsx", ".py", ".go",
-    ".java", ".cpp", ".c", ".h", ".css", ".html", ".sql", ".toml",
-    ".json", ".yaml", ".yml",
+    ".rs", ".ts", ".vue", ".js", ".tsx", ".jsx", ".py", ".go", ".java", ".cpp", ".c", ".h", ".css",
+    ".html", ".sql", ".toml", ".json", ".yaml", ".yml",
 ];
 
 /// Detect coding intent from a user message.
@@ -303,7 +302,10 @@ fn infer_capability(lower: &str) -> CodingCapability {
         CodingCapability::Fix
     } else if lower.contains("review") || lower.contains("audit") {
         CodingCapability::Review
-    } else if lower.contains("refactor") || lower.contains("restructure") || lower.contains("clean up") {
+    } else if lower.contains("refactor")
+        || lower.contains("restructure")
+        || lower.contains("clean up")
+    {
         CodingCapability::Refactor
     } else if lower.contains("test") || lower.contains("spec") || lower.contains("verify") {
         CodingCapability::Test

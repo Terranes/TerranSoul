@@ -154,8 +154,8 @@ pub fn parse_pose_payload(payload: &str) -> Result<PoseParseResult, PoseParseErr
         return Err(PoseParseError::InvalidJson("empty payload".into()));
     }
 
-    let raw: serde_json::Value = serde_json::from_str(trimmed)
-        .map_err(|e| PoseParseError::InvalidJson(e.to_string()))?;
+    let raw: serde_json::Value =
+        serde_json::from_str(trimmed).map_err(|e| PoseParseError::InvalidJson(e.to_string()))?;
 
     // The LLM may emit either a bare bones map (forgiving) or the full
     // shape `{ bones: {...}, duration_s: ..., easing: ..., expression: ... }`.
@@ -164,38 +164,36 @@ pub fn parse_pose_payload(payload: &str) -> Result<PoseParseResult, PoseParseErr
         .as_object()
         .ok_or_else(|| PoseParseError::InvalidJson("top-level must be a JSON object".into()))?;
 
-    let (bones_value, duration_s, easing, expression) =
-        if let Some(b) = obj.get("bones") {
-            (
-                b.clone(),
-                obj.get("duration_s")
-                    .and_then(|v| v.as_f64())
-                    .map(|f| f as f32)
-                    .unwrap_or(DEFAULT_DURATION_SECS),
-                obj.get("easing")
-                    .and_then(|v| serde_json::from_value(v.clone()).ok())
-                    .unwrap_or_default(),
-                obj.get("expression")
-                    .and_then(|v| v.as_object())
-                    .map(parse_expression_map)
-                    .unwrap_or_default(),
-            )
-        } else {
-            // Bare bones map — every key must look like a bone.
-            (
-                serde_json::Value::Object(obj.clone()),
-                DEFAULT_DURATION_SECS,
-                PoseEasing::default(),
-                BTreeMap::new(),
-            )
-        };
+    let (bones_value, duration_s, easing, expression) = if let Some(b) = obj.get("bones") {
+        (
+            b.clone(),
+            obj.get("duration_s")
+                .and_then(|v| v.as_f64())
+                .map(|f| f as f32)
+                .unwrap_or(DEFAULT_DURATION_SECS),
+            obj.get("easing")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
+            obj.get("expression")
+                .and_then(|v| v.as_object())
+                .map(parse_expression_map)
+                .unwrap_or_default(),
+        )
+    } else {
+        // Bare bones map — every key must look like a bone.
+        (
+            serde_json::Value::Object(obj.clone()),
+            DEFAULT_DURATION_SECS,
+            PoseEasing::default(),
+            BTreeMap::new(),
+        )
+    };
 
     let bones_obj = bones_value
         .as_object()
         .ok_or(PoseParseError::MissingBones)?;
 
-    let canonical: std::collections::HashSet<&str> =
-        CANONICAL_BONES.iter().copied().collect();
+    let canonical: std::collections::HashSet<&str> = CANONICAL_BONES.iter().copied().collect();
 
     let mut bones: BTreeMap<String, [f32; 3]> = BTreeMap::new();
     let mut dropped: Vec<String> = Vec::new();
@@ -253,9 +251,7 @@ pub fn parse_pose_payload(payload: &str) -> Result<PoseParseResult, PoseParseErr
     })
 }
 
-fn parse_expression_map(
-    obj: &serde_json::Map<String, serde_json::Value>,
-) -> BTreeMap<String, f32> {
+fn parse_expression_map(obj: &serde_json::Map<String, serde_json::Value>) -> BTreeMap<String, f32> {
     obj.iter()
         .filter_map(|(k, v)| {
             let f = v.as_f64()? as f32;
@@ -341,8 +337,7 @@ mod tests {
 
     #[test]
     fn drops_unknown_bones() {
-        let payload =
-            r#"{ "bones": { "head": [0.1, 0, 0], "tail": [1, 1, 1] } }"#;
+        let payload = r#"{ "bones": { "head": [0.1, 0, 0], "tail": [1, 1, 1] } }"#;
         let r = parse_pose_payload(payload).unwrap();
         assert_eq!(r.frame.bones.len(), 1);
         assert_eq!(r.dropped_bones, vec!["tail".to_string()]);
@@ -397,8 +392,7 @@ mod tests {
 
     #[test]
     fn drops_bones_with_wrong_arity() {
-        let payload =
-            r#"{ "bones": { "head": [0.1, 0.0], "spine": [0.0, 0.0, 0.03] } }"#;
+        let payload = r#"{ "bones": { "head": [0.1, 0.0], "spine": [0.0, 0.0, 0.03] } }"#;
         let r = parse_pose_payload(payload).unwrap();
         assert_eq!(r.frame.bones.len(), 1);
         assert!(r.dropped_bones.contains(&"head".to_string()));
@@ -439,8 +433,7 @@ mod tests {
 
     #[test]
     fn unknown_easing_falls_back_to_default() {
-        let payload =
-            r#"{ "bones": { "head": [0,0,0] }, "easing": "wibble" }"#;
+        let payload = r#"{ "bones": { "head": [0,0,0] }, "easing": "wibble" }"#;
         let r = parse_pose_payload(payload).unwrap();
         assert_eq!(r.frame.easing, PoseEasing::Spring);
     }

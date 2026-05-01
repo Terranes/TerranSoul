@@ -292,8 +292,7 @@ async fn complete_via_mode(
                 .unwrap_or_else(|| provider_id.clone());
             let provider = crate::brain::get_free_provider(&effective_id)
                 .ok_or_else(|| format!("Unknown free provider: {effective_id}"))?;
-            let client =
-                OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
             client.chat(build_messages(user_text)).await
         }
         BrainMode::PaidApi {
@@ -465,7 +464,10 @@ mod tests {
 
     #[test]
     fn malformed_json_yields_unknown() {
-        assert_eq!(parse_decision("not json at all", "hi"), IntentDecision::Unknown);
+        assert_eq!(
+            parse_decision("not json at all", "hi"),
+            IntentDecision::Unknown
+        );
         assert_eq!(parse_decision("", "hi"), IntentDecision::Unknown);
     }
 
@@ -503,10 +505,7 @@ mod tests {
 
     #[test]
     fn tolerates_markdown_code_fences() {
-        let d = parse_decision(
-            "```json\n{\"kind\":\"chat\"}\n```",
-            "hello",
-        );
+        let d = parse_decision("```json\n{\"kind\":\"chat\"}\n```", "hello");
         assert_eq!(d, IntentDecision::Chat);
     }
 

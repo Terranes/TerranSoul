@@ -6,9 +6,7 @@
 
 use tauri::State;
 
-use crate::vscode_workspace::{
-    self, OpenOutcome, VsCodeWindow,
-};
+use crate::vscode_workspace::{self, OpenOutcome, VsCodeWindow};
 use crate::AppState;
 
 /// Open `target_path` in VS Code, focusing an existing window when
@@ -23,8 +21,7 @@ pub async fn vscode_open_project(
     let target = std::path::PathBuf::from(&target_path);
     let data_dir = state.data_dir.clone();
     tokio::task::spawn_blocking(move || {
-        vscode_workspace::open_project(&data_dir, &target)
-            .map_err(|e| e.to_string())
+        vscode_workspace::open_project(&data_dir, &target).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("internal join error: {e}"))?
@@ -46,14 +43,10 @@ pub async fn vscode_list_known_windows(
 /// Drop a registry entry by PID (e.g. after the user closed VS Code
 /// via Task Manager and the registry got out of sync). Idempotent.
 #[tauri::command]
-pub async fn vscode_forget_window(
-    state: State<'_, AppState>,
-    pid: u32,
-) -> Result<(), String> {
+pub async fn vscode_forget_window(state: State<'_, AppState>, pid: u32) -> Result<(), String> {
     let data_dir = state.data_dir.clone();
     tokio::task::spawn_blocking(move || {
-        vscode_workspace::forget_window(&data_dir, pid)
-            .map_err(|e| e.to_string())
+        vscode_workspace::forget_window(&data_dir, pid).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("internal join error: {e}"))?

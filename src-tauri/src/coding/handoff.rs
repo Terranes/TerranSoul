@@ -230,7 +230,9 @@ fn truncate_with_ellipsis(s: &str, max: usize) -> String {
 pub fn emit_handoff_seed_instruction() -> String {
     let mut s = String::with_capacity(512);
     s.push_str("\n\n# Session handoff\n\n");
-    s.push_str("Before ending your reply, emit a JSON payload describing the next session's seed inside ");
+    s.push_str(
+        "Before ending your reply, emit a JSON payload describing the next session's seed inside ",
+    );
     s.push_str(SEED_OPEN_TAG);
     s.push_str(" / ");
     s.push_str(SEED_CLOSE_TAG);
@@ -246,7 +248,9 @@ pub fn emit_handoff_seed_instruction() -> String {
     s.push_str("  \"created_at\": <unix-ms integer>\n");
     s.push_str("}\n");
     s.push_str("```\n");
-    s.push_str("Keep the payload under 3 KB. Omit fields you cannot fill rather than inventing values.\n");
+    s.push_str(
+        "Keep the payload under 3 KB. Omit fields you cannot fill rather than inventing values.\n",
+    );
     s
 }
 
@@ -431,9 +435,7 @@ mod tests {
 
     #[test]
     fn parse_reply_returns_none_on_missing_required_field() {
-        let reply = format!(
-            "{SEED_OPEN_TAG}{{\"session_id\":\"x\"}}{SEED_CLOSE_TAG}"
-        );
+        let reply = format!("{SEED_OPEN_TAG}{{\"session_id\":\"x\"}}{SEED_CLOSE_TAG}");
         assert!(parse_handoff_reply(&reply).is_none());
     }
 

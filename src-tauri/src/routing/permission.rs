@@ -94,10 +94,7 @@ impl PermissionStore {
 
     /// List all devices and their policies.
     pub fn all_policies(&self) -> Vec<(String, PermissionPolicy)> {
-        self.policies
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect()
+        self.policies.iter().map(|(k, v)| (k.clone(), *v)).collect()
     }
 }
 

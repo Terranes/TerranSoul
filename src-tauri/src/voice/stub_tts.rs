@@ -26,7 +26,7 @@ fn silent_wav(duration_ms: u32) -> Vec<u8> {
     wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
     wav.extend_from_slice(&2u16.to_le_bytes()); // block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    // data chunk
+                                                 // data chunk
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_size.to_le_bytes());
     wav.resize(44 + data_size as usize, 0); // zero samples = silence

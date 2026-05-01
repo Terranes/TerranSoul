@@ -242,10 +242,7 @@ pub fn step_promote(
 }
 
 /// Step 4: Apply decay and garbage collect.
-pub fn step_decay_and_gc(
-    store: &MemoryStore,
-    gc_threshold: f64,
-) -> Result<(usize, usize), String> {
+pub fn step_decay_and_gc(store: &MemoryStore, gc_threshold: f64) -> Result<(usize, usize), String> {
     let decayed = store.apply_decay().map_err(|e| format!("decay: {e}"))?;
     let gc = store
         .gc_decayed(gc_threshold)
@@ -383,7 +380,9 @@ mod tests {
     fn activity_tracker_touch_resets_idle() {
         let tracker = ActivityTracker::new();
         // Manually set to old timestamp
-        tracker.last_activity_ms.store(now_ms() - 60_000, Ordering::Relaxed);
+        tracker
+            .last_activity_ms
+            .store(now_ms() - 60_000, Ordering::Relaxed);
         assert!(tracker.is_idle(30_000));
 
         tracker.touch();
@@ -416,10 +415,13 @@ mod tests {
 
         // Bump access count above threshold via raw SQL (no public record_access)
         let now = now_ms();
-        store.conn().execute(
-            "UPDATE memories SET access_count = 5, last_accessed = ?1 WHERE id = ?2",
-            rusqlite::params![now, id],
-        ).unwrap();
+        store
+            .conn()
+            .execute(
+                "UPDATE memories SET access_count = 5, last_accessed = ?1 WHERE id = ?2",
+                rusqlite::params![now, id],
+            )
+            .unwrap();
 
         let promoted = step_promote(&store, 3, 30).unwrap();
         assert!(promoted.contains(&id));
@@ -476,8 +478,8 @@ mod tests {
         let result = run_consolidation(&store, &["s1".to_string()], &config);
 
         assert_eq!(result.compressed, 1); // one short-tier evicted
-        // May or may not have edges/promotions depending on access counts
-        // but the run itself should complete
+                                          // May or may not have edges/promotions depending on access counts
+                                          // but the run itself should complete
         assert!(result.warnings.is_empty() || !result.warnings.is_empty());
     }
 

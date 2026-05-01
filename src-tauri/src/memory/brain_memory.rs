@@ -204,8 +204,7 @@ pub async fn complete_via_mode(
                 .unwrap_or_else(|| provider_id.clone());
             let provider = crate::brain::get_free_provider(&effective_id)
                 .ok_or_else(|| format!("Unknown free provider: {effective_id}"))?;
-            let client =
-                OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
             let msgs = vec![
                 OpenAiMessage {
                     role: "system".to_string(),
@@ -301,24 +300,18 @@ pub async fn semantic_search_entries(
         return vec![];
     }
 
-    let candidates: Vec<(i64, String)> = entries
-        .iter()
-        .map(|e| (e.id, e.content.clone()))
-        .collect();
+    let candidates: Vec<(i64, String)> =
+        entries.iter().map(|e| (e.id, e.content.clone())).collect();
 
     let agent = OllamaAgent::new(model);
-    let relevant_ids = agent
-        .semantic_relevant_ids(query, &candidates, limit)
-        .await;
+    let relevant_ids = agent.semantic_relevant_ids(query, &candidates, limit).await;
 
     if relevant_ids.is_empty() {
         // Keyword fallback.
         let q = query.to_lowercase();
         return entries
             .iter()
-            .filter(|e| {
-                e.content.to_lowercase().contains(&q) || e.tags.to_lowercase().contains(&q)
-            })
+            .filter(|e| e.content.to_lowercase().contains(&q) || e.tags.to_lowercase().contains(&q))
             .take(limit)
             .cloned()
             .collect();
@@ -384,11 +377,7 @@ pub async fn backfill_embeddings(model: &str, store: &MemoryStore) -> usize {
 
 /// Check if a text is a near-duplicate of an existing memory (cosine > 0.97).
 /// Returns the id of the duplicate, if any.
-pub async fn check_duplicate(
-    content: &str,
-    model: &str,
-    store: &MemoryStore,
-) -> Option<i64> {
+pub async fn check_duplicate(content: &str, model: &str, store: &MemoryStore) -> Option<i64> {
     let emb = OllamaAgent::embed_text(content, model).await?;
     store.find_duplicate(&emb, 0.97).ok().flatten()
 }
@@ -451,8 +440,7 @@ pub async fn extract_edges_via_brain(
     if entries.len() < 2 {
         return 0;
     }
-    let known_ids: std::collections::HashSet<i64> =
-        entries.iter().map(|e| e.id).collect();
+    let known_ids: std::collections::HashSet<i64> = entries.iter().map(|e| e.id).collect();
 
     let agent = OllamaAgent::new(model);
     let mut total_inserted = 0usize;
@@ -478,7 +466,7 @@ pub async fn extract_edges_via_brain(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::{MemoryStore, NewMemory, MemoryType};
+    use crate::memory::{MemoryStore, MemoryType, NewMemory};
 
     fn sample_history() -> Vec<(String, String)> {
         vec![
@@ -558,8 +546,7 @@ mod tests {
         // Ollama won't be running in CI; should fall back to keyword filter.
         let store = store_with_entries();
         let entries = store.get_all().unwrap();
-        let results =
-            semantic_search_entries("gemma3:4b", "Python", &entries, 5).await;
+        let results = semantic_search_entries("gemma3:4b", "Python", &entries, 5).await;
         // Keyword fallback should find the "User prefers Python" entry.
         assert!(results.iter().any(|e| e.content.contains("Python")));
     }
@@ -578,13 +565,8 @@ mod tests {
         // than panicking — the assertion is that the function
         // *terminates* with a `Vec` (i.e. takes the fallback path
         // instead of trying to embed and segment).
-        let facts = extract_facts_segmented_any_mode(
-            &mode,
-            None,
-            &sample_history(),
-            &rotator,
-        )
-        .await;
+        let facts =
+            extract_facts_segmented_any_mode(&mode, None, &sample_history(), &rotator).await;
         assert!(facts.is_empty() || facts.iter().all(|f| !f.is_empty()));
     }
 

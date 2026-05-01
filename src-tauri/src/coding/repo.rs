@@ -92,7 +92,10 @@ pub fn sanitize_branch_segment(raw: &str) -> String {
 
 /// Build the canonical feature-branch name for an autonomous-loop chunk.
 pub fn feature_branch_name(chunk_id: &str) -> String {
-    format!("terransoul/self-improve/{}", sanitize_branch_segment(chunk_id))
+    format!(
+        "terransoul/self-improve/{}",
+        sanitize_branch_segment(chunk_id)
+    )
 }
 
 /// Best-effort: locate the workspace root for the autonomous loop.
@@ -121,7 +124,10 @@ mod tests {
 
     #[test]
     fn sanitize_strips_unsafe_chars_and_collapses_dashes() {
-        assert_eq!(sanitize_branch_segment("Chunk 25.4 — MVP!"), "Chunk-25.4-MVP");
+        assert_eq!(
+            sanitize_branch_segment("Chunk 25.4 — MVP!"),
+            "Chunk-25.4-MVP"
+        );
         assert_eq!(sanitize_branch_segment("///"), "chunk");
         assert_eq!(sanitize_branch_segment(""), "chunk");
         assert_eq!(sanitize_branch_segment("a/b\\c d"), "a-b-c-d");
@@ -162,7 +168,10 @@ mod tests {
             return;
         }
         assert!(state.root.is_some(), "repo root should be populated");
-        assert!(state.current_branch.is_some(), "current branch should be populated");
+        assert!(
+            state.current_branch.is_some(),
+            "current branch should be populated"
+        );
     }
 
     /// Verify guess_repo_root walks upward from a deep starting point.
