@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 15.2 — gRPC `brain.v1` transport foundation](#chunk-152--grpc-brainv1-transport-foundation) | 2026-05-01 |
 | [Chunk 14.16f — Pack-import provenance markers](#chunk-1416f--pack-import-provenance-markers) | 2026-05-02 |
 | [Chunk 14.16e — Self-improve motion-feedback loop](#chunk-1416e--self-improve-motion-feedback-loop) | 2026-05-02 |
 | [Chunk 14.16d — Emotion-reactive procedural pose bias](#chunk-1416d--emotion-reactive-procedural-pose-bias) | 2026-05-02 |
@@ -227,6 +228,42 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 15.2 — gRPC `brain.v1` transport foundation
+
+**Date:** 2026-05-01
+**Status:** ✅ Complete
+
+### Summary
+
+Lands the typed gRPC transport foundation for AI coding integrations. The new
+`brain.v1` protobuf schema exposes the existing `BrainGateway` surface over
+tonic, including unary search and streaming search, while preserving the same
+capability-gated business logic used by MCP.
+
+### Implementation
+
+- **`src-tauri/proto/terransoul/brain.v1.proto`** — versioned protobuf schema
+  with `Health`, `Search`, `StreamSearch`, `GetEntry`, `ListRecent`,
+  `KgNeighbors`, `Summarize`, `SuggestContext`, and `IngestUrl` RPCs.
+- **`src-tauri/build.rs`** — compiles the proto with `tonic-prost-build` and a
+  vendored `protoc`, avoiding host protobuf compiler drift in CI.
+- **`src-tauri/src/ai_integrations/grpc/mod.rs`** — tonic service adapter over
+  `Arc<dyn BrainGateway>`, conversion helpers, gRPC status mapping, mTLS-capable
+  `tls_config_from_pem`, and `serve_with_shutdown`. Plaintext serving is
+  fail-closed for non-loopback addresses so future LAN mode cannot expose the
+  brain without TLS.
+- **`src-tauri/src/ai_integrations/mod.rs`** — exports the new `grpc` module.
+- **`docs/AI-coding-integrations.md`** — records 15.2 as shipped and documents
+  the as-built transport foundation.
+- **`rules/milestones.md`** — archives 15.2 from Phase 15 and narrows Phase 24.3
+  to LAN/runtime activation over the shipped transport.
+
+### Validation
+
+- `cargo test -q ai_integrations::grpc` — 4 passed.
 
 ---
 

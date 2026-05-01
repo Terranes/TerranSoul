@@ -33,6 +33,14 @@ use proto::brain_server::{Brain, BrainServer};
 /// Default loopback endpoint for the typed gRPC transport.
 pub const DEFAULT_GRPC_ADDR: &str = "127.0.0.1:7422";
 
+#[derive(Debug, thiserror::Error)]
+pub enum GrpcServeError {
+    #[error("refusing to serve plaintext gRPC on non-loopback address {0}")]
+    PlaintextNonLoopback(SocketAddr),
+    #[error(transparent)]
+    Transport(#[from] tonic::transport::Error),
+}
+
 /// Tonic service wrapper. It is cloneable because tonic clones services per
 /// connection; the business logic remains in the shared gateway trait object.
 #[derive(Clone)]
@@ -73,7 +81,10 @@ pub async fn serve_with_shutdown(
     caps: GatewayCaps,
     tls: Option<ServerTlsConfig>,
     shutdown: impl Future<Output = ()> + Send + 'static,
-) -> Result<(), tonic::transport::Error> {
+) -> Result<(), GrpcServeError> {
+    if tls.is_none() && !addr.ip().is_loopback() {
+        return Err(GrpcServeError::PlaintextNonLoopback(addr));
+    }
     let svc = BrainGrpcService::new(gateway, caps).into_server();
     let builder = Server::builder();
     let mut builder = if let Some(tls) = tls {
@@ -85,6 +96,7 @@ pub async fn serve_with_shutdown(
         .add_service(svc)
         .serve_with_shutdown(addr, shutdown)
         .await
+        .map_err(GrpcServeError::from)
 }
 
 #[tonic::async_trait]
