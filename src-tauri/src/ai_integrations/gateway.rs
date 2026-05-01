@@ -1306,4 +1306,175 @@ mod tests {
         ));
         assert!(parse_memory_type("nonsense").is_none());
     }
+
+    // ─── Chunk 15.7 — Incremental-indexing QA ─────────────────────────
+
+    /// Cold call: first suggest_context returns a non-empty fingerprint and hits.
+    #[tokio::test]
+    async fn incremental_indexing_cold_call_returns_valid_fingerprint() {
+        let gw = AppStateGateway::new(seed_state());
+        let pack = gw
+            .suggest_context(
+                &GatewayCaps::default(),
+                SuggestContextRequest {
+                    file_path: Some("lib.rs".into()),
+                    cursor_offset: None,
+                    selection: None,
+                    query: "rust ownership".into(),
+                    limit: Some(10),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(!pack.fingerprint.is_empty(), "cold call must return fingerprint");
+        assert_eq!(pack.fingerprint.len(), 64, "SHA-256 hex is 64 chars");
+        assert!(!pack.hits.is_empty(), "cold call must return hits");
+    }
+
+    /// Warm call: identical request to the same gateway yields the same
+    /// fingerprint — this is the cache-hit contract for VS Code Copilot.
+    #[tokio::test]
+    async fn incremental_indexing_warm_call_cache_hit() {
+        let gw = AppStateGateway::new(seed_state());
+        let req = SuggestContextRequest {
+            file_path: Some("src/main.rs".into()),
+            cursor_offset: Some(100),
+            selection: None,
+            query: "dark mode preference".into(),
+            limit: Some(5),
+        };
+        let first = gw
+            .suggest_context(&GatewayCaps::default(), req.clone())
+            .await
+            .unwrap();
+        let second = gw
+            .suggest_context(&GatewayCaps::default(), req)
+            .await
+            .unwrap();
+        assert_eq!(
+            first.fingerprint, second.fingerprint,
+            "warm call (no mutation) must produce same fingerprint (cache hit)"
+        );
+    }
+
+    /// Invalidation: after ingesting new memory data, the fingerprint
+    /// changes — simulates file-watcher invalidation where a new memory
+    /// is added and the editor-side cache must be busted.
+    #[tokio::test]
+    async fn incremental_indexing_invalidation_after_new_memory() {
+        let state = seed_state();
+        let gw = AppStateGateway::new(state.clone());
+        let req = SuggestContextRequest {
+            file_path: None,
+            cursor_offset: None,
+            selection: None,
+            query: "rust".into(),
+            limit: Some(10),
+        };
+        let before = gw
+            .suggest_context(&GatewayCaps::default(), req.clone())
+            .await
+            .unwrap();
+
+        // Mutate: add a new memory that matches the query.
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(NewMemory {
+                    content: "Rust's borrow checker prevents data races at compile time.".into(),
+                    tags: "rust,concurrency".into(),
+                    importance: 4,
+                    memory_type: MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let after = gw
+            .suggest_context(&GatewayCaps::default(), req)
+            .await
+            .unwrap();
+        assert_ne!(
+            before.fingerprint, after.fingerprint,
+            "fingerprint must change after new memory is added (cache invalidation)"
+        );
+        assert!(
+            after.hits.len() > before.hits.len(),
+            "new memory should appear in hits"
+        );
+    }
+
+    /// Invalidation: deleting a memory also changes the fingerprint.
+    #[tokio::test]
+    async fn incremental_indexing_invalidation_after_delete() {
+        let state = seed_state();
+        let gw = AppStateGateway::new(state.clone());
+        let req = SuggestContextRequest {
+            file_path: None,
+            cursor_offset: None,
+            selection: None,
+            query: "rust".into(),
+            limit: Some(10),
+        };
+        let before = gw
+            .suggest_context(&GatewayCaps::default(), req.clone())
+            .await
+            .unwrap();
+
+        // Delete the first matching memory.
+        {
+            let store = state.memory_store.lock().unwrap();
+            let entries = store.get_all().unwrap();
+            let rust_entry = entries.iter().find(|e| e.content.contains("Rust")).unwrap();
+            store.delete(rust_entry.id).unwrap();
+        }
+
+        let after = gw
+            .suggest_context(&GatewayCaps::default(), req)
+            .await
+            .unwrap();
+        assert_ne!(
+            before.fingerprint, after.fingerprint,
+            "fingerprint must change after memory deletion (cache invalidation)"
+        );
+    }
+
+    /// Fingerprint is query-sensitive: different queries over the same data
+    /// produce different fingerprints (different hit sets).
+    #[tokio::test]
+    async fn incremental_indexing_fingerprint_is_query_sensitive() {
+        let gw = AppStateGateway::new(seed_state());
+        let a = gw
+            .suggest_context(
+                &GatewayCaps::default(),
+                SuggestContextRequest {
+                    file_path: None,
+                    cursor_offset: None,
+                    selection: None,
+                    query: "rust ownership".into(),
+                    limit: Some(10),
+                },
+            )
+            .await
+            .unwrap();
+        let b = gw
+            .suggest_context(
+                &GatewayCaps::default(),
+                SuggestContextRequest {
+                    file_path: None,
+                    cursor_offset: None,
+                    selection: None,
+                    query: "dark mode UI preference".into(),
+                    limit: Some(10),
+                },
+            )
+            .await
+            .unwrap();
+        // Different queries hit different memories ⇒ different fingerprints.
+        // (Both queries are designed to match different seeded entries.)
+        assert_ne!(
+            a.fingerprint, b.fingerprint,
+            "different queries should yield different fingerprints"
+        );
+    }
 }

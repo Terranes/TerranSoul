@@ -293,7 +293,7 @@ Integration test with VRM playback.
 | # | Chunk | Status | Notes |
 |---|---|---|---|
 
-| 15.7 | **VS Code Copilot incremental-indexing QA** — e2e test: cold/warm calls, fingerprint cache, file-watcher invalidation. | not-started | Depends on 15.1 + 15.3 + 15.6. |
+
 
 ---
 

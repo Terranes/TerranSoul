@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 15.7 — VS Code Copilot incremental-indexing QA](#chunk-157--vs-code-copilot-incremental-indexing-qa) | 2026-05-02 |
 | [Chunk 17.7 — Bidirectional Obsidian sync](#chunk-177--bidirectional-obsidian-sync) | 2026-05-02 |
 | [Chunk 24.4 — Phone-control RPC surface](#chunk-244--phone-control-rpc-surface) | 2026-05-02 |
 | [Chunk 24.3 — LAN gRPC activation + paired-device mTLS enforcement](#chunk-243--lan-grpc-activation--paired-device-mtls-enforcement) | 2026-05-02 |
@@ -242,6 +243,19 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 15.7 — VS Code Copilot incremental-indexing QA
+
+**Date:** 2026-05-02
+
+**Summary:** Added 5 integration tests validating the `brain_suggest_context` fingerprint caching contract for VS Code Copilot. Tests cover: cold call (valid fingerprint + hits), warm call (cache-hit stability), invalidation after new memory addition, invalidation after memory deletion, and query-sensitivity (different queries → different fingerprints).
+
+**Files changed:**
+- `src-tauri/src/ai_integrations/gateway.rs` (5 new tests in `tests` module)
+
+**Tests:** `incremental_indexing_cold_call_returns_valid_fingerprint`, `incremental_indexing_warm_call_cache_hit`, `incremental_indexing_invalidation_after_new_memory`, `incremental_indexing_invalidation_after_delete`, `incremental_indexing_fingerprint_is_query_sensitive`
 
 ---
 
