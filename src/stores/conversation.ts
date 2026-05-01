@@ -1121,6 +1121,116 @@ function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
   return null;
 }
 
+export interface TranslatorLanguage {
+  code: string;
+  name: string;
+}
+
+export interface TranslatorModeState {
+  active: boolean;
+  source: TranslatorLanguage;
+  target: TranslatorLanguage;
+  nextDirection: 'source_to_target' | 'target_to_source';
+}
+
+const LANGUAGE_ALIASES: Record<string, TranslatorLanguage> = {
+  english: { code: 'en', name: 'English' },
+  en: { code: 'en', name: 'English' },
+  spanish: { code: 'es', name: 'Spanish' },
+  espanol: { code: 'es', name: 'Spanish' },
+  español: { code: 'es', name: 'Spanish' },
+  es: { code: 'es', name: 'Spanish' },
+  french: { code: 'fr', name: 'French' },
+  francais: { code: 'fr', name: 'French' },
+  français: { code: 'fr', name: 'French' },
+  fr: { code: 'fr', name: 'French' },
+  german: { code: 'de', name: 'German' },
+  deutsch: { code: 'de', name: 'German' },
+  de: { code: 'de', name: 'German' },
+  japanese: { code: 'ja', name: 'Japanese' },
+  nihongo: { code: 'ja', name: 'Japanese' },
+  ja: { code: 'ja', name: 'Japanese' },
+  korean: { code: 'ko', name: 'Korean' },
+  ko: { code: 'ko', name: 'Korean' },
+  chinese: { code: 'zh', name: 'Chinese' },
+  mandarin: { code: 'zh', name: 'Chinese' },
+  zh: { code: 'zh', name: 'Chinese' },
+  vietnamese: { code: 'vi', name: 'Vietnamese' },
+  'viet namese': { code: 'vi', name: 'Vietnamese' },
+  tieng_viet: { code: 'vi', name: 'Vietnamese' },
+  'tiếng việt': { code: 'vi', name: 'Vietnamese' },
+  vi: { code: 'vi', name: 'Vietnamese' },
+  portuguese: { code: 'pt', name: 'Portuguese' },
+  pt: { code: 'pt', name: 'Portuguese' },
+  russian: { code: 'ru', name: 'Russian' },
+  ru: { code: 'ru', name: 'Russian' },
+  arabic: { code: 'ar', name: 'Arabic' },
+  ar: { code: 'ar', name: 'Arabic' },
+  italian: { code: 'it', name: 'Italian' },
+  it: { code: 'it', name: 'Italian' },
+  thai: { code: 'th', name: 'Thai' },
+  th: { code: 'th', name: 'Thai' },
+};
+
+function normalizeLanguageName(value: string): string {
+  return value
+    .trim()
+    .replace(/^(?:from|in|the)\s+/i, '')
+    .replace(/\s+(?:language|speaker|person)$/i, '')
+    .replace(/[.!?]+$/g, '')
+    .trim();
+}
+
+function resolveTranslatorLanguage(value: string): TranslatorLanguage {
+  const clean = normalizeLanguageName(value);
+  const alias = LANGUAGE_ALIASES[clean.toLowerCase()];
+  return alias ?? { code: clean.toLowerCase().replace(/\s+/g, '-'), name: clean };
+}
+
+export function detectTranslatorModeRequest(text: string): Pick<TranslatorModeState, 'source' | 'target'> | null {
+  const trimmed = text.trim();
+  const patterns = [
+    /\b(?:become|be|act\s+as|serve\s+as)\s+(?:a\s+)?translator\b[\s\S]*?\bbetween\s+(.+?)\s+(?:and|&|↔|<->|to-and-from)\s+(.+?)(?:[.!?]|$)/i,
+    /\btranslator\s+mode\b[\s\S]*?\bbetween\s+(.+?)\s+(?:and|&|↔|<->|to-and-from)\s+(.+?)(?:[.!?]|$)/i,
+    /\btranslate\s+between\s+(.+?)\s+(?:and|&|↔|<->|to-and-from)\s+(.+?)(?:[.!?]|$)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern);
+    if (!match) continue;
+    const source = resolveTranslatorLanguage(match[1] ?? '');
+    const target = resolveTranslatorLanguage(match[2] ?? '');
+    if (source.name && target.name && source.code !== target.code) {
+      return { source, target };
+    }
+  }
+  return null;
+}
+
+export function isStopTranslatorModeRequest(text: string): boolean {
+  return /^(?:please\s+)?(?:stop|exit|disable|turn\s+off)\s+(?:the\s+)?translator(?:\s+mode)?[.!]?$/i.test(text.trim());
+}
+
+function translatorPrompt(content: string, mode: TranslatorModeState): string {
+  const source = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
+  const target = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
+  return [
+    `You are TerranSoul's translator-mode plugin.`,
+    `Translate the user's message from ${source.name} (${source.code}) to ${target.name} (${target.code}).`,
+    `Return only the translation, with no commentary, explanations, quotes, or markdown.`,
+    `Message: ${content}`,
+  ].join('\n');
+}
+
+function translatorDirectionLabel(mode: TranslatorModeState): string {
+  const source = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
+  const target = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
+  return `${source.name} → ${target.name}`;
+}
+
+function flipTranslatorDirection(mode: TranslatorModeState): void {
+  mode.nextDirection = mode.nextDirection === 'source_to_target' ? 'target_to_source' : 'source_to_target';
+}
+
 // Re-export detectLlmCommand for tests
 export { detectLlmCommand };
 
@@ -1132,6 +1242,7 @@ export const useConversationStore = defineStore('conversation', () => {
   const streamingText = ref('');
   /** Whether a streaming response is in progress. */
   const isStreaming = ref(false);
+  const translatorMode = ref<TranslatorModeState | null>(null);
 
   /** Maximum total size of all message content in bytes (~1MB). */
   const MAX_HISTORY_BYTES = 1_000_000;
@@ -1428,7 +1539,75 @@ export const useConversationStore = defineStore('conversation', () => {
 
     const brain = useBrainStore();
 
-    const llmCmd = detectLlmCommand(content);
+    const translatorRequest = detectTranslatorModeRequest(content);
+    if (translatorRequest) {
+      translatorMode.value = {
+        active: true,
+        source: translatorRequest.source,
+        target: translatorRequest.target,
+        nextDirection: 'source_to_target',
+      };
+      if (isTauriAvailable()) {
+        try {
+          await invoke('plugin_invoke_command', {
+            commandId: 'terransoul-translator.start',
+            args: {
+              source: translatorRequest.source.name,
+              target: translatorRequest.target.name,
+            },
+          });
+        } catch {
+          // The built-in plugin command is informational; chat mode still works.
+        }
+      }
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content:
+          `🌍 Translator mode is on for **${translatorRequest.source.name} ↔ ${translatorRequest.target.name}**.\n\n` +
+          `Send one person's message at a time. I'll translate the next message **${translatorRequest.source.name} → ${translatorRequest.target.name}**, then alternate directions. Type **stop translator mode** to exit.`,
+        agentName: 'Translator Mode',
+        sentiment: 'happy',
+        timestamp: Date.now(),
+      });
+      isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
+      return;
+    }
+
+    if (translatorMode.value && isStopTranslatorModeRequest(content)) {
+      if (isTauriAvailable()) {
+        try {
+          await invoke('plugin_invoke_command', {
+            commandId: 'terransoul-translator.stop',
+            args: null,
+          });
+        } catch {
+          // best-effort
+        }
+      }
+      const previous = translatorMode.value;
+      translatorMode.value = null;
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Translator mode stopped for **${previous.source.name} ↔ ${previous.target.name}**. Back to normal chat.`,
+        agentName: 'Translator Mode',
+        sentiment: 'neutral',
+        timestamp: Date.now(),
+      });
+      isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
+      return;
+    }
+
+    const translatorPromptForTurn = translatorMode.value
+      ? translatorPrompt(content, translatorMode.value)
+      : null;
+
+    const llmCmd = translatorPromptForTurn ? null : detectLlmCommand(content);
     // Respect the "Chat-based LLM switching" toggle: when off, ignore commands
     // like "switch to groq" / "use my openai api key …" and let them flow
     // through to the LLM as ordinary messages.
@@ -1452,7 +1631,9 @@ export const useConversationStore = defineStore('conversation', () => {
     // The configured brain (Free → Paid → Local) decides what to do;
     // failure (no brain, timeout, malformed JSON) maps to `unknown` and
     // falls back to the install-all path so future turns work offline.
-    const decision = await classifyIntent(content, brain.hasBrain);
+    const decision = translatorPromptForTurn
+      ? ({ kind: 'chat' } as IntentDecision)
+      : await classifyIntent(content, brain.hasBrain);
     switch (decision.kind) {
       case 'gated_setup': {
         messages.value.push(executeGatedSetupCommand({ type: decision.setup }));
@@ -1541,7 +1722,7 @@ export const useConversationStore = defineStore('conversation', () => {
         let wasAborted = false;
         try {
           sendOk = await Promise.race([
-            streaming.sendStreaming(content),
+            streaming.sendStreaming(translatorPromptForTurn ?? content),
             new Promise<boolean>((_, reject) =>
               setTimeout(() => reject(new Error('Tauri streaming timeout')), TAURI_STREAM_TIMEOUT_MS),
             ),
@@ -1624,17 +1805,23 @@ export const useConversationStore = defineStore('conversation', () => {
             id: crypto.randomUUID(),
             role: 'assistant',
             content: clean || cleanText,
-            agentName: 'TerranSoul',
+            agentName: translatorPromptForTurn ? 'Translator Mode' : 'TerranSoul',
             sentiment: sentiment as Message['sentiment'],
             timestamp: Date.now(),
             emoji: parsed.emoji ?? undefined,
             motion,
           };
+          if (translatorPromptForTurn && translatorMode.value) {
+            assistantMsg.content = `**${translatorDirectionLabel(translatorMode.value)}**\n\n${assistantMsg.content}`;
+            flipTranslatorDirection(translatorMode.value);
+          }
           stampAgent(assistantMsg);
-          if (warning) applyWarningAsQuest(assistantMsg, warning);
+          if (!translatorPromptForTurn && warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
-          maybeShowQuestFromResponse(clean || cleanText, content);
-          maybeShowDontKnowPrompt(clean || cleanText);
+          if (!translatorPromptForTurn) {
+            maybeShowQuestFromResponse(clean || cleanText, content);
+            maybeShowDontKnowPrompt(clean || cleanText);
+          }
         } else {
           // Streaming completed but no text accumulated (events not received or
           // API returned empty) — fall back to non-streaming invoke which also
@@ -1648,16 +1835,23 @@ export const useConversationStore = defineStore('conversation', () => {
           const FALLBACK_TIMEOUT_MS = 30_000;
           const response = await Promise.race([
             invoke<Message>('send_message', {
-              message: content,
+              message: translatorPromptForTurn ?? content,
               agentId: currentAgent.value === 'auto' ? null : currentAgent.value,
             }),
             new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('Fallback invoke timeout')), FALLBACK_TIMEOUT_MS),
             ),
           ]);
+          if (translatorPromptForTurn && translatorMode.value) {
+            response.agentName = 'Translator Mode';
+            response.content = `**${translatorDirectionLabel(translatorMode.value)}**\n\n${response.content}`;
+            flipTranslatorDirection(translatorMode.value);
+          }
           messages.value.push(response);
-          maybeShowQuestFromResponse(response.content, content);
-          maybeShowDontKnowPrompt(response.content);
+          if (!translatorPromptForTurn) {
+            maybeShowQuestFromResponse(response.content, content);
+            maybeShowDontKnowPrompt(response.content);
+          }
         } catch {
           messages.value.push(createPersonaResponse(content));
           pushNetworkOrProviderWarning();
@@ -1682,6 +1876,9 @@ export const useConversationStore = defineStore('conversation', () => {
         const history = buildHistory(
           messages.value.map((m) => ({ role: m.role, content: m.content })),
         );
+        if (translatorPromptForTurn && history.length > 0) {
+          history[history.length - 1].content = translatorPromptForTurn;
+        }
 
         // RAG: fetch relevant memories from Tauri backend if available
         let memoryBlock = '';
@@ -1795,17 +1992,23 @@ export const useConversationStore = defineStore('conversation', () => {
               id: crypto.randomUUID(),
               role: 'assistant',
               content: clean || parsed.text,
-              agentName: 'TerranSoul',
+              agentName: translatorPromptForTurn ? 'Translator Mode' : 'TerranSoul',
               sentiment: sentiment as Message['sentiment'],
               timestamp: Date.now(),
               emoji: parsed.emoji ?? undefined,
               motion: parsed.motion ?? undefined,
             };
+            if (translatorPromptForTurn && translatorMode.value) {
+              assistantMsg.content = `**${translatorDirectionLabel(translatorMode.value)}**\n\n${assistantMsg.content}`;
+              flipTranslatorDirection(translatorMode.value);
+            }
             stampAgent(assistantMsg);
-            if (warning) applyWarningAsQuest(assistantMsg, warning);
+            if (!translatorPromptForTurn && warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
-            maybeShowQuestFromResponse(clean || parsed.text, content);
-            maybeShowDontKnowPrompt(clean || parsed.text);
+            if (!translatorPromptForTurn) {
+              maybeShowQuestFromResponse(clean || parsed.text, content);
+              maybeShowDontKnowPrompt(clean || parsed.text);
+            }
             succeeded = true;
             break;
           } catch (err) {
@@ -1845,7 +2048,33 @@ export const useConversationStore = defineStore('conversation', () => {
 
     // Path 3: No brain configured — persona fallback
     await new Promise((r) => setTimeout(r, 500));
-    messages.value.push(createPersonaResponse(content));
+    if (translatorPromptForTurn && translatorMode.value) {
+      const mode = translatorMode.value;
+      const source = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
+      const target = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
+      let translated = `[${target.code}] ${content}`;
+      try {
+        const result = await invoke<{ translated: string }>('translate_text', {
+          text: content,
+          sourceLang: source.code,
+          targetLang: target.code,
+        });
+        translated = result.translated;
+      } catch {
+        // Browser-only fallback keeps the plugin usable without a configured brain.
+      }
+      messages.value.push({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `**${translatorDirectionLabel(mode)}**\n\n${translated}`,
+        agentName: 'Translator Mode',
+        sentiment: 'neutral',
+        timestamp: Date.now(),
+      });
+      flipTranslatorDirection(mode);
+    } else {
+      messages.value.push(createPersonaResponse(content));
+    }
     isThinking.value = false;
     activeAbortController = null;
     generationActive.value = false;
@@ -1930,6 +2159,7 @@ export const useConversationStore = defineStore('conversation', () => {
     isThinking,
     streamingText,
     isStreaming,
+    translatorMode,
     sendMessage,
     getConversation,
     addMessage,

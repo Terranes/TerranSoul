@@ -236,6 +236,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - **Hotword detection** for wake-word activation
 - **Speaker diarization** support
 - LipSync ↔ TTS audio pipeline for real-time mouth animation
+- **Translator mode plugin** — say “become a translator to help me translate between English and Vietnamese” to activate the built-in `terransoul-translator` reference plugin. TerranSoul then alternates translation direction between the two people until “stop translator mode”. The implementation doubles as the documented example for new chat-mode plugins in [docs/plugin-development.md](docs/plugin-development.md#translator-mode-reference-plugin).
 - **Audio-prosody persona hints** — when ASR is configured, the Master-Echo
   persona suggester analyses the user's typed turns (which mirror their spoken
   patterns) for tone (concise / elaborate / energetic / inquisitive / emphatic

@@ -408,6 +408,63 @@ When the user types `/translate hello world`, TerranSoul:
 
 ## Example Plugins
 
+### Translator Mode Reference Plugin
+
+TerranSoul ships a built-in reference plugin named `terransoul-translator`. It demonstrates the recommended pattern for chat-native plugins:
+
+1. Declare a normal command (`terransoul-translator.start`) plus a slash command (`/translator`).
+2. Use an `OnChatMessage` activation event so natural language like “become a translator to help me translate between English and Vietnamese” can activate the feature.
+3. Keep plugin state in the host app (`translatorMode` in the conversation store) while the plugin command remains the stable extension point.
+4. Route the actual work through existing host capabilities instead of inventing a separate framework: configured LLMs translate with a strict translator prompt, and the `translate_text` command provides a local fallback.
+
+```json
+{
+  "id": "terransoul-translator",
+  "display_name": "Translator Mode",
+  "version": "1.0.0",
+  "description": "Reference built-in plugin that turns TerranSoul into a two-person translator.",
+  "kind": "tool",
+  "install_method": "built_in",
+  "capabilities": [],
+  "activation_events": [
+    { "type": "on_chat_message", "pattern": "translator" }
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "terransoul-translator.start",
+        "title": "Start Translator Mode",
+        "icon": "🌍",
+        "category": "Translation"
+      },
+      {
+        "id": "terransoul-translator.stop",
+        "title": "Stop Translator Mode",
+        "icon": "🛑",
+        "category": "Translation"
+      }
+    ],
+    "slash_commands": [
+      {
+        "name": "translator",
+        "description": "Start translator mode, e.g. /translator English Vietnamese",
+        "command_id": "terransoul-translator.start"
+      }
+    ]
+  },
+  "api_version": 1
+}
+```
+
+User flow:
+
+- Start: “become a translator to help me translate between English and Vietnamese”
+- Turn 1: TerranSoul translates English → Vietnamese
+- Turn 2: TerranSoul translates Vietnamese → English
+- Stop: “stop translator mode”
+
+Use this plugin as the smallest complete example for a new chat-mode plugin: one manifest, one contributed command, one optional slash command, deterministic activation text, tests for state transitions, and documentation of the user-facing flow.
+
 ### Code Analyzer
 
 ```json

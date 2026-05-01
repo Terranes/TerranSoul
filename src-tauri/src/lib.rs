@@ -293,7 +293,7 @@ impl AppState {
             gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
             gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
-            plugin_host: plugins::PluginHost::new(data_dir),
+            plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
         }))
     }

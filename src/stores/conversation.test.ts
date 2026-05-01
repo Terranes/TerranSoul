@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
-import { useConversationStore } from './conversation';
+import { detectTranslatorModeRequest, isStopTranslatorModeRequest, useConversationStore } from './conversation';
 import { useBrainStore } from './brain';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import type { Message } from '../types';
@@ -91,6 +91,56 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.isThinking).toBe(true);
     await promise;
     expect(store.isThinking).toBe(false);
+  });
+
+  it('activates translator mode from normal chat and translates alternating turns', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      original: 'hello',
+      source_lang: 'en',
+      translated: '[vi] hello',
+      target_lang: 'vi',
+      confidence: 0.5,
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
+    expect(store.translatorMode?.active).toBe(true);
+    expect(store.messages[1].agentName).toBe('Translator Mode');
+    expect(store.messages[1].content).toContain('English ↔ Vietnamese');
+
+    await store.sendMessage('hello');
+
+    expect(mockInvoke).toHaveBeenCalledWith('translate_text', {
+      text: 'hello',
+      sourceLang: 'en',
+      targetLang: 'vi',
+    });
+    expect(store.messages[3].agentName).toBe('Translator Mode');
+    expect(store.messages[3].content).toContain('English → Vietnamese');
+    expect(store.messages[3].content).toContain('[vi] hello');
+    expect(store.translatorMode?.nextDirection).toBe('target_to_source');
+  });
+
+  it('stops translator mode from normal chat', async () => {
+    const store = useConversationStore();
+    await store.sendMessage('translate between English and Japanese');
+    await store.sendMessage('stop translator mode');
+
+    expect(store.translatorMode).toBeNull();
+    expect(store.messages.at(-1)?.content).toContain('Translator mode stopped');
+  });
+});
+
+describe('translator mode intent helpers', () => {
+  it('detects become-translator requests with language aliases', () => {
+    const result = detectTranslatorModeRequest('Please become a translator to help me translate between en and Vietnamese');
+    expect(result?.source).toEqual({ code: 'en', name: 'English' });
+    expect(result?.target).toEqual({ code: 'vi', name: 'Vietnamese' });
+  });
+
+  it('detects stop-translator requests', () => {
+    expect(isStopTranslatorModeRequest('stop translator mode')).toBe(true);
+    expect(isStopTranslatorModeRequest('hello translator')).toBe(false);
   });
 });
 
