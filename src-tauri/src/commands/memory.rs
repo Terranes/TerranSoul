@@ -1430,6 +1430,41 @@ pub async fn obsidian_sync_stop(
     Ok(())
 }
 
+// ── GraphRAG community detection + dual-level search (Chunk 16.6) ────
+
+/// Run community detection on the memory knowledge graph and store results.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_rag_detect_communities(
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let communities = store
+        .detect_and_store_communities()
+        .map_err(|e| format!("detect communities: {e}"))?;
+    Ok(communities.len())
+}
+
+/// Dual-level GraphRAG search: entity + community retrieval fused via RRF.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_rag_search(
+    query: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::store::MemoryEntry>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let results = store
+        .graph_rag_search(&query, None, limit.unwrap_or(10))
+        .map_err(|e| format!("graph_rag_search: {e}"))?;
+    // Fetch full entries for the result ids.
+    let mut entries = Vec::with_capacity(results.len());
+    for (id, _score) in results {
+        if let Ok(entry) = store.get_by_id(id) {
+            entries.push(entry);
+        }
+    }
+    Ok(entries)
+}
+
 // ── Temporal reasoning queries (Chunk 17.3) ──────────────────────────
 
 /// Result of a temporal query: the parsed time range + matching memories.

@@ -84,7 +84,8 @@ use commands::{
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
         close_memory_edge, count_memory_conflicts, delete_memory, delete_memory_edge,
         dismiss_memory_conflict, evaluate_auto_learn, export_to_obsidian,
-        extract_edges_via_brain, obsidian_sync, obsidian_sync_start, obsidian_sync_stop,
+        extract_edges_via_brain, graph_rag_detect_communities, graph_rag_search,
+        obsidian_sync, obsidian_sync_start, obsidian_sync_stop,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
         get_memory_stats, get_relevant_memories, get_schema_info, get_short_term_memory,
@@ -506,6 +507,9 @@ pub fn run() {
             obsidian_sync,
             obsidian_sync_start,
             obsidian_sync_stop,
+            // GraphRAG community detection + dual-level search (Chunk 16.6)
+            graph_rag_detect_communities,
+            graph_rag_search,
             // Temporal reasoning queries (Chunk 17.3)
             temporal_query,
             // Memory versioning (Chunk 16.12)

@@ -15,6 +15,7 @@ pub mod edge_conflict_scan;
 pub mod edges;
 pub mod fusion;
 pub mod gitnexus_mirror;
+pub mod graph_rag;
 pub mod hyde;
 pub mod late_chunking;
 pub mod matryoshka;

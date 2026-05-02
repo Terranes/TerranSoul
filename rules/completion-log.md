@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 16.6 — GraphRAG community summaries](#chunk-166--graphrag-community-summaries) | 2026-05-02 |
 | [Chunk 15.7 — VS Code Copilot incremental-indexing QA](#chunk-157--vs-code-copilot-incremental-indexing-qa) | 2026-05-02 |
 | [Chunk 17.7 — Bidirectional Obsidian sync](#chunk-177--bidirectional-obsidian-sync) | 2026-05-02 |
 | [Chunk 24.4 — Phone-control RPC surface](#chunk-244--phone-control-rpc-surface) | 2026-05-02 |
@@ -243,6 +244,22 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 16.6 — GraphRAG community summaries
+
+**Date:** 2026-05-02
+
+**Summary:** Implemented GraphRAG with Leiden-style community detection over `memory_edges`, community persistence (`memory_communities` table), and dual-level retrieval (entity keyword search + community summary search) fused via RRF. Custom Louvain/modularity-greedy algorithm (~130 LOC) avoids external graph dependency. Two new Tauri commands: `graph_rag_detect_communities` (runs detection + stores), `graph_rag_search` (dual-level retrieval). LLM community summarization is a separate step (communities stored without summaries initially, summaries populated via brain when available).
+
+**Files changed:**
+- `src-tauri/src/memory/graph_rag.rs` (new, ~320 LOC)
+- `src-tauri/src/memory/mod.rs` (module declaration)
+- `src-tauri/src/commands/memory.rs` (2 new commands)
+- `src-tauri/src/lib.rs` (command registration)
+
+**Tests:** 5 unit tests (detect_communities_finds_two_clusters, detect_and_store_communities_persists, graph_rag_search_returns_relevant_hits, detect_communities_handles_empty_graph, community_ranking_keyword_only)
 
 ---
 
