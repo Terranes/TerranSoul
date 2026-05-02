@@ -197,7 +197,9 @@ fn build_entry(snippet: Snippet, id: i64, now_ms: i64) -> MemoryEntry {
         expires_at: None,
         valid_to: None,
         obsidian_path: None,
-        last_exported: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
     }
 }
 
@@ -403,7 +405,9 @@ mod tests {
             expires_at: None,
             valid_to: None,
         obsidian_path: None,
-        last_exported: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
         };
         assert!(!is_code_rag_entry(&real));
 
@@ -419,3 +423,4 @@ mod tests {
         assert!(gitnexus_response_to_entries(&v, -1).is_empty());
     }
 }
+

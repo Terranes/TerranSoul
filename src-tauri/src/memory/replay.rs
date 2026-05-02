@@ -145,7 +145,9 @@ mod tests {
             expires_at: None,
             valid_to: None,
         obsidian_path: None,
-        last_exported: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
         }
     }
 
@@ -170,7 +172,9 @@ mod tests {
             expires_at: None,
             valid_to: None,
         obsidian_path: None,
-        last_exported: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
         }
     }
 
@@ -321,3 +325,4 @@ mod tests {
         assert!(json.contains("\"done\":false"));
     }
 }
+

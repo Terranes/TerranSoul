@@ -77,7 +77,10 @@ use commands::{
     },
     ingest::{cancel_ingest_task, get_all_tasks, ingest_document, resume_ingest_task},
     lan::{confirm_pairing, get_copilot_session_status, list_lan_addresses, list_paired_devices, revoke_device, start_pairing},
-    link::{connect_to_peer, disconnect_link, get_link_status, start_link_server},
+    link::{
+        apply_memory_deltas, connect_to_peer, disconnect_link, get_link_status,
+        get_memory_deltas, start_link_server,
+    },
     mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
@@ -428,6 +431,9 @@ pub fn run() {
             start_link_server,
             connect_to_peer,
             disconnect_link,
+            // CRDT memory sync (Chunk 17.5)
+            get_memory_deltas,
+            apply_memory_deltas,
             list_pending_commands,
             approve_remote_command,
             deny_remote_command,

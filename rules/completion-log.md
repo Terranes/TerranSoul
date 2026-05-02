@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 17.5a — CRDT sync schema + LWW core](#chunk-175a--crdt-sync-schema--lww-core) | 2026-05-02 |
 | [Chunk 16.6 — GraphRAG community summaries](#chunk-166--graphrag-community-summaries) | 2026-05-02 |
 | [Chunk 15.7 — VS Code Copilot incremental-indexing QA](#chunk-157--vs-code-copilot-incremental-indexing-qa) | 2026-05-02 |
 | [Chunk 17.7 — Bidirectional Obsidian sync](#chunk-177--bidirectional-obsidian-sync) | 2026-05-02 |
@@ -244,6 +245,25 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 17.5a — CRDT sync schema + LWW core
+
+**Date:** 2026-05-02
+
+**Summary:** Implemented the LWW-Map CRDT foundation for cross-device memory sync. V13 schema migration adds `updated_at` and `origin_device` columns to `memories` + `sync_log` audit table. New `crdt_sync` module provides `compute_sync_deltas()` and `apply_sync_deltas()` with LWW conflict resolution (highest `updated_at` wins, lexicographic `origin_device` tiebreaker). Custom `SyncKey` type matches entries by `content_hash` (primary) or `(content_prefix, created_at)` for legacy entries. Two new Tauri commands: `get_memory_deltas`, `apply_memory_deltas`.
+
+**Files changed:**
+- `src-tauri/src/memory/crdt_sync.rs` (new, ~380 LOC)
+- `src-tauri/src/memory/migrations.rs` (V13 migration + sentinel bump)
+- `src-tauri/src/memory/store.rs` (`updated_at` + `origin_device` on MemoryEntry, SELECT updates)
+- `src-tauri/src/memory/mod.rs` (module declaration)
+- `src-tauri/src/commands/link.rs` (2 new commands)
+- `src-tauri/src/lib.rs` (command registration)
+- Various files: added new fields to struct literals
+
+**Tests:** 8 unit tests (compute_deltas, insert/update/skip/tiebreaker/soft_close/roundtrip/sync_log)
 
 ---
 

@@ -289,6 +289,8 @@ async fn try_web_fallback(query: &str, state: &AppState) -> Result<CragResult, S
             valid_to: None,
             obsidian_path: None,
             last_exported: None,
+            updated_at: None,
+            origin_device: None,
         })
         .collect();
 
@@ -370,7 +372,9 @@ mod tests {
             expires_at: None,
             valid_to: None,
         obsidian_path: None,
-        last_exported: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
         };
         let mems = vec![make_mem("good"), make_mem("bad"), make_mem("meh")];
         let verdicts = vec![
@@ -401,3 +405,4 @@ mod tests {
         assert!(snippets[0].contains("Rust programming"));
     }
 }
+

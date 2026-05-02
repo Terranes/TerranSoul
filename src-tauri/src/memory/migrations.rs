@@ -377,6 +377,47 @@ CREATE TABLE IF NOT EXISTS paired_devices (
 DROP TABLE IF EXISTS paired_devices;
 "#,
     },
+    // ── V13: CRDT sync columns (Chunk 17.5a) ──────────────────────────
+    //
+    // Adds per-entry metadata needed for Last-Write-Wins (LWW) CRDT sync
+    // across linked devices:
+    //
+    // - `updated_at` — Unix-ms timestamp of the last mutation on this
+    //   entry. NULL for legacy entries (treated as `created_at` during
+    //   sync). The LWW winner is the entry with the highest `updated_at`.
+    // - `origin_device` — UUID of the device that last wrote this entry.
+    //   Used as a tiebreaker when `updated_at` is identical (lexicographic
+    //   comparison). NULL for legacy entries (treated as local device).
+    //
+    // Also creates a `sync_log` table that records inbound/outbound delta
+    // batches for conflict audit and deduplication.
+    //
+    // See chunk 17.5 spec in `rules/milestones.md`.
+    Migration {
+        version: 13,
+        description: "CRDT sync: updated_at + origin_device on memories; sync_log table",
+        up: r#"
+ALTER TABLE memories ADD COLUMN updated_at INTEGER;
+ALTER TABLE memories ADD COLUMN origin_device TEXT;
+CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at);
+
+CREATE TABLE IF NOT EXISTS sync_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    peer_device TEXT    NOT NULL,
+    direction   TEXT    NOT NULL,
+    entry_count INTEGER NOT NULL,
+    timestamp   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sync_log_peer ON sync_log(peer_device);
+"#,
+        down: r#"
+DROP INDEX IF EXISTS idx_sync_log_peer;
+DROP TABLE IF EXISTS sync_log;
+DROP INDEX IF EXISTS idx_memories_updated_at;
+ALTER TABLE memories DROP COLUMN origin_device;
+ALTER TABLE memories DROP COLUMN updated_at;
+"#,
+    },
 ];
 
 /// The latest version that the codebase targets.
@@ -657,13 +698,13 @@ mod tests {
     }
 
     #[test]
-    fn target_version_is_v12() {
+    fn target_version_is_v13() {
         // Sentinel test: forces an explicit decision when adding a new
         // migration. Bumping TARGET_VERSION without deliberately
         // updating this assertion catches accidental schema additions.
         assert_eq!(
-            TARGET_VERSION, 12,
-            "V12 is the current paired_devices schema (24.2b)"
+            TARGET_VERSION, 13,
+            "V13 is the current CRDT sync schema (17.5a)"
         );
     }
 

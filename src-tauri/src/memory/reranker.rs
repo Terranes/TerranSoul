@@ -207,7 +207,9 @@ mod tests {
             expires_at: None,
             valid_to: None,
         obsidian_path: None,
-        last_exported: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
         }
     }
 
@@ -340,3 +342,4 @@ mod tests {
         assert_eq!(out.iter().map(|e| e.id).collect::<Vec<_>>(), vec![9, 8, 7]);
     }
 }
+

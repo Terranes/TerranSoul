@@ -310,7 +310,7 @@ Integration test with VRM playback.
 
 | # | Chunk | Status | Notes |
 |---|---|---|---|
-| 17.5 | **Cross-device memory merge via CRDT sync** — wire `MemoryStore` into Soul Link. LWW-Map CRDT keyed on `(content_hash, source_url)`. | not-started | Hardest chunk — may split into 17.5a (schema) + 17.5b (delta sync). |
+| 17.5b | **Cross-device memory sync — Soul Link wire protocol** — Hook `compute_sync_deltas`/`apply_sync_deltas` into Soul Link's `LinkMessage` handler. Auto-sync on reconnect. | not-started | Depends on 17.5a (shipped). |
 
 ---
 

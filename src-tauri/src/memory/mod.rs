@@ -11,6 +11,7 @@ pub mod conflicts;
 pub mod consolidation;
 pub mod contextualize;
 pub mod crag;
+pub mod crdt_sync;
 pub mod edge_conflict_scan;
 pub mod edges;
 pub mod fusion;
