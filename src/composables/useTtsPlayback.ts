@@ -40,7 +40,7 @@ export interface TtsPlaybackHandle {
   /** All text that has been fully spoken so far in this generation. */
   spokenText: Readonly<ReturnType<typeof ref<string>>>;
   /** Feed an LLM token chunk into the sentence buffer. */
-  feedChunk(text: string): void;
+  feedChunk(text: string, options?: TtsChunkOptions): void;
   /** Flush the remaining buffer as the final TTS sentence (call on stream done). */
   flush(): void;
   /** Stop all pending synthesis and cancel audio playback. */
@@ -54,6 +54,11 @@ export interface TtsPlaybackHandle {
   onAudioEnd(cb: () => void): void;
   /** Register a callback fired when stop() is called (all playback cancelled). */
   onPlaybackStop(cb: () => void): void;
+}
+
+export interface TtsChunkOptions {
+  /** BCP-47 or short ISO language code for this chunk, e.g. "vi" or "ja-JP". */
+  language?: string | null;
 }
 
 export interface TtsPlaybackOptions {
@@ -71,6 +76,54 @@ export interface TtsPlaybackOptions {
   mutedRef?: Ref<boolean>;
 }
 
+const LANGUAGE_NAME_TO_BCP47: Record<string, string> = {
+  english: 'en-US',
+  vietnamese: 'vi-VN',
+  japanese: 'ja-JP',
+  spanish: 'es-ES',
+  french: 'fr-FR',
+  german: 'de-DE',
+  korean: 'ko-KR',
+  chinese: 'zh-CN',
+};
+
+const LANGUAGE_CODE_TO_BCP47: Record<string, string> = {
+  en: 'en-US',
+  vi: 'vi-VN',
+  ja: 'ja-JP',
+  jp: 'ja-JP',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  ko: 'ko-KR',
+  zh: 'zh-CN',
+};
+
+function normaliseBrowserTtsLanguage(language?: string | null): string | undefined {
+  const cleaned = language?.trim();
+  if (!cleaned) return undefined;
+  const lower = cleaned.toLowerCase();
+  return LANGUAGE_CODE_TO_BCP47[lower]
+    ?? LANGUAGE_NAME_TO_BCP47[lower]
+    ?? (lower.includes('-') ? cleaned : undefined);
+}
+
+function inferLanguageFromTranslatorLabel(text: string): string | undefined {
+  const match = text.match(/^\s*[A-Za-z]+(?:\s+[A-Za-z]+)?\s*(?:→|->|to)\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)\s*:/);
+  return normaliseBrowserTtsLanguage(match?.[1]);
+}
+
+function selectBrowserVoice(language: string): SpeechSynthesisVoice | undefined {
+  if (typeof speechSynthesis === 'undefined' || typeof speechSynthesis.getVoices !== 'function') {
+    return undefined;
+  }
+  const voices = speechSynthesis.getVoices();
+  const exact = voices.find((voice) => voice.lang.toLowerCase() === language.toLowerCase());
+  if (exact) return exact;
+  const languagePrefix = language.split('-')[0]?.toLowerCase();
+  return voices.find((voice) => voice.lang.toLowerCase().split('-')[0] === languagePrefix);
+}
+
 export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle {
   const isSpeaking = ref(false);
   /** The sentence currently being spoken. */
@@ -80,14 +133,16 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
 
   /** Accumulated text not yet sent to TTS. */
   let buffer = '';
+  /** Language metadata for the current buffer, if provided by translator mode. */
+  let bufferLanguage: string | undefined;
   /**
    * Generation counter — incremented on every stop() call.
    * Each async operation captures the generation at enqueue time and aborts
    * if the current generation has changed when it executes.
    */
   let generation = 0;
-  /** Queue of pending sentences — each carries text and a WAV synthesis promise. */
-  const synthQueue: { text: string; wav: Promise<Uint8Array | null> }[] = [];
+  /** Queue of pending sentences — each carries text, language, and a WAV synthesis promise. */
+  const synthQueue: { text: string; language?: string; wav: Promise<Uint8Array | null> }[] = [];
   /** Current HTMLAudioElement being played, if any. */
   let currentAudio: HTMLAudioElement | null = null;
   /** Blob URLs created for audio elements, tracked for cleanup. */
@@ -153,7 +208,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
   }
 
   /** Enqueue a sentence for synthesis and sequential playback. */
-  function enqueueSentence(sentence: string): void {
+  function enqueueSentence(sentence: string, language?: string): void {
     const trimmed = sanitizeTtsText(sentence.trim());
     if (trimmed.length < MIN_SENTENCE_CHARS) return;
 
@@ -164,7 +219,11 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       .then((bytes) => (generation === myGen ? new Uint8Array(bytes) : null))
       .catch(() => null);
 
-    synthQueue.push({ text: trimmed, wav: synthPromise });
+    synthQueue.push({
+      text: trimmed,
+      language: language ?? inferLanguageFromTranslatorLabel(trimmed),
+      wav: synthPromise,
+    });
 
     // Drain queue if nothing is playing
     if (synthQueue.length === 1) {
@@ -189,7 +248,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
         await playWavBytes(wavBytes, myGen);
       } else {
         // Synthesis failed or returned empty audio — fall back to browser speech.
-        await speakWithBrowserTts(item.text, myGen);
+        await speakWithBrowserTts(item.text, myGen, item.language);
       }
 
       // Mark sentence as fully spoken
@@ -267,7 +326,7 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
    * offline, and without any backend dependency.
    * Note: does not produce an HTMLAudioElement so lip sync is unavailable.
    */
-  function speakWithBrowserTts(text: string, myGen: number): Promise<void> {
+  function speakWithBrowserTts(text: string, myGen: number, language?: string): Promise<void> {
     return new Promise<void>((resolve) => {
       if (!('speechSynthesis' in window) || generation !== myGen) {
         audioEndCb?.();
@@ -276,6 +335,12 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       }
 
       const utterance = new SpeechSynthesisUtterance(text);
+      const browserLanguage = normaliseBrowserTtsLanguage(language) ?? inferLanguageFromTranslatorLabel(text);
+      if (browserLanguage) {
+        utterance.lang = browserLanguage;
+        const voice = selectBrowserVoice(browserLanguage);
+        if (voice) utterance.voice = voice;
+      }
       utterance.pitch = options?.getBrowserPitch?.() ?? 1.0;
       utterance.rate = options?.getBrowserRate?.() ?? 1.0;
       // Browser SpeechSynthesisUtterance does not honour HTMLAudioElement
@@ -297,15 +362,25 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  function feedChunk(text: string): void {
+  function feedChunk(text: string, chunkOptions?: TtsChunkOptions): void {
     if (!text) return;
 
+    const chunkLanguage = normaliseBrowserTtsLanguage(chunkOptions?.language);
+    if (!buffer.trim()) {
+      bufferLanguage = chunkLanguage;
+    } else if (chunkLanguage && chunkLanguage !== bufferLanguage) {
+      flush();
+      bufferLanguage = chunkLanguage;
+    }
     buffer += text;
     const { sentences, remainder } = extractSentences(buffer);
     buffer = remainder;
 
     for (const sentence of sentences) {
-      enqueueSentence(sentence);
+      enqueueSentence(sentence, chunkLanguage ?? bufferLanguage);
+    }
+    if (!buffer.trim()) {
+      bufferLanguage = undefined;
     }
   }
 
@@ -313,13 +388,15 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
     const leftover = buffer.trim();
     buffer = '';
     if (leftover.length >= MIN_SENTENCE_CHARS) {
-      enqueueSentence(leftover);
+      enqueueSentence(leftover, bufferLanguage);
     }
+    bufferLanguage = undefined;
   }
 
   function stop(): void {
     generation++;
     buffer = '';
+    bufferLanguage = undefined;
     synthQueue.length = 0;
     isSpeaking.value = false;
     currentSentence.value = '';

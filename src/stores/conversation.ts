@@ -1385,7 +1385,7 @@ export const useConversationStore = defineStore('conversation', () => {
           onSentence: (sentence) => {
             if (typeof window !== 'undefined') {
               window.dispatchEvent(
-                new CustomEvent('ts:llm-sentence', { detail: { sentence } }),
+                new CustomEvent('ts:llm-sentence', { detail: { sentence, language: to.code } }),
               );
             }
           },

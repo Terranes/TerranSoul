@@ -57,8 +57,11 @@ vi.stubGlobal('Blob', class MockBlob {
 
 class MockSpeechSynthesisUtterance {
   text: string;
+  lang = '';
   pitch = 1.0;
   rate = 1.0;
+  voice: SpeechSynthesisVoice | null = null;
+  volume = 1;
   onend: (() => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(text: string) { this.text = text; }
@@ -71,6 +74,7 @@ const mockSpeechSynthesis = {
     // Simulate async completion
     Promise.resolve().then(() => utterance.onend?.());
   }),
+  getVoices: vi.fn(() => []),
   cancel: vi.fn(),
   pause: vi.fn(),
   resume: vi.fn(),
@@ -348,6 +352,8 @@ describe('useTtsPlayback — gender voice pitch', () => {
     mockInvoke.mockReset();
     spokenUtterances.length = 0;
     mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.getVoices.mockReset();
+    mockSpeechSynthesis.getVoices.mockReturnValue([]);
     mockSpeechSynthesis.speak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
       spokenUtterances.push(utterance.text);
       Promise.resolve().then(() => utterance.onend?.());
@@ -399,6 +405,55 @@ describe('useTtsPlayback — gender voice pitch', () => {
     await new Promise((r) => setTimeout(r, 50));
     const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
     expect(utterance.rate).toBe(1.0);
+  });
+});
+
+describe('useTtsPlayback — multilingual browser voices', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    spokenUtterances.length = 0;
+    mockSpeechSynthesis.speak.mockClear();
+    mockSpeechSynthesis.getVoices.mockReset();
+    mockSpeechSynthesis.getVoices.mockReturnValue([
+      { name: 'Vietnamese Voice', lang: 'vi-VN' },
+      { name: 'Japanese Voice', lang: 'ja-JP' },
+      { name: 'Spanish Voice', lang: 'es-ES' },
+    ] as SpeechSynthesisVoice[]);
+    mockSpeechSynthesis.speak.mockImplementation((utterance: MockSpeechSynthesisUtterance) => {
+      spokenUtterances.push(utterance.text);
+      Promise.resolve().then(() => utterance.onend?.());
+    });
+  });
+
+  it.each([
+    ['vi', 'vi-VN', 'Vietnamese Voice', 'xin chào. '],
+    ['ja', 'ja-JP', 'Japanese Voice', 'こんにちは。 '],
+    ['es', 'es-ES', 'Spanish Voice', 'hola. '],
+  ])('sets SpeechSynthesisUtterance language for translator chunks in %s', async (
+    language,
+    expectedLang,
+    expectedVoice,
+    sentence,
+  ) => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback();
+    tts.feedChunk(sentence, { language });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.lang).toBe(expectedLang);
+    expect(utterance.voice?.name).toBe(expectedVoice);
+  });
+
+  it('infers browser language from translator-mode labels when metadata is unavailable', async () => {
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const tts = useTtsPlayback();
+    tts.feedChunk('English → Vietnamese: xin chào. ');
+    await new Promise((r) => setTimeout(r, 50));
+
+    const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
+    expect(utterance.lang).toBe('vi-VN');
+    expect(utterance.voice?.name).toBe('Vietnamese Voice');
   });
 });
 

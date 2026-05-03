@@ -69,12 +69,13 @@ function beginStreamingTtsIfNeeded(): void {
 }
 
 function handleSentenceEvent(event: Event): void {
-  const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
+  const detail = (event as CustomEvent<{ sentence?: string; language?: string }>).detail;
+  const sentence = detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
   beginStreamingTtsIfNeeded();
   spokenSentenceCount += 1;
   // `useTtsPlayback` emits on sentence terminators followed by whitespace.
-  tts.feedChunk(`${sentence} `);
+  tts.feedChunk(`${sentence} `, { language: detail?.language });
 }
 
 watch(
