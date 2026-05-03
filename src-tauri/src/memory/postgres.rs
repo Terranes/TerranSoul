@@ -53,7 +53,7 @@ impl PostgresBackend {
             .map_err(|e| StorageError::Postgres(e.to_string()))?;
 
         let backend = Self { pool };
-        backend.migrate()?;
+        backend.run_migrations().await?;
         Ok(backend)
     }
 
