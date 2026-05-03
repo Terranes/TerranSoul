@@ -132,13 +132,19 @@
       :class="{ 'si-live--running': store.running }"
     >
       <div class="si-live-row">
-        <span class="si-live-dot" :class="{ 'si-live-dot--on': store.running }" />
+        <span
+          class="si-live-dot"
+          :class="{ 'si-live-dot--on': store.running }"
+        />
         <span class="si-live-phase">{{ store.activePhase ?? 'idle' }}</span>
         <span class="si-live-msg">{{ store.liveMessage }}</span>
         <span class="si-live-pct">{{ store.livePercent }}%</span>
       </div>
       <div class="si-live-track">
-        <div class="si-live-fill" :style="{ width: `${store.livePercent}%` }" />
+        <div
+          class="si-live-fill"
+          :style="{ width: `${store.livePercent}%` }"
+        />
       </div>
     </div>
 
@@ -160,36 +166,60 @@
       </div>
       <div class="si-obs-stats">
         <div class="si-stat">
-          <div class="si-stat-num">{{ store.metrics.total_runs }}</div>
-          <div class="si-stat-label">Runs</div>
+          <div class="si-stat-num">
+            {{ store.metrics.total_runs }}
+          </div>
+          <div class="si-stat-label">
+            Runs
+          </div>
         </div>
         <div class="si-stat si-stat--ok">
-          <div class="si-stat-num">{{ formatRate(store.metrics.success_rate) }}</div>
-          <div class="si-stat-label">Success ({{ store.metrics.successes }})</div>
+          <div class="si-stat-num">
+            {{ formatRate(store.metrics.success_rate) }}
+          </div>
+          <div class="si-stat-label">
+            Success ({{ store.metrics.successes }})
+          </div>
         </div>
         <div class="si-stat si-stat--err">
-          <div class="si-stat-num">{{ formatRate(store.metrics.failure_rate) }}</div>
-          <div class="si-stat-label">Failure ({{ store.metrics.failures }})</div>
+          <div class="si-stat-num">
+            {{ formatRate(store.metrics.failure_rate) }}
+          </div>
+          <div class="si-stat-label">
+            Failure ({{ store.metrics.failures }})
+          </div>
         </div>
         <div class="si-stat">
-          <div class="si-stat-num">{{ formatDuration(store.metrics.avg_duration_ms) }}</div>
-          <div class="si-stat-label">Avg. latency</div>
+          <div class="si-stat-num">
+            {{ formatDuration(store.metrics.avg_duration_ms) }}
+          </div>
+          <div class="si-stat-label">
+            Avg. latency
+          </div>
         </div>
       </div>
 
       <!-- Cost / token telemetry (Chunk 28.5) -->
       <div class="si-cost-row">
         <div class="si-cost-card">
-          <div class="si-cost-label">Total spend</div>
-          <div class="si-cost-value">{{ formatUsd(store.metrics.total_cost_usd) }}</div>
+          <div class="si-cost-label">
+            Total spend
+          </div>
+          <div class="si-cost-value">
+            {{ formatUsd(store.metrics.total_cost_usd) }}
+          </div>
           <div class="si-cost-sub">
             {{ formatTokens(store.metrics.total_prompt_tokens) }} prompt
             · {{ formatTokens(store.metrics.total_completion_tokens) }} out
           </div>
         </div>
         <div class="si-cost-card">
-          <div class="si-cost-label">Last 7 days</div>
-          <div class="si-cost-value">{{ formatUsd(store.metrics.rolling_7d_cost_usd) }}</div>
+          <div class="si-cost-label">
+            Last 7 days
+          </div>
+          <div class="si-cost-value">
+            {{ formatUsd(store.metrics.rolling_7d_cost_usd) }}
+          </div>
           <div class="si-cost-sub">
             {{ store.metrics.rolling_7d_runs }} runs
             · {{ formatTokens(store.metrics.rolling_7d_prompt_tokens) }} prompt
@@ -199,7 +229,9 @@
           v-if="providerCostEntries.length > 0"
           class="si-cost-card si-cost-card--breakdown"
         >
-          <div class="si-cost-label">By provider</div>
+          <div class="si-cost-label">
+            By provider
+          </div>
           <ul class="si-cost-breakdown">
             <li
               v-for="[provider, cost] in providerCostEntries"
@@ -292,19 +324,24 @@
       >
         🧠 Configure Coding LLM
       </button>
-      <label class="si-autostart" :title="'Launch TerranSoul on Windows login (per-user, reversible)'">
+      <label
+        class="si-autostart"
+        :title="'Launch TerranSoul on Windows login (per-user, reversible)'"
+      >
         <input
           type="checkbox"
           :checked="store.autostartEnabled"
           @change="onAutostartToggle(($event.target as HTMLInputElement).checked)"
-        />
+        >
         <span>Auto-start on login</span>
       </label>
     </footer>
 
     <!-- GitHub PR + pull-from-main controls (Chunk 25.13) -->
     <div class="si-github">
-      <h3 class="si-section-h">GitHub</h3>
+      <h3 class="si-section-h">
+        GitHub
+      </h3>
       <p class="si-github-desc">
         When all chunks complete, the loop opens a Pull Request against
         <code>{{ store.githubConfig?.default_base ?? 'main' }}</code> and
@@ -319,7 +356,7 @@
             class="si-input"
             placeholder="ghp_…"
             autocomplete="off"
-          />
+          >
         </label>
         <label class="si-field">
           <span class="si-field-label">Owner / Repo</span>
@@ -328,7 +365,7 @@
             type="text"
             class="si-input"
             placeholder="owner/repo (auto-detected if empty)"
-          />
+          >
         </label>
         <label class="si-field">
           <span class="si-field-label">Base branch</span>
@@ -337,7 +374,7 @@
             type="text"
             class="si-input"
             placeholder="main"
-          />
+          >
         </label>
         <label class="si-field">
           <span class="si-field-label">Reviewers (comma-separated)</span>
@@ -346,11 +383,15 @@
             type="text"
             class="si-input"
             placeholder="alice, bob"
-          />
+          >
         </label>
       </div>
       <div class="si-github-actions">
-        <button type="button" class="si-btn si-btn-tiny" @click="onSaveGithub">
+        <button
+          type="button"
+          class="si-btn si-btn-tiny"
+          @click="onSaveGithub"
+        >
           💾 Save GitHub config
         </button>
         <button
@@ -375,7 +416,11 @@
         v-if="store.lastPullRequest"
         class="si-github-result si-github-result--ok"
       >
-        Last PR: <a :href="store.lastPullRequest.html_url" target="_blank" rel="noreferrer">
+        Last PR: <a
+          :href="store.lastPullRequest.html_url"
+          target="_blank"
+          rel="noreferrer"
+        >
           #{{ store.lastPullRequest.number }}
         </a>
         ({{ store.lastPullRequest.created ? 'opened' : 'updated' }})

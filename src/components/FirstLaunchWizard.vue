@@ -192,7 +192,9 @@
                   :style="{ width: setupProgress + '%' }"
                 />
               </div>
-              <p class="flw-percent">{{ setupProgress }}%</p>
+              <p class="flw-percent">
+                {{ setupProgress }}%
+              </p>
 
               <!-- Debug Log Toggle -->
               <button

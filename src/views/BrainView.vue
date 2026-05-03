@@ -138,14 +138,23 @@
         class="bv-coding-form"
       >
         <label>Model</label>
-        <div v-if="isLocalOllamaSelection" class="bv-local-model-row">
+        <div
+          v-if="isLocalOllamaSelection"
+          class="bv-local-model-row"
+        >
           <select
             v-if="localCodingModels.length > 0"
             v-model="codingModelInput"
             class="bv-input"
             data-testid="bv-local-model-select"
           >
-            <option v-for="m in localCodingModels" :key="m" :value="m">{{ m }}</option>
+            <option
+              v-for="m in localCodingModels"
+              :key="m"
+              :value="m"
+            >
+              {{ m }}
+            </option>
           </select>
           <input
             v-else
@@ -194,7 +203,10 @@
             class="bv-input"
           >
         </template>
-        <p v-else class="bv-coding-hint">
+        <p
+          v-else
+          class="bv-coding-hint"
+        >
           🔒 No API key needed — this provider runs locally.
         </p>
         <div class="bv-coding-actions">
@@ -203,7 +215,7 @@
             class="bv-btn bv-btn-primary"
             :disabled="
               !(codingModelInput || selectedCodingRec.default_model) ||
-              (selectedCodingRec.requires_api_key && !codingApiKeyInput)
+                (selectedCodingRec.requires_api_key && !codingApiKeyInput)
             "
             @click="saveCodingLlm"
           >
@@ -250,7 +262,10 @@
     </section>
 
     <!-- ── Coding Workflow Context (Chunk 25.16) ───────────────────────────── -->
-    <section class="bv-coding-workflow" data-testid="bv-coding-workflow">
+    <section
+      class="bv-coding-workflow"
+      data-testid="bv-coding-workflow"
+    >
       <CodingWorkflowConfigPanel />
     </section>
 

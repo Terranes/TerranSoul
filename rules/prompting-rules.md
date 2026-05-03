@@ -183,6 +183,39 @@ cargo clippy -- -D warnings  # must produce zero warnings
 
 ---
 
+## ENFORCEMENT RULE — Bounded Lint and QA Loops
+
+When a user asks to fix all warnings, perform a full audit, or loop until QA
+is clean, the agent MUST run a bounded, measurable loop rather than drifting
+through open-ended formatter/test churn.
+
+Required loop:
+
+1. Capture a baseline before edits: `git status --short`, the exact failing
+   command, and a warning/error count grouped by rule or test file.
+2. Read the current contents of any file named by the environment as changed
+   by the user, formatter, or another tool before editing it.
+3. Fix one coherent batch at a time, preferring narrow edits over broad
+   formatters in a dirty worktree. If a broad formatter is necessary, record
+   the changed-file set immediately after it runs.
+4. Rerun the same command after each batch and confirm that the issue count
+   decreased or the failure class changed in a clearly explained way.
+5. If three consecutive iterations do not reduce the count, or if the agent is
+   debugging its own ad-hoc helper script instead of the product, stop that
+   path. Replace the helper with a canonical repo command or report the blocker
+   to the user with the current evidence.
+6. Do not claim completion until the exact requested gate passes. For ESLint
+   warning cleanup, that means `npm run lint -- --max-warnings=0` exits 0.
+7. Finish with a compact changed-file summary, the commands that passed, and
+   any remaining warnings only if they are intentionally configured outside the
+   requested gate.
+
+This rule is specifically intended to prevent agents from getting stuck in
+recursive QA/lint loops, chasing PowerShell or helper-script mistakes, or
+declaring success from stale diagnostics after formatters changed files.
+
+---
+
 ## Documentation Rules
 
 - Update `rules/milestones.md` after every completed chunk:

@@ -147,7 +147,9 @@
           </span>
         </header>
         <dl class="pp-suggestion-fields">
-          <dt>Name</dt><dd data-testid="pp-suggestion-name">{{ suggestion.name }}</dd>
+          <dt>Name</dt><dd data-testid="pp-suggestion-name">
+            {{ suggestion.name }}
+          </dd>
           <dt>Role</dt><dd>{{ suggestion.role }}</dd>
           <dt>Bio</dt><dd>{{ suggestion.bio }}</dd>
           <dt v-if="suggestion.tone?.length">

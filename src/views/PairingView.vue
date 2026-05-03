@@ -52,8 +52,13 @@
       <div
         v-if="store.qrSvg"
         class="qr-container"
-        v-html="store.qrSvg"
-      />
+      >
+        <img
+          class="qr-code"
+          :src="qrSvgDataUrl"
+          alt="Pairing QR code"
+        >
+      </div>
       <div
         v-else-if="store.isLoading"
         class="loading"
@@ -103,10 +108,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useIdentityStore } from '../stores/identity';
 
 const store = useIdentityStore();
+const qrSvgDataUrl = computed(() => (
+  store.qrSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(store.qrSvg)}` : ''
+));
 
 onMounted(async () => {
   await Promise.all([
@@ -206,7 +214,7 @@ section h3 {
   justify-content: center;
 }
 
-.qr-container :deep(svg) {
+.qr-code {
   max-width: 220px;
   height: auto;
 }

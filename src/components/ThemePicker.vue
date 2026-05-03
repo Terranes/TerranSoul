@@ -10,7 +10,10 @@ function pickTheme(theme: ThemeDefinition): void {
 </script>
 
 <template>
-  <div class="theme-picker" data-testid="theme-picker">
+  <div
+    class="theme-picker"
+    data-testid="theme-picker"
+  >
     <div class="tp-header">
       <span class="tp-title">🎨 Appearance</span>
     </div>

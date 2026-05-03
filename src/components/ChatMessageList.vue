@@ -71,9 +71,9 @@
           v-if="item.msg!.role === 'assistant'"
           :name="item.msg!.agentName ?? 'TerranSoul'"
         />
-        <div
+        <SafeMarkdown
           class="bubble"
-          v-html="renderMarkdown(item.msg!.content)"
+          :text="item.msg!.content"
         />
         <span class="timestamp">{{ formatTime(item.msg!.timestamp) }}</span>
       </div>
@@ -86,9 +86,10 @@
     >
       <div class="bubble-wrapper">
         <AgentBadge name="TerranSoul" />
-        <div
+        <SafeMarkdown
           class="bubble streaming-bubble"
-          v-html="renderMarkdown(streamingText) + '<span class=\'cursor-blink\'>▎</span>'"
+          :text="streamingText"
+          cursor
         />
       </div>
     </div>
@@ -125,7 +126,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import type { Message } from '../types';
 import AgentBadge from './AgentBadge.vue';
 import TypingIndicator from './TypingIndicator.vue';
-import { renderMarkdown } from '../utils/render-markdown';
+import SafeMarkdown from './SafeMarkdown.vue';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
 
 /**
@@ -218,8 +219,6 @@ const messagesWithSeparators = computed<(SeparatorItem | MessageItem)[]>(() => {
 function formatTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
-
-// renderMarkdown and escapeHtml imported from '../utils/render-markdown'
 
 async function scrollToBottom() {
   await nextTick();

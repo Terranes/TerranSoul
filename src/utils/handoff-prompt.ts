@@ -88,7 +88,7 @@ export function buildHandoffBlock(input: HandoffBlockInput | null | undefined): 
  */
 function sanitiseContext(raw: unknown): string {
   if (typeof raw !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
+
   const cleaned = raw.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');
   const lines = cleaned
     .split('\n')
@@ -112,6 +112,6 @@ function capCharacters(body: string): string {
 /** Strip control chars + collapse whitespace for a single-line field. */
 function sanitiseLine(s: unknown): string {
   if (typeof s !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
+
   return s.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
 }

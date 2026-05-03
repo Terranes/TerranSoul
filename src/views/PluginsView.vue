@@ -139,7 +139,9 @@
             {{ stateLabel(plugin) }}
           </span>
         </div>
-        <p class="pv-card-desc">{{ plugin.manifest.description }}</p>
+        <p class="pv-card-desc">
+          {{ plugin.manifest.description }}
+        </p>
         <p class="pv-card-meta">
           <span>kind: <code>{{ plugin.manifest.kind }}</code></span>
           <span class="pv-divider">·</span>
@@ -204,7 +206,9 @@
                 <span class="pv-setting-name">{{ setting.label }}</span>
                 <span class="pv-setting-key">{{ plugin.manifest.id }}.{{ setting.key }}</span>
               </label>
-              <p class="pv-setting-desc">{{ setting.description }}</p>
+              <p class="pv-setting-desc">
+                {{ setting.description }}
+              </p>
 
               <!-- Boolean → toggle -->
               <input

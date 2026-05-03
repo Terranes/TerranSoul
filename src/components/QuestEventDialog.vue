@@ -80,9 +80,9 @@
               :class="'qe-msg-' + msg.role"
             >
               <span class="qe-msg-avatar">{{ msg.role === 'assistant' ? '🧙' : '🗡️' }}</span>
-              <div
+              <SafeMarkdown
                 class="qe-msg-bubble"
-                v-html="renderMarkdown(msg.content)"
+                :text="msg.content"
               />
             </div>
             <div
@@ -147,7 +147,7 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { useSkillTreeStore, type SkillNode } from '../stores/skill-tree';
 import { useBrainStore } from '../stores/brain';
 import { streamChatCompletion, type ChatMessage } from '../utils/free-api-client';
-import { renderMarkdown } from '../utils/render-markdown';
+import SafeMarkdown from './SafeMarkdown.vue';
 
 const props = defineProps<{
   node: SkillNode;
