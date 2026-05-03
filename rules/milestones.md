@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-No active chunks remain. Promote a row from `rules/backlog.md` before starting more chunk work.
+Chunk 29.1 — Browser-mode QA and responsive landing polish.
 
 ---
 
@@ -41,3 +41,8 @@ No active chunks remain. Promote a row from `rules/backlog.md` before starting m
 
 | Chunk | Status | Goal | Maps to |
 |---|---|---|---|
+| 29.1 | not-started | Browser-mode QA and responsive landing polish: verify the landing page + live pet model across desktop/mobile browser sizes, confirm the compact in-page app window behaves like the browser substitute for native windows, and add focused regression coverage where practical. | Browser mode follow-up from `src/views/BrowserLandingView.vue`, `src/App.vue`, `src/components/CharacterViewport.vue`; docs in `README.md` and `docs/brain-advanced-design.md` |
+| 29.2 | not-started | Browser brain transport hardening: define the browser-safe path for free cloud chat, paid API configuration, and optional RemoteHost pairing so browser mode does not imply local Rust memory/LLM capabilities that are unavailable without a host. | `src/stores/brain.ts`, `src/stores/conversation.ts`, `src/transport/`, `docs/brain-advanced-design.md` |
+| 29.3 | not-started | Browser app-window UX hardening: refine the small in-page window controls, keyboard/focus behavior, accessibility labels, and mode switching between pet preview, 3D, and chatbox layouts. | `src/App.vue`, `src/views/BrowserLandingView.vue`, `src/views/ChatView.vue` |
+| 29.4 | not-started | glib/GTK modernization tracker: periodically retry the Tauri/wry/gtk-rs dependency path, remove the `glib 0.18` advisory note only when the Linux stack can actually resolve to `glib >=0.20`, and avoid adding duplicate direct glib dependencies that leave gtk3 transitives in place. | `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, Tauri/wry Linux dependency graph |
+| 29.5 | not-started | Sitting-prop lifecycle regression coverage: add targeted frontend/renderer tests or lightweight harness coverage proving the chair is absent by default, appears only for sitting animations, and is disposed/hidden after sitting ends. | `src/components/CharacterViewport.vue`, `src/renderer/props.ts`, `src/renderer/vrma-manager.ts` |
