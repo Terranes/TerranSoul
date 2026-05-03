@@ -49,7 +49,7 @@
               v-if="brain.systemInfo"
               class="brain-hw"
             >
-              {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
+              {{ brain.systemInfo?.cpu_name }} · {{ formatRam(brain.systemInfo?.total_ram_mb) }} RAM
             </p>
             <p
               v-if="brain.topRecommendation"
