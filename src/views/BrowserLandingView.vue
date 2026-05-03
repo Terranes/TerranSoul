@@ -9,7 +9,10 @@
         >
         <span class="brand-name">TerranSoul</span>
       </div>
-      <nav class="landing-links" aria-label="Landing page navigation">
+      <nav
+        class="landing-links"
+        aria-label="Landing page navigation"
+      >
         <a href="#about">About</a>
         <a href="#missions">Missions</a>
         <a href="#browser-docs">Docs</a>
@@ -23,8 +26,13 @@
     </header>
 
     <main class="landing-main">
-      <section class="hero-section" aria-labelledby="landing-title">
-        <p class="eyebrow">Open-source 3D AI companion</p>
+      <section
+        class="hero-section"
+        aria-labelledby="landing-title"
+      >
+        <p class="eyebrow">
+          Open-source 3D AI companion
+        </p>
         <h1 id="landing-title">
           Build your own contextual AI familiar.
         </h1>
@@ -56,7 +64,9 @@
         aria-labelledby="about-title"
       >
         <article class="info-card wide">
-          <p class="card-kicker">About</p>
+          <p class="card-kicker">
+            About
+          </p>
           <h2 id="about-title">
             A companion interface for complete-context engineering.
           </h2>
@@ -69,12 +79,16 @@
           </p>
         </article>
         <article class="info-card">
-          <p class="card-kicker">Brain</p>
+          <p class="card-kicker">
+            Brain
+          </p>
           <h3>Multi-provider LLM routing</h3>
           <p>Free, paid, local Ollama, and remote desktop brain transports share one frontend contract.</p>
         </article>
         <article class="info-card">
-          <p class="card-kicker">Avatar</p>
+          <p class="card-kicker">
+            Avatar
+          </p>
           <h3>Live VRM model</h3>
           <p>The bottom-right pet uses the same Three.js + VRM renderer as the desktop app.</p>
         </article>
@@ -85,7 +99,9 @@
         class="mission-section"
         aria-labelledby="missions-title"
       >
-        <p class="eyebrow">Missions</p>
+        <p class="eyebrow">
+          Missions
+        </p>
         <h2 id="missions-title">
           What TerranSoul is built to do
         </h2>
@@ -113,7 +129,9 @@
         class="docs-panel"
         aria-labelledby="docs-title"
       >
-        <p class="card-kicker">Docs</p>
+        <p class="card-kicker">
+          Docs
+        </p>
         <h2 id="docs-title">
           Browser mode architecture
         </h2>
@@ -126,7 +144,10 @@
       </section>
     </main>
 
-    <aside class="pet-preview" aria-label="Live TerranSoul model preview">
+    <aside
+      class="pet-preview"
+      aria-label="Live TerranSoul model preview"
+    >
       <CharacterViewport force-pet />
       <div class="pet-caption">
         Live model test
