@@ -150,10 +150,11 @@ async function renderVrmHeadshot(vrmPath: string): Promise<string> {
       else if (mat) mat.dispose();
     }
   });
-  // Dispose lights
+  // Remove lights
   scene.traverse((obj) => {
     if ((obj as THREE.Light).isLight) {
-      (obj as THREE.Light).dispose?.();
+      const light = obj as THREE.Light;
+      light.parent?.remove(light);
     }
   });
 
