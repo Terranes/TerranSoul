@@ -101,6 +101,7 @@
             <li><strong>VRM character</strong><span>Live Three.js renderer</span></li>
             <li><strong>Cross-device</strong><span>Desktop · Mobile · Web</span></li>
           </ul>
+          <BrowserAuthPanel />
         </div>
         <aside
           class="pet-stage"
@@ -277,6 +278,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import BrowserAuthPanel from '../components/BrowserAuthPanel.vue';
 import BrowserPetCompanion from '../components/BrowserPetCompanion.vue';
 import LandingThemeSwitch from '../components/LandingThemeSwitch.vue';
 

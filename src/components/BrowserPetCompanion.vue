@@ -2,10 +2,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CharacterViewport from './CharacterViewport.vue';
 import { useAsrManager } from '../composables/useAsrManager';
-import { useTtsPlayback } from '../composables/useTtsPlayback';
+import { hasBrowserTtsVoice, useTtsPlayback } from '../composables/useTtsPlayback';
 import { useCharacterStore } from '../stores/character';
 import { useConversationStore } from '../stores/conversation';
 import { useVoiceStore } from '../stores/voice';
+import { TRANSLATOR_LANGUAGE_OPTIONS } from '../utils/translator-languages';
 
 const conversation = useConversationStore();
 const voice = useVoiceStore();
@@ -15,6 +16,9 @@ const inputText = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
 const liveVoice = ref(false);
 const asrError = ref<string | null>(null);
+const ttsInstallPrompt = ref<string | null>(null);
+const translatorSourceLanguage = ref('en');
+const translatorTargetLanguage = ref('vi');
 const ttsStreamActive = ref(false);
 let spokenSentenceCount = 0;
 let liveRestartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,12 +45,27 @@ const translatorLabel = computed(() => {
   if (!mode?.active) return 'Chat companion';
   return `${mode.source.name} ↔ ${mode.target.name} live translator`;
 });
+const translatorSelectionInvalid = computed(() => (
+  translatorSourceLanguage.value === translatorTargetLanguage.value && !translatorMode.value?.active
+));
 const statusLabel = computed(() => {
   if (asr.isListening.value) return 'Listening…';
   if (conversation.isStreaming) return 'Streaming voice…';
   if (conversation.isThinking) return 'Thinking…';
   if (tts.isSpeaking.value) return 'Speaking…';
   return 'Ready';
+});
+const emotionBubble = computed(() => {
+  switch (character.state) {
+    case 'thinking': return { emoji: '💭', label: 'Thinking' };
+    case 'talking': return { emoji: '💬', label: 'Talking' };
+    case 'happy': return { emoji: '✨', label: 'Happy' };
+    case 'sad': return { emoji: '💧', label: 'Sad' };
+    case 'angry': return { emoji: '💢', label: 'Angry' };
+    case 'relaxed': return { emoji: '🌿', label: 'Relaxed' };
+    case 'surprised': return { emoji: '❗', label: 'Surprised' };
+    default: return null;
+  }
 });
 
 function scrollToBottom() {
@@ -60,6 +79,21 @@ async function ensureBrowserVoice(): Promise<void> {
   }
 }
 
+function promptForMissingTranslatorVoices(): void {
+  const missing = [
+    translatorSourceLanguage.value,
+    translatorTargetLanguage.value,
+  ].filter((language) => !hasBrowserTtsVoice(language));
+  if (missing.length === 0) {
+    ttsInstallPrompt.value = null;
+    return;
+  }
+  const labels = missing
+    .map((code) => TRANSLATOR_LANGUAGE_OPTIONS.find((language) => language.code === code)?.name ?? code)
+    .join(' and ');
+  ttsInstallPrompt.value = `Install ${labels} speech voice support in your OS/browser language settings for best translator TTS.`;
+}
+
 function beginStreamingTtsIfNeeded(): void {
   if (!voice.config.tts_provider) return;
   if (!ttsStreamActive.value) {
@@ -69,12 +103,19 @@ function beginStreamingTtsIfNeeded(): void {
 }
 
 function handleSentenceEvent(event: Event): void {
-  const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
+  const detail = (event as CustomEvent<{ sentence?: string; language?: string }>).detail;
+  const sentence = detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
   beginStreamingTtsIfNeeded();
   spokenSentenceCount += 1;
   // `useTtsPlayback` emits on sentence terminators followed by whitespace.
-  tts.feedChunk(`${sentence} `);
+  tts.feedChunk(`${sentence} `, { language: detail?.language });
+}
+
+function handleMissingVoiceEvent(event: Event): void {
+  const detail = (event as CustomEvent<{ name?: string; code?: string }>).detail;
+  const label = detail?.name && detail?.code ? `${detail.name} (${detail.code})` : 'the selected language';
+  ttsInstallPrompt.value = `Install a ${label} speech voice in your OS/browser language settings, then restart voice playback.`;
 }
 
 watch(
@@ -168,7 +209,8 @@ async function toggleLiveVoice(): Promise<void> {
 
 async function startTranslatorDemo(): Promise<void> {
   liveVoice.value = false;
-  await submitText('Become a translator to help me translate between English and Vietnamese.');
+  promptForMissingTranslatorVoices();
+  await submitText(`Become a translator to help me translate between ${translatorSourceLanguage.value} and ${translatorTargetLanguage.value}.`);
   liveVoice.value = true;
   scheduleLiveRestart();
 }
@@ -181,10 +223,12 @@ async function stopTranslator(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('ts:llm-sentence', handleSentenceEvent);
+  window.addEventListener('ts:tts-voice-missing', handleMissingVoiceEvent);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('ts:llm-sentence', handleSentenceEvent);
+  window.removeEventListener('ts:tts-voice-missing', handleMissingVoiceEvent);
   if (liveRestartTimer) clearTimeout(liveRestartTimer);
   asr.stopListening();
   tts.stop();
@@ -195,6 +239,22 @@ onBeforeUnmount(() => {
   <div class="browser-pet-companion">
     <div class="pet-frame">
       <CharacterViewport force-pet />
+      <Transition name="emotion-pop">
+        <div
+          v-if="emotionBubble"
+          class="pet-emotion-bubble"
+          role="status"
+          aria-live="polite"
+          :aria-label="emotionBubble.label"
+        >
+          <span class="pet-emotion-emoji">{{ emotionBubble.emoji }}</span>
+          <span class="pet-emotion-text">{{ emotionBubble.label }}</span>
+          <span
+            class="pet-emotion-tail"
+            aria-hidden="true"
+          />
+        </div>
+      </Transition>
     </div>
 
     <section
@@ -250,6 +310,39 @@ onBeforeUnmount(() => {
       >
         {{ asrError }}
       </p>
+      <p
+        v-if="ttsInstallPrompt"
+        class="pet-error"
+      >
+        {{ ttsInstallPrompt }}
+      </p>
+
+      <div class="pet-translator-selectors">
+        <label>
+          From
+          <select v-model="translatorSourceLanguage">
+            <option
+              v-for="language in TRANSLATOR_LANGUAGE_OPTIONS"
+              :key="`source-${language.code}`"
+              :value="language.code"
+            >
+              {{ language.name }}
+            </option>
+          </select>
+        </label>
+        <label>
+          To
+          <select v-model="translatorTargetLanguage">
+            <option
+              v-for="language in TRANSLATOR_LANGUAGE_OPTIONS"
+              :key="`target-${language.code}`"
+              :value="language.code"
+            >
+              {{ language.name }}
+            </option>
+          </select>
+        </label>
+      </div>
 
       <div class="pet-tool-row">
         <button
@@ -264,6 +357,7 @@ onBeforeUnmount(() => {
           type="button"
           class="pet-tool"
           :class="{ active: translatorMode?.active }"
+          :disabled="translatorSelectionInvalid"
           @click="translatorMode?.active ? stopTranslator() : startTranslatorDemo()"
         >
           {{ translatorMode?.active ? 'Stop translator' : 'Translator demo' }}
@@ -327,6 +421,61 @@ onBeforeUnmount(() => {
 }
 
 .pet-frame:active { cursor: grabbing; }
+
+.pet-emotion-bubble {
+  position: absolute;
+  top: 12%;
+  right: 8%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 5.4rem;
+  padding: 0.52rem 0.7rem;
+  border: 2px solid color-mix(in srgb, var(--ts-text-primary) 70%, var(--ts-accent));
+  border-radius: 999px 999px 999px 0.35rem;
+  color: var(--ts-text-primary);
+  background: color-mix(in srgb, var(--ts-bg-panel) 92%, white 8%);
+  box-shadow:
+    0 12px 24px -14px color-mix(in srgb, var(--ts-accent) 70%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--ts-bg-panel) 48%, transparent);
+  pointer-events: none;
+}
+
+.pet-emotion-emoji {
+  font-size: 1.18rem;
+  line-height: 1;
+}
+
+.pet-emotion-text {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pet-emotion-tail {
+  position: absolute;
+  right: 1.1rem;
+  bottom: -0.48rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-right: 2px solid color-mix(in srgb, var(--ts-text-primary) 70%, var(--ts-accent));
+  border-bottom: 2px solid color-mix(in srgb, var(--ts-text-primary) 70%, var(--ts-accent));
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.emotion-pop-enter-active,
+.emotion-pop-leave-active {
+  transition: opacity var(--ts-transition-fast, 0.15s ease), transform var(--ts-transition-fast, 0.15s ease);
+}
+
+.emotion-pop-enter-from,
+.emotion-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.92);
+}
 
 .pet-frame :deep(canvas),
 .pet-frame :deep(.viewport-wrapper) {
@@ -412,6 +561,31 @@ onBeforeUnmount(() => {
 }
 
 .pet-line.streaming { box-shadow: 0 0 16px color-mix(in srgb, var(--ts-accent) 18%, transparent); }
+
+.pet-translator-selectors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ts-space-xs);
+  margin-top: var(--ts-space-sm);
+}
+
+.pet-translator-selectors label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--ts-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pet-translator-selectors select {
+  min-width: 0;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+  padding: 0.42rem 0.5rem;
+  color: var(--ts-text-primary);
+  background: var(--ts-bg-input);
+}
 
 .pet-tool-row {
   flex-wrap: wrap;

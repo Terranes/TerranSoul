@@ -1,22 +1,253 @@
 use serde::{Deserialize, Serialize};
 
-/// Supported language codes (ISO 639-1).
-/// The stub translator echoes input; real translators use LLM or API.
+/// Common language choices (ISO 639-1) exposed to UI/plugin callers.
+/// Translation accepts any syntactically valid BCP-47/ISO language code so
+/// worldwide languages and regional variants are not blocked by this list.
 pub const SUPPORTED_LANGUAGES: &[(&str, &str)] = &[
-    ("en", "English"),
-    ("es", "Spanish"),
-    ("fr", "French"),
-    ("de", "German"),
-    ("ja", "Japanese"),
-    ("ko", "Korean"),
-    ("zh", "Chinese"),
-    ("vi", "Vietnamese"),
-    ("it", "Italian"),
-    ("th", "Thai"),
-    ("pt", "Portuguese"),
-    ("ru", "Russian"),
+    ("aa", "Afar"),
+    ("ab", "Abkhazian"),
+    ("ae", "Avestan"),
+    ("af", "Afrikaans"),
+    ("ak", "Akan"),
+    ("am", "Amharic"),
+    ("an", "Aragonese"),
     ("ar", "Arabic"),
+    ("as", "Assamese"),
+    ("av", "Avaric"),
+    ("ay", "Aymara"),
+    ("az", "Azerbaijani"),
+    ("ba", "Bashkir"),
+    ("be", "Belarusian"),
+    ("bg", "Bulgarian"),
+    ("bh", "Bihari languages"),
+    ("bi", "Bislama"),
+    ("bm", "Bambara"),
+    ("bn", "Bangla"),
+    ("bo", "Tibetan"),
+    ("br", "Breton"),
+    ("bs", "Bosnian"),
+    ("ca", "Catalan"),
+    ("ce", "Chechen"),
+    ("ch", "Chamorro"),
+    ("co", "Corsican"),
+    ("cr", "Cree"),
+    ("cs", "Czech"),
+    ("cu", "Church Slavic"),
+    ("cv", "Chuvash"),
+    ("cy", "Welsh"),
+    ("da", "Danish"),
+    ("de", "German"),
+    ("dv", "Divehi"),
+    ("dz", "Dzongkha"),
+    ("ee", "Ewe"),
+    ("el", "Greek"),
+    ("en", "English"),
+    ("eo", "Esperanto"),
+    ("es", "Spanish"),
+    ("et", "Estonian"),
+    ("eu", "Basque"),
+    ("fa", "Persian"),
+    ("ff", "Fulah"),
+    ("fi", "Finnish"),
+    ("fj", "Fijian"),
+    ("fo", "Faroese"),
+    ("fr", "French"),
+    ("fy", "Western Frisian"),
+    ("ga", "Irish"),
+    ("gd", "Scottish Gaelic"),
+    ("gl", "Galician"),
+    ("gn", "Guarani"),
+    ("gu", "Gujarati"),
+    ("gv", "Manx"),
+    ("ha", "Hausa"),
+    ("he", "Hebrew"),
+    ("hi", "Hindi"),
+    ("ho", "Hiri Motu"),
+    ("hr", "Croatian"),
+    ("ht", "Haitian Creole"),
+    ("hu", "Hungarian"),
+    ("hy", "Armenian"),
+    ("hz", "Herero"),
+    ("ia", "Interlingua"),
+    ("id", "Indonesian"),
+    ("ie", "Interlingue"),
+    ("ig", "Igbo"),
+    ("ii", "Sichuan Yi"),
+    ("ik", "Inupiaq"),
+    ("io", "Ido"),
+    ("is", "Icelandic"),
+    ("it", "Italian"),
+    ("iu", "Inuktitut"),
+    ("ja", "Japanese"),
+    ("jv", "Javanese"),
+    ("ka", "Georgian"),
+    ("kg", "Kongo"),
+    ("ki", "Kikuyu"),
+    ("kj", "Kuanyama"),
+    ("kk", "Kazakh"),
+    ("kl", "Kalaallisut"),
+    ("km", "Khmer"),
+    ("kn", "Kannada"),
+    ("ko", "Korean"),
+    ("kr", "Kanuri"),
+    ("ks", "Kashmiri"),
+    ("ku", "Kurdish"),
+    ("kv", "Komi"),
+    ("kw", "Cornish"),
+    ("ky", "Kyrgyz"),
+    ("la", "Latin"),
+    ("lb", "Luxembourgish"),
+    ("lg", "Ganda"),
+    ("li", "Limburgish"),
+    ("ln", "Lingala"),
+    ("lo", "Lao"),
+    ("lt", "Lithuanian"),
+    ("lu", "Luba-Katanga"),
+    ("lv", "Latvian"),
+    ("mg", "Malagasy"),
+    ("mh", "Marshallese"),
+    ("mi", "Māori"),
+    ("mk", "Macedonian"),
+    ("ml", "Malayalam"),
+    ("mn", "Mongolian"),
+    ("mr", "Marathi"),
+    ("ms", "Malay"),
+    ("mt", "Maltese"),
+    ("my", "Burmese"),
+    ("na", "Nauru"),
+    ("nb", "Norwegian Bokmål"),
+    ("nd", "North Ndebele"),
+    ("ne", "Nepali"),
+    ("ng", "Ndonga"),
+    ("nl", "Dutch"),
+    ("nn", "Norwegian Nynorsk"),
+    ("no", "Norwegian"),
+    ("nr", "South Ndebele"),
+    ("nv", "Navajo"),
+    ("ny", "Nyanja"),
+    ("oc", "Occitan"),
+    ("oj", "Ojibwa"),
+    ("om", "Oromo"),
+    ("or", "Odia"),
+    ("os", "Ossetic"),
+    ("pa", "Punjabi"),
+    ("pi", "Pali"),
+    ("pl", "Polish"),
+    ("ps", "Pashto"),
+    ("pt", "Portuguese"),
+    ("qu", "Quechua"),
+    ("rm", "Romansh"),
+    ("rn", "Rundi"),
+    ("ro", "Romanian"),
+    ("ru", "Russian"),
+    ("rw", "Kinyarwanda"),
+    ("sa", "Sanskrit"),
+    ("sc", "Sardinian"),
+    ("sd", "Sindhi"),
+    ("se", "Northern Sami"),
+    ("sg", "Sango"),
+    ("si", "Sinhala"),
+    ("sk", "Slovak"),
+    ("sl", "Slovenian"),
+    ("sm", "Samoan"),
+    ("sn", "Shona"),
+    ("so", "Somali"),
+    ("sq", "Albanian"),
+    ("sr", "Serbian"),
+    ("ss", "Swati"),
+    ("st", "Southern Sotho"),
+    ("su", "Sundanese"),
+    ("sv", "Swedish"),
+    ("sw", "Swahili"),
+    ("ta", "Tamil"),
+    ("te", "Telugu"),
+    ("tg", "Tajik"),
+    ("th", "Thai"),
+    ("ti", "Tigrinya"),
+    ("tk", "Turkmen"),
+    ("tl", "Tagalog"),
+    ("tn", "Tswana"),
+    ("to", "Tongan"),
+    ("tr", "Turkish"),
+    ("ts", "Tsonga"),
+    ("tt", "Tatar"),
+    ("tw", "Twi"),
+    ("ty", "Tahitian"),
+    ("ug", "Uyghur"),
+    ("uk", "Ukrainian"),
+    ("ur", "Urdu"),
+    ("uz", "Uzbek"),
+    ("ve", "Venda"),
+    ("vi", "Vietnamese"),
+    ("vo", "Volapük"),
+    ("wa", "Walloon"),
+    ("wo", "Wolof"),
+    ("xh", "Xhosa"),
+    ("yi", "Yiddish"),
+    ("yo", "Yoruba"),
+    ("za", "Zhuang"),
+    ("zh", "Chinese"),
+    ("zu", "Zulu"),
 ];
+
+fn is_language_subtag(value: &str, min: usize, max: usize) -> bool {
+    let len = value.len();
+    (min..=max).contains(&len) && value.chars().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// Normalize and validate user-supplied language codes.
+///
+/// Accepts ISO 639-1/639-2 primary language subtags and BCP-47 variants such
+/// as `pt-BR`, `zh-Hant`, `es-419`, and `fil-PH` so the translator plugin can
+/// target languages beyond the common UI list.
+pub fn normalize_language_code(language: &str) -> Result<String, String> {
+    let cleaned = language.trim().replace('_', "-");
+    if cleaned.is_empty() {
+        return Err("Language code cannot be empty".to_string());
+    }
+
+    let mut parts = cleaned.split('-');
+    let primary = parts
+        .next()
+        .ok_or_else(|| "Language code cannot be empty".to_string())?
+        .to_ascii_lowercase();
+    let primary = if primary == "jp" {
+        "ja".to_string()
+    } else {
+        primary
+    };
+    if !is_language_subtag(&primary, 2, 3) || !primary.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Err(format!("Unsupported language code: {language}"));
+    }
+
+    let mut normalized = primary;
+    for subtag in parts {
+        if !is_language_subtag(subtag, 2, 8) {
+            return Err(format!("Unsupported language code: {language}"));
+        }
+        normalized.push('-');
+        normalized.push_str(&subtag.to_ascii_lowercase());
+    }
+
+    Ok(normalized)
+}
+
+/// Normalize user-facing language input, accepting either language codes or
+/// common English language names from `SUPPORTED_LANGUAGES`.
+pub fn normalize_language_input(language: &str) -> Result<String, String> {
+    if let Ok(code) = normalize_language_code(language) {
+        return Ok(code);
+    }
+
+    let cleaned = language.trim();
+    SUPPORTED_LANGUAGES
+        .iter()
+        .find(|(code, name)| {
+            code.eq_ignore_ascii_case(cleaned) || name.eq_ignore_ascii_case(cleaned)
+        })
+        .map(|(code, _)| (*code).to_string())
+        .ok_or_else(|| format!("Unsupported language code: {language}"))
+}
 
 /// A translation result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,14 +288,10 @@ pub async fn translate_text(
         return Err("Text cannot be empty".to_string());
     }
 
-    // Validate language codes
-    let valid_codes: Vec<&str> = SUPPORTED_LANGUAGES.iter().map(|(c, _)| *c).collect();
-    if !valid_codes.contains(&source_lang.as_str()) {
-        return Err(format!("Unsupported source language: {source_lang}"));
-    }
-    if !valid_codes.contains(&target_lang.as_str()) {
-        return Err(format!("Unsupported target language: {target_lang}"));
-    }
+    let source_lang = normalize_language_input(&source_lang)
+        .map_err(|_| format!("Unsupported source language: {source_lang}"))?;
+    let target_lang = normalize_language_input(&target_lang)
+        .map_err(|_| format!("Unsupported target language: {target_lang}"))?;
 
     // Stub: return original text when same language
     if source_lang == target_lang {
@@ -110,6 +337,36 @@ mod tests {
         assert_eq!(langs.len(), SUPPORTED_LANGUAGES.len());
         assert!(langs.iter().any(|(code, _)| code == "en"));
         assert!(langs.iter().any(|(code, _)| code == "ja"));
+        assert!(langs.iter().any(|(code, _)| code == "zu"));
+    }
+
+    #[tokio::test]
+    async fn translate_text_accepts_every_listed_language() {
+        for (code, _) in SUPPORTED_LANGUAGES {
+            let result = translate_text("Hello".into(), "en".into(), (*code).into())
+                .await
+                .unwrap();
+            assert_eq!(result.target_lang, *code);
+        }
+    }
+
+    #[tokio::test]
+    async fn translate_text_accepts_worldwide_bcp47_codes() {
+        for code in ["pt-BR", "zh-Hant", "fil-PH", "haw-US", "chr-US"] {
+            let result = translate_text("Hello".into(), "en".into(), code.into())
+                .await
+                .unwrap();
+            assert_eq!(result.target_lang, code.to_ascii_lowercase());
+        }
+    }
+
+    #[tokio::test]
+    async fn translate_text_accepts_common_language_names() {
+        let result = translate_text("Hello".into(), "English".into(), "Vietnamese".into())
+            .await
+            .unwrap();
+        assert_eq!(result.source_lang, "en");
+        assert_eq!(result.target_lang, "vi");
     }
 
     #[tokio::test]
@@ -141,14 +398,14 @@ mod tests {
 
     #[tokio::test]
     async fn translate_text_rejects_invalid_source_lang() {
-        let result = translate_text("Hello".into(), "xx".into(), "en".into()).await;
+        let result = translate_text("Hello".into(), "x".into(), "en".into()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unsupported source language"));
     }
 
     #[tokio::test]
     async fn translate_text_rejects_invalid_target_lang() {
-        let result = translate_text("Hello".into(), "en".into(), "xx".into()).await;
+        let result = translate_text("Hello".into(), "en".into(), "en-".into()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unsupported target language"));
     }
