@@ -15,7 +15,6 @@ const DB_VERSION = 1;
 
 // ── IndexedDB cache ─────────────────────────────────────────────────────────
 
-const _inflightOwners = new Map<string, symbol>();
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -167,6 +166,10 @@ async function renderVrmHeadshot(vrmPath: string): Promise<string> {
  *  concurrent renders for the same model. */
 const _inflight = new Map<string, Promise<string>>();
 
+/** Owner symbols for in-flight pre-generate tasks — allows safe cleanup
+ *  without cancelling a task started by a different caller. */
+const _inflightOwners = new Map<string, symbol>();
+
 /** Keys that already failed — avoids retrying on every component mount. */
 const _failed = new Set<string>();
 
@@ -175,9 +178,11 @@ const _failed = new Set<string>();
  * render a headshot, cache the result, and revoke the blob URL.
  */
 async function renderUserModelHeadshot(userModelId: string): Promise<string> {
-  const bytes = await invoke<number[] | Uint8Array<ArrayBuffer>>('read_user_model_bytes', { id: userModelId });
+  const bytes = await invoke<number[] | Uint8Array>('read_user_model_bytes', { id: userModelId });
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const blob = new Blob([u8], { type: 'model/gltf-binary' });
+  // Uint8Array.from() ensures the underlying buffer is a plain ArrayBuffer
+  // (not SharedArrayBuffer), satisfying the BlobPart constraint.
+  const blob = new Blob([Uint8Array.from(u8)], { type: 'model/gltf-binary' });
   const blobUrl = URL.createObjectURL(blob);
   try {
     return await renderVrmHeadshot(blobUrl);

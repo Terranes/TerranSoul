@@ -385,7 +385,7 @@
                 v-if="selectedStatus !== 'locked'"
                 class="sc-btn sc-btn--primary"
                 data-testid="constellation-begin"
-                @click="beginQuest(selectedNode!.id)"
+                @click="selectedNode && beginQuest(selectedNode.id)"
               >
                 ⚔️ Begin Quest
               </button>
@@ -416,6 +416,8 @@ const skillTree = useSkillTreeStore();
 const WORLD_W = 1600;
 const WORLD_H = 1200;
 const CLUSTER_R = 240; // visual radius for outer ring
+const MIN_ADVANCED_RING_COUNT = 6;
+const MIN_ULTIMATE_RING_COUNT = 8;
 const RING_RADII: Record<SkillTier, number> = {
   foundation: 90,
   advanced: 155,
@@ -459,8 +461,8 @@ interface BuiltCluster extends ClusterMeta {
 
 function getRingOffset(tier: SkillTier, count: number): number {
   if (tier === 'foundation') return -Math.PI / 2;
-  if (tier === 'advanced') return -Math.PI / 2 + Math.PI / Math.max(count, 6);
-  return -Math.PI / 2 + Math.PI / Math.max(count, 8);
+  if (tier === 'advanced') return -Math.PI / 2 + Math.PI / Math.max(count, MIN_ADVANCED_RING_COUNT);
+  return -Math.PI / 2 + Math.PI / Math.max(count, MIN_ULTIMATE_RING_COUNT);
 }
 
 const clusters = computed<BuiltCluster[]>(() => {
