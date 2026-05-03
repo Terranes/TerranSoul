@@ -1102,7 +1102,7 @@ const ramTier = computed(() => {
   const gb = sys.total_ram_mb / 1024;
   // 4 → 8 → 16 → 32+ GB tiers map to 25/50/75/100% with colors.
   let percent = Math.min(100, (gb / 32) * 100);
-  let color = '#fbbf24';
+  let color: string;
   if (gb >= 32) { percent = 100; color = '#34d399'; }
   else if (gb >= 16) color = '#60a5fa';
   else if (gb >= 8) color = '#fbbf24';
