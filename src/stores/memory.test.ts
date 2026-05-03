@@ -28,6 +28,7 @@ describe('memory store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    localStorage.removeItem('ts.browser.rag.memories.v1');
   });
 
   it('starts with empty memories', () => {
@@ -120,6 +121,53 @@ describe('memory store', () => {
     const store = useMemoryStore();
     const results = await store.search('anything');
     expect(results).toEqual([]);
+  });
+
+  it('falls back to browser memory storage when Tauri addMemory fails', async () => {
+    mockInvoke.mockRejectedValue(new Error('no tauri'));
+    const store = useMemoryStore();
+    const result = await store.addMemory({
+      content: 'User likes browser-native RAG with vectors',
+      tags: 'browser-rag',
+      importance: 4,
+      memory_type: 'fact',
+    });
+
+    expect(result?.content).toContain('browser-native RAG');
+    expect(store.memories).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem('ts.browser.rag.memories.v1') ?? '[]')).toHaveLength(1);
+  });
+
+  it('browser hybrid search retrieves persisted memory by keyword and vector signals', async () => {
+    mockInvoke.mockRejectedValue(new Error('no tauri'));
+    const store = useMemoryStore();
+    await store.addMemory({
+      content: 'The user wants Google Drive sync for browser memories',
+      tags: 'browser-rag,drive',
+      importance: 5,
+      memory_type: 'fact',
+    });
+
+    const results = await store.hybridSearch('browser memory drive sync', 3);
+    expect(results[0]?.content).toContain('Google Drive sync');
+  });
+
+  it('exports and imports browser sync payloads for drive-style backup', async () => {
+    mockInvoke.mockRejectedValue(new Error('no tauri'));
+    const store = useMemoryStore();
+    await store.addMemory({
+      content: 'Export this browser memory',
+      tags: 'browser-rag',
+      importance: 3,
+      memory_type: 'summary',
+    });
+
+    const payload = await store.exportBrowserSyncPayload();
+    localStorage.removeItem('ts.browser.rag.memories.v1');
+    const count = await store.importBrowserSyncPayload(payload);
+
+    expect(count).toBe(1);
+    expect(store.memories[0].content).toContain('Export this browser memory');
   });
 
   // ── Entity-Relationship Graph (V5) ─────────────────────────────────────────

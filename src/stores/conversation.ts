@@ -1549,6 +1549,21 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
+  async function rememberBrowserTurn(userContent: string, assistantContent: string): Promise<void> {
+    if (isTauriAvailable()) return;
+    const content = `User said: ${userContent}\nTerranSoul replied: ${assistantContent}`;
+    try {
+      await useMemoryStore().addMemory({
+        content: content.slice(0, 4000),
+        tags: 'session,browser-rag,conversation',
+        importance: 3,
+        memory_type: 'summary',
+      });
+    } catch {
+      // Browser memory is best-effort; never block chat completion.
+    }
+  }
+
   async function sendMessage(content: string) {
     // ── Concurrency gate: only one generation at a time ──
     // If a stream/generation is already active, queue this message and
@@ -1903,18 +1918,17 @@ export const useConversationStore = defineStore('conversation', () => {
           messages.value.map((m) => ({ role: m.role, content: m.content })),
         );
 
-        // RAG: fetch relevant memories from Tauri backend if available
+        // RAG: fetch relevant memories from Tauri or browser-native storage.
         let memoryBlock = '';
         try {
-          const results = await invoke<{ id: number; content: string }[]>('search_memories', { query: content });
+          const results = await useMemoryStore().hybridSearch(content, 5);
           if (results && results.length > 0) {
-            const topMemories = results.slice(0, 5);
             memoryBlock = '\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n'
-              + topMemories.map((m) => `- ${m.content}`).join('\n')
+              + results.map((m) => `- ${m.content}`).join('\n')
               + '\n[/LONG-TERM MEMORY]';
           }
         } catch {
-          // Tauri unavailable (browser-only) or no memories — continue without RAG
+          // No memories — continue without RAG.
         }
 
         // Try the primary provider, then rotate to next healthy on rate-limit
@@ -2029,6 +2043,7 @@ export const useConversationStore = defineStore('conversation', () => {
             stampAgent(assistantMsg);
             if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
+            void rememberBrowserTurn(content, clean || parsed.text);
             maybeShowQuestFromResponse(clean || parsed.text, content);
             maybeShowDontKnowPrompt(clean || parsed.text);
             succeeded = true;

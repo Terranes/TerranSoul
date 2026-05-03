@@ -141,8 +141,7 @@ path, and keeps the real Three.js/VRM character mounted as a forced pet-mode
 preview. Opening "3D" or "Chat" from the landing page creates a compact
 responsive in-page app window with dialog semantics and mobile-safe sizing; it
 uses the same Pinia stores as desktop, but native-only commands fall back to
-in-memory or localStorage behavior and Rust-backed memory/LLM operations remain
-unavailable unless a remote host is paired.
+browser-native storage and direct provider calls unless a remote host is paired.
 
 Browser mode therefore exercises the real frontend brain contract without
 claiming local desktop capabilities: Free API chat can run directly in the web
@@ -152,13 +151,22 @@ and the selected web test session is remembered in the `brain` Pinia store plus
 localStorage without manual API-key input. Local/remote brain paths still require
 an explicit paired TerranSoul host. The browser transport resolver rejects local
 Ollama/LM Studio as direct browser transports so the UI never implies Rust-backed
-memory or localhost LLM access is available without RemoteHost pairing;
-persistent RAG storage remains a desktop/mobile backend responsibility until a
-browser-native IndexedDB/OPFS memory backend is added. Browser-mode QA is covered
-by focused Vue tests for landing anchors, one-click browser authorization,
-forced pet-preview wiring, manga-style pet emotion bubbles, and app-window
-launch events; CSS keeps enough bottom padding for the fixed live model on
-mobile viewports.
+memory or localhost LLM access is available without RemoteHost pairing.
+
+Browser RAG is implemented by `src/transport/browser-rag.ts` and backs the
+`memory` Pinia store whenever Tauri IPC is unavailable. It persists memory
+records to IndexedDB with a localStorage mirror, computes browser embeddings via
+a deterministic Transformers.js-compatible seam, performs flat vector search
+with keyword/freshness/importance/decay/tier scoring, fuses vector + keyword +
+freshness rankings with RRF (`k=60`), exposes a HyDE prompt builder for direct
+provider calls, applies a simplified local rerank through the same hybrid score,
+and exports/imports a versioned sync payload that can be stored in the user's
+Google Drive file flow. Browser chat injects top browser-RAG hits as the same
+`[LONG-TERM MEMORY]` block used by desktop and writes completed browser chat
+turns back into local memory. Browser-mode QA is covered by focused Vue tests for
+landing anchors, one-click browser authorization, forced pet-preview wiring,
+manga-style pet emotion bubbles, app-window launch events, browser memory
+storage/search, browser sync payloads, and prompt injection.
 
 ---
 
