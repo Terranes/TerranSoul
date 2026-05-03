@@ -1,8 +1,13 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it } from 'vitest';
 import BrowserLandingView from './BrowserLandingView.vue';
 
 describe('BrowserLandingView', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
   it('renders the browser landing content and docs anchors', () => {
     const wrapper = mount(BrowserLandingView, {
       global: { stubs: { CharacterViewport: true } },
@@ -23,7 +28,9 @@ describe('BrowserLandingView', () => {
     const viewport = wrapper.findComponent({ name: 'CharacterViewport' });
     expect(viewport.exists()).toBe(true);
     expect(viewport.props('forcePet')).toBe(true);
-    expect(wrapper.get('.pet-stage').attributes('aria-label')).toBe('Live TerranSoul model preview');
+    expect(wrapper.get('.pet-stage').attributes('aria-label')).toBe('Live TerranSoul pet companion');
+    expect(wrapper.text()).toContain('Live voice');
+    expect(wrapper.text()).toContain('Translator demo');
   });
 
   it('emits open-app-window from both browser launch buttons', async () => {

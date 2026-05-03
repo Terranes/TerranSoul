@@ -102,23 +102,11 @@
             <li><strong>Cross-device</strong><span>Desktop · Mobile · Web</span></li>
           </ul>
         </div>
-        <!-- Pet preview pinned inside the hero on desktop, floats on mobile.
-             The viewport has its own pet/transparent rendering and is sized by
-             the surrounding frame. -->
         <aside
           class="pet-stage"
-          aria-label="Live TerranSoul model preview"
+          aria-label="Live TerranSoul pet companion"
         >
-          <div class="pet-frame">
-            <CharacterViewport force-pet />
-          </div>
-          <p class="pet-caption">
-            <span
-              class="live-dot"
-              aria-hidden="true"
-            />
-            Live VRM preview · drag to rotate
-          </p>
+          <BrowserPetCompanion />
         </aside>
       </section>
 
@@ -289,7 +277,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import CharacterViewport from '../components/CharacterViewport.vue';
+import BrowserPetCompanion from '../components/BrowserPetCompanion.vue';
 import LandingThemeSwitch from '../components/LandingThemeSwitch.vue';
 
 defineEmits<{
@@ -613,63 +601,6 @@ h3 {
   align-items: center;
   gap: 0.85rem;
   position: relative;
-}
-
-.pet-frame {
-  position: relative;
-  width: 100%;
-  max-width: 380px;
-  aspect-ratio: 3 / 4;
-  border-radius: var(--ts-radius-xl);
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--ts-accent) 28%, transparent), transparent 65%),
-    color-mix(in srgb, var(--ts-bg-panel) 75%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ts-accent) 30%, var(--ts-border));
-  box-shadow:
-    0 30px 60px -25px color-mix(in srgb, var(--ts-accent) 45%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--ts-accent) 20%, transparent) inset;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  /* Cursor hint: the canvas is interactive (drag to rotate the model). */
-  cursor: grab;
-  transition: box-shadow var(--ts-transition-normal, 0.3s ease);
-}
-.pet-frame:hover {
-  box-shadow:
-    0 40px 80px -25px color-mix(in srgb, var(--ts-accent) 60%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--ts-accent) 35%, transparent) inset;
-}
-.pet-frame:active { cursor: grabbing; }
-
-/* CharacterViewport stretches inside the frame. */
-.pet-frame :deep(canvas),
-.pet-frame :deep(.character-viewport) {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.pet-caption {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0.4rem 0.85rem;
-  border: 1px solid var(--ts-border);
-  border-radius: var(--ts-radius-pill);
-  background: color-mix(in srgb, var(--ts-bg-panel) 80%, transparent);
-  color: var(--ts-text-secondary);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.live-dot {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: var(--ts-success, #34d399);
-  box-shadow: 0 0 8px var(--ts-success, #34d399);
-  animation: pulse-dot 1.8s ease-in-out infinite;
 }
 
 /* ── Feature cards ────────────────────────────────────────────────────── */

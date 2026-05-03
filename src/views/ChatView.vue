@@ -524,6 +524,18 @@ function getAsm(): AvatarStateMachine | null {
 // LipSync ↔ TTS bridge: feeds TTS audio into LipSync → AvatarState.viseme
 const lipSyncBridge = useLipSyncBridge(tts, getAsm);
 
+function handleBrowserSentenceEvent(event: Event) {
+  const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
+  if (!sentence || !voice.config.tts_provider) return;
+  if (!streamTtsActive) {
+    tts.stop();
+    streamTtsActive = true;
+  }
+  // Add trailing whitespace so useTtsPlayback's sentence detector flushes
+  // browser-direct sentence events immediately instead of waiting for done.
+  tts.feedChunk(`${sentence} `);
+}
+
 /**
  * Set coarse avatar state: updates the AvatarStateMachine (read by render loop)
  * AND the characterStore (for the UI pill label). This is the single bridge point.
@@ -1329,6 +1341,10 @@ watch(
       // Stream done — set final emotion from parsed tags (once, not per-chunk)
       setAvatarState(sentimentToState(streaming.currentEmotion));
     }
+    if (!active && streamTtsActive) {
+      tts.flush();
+      streamTtsActive = false;
+    }
   },
 );
 
@@ -1389,6 +1405,7 @@ watch(
 );
 
 onMounted(async () => {
+  window.addEventListener('ts:llm-sentence', handleBrowserSentenceEvent);
   await setupTauriEventListener();
 
   // Initialise background task listener
@@ -1432,6 +1449,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('ts:llm-sentence', handleBrowserSentenceEvent);
   if (unlistenLlmChunk) {
     unlistenLlmChunk();
     unlistenLlmChunk = null;
