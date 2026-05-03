@@ -430,7 +430,7 @@ impl StorageBackend for PostgresBackend {
         );
 
         let limit_i64 = i64::try_from(limit)
-            .map_err(|_| StorageError::Other("limit is too large for PostgreSQL BIGINT".into()))?;
+            .map_err(|_| StorageError::Other("limit exceeds i64::MAX".into()))?;
 
         let mut query = sqlx::query_scalar::<_, String>(&sql);
         for word in &words {

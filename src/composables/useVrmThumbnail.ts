@@ -174,9 +174,9 @@ const _failed = new Set<string>();
  * render a headshot, cache the result, and revoke the blob URL.
  */
 async function renderUserModelHeadshot(userModelId: string): Promise<string> {
-  const bytes = await invoke<number[] | Uint8Array>('read_user_model_bytes', { id: userModelId });
+  const bytes = await invoke<number[] | Uint8Array<ArrayBuffer>>('read_user_model_bytes', { id: userModelId });
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const blob = new Blob([u8 as Uint8Array<ArrayBuffer>], { type: 'model/gltf-binary' });
+  const blob = new Blob([u8], { type: 'model/gltf-binary' });
   const blobUrl = URL.createObjectURL(blob);
   try {
     return await renderVrmHeadshot(blobUrl);

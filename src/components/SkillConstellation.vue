@@ -457,6 +457,12 @@ interface BuiltCluster extends ClusterMeta {
   activeCount: number;
 }
 
+function getRingOffset(tier: SkillTier, count: number): number {
+  if (tier === 'foundation') return -Math.PI / 2;
+  if (tier === 'advanced') return -Math.PI / 2 + Math.PI / Math.max(count, 6);
+  return -Math.PI / 2 + Math.PI / Math.max(count, 8);
+}
+
 const clusters = computed<BuiltCluster[]>(() => {
   return CLUSTER_META.map(meta => {
     const clusterNodes = skillTree.nodes.filter(n => n.category === meta.id);
@@ -469,7 +475,7 @@ const clusters = computed<BuiltCluster[]>(() => {
       const r = RING_RADII[tier];
       const count = ring.length;
       // Spread nodes around the full circle. Offset by tier so adjacent rings stagger.
-      const offset = tier === 'foundation' ? -Math.PI / 2 : tier === 'advanced' ? -Math.PI / 2 + Math.PI / Math.max(count, 6) : -Math.PI / 2 + Math.PI / Math.max(count, 8);
+      const offset = getRingOffset(tier, count);
       for (let i = 0; i < count; i++) {
         const angle = offset + (2 * Math.PI * i) / Math.max(count, 1);
         placed.push({
