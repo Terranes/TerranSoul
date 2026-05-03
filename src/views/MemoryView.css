@@ -15,6 +15,13 @@
 .mv-stat.tier-working .mv-stat-value { color: var(--ts-accent-blue); }
 .mv-stat.tier-long { border-color: var(--ts-success); }
 .mv-stat.tier-long .mv-stat-value { color: var(--ts-success); }
+.mv-storage-cap { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.55rem 0.75rem; background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 8px; }
+.mv-storage-summary { display: flex; flex-direction: column; gap: 0.1rem; min-width: 150px; color: var(--ts-text-primary); }
+.mv-storage-summary span { color: var(--ts-text-muted); font-size: var(--ts-text-sm); }
+.mv-storage-control { display: flex; align-items: center; gap: 0.6rem; flex: 1; min-width: 220px; color: var(--ts-text-secondary); font-size: var(--ts-text-sm); }
+.mv-storage-control input { flex: 1; accent-color: var(--ts-accent-blue); }
+.mv-storage-number { display: flex; align-items: center; gap: 0.3rem; color: var(--ts-text-muted); font-size: var(--ts-text-sm); }
+.mv-storage-number input { width: 5.5rem; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; padding: 0.3rem 0.5rem; color: var(--ts-text-primary); }
 
 .mv-tabs { display: flex; gap: 0.25rem; }
 .mv-tab { padding: 0.4rem 1rem; border: none; border-radius: 6px; cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: var(--ts-text-sm); transition: background var(--ts-transition-fast), color var(--ts-transition-fast); }

@@ -46,8 +46,8 @@ pub use edges::{
     EdgeStats, MemoryEdge, NewMemoryEdge, COMMON_RELATION_TYPES,
 };
 pub use store::{
-    bytes_to_embedding, cosine_similarity, embedding_to_bytes, MemoryEntry, MemoryStats,
-    MemoryStore, MemoryTier, MemoryType, MemoryUpdate, NewMemory,
+    bytes_to_embedding, cosine_similarity, embedding_to_bytes, MemoryCleanupReport, MemoryEntry,
+    MemoryStats, MemoryStore, MemoryTier, MemoryType, MemoryUpdate, NewMemory,
 };
 
 #[cfg(feature = "cassandra")]

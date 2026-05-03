@@ -88,6 +88,35 @@
       </div>
     </div>
 
+    <section class="mv-storage-cap">
+      <div class="mv-storage-summary">
+        <strong>Memory cap</strong>
+        <span>{{ formatBytes(memoryStorageBytes) }} / {{ maxMemoryGb.toFixed(1) }} GB</span>
+      </div>
+      <label class="mv-storage-control">
+        <span>Maximum allowed memory</span>
+        <input
+          v-model.number="maxMemoryGb"
+          type="range"
+          min="1"
+          max="100"
+          step="0.5"
+          @change="saveMemoryCap"
+        >
+      </label>
+      <label class="mv-storage-number">
+        <input
+          v-model.number="maxMemoryGb"
+          type="number"
+          min="1"
+          max="100"
+          step="0.5"
+          @change="saveMemoryCap"
+        >
+        <span>GB</span>
+      </label>
+    </section>
+
     <!-- Tabs -->
     <nav class="mv-tabs">
       <button
@@ -489,15 +518,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useMemoryStore } from '../stores/memory';
+import { useSettingsStore } from '../stores/settings';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import type { MemoryEntry, MemoryType, MemoryTier } from '../types';
 
 const store = useMemoryStore();
+const settingsStore = useSettingsStore();
 
 const activeTab = ref<'Graph' | 'List' | 'Session'>('List');
 const tabs: Array<'Graph' | 'List' | 'Session'> = ['List', 'Graph', 'Session'];
 const allTypes: MemoryType[] = ['fact', 'preference', 'context', 'summary'];
 const allTiers: MemoryTier[] = ['short', 'working', 'long'];
+const maxMemoryGb = ref(10);
+const memoryStorageBytes = computed(() => store.stats?.storage_bytes ?? 0);
 
 // Search & filter
 const searchQuery = ref('');
@@ -700,6 +733,24 @@ function formatTokens(n: number) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
 }
 
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(2) + ' GB';
+  if (bytes >= 1024 ** 2) return (bytes / 1024 ** 2).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
+async function saveMemoryCap() {
+  const gb = Math.min(100, Math.max(1, Number(maxMemoryGb.value) || 10));
+  maxMemoryGb.value = gb;
+  await settingsStore.saveMaxMemoryGb(gb);
+  const report = await store.enforceStorageLimit();
+  if (report && report.deleted > 0) {
+    feedback.value = `🧹 Memory cap saved. Removed ${report.deleted} older low-utility memories.`;
+    setTimeout(() => (feedback.value = ''), 4000);
+  }
+}
+
 // Obsidian export
 const showObsidianExport = ref(false);
 const obsidianVaultDir = ref('');
@@ -718,6 +769,8 @@ async function handleObsidianExport() {
 }
 
 onMounted(async () => {
+  await settingsStore.loadSettings();
+  maxMemoryGb.value = settingsStore.settings.max_memory_gb ?? 10;
   await store.fetchAll();
   await Promise.all([loadShortTerm(), store.getStats(), store.fetchEdges(), store.getEdgeStats()]);
 });

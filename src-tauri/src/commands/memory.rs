@@ -3,6 +3,24 @@ use tauri::State;
 use crate::memory::{MemoryEntry, MemoryUpdate, NewMemory};
 use crate::AppState;
 
+fn configured_memory_limit_bytes(state: &AppState) -> u64 {
+    state
+        .app_settings
+        .lock()
+        .map(|s| s.max_memory_bytes())
+        .unwrap_or((crate::settings::DEFAULT_MAX_MEMORY_GB * 1024.0 * 1024.0 * 1024.0) as u64)
+}
+
+fn enforce_configured_memory_limit(
+    state: &AppState,
+) -> Result<crate::memory::MemoryCleanupReport, String> {
+    let max_bytes = configured_memory_limit_bytes(state);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .enforce_size_limit(max_bytes)
+        .map_err(|e| e.to_string())
+}
+
 /// Read brain_mode + active_brain from state for use by `embed_for_mode`.
 /// Returns `(Option<BrainMode>, Option<String>)`.
 fn read_embed_context(state: &AppState) -> (Option<crate::brain::BrainMode>, Option<String>) {
@@ -171,6 +189,7 @@ async fn add_memory_inner(
         eprintln!("[plugins] PostStore memory hook failed: {error}");
     }
 
+    let _ = enforce_configured_memory_limit(state);
     Ok(entry)
 }
 
@@ -324,6 +343,7 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
         }
     }
 
+    let _ = enforce_configured_memory_limit(&state);
     Ok(count)
 }
 
@@ -398,6 +418,7 @@ pub async fn summarize_session(state: State<'_, AppState>) -> Result<String, Str
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         crate::memory::brain_memory::save_summary(&summary, &store);
     }
+    let _ = enforce_configured_memory_limit(&state);
     Ok(summary)
 }
 
@@ -491,6 +512,7 @@ pub async fn replay_extract_history(
         let _ = app_handle.emit("brain-replay-progress", &progress);
     }
 
+    let _ = enforce_configured_memory_limit(&state);
     Ok(progress)
 }
 
@@ -949,6 +971,14 @@ pub async fn get_memory_stats(
     store.stats().map_err(|e| e.to_string())
 }
 
+/// Enforce the configured maximum memory/RAG storage cap immediately.
+#[tauri::command]
+pub async fn enforce_memory_storage_limit(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::MemoryCleanupReport, String> {
+    enforce_configured_memory_limit(&state)
+}
+
 /// Apply time-based decay to long-term memories. Returns count of updated entries.
 #[tauri::command]
 pub async fn apply_memory_decay(state: State<'_, AppState>) -> Result<usize, String> {
@@ -1188,7 +1218,10 @@ pub async fn gc_memories(
 ) -> Result<usize, String> {
     let threshold = threshold.unwrap_or(0.05);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.gc_decayed(threshold).map_err(|e| e.to_string())
+    let decayed = store.gc_decayed(threshold).map_err(|e| e.to_string())?;
+    drop(store);
+    let capped = enforce_configured_memory_limit(&state)?;
+    Ok(decayed + capped.deleted)
 }
 
 /// Promote a working memory to long-term storage.

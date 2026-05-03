@@ -110,12 +110,11 @@ impl PostgresBackend {
         .map_err(|e| StorageError::Migration(e.to_string()))?;
 
         // V2: Add extended columns (version-tracked)
-        let v2_applied: Option<i64> = sqlx::query_scalar(
-            "SELECT version FROM schema_version WHERE version = 2 LIMIT 1",
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| StorageError::Migration(e.to_string()))?;
+        let v2_applied: Option<i64> =
+            sqlx::query_scalar("SELECT version FROM schema_version WHERE version = 2 LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| StorageError::Migration(e.to_string()))?;
 
         if v2_applied.is_none() {
             for column_sql in &[
@@ -148,12 +147,11 @@ impl PostgresBackend {
         }
 
         // V3: Create indexes (version-tracked)
-        let v3_applied: Option<i64> = sqlx::query_scalar(
-            "SELECT version FROM schema_version WHERE version = 3 LIMIT 1",
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| StorageError::Migration(e.to_string()))?;
+        let v3_applied: Option<i64> =
+            sqlx::query_scalar("SELECT version FROM schema_version WHERE version = 3 LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| StorageError::Migration(e.to_string()))?;
 
         if v3_applied.is_none() {
             for idx in &[
@@ -187,12 +185,11 @@ impl PostgresBackend {
         }
 
         // V4: Mark full schema migration complete (version-tracked)
-        let v4_applied: Option<i64> = sqlx::query_scalar(
-            "SELECT version FROM schema_version WHERE version = 4 LIMIT 1",
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| StorageError::Migration(e.to_string()))?;
+        let v4_applied: Option<i64> =
+            sqlx::query_scalar("SELECT version FROM schema_version WHERE version = 4 LIMIT 1")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| StorageError::Migration(e.to_string()))?;
 
         if v4_applied.is_none() {
             let now_ms = std::time::SystemTime::now()
@@ -377,7 +374,15 @@ impl StorageBackend for PostgresBackend {
                     COUNT(*) FILTER (WHERE tier = 'long') AS long_tier,
                     COUNT(embedding) AS embedded,
                     COALESCE(SUM(token_count), 0) AS total_tokens,
-                    COALESCE(AVG(decay_score), 1.0) AS avg_decay
+                    COALESCE(AVG(decay_score), 1.0) AS avg_decay,
+                    COALESCE(SUM(
+                        length(content)
+                        + length(tags)
+                        + COALESCE(octet_length(embedding), 0)
+                        + COALESCE(length(source_url), 0)
+                        + COALESCE(length(source_hash), 0)
+                        + 128
+                    ), 0) AS storage_bytes
                  FROM memories",
             )
             .fetch_one(&self.pool),
@@ -390,6 +395,7 @@ impl StorageBackend for PostgresBackend {
             embedded: row.get("embedded"),
             total_tokens: row.get("total_tokens"),
             avg_decay: row.get("avg_decay"),
+            storage_bytes: row.get("storage_bytes"),
         })
     }
 

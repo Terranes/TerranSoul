@@ -378,7 +378,15 @@ impl StorageBackend for MssqlBackend {
                     SUM(CASE WHEN tier = 'long' THEN 1 ELSE 0 END) AS long_cnt,
                     SUM(CASE WHEN embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded,
                     ISNULL(SUM(token_count), 0) AS total_tokens,
-                    ISNULL(AVG(CAST(decay_score AS FLOAT)), 1.0) AS avg_decay
+                    ISNULL(AVG(CAST(decay_score AS FLOAT)), 1.0) AS avg_decay,
+                    ISNULL(SUM(
+                        LEN(content)
+                        + LEN(tags)
+                        + ISNULL(DATALENGTH(embedding), 0)
+                        + ISNULL(LEN(source_url), 0)
+                        + ISNULL(LEN(source_hash), 0)
+                        + 128
+                    ), 0) AS storage_bytes
                  FROM memories",
                     &[],
                 )
@@ -397,6 +405,7 @@ impl StorageBackend for MssqlBackend {
                 embedded: row.get::<i64, _>("embedded").unwrap_or(0),
                 total_tokens: row.get::<i64, _>("total_tokens").unwrap_or(0),
                 avg_decay: row.get::<f64, _>("avg_decay").unwrap_or(1.0),
+                storage_bytes: row.get::<i64, _>("storage_bytes").unwrap_or(0),
             })
         })
     }

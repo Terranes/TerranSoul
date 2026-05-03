@@ -13,6 +13,13 @@ export interface MemoryConflict {
   resolved_at: number | null;
   reason: string;
 }
+
+export interface MemoryCleanupReport {
+  before_bytes: number;
+  after_bytes: number;
+  max_bytes: number;
+  deleted: number;
+}
 import type {
   EdgeDirection,
   EdgeStats,
@@ -191,6 +198,18 @@ export const useMemoryStore = defineStore('memory', () => {
       return count;
     } catch {
       return 0;
+    }
+  }
+
+  async function enforceStorageLimit(): Promise<MemoryCleanupReport | null> {
+    try {
+      const report = await invoke<MemoryCleanupReport>('enforce_memory_storage_limit');
+      if (report.deleted > 0) await fetchAll();
+      await getStats();
+      return report;
+    } catch (e) {
+      error.value = String(e);
+      return null;
     }
   }
 
@@ -394,6 +413,7 @@ export const useMemoryStore = defineStore('memory', () => {
     getStats,
     applyDecay,
     gcMemories,
+    enforceStorageLimit,
     promoteMemory,
     getByTier,
     fetchEdges,

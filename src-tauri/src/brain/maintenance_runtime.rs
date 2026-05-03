@@ -245,13 +245,23 @@ async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<St
             Ok(format!("decay: updated {n} entries"))
         }
         MaintenanceJob::GarbageCollect => {
-            // Default GC threshold matches `gc_memories` Tauri command
-            // (0.05). When `AppSettings` gains a configurable threshold
-            // we should surface that here.
             let threshold = 0.05_f64;
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            let n = store.gc_decayed(threshold).map_err(|e| e.to_string())?;
-            Ok(format!("garbage_collect: removed {n} entries"))
+            let decayed = store.gc_decayed(threshold).map_err(|e| e.to_string())?;
+            let max_bytes = state
+                .app_settings
+                .lock()
+                .map(|s| s.max_memory_bytes())
+                .unwrap_or(
+                    (crate::settings::DEFAULT_MAX_MEMORY_GB * 1024.0 * 1024.0 * 1024.0) as u64,
+                );
+            let capped = store
+                .enforce_size_limit(max_bytes)
+                .map_err(|e| e.to_string())?;
+            Ok(format!(
+                "garbage_collect: removed {} entries",
+                decayed + capped.deleted
+            ))
         }
         MaintenanceJob::PromoteTier => {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
