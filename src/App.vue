@@ -5,6 +5,7 @@
       <section
         v-if="browserAppWindowOpen"
         class="browser-app-window"
+        role="dialog"
         aria-label="TerranSoul browser app window"
       >
         <header class="browser-window-header">
@@ -17,17 +18,22 @@
           <div class="browser-window-actions">
             <button
               :class="{ active: browserDisplayMode === 'desktop' }"
+              :aria-pressed="browserDisplayMode === 'desktop'"
               @click="browserDisplayMode = 'desktop'"
             >
               3D
             </button>
             <button
               :class="{ active: browserDisplayMode === 'chatbox' }"
+              :aria-pressed="browserDisplayMode === 'chatbox'"
               @click="browserDisplayMode = 'chatbox'"
             >
               Chat
             </button>
-            <button @click="browserAppWindowOpen = false">
+            <button
+              aria-label="Close app window and return to pet preview"
+              @click="browserAppWindowOpen = false"
+            >
               Pet
             </button>
           </div>
@@ -557,6 +563,33 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
   border-radius: var(--ts-radius-xl);
   background: color-mix(in srgb, var(--ts-bg-panel) 92%, transparent);
   box-shadow: var(--ts-shadow-lg);
+}
+
+@media (max-width: 720px) {
+  .browser-app-window {
+    inset:
+      calc(var(--ts-space-md) + env(safe-area-inset-top))
+      var(--ts-space-sm)
+      calc(var(--ts-space-md) + env(safe-area-inset-bottom))
+      var(--ts-space-sm);
+    width: auto;
+    height: auto;
+    max-height: none;
+    border-radius: var(--ts-radius-lg);
+  }
+
+  .browser-window-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .browser-window-actions {
+    width: 100%;
+  }
+
+  .browser-window-actions button {
+    flex: 1;
+  }
 }
 
 .browser-window-header {

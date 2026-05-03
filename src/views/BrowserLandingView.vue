@@ -166,6 +166,9 @@ defineEmits<{
 
 <style scoped>
 .browser-landing {
+  --landing-pet-width: min(28vw, 260px);
+  --landing-pet-height: min(46vh, 390px);
+
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
@@ -246,7 +249,10 @@ defineEmits<{
 .landing-main {
   width: min(1120px, calc(100% - 2 * var(--ts-space-lg)));
   margin: 0 auto;
-  padding: clamp(3rem, 8vw, 7rem) 0 12rem;
+  padding:
+    clamp(3rem, 8vw, 7rem)
+    0
+    calc(var(--landing-pet-height) + clamp(var(--ts-space-2xl), 8vw, 6rem));
 }
 
 .hero-section {
@@ -343,8 +349,8 @@ h1 {
   right: clamp(var(--ts-space-sm), 3vw, var(--ts-space-xl));
   bottom: clamp(var(--ts-space-sm), 3vw, var(--ts-space-xl));
   z-index: var(--ts-z-overlay);
-  width: min(28vw, 260px);
-  height: min(46vh, 390px);
+  width: var(--landing-pet-width);
+  height: var(--landing-pet-height);
   pointer-events: auto;
 }
 
@@ -362,6 +368,11 @@ h1 {
 }
 
 @media (max-width: 820px) {
+  .browser-landing {
+    --landing-pet-width: 168px;
+    --landing-pet-height: 250px;
+  }
+
   .landing-links {
     display: none;
   }
@@ -371,9 +382,33 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .pet-preview {
-    width: 168px;
-    height: 250px;
+  .landing-main {
+    width: min(100% - 2 * var(--ts-space-md), 1120px);
+  }
+}
+
+@media (max-width: 520px) {
+  .landing-nav,
+  .hero-actions {
+    align-items: stretch;
+  }
+
+  .landing-nav {
+    flex-wrap: wrap;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+  }
+
+  .primary-action,
+  .secondary-action {
+    text-align: center;
+  }
+
+  .pet-caption {
+    max-width: 9rem;
+    text-align: center;
   }
 }
 </style>
