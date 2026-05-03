@@ -481,7 +481,11 @@ onMounted(async () => {
     await windowStore.loadDevBuildFlag();
   } catch {
     // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
-    browserMode.value = true;
+    // Only activate the browser landing page when NOT running under Playwright E2E,
+    // so the test suite continues to see the normal app shell and chat view.
+    if (!import.meta.env.VITE_E2E) {
+      browserMode.value = true;
+    }
     brain.autoConfigureFreeApi();
     skipSetup.value = true;
     // Also auto-configure voice so it works out of the box

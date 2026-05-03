@@ -29,6 +29,9 @@ export default defineConfig({
     env: {
       ...process.env,
       TERRANSOUL_E2E_LOCAL_LLM: '1',
+      // Exposed to the Vite bundle so App.vue can skip the browser landing
+      // redirect and show the normal app shell during E2E test runs.
+      VITE_E2E: '1',
     },
     url: 'http://localhost:1420',
     reuseExistingServer: !process.env.CI,
