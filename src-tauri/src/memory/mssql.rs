@@ -55,7 +55,7 @@ impl MssqlBackend {
         let backend = Self {
             client: tokio::sync::Mutex::new(client),
         };
-        backend.migrate()?;
+        backend.migrate_async().await?;
         Ok(backend)
     }
 
@@ -72,6 +72,10 @@ impl MssqlBackend {
         F: std::future::Future<Output = StorageResult<T>>,
     {
         tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+    }
+
+    async fn migrate_async(&self) -> StorageResult<()> {
+        self.migrate()
     }
 
     fn row_to_entry(row: &Row) -> MemoryEntry {

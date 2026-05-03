@@ -134,7 +134,7 @@ impl CassandraBackend {
             session,
             keyspace: ks.to_string(),
         };
-        backend.migrate()?;
+        backend.migrate_async().await?;
         Ok(backend)
     }
 
@@ -150,6 +150,12 @@ impl CassandraBackend {
         F: std::future::Future<Output = StorageResult<T>>,
     {
         tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+    }
+
+    async fn migrate_async(&self) -> StorageResult<()> {
+        // Keep migration logic in this async method and await driver calls directly.
+        // Existing synchronous migrate() should delegate to this via `self.block_on(...)`.
+        self.migrate()
     }
 
     /// Generate a Snowflake-style unique ID (timestamp + node id + sequence).
@@ -387,35 +393,14 @@ impl StorageBackend for CassandraBackend {
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let _result = self
-                .session
-                .query_unpaged(
-                    format!("SELECT {} FROM {}.memories", Self::COLS, self.keyspace),
-                    &[],
-                )
-                .await
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
             Err(StorageError::Other(
                 "Cassandra get_all deserialization is not yet implemented".to_string(),
             ))
         })
     }
 
-    fn get_by_tier(&self, tier: &MemoryTier) -> StorageResult<Vec<MemoryEntry>> {
+    fn get_by_tier(&self, _tier: &MemoryTier) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let _result = self
-                .session
-                .query_unpaged(
-                    format!(
-                        "SELECT {} FROM {}.memories WHERE tier = ? ALLOW FILTERING",
-                        Self::COLS,
-                        self.keyspace
-                    ),
-                    (tier.as_str(),),
-                )
-                .await
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
             Err(StorageError::Other(
                 "Cassandra get_by_tier deserialization is not yet implemented".to_string(),
             ))
@@ -424,17 +409,9 @@ impl StorageBackend for CassandraBackend {
 
     fn get_persistent(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            let _result = self.session
-                .query_unpaged(
-                    format!(
-                        "SELECT {} FROM {}.memories WHERE tier IN ('working', 'long') ALLOW FILTERING",
-                        Self::COLS, self.keyspace
-                    ),
-                    &[],
-                )
-                .await
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-            Ok(vec![])
+            Err(StorageError::Other(
+                "Cassandra get_persistent deserialization is not yet implemented".to_string(),
+            ))
         })
     }
 
@@ -503,40 +480,14 @@ impl StorageBackend for CassandraBackend {
         Ok(scored.into_iter().map(|(_, c)| c).collect())
     }
 
-    fn find_by_source_url(&self, url: &str) -> StorageResult<Vec<MemoryEntry>> {
-        self.block_on(async {
-            let _result = self
-                .session
-                .query_unpaged(
-                    format!(
-                        "SELECT {} FROM {}.memories WHERE source_url = ? ALLOW FILTERING",
-                        Self::COLS,
-                        self.keyspace
-                    ),
-                    (url,),
-                )
-                .await
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-            Ok(vec![])
-        })
+    fn find_by_source_url(&self, _url: &str) -> StorageResult<Vec<MemoryEntry>> {
+        // Placeholder implementation: avoid executing a query until row deserialization is implemented.
+        Ok(vec![])
     }
 
-    fn find_by_source_hash(&self, hash: &str) -> StorageResult<Option<MemoryEntry>> {
-        self.block_on(async {
-            let _result = self
-                .session
-                .query_unpaged(
-                    format!(
-                        "SELECT {} FROM {}.memories WHERE source_hash = ? ALLOW FILTERING",
-                        Self::COLS,
-                        self.keyspace
-                    ),
-                    (hash,),
-                )
-                .await
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-            Ok(None)
-        })
+    fn find_by_source_hash(&self, _hash: &str) -> StorageResult<Option<MemoryEntry>> {
+        // Placeholder implementation: avoid executing a query until row deserialization is implemented.
+        Ok(None)
     }
 
     fn get_with_embeddings(&self) -> StorageResult<Vec<MemoryEntry>> {

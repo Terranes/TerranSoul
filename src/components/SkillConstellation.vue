@@ -323,7 +323,7 @@
                 <button
                   v-if="step.target"
                   class="sc-step-go"
-                  @click="$emit('navigate', step.target!)"
+                  @click="$emit('navigate', step.target)"
                 >
                   ▸
                 </button>
@@ -370,14 +370,14 @@
               <button
                 v-if="!isPinned(selectedNode.id)"
                 class="sc-btn sc-btn--secondary"
-                @click="() => { skillTree.pinQuest(selectedNode!.id); emit('close'); }"
+                @click="pinAndClose"
               >
                 📌 Pin
               </button>
               <button
                 v-else
                 class="sc-btn sc-btn--secondary"
-                @click="() => { skillTree.unpinQuest(selectedNode!.id); emit('close'); }"
+                @click="unpinAndClose"
               >
                 📌 Unpin
               </button>
@@ -718,6 +718,12 @@ function beginQuest(id: string) {
 function getNodeIcon(id: string): string { return skillTree.nodes.find(n => n.id === id)?.icon ?? '?'; }
 function getNodeName(id: string): string { return skillTree.nodes.find(n => n.id === id)?.name ?? id; }
 function isPinned(id: string): boolean { return skillTree.tracker.pinnedQuestIds.includes(id); }
+function pinAndClose(): void {
+  if (selectedNode.value) { skillTree.pinQuest(selectedNode.value.id); emit('close'); }
+}
+function unpinAndClose(): void {
+  if (selectedNode.value) { skillTree.unpinQuest(selectedNode.value.id); emit('close'); }
+}
 function stepNumeral(i: number): string { return ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ'][i] ?? String(i + 1); }
 
 function onEsc() {
