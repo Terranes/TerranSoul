@@ -113,6 +113,16 @@ describe('translator mode intent helpers', () => {
     expect(result?.target).toEqual({ code: 'vi', name: 'Vietnamese' });
   });
 
+  it('detects translator requests for worldwide language names and BCP-47 codes', () => {
+    const byName = detectTranslatorModeRequest('translate between Arabic and Swahili');
+    expect(byName?.source).toEqual({ code: 'ar', name: 'Arabic' });
+    expect(byName?.target).toEqual({ code: 'sw', name: 'Swahili' });
+
+    const byCode = detectTranslatorModeRequest('translator from pt-BR to zu');
+    expect(byCode?.source).toEqual({ code: 'pt-BR', name: 'Brazilian Portuguese' });
+    expect(byCode?.target).toEqual({ code: 'zu', name: 'Zulu' });
+  });
+
   it('detects stop-translator requests', () => {
     expect(isStopTranslatorModeRequest('stop translator mode')).toBe(true);
     expect(isStopTranslatorModeRequest('hello translator')).toBe(false);
@@ -269,6 +279,38 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.translatorMode?.active).toBe(true);
     expect(store.messages[1].agentName).toBe('Translator Mode');
     expect(store.messages[1].content).toContain('English ↔ Vietnamese');
+  });
+
+  it.each([
+    ['English', 'Vietnamese', 'vi'],
+    ['English', 'Japanese', 'ja'],
+    ['English', 'Spanish', 'es'],
+  ])('emits target language metadata for %s to %s translator TTS', async (source, target, expectedLanguage) => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
+    const languageEvents: Array<{ sentence?: string; language?: string }> = [];
+    const listener = (event: Event) => {
+      languageEvents.push((event as CustomEvent<{ sentence?: string; language?: string }>).detail);
+    };
+    window.addEventListener('ts:llm-sentence', listener);
+    mockStreamChat.mockImplementation(
+      (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onSentence?: (text: string) => void; onDone: (text: string) => void }) => {
+        callbacks.onSentence?.('translated sentence');
+        callbacks.onDone('translated sentence');
+        return new AbortController();
+      },
+    );
+
+    try {
+      const store = useConversationStore();
+      await store.sendMessage(`translate between ${source} and ${target}`);
+      await store.sendMessage('hello');
+
+      expect(languageEvents).toContainEqual({ sentence: 'translated sentence', language: expectedLanguage });
+    } finally {
+      window.removeEventListener('ts:llm-sentence', listener);
+    }
   });
 
   it('stops translator mode from normal chat', async () => {

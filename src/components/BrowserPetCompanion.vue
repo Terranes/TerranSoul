@@ -2,10 +2,11 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CharacterViewport from './CharacterViewport.vue';
 import { useAsrManager } from '../composables/useAsrManager';
-import { useTtsPlayback } from '../composables/useTtsPlayback';
+import { hasBrowserTtsVoice, useTtsPlayback } from '../composables/useTtsPlayback';
 import { useCharacterStore } from '../stores/character';
 import { useConversationStore } from '../stores/conversation';
 import { useVoiceStore } from '../stores/voice';
+import { TRANSLATOR_LANGUAGE_OPTIONS } from '../utils/translator-languages';
 
 const conversation = useConversationStore();
 const voice = useVoiceStore();
@@ -15,6 +16,9 @@ const inputText = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
 const liveVoice = ref(false);
 const asrError = ref<string | null>(null);
+const ttsInstallPrompt = ref<string | null>(null);
+const translatorSourceLanguage = ref('en');
+const translatorTargetLanguage = ref('vi');
 const ttsStreamActive = ref(false);
 let spokenSentenceCount = 0;
 let liveRestartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,6 +45,9 @@ const translatorLabel = computed(() => {
   if (!mode?.active) return 'Chat companion';
   return `${mode.source.name} ↔ ${mode.target.name} live translator`;
 });
+const translatorSelectionInvalid = computed(() => (
+  translatorSourceLanguage.value === translatorTargetLanguage.value && !translatorMode.value?.active
+));
 const statusLabel = computed(() => {
   if (asr.isListening.value) return 'Listening…';
   if (conversation.isStreaming) return 'Streaming voice…';
@@ -72,6 +79,21 @@ async function ensureBrowserVoice(): Promise<void> {
   }
 }
 
+function promptForMissingTranslatorVoices(): void {
+  const missing = [
+    translatorSourceLanguage.value,
+    translatorTargetLanguage.value,
+  ].filter((language) => !hasBrowserTtsVoice(language));
+  if (missing.length === 0) {
+    ttsInstallPrompt.value = null;
+    return;
+  }
+  const labels = missing
+    .map((code) => TRANSLATOR_LANGUAGE_OPTIONS.find((language) => language.code === code)?.name ?? code)
+    .join(' and ');
+  ttsInstallPrompt.value = `Install ${labels} speech voice support in your OS/browser language settings for best translator TTS.`;
+}
+
 function beginStreamingTtsIfNeeded(): void {
   if (!voice.config.tts_provider) return;
   if (!ttsStreamActive.value) {
@@ -81,12 +103,19 @@ function beginStreamingTtsIfNeeded(): void {
 }
 
 function handleSentenceEvent(event: Event): void {
-  const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
+  const detail = (event as CustomEvent<{ sentence?: string; language?: string }>).detail;
+  const sentence = detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
   beginStreamingTtsIfNeeded();
   spokenSentenceCount += 1;
   // `useTtsPlayback` emits on sentence terminators followed by whitespace.
-  tts.feedChunk(`${sentence} `);
+  tts.feedChunk(`${sentence} `, { language: detail?.language });
+}
+
+function handleMissingVoiceEvent(event: Event): void {
+  const detail = (event as CustomEvent<{ name?: string; code?: string }>).detail;
+  const label = detail?.name && detail?.code ? `${detail.name} (${detail.code})` : 'the selected language';
+  ttsInstallPrompt.value = `Install a ${label} speech voice in your OS/browser language settings, then restart voice playback.`;
 }
 
 watch(
@@ -180,7 +209,8 @@ async function toggleLiveVoice(): Promise<void> {
 
 async function startTranslatorDemo(): Promise<void> {
   liveVoice.value = false;
-  await submitText('Become a translator to help me translate between English and Vietnamese.');
+  promptForMissingTranslatorVoices();
+  await submitText(`Become a translator to help me translate between ${translatorSourceLanguage.value} and ${translatorTargetLanguage.value}.`);
   liveVoice.value = true;
   scheduleLiveRestart();
 }
@@ -193,10 +223,12 @@ async function stopTranslator(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener('ts:llm-sentence', handleSentenceEvent);
+  window.addEventListener('ts:tts-voice-missing', handleMissingVoiceEvent);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('ts:llm-sentence', handleSentenceEvent);
+  window.removeEventListener('ts:tts-voice-missing', handleMissingVoiceEvent);
   if (liveRestartTimer) clearTimeout(liveRestartTimer);
   asr.stopListening();
   tts.stop();
@@ -278,6 +310,39 @@ onBeforeUnmount(() => {
       >
         {{ asrError }}
       </p>
+      <p
+        v-if="ttsInstallPrompt"
+        class="pet-error"
+      >
+        {{ ttsInstallPrompt }}
+      </p>
+
+      <div class="pet-translator-selectors">
+        <label>
+          From
+          <select v-model="translatorSourceLanguage">
+            <option
+              v-for="language in TRANSLATOR_LANGUAGE_OPTIONS"
+              :key="`source-${language.code}`"
+              :value="language.code"
+            >
+              {{ language.name }}
+            </option>
+          </select>
+        </label>
+        <label>
+          To
+          <select v-model="translatorTargetLanguage">
+            <option
+              v-for="language in TRANSLATOR_LANGUAGE_OPTIONS"
+              :key="`target-${language.code}`"
+              :value="language.code"
+            >
+              {{ language.name }}
+            </option>
+          </select>
+        </label>
+      </div>
 
       <div class="pet-tool-row">
         <button
@@ -292,6 +357,7 @@ onBeforeUnmount(() => {
           type="button"
           class="pet-tool"
           :class="{ active: translatorMode?.active }"
+          :disabled="translatorSelectionInvalid"
           @click="translatorMode?.active ? stopTranslator() : startTranslatorDemo()"
         >
           {{ translatorMode?.active ? 'Stop translator' : 'Translator demo' }}
@@ -495,6 +561,31 @@ onBeforeUnmount(() => {
 }
 
 .pet-line.streaming { box-shadow: 0 0 16px color-mix(in srgb, var(--ts-accent) 18%, transparent); }
+
+.pet-translator-selectors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ts-space-xs);
+  margin-top: var(--ts-space-sm);
+}
+
+.pet-translator-selectors label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--ts-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pet-translator-selectors select {
+  min-width: 0;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+  padding: 0.42rem 0.5rem;
+  color: var(--ts-text-primary);
+  background: var(--ts-bg-input);
+}
 
 .pet-tool-row {
   flex-wrap: wrap;

@@ -23,6 +23,7 @@ use super::manifest::{
     PluginState,
 };
 use crate::agent::openclaw_agent::{parse as parse_openclaw, OpenClawTool, ParsedMessage};
+use crate::commands::translation::normalize_language_input;
 use crate::package_manager::manifest::{Capability as ManifestCapability, InstallMethod};
 use crate::sandbox::{Capability as SandboxCapability, CapabilityStore, WasmRunner};
 
@@ -1031,7 +1032,8 @@ fn translator_manifest() -> PluginManifest {
         display_name: "Translator Mode".into(),
         version: "1.0.0".into(),
         description:
-            "Reference built-in plugin that turns TerranSoul into a two-person translator.".into(),
+            "Reference built-in plugin that turns TerranSoul into a worldwide two-person translator."
+                .into(),
         kind: PluginKind::Tool,
         install_method: InstallMethod::BuiltIn,
         capabilities: vec![],
@@ -1064,7 +1066,9 @@ fn translator_manifest() -> PluginManifest {
             ],
             slash_commands: vec![ContributedSlashCommand {
                 name: "translator".into(),
-                description: "Start translator mode, e.g. /translator English Vietnamese".into(),
+                description:
+                    "Start translator mode with any BCP-47 language pair, e.g. /translator en-US vi."
+                        .into(),
                 command_id: "terransoul-translator.start".into(),
             }],
             ..Contributions::default()
@@ -1089,19 +1093,27 @@ fn invoke_builtin_translator(command_id: &str, args: Option<serde_json::Value>) 
                 .as_ref()
                 .and_then(|v| v.get("source"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("first language");
+                .unwrap_or("und");
             let target = args
                 .as_ref()
                 .and_then(|v| v.get("target"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("second language");
+                .unwrap_or("und");
+            let source = match normalize_language_input(source) {
+                Ok(code) => code,
+                Err(_) => return CommandResult::failure(format!("unsupported source language: {source}")),
+            };
+            let target = match normalize_language_input(target) {
+                Ok(code) => code,
+                Err(_) => return CommandResult::failure(format!("unsupported target language: {target}")),
+            };
             CommandResult::success(format!(
-                "Translator mode ready between {source} and {target}."
+                "Translator mode ready between {source} and {target}. If either voice is not installed, install that speech language in your OS/browser language settings."
             ))
         }
         "terransoul-translator.stop" => CommandResult::success("Translator mode stopped."),
         "terransoul-translator.status" => {
-            CommandResult::success("Translator mode is available as a built-in reference plugin.")
+            CommandResult::success("Translator mode supports any valid BCP-47 language pair. If a selected speech voice is not installed, install the language voice in OS/browser settings.")
         }
         _ => CommandResult::failure(format!("unsupported translator command: {command_id}")),
     }
@@ -1690,7 +1702,44 @@ mod tests {
             .await
             .unwrap();
         assert!(result.success);
-        assert!(result.output.unwrap().contains("English and Vietnamese"));
+        let output = result.output.unwrap();
+        assert!(output.contains("en and vi"));
+        assert!(output.contains("If either voice is not installed"));
+    }
+
+    #[tokio::test]
+    async fn translator_plugin_accepts_worldwide_bcp47_language_pair() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let host = PluginHost::with_builtin_plugins(tmp.path());
+        let result = host
+            .invoke_command(
+                "terransoul-translator.start",
+                Some(serde_json::json!({ "source": "pt-BR", "target": "zu" })),
+            )
+            .await
+            .unwrap();
+        assert!(result.success);
+        let output = result.output.unwrap();
+        assert!(output.contains("pt-br and zu"));
+        assert!(output.contains("install that speech language"));
+    }
+
+    #[tokio::test]
+    async fn translator_plugin_rejects_invalid_language_pair() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let host = PluginHost::with_builtin_plugins(tmp.path());
+        let result = host
+            .invoke_command(
+                "terransoul-translator.start",
+                Some(serde_json::json!({ "source": "en", "target": "bad-" })),
+            )
+            .await
+            .unwrap();
+        assert!(!result.success);
+        assert!(result
+            .error
+            .unwrap()
+            .contains("unsupported target language"));
     }
 
     #[tokio::test]
