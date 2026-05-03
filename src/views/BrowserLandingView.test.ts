@@ -9,8 +9,8 @@ describe('BrowserLandingView', () => {
     });
 
     expect(wrapper.find('.browser-landing').exists()).toBe(true);
-    expect(wrapper.get('#landing-title').text()).toContain('contextual AI familiar');
-    expect(wrapper.find('a[href="#about"]').exists()).toBe(true);
+    expect(wrapper.get('#landing-title').text()).toContain('soul');
+    expect(wrapper.find('a[href="#features"]').exists()).toBe(true);
     expect(wrapper.find('a[href="#missions"]').exists()).toBe(true);
     expect(wrapper.find('a[href="#browser-docs"]').exists()).toBe(true);
   });
@@ -23,7 +23,7 @@ describe('BrowserLandingView', () => {
     const viewport = wrapper.findComponent({ name: 'CharacterViewport' });
     expect(viewport.exists()).toBe(true);
     expect(viewport.props('forcePet')).toBe(true);
-    expect(wrapper.get('.pet-preview').attributes('aria-label')).toBe('Live TerranSoul model preview');
+    expect(wrapper.get('.pet-stage').attributes('aria-label')).toBe('Live TerranSoul model preview');
   });
 
   it('emits open-app-window from both browser launch buttons', async () => {

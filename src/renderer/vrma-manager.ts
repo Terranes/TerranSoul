@@ -68,6 +68,12 @@ export const VALID_MOTION_KEYS: readonly string[] = VRMA_ANIMATIONS
   .map(a => a.motionKey)
   .filter((k): k is string => !!k);
 
+/** Paths of VRMA animations where the character is in a seated pose. */
+export const SITTING_ANIMATION_PATHS = new Set([
+  '/animations/relax.vrma',
+  '/animations/ladylike.vrma',
+]);
+
 /**
  * Find a VRMA animation entry mapped to a given mood.
  * Returns the first matching entry, or undefined if none mapped.
@@ -80,19 +86,38 @@ export function getAnimationForMood(mood: CharacterState): VrmaAnimationEntry | 
  * Pick the idle loop animation based on model gender.
  * Female models prefer `ladylike.vrma` most of the time; male models default
  * to the standard `idle.vrma` loop.
+ *
+ * When `excludeSitting` is true, sitting animations (e.g. `ladylike`) are
+ * never returned — used by the floating pet preview / pet mode where there
+ * is no chair prop and the model should remain standing.
  */
 export function getIdleAnimationForGender(
   gender: ModelGender,
   random: () => number = Math.random,
+  excludeSitting = false,
 ): VrmaAnimationEntry | undefined {
   const idle = VRMA_ANIMATIONS.find(a => a.motionKey === 'idle');
   const ladylike = VRMA_ANIMATIONS.find(a => a.motionKey === 'ladylike');
+  const ladylikeAvailable = ladylike && !(excludeSitting && SITTING_ANIMATION_PATHS.has(ladylike.path));
 
-  if (gender === 'female' && ladylike) {
+  if (gender === 'female' && ladylikeAvailable) {
     // 75% chance ladylike, 25% standard idle for variety
     if (random() < 0.75) return ladylike;
   }
-  return idle ?? ladylike;
+  return idle ?? (ladylikeAvailable ? ladylike : undefined);
+}
+
+/**
+ * Find a non-sitting alternative animation for a mood. Used by the floating
+ * pet preview where seated animations would spawn a chair that floats in
+ * mid-air. Falls back to `undefined` when there is no standing equivalent.
+ */
+export function getStandingAnimationForMood(
+  mood: CharacterState,
+): VrmaAnimationEntry | undefined {
+  return VRMA_ANIMATIONS.find(
+    a => a.mood === mood && !SITTING_ANIMATION_PATHS.has(a.path),
+  );
 }
 
 /**
@@ -153,12 +178,6 @@ export function getAnimationForMotion(motionKey: string): VrmaAnimationEntry | u
   const canonical = MOTION_ALIASES[lower] ?? lower;
   return VRMA_ANIMATIONS.find(a => a.motionKey === canonical);
 }
-
-/** Paths of VRMA animations where the character is in a seated pose. */
-export const SITTING_ANIMATION_PATHS = new Set([
-  '/animations/relax.vrma',
-  '/animations/ladylike.vrma',
-]);
 
 // ── VrmaManager class ────────────────────────────────────────────────────────
 

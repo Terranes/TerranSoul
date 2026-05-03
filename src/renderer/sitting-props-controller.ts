@@ -7,12 +7,23 @@ export class SittingPropController {
 
   constructor(private readonly createProps: () => SittingProps = createSittingProps) {}
 
+  /**
+   * When true, the controller will never spawn furniture props regardless of
+   * the current animation. Used by the floating pet preview / pet mode where
+   * a chair would visibly float in mid-air next to the small avatar.
+   */
+  disabled = false;
+
   get activeProps(): SittingProps | null {
     return this.sittingProps;
   }
 
   sync(scene: THREE.Scene | null, playing: boolean, currentPath: string | null): void {
-    const isSitting = playing && currentPath != null && SITTING_ANIMATION_PATHS.has(currentPath);
+    const isSitting =
+      !this.disabled &&
+      playing &&
+      currentPath != null &&
+      SITTING_ANIMATION_PATHS.has(currentPath);
     if (!isSitting) {
       this.dispose(scene);
       return;

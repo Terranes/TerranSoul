@@ -44,10 +44,13 @@
             </button>
             <button
               type="button"
+              class="browser-window-close"
               aria-label="Close app window and return to pet preview"
+              title="Close (Esc)"
               @click="closeBrowserAppWindow"
             >
-              Pet
+              <span aria-hidden="true">×</span>
+              <span class="visually-hidden">Close</span>
             </button>
           </div>
         </header>
@@ -58,6 +61,17 @@
           />
         </div>
       </section>
+    </Transition>
+    <!-- Click-outside backdrop so the modal is always dismissible even if
+         the close button is obscured. Rendered behind the dialog. -->
+    <Transition name="browser-backdrop">
+      <button
+        v-if="browserAppWindowOpen"
+        type="button"
+        class="browser-backdrop"
+        aria-label="Close app window"
+        @click="closeBrowserAppWindow"
+      />
     </Transition>
   </template>
 
@@ -590,101 +604,77 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
 .panel-main { height: 100vh; height: 100dvh; overflow-y: auto; }
 
 .browser-app-window {
-  position: fixed;
-  right: clamp(var(--ts-space-md), 4vw, var(--ts-space-2xl));
-  top: clamp(5rem, 12vh, 7rem);
-  z-index: var(--ts-z-overlay);
-  width: min(680px, calc(100vw - 2 * var(--ts-space-md)));
-  height: min(720px, calc(100vh - 7rem));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--ts-border);
-  border-radius: var(--ts-radius-xl);
-  background: color-mix(in srgb, var(--ts-bg-panel) 92%, transparent);
+  position: fixed; inset: 0; margin: auto;
+  z-index: var(--ts-z-modal, var(--ts-z-overlay));
+  width: min(820px, calc(100vw - 2 * var(--ts-space-lg)));
+  height: min(780px, calc(100dvh - 2 * var(--ts-space-lg)));
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--ts-border); border-radius: var(--ts-radius-xl);
+  background: color-mix(in srgb, var(--ts-bg-panel) 96%, transparent);
   box-shadow: var(--ts-shadow-lg);
 }
+.browser-backdrop {
+  position: fixed; inset: 0;
+  z-index: calc(var(--ts-z-modal, var(--ts-z-overlay)) - 1);
+  border: 0; padding: 0; margin: 0;
+  background: color-mix(in srgb, #050313 62%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+.browser-backdrop-enter-active, .browser-backdrop-leave-active { transition: opacity var(--ts-transition-normal); }
+.browser-backdrop-enter-from, .browser-backdrop-leave-to { opacity: 0; }
 
 @media (max-width: 720px) {
   .browser-app-window {
     inset:
-      calc(var(--ts-space-md) + env(safe-area-inset-top))
-      var(--ts-space-sm)
-      calc(var(--ts-space-md) + env(safe-area-inset-bottom))
-      var(--ts-space-sm);
-    width: auto;
-    height: auto;
-    max-height: none;
+      calc(var(--ts-space-md) + env(safe-area-inset-top)) var(--ts-space-sm)
+      calc(var(--ts-space-md) + env(safe-area-inset-bottom)) var(--ts-space-sm);
+    width: auto; height: auto; max-height: none;
     border-radius: var(--ts-radius-lg);
   }
-
-  .browser-window-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .browser-window-actions {
-    width: 100%;
-  }
-
-  .browser-window-actions button {
-    flex: 1;
-  }
+  .browser-window-header { align-items: flex-start; flex-direction: column; }
+  .browser-window-actions { width: 100%; }
+  .browser-window-actions button { flex: 1; }
+  .browser-window-actions .browser-window-close { flex: 0 0 auto; }
 }
 
 .browser-window-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ts-space-md);
-  padding: var(--ts-space-md);
-  border-bottom: 1px solid var(--ts-border);
-  background: var(--ts-bg-panel);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--ts-space-md); padding: var(--ts-space-md);
+  border-bottom: 1px solid var(--ts-border); background: var(--ts-bg-panel);
 }
-
-.browser-window-kicker,
-.browser-window-header h2 {
-  margin: 0;
-}
-
+.browser-window-kicker, .browser-window-header h2 { margin: 0; }
 .browser-window-kicker {
-  color: var(--ts-accent);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  color: var(--ts-accent); font-size: 0.68rem; font-weight: 900;
+  letter-spacing: 0.14em; text-transform: uppercase;
 }
-
-.browser-window-header h2 {
-  font-size: 1rem;
-}
-
-.browser-window-actions {
-  display: flex;
-  gap: var(--ts-space-xs);
-}
-
+.browser-window-header h2 { font-size: 1rem; }
+.browser-window-actions { display: flex; gap: var(--ts-space-xs); }
 .browser-window-actions button {
-  border: 1px solid var(--ts-border);
-  border-radius: var(--ts-radius-pill);
-  padding: 0.48rem 0.7rem;
-  color: var(--ts-text-secondary);
-  background: var(--ts-bg-input);
-  cursor: pointer;
-  font-weight: 800;
+  border: 1px solid var(--ts-border); border-radius: var(--ts-radius-pill);
+  padding: 0.48rem 0.7rem; color: var(--ts-text-secondary);
+  background: var(--ts-bg-input); cursor: pointer; font-weight: 800;
 }
-
 .browser-window-actions button.active {
-  color: var(--ts-text-on-accent);
-  background: var(--ts-accent);
-  border-color: transparent;
+  color: var(--ts-text-on-accent); background: var(--ts-accent); border-color: transparent;
 }
-
-.browser-window-body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+.browser-window-actions .browser-window-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.25rem; height: 2.25rem; padding: 0;
+  margin-left: var(--ts-space-xs);
+  font-size: 1.4rem; line-height: 1; font-weight: 400;
+  border-radius: var(--ts-radius-full, 999px);
 }
+.browser-window-actions .browser-window-close:hover {
+  color: var(--ts-text-primary);
+  background: color-mix(in srgb, var(--ts-danger, #e34) 18%, var(--ts-bg-input));
+  border-color: color-mix(in srgb, var(--ts-danger, #e34) 40%, var(--ts-border));
+}
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.browser-window-body { flex: 1; min-height: 0; overflow: hidden; }
 
 .browser-window-enter-active,
 .browser-window-leave-active {

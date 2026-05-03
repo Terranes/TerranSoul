@@ -482,7 +482,7 @@ import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
-import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender } from '../renderer/vrma-manager';
+import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender, getStandingAnimationForMood, SITTING_ANIMATION_PATHS } from '../renderer/vrma-manager';
 import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
 import { PoseAnimator, type LlmPoseFrame } from '../renderer/pose-animator';
 import { EmotionPoseBias, type BiasEmotion } from '../renderer/emotion-pose-bias';
@@ -818,6 +818,15 @@ let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Sitting chair prop ───────────────────────────────────────────────
 const sittingPropController = new SittingPropController();
+// In pet / forcePet mode the floating preview has no floor — a chair would
+// visibly hover beside the avatar. Disable the prop entirely in that case.
+sittingPropController.disabled = isPetMode.value;
+watch(isPetMode, (pet) => {
+  sittingPropController.disabled = pet;
+  if (pet) {
+    sittingPropController.dispose(sceneCtx?.scene ?? null);
+  }
+});
 
 function disposeSittingProps() {
   sittingPropController.dispose(sceneCtx?.scene ?? null);
@@ -1172,7 +1181,11 @@ watch(
     if (vrmaManager.isMoodSuppressed) return;
     // Idle special-case: use character-gender weighted loop selection.
     if (newState === 'idle') {
-      const idleEntry = getIdleAnimationForGender(characterStore.currentGender());
+      const idleEntry = getIdleAnimationForGender(
+        characterStore.currentGender(),
+        Math.random,
+        isPetMode.value,
+      );
       if (idleEntry) {
         // Keep looping until mood/state changes away from idle.
         vrmaManager.play(idleEntry.path, true, 0.4);
@@ -1181,9 +1194,13 @@ watch(
       }
       return;
     }
-    // Try to play a VRMA animation mapped to this mood (one-shot, then return to procedural)
-    const entry = getAnimationForMood(newState);
-    if (entry) {
+    // Try to play a VRMA animation mapped to this mood (one-shot, then return to procedural).
+    // In pet/forcePet mode, prefer the standing variant so we don't spawn a chair
+    // floating in mid-air next to the small floating preview.
+    const entry = isPetMode.value
+      ? (getStandingAnimationForMood(newState) ?? getAnimationForMood(newState))
+      : getAnimationForMood(newState);
+    if (entry && (!isPetMode.value || !SITTING_ANIMATION_PATHS.has(entry.path))) {
       vrmaManager.suppressMoodAnimation();
       vrmaManager.play(entry.path, false, 0.4);
     } else if (newState === 'talking') {
@@ -1322,7 +1339,11 @@ async function loadModelIntoScene(newPath: string | undefined) {
         // on *changes*, but the character is already in 'idle' state at load
         // time, so we need an explicit trigger here.
         if (characterStore.state === 'idle') {
-          const idleEntry = getIdleAnimationForGender(characterStore.currentGender());
+          const idleEntry = getIdleAnimationForGender(
+            characterStore.currentGender(),
+            Math.random,
+            isPetMode.value,
+          );
           if (idleEntry) {
             vrmaManager.play(idleEntry.path, true, 0.4);
           }
