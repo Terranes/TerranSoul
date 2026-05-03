@@ -60,7 +60,10 @@ impl MemoryRow {
             created_at: self.created_at,
             last_accessed: self.last_accessed,
             access_count: self.access_count as i64,
-            embedding: self.embedding.as_deref().map(super::store::bytes_to_embedding),
+            embedding: self
+                .embedding
+                .as_deref()
+                .map(super::store::bytes_to_embedding),
             tier: super::store::MemoryTier::from_str(&self.tier),
             decay_score: self.decay_score,
             session_id: self.session_id,
@@ -231,15 +234,12 @@ impl StorageBackend for CassandraBackend {
                     "CREATE INDEX IF NOT EXISTS {} ON {}.memories ({})",
                     idx.0, self.keyspace, idx.1
                 );
-                self.session
-                    .query_unpaged(cql, &[])
-                    .await
-                    .map_err(|e| {
-                        StorageError::Migration(format!(
-                            "failed to create index {} on {}.memories({}): {}",
-                            idx.0, self.keyspace, idx.1, e
-                        ))
-                    })?;
+                self.session.query_unpaged(cql, &[]).await.map_err(|e| {
+                    StorageError::Migration(format!(
+                        "failed to create index {} on {}.memories({}): {}",
+                        idx.0, self.keyspace, idx.1, e
+                    ))
+                })?;
             }
 
             // Schema version tracking
@@ -385,7 +385,9 @@ impl StorageBackend for CassandraBackend {
             let row = result
                 .maybe_first_row_typed::<MemoryRow>()
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?
-                .ok_or_else(|| StorageError::Other(format!("Memory {id} not found (Cassandra query)")))?;
+                .ok_or_else(|| {
+                    StorageError::Other(format!("Memory {id} not found (Cassandra query)"))
+                })?;
 
             Ok(row.into_entry())
         })
@@ -447,7 +449,8 @@ impl StorageBackend for CassandraBackend {
 
     fn count(&self) -> StorageResult<i64> {
         self.block_on(async {
-            let result = self.session
+            let result = self
+                .session
                 .query_unpaged(
                     format!("SELECT COUNT(*) FROM {}.memories", self.keyspace),
                     &[],
