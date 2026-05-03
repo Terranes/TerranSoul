@@ -1261,6 +1261,14 @@ CREATE TABLE memories (
     origin_device TEXT                           -- CRDT tiebreaker device id
 );
 
+The feature-gated distributed backends (`postgres.rs`, `mssql.rs`,
+`cassandra.rs`) mirror the same lifecycle metadata for cross-device and vault
+workflows: `valid_to` for non-destructive supersession, `obsidian_path` /
+`last_exported` for Obsidian export state, and `updated_at` / `origin_device`
+for LWW sync deltas. SQLite remains canonical, but `StorageBackend` implementors
+must keep those `MemoryEntry` fields populated or explicitly `NULL` so
+all-feature Rust validation covers the same shape.
+
 CREATE INDEX idx_memories_importance ON memories(importance DESC);
 CREATE INDEX idx_memories_created    ON memories(created_at DESC);
 CREATE INDEX idx_memories_tier       ON memories(tier);
