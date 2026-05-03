@@ -1126,6 +1126,13 @@ function handleStartQuest() {
   }
 }
 
+/**
+ * Matches common "learn X" phrasings and captures the topic in group 1.
+ * Supported prompts include: "learn about ...", "teach me about ...",
+ * "study ...", "deep dive into ...", and "learn ...".
+ */
+const LEARNING_TOPIC_REGEX = /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/;
+
 /** Handle quest choice button clicks from hot-seat overlay or ChatMessageList. */
 async function handleQuestChoice(questId: string, choiceValue: string) {
   // Record which message we picked from BEFORE dismissing, because
@@ -1142,7 +1149,7 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'user') {
         const lower = msgs[i].content.toLowerCase();
-        const match = lower.match(/(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/);
+        const match = lower.match(LEARNING_TOPIC_REGEX);
         if (match) topic = match[1].trim();
         break;
       }
