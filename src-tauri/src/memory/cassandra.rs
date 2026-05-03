@@ -402,12 +402,8 @@ impl StorageBackend for CassandraBackend {
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            let rows = result
-                .rows
-                .ok_or_else(|| StorageError::Other("Cassandra query returned no rows".to_string()))?;
-
-            let mut memories = Vec::with_capacity(rows.len());
-            for row in rows.into_typed::<MemoryRow>() {
+            let mut memories = Vec::new();
+            for row in result.rows_typed_or_empty::<MemoryRow>() {
                 let row = row.map_err(|e| StorageError::Cassandra(e.to_string()))?;
                 memories.push(row.into_entry());
             }
@@ -426,21 +422,13 @@ impl StorageBackend for CassandraBackend {
                         Self::COLS,
                         self.keyspace
                     ),
-                    (tier.to_string(),),
+                    (tier.as_str(),),
                 )
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            let rows = result
-                .into_rows_result()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
-            let iter = rows
-                .rows::<MemoryRow>()
-                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-
             let mut entries = Vec::new();
-            for row in iter {
+            for row in result.rows_typed_or_empty::<MemoryRow>() {
                 let row = row.map_err(|e| StorageError::Cassandra(e.to_string()))?;
                 entries.push(row.into_entry());
             }
