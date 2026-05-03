@@ -2354,7 +2354,7 @@ mod tests {
             .unwrap();
         let before = store.active_storage_bytes().unwrap();
 
-        let report = store.enforce_size_limit(before - 1).unwrap();
+        let report = store.enforce_size_limit((before - 1) as u64).unwrap();
 
         assert_eq!(report.deleted, 1);
         assert!(store.get_by_id(old.id).is_err());
