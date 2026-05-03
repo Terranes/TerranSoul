@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 29.2 — Browser brain transport hardening](#chunk-292--browser-brain-transport-hardening) | 2026-05-03 |
 | [Chunk 29.1 — Browser-mode QA and responsive landing polish](#chunk-291--browser-mode-qa-and-responsive-landing-polish) | 2026-05-03 |
 | [Chunk 28.14 — Path-scoped workflow context loading](#chunk-2814--path-scoped-workflow-context-loading) | 2026-05-03 |
 | [Chunk 28.13 — Temporary-worktree coding execution](#chunk-2813--temporary-worktree-coding-execution) | 2026-05-03 |
@@ -233,6 +234,35 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 29.2 — Browser brain transport hardening
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Hardened browser-mode brain routing so direct browser chat only uses browser-safe cloud transports. Local Ollama and LM Studio are no longer resolved as localhost browser providers; those Rust/local capabilities are represented as requiring an explicit RemoteHost pairing path.
+
+### What changed
+
+- Added `src/transport/browser-brain.ts` to centralize browser brain transport resolution.
+- Resolved no-key free providers and paid API modes as direct browser transports.
+- Rejected keyed free providers without API keys and local Ollama/LM Studio modes without a RemoteHost.
+- Filtered browser fallback-provider rotation so providers requiring API keys are not tried without configured keys.
+- Kept optional RemoteHost pairing as the path for desktop-local LLM/memory capabilities through the existing `remote-conversation` store.
+- Shrank the default browser pet preview across desktop, tablet, and mobile so it stays unobtrusive; users can still resize pet mode larger where pet-mode resizing is available.
+- Updated `README.md` and `docs/brain-advanced-design.md` to describe browser-safe cloud chat versus RemoteHost-local capabilities.
+- Removed the completed 29.2 row from `rules/milestones.md`; next chunk is 29.3.
+
+### Validation
+
+- `npm ci` - passed.
+- `npm run lint` - passed.
+- `npx vitest run src/views/BrowserLandingView.test.ts` - 3 passed.
+- `npx vitest run src/transport/browser-brain.test.ts src/stores/conversation.test.ts src/stores/brain.test.ts src/transport/grpc_web.test.ts` - 125 passed.
 
 ---
 

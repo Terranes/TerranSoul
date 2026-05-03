@@ -15,6 +15,7 @@ import { parseTags } from '../utils/emotion-parser';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import { useAgentRosterStore } from './agent-roster';
 import { buildHandoffBlock } from '../utils/handoff-prompt';
+import { browserDirectFallbackProviders, resolveBrowserBrainTransport } from '../transport/browser-brain';
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
@@ -1109,54 +1110,18 @@ async function executeLlmCommand(
 }
 
 /**
- * Resolve the provider details (base_url, model, api_key) from the brain store
- * for browser-side streaming. Supports free_api, paid_api, local_ollama,
- * and local_lm_studio modes.
+ * Resolve direct provider details for browser-side streaming.
+ * Local Ollama/LM Studio are intentionally excluded here: browser mode can only
+ * use them through the explicit RemoteHost path (`remote-conversation`).
  */
 function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
   baseUrl: string;
   model: string;
   apiKey: string | null;
+  providerId: string;
 } | null {
-  if (!brain.brainMode) return null;
-
-  const mode = brain.brainMode;
-
-  if (mode.mode === 'free_api') {
-    const provider = brain.freeProviders.find((p) => p.id === mode.provider_id);
-    if (!provider) return null;
-    return {
-      baseUrl: provider.base_url,
-      model: provider.model,
-      apiKey: mode.api_key ?? null,
-    };
-  }
-
-  if (mode.mode === 'paid_api') {
-    return {
-      baseUrl: mode.base_url,
-      model: mode.model,
-      apiKey: mode.api_key,
-    };
-  }
-
-  if (mode.mode === 'local_ollama') {
-    return {
-      baseUrl: 'http://localhost:11434',
-      model: mode.model,
-      apiKey: null,
-    };
-  }
-
-  if (mode.mode === 'local_lm_studio') {
-    return {
-      baseUrl: mode.base_url,
-      model: mode.model,
-      apiKey: mode.api_key,
-    };
-  }
-
-  return null;
+  const transport = resolveBrowserBrainTransport(brain.brainMode, brain.freeProviders);
+  return transport.kind === 'direct' ? transport.provider : null;
 }
 
 function canUseTranslatorMode(brain: ReturnType<typeof useBrainStore>): boolean {
@@ -1874,18 +1839,11 @@ export const useConversationStore = defineStore('conversation', () => {
         }
 
         // Try the primary provider, then rotate to next healthy on rate-limit
-        const providersToTry = [provider];
-        // Add fallback providers from the brain store
-        const primaryProviderId = brain.brainMode?.mode === 'free_api' ? brain.brainMode.provider_id : '';
-        for (const fp of brain.freeProviders) {
-          if (fp.id !== primaryProviderId && !providersToTry.some((p) => p.baseUrl === fp.base_url)) {
-            providersToTry.push({ baseUrl: fp.base_url, model: fp.model, apiKey: provider.apiKey });
-          }
-        }
+        const providersToTry = browserDirectFallbackProviders(provider, brain.brainMode, brain.freeProviders);
 
         let succeeded = false;
         for (const prov of providersToTry) {
-          const provId = brain.freeProviders.find((f) => f.base_url === prov.baseUrl)?.id ?? 'unknown';
+          const provId = prov.providerId;
           // Skip if already known to be rate-limited
           const healthInfo = healthStore.providers.find((p) => p.id === provId);
           if (healthInfo?.is_rate_limited) continue;
