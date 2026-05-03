@@ -50,6 +50,35 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Inclusive-start, exclusive-end text range for a token or chunk.
+///
+/// Offsets are UTF-8 byte offsets into the original document string.
+/// They must be valid string boundaries when produced by Rust code, but
+/// this module only compares ranges and does not slice by them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CharSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl CharSpan {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start >= self.end
+    }
+
+    pub fn len(&self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    fn overlaps(&self, other: CharSpan) -> bool {
+        !self.is_empty() && !other.is_empty() && self.start < other.end && other.start < self.end
+    }
+}
+
 /// Inclusive-start, exclusive-end token range covering a chunk.
 ///
 /// `start` and `end` are indices into the per-token embedding array
@@ -167,6 +196,41 @@ pub fn spans_from_token_counts(token_counts: &[usize]) -> Vec<TokenSpan> {
     spans
 }
 
+/// Convert document-level chunk text spans into token-index spans.
+///
+/// A token is considered part of a chunk when its character span overlaps
+/// the chunk span. Missing chunk spans map to an empty [`TokenSpan`], which
+/// lets callers pass the result directly to [`pool_chunks`] and receive
+/// `None` for unalignable chunks.
+pub fn token_spans_for_char_spans(
+    token_char_spans: &[CharSpan],
+    chunk_char_spans: &[Option<CharSpan>],
+) -> Vec<TokenSpan> {
+    chunk_char_spans
+        .iter()
+        .map(|chunk_span| {
+            let Some(chunk_span) = chunk_span else {
+                return TokenSpan::new(0, 0);
+            };
+            if chunk_span.is_empty() {
+                return TokenSpan::new(0, 0);
+            }
+
+            let first = token_char_spans
+                .iter()
+                .position(|token_span| token_span.overlaps(*chunk_span));
+            let Some(first) = first else {
+                return TokenSpan::new(0, 0);
+            };
+            let last = token_char_spans
+                .iter()
+                .rposition(|token_span| token_span.overlaps(*chunk_span))
+                .unwrap_or(first);
+            TokenSpan::new(first, last + 1)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,6 +257,18 @@ mod tests {
 
         let inverted = TokenSpan::new(5, 3);
         assert!(inverted.is_empty());
+    }
+
+    #[test]
+    fn char_span_basics() {
+        let s = CharSpan::new(10, 15);
+        assert_eq!(s.start, 10);
+        assert_eq!(s.end, 15);
+        assert_eq!(s.len(), 5);
+        assert!(!s.is_empty());
+        assert!(CharSpan::new(4, 4).is_empty());
+        assert!(s.overlaps(CharSpan::new(12, 20)));
+        assert!(!s.overlaps(CharSpan::new(15, 20)));
     }
 
     #[test]
@@ -318,6 +394,39 @@ mod tests {
     #[test]
     fn spans_from_counts_empty_input_empty_output() {
         assert!(spans_from_token_counts(&[]).is_empty());
+    }
+
+    #[test]
+    fn token_spans_for_char_spans_maps_overlapping_tokens() {
+        let token_chars = vec![
+            CharSpan::new(0, 5),
+            CharSpan::new(5, 6),
+            CharSpan::new(6, 11),
+            CharSpan::new(11, 12),
+            CharSpan::new(12, 17),
+        ];
+        let chunks = vec![Some(CharSpan::new(0, 11)), Some(CharSpan::new(12, 17))];
+        let spans = token_spans_for_char_spans(&token_chars, &chunks);
+        assert_eq!(spans, vec![TokenSpan::new(0, 3), TokenSpan::new(4, 5)]);
+    }
+
+    #[test]
+    fn token_spans_for_char_spans_returns_empty_for_unaligned_chunks() {
+        let token_chars = vec![CharSpan::new(0, 5), CharSpan::new(6, 10)];
+        let chunks = vec![
+            None,
+            Some(CharSpan::new(10, 10)),
+            Some(CharSpan::new(20, 25)),
+        ];
+        let spans = token_spans_for_char_spans(&token_chars, &chunks);
+        assert_eq!(
+            spans,
+            vec![
+                TokenSpan::new(0, 0),
+                TokenSpan::new(0, 0),
+                TokenSpan::new(0, 0),
+            ]
+        );
     }
 
     #[test]

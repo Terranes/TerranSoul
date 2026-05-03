@@ -2,7 +2,7 @@
 //!
 //! Promotes the memory store from a tag-based co-occurrence graph to a
 //! proper knowledge graph. See `docs/brain-advanced-design.md` §6 for the
-//! full design and `migrations.rs` (V5) for the schema.
+//! full design and `schema.rs` for the canonical schema.
 //!
 //! Directional, typed edges enable:
 //! - **Multi-hop RAG** — start from a vector hit and walk the graph for
@@ -1359,12 +1359,13 @@ not json at all
     }
 
     #[test]
-    fn migration_v5_round_trip() {
-        // A fresh in-memory store is at TARGET_VERSION (≥ 5).
+    fn canonical_schema_has_memory_edges_with_cascade() {
         let store = MemoryStore::in_memory();
-        assert!(store.schema_version() >= 5);
-        // Add a memory + edge, then downgrade to V4 — the edge table should
-        // disappear, but the memory must survive.
+        assert_eq!(
+            store.schema_version(),
+            crate::memory::schema::CANONICAL_SCHEMA_VERSION
+        );
+
         let a = make_memory(&store, "A");
         let b = make_memory(&store, "B");
         store
@@ -1381,20 +1382,9 @@ not json at all
             .unwrap();
         assert_eq!(store.list_edges().unwrap().len(), 1);
 
-        crate::memory::migrations::downgrade_to(store.conn(), 4).unwrap();
-        assert_eq!(store.schema_version(), 4);
-        // memory_edges no longer exists.
-        let exists: Result<i64, _> =
-            store
-                .conn()
-                .query_row("SELECT COUNT(*) FROM memory_edges", [], |r| r.get(0));
-        assert!(exists.is_err(), "memory_edges should not exist at V4");
-        // Re-upgrade to latest.
-        crate::memory::migrations::migrate_to_latest(store.conn()).unwrap();
-        assert!(store.schema_version() >= 5);
-        // Edges from before are gone (table was dropped), memories survive.
+        store.delete(a).unwrap();
         assert_eq!(store.list_edges().unwrap().len(), 0);
-        assert_eq!(store.count(), 2);
+        assert_eq!(store.count(), 1);
     }
 
     #[test]

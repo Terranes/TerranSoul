@@ -58,7 +58,12 @@ pub async fn connect_to_peer(
         addr: format!("{}:{}", host, port),
     };
     let mgr = state.link_manager.lock().await;
-    mgr.connect(&addr, peer).await
+    mgr.connect(&addr, peer).await?;
+    drop(mgr);
+
+    // Start the background receive loop for handling sync messages.
+    crate::link::handlers::start_receive_loop(state.inner().clone());
+    Ok(())
 }
 
 /// Disconnect the current link.
@@ -68,4 +73,66 @@ pub async fn disconnect_link(state: State<'_, AppState>) -> Result<(), String> {
     mgr.disconnect().await?;
     *state.link_server_port.lock().await = None;
     Ok(())
+}
+
+// ── CRDT Memory Sync (Chunk 17.5) ────────────────────────────────────
+
+/// Compute memory deltas for a peer device (since last sync).
+///
+/// Returns serialized deltas ready to send over Soul Link.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_memory_deltas(
+    peer_device_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::crdt_sync::SyncDelta>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let since = store
+        .last_sync_time(&peer_device_id)
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0);
+    let device_id = state
+        .device_identity
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .map(|id| id.device_id.clone())
+        .unwrap_or_else(|| "unknown".into());
+    store
+        .compute_sync_deltas(since, &device_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Apply inbound memory deltas from a peer device.
+///
+/// Uses LWW conflict resolution with device-id tiebreaker.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn apply_memory_deltas(
+    peer_device_id: String,
+    deltas: Vec<crate::memory::crdt_sync::SyncDelta>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::crdt_sync::ApplyResult, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let device_id = state
+        .device_identity
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .map(|id| id.device_id.clone())
+        .unwrap_or_else(|| "unknown".into());
+    let result = store
+        .apply_sync_deltas(&deltas, &device_id)
+        .map_err(|e| e.to_string())?;
+    let total = result.inserted + result.updated + result.soft_closed;
+    store
+        .log_sync(&peer_device_id, "inbound", total)
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+/// Trigger a full memory sync with the currently connected peer.
+///
+/// Sends all local deltas that the peer hasn't seen yet.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn sync_memories_with_peer(state: State<'_, AppState>) -> Result<(), String> {
+    crate::link::handlers::trigger_sync(state.inner()).await
 }

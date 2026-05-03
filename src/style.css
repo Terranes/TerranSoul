@@ -143,6 +143,11 @@
   /* ── Layout Constants ── */
   --ts-nav-width: 72px;
   --ts-mobile-nav-height: 56px;
+  --ts-safe-area-top: env(safe-area-inset-top, 0px);
+  --ts-safe-area-right: env(safe-area-inset-right, 0px);
+  --ts-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --ts-safe-area-left: env(safe-area-inset-left, 0px);
+  --ts-mobile-nav-total-height: calc(var(--ts-mobile-nav-height) + var(--ts-safe-area-bottom));
 
   /* ── Typography ── */
   --ts-font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;

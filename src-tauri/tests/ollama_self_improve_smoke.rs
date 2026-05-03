@@ -170,6 +170,7 @@ async fn ollama_real_run_coding_task_prose() {
         include_docs: false,
         output_kind: TaskOutputKind::Prose,
         extra_documents: Vec::new(),
+        target_paths: Vec::new(),
         prior_handoff: None,
     };
 

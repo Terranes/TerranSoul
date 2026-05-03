@@ -16,6 +16,9 @@ tonic-prost-build = "0.14.5"
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
+tauri-plugin-stronghold = "2"
+tauri-plugin-barcode-scanner = "2"
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
@@ -31,13 +34,16 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rcgen = "0.14"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 sysinfo = "0.32"
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 scraper = "0.22"
 url = "2"
 futures-util = "0.3"
+local-ip-address = "0.6"
 sha2 = "0.10"
 hex = "0.4"
+glob = "0.3.3"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 thiserror = "2"
@@ -64,6 +70,7 @@ usearch = "2"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }
 tonic-prost = "0.14.5"
 prost = "0.14.3"
+tonic-web = "0.14.5"
 
 [features]
 default = []
@@ -72,21 +79,13 @@ mssql = ["dep:tiberius", "dep:tokio-util"]
 cassandra = ["dep:scylla", "dep:rand"]
 motion-research = []
 
+[profile.dev.package.scrypt]
+opt-level = 3
+
 [dev-dependencies]
 tempfile = "3"
+wasm-encoder = "0.244.0"
 # Enables tauri::test::{mock_app, MockRuntime} for headless integration tests.
 # Resolver=2 (default for edition=2021) keeps this dev-only feature out of the
 # production binary.
 tauri = { version = "2", features = ["tray-icon", "test"] }
-
-# ────────────────────────────────────────────────────────────────────────────────────────────
-# Security patch: RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g
-# glib 0.18.5 has UB in VariantStrIter::impl_get (passes &p instead of &mut p).
-# Fixed in glib 0.20.0, but Tauri 2.x pins gtk 0.18 which requires glib ^0.18.
-# This patch points to a community fork that backports the 2-line fix to 0.18.5.
-# Linux-only transitive dep — not compiled on Windows/macOS.
-# Remove once Tauri upgrades to gtk4-rs (glib 0.20+).
-# Track: https://github.com/tauri-apps/tauri/issues/12048
-# ────────────────────────────────────────────────────────────────────────────────────────────
-[patch.crates-io]
-glib = { git = "https://github.com/Quickture/gtk-rs-core.git", branch = "quickture-glib-0.18.5-fix-rustsec-2024-0429" }

@@ -34,27 +34,6 @@ pub fn all_entries() -> Vec<AgentManifest> {
             signature: None,
         },
         AgentManifest {
-            name: "openclaw-bridge".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Built-in reference bridge demonstrating capability-gated \
-                          tool calls (read / fetch / chat)."
-                .to_string(),
-            system_requirements: req.clone(),
-            install_method: InstallMethod::BuiltIn,
-            capabilities: vec![
-                Capability::Chat,
-                Capability::Filesystem,
-                Capability::Network,
-            ],
-            ipc_protocol_version: 1,
-            homepage: Some("https://openclaw.dev".to_string()),
-            license: None,
-            author: Some("OpenClaw Community".to_string()),
-            sha256: None,
-            publisher: None,
-            signature: None,
-        },
-        AgentManifest {
             name: "claude-cowork".to_string(),
             version: "1.0.0".to_string(),
             description: "Built-in Claude collaborative workspace integration. \

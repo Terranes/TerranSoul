@@ -64,7 +64,12 @@
             viewBox="0 0 16 16"
             fill="currentColor"
           >
-            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" fill="none" />
+            <path
+              d="M8 2v12M2 8h12"
+              stroke="currentColor"
+              stroke-width="2"
+              fill="none"
+            />
           </svg>
           <span class="task-controls__label">Queue</span>
           <span
@@ -85,8 +90,17 @@
             viewBox="0 0 16 16"
             fill="currentColor"
           >
-            <path d="M1 8h10M8 4l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none" />
-            <circle cx="14" cy="8" r="1.5" />
+            <path
+              d="M1 8h10M8 4l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="2"
+              fill="none"
+            />
+            <circle
+              cx="14"
+              cy="8"
+              r="1.5"
+            />
           </svg>
           <span class="task-controls__label">Steer</span>
         </button>

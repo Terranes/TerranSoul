@@ -22,9 +22,9 @@ const sampleAgents: AgentSearchResult[] = [
     homepage: 'https://terranes.dev',
   },
   {
-    name: 'openclaw-bridge',
+    name: 'file-fetch-agent',
     version: '1.0.0',
-    description: 'OpenClaw AI bridge',
+    description: 'Capability-gated file and network bridge',
     capabilities: ['chat', 'filesystem', 'network'],
     homepage: null,
   },
@@ -113,7 +113,7 @@ describe('MarketplaceView', () => {
     const wrapper = mount(MarketplaceView);
     await flushPromises();
     expect(wrapper.text()).toContain('stub-agent');
-    expect(wrapper.text()).toContain('openclaw-bridge');
+    expect(wrapper.text()).toContain('file-fetch-agent');
     expect(wrapper.text()).toContain('Built-in stub agent for testing');
   });
 
@@ -145,15 +145,15 @@ describe('MarketplaceView', () => {
     setupMocks();
     const wrapper = mount(MarketplaceView);
     await flushPromises();
-    // Click install on openclaw-bridge (has sensitive caps)
+    // Click install on the capability-gated sample agent.
     const cards = wrapper.findAll('.mp-card');
-    const openclawCard = cards.find((c) => c.text().includes('openclaw-bridge'));
-    expect(openclawCard).toBeTruthy();
-    const installBtn = openclawCard!.find('button');
+    const sensitiveCard = cards.find((c) => c.text().includes('file-fetch-agent'));
+    expect(sensitiveCard).toBeTruthy();
+    const installBtn = sensitiveCard!.find('button');
     await installBtn.trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('Capability Consent');
-    expect(wrapper.text()).toContain('openclaw-bridge');
+    expect(wrapper.text()).toContain('file-fetch-agent');
   });
 
   it('switches to installed tab', async () => {

@@ -5,6 +5,8 @@
 //! ownership remains with the existing self-hosting commands so the transport
 //! can be started explicitly by callers.
 
+pub mod phone_control;
+
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -81,22 +83,34 @@ pub async fn serve_with_shutdown(
     caps: GatewayCaps,
     tls: Option<ServerTlsConfig>,
     shutdown: impl Future<Output = ()> + Send + 'static,
+    app_state: Option<crate::AppState>,
 ) -> Result<(), GrpcServeError> {
     if tls.is_none() && !addr.ip().is_loopback() {
         return Err(GrpcServeError::PlaintextNonLoopback(addr));
     }
-    let svc = BrainGrpcService::new(gateway, caps).into_server();
-    let builder = Server::builder();
-    let mut builder = if let Some(tls) = tls {
+    let brain_svc = BrainGrpcService::new(gateway, caps).into_server();
+    let builder = Server::builder().accept_http1(true);
+    let builder = if let Some(tls) = tls {
         builder.tls_config(tls)?
     } else {
         builder
     };
-    builder
-        .add_service(svc)
-        .serve_with_shutdown(addr, shutdown)
-        .await
-        .map_err(GrpcServeError::from)
+    let router = builder
+        .layer(tonic_web::GrpcWebLayer::new())
+        .add_service(brain_svc);
+    if let Some(state) = app_state {
+        let phone_svc = phone_control::PhoneControlService::new(state).into_server();
+        router
+            .add_service(phone_svc)
+            .serve_with_shutdown(addr, shutdown)
+            .await
+            .map_err(GrpcServeError::from)
+    } else {
+        router
+            .serve_with_shutdown(addr, shutdown)
+            .await
+            .map_err(GrpcServeError::from)
+    }
 }
 
 #[tonic::async_trait]

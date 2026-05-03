@@ -7,7 +7,7 @@
  * Sections:
  *  1.  App loads on mobile viewport
  *  2.  Mobile bottom nav visible, desktop nav hidden
- *  3.  Tab navigation switches views (all 6 tabs)
+ *  3.  Tab navigation switches views (all 7 tabs)
  *  4.  Input wrapper styling (border-less input)
  *  5.  Send message on mobile → real LLM response
  *  6.  Chat drawer max-height capped (50vh)
@@ -59,9 +59,9 @@ test.describe('Mobile', () => {
     await expect(bottomNav).toBeVisible();
     await expect(page.locator('.desktop-nav')).not.toBeVisible();
 
-    // 6 tabs (chat, memory, quests, market, voice, brain)
+    // 7 tabs (chat, quests, brain, memory, market, link, voice)
     const tabs = bottomNav.locator('.mobile-tab');
-    await expect(tabs).toHaveCount(6);
+    await expect(tabs).toHaveCount(7);
 
     // Chat tab active by default
     const chatTab = bottomNav.locator('.mobile-tab', { hasText: 'Chat' });
@@ -85,6 +85,12 @@ test.describe('Mobile', () => {
     await marketTab.click();
     await expect(marketTab).toHaveClass(/active/);
     await expect(page.locator('.marketplace-view')).toBeVisible({ timeout: PANEL_TIMEOUT });
+
+    // Link tab
+    const linkTab = bottomNav.locator('.mobile-tab', { hasText: 'Link' });
+    await linkTab.click();
+    await expect(linkTab).toHaveClass(/active/);
+    await expect(page.locator('.mobile-pairing-view')).toBeVisible({ timeout: PANEL_TIMEOUT });
 
     // Voice tab
     const voiceTab = bottomNav.locator('.mobile-tab', { hasText: 'Voice' });

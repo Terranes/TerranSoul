@@ -3,9 +3,10 @@
 //! Applies a configurable low-pass filter to recorded `LearnedMotion`
 //! frame sequences to remove jitter from camera-captured clips.
 //!
-//! **Feature-flagged** behind `motion-research`. This is research code
-//! — the pipeline works but the ML-accelerated variant (Hunyuan-Motion /
-//! MimicMotion style) is deferred until real demand materialises.
+//! This pure Gaussian path is part of the default build because Chunk 27.5b
+//! exposes it through the non-destructive `polish_learned_motion` command.
+//! The ML-accelerated variant (Hunyuan-Motion / MimicMotion style) remains
+//! deferred until a license-clean sidecar exists.
 //!
 //! # Algorithm
 //!
@@ -115,20 +116,25 @@ fn convolve_channel(data: &[f64], kernel: &[f64]) -> Vec<f64> {
         for (ki, &weight) in kernel.iter().enumerate() {
             let offset = ki as isize - radius as isize;
             let idx = i as isize + offset;
-            // Reflection padding
-            let clamped = if idx < 0 {
-                (-idx) as usize
-            } else if idx >= n as isize {
-                2 * n - 2 - idx as usize
-            } else {
-                idx as usize
-            };
-            let clamped = clamped.min(n - 1);
+            let clamped = reflect_index(idx, n);
             sum += data[clamped] * weight;
         }
         out.push(sum);
     }
     out
+}
+
+fn reflect_index(idx: isize, len: usize) -> usize {
+    if len <= 1 {
+        return 0;
+    }
+    let period = 2 * (len - 1) as isize;
+    let folded = idx.rem_euclid(period);
+    if folded >= len as isize {
+        (period - folded) as usize
+    } else {
+        folded as usize
+    }
 }
 
 // ─── Two-pass (forward + backward) zero-phase filter ─────────────────────────
@@ -276,6 +282,15 @@ mod tests {
         for v in &out {
             assert!((v - 5.0).abs() < 1e-10);
         }
+    }
+
+    #[test]
+    fn convolve_handles_kernel_wider_than_channel() {
+        let data = vec![0.0, 1.0, 0.0];
+        let kernel = gaussian_kernel(8.0, 24);
+        let out = convolve_channel(&data, &kernel);
+        assert_eq!(out.len(), data.len());
+        assert!(out.iter().all(|value| value.is_finite()));
     }
 
     #[test]

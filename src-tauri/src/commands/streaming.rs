@@ -78,7 +78,7 @@ const ALL_BLOCKS: &[BlockKind] = &[BlockKind::Anim, BlockKind::Pose];
 /// State-machine parser that extracts `<anim>{…}</anim>` and
 /// `<pose>{…}</pose>` blocks from a stream of text chunks. Returns
 /// clean text plus typed payloads — no regex needed on the frontend.
-struct StreamTagParser {
+pub(crate) struct StreamTagParser {
     buffer: String,
     in_block: Option<BlockKind>,
     block_buffer: String,
@@ -86,7 +86,7 @@ struct StreamTagParser {
 }
 
 impl StreamTagParser {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             buffer: String::new(),
             in_block: None,
@@ -96,7 +96,7 @@ impl StreamTagParser {
     }
 
     /// Feed a chunk of text. Returns clean text plus any complete blocks.
-    fn feed(&mut self, chunk: &str) -> StreamFeed {
+    pub(crate) fn feed(&mut self, chunk: &str) -> StreamFeed {
         self.buffer.push_str(chunk);
 
         // Strip leading newline left over from a previous </tag> boundary.
@@ -172,7 +172,7 @@ impl StreamTagParser {
     }
 
     /// Flush remaining buffered content (call when the stream ends).
-    fn flush(&mut self) -> StreamFeed {
+    pub(crate) fn flush(&mut self) -> StreamFeed {
         let remaining = std::mem::take(&mut self.buffer);
         let block_remaining = std::mem::take(&mut self.block_buffer);
         let in_block = self.in_block.take();
@@ -219,7 +219,7 @@ fn partial_prefix_len(buffer: &str, tag: &str) -> usize {
 
 /// Strip `<anim>...</anim>` and `<pose>...</pose>` blocks from a
 /// completed response (for storage).
-fn strip_anim_blocks(input: &str) -> String {
+pub(crate) fn strip_anim_blocks(input: &str) -> String {
     let mut result = String::new();
     let mut remaining = input;
     loop {
@@ -744,6 +744,281 @@ async fn stream_ollama<R: tauri::Runtime>(
     }
 
     store_assistant_message(state, &strip_anim_blocks(&full_response), model)?;
+    Ok(())
+}
+
+// ── Self-RAG iterative streaming (Chunk 16.4b) ────────────────────────────────
+
+/// Stream a chat response using Self-RAG iterative refinement.
+///
+/// The loop:
+/// 1. Retrieve memories via hybrid search
+/// 2. Prompt LLM with Self-RAG system prompt (asks for reflection tokens)
+/// 3. Collect full response, stream tokens to user in real-time
+/// 4. Run `SelfRagController::next_step()` on the complete response
+/// 5. On `Retrieve` → re-embed, re-retrieve, re-prompt (loop)
+/// 6. On `Accept` → emit final cleaned answer
+/// 7. On `Reject` → emit graceful refusal
+///
+/// Only available for LocalOllama mode (needs embeddings for re-retrieval).
+#[tauri::command]
+pub async fn send_message_stream_self_rag(
+    message: String,
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    run_self_rag_stream(message, &app_handle, state.inner()).await
+}
+
+/// Testable entry point for the Self-RAG streaming pipeline.
+pub async fn run_self_rag_stream<R: tauri::Runtime>(
+    message: String,
+    app_handle: &tauri::AppHandle<R>,
+    state: &AppState,
+) -> Result<(), String> {
+    use crate::orchestrator::self_rag::{
+        Decision, RejectReason, SelfRagController, SELF_RAG_SYSTEM_PROMPT,
+    };
+    use futures_util::StreamExt;
+
+    if message.trim().is_empty() {
+        return Err("Message cannot be empty".to_string());
+    }
+
+    // Add user message to conversation
+    let user_msg = crate::commands::chat::Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        role: "user".to_string(),
+        content: message.clone(),
+        agent_name: None,
+        agent_id: None,
+        sentiment: None,
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
+    };
+    {
+        let mut conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.push(user_msg);
+    }
+
+    // Self-RAG requires local Ollama (needs embeddings for re-retrieval).
+    let model = {
+        let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+        match brain_mode.as_ref() {
+            Some(BrainMode::LocalOllama { model }) => model.clone(),
+            _ => {
+                // Fall back to legacy active_brain for backward compat
+                state
+                    .active_brain
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .clone()
+                    .ok_or_else(|| {
+                        "Self-RAG requires a local Ollama model to be configured".to_string()
+                    })?
+            }
+        }
+    };
+
+    // Build conversation history (last 20 messages)
+    let history: Vec<(String, String)> = {
+        let conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.iter()
+            .rev()
+            .take(20)
+            .rev()
+            .map(|m| (m.role.clone(), m.content.clone()))
+            .collect()
+    };
+
+    let threshold = state
+        .app_settings
+        .lock()
+        .map(|s| s.relevance_threshold)
+        .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
+
+    let mut controller = SelfRagController::new();
+
+    let final_answer: String = loop {
+        // ── Step 1: Embed + retrieve ──────────────────────────────────
+        let query_emb = crate::brain::OllamaAgent::embed_text(&message, &model).await;
+
+        let relevant: Vec<crate::memory::MemoryEntry> = {
+            match state.memory_store.lock() {
+                Ok(store) => store
+                    .hybrid_search_with_threshold(&message, query_emb.as_deref(), 5, threshold)
+                    .unwrap_or_default(),
+                Err(_) => vec![],
+            }
+        };
+
+        // ── Step 2: Build system prompt with RAG + Self-RAG addendum ──
+        let mut system_prompt = super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
+
+        if !relevant.is_empty() {
+            let memory_block: String = relevant
+                .iter()
+                .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
+                .collect::<Vec<_>>()
+                .join("\n");
+            system_prompt.push_str(&format!(
+                "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
+            ));
+        }
+
+        // Append Self-RAG reflection instructions
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(SELF_RAG_SYSTEM_PROMPT);
+
+        // Persona block
+        if let Ok(persona) = state.persona_block.lock() {
+            if !persona.is_empty() {
+                system_prompt.push_str(persona.as_str());
+            }
+        }
+
+        // ── Step 3: Stream LLM response ───────────────────────────────
+        let system_msg = ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt,
+        };
+        let mut messages = vec![system_msg];
+        for (role, content) in &history {
+            messages.push(ChatMessage {
+                role: role.clone(),
+                content: content.clone(),
+            });
+        }
+
+        let url = format!("{OLLAMA_BASE_URL}/api/chat");
+        let body = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "stream": true,
+        });
+
+        let client = &state.ollama_client;
+        let resp = client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama not reachable: {e}"))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Ollama returned HTTP {}", resp.status()));
+        }
+
+        let mut full_response = String::new();
+        let mut parser = StreamTagParser::new();
+        let mut stream = resp.bytes_stream();
+
+        while let Some(chunk_result) = stream.next().await {
+            let bytes = chunk_result.map_err(|e| format!("stream error: {e}"))?;
+            let text = String::from_utf8_lossy(&bytes);
+
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                if let Ok(parsed) = serde_json::from_str::<OllamaStreamChunk>(line) {
+                    if let Some(msg) = &parsed.message {
+                        if !msg.content.is_empty() {
+                            full_response.push_str(&msg.content);
+                            let feed = parser.feed(&msg.content);
+                            if !feed.text.is_empty() {
+                                let _ = app_handle.emit(
+                                    "llm-chunk",
+                                    LlmChunk {
+                                        text: feed.text,
+                                        done: false,
+                                    },
+                                );
+                            }
+                            for cmd in feed.anim_commands {
+                                let _ = app_handle.emit("llm-animation", cmd);
+                            }
+                            for frame in feed.pose_frames {
+                                let _ = app_handle.emit("llm-pose", frame);
+                            }
+                        }
+                    }
+                    if parsed.done {
+                        let feed = parser.flush();
+                        if !feed.text.is_empty() {
+                            let _ = app_handle.emit(
+                                "llm-chunk",
+                                LlmChunk {
+                                    text: feed.text,
+                                    done: false,
+                                },
+                            );
+                        }
+                        for cmd in feed.anim_commands {
+                            let _ = app_handle.emit("llm-animation", cmd);
+                        }
+                        for frame in feed.pose_frames {
+                            let _ = app_handle.emit("llm-pose", frame);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Step 4: Evaluate via Self-RAG controller ──────────────────
+        let decision = controller.next_step(&full_response);
+
+        match decision {
+            Decision::Accept { answer } => {
+                break answer;
+            }
+            Decision::Reject { reason } => {
+                let refusal = match reason {
+                    RejectReason::MaxIterationsExceeded => {
+                        "I wasn't able to find a well-supported answer after multiple attempts. Let me know if you'd like me to try a different approach.".to_string()
+                    }
+                    RejectReason::Unsupported => {
+                        "I don't have enough information in my memory to give you a reliable answer to that question.".to_string()
+                    }
+                };
+                let _ = app_handle.emit(
+                    "llm-chunk",
+                    LlmChunk {
+                        text: refusal.clone(),
+                        done: false,
+                    },
+                );
+                break refusal;
+            }
+            Decision::Retrieve => {
+                // Emit a brief indicator that we're re-retrieving
+                let _ = app_handle.emit(
+                    "llm-chunk",
+                    LlmChunk {
+                        text: "\n\n---\n*Refining answer with additional context...*\n\n"
+                            .to_string(),
+                        done: false,
+                    },
+                );
+                // Loop continues — next iteration re-embeds and re-retrieves
+            }
+        }
+    };
+
+    // ── Final: emit done signal and store message ─────────────────────
+    let _ = app_handle.emit(
+        "llm-chunk",
+        LlmChunk {
+            text: String::new(),
+            done: true,
+        },
+    );
+
+    store_assistant_message(state, &strip_anim_blocks(&final_answer), &model)?;
+
     Ok(())
 }
 

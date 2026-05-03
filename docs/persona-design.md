@@ -582,10 +582,118 @@ RGB camera. The roadmap path is to integrate one of:
   for cleaning up a recorded teach session into a cinematic clip.
 
 All three are deferred because (a) they require GPU inference budgets we
-cannot assume on a desktop pet app, and (b) they are not Apache/MIT
-licensed in their reference implementations and would need a proxy
-service or local Ollama-style runner. They are first-class items in the
-April 2026 research survey (§14).
+cannot assume on a desktop pet app, and (b) the runnable app integration
+is more complicated than the headline paper/code license once model
+weights, datasets, SMPL/SMPL-X assets, and retarget tooling are included.
+They are first-class items in the April 2026 research survey (§14).
+
+### 7.3 Chunk 27.4 research decision: MoMask-style reconstruction
+
+Chunk 27.4 completed the MoMask-style full-body reconstruction research
+spike on 2026-05-02. The detailed note lives in
+[`docs/momask-full-body-retarget-research.md`](momask-full-body-retarget-research.md).
+
+The decision is deliberately conservative: **do not bundle MoMask or any
+new motion-model runtime yet**. TerranSoul already has a feature-gated
+Rust geometric full-body retargeter (`src-tauri/src/persona/retarget.rs`)
+that maps 33 BlazePose landmarks to a 17-bone VRM pose, while the live
+browser path (`src/renderer/pose-mirror.ts`) maps the same landmark family
+to the 11-bone upper-body contract. A future ML pass should be an optional
+refinement backend over saved landmark clips, not a replacement for the
+privacy-preserving live mirror.
+
+The evaluated posture:
+
+| Candidate | Fit for TerranSoul | Decision |
+|---|---|---|
+| Current geometric retargeter | Direct 33-landmark -> VRM-bone contract, no dependency, easy regression baseline | Keep as default |
+| MoMask | MIT code and CPU demo, but public interfaces center on text-to-motion, 22-joint/BVH output, and HumanML3D 263D inpainting input; README notes separate SMPL/SMPL-X/PyTorch3D/dataset licenses | Keep for later offline inpainting/synthesis experiments only |
+| MotionBERT-Lite | Apache-2.0 code, 17-keypoint H36M sequence input, 3D pose output, published lite model around 61 MB | Best first ML-lift prototype if a sidecar is built |
+| MMPose / RTMPose3D | Apache-2.0 code and broad 3D/whole-body pose support, but large Python/OpenMMLab runtime | Good research harness; too heavy for default bundle |
+| VideoPose3D | Useful 2D->3D baseline, but CC BY-NC | Reject for bundled product |
+
+Any future implementation should introduce a small `MotionReconstructionBackend`
+boundary that accepts **saved landmark frames only** and returns
+TerranSoul-native `LearnedMotion` / `VrmBonePose` frames with confidence and
+warnings. It must stay disabled by default, require an explicit user-triggered
+offline polish/reconstruct action, show model license and download size before
+first use, and never process live camera frames.
+
+Chunk 27.4b shipped the first version of that boundary behind the existing
+`motion-research` feature. The bundled `geometric` backend wraps the current
+Rust retargeter for saved landmark frames, reports `accepts_live_camera: false`,
+and includes synthetic saved-landmark fixtures so future sidecar adapters can be
+tested against the same baseline without touching live camera behavior.
+
+### 7.4 Chunk 27.5 research decision: recorded-motion polish
+
+Chunk 27.5 completed the offline recorded-motion polish research spike on
+2026-05-02. The detailed note lives in
+[`docs/offline-motion-polish-research.md`](offline-motion-polish-research.md).
+
+The decision is to **ship the native smoothing path first** and keep video
+diffusion systems as external research references. TerranSoul already has a
+feature-gated zero-phase Gaussian smoother in
+`src-tauri/src/persona/motion_smooth.rs` that operates directly on
+`LearnedMotion`-style frames and reports displacement stats. That is the right
+first product workflow: duplicate a saved clip, smooth it in a background task,
+preview original vs polished, and save a new clip only when the user accepts.
+Chunk 27.5b shipped the first backend slice of that workflow through the
+non-destructive `polish_learned_motion` command and Pinia wrapper. Chunk 27.5c
+ships the Persona-panel preview surface with source-clip selection,
+light/medium/heavy presets, original/polished playback toggles, displacement
+stats, and explicit Save as new clip / discard controls.
+
+HunyuanVideo / Hunyuan-Motion-class models, MimicMotion, and MagicAnimate are
+not bundled because their useful public interfaces produce rendered video or
+image-to-video results rather than reusable VRM bone frames, require large GPU
+budgets, and carry model-license/runtime obligations beyond the code license.
+Any future ML polish backend must be optional, explicit-user-triggered,
+non-destructive, and return TerranSoul-native `LearnedMotion` frames with model
+metadata, warnings, and a clear preview/accept flow.
+
+### 7.5 Chunk 27.6 research decision: neural audio-to-face
+
+Chunk 27.6 completed the neural audio-to-face upgrade evaluation on
+2026-05-02. The detailed note lives in
+[`docs/neural-audio-to-face-evaluation.md`](neural-audio-to-face-evaluation.md).
+
+The decision is to **keep TerranSoul's shipped phoneme-aware viseme path as the
+default**. The current bridge already prefers `src/renderer/phoneme-viseme.ts`
+when TTS text and duration are known, falls back to `src/renderer/lip-sync.ts`
+FFT/RMS analysis when they are not, and writes the same five VRM visemes through
+`AvatarStateMachine`. That is the right baseline because it is local, fast,
+test-covered, and model-free.
+
+The only viable future neural upgrade is an optional local Audio2Face-3D sidecar
+for users with compatible NVIDIA hardware. The SDK and current Audio2Face-3D
+models are more license-viable than older cloud-only ACE assumptions, but the
+runtime still requires CUDA/TensorRT/NVIDIA hardware and a model-license flow.
+FaceFormer and EmoTalk remain research references because their public surfaces
+are mesh/dataset oriented or not clearly available as maintained VRM-ready local
+runtimes. Any future backend must return TerranSoul-native facial frames that
+degrade to the existing five-viseme contract and must never silently call a
+cloud service.
+
+### 7.6 Chunk 14.16g decision: MotionGPT / T2M-GPT inference
+
+Optional Chunk 14.16g evaluated whether TerranSoul should add MotionGPT /
+T2M-GPT local model inference on 2026-05-02. The detailed note lives in
+[`docs/motion-model-inference-evaluation.md`](motion-model-inference-evaluation.md).
+
+The local machine has an RTX 3080 Ti, so the GPU class is present, but the
+upstream model boundary is not clean enough to ship. MotionGPT and T2M-GPT have
+permissive code licenses, yet their public runtimes depend on SMPL-family,
+HumanML3D/KIT-style, PyTorch, and model/checkpoint assets with separate license
+or artifact constraints. TerranSoul should not add `ort` or a model-download UI
+until there is a stable, checksummed model artifact that outputs the canonical
+VRM 11-bone `LearnedMotion` contract or deterministic `motion_tokens` that the
+existing codec can decode.
+
+The product path remains the shipped LLM motion generator plus the feature-gated
+`src-tauri/src/persona/motion_tokens.rs` research codec. A future neural model
+must be a local sidecar with an explicit manifest, license, checksum, skeleton
+contract, and preview-before-save flow.
 
 ---
 
@@ -982,6 +1090,7 @@ commands.** This is by design (§5).
 | `list_learned_motions` | FE → BE | — | Returns array of motion JSON objects, newest first. Frame arrays included (a motion clip is rarely >100 KB). |
 | `save_learned_motion` | FE → BE | `{ json: string }` | As above for motions. |
 | `delete_learned_motion` | FE → BE | `{ id: string }` | As above. |
+| `polish_learned_motion` | FE → BE | `{ id: string, config?: { preset?: "light" | "medium" | "heavy", sigma?: number, radius?: number, pinEndpoints?: boolean } }` | ✅ Shipped 2026-05-02. Reads an existing saved motion, runs `persona::motion_smooth::smooth_clip`, and returns a polished candidate object with per-bone mean displacement, max displacement, warnings, and applied config. **Never** auto-saves — caller previews the candidate and uses `save_learned_motion` only after explicit acceptance. |
 | `extract_persona_from_brain` | FE → BE | — | ✅ Shipped 2026-04-24. Snapshots conversation history + long-tier `personal:*` memories, calls `OllamaAgent::propose_persona`, returns the parsed `PersonaCandidate` as a JSON string (or `""` when the brain reply could not be parsed; or an error string when no brain is configured). **Never** auto-saves — caller routes through `save_persona` after the user clicks Apply. Pure prompt construction + parsing live in `src-tauri/src/persona/extract.rs` for unit-testability. |
 | `export_persona_pack` | FE → BE | `{ note?: string }` | ✅ Shipped 2026-04-24. Reads `persona.json` + every `expressions/*.json` + `motions/*.json`, builds a `PersonaPack`, returns the pretty-printed JSON. Corrupt asset files are skipped silently per §13. |
 | `preview_persona_pack` | FE → BE | `{ json: string }` | ✅ Shipped 2026-04-24. Dry-run validator: parses the pack, validates every asset, returns the per-entry `ImportReport` **without writing anything**. Used by the "🔍 Preview" button. |
@@ -1035,14 +1144,14 @@ right now" — never "the camera is on but you can't tell".
 | 1 | **MediaPipe Tasks Vision FaceLandmarker** ([Google, 2023; ARKit blendshapes 2024](https://developers.google.com/mediapipe/solutions/vision/face_landmarker)) | 478 facial landmarks + 52 ARKit blendshape coefficients in browser via WASM/WebGL | ✅ | §4, §6 |
 | 2 | **MediaPipe Tasks Vision PoseLandmarker** ([Google, 2024](https://developers.google.com/mediapipe/solutions/vision/pose_landmarker)) | 33 body keypoints + per-keypoint visibility | ✅ (upper-body) | §7.1 |
 | 3 | **VRM 1.0 expression presets** ([VRM Consortium, 2023](https://vrm.dev/en/vrm1/)) | Standardised 6-expression preset list shipped by every VRM 1.0 model | ✅ | §6 |
-| 4 | **Hunyuan-Motion** ([Tencent, March 2026](https://hunyuan.tencent.com/)) | Text-and-video-conditioned motion diffusion — generates SMPL-X / Mixamo-compatible motion sequences from a prompt or a reference video | 🔵 | §15 — used as offline "polish my recorded clip" pass; cannot run live in browser. |
-| 5 | **MoMask** ([Guo et al., CVPR 2024](https://ericguo5513.github.io/momask/)) | Masked-token motion generator; high-quality reconstruction from sparse keypoints | 🔵 | §15 — Phase 2 full-body retargeting pathway |
-| 6 | **MimicMotion** ([Tencent, 2024](https://github.com/Tencent/MimicMotion)) | Reference-image + pose video → animated character video | 🔵 | §15 — offline "render my recorded motion as a cinematic clip" |
-| 7 | **MagicAnimate** ([ByteDance, 2024](https://github.com/magic-research/magic-animate)) | Diffusion-based human image animation from pose sequences | 🔵 | §15 — alternative to MimicMotion; same use case |
-| 8 | **MotionGPT** ([Jiang et al., NeurIPS 2023](https://github.com/OpenMotionLab/MotionGPT)) | Treats motion as a language; LLM emits motion tokens | 🔵 | §15 — natural Phase-3 "let the brain *generate* motion, not pick from a library" |
-| 9 | **Audio2Face / NVIDIA ACE** (2023–2024) | Audio → blendshape weights for talking heads | 🟡 | We already do simpler band-energy lip sync in `lip-sync.ts`. ACE-quality phoneme-aware mapping is a §15 item. |
+| 4 | **Hunyuan-Motion / HunyuanVideo-class models** ([Tencent](https://hunyuan.tencent.com/)) | Text/image/video-conditioned diffusion — high-quality video or motion generation references, but too GPU-heavy for default app polish | 🟡 | §7.4 / §15 — research complete; native smoother first; future optional sidecar only |
+| 5 | **MoMask** ([Guo et al., CVPR 2024](https://ericguo5513.github.io/momask/)) | Masked-token motion generator; useful reference for full-body motion generation and inpainting, but not a direct BlazePose -> VRM runtime interface | 🟡 | §7.3 / §15 — research complete; no bundled dependency; future optional sidecar only |
+| 6 | **MimicMotion** ([Tencent, 2024](https://github.com/Tencent/MimicMotion)) | Reference-image + pose video → animated character video | 🟡 | §7.4 / §15 — research complete; rendered-video output, not bundled motion-frame polish |
+| 7 | **MagicAnimate** ([ByteDance, 2024](https://github.com/magic-research/magic-animate)) | Diffusion-based human image animation from pose sequences | 🟡 | §7.4 / §15 — research complete; rendered-video output, not bundled motion-frame polish |
+| 8 | **MotionGPT / T2M-GPT** ([MotionGPT](https://github.com/OpenMotionLab/MotionGPT), [T2M-GPT](https://github.com/Mael-zys/T2M-GPT)) | Treats motion as discrete tokens / language-like sequences | 🟡 | §7.6 / §15 — codec and LLM generation shipped; bundled neural runtime deferred to optional sidecar |
+| 9 | **Audio2Face-3D / NVIDIA ACE** (2023–2026) | Audio → facial pose / blendshape-style weights for talking heads | 🟡 | §7.5 / §15 — research complete; viable only as an optional local NVIDIA sidecar, not bundled default |
 | 10 | **VASA-1** ([Microsoft, 2024](https://www.microsoft.com/en-us/research/project/vasa-1/)) | Single image + audio → high-realism talking head | ⚪ | Rejected: targets real-faces deepfakes, ethically incompatible with a personal companion. |
-| 11 | **EMOTalk-3D / FaceFormer** (2022–2024) | Audio-conditioned 3D facial animation | 🔵 | §15 — would replace the band-energy viseme path (`lip-sync.ts`) with a phoneme-aware model |
+| 11 | **EMOTalk-3D / FaceFormer** (2022–2024) | Audio-conditioned 3D facial animation | 🟡 | §7.5 / §15 — research complete; keep shipped phoneme scheduler, treat mesh/model systems as references |
 | 12 | **OmniHuman-1** ([ByteDance, Feb 2025](https://omnihuman-lab.github.io/)) | Conditioning-mixed end-to-end human video generation | ⚪ | Same posture as #10. Out of scope for a local desktop pet. |
 | 13 | **Persona / character cards** (open-source LLM community, 2023–2026) | Structured prompt block defining LLM character (name, traits, examples) | 🟡 | We ship traits in §2 + prompt block in §9.1; we do not yet ship an example-dialogue field. §15 |
 | 14 | **Reflective-prompt persona drift detection** (industry, 2025) | Periodically check that LLM responses still match declared persona; nudge with corrective prompt | ✅ | Shipped Chunk 14.8 (2026-04-26) — `OllamaAgent::check_persona_drift` + `check_persona_drift` Tauri command + auto-learn task hook |
@@ -1087,11 +1196,17 @@ right now" — never "the camera is on but you can't tell".
 - Google MediaPipe — *Tasks Vision: Face Landmarker, Pose Landmarker* (2023–2024 docs)
 - VRM Consortium — *VRM 1.0 Specification* (2023)
 - Guo et al. — *MoMask: Generative Masked Modeling of 3D Human Motions* (CVPR 2024)
+- Zhu et al. — *MotionBERT: A Unified Perspective on Learning Human Motion Representations* (ICCV 2023)
+- OpenMMLab — *MMPose Pose Estimation Toolbox* (Apache-2.0)
 - Jiang et al. — *MotionGPT: Human Motion as a Foreign Language* (NeurIPS 2023)
+- Zhang et al. — *T2M-GPT: Generating Human Motion from Textual Descriptions with Discrete Representations* (CVPR 2023)
 - Tencent — *Hunyuan Motion* (2026) and *MimicMotion* (2024)
 - ByteDance — *MagicAnimate* (CVPR 2024) and *OmniHuman-1* (Feb 2025)
+- Stability AI — *Stable Video Diffusion 1.1* model card and community license
 - Microsoft Research — *VASA-1* (2024)
-- NVIDIA — *Audio2Face / Avatar Cloud Engine (ACE)* (2023–2024)
+- NVIDIA — *Audio2Face-3D SDK*, *Audio2Face-3D v2.3/v3.0 models*, and *Avatar Cloud Engine (ACE)* (2023–2026)
+- Fan et al. — *FaceFormer: Speech-Driven 3D Facial Animation with Transformers* (CVPR 2022)
+- Peng et al. — *EmoTalk: Speech-Driven Emotional Disentanglement for 3D Face Animation* (ICCV 2023)
 - VRM Consortium — *VRMA Animation Format* (2024)
 - Open-source SillyTavern / TavernAI persona-card spec, V2 (2024)
 
@@ -1144,10 +1259,10 @@ no camera dependency.
 | **14.9** | Save / load learned expression presets (JSON-on-disk) — promotes `expressions-pack` from stub to real ✅ shipped 2026-04-25 | — (storage) | 14.4 |
 | **14.10** | Save / load learned motion clips + `LearnedMotionPlayer` — promotes `motion-capture` from stub to real ✅ shipped 2026-04-25 | — (storage) | 14.4 |
 | **14.11** | Side-chain export — bundle learned expressions + motions into the persona zip ✅ shipped 2026-04-25 | 15 | 14.9, 14.10 |
-| **14.12** | Phoneme-aware viseme model (FaceFormer / EMOTalk-class) ✅ shipped 2026-04-25 | 11 | 14.4 |
-| **14.13** | Hunyuan-Motion / MimicMotion offline polish pass (opt-in, deferred) | 4, 6 | 14.10 |
-| **14.14** | MoMask reconstruction for full-body retarget from sparse keypoints | 5 | 14.4 |
-| **14.15** | MotionGPT — let the brain *generate* motion tokens directly | 8 | 14.10, brain configured |
+| **14.12** | Phoneme-aware viseme model (FaceFormer / EMOTalk-class) ✅ shipped 2026-04-25; Chunk 27.6 evaluation completed 2026-05-02 and chose the shipped phoneme scheduler + FFT fallback as default, with Audio2Face-3D only as a future optional local NVIDIA sidecar | 9, 11 | 14.4 |
+| **14.13** | Hunyuan-Motion / MimicMotion / MagicAnimate offline polish pass — research spike completed 2026-05-02; native Gaussian smoothing should ship first, and any ML/video backend must be optional, non-destructive, saved-artifact-only, and return `LearnedMotion` frames rather than only rendered video | 4, 6, 7 | 14.10 |
+| **14.14** | MoMask-style reconstruction for full-body retarget from sparse keypoints — research spike completed 2026-05-02; Chunk 27.4b shipped a feature-gated saved-landmark `geometric` backend seam while keeping future ML sidecars optional and live-camera behavior unchanged | 5 | 14.4 |
+| **14.15** | MotionGPT / T2M-GPT — LLM motion generation + deterministic token codec shipped; optional 14.16g inference evaluation completed 2026-05-02 and deferred bundled ONNX/runtime integration until a license-clean VRM-native model artifact exists | 8 | 14.10, brain configured |
 
 Chunks 14.1–14.2 + 14.7–14.8 (main chain) deliver the user-authored /
 brain-extracted persona experience first. Chunks 14.3–14.6 + 14.9–14.15

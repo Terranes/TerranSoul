@@ -454,8 +454,7 @@ pub async fn get_brain_selection(
             working_count: stats.working,
             long_count: stats.long,
             embedded_count: stats.embedded,
-            // Schema is migrated through V5 (see memory/migrations.rs).
-            schema_version: 5,
+            schema_version: store.schema_version() as u32,
         }
     };
 
@@ -466,7 +465,7 @@ pub async fn get_brain_selection(
     let storage_snapshot = brain::StorageSelection {
         backend: "sqlite".to_string(),
         is_local: true,
-        schema_label: "V6 — memory_edges + temporal validity".to_string(),
+        schema_label: "V13 — canonical memory schema".to_string(),
     };
 
     // (5) Agents — read the orchestrator roster. The default routing

@@ -26,6 +26,14 @@ export interface AppSettings {
   auto_tag?: boolean;
   /** When true, ingest prepends document-level context to each chunk before embedding (Anthropic 2024). */
   contextual_retrieval?: boolean;
+  /** When true, local-Ollama ingest uses whole-document token vectors for late chunking when available. */
+  late_chunking?: boolean;
+  /** When true, paired mobile shells can show local notifications for long-running desktop work. */
+  mobile_notifications_enabled?: boolean;
+  /** Minimum observed duration before mobile local notifications fire. */
+  mobile_notification_threshold_ms?: number;
+  /** Poll interval for the paired-mobile notification watcher. */
+  mobile_notification_poll_ms?: number;
   /**
    * Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
    * (Chunk 27.3). When true, the camera mirror also writes the raw 52
@@ -62,6 +70,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   bgm_custom_tracks: [],
   auto_tag: false,
   contextual_retrieval: false,
+  late_chunking: false,
+  mobile_notifications_enabled: true,
+  mobile_notification_threshold_ms: 30_000,
+  mobile_notification_poll_ms: 10_000,
   first_launch_complete: false,
   chatbox_mode: false,
   auto_configured: [],

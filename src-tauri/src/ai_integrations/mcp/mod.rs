@@ -82,12 +82,16 @@ impl McpServerHandle {
 /// consecutive ports (e.g. 7421, 7423, 7425…) before failing. This
 /// prevents dev and release builds from stealing each other's port.
 ///
+/// When `lan_enabled` is `true`, binds to `0.0.0.0` (all interfaces)
+/// instead of `127.0.0.1` (loopback only).
+///
 /// Returns a handle that can be stored in `AppState.mcp_server` and
 /// used to query status or stop the server.
 pub async fn start_server(
     state: AppState,
     port: u16,
     token: String,
+    lan_enabled: bool,
 ) -> Result<McpServerHandle, String> {
     let gw = Arc::new(AppStateGateway::new(state))
         as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
@@ -106,7 +110,12 @@ pub async fn start_server(
 
     for offset in 0..=PORT_FALLBACK_RANGE {
         let try_port = port.saturating_add(offset);
-        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], try_port));
+        let ip = if lan_enabled {
+            [0, 0, 0, 0]
+        } else {
+            [127, 0, 0, 1]
+        };
+        let addr = std::net::SocketAddr::from((ip, try_port));
         match tokio::net::TcpListener::bind(addr).await {
             Ok(l) => {
                 bound_port = try_port;

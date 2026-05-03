@@ -188,7 +188,10 @@ impl StorageBackend for CassandraBackend {
         self.block_on(async {
             self.session
                 .query_unpaged(
-                    format!("SELECT version FROM {}.schema_version WHERE version = 4", self.keyspace),
+                    format!(
+                        "SELECT version FROM {}.schema_version WHERE version = 4",
+                        self.keyspace
+                    ),
                     &[],
                 )
                 .await
@@ -270,8 +273,7 @@ impl StorageBackend for CassandraBackend {
 
     fn get_by_id(&self, id: i64) -> StorageResult<MemoryEntry> {
         self.block_on(async {
-            self
-                .session
+            self.session
                 .query_unpaged(
                     format!(
                         "SELECT {} FROM {}.memories WHERE id = ?",
@@ -293,8 +295,7 @@ impl StorageBackend for CassandraBackend {
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            self
-                .session
+            self.session
                 .query_unpaged(
                     format!("SELECT {} FROM {}.memories", Self::COLS, self.keyspace),
                     &[],
@@ -344,8 +345,7 @@ impl StorageBackend for CassandraBackend {
 
     fn count(&self) -> StorageResult<i64> {
         self.block_on(async {
-            self
-                .session
+            self.session
                 .query_unpaged(
                     format!("SELECT COUNT(*) FROM {}.memories", self.keyspace),
                     &[],
@@ -507,7 +507,10 @@ impl StorageBackend for CassandraBackend {
             if let Some(content) = upd.content {
                 self.session
                     .query_unpaged(
-                        format!("UPDATE {}.memories SET content = ? WHERE id = ?", self.keyspace),
+                        format!(
+                            "UPDATE {}.memories SET content = ? WHERE id = ?",
+                            self.keyspace
+                        ),
                         (content, id),
                     )
                     .await
@@ -516,7 +519,10 @@ impl StorageBackend for CassandraBackend {
             if let Some(tags) = upd.tags {
                 self.session
                     .query_unpaged(
-                        format!("UPDATE {}.memories SET tags = ? WHERE id = ?", self.keyspace),
+                        format!(
+                            "UPDATE {}.memories SET tags = ? WHERE id = ?",
+                            self.keyspace
+                        ),
                         (tags, id),
                     )
                     .await

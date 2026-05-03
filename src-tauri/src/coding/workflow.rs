@@ -22,6 +22,7 @@
 
 use std::path::{Path, PathBuf};
 
+use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
 use super::client::client_from;
@@ -72,6 +73,11 @@ pub struct CodingTask {
     /// snippets, commit messages) injected after the auto-loaded ones.
     #[serde(default)]
     pub extra_documents: Vec<TaskDocument>,
+    /// Repo-relative paths this task is expected to touch. When present,
+    /// markdown files with `applyTo` frontmatter are loaded only when at
+    /// least one target path matches.
+    #[serde(default)]
+    pub target_paths: Vec<String>,
     /// Optional in-memory handoff state to inject as a `[RESUMING
     /// SESSION]` block at the head of the prompt. The Tauri command
     /// layer loads this from disk via
@@ -176,12 +182,13 @@ pub async fn run_coding_task(
     }
 
     if let Some(root) = &task.repo_root {
-        let auto = load_workflow_context(
+        let auto = load_workflow_context_for_paths(
             root,
             workflow_cfg,
             task.include_rules,
             task.include_instructions,
             task.include_docs,
+            &task.target_paths,
         );
         documents.extend(auto);
     }
@@ -274,6 +281,39 @@ pub fn load_workflow_context(
     include_instructions: bool,
     include_docs: bool,
 ) -> Vec<DocSnippet> {
+    load_workflow_context_for_paths(
+        repo_root,
+        cfg,
+        include_rules,
+        include_instructions,
+        include_docs,
+        &[],
+    )
+}
+
+/// Path-aware variant of [`load_workflow_context`].
+///
+/// Markdown files may opt into path scoping with YAML-style frontmatter:
+///
+/// ```text
+/// ---
+/// applyTo:
+///   - src-tauri/**
+///   - src/**/*.ts
+/// ---
+/// ```
+///
+/// Scoped files are included only when at least one supplied target path
+/// matches. Files without `applyTo` remain global. When `target_paths` is
+/// empty, all files are loaded to preserve the legacy preview/planner behavior.
+pub fn load_workflow_context_for_paths(
+    repo_root: &Path,
+    cfg: &CodingWorkflowConfig,
+    include_rules: bool,
+    include_instructions: bool,
+    include_docs: bool,
+    target_paths: &[String],
+) -> Vec<DocSnippet> {
     let mut documents: Vec<DocSnippet> = Vec::new();
     let mut total_chars = 0usize;
 
@@ -292,6 +332,7 @@ pub fn load_workflow_context(
             cfg,
             &mut documents,
             &mut total_chars,
+            target_paths,
         );
         if total_chars >= cfg.max_total_chars {
             break;
@@ -308,7 +349,7 @@ pub fn load_workflow_context(
             continue;
         }
         let path = repo_root.join(rel);
-        if let Some(snippet) = read_truncated(&path, rel, cfg) {
+        if let Some(snippet) = read_truncated(&path, rel, cfg, target_paths) {
             total_chars += snippet.body.chars().count();
             documents.push(snippet);
         }
@@ -371,6 +412,7 @@ fn load_dir(
     cfg: &CodingWorkflowConfig,
     documents: &mut Vec<DocSnippet>,
     total_chars: &mut usize,
+    target_paths: &[String],
 ) {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -401,7 +443,7 @@ fn load_dir(
         if is_excluded(&label, &cfg.exclude_paths) {
             continue;
         }
-        if let Some(snippet) = read_truncated(&path, &label, cfg) {
+        if let Some(snippet) = read_truncated(&path, &label, cfg, target_paths) {
             *total_chars += snippet.body.chars().count();
             documents.push(snippet);
         }
@@ -410,8 +452,16 @@ fn load_dir(
 
 /// Read a single file and return a truncated [`DocSnippet`], or `None`
 /// when the path cannot be read.
-fn read_truncated(path: &Path, label: &str, cfg: &CodingWorkflowConfig) -> Option<DocSnippet> {
+fn read_truncated(
+    path: &Path,
+    label: &str,
+    cfg: &CodingWorkflowConfig,
+    target_paths: &[String],
+) -> Option<DocSnippet> {
     let body = std::fs::read_to_string(path).ok()?;
+    if !matches_path_scope(&body, target_paths) {
+        return None;
+    }
     let truncated = if body.chars().count() > cfg.max_file_chars {
         let head: String = body.chars().take(cfg.max_file_chars).collect();
         format!("{head}\n… [file truncated to {} chars]", cfg.max_file_chars)
@@ -439,6 +489,95 @@ fn is_excluded(path: &str, exclude: &[String]) -> bool {
     })
 }
 
+fn matches_path_scope(markdown: &str, target_paths: &[String]) -> bool {
+    let patterns = apply_to_patterns(markdown);
+    if patterns.is_empty() || target_paths.is_empty() {
+        return true;
+    }
+
+    target_paths.iter().any(|target_path| {
+        let normalised_target = normalise_repo_path(target_path);
+        patterns.iter().any(|pattern| {
+            let normalised_pattern = normalise_repo_path(pattern);
+            Pattern::new(&normalised_pattern)
+                .map(|compiled| compiled.matches(&normalised_target))
+                .unwrap_or(false)
+                || prefix_glob_matches(&normalised_pattern, &normalised_target)
+        })
+    })
+}
+
+fn prefix_glob_matches(pattern: &str, target_path: &str) -> bool {
+    pattern
+        .strip_suffix("/**")
+        .map(|prefix| target_path == prefix || target_path.starts_with(&format!("{prefix}/")))
+        .unwrap_or(false)
+}
+
+fn apply_to_patterns(markdown: &str) -> Vec<String> {
+    let mut lines = markdown.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return Vec::new();
+    }
+
+    let mut patterns = Vec::new();
+    let mut reading_apply_to = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed == "---" {
+            break;
+        }
+
+        if let Some((key, value)) = trimmed.split_once(':') {
+            let key = key.trim();
+            if key == "applyTo" || key == "apply_to" {
+                reading_apply_to = true;
+                patterns.extend(parse_inline_apply_to(value.trim()));
+                continue;
+            }
+            reading_apply_to = false;
+        }
+
+        if reading_apply_to {
+            if let Some(value) = trimmed.strip_prefix('-') {
+                patterns.push(unquote(value.trim()).to_string());
+            }
+        }
+    }
+
+    patterns
+        .into_iter()
+        .map(|pattern| pattern.trim().to_string())
+        .filter(|pattern| !pattern.is_empty())
+        .collect()
+}
+
+fn parse_inline_apply_to(value: &str) -> Vec<String> {
+    if value.is_empty() {
+        return Vec::new();
+    }
+    let trimmed = value.trim();
+    if let Some(inner) = trimmed
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        return inner
+            .split(',')
+            .map(|entry| unquote(entry.trim()).to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect();
+    }
+    vec![unquote(trimmed).to_string()]
+}
+
+fn unquote(value: &str) -> &str {
+    value.trim_matches('"').trim_matches('\'').trim()
+}
+
+fn normalise_repo_path(path: &str) -> String {
+    path.trim().trim_start_matches("./").replace('\\', "/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,7 +599,7 @@ mod tests {
         let cfg = CodingWorkflowConfig::default();
         let mut docs = Vec::new();
         let mut total = 0usize;
-        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total);
+        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total, &[]);
         assert_eq!(docs.len(), 2);
         assert!(docs.iter().any(|d| d.label.ends_with("a.md")));
         assert!(docs.iter().any(|d| d.label.ends_with("b.md")));
@@ -475,7 +614,7 @@ mod tests {
         let cfg = CodingWorkflowConfig::default();
         let mut docs = Vec::new();
         let mut total = 0usize;
-        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total);
+        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total, &[]);
         assert_eq!(docs.len(), 1);
         assert!(docs[0].body.contains("[file truncated"));
     }
@@ -491,7 +630,7 @@ mod tests {
         let cfg = CodingWorkflowConfig::default();
         let mut docs = Vec::new();
         let mut total = 0usize;
-        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total);
+        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total, &[]);
         // Should stop before reading all 20 files (~ 20 * 4000 = 80_000 > 30_000).
         assert!(total <= MAX_CONTEXT_CHARS + MAX_FILE_CHARS);
         assert!(docs.len() < 20);
@@ -503,7 +642,13 @@ mod tests {
         let cfg = CodingWorkflowConfig::default();
         let mut docs = Vec::new();
         let mut total = 0usize;
-        load_dir(&tmp.path().join("missing"), &cfg, &mut docs, &mut total);
+        load_dir(
+            &tmp.path().join("missing"),
+            &cfg,
+            &mut docs,
+            &mut total,
+            &[],
+        );
         assert!(docs.is_empty());
         assert_eq!(total, 0);
     }
@@ -519,7 +664,7 @@ mod tests {
         };
         let mut docs = Vec::new();
         let mut total = 0usize;
-        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total);
+        load_dir(&tmp.path().join("rules"), &cfg, &mut docs, &mut total, &[]);
         assert_eq!(docs.len(), 1);
         assert!(docs[0].label.ends_with("keep.md"));
     }
@@ -572,6 +717,69 @@ mod tests {
         let docs = load_workflow_context(tmp.path(), &cfg, true, true, true);
         assert_eq!(docs.len(), 1);
         assert!(docs[0].label.ends_with("p.md"));
+    }
+
+    #[test]
+    fn load_workflow_context_for_paths_filters_apply_to_frontmatter() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("rules"), "global.md", "global rule");
+        write(
+            &tmp.path().join("rules"),
+            "rust.md",
+            "---\napplyTo:\n  - src-tauri/**\n---\nrust rule",
+        );
+        write(
+            &tmp.path().join("docs"),
+            "vue.md",
+            "---\napplyTo: [src/**/*.vue, src/**/*.ts]\n---\nvue doc",
+        );
+
+        let cfg = CodingWorkflowConfig {
+            include_files: Vec::new(),
+            ..CodingWorkflowConfig::default()
+        };
+        let target_paths = vec!["src-tauri/src/coding/workflow.rs".to_string()];
+        let docs =
+            load_workflow_context_for_paths(tmp.path(), &cfg, true, true, true, &target_paths);
+        let labels: Vec<&str> = docs.iter().map(|doc| doc.label.as_str()).collect();
+
+        assert!(labels.iter().any(|label| label.ends_with("global.md")));
+        assert!(labels.iter().any(|label| label.ends_with("rust.md")));
+        assert!(!labels.iter().any(|label| label.ends_with("vue.md")));
+    }
+
+    #[test]
+    fn load_workflow_context_without_target_paths_keeps_legacy_loading() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            &tmp.path().join("rules"),
+            "scoped.md",
+            "---\napplyTo: src-tauri/**\n---\nscoped rule",
+        );
+
+        let cfg = CodingWorkflowConfig {
+            include_files: Vec::new(),
+            ..CodingWorkflowConfig::default()
+        };
+        let docs = load_workflow_context(tmp.path(), &cfg, true, false, false);
+
+        assert_eq!(docs.len(), 1);
+        assert!(docs[0].label.ends_with("scoped.md"));
+    }
+
+    #[test]
+    fn apply_to_patterns_supports_yaml_list_and_inline_array() {
+        let yaml_list = "---\napplyTo:\n  - src-tauri/**\n  - docs/**\n---\nbody";
+        assert_eq!(
+            apply_to_patterns(yaml_list),
+            vec!["src-tauri/**".to_string(), "docs/**".to_string()]
+        );
+
+        let inline = "---\napplyTo: [src/**/*.ts, 'rules/**']\n---\nbody";
+        assert_eq!(
+            apply_to_patterns(inline),
+            vec!["src/**/*.ts".to_string(), "rules/**".to_string()]
+        );
     }
 
     #[test]

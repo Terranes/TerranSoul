@@ -120,6 +120,7 @@ pub fn build_review_task(task_id: &str, diff: &str, context_docs: Vec<TaskDocume
             schema_description: REVIEW_SCHEMA_DESCRIPTION.to_string(),
         },
         extra_documents: context_docs,
+        target_paths: Vec::new(),
         prior_handoff: None,
     }
 }

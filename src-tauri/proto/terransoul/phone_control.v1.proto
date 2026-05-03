@@ -1,0 +1,151 @@
+syntax = "proto3";
+package terransoul.phone_control.v1;
+
+// Phone-control RPC surface for the mobile companion (Phase 24).
+// Capability-gated per-RPC via paired_devices.capabilities.
+
+service PhoneControl {
+  // System health and resource usage.
+  rpc GetSystemStatus(SystemStatusRequest) returns (SystemStatusResponse);
+
+  // VS Code workspace discovery.
+  rpc ListVsCodeWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+
+  // Copilot session status for a given workspace.
+  rpc GetCopilotSessionStatus(CopilotSessionRequest) returns (CopilotSessionResponse);
+
+  // Workflow runs (durable task engine).
+  rpc ListWorkflowRuns(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc GetWorkflowProgress(WorkflowProgressRequest) returns (WorkflowProgressResponse);
+  rpc ContinueWorkflow(ContinueWorkflowRequest) returns (ContinueWorkflowResponse);
+
+  // Chat. The streaming RPC keeps prompt assembly on the desktop host;
+  // mobile receives only clean response text chunks.
+  rpc SendChatMessage(ChatRequest) returns (ChatResponse);
+  rpc StreamChatMessage(ChatRequest) returns (stream ChatChunk);
+
+  // Device registry query.
+  rpc ListPairedDevices(ListDevicesRequest) returns (ListDevicesResponse);
+}
+
+// ── System Status ────────────────────────────────────────────────────────────
+
+message SystemStatusRequest {}
+
+message SystemStatusResponse {
+  uint64 total_memory_bytes = 1;
+  uint64 used_memory_bytes = 2;
+  float cpu_usage_pct = 3;
+  string brain_provider = 4;
+  string brain_model = 5;
+  uint32 memory_entry_count = 6;
+}
+
+// ── VS Code Workspaces ───────────────────────────────────────────────────────
+
+message ListWorkspacesRequest {}
+
+message ListWorkspacesResponse {
+  repeated VsCodeWorkspace workspaces = 1;
+}
+
+message VsCodeWorkspace {
+  string path = 1;
+  string name = 2;
+  int64 last_opened_unix_ms = 3;
+}
+
+// ── Copilot Session ──────────────────────────────────────────────────────────
+
+message CopilotSessionRequest {
+  // Optional workspace filter. Empty = latest across all.
+  string workspace_path = 1;
+}
+
+message CopilotSessionResponse {
+  bool found = 1;
+  string workspace_folder = 2;
+  string session_id = 3;
+  string model = 4;
+  string last_user_turn_ts = 5;
+  string last_user_preview = 6;
+  string last_assistant_turn_ts = 7;
+  string last_assistant_preview = 8;
+  uint32 tool_invocation_count = 9;
+  uint32 event_count = 10;
+}
+
+// ── Workflow Runs ────────────────────────────────────────────────────────────
+
+message ListWorkflowsRequest {
+  // If true, include completed/failed runs. Default: pending only.
+  bool include_finished = 1;
+}
+
+message ListWorkflowsResponse {
+  repeated WorkflowRun runs = 1;
+}
+
+message WorkflowRun {
+  string workflow_id = 1;
+  string name = 2;
+  string status = 3;
+  int64 started_at_unix_ms = 4;
+  int64 last_event_at_unix_ms = 5;
+  int64 event_count = 6;
+}
+
+message WorkflowProgressRequest {
+  string workflow_id = 1;
+}
+
+message WorkflowProgressResponse {
+  string workflow_id = 1;
+  string name = 2;
+  string status = 3;
+  int64 started_at_unix_ms = 4;
+  int64 last_event_at_unix_ms = 5;
+  int64 event_count = 6;
+  // Human-readable progress summary (generated from events).
+  string summary = 7;
+}
+
+message ContinueWorkflowRequest {
+  string workflow_id = 1;
+}
+
+message ContinueWorkflowResponse {
+  bool accepted = 1;
+  string message = 2;
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+
+message ChatRequest {
+  string message = 1;
+}
+
+message ChatResponse {
+  string reply = 1;
+}
+
+message ChatChunk {
+  string text = 1;
+  bool done = 2;
+}
+
+// ── Paired Devices ───────────────────────────────────────────────────────────
+
+message ListDevicesRequest {}
+
+message ListDevicesResponse {
+  repeated PairedDeviceInfo devices = 1;
+}
+
+message PairedDeviceInfo {
+  string device_id = 1;
+  string display_name = 2;
+  int64 paired_at_unix_ms = 3;
+  int64 last_seen_at_unix_ms = 4;
+  repeated string capabilities = 5;
+}

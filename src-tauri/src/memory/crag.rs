@@ -180,6 +180,58 @@ pub fn aggregate(verdicts: &[DocumentVerdict]) -> RetrievalQuality {
     }
 }
 
+// ─── Query rewriter (Chunk 16.5b) ───────────────────────────────────
+
+/// Build prompts for the LLM query rewriter. The rewriter reformulates
+/// a user query that failed or was ambiguous in retrieval, aiming to
+/// produce a query that will match stored memories more precisely.
+///
+/// Returns `(system_prompt, user_prompt)` — same shape as
+/// `build_evaluator_prompts` for pipeline uniformity.
+pub fn build_rewriter_prompts(original_query: &str) -> (String, String) {
+    let system = "You are a search-query optimizer. Given a user question that failed to retrieve good results from a knowledge base, rewrite it into a better search query.\n\
+        \n\
+        Rules:\n\
+        - Output ONLY the rewritten query, nothing else.\n\
+        - Make it more specific or use alternative phrasings.\n\
+        - Expand abbreviations.\n\
+        - Add likely synonyms or related terms.\n\
+        - Keep it concise (under 50 words).\n\
+        - Do NOT answer the question — just rewrite it for better retrieval."
+        .to_string();
+
+    let user = format!(
+        "Original query that got poor retrieval results:\n{original_query}\n\nRewritten query:"
+    );
+
+    (system, user)
+}
+
+/// Parse the rewriter LLM reply. Simply trims whitespace and returns
+/// `None` if the reply is empty or suspiciously long (>500 chars means
+/// the LLM went off-script).
+pub fn parse_rewritten_query(reply: &str) -> Option<String> {
+    let trimmed = reply.trim().to_string();
+    if trimmed.is_empty() || trimmed.len() > 500 {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+/// Build a web-search query from the user's original query. This is a
+/// simple transformation (no LLM needed) — strip question marks, add
+/// context keywords. Used when CRAG decides `Incorrect` and we need
+/// to fall back to web search.
+pub fn build_web_search_url(query: &str) -> String {
+    let cleaned = query.trim().trim_end_matches('?');
+    // Use DuckDuckGo HTML-only endpoint for scraping (no API key needed)
+    let encoded: String = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("q", cleaned)
+        .finish();
+    format!("https://html.duckduckgo.com/html/?{encoded}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,5 +353,41 @@ mod tests {
             aggregate(&[DocumentVerdict::Ambiguous, DocumentVerdict::Ambiguous]),
             RetrievalQuality::Ambiguous
         );
+    }
+
+    // ── Query rewriter tests (16.5b) ─────────────────────────────────
+
+    #[test]
+    fn rewriter_prompts_contain_original_query() {
+        let (system, user) = build_rewriter_prompts("what is rust?");
+        assert!(system.contains("rewrite"));
+        assert!(user.contains("what is rust?"));
+    }
+
+    #[test]
+    fn parse_rewritten_query_trims() {
+        assert_eq!(
+            parse_rewritten_query("  how does Rust ownership work  "),
+            Some("how does Rust ownership work".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_rewritten_query_rejects_empty() {
+        assert_eq!(parse_rewritten_query(""), None);
+        assert_eq!(parse_rewritten_query("   "), None);
+    }
+
+    #[test]
+    fn parse_rewritten_query_rejects_too_long() {
+        let long = "x".repeat(501);
+        assert_eq!(parse_rewritten_query(&long), None);
+    }
+
+    #[test]
+    fn web_search_url_encodes_query() {
+        let url = build_web_search_url("what is rust?");
+        assert!(url.starts_with("https://html.duckduckgo.com/html/?"));
+        assert!(url.contains("what+is+rust"));
     }
 }

@@ -15,6 +15,7 @@
       />
       <MemoryView v-if="panelOnly === 'memory'" />
       <MarketplaceView v-if="panelOnly === 'marketplace'" />
+      <MobilePairingView v-if="panelOnly === 'mobile'" />
       <VoiceSetupView
         v-if="panelOnly === 'voice'"
         @done="() => {}"
@@ -86,8 +87,9 @@
             >
               <span
                 class="nav-icon"
-                v-html="tab.svg"
-              />
+              >
+                <AppTabIcon :name="tab.id" />
+              </span>
               <span class="nav-label">{{ tab.label }}</span>
             </button>
 
@@ -131,8 +133,9 @@
             >
               <span
                 class="mobile-tab-icon"
-                v-html="tab.svg"
-              />
+              >
+                <AppTabIcon :name="tab.id" />
+              </span>
               <span class="mobile-tab-label">{{ tab.label }}</span>
             </button>
           </nav>
@@ -185,6 +188,7 @@
             />
             <MemoryView v-if="activeTab === 'memory'" />
             <MarketplaceView v-if="activeTab === 'marketplace'" />
+            <MobilePairingView v-if="activeTab === 'mobile'" />
             <VoiceSetupView
               v-if="activeTab === 'voice'"
               @done="activeTab = 'chat'"
@@ -219,10 +223,12 @@ import { useWindowStore } from './stores/window';
 import { useSkillTreeStore } from './stores/skill-tree';
 import { usePersonaStore } from './stores/persona';
 import { useSettingsStore } from './stores/settings';
+import { useMobileNotificationsStore } from './stores/mobile-notifications';
 import { useTheme } from './composables/useTheme';
 import ChatView from './views/ChatView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
+import MobilePairingView from './views/MobilePairingView.vue';
 import BrainView from './views/BrainView.vue';
 import BrainSetupView from './views/BrainSetupView.vue';
 import VoiceSetupView from './views/VoiceSetupView.vue';
@@ -235,6 +241,7 @@ import SplashScreen from './components/SplashScreen.vue';
 import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
 import FloatingBadge from './components/ui/FloatingBadge.vue';
 import BackgroundScene from './components/BackgroundScene.vue';
+import AppTabIcon from './components/AppTabIcon.vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();
@@ -242,8 +249,9 @@ const windowStore = useWindowStore();
 const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
 const settingsStore = useSettingsStore();
+const mobileNotifications = useMobileNotificationsStore();
 useTheme(); // applies saved theme to html[data-theme] at startup
-const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain'>('chat');
+const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile'>('chat');
 const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
@@ -258,17 +266,18 @@ const appIconUrl = '/icon.png';
 
 /** Panel-only window mode: when opened from pet mode context menu with ?panel=<id>. */
 const panelParam = new URLSearchParams(window.location.search).get('panel');
-const VALID_PANELS = ['brain', 'memory', 'skills', 'marketplace', 'voice'] as const;
+const VALID_PANELS = ['brain', 'memory', 'skills', 'marketplace', 'voice', 'mobile'] as const;
 type PanelId = typeof VALID_PANELS[number];
 const panelOnly = VALID_PANELS.includes(panelParam as PanelId) ? (panelParam as PanelId) : null;
 
 const tabs = [
-  { id: 'chat' as const, label: 'Chat', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>' },
-  { id: 'skills' as const, label: 'Quests', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
-  { id: 'brain' as const, label: 'Brain', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2z"/><path d="M14.5 2a2.5 2.5 0 0 0-2.5 2.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2z"/></svg>' },
-  { id: 'memory' as const, label: 'Memory', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg>' },
-  { id: 'marketplace' as const, label: 'Market', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>' },
-  { id: 'voice' as const, label: 'Voice', svg: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>' },
+  { id: 'chat' as const, label: 'Chat' },
+  { id: 'skills' as const, label: 'Quests' },
+  { id: 'brain' as const, label: 'Brain' },
+  { id: 'memory' as const, label: 'Memory' },
+  { id: 'marketplace' as const, label: 'Market' },
+  { id: 'mobile' as const, label: 'Link' },
+  { id: 'voice' as const, label: 'Voice' },
 ];
 
 async function onBrainDone() {
@@ -302,6 +311,7 @@ function handleSkillNavigate(target: string) {
     marketplace: 'marketplace',
     voice: 'voice',
     brain: 'brain',
+    mobile: 'mobile',
     'brain-setup': 'brain', // brain setup wizard re-opens from the Brain hub
   };
   const tab = tabMap[target];
@@ -435,6 +445,8 @@ onMounted(async () => {
   // Initialise skill tree (load quest tracker, refresh daily suggestions)
   await skillTree.initialise();
 
+  await mobileNotifications.start();
+
   // Listen for the tray-driven 'window-mode-changed' event so the frontend
   // state stays in sync when the user toggles via the system-tray menu.
   try {
@@ -457,6 +469,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
+  mobileNotifications.stop();
 });
 
 
@@ -600,12 +613,12 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
   left: 0;
   right: 0;
   z-index: var(--ts-z-dropdown);
-  height: var(--ts-mobile-nav-height);
+  height: var(--ts-mobile-nav-total-height);
   background: color-mix(in srgb, var(--ts-bg-panel) 82%, transparent);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-top: 1px solid var(--ts-border);
-  padding: 0 4px;
+  padding: 0 max(4px, var(--ts-safe-area-right)) var(--ts-safe-area-bottom) max(4px, var(--ts-safe-area-left));
   flex-direction: row;
   align-items: center;
   justify-content: space-around;
@@ -653,7 +666,7 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
   .app-shell { flex-direction: column; }
   .desktop-nav { display: none; }
   .mobile-bottom-nav { display: flex; }
-  .app-main { flex: 1; min-height: 0; padding-bottom: var(--ts-mobile-nav-height); }
+  .app-main { flex: 1; min-height: 0; padding-bottom: var(--ts-mobile-nav-total-height); }
 }
 
 /* ── DEV badge (layout-aware, no fixed positioning) ── */

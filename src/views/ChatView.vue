@@ -27,7 +27,7 @@
     <!-- Brain setup card (shown when no brain is configured) -->
     <Transition name="fade-up">
       <div
-        v-if="!brain.hasBrain && !props.chatboxMode"
+        v-if="!usesRemoteConversation && !brain.hasBrain && !props.chatboxMode"
         class="brain-overlay"
       >
         <div class="brain-card">
@@ -125,8 +125,13 @@
         <div
           ref="subtitleRef"
           class="subtitle-text"
-          v-html="subtitleHtml"
-        />
+        >
+          <span
+            v-for="(segment, index) in subtitleSegments"
+            :key="index"
+            :class="segment.className"
+          >{{ segment.text }}</span>
+        </div>
       </div>
     </Transition>
 
@@ -148,7 +153,7 @@
     <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
       <div
-        v-if="brain.hasBrain && !props.chatboxMode"
+        v-if="(usesRemoteConversation || brain.hasBrain) && !props.chatboxMode"
         class="brain-status-pill"
       >
         <span class="brain-pill-dot" />
@@ -166,7 +171,7 @@
       <div class="chatbox-header">
         <div class="chatbox-header-left">
           <div
-            v-if="!brain.hasBrain"
+            v-if="!usesRemoteConversation && !brain.hasBrain"
             class="chatbox-brain-setup"
           >
             <span>🧠</span>
@@ -446,7 +451,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useConversationStore, detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
+import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
+import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
@@ -478,7 +484,8 @@ import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
 
-const conversationStore = useConversationStore();
+const usesRemoteConversation = shouldUseRemoteChatStore();
+const conversationStore = useChatConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const aiDecisionPolicy = useAiDecisionPolicyStore().policy;
@@ -686,27 +693,22 @@ const subtitleBottom = computed(() => {
   return `${offset}px`;
 });
 
-/**
- * Build subtitle HTML with karaoke-style highlighting.
- * Spoken text is dimmed, the current sentence is bright/highlighted,
- * and upcoming text is at normal opacity.
- */
-const subtitleHtml = computed(() => {
+type SubtitleSegment = { text: string; className?: string };
+
+/** Build karaoke-style subtitle segments without injecting HTML. */
+const subtitleSegments = computed<SubtitleSegment[]>(() => {
   const full = subtitleFullText.value;
-  if (!full) return '';
+  if (!full) return [];
 
   const spoken = tts.spokenText.value ?? '';
   const current = tts.currentSentence.value ?? '';
 
   if (!current && !spoken) {
-    // Not speaking yet — show full text at normal opacity
-    return escapeHtml(full);
+    return [{ text: full }];
   }
 
-  // When spoken has text but current is empty, TTS just finished the
-  // last sentence. Dim everything as "spoken" (done).
   if (!current && spoken) {
-    return `<span class="subtitle-spoken">${escapeHtml(full)}</span>`;
+    return [{ text: full, className: 'subtitle-spoken' }];
   }
 
   // Find where the current sentence starts in the full text.
@@ -723,34 +725,26 @@ const subtitleHtml = computed(() => {
   }
 
   if (currentStart === -1 && current) {
-    // Can't find exact match — just highlight what we can
-    return escapeHtml(full);
+    return [{ text: full }];
   }
 
-  const parts: string[] = [];
+  const parts: SubtitleSegment[] = [];
 
-  // Spoken portion (before current sentence)
   if (currentStart > 0) {
-    parts.push(`<span class="subtitle-spoken">${escapeHtml(full.slice(0, currentStart))}</span>`);
+    parts.push({ text: full.slice(0, currentStart), className: 'subtitle-spoken' });
   }
 
-  // Current sentence (highlighted)
   if (current && currentStart !== -1) {
     const currentEnd = currentStart + current.length;
-    parts.push(`<span class="subtitle-active">${escapeHtml(full.slice(currentStart, currentEnd))}</span>`);
+    parts.push({ text: full.slice(currentStart, currentEnd), className: 'subtitle-active' });
 
-    // Upcoming text
     if (currentEnd < full.length) {
-      parts.push(`<span class="subtitle-upcoming">${escapeHtml(full.slice(currentEnd))}</span>`);
+      parts.push({ text: full.slice(currentEnd), className: 'subtitle-upcoming' });
     }
   }
 
-  return parts.join('');
+  return parts;
 });
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 /** Strip markdown so subtitle text matches TTS-stripped sentences. */
 function stripMarkdownForSubtitle(text: string): string {
@@ -798,6 +792,7 @@ const STATE_LABELS: Record<CharacterState, string> = {
 const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
 
 const activeProviderName = computed(() => {
+  if (usesRemoteConversation) return 'Remote Desktop';
   const mode = brain.brainMode;
   if (!mode) return '';
   if (mode.mode === 'free_api') {
@@ -1255,6 +1250,7 @@ function handleKnowledgeQuestFinish() {
 
 /** Set up Tauri event listeners for dual-stream LLM events. */
 async function setupTauriEventListener() {
+  if (usesRemoteConversation) return;
   try {
     const { listen } = await import('@tauri-apps/api/event');
 

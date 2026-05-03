@@ -21,6 +21,9 @@ const BIO_MAX_CHARS = 500;
 /** Maximum number of items rendered from each list field. */
 const LIST_MAX_ITEMS = 8;
 
+/** Maximum example dialogue entries rendered into the persona block. */
+const EXAMPLE_DIALOGUE_MAX = 4;
+
 /** A learned motion key the brain can emit; merged into the motion vocabulary. */
 export interface LearnedMotionRef {
   /** Display name (for human-readable comments only). */
@@ -69,6 +72,15 @@ export function buildPersonaBlock(
   }
   if (avoid.length > 0) {
     lines.push(`Never: ${avoid.join('; ')}.`);
+  }
+
+  // Example dialogue — shows the LLM how this persona speaks.
+  const examples = dedupTrim(traits.exampleDialogue).slice(0, EXAMPLE_DIALOGUE_MAX);
+  if (examples.length > 0) {
+    lines.push('Example dialogue:');
+    for (const ex of examples) {
+      lines.push(`- ${ex}`);
+    }
   }
 
   // If the user has trained custom motions via the side chain (camera),

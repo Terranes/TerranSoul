@@ -45,6 +45,7 @@ function buildPlugin(overrides: Partial<InstalledPlugin> = {}): InstalledPlugin 
 
 function setupMocks(plugins: InstalledPlugin[] = []) {
   const settingsStore = new Map<string, unknown>();
+  const consentStore = new Map<string, Map<string, boolean>>();
   mockInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
     switch (cmd) {
       case 'plugin_list':
@@ -80,11 +81,32 @@ function setupMocks(plugins: InstalledPlugin[] = []) {
         settingsStore.set(key, value);
         return undefined;
       }
+      case 'list_agent_capabilities': {
+        const agentName = (args as { agentName: string }).agentName;
+        const records = consentStore.get(agentName) ?? new Map<string, boolean>();
+        return Array.from(records.entries()).map(([capability, granted]) => ({
+          agent_name: agentName,
+          capability,
+          granted,
+        }));
+      }
+      case 'grant_agent_capability': {
+        const { agentName, capability } = args as { agentName: string; capability: string };
+        if (!consentStore.has(agentName)) consentStore.set(agentName, new Map());
+        consentStore.get(agentName)!.set(capability, true);
+        return undefined;
+      }
+      case 'revoke_agent_capability': {
+        const { agentName, capability } = args as { agentName: string; capability: string };
+        if (!consentStore.has(agentName)) consentStore.set(agentName, new Map());
+        consentStore.get(agentName)!.set(capability, false);
+        return undefined;
+      }
       default:
         throw new Error(`Unmocked command: ${cmd} ${JSON.stringify(args)}`);
     }
   });
-  return { settingsStore };
+  return { settingsStore, consentStore };
 }
 
 describe('PluginsView', () => {
@@ -158,7 +180,37 @@ describe('PluginsView', () => {
 
     const grantBox = w.find('[data-testid="pv-grant-sample-plugin-network"]');
     await grantBox.setValue(true);
+    await flushPromises();
     expect(btn().attributes('disabled')).toBeUndefined();
+    expect(mockInvoke).toHaveBeenCalledWith('grant_agent_capability', {
+      agentName: 'sample-plugin',
+      capability: 'network',
+    });
+  });
+
+  it('persists filesystem consent as file_read and file_write grants', async () => {
+    setupMocks([
+      buildPlugin({
+        manifest: {
+          ...buildPlugin().manifest,
+          capabilities: ['filesystem'],
+        },
+      }),
+    ]);
+    const w = mount(PluginsView);
+    await flushPromises();
+
+    await w.find('[data-testid="pv-grant-sample-plugin-filesystem"]').setValue(true);
+    await flushPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith('grant_agent_capability', {
+      agentName: 'sample-plugin',
+      capability: 'file_read',
+    });
+    expect(mockInvoke).toHaveBeenCalledWith('grant_agent_capability', {
+      agentName: 'sample-plugin',
+      capability: 'file_write',
+    });
   });
 
   it('always allows Activate when only auto-granted capabilities are declared', async () => {

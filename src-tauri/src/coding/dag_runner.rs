@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -388,6 +389,105 @@ where
     }
 }
 
+/// Execute a DAG with an async node executor.
+///
+/// Nodes in the same topological layer are polled concurrently, bounded by
+/// [`DagRunnerConfig::max_parallel`]. Downstream nodes are skipped when any
+/// predecessor failed and `skip_on_failure` is enabled.
+pub async fn execute_dag_async<F, Fut>(
+    graph: &WorkflowGraph,
+    config: &DagRunnerConfig,
+    executor: F,
+) -> DagRunResult
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = Result<String, String>>,
+{
+    let start = std::time::Instant::now();
+    let layers = compute_layers(graph);
+
+    let mut results: Vec<NodeResult> = Vec::new();
+    let mut failed_set: HashSet<String> = HashSet::new();
+    let mut skip_set: HashSet<String> = HashSet::new();
+
+    let mut predecessors: HashMap<&str, HashSet<&str>> = HashMap::new();
+    for node in &graph.nodes {
+        predecessors.entry(node.id.as_str()).or_default();
+    }
+    for edge in &graph.edges {
+        predecessors
+            .entry(edge.to.as_str())
+            .or_default()
+            .insert(edge.from.as_str());
+    }
+
+    for layer in &layers {
+        for chunk in layer.chunks(config.max_parallel.max(1)) {
+            let mut runnable = Vec::new();
+            for node_id in chunk {
+                let should_skip = config.skip_on_failure
+                    && predecessors
+                        .get(node_id.as_str())
+                        .map(|preds| preds.iter().any(|p| failed_set.contains(*p)))
+                        .unwrap_or(false);
+
+                if should_skip {
+                    skip_set.insert(node_id.clone());
+                    results.push(NodeResult {
+                        node_id: node_id.clone(),
+                        status: NodeStatus::Skipped,
+                        message: "Skipped: predecessor failed".to_owned(),
+                        duration_ms: 0,
+                    });
+                } else {
+                    runnable.push(node_id.clone());
+                }
+            }
+
+            let futures = runnable.into_iter().map(|node_id| {
+                let fut = executor(node_id.clone());
+                async move {
+                    let node_start = std::time::Instant::now();
+                    let outcome = fut.await;
+                    (node_id, node_start.elapsed().as_millis(), outcome)
+                }
+            });
+
+            for (node_id, duration_ms, outcome) in futures_util::future::join_all(futures).await {
+                match outcome {
+                    Ok(message) => results.push(NodeResult {
+                        node_id,
+                        status: NodeStatus::Success,
+                        message,
+                        duration_ms,
+                    }),
+                    Err(message) => {
+                        failed_set.insert(node_id.clone());
+                        results.push(NodeResult {
+                            node_id,
+                            status: NodeStatus::Failed,
+                            message,
+                            duration_ms,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let failed_nodes: Vec<String> = failed_set.into_iter().collect();
+    let skipped_nodes: Vec<String> = skip_set.into_iter().collect();
+    let all_success = failed_nodes.is_empty() && skipped_nodes.is_empty();
+
+    DagRunResult {
+        results,
+        all_success,
+        total_duration_ms: start.elapsed().as_millis(),
+        failed_nodes,
+        skipped_nodes,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -724,5 +824,42 @@ mod tests {
         let deser: DagRunResult = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.all_success, result.all_success);
         assert_eq!(deser.results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn async_execute_all_success_linear() {
+        let graph = WorkflowGraph {
+            nodes: vec![node("a"), node("b"), node("c")],
+            edges: vec![edge("a", "b"), edge("b", "c")],
+        };
+        let result = execute_dag_async(&graph, &DagRunnerConfig::default(), |id| async move {
+            Ok(format!("{id} async"))
+        })
+        .await;
+        assert!(result.all_success);
+        assert_eq!(result.results.len(), 3);
+        assert_eq!(result.results[0].node_id, "a");
+        assert_eq!(result.results[2].node_id, "c");
+    }
+
+    #[tokio::test]
+    async fn async_execute_failure_skips_downstream() {
+        let graph = WorkflowGraph {
+            nodes: vec![node("a"), node("b"), node("c")],
+            edges: vec![edge("a", "b"), edge("b", "c")],
+        };
+        let result = execute_dag_async(&graph, &DagRunnerConfig::default(), |id| async move {
+            if id == "b" {
+                Err("b failed".to_owned())
+            } else {
+                Ok(format!("{id} ok"))
+            }
+        })
+        .await;
+        assert!(!result.all_success);
+        assert!(result.failed_nodes.contains(&"b".to_owned()));
+        assert!(result.skipped_nodes.contains(&"c".to_owned()));
+        let c = result.results.iter().find(|r| r.node_id == "c").unwrap();
+        assert_eq!(c.status, NodeStatus::Skipped);
     }
 }

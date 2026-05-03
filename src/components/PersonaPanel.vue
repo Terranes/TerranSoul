@@ -86,6 +86,14 @@
         @update="(items: string[]) => { draft.avoid = items; markDirty(); }"
       />
 
+      <PersonaListEditor
+        label="Example dialogue"
+        placeholder="User: How are you? / Assistant: Splendid, thanks for asking!"
+        :items="draft.exampleDialogue"
+        data-testid="pp-example-dialogue"
+        @update="(items: string[]) => { draft.exampleDialogue = items; markDirty(); }"
+      />
+
       <div class="pp-actions">
         <button
           class="pp-btn pp-btn-primary"
@@ -139,7 +147,9 @@
           </span>
         </header>
         <dl class="pp-suggestion-fields">
-          <dt>Name</dt><dd data-testid="pp-suggestion-name">{{ suggestion.name }}</dd>
+          <dt>Name</dt><dd data-testid="pp-suggestion-name">
+            {{ suggestion.name }}
+          </dd>
           <dt>Role</dt><dd>{{ suggestion.role }}</dd>
           <dt>Bio</dt><dd>{{ suggestion.bio }}</dd>
           <dt v-if="suggestion.tone?.length">
@@ -301,6 +311,9 @@
       </p>
     </div>
 
+    <!-- ── Learned-motion polish preview (Chunk 27.5c) ──────────────── -->
+    <PersonaMotionPolishPanel />
+
     <!-- ── LLM-as-Animator: generate motion from text (Chunk 14.16c3) ─ -->
     <PersonaMotionGenerator />
 
@@ -324,6 +337,7 @@ import {
 import { buildPersonaBlock } from '../utils/persona-prompt';
 import PersonaListEditor from './PersonaListEditor.vue';
 import PersonaPackPanel from './PersonaPackPanel.vue';
+import PersonaMotionPolishPanel from './PersonaMotionPolishPanel.vue';
 import PersonaMotionGenerator from './PersonaMotionGenerator.vue';
 
 const store = usePersonaStore();
@@ -340,6 +354,7 @@ function cloneTraits(t: PersonaTraits): PersonaTraits {
     tone: [...t.tone],
     quirks: [...t.quirks],
     avoid: [...t.avoid],
+    exampleDialogue: [...(t.exampleDialogue ?? [])],
   };
 }
 
@@ -443,6 +458,7 @@ function loadSuggestionIntoDraft(): void {
     tone: suggestion.value.tone ? [...suggestion.value.tone] : draft.value.tone,
     quirks: suggestion.value.quirks ? [...suggestion.value.quirks] : draft.value.quirks,
     avoid: suggestion.value.avoid ? [...suggestion.value.avoid] : draft.value.avoid,
+    exampleDialogue: suggestion.value.exampleDialogue ? [...suggestion.value.exampleDialogue] : draft.value.exampleDialogue,
   };
   isDirty.value = true;
 }

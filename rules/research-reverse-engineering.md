@@ -17,6 +17,8 @@
 6. [Actionable Chunks for TerranSoul](#6-actionable-chunks)
 7. [AI4Animation-js — Brain-Driven Neural Animation](#7-ai4animation-js)
 8. [Free LLM APIs — Three-Tier Brain Provider Strategy](#8-free-llm-apis)
+9. [Integration Analysis — What We Can Learn & Implement](#9-integration-analysis)
+10. [Cursor + Claude Code — Coding Workflow Lessons](#10-cursor--claude-code)
 
 ---
 
@@ -877,7 +879,11 @@ See `rules/milestones.md` Phase 5.5 for chunks 055–057.
 
 > **Date:** 2026-04-14
 > **Source repos:** All four above, re-analyzed for implementable patterns.
-> **Backlog chunks:** See `rules/backlog.md` Phase 9 (chunks 090–103).
+> **Backlog chunks:** See `rules/backlog.md` Phase 9. The original Phase 9
+> research range has since been reconciled: high-priority and medium-priority
+> items are archived, the shipped lower-priority utility items are backfilled in
+> `rules/completion-log.md`, and closed/demoted items remain out of active
+> milestones unless the user explicitly re-promotes them.
 
 ### Summary Matrix
 
@@ -936,3 +942,55 @@ These features from the reference repos are already implemented in TerranSoul:
 - ✅ VRM expression system (6 emotions) — aituber-kit pattern
 - ✅ Pose blending (additive Euler offsets) — AI4Animation-inspired
 - ✅ Gesture system (nod, wave, shrug, etc.) — original implementation
+
+---
+
+## 10. Cursor + Claude Code — Coding Workflow Lessons {#10-cursor--claude-code}
+
+> **Date:** 2026-05-02
+> **Sources:** Cursor public workflow concepts (rules, memories, codebase
+> context, checkpoints/review) and Claude Code documentation (project memory,
+> path-scoped rules, subagents, hooks, background/forked work, worktree
+> isolation).
+
+### Patterns worth absorbing
+
+| Pattern | Cursor / Claude Code behavior | TerranSoul adaptation |
+|---|---|---|
+| Project rules + memory | Rules and memory files are loaded with the coding session so the agent does not rediscover conventions every turn. | `load_workflow_context` already injects `rules/`, `instructions/`, and `docs/`; keep the files concise and deterministic. |
+| Context surfacing | Agents curate relevant codebase context before editing instead of dumping everything. | Chunk 28.14 adds `applyTo` frontmatter plus target-path filtering so scoped rules/docs load only for matching files. |
+| Reviewable checkpoints | Agent edits are grouped into a reviewable checkpoint that can be accepted or reverted. | Chunk 28.11 snapshots touched files before apply and restores them on review/test failure. |
+| Specialized subagents | Claude Code uses read-only Explore, reviewer, debugger, and test-runner style workers with restricted tools. | TerranSoul has `reviewer`, `test_runner`, and `dag_runner`; 28.11 wires reviewer/tester into the engine, while 28.12 wires the DAG. |
+| Hooks / guarded commands | Claude Code hooks can validate tool use before and after actions. | TerranSoul should keep enforcement in Rust: clean-tree preflight, path validation, reviewer verdict, and test gate before staging. |
+| Worktree isolation | Claude Code can isolate subagent edits in temporary worktrees. | Chunk 28.13 now runs dirty-checkout coder/tester paths in a detached temporary git worktree and saves a patch artifact for review. |
+
+### Implemented in Chunk 28.11
+
+- ✅ Coder output is constrained to complete `<file path="...">` blocks.
+- ✅ Preview diff is reviewed before any file is written.
+- ✅ Touched files are snapshotted and restored if apply or tests fail.
+- ✅ Dirty working trees are refused before autonomous apply.
+- ✅ Tests run through `coding::test_runner`; changed files are staged only after a green gate.
+
+### Implemented in Chunk 28.12
+
+- ✅ `coding::dag_runner` has an async executor for bounded parallel execution within topological layers.
+- ✅ The self-improve engine runs a real Planner → Coder → Reviewer → Apply → Tester → Stage DAG.
+- ✅ DAG nodes declare capabilities (`llm_call`, `review`, `file_write`, `test_run`, `git_write`) and validate them before execution.
+- ✅ Downstream nodes are skipped when a predecessor fails, so rejected reviews or failed tests cannot reach staging.
+
+### Implemented in Chunk 28.13
+
+- ✅ `coding::worktree` creates detached temporary git worktrees and cleans them up with `git worktree remove --force`.
+- ✅ Dirty active checkouts run autonomous apply/test/stage against the temporary worktree instead of mixing generated edits with user changes.
+- ✅ Successful isolated runs capture the staged binary diff under `target/terransoul-self-improve/patches` for review.
+
+### Implemented in Chunk 28.14
+
+- ✅ `workflow::load_workflow_context_for_paths` filters markdown context files by `applyTo` frontmatter and caller-supplied target paths.
+- ✅ `CodingTask.target_paths` lets reusable coding tasks request only relevant scoped rules/docs while preserving legacy loading when no target paths are supplied.
+- ✅ Self-improve coder prompts derive likely repo path hints from the approved plan so file-specific context can be narrowed before implementation.
+
+### Follow-up for Chunk 28.12+
+
+All follow-ups from the Cursor/Claude Code comparison are implemented as of Chunk 28.14.

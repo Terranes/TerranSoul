@@ -29,6 +29,60 @@ export type IntentDecision =
   | { kind: 'gated_setup'; setup: GatedSetupKind }
   | { kind: 'unknown' };
 
+export interface TranslatorLanguage {
+  code: string;
+  name: string;
+}
+
+interface TranslatorModeState {
+  active: boolean;
+  source: TranslatorLanguage;
+  target: TranslatorLanguage;
+  nextDirection: 'source_to_target' | 'target_to_source';
+}
+
+const TRANSLATOR_LANGUAGES: TranslatorLanguage[] = [
+  { code: 'en', name: 'English' },
+  { code: 'vi', name: 'Vietnamese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'jp', name: 'Japanese' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'zh', name: 'Chinese' },
+];
+
+function normaliseTranslatorLanguage(value: string): TranslatorLanguage | null {
+  const cleaned = value.trim().toLowerCase().replace(/[.?!,]/g, '');
+  if (!cleaned) return null;
+  const found = TRANSLATOR_LANGUAGES.find((lang) => (
+    lang.code.toLowerCase() === cleaned || lang.name.toLowerCase() === cleaned
+  ));
+  if (!found) return null;
+  return found.code === 'jp' ? { code: 'ja', name: 'Japanese' } : found;
+}
+
+export function detectTranslatorModeRequest(userInput: string): { source: TranslatorLanguage; target: TranslatorLanguage } | null {
+  const compact = userInput.trim().replace(/\s+/g, ' ');
+  const between = compact.match(/(?:translate|translator).*?between\s+(.+?)\s+and\s+(.+?)(?:[.?!]|$)/i);
+  const directional = compact.match(/(?:translate|translator).*?from\s+(.+?)\s+to\s+(.+?)(?:[.?!]|$)/i);
+  const match = between ?? directional;
+  if (!match) return null;
+  const source = normaliseTranslatorLanguage(match[1] ?? '');
+  const target = normaliseTranslatorLanguage(match[2] ?? '');
+  if (!source || !target || source.code === target.code) return null;
+  return { source, target };
+}
+
+export function isStopTranslatorModeRequest(userInput: string): boolean {
+  const lower = userInput.trim().toLowerCase();
+  return lower === 'stop translator mode'
+    || lower === 'exit translator mode'
+    || lower === 'disable translator mode'
+    || lower === 'turn off translator mode';
+}
+
 
 /**
  * Keyword-based sentiment detection from text content.
@@ -649,9 +703,9 @@ async function runAutoInstall(topic: string): Promise<void> {
     try {
       // Perform the actual activation for each quest type.
       if (id === 'free-brain') {
-        // Configure brain — local-first per rules/local-first-brain.md.
+        // Configure a free cloud LLM provider (Pollinations).
         try {
-          await brain.autoConfigureLocalFirst();
+          await brain.autoConfigureForDesktop();
         } catch {
           brain.autoConfigureFreeApi();
         }
@@ -659,7 +713,7 @@ async function runAutoInstall(topic: string): Promise<void> {
         // Memory auto-activates once the brain is configured.
         // Ensure brain mode is set (should be from free-brain step).
         if (!brain.brainMode) {
-          try { await brain.autoConfigureLocalFirst(); }
+          try { await brain.autoConfigureForDesktop(); }
           catch { brain.autoConfigureFreeApi(); }
         }
       } else if (id === 'rag-knowledge') {
@@ -849,16 +903,6 @@ export async function handleLearnDocsChoice(value: string): Promise<boolean> {
   }
 }
 
-// ── Model update quest ───────────────────────────────────────────────────────
-
-/**
- * Route a `model-update:*` quest-choice value emitted by the chat overlay.
- * Returns `true` when the value was handled.
- *
- * Formats:
- *   `model-update:upgrade:<modelTag>` — pull + activate the recommended model
- *   `model-update:dismiss:<modelTag>` — persist dismissal, never re-show
- */
 export async function handleModelUpdateChoice(value: string): Promise<boolean> {
   if (!value.startsWith('model-update:')) return false;
   const rest = value.slice('model-update:'.length);
@@ -866,37 +910,33 @@ export async function handleModelUpdateChoice(value: string): Promise<boolean> {
   if (colon < 0) return false;
   const action = rest.slice(0, colon);
   const modelTag = rest.slice(colon + 1);
-
   const conversation = useConversationStore();
-
   if (action === 'dismiss') {
     try {
       await invoke('dismiss_model_update', { modelTag });
     } catch {
-      // best-effort
+      // Best-effort in browser-only tests.
     }
     conversation.addMessage({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: `Got it — I won't suggest **${modelTag}** again.`,
+      content: `Got it - I won't suggest **${modelTag}** again.`,
       agentName: 'System',
       sentiment: 'neutral',
       timestamp: Date.now(),
     });
     return true;
   }
-
   if (action === 'upgrade') {
     const brain = useBrainStore();
     conversation.addMessage({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: `Downloading **${modelTag}**... This may take a few minutes. ⏳`,
+      content: `Downloading **${modelTag}**. This may take a few minutes.`,
       agentName: 'System',
       sentiment: 'neutral',
       timestamp: Date.now(),
     });
-
     const ok = await brain.pullModel(modelTag);
     if (ok) {
       try {
@@ -904,23 +944,22 @@ export async function handleModelUpdateChoice(value: string): Promise<boolean> {
         conversation.addMessage({
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `Upgrade complete! Now running **${modelTag}**. 🚀`,
+          content: `Upgrade complete! Now running **${modelTag}**.`,
           agentName: 'System',
           sentiment: 'happy',
           timestamp: Date.now(),
         });
-        // Auto-remove the old weaker model.
         const installed = brain.installedModels;
         const recTags = new Set(
-          brain.recommendations.filter(r => !r.is_cloud).map(r => r.model_tag),
+          brain.recommendations.filter((model) => !model.is_cloud).map((model) => model.model_tag),
         );
-        for (const m of installed) {
-          if (m.name === modelTag) continue;
-          if (!recTags.has(m.name)) continue;
+        for (const model of installed) {
+          if (model.name === modelTag) continue;
+          if (!recTags.has(model.name)) continue;
           try {
-            await invoke('delete_ollama_model', { modelName: m.name });
+            await invoke('delete_ollama_model', { modelName: model.name });
           } catch {
-            // best-effort
+            // Best-effort cleanup of older recommended local models.
           }
         }
         await brain.fetchInstalledModels();
@@ -928,7 +967,7 @@ export async function handleModelUpdateChoice(value: string): Promise<boolean> {
         conversation.addMessage({
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `Downloaded **${modelTag}** but failed to activate it. You can switch manually in the Brain tab.`,
+          content: `Downloaded **${modelTag}** but could not activate it. You can switch manually in the Brain tab.`,
           agentName: 'System',
           sentiment: 'sad',
           timestamp: Date.now(),
@@ -946,7 +985,6 @@ export async function handleModelUpdateChoice(value: string): Promise<boolean> {
     }
     return true;
   }
-
   return false;
 }
 
@@ -1121,142 +1159,44 @@ function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
   return null;
 }
 
-export interface TranslatorLanguage {
-  code: string;
-  name: string;
+function canUseTranslatorMode(brain: ReturnType<typeof useBrainStore>): boolean {
+  const mode = brain.brainMode;
+  if (!mode) return false;
+  if (mode.mode === 'free_api') return Boolean(mode.api_key);
+  return mode.mode === 'paid_api' || mode.mode === 'local_ollama' || mode.mode === 'local_lm_studio';
 }
 
-export interface TranslatorModeState {
-  active: boolean;
-  source: TranslatorLanguage;
-  target: TranslatorLanguage;
-  nextDirection: 'source_to_target' | 'target_to_source';
-}
-
-const LANGUAGE_ALIASES: Record<string, TranslatorLanguage> = {
-  english: { code: 'en', name: 'English' },
-  en: { code: 'en', name: 'English' },
-  spanish: { code: 'es', name: 'Spanish' },
-  espanol: { code: 'es', name: 'Spanish' },
-  español: { code: 'es', name: 'Spanish' },
-  es: { code: 'es', name: 'Spanish' },
-  french: { code: 'fr', name: 'French' },
-  francais: { code: 'fr', name: 'French' },
-  français: { code: 'fr', name: 'French' },
-  fr: { code: 'fr', name: 'French' },
-  german: { code: 'de', name: 'German' },
-  deutsch: { code: 'de', name: 'German' },
-  de: { code: 'de', name: 'German' },
-  japanese: { code: 'ja', name: 'Japanese' },
-  nihongo: { code: 'ja', name: 'Japanese' },
-  ja: { code: 'ja', name: 'Japanese' },
-  korean: { code: 'ko', name: 'Korean' },
-  ko: { code: 'ko', name: 'Korean' },
-  chinese: { code: 'zh', name: 'Chinese' },
-  mandarin: { code: 'zh', name: 'Chinese' },
-  zh: { code: 'zh', name: 'Chinese' },
-  vietnamese: { code: 'vi', name: 'Vietnamese' },
-  'viet namese': { code: 'vi', name: 'Vietnamese' },
-  tieng_viet: { code: 'vi', name: 'Vietnamese' },
-  'tiếng việt': { code: 'vi', name: 'Vietnamese' },
-  vi: { code: 'vi', name: 'Vietnamese' },
-  portuguese: { code: 'pt', name: 'Portuguese' },
-  pt: { code: 'pt', name: 'Portuguese' },
-  russian: { code: 'ru', name: 'Russian' },
-  ru: { code: 'ru', name: 'Russian' },
-  arabic: { code: 'ar', name: 'Arabic' },
-  ar: { code: 'ar', name: 'Arabic' },
-  italian: { code: 'it', name: 'Italian' },
-  it: { code: 'it', name: 'Italian' },
-  thai: { code: 'th', name: 'Thai' },
-  th: { code: 'th', name: 'Thai' },
-};
-
-function normalizeLanguageName(value: string): string {
-  return value
-    .trim()
-    .replace(/^(?:from|in|the)\s+/i, '')
-    .replace(/\s+(?:language|speaker|person)$/i, '')
-    .replace(/[.!?]+$/g, '')
-    .trim();
-}
-
-function resolveTranslatorLanguage(value: string): TranslatorLanguage {
-  const clean = normalizeLanguageName(value);
-  const alias = LANGUAGE_ALIASES[clean.toLowerCase()];
-  return alias ?? { code: clean.toLowerCase().replace(/\s+/g, '-'), name: clean };
-}
-
-export function detectTranslatorModeRequest(text: string): Pick<TranslatorModeState, 'source' | 'target'> | null {
-  const trimmed = text.trim();
-  const patterns = [
-    /\b(?:become|be|act\s+as|serve\s+as)\s+(?:a\s+)?translator\b[\s\S]*?\bbetween\s+(.+?)\s+(?:and|&|↔|<->|to-and-from)\s+(.+?)(?:[.!?]|$)/i,
-    /\btranslator\s+mode\b[\s\S]*?\bbetween\s+(.+?)\s+(?:and|&|↔|<->|to-and-from)\s+(.+?)(?:[.!?]|$)/i,
-    /\btranslate\s+between\s+(.+?)\s+(?:and|&|↔|<->|to-and-from)\s+(.+?)(?:[.!?]|$)/i,
-  ];
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern);
-    if (!match) continue;
-    const source = resolveTranslatorLanguage(match[1] ?? '');
-    const target = resolveTranslatorLanguage(match[2] ?? '');
-    if (source.name && target.name && source.code !== target.code) {
-      return { source, target };
-    }
-  }
-  return null;
-}
-
-export function isStopTranslatorModeRequest(text: string): boolean {
-  return /^(?:please\s+)?(?:stop|exit|disable|turn\s+off)\s+(?:the\s+)?translator(?:\s+mode)?[.!]?$/i.test(text.trim());
-}
-
-function translatorPrompt(content: string, mode: TranslatorModeState): string {
-  const source = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
-  const target = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
-  return [
-    `You are TerranSoul's translator-mode plugin.`,
-    `Translate the user's message from ${source.name} (${source.code}) to ${target.name} (${target.code}).`,
-    `Return only the translation, with no commentary, explanations, quotes, or markdown.`,
-    `Message: ${content}`,
-  ].join('\n');
-}
-
-function translatorDirectionLabel(mode: TranslatorModeState): string {
-  const source = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
-  const target = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
-  return `${source.name} → ${target.name}`;
-}
-
-function flipTranslatorDirection(mode: TranslatorModeState): void {
-  mode.nextDirection = mode.nextDirection === 'source_to_target' ? 'target_to_source' : 'source_to_target';
-}
-
-function hasTranslatorBrain(brain: ReturnType<typeof useBrainStore>): boolean {
-  if (brain.brainMode?.mode === 'free_api') {
-    return Boolean(brain.brainMode.api_key?.trim());
-  }
-  return brain.brainMode?.mode === 'paid_api' ||
-    brain.brainMode?.mode === 'local_ollama' ||
-    brain.brainMode?.mode === 'local_lm_studio' ||
-    (brain.activeBrain !== null && brain.brainMode === null);
-}
-
-function createTranslatorBrainRequiredMessage(): Message {
+function translatorUnavailableMessage(): Message {
   return {
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      `🌍 Translator mode needs a **free cloud LLM with an API key** or a **local LLM** for direct two-person translation.\n\n` +
-      `The no-key Pollinations fallback is not used for translator mode. Configure a keyed free provider such as Groq/Cerebras, or use Local Ollama / LM Studio, then ask again.`,
+      'Translator mode needs a free cloud LLM with an API key, a paid API, or a local brain before it can translate reliably.',
     agentName: 'Translator Mode',
     sentiment: 'neutral',
     timestamp: Date.now(),
-    questChoices: [
-      { label: 'Configure Free API Key', value: 'navigate:brain-setup', icon: '🔑' },
-      { label: 'Install Local LLM', value: 'navigate:brain-setup', icon: '🏰' },
-      { label: 'Dismiss', value: 'dismiss', icon: '💤' },
-    ],
-    questId: 'free-brain',
+  };
+}
+
+function translatorReadyMessage(mode: TranslatorModeState): Message {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: `Translator mode ready: ${mode.source.name} ↔ ${mode.target.name}.`,
+    agentName: 'Translator Mode',
+    sentiment: 'happy',
+    timestamp: Date.now(),
+  };
+}
+
+function translatorStoppedMessage(): Message {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: 'Translator mode stopped.',
+    agentName: 'Translator Mode',
+    sentiment: 'neutral',
+    timestamp: Date.now(),
   };
 }
 
@@ -1380,6 +1320,79 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
+  async function translateWithBrowserProvider(content: string, brain: ReturnType<typeof useBrainStore>): Promise<void> {
+    const mode = translatorMode.value;
+    if (!mode) return;
+    const provider = resolveBrowserProvider(brain);
+    if (!provider) {
+      messages.value.push(translatorUnavailableMessage());
+      return;
+    }
+
+    const from = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
+    const to = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
+    const prompt = `Translate the user's message from ${from.name} (${from.code}) to ${to.name} (${to.code}). Return only the translation. User message: ${content}`;
+    const fullText = await new Promise<string>((resolve, reject) => {
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      const abortController = streamChatCompletion(
+        provider.baseUrl,
+        provider.model,
+        provider.apiKey,
+        [{ role: 'user', content: prompt }],
+        {
+          onChunk: (text) => {
+            if (!isStreaming.value && text) isStreaming.value = true;
+            streamingText.value += text;
+          },
+          onDone: (full) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeout);
+              resolve(full);
+            }
+          },
+          onError: (err) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeout);
+              reject(new Error(err));
+            }
+          },
+        },
+        getSystemPrompt(false) + usePersonaStore().personaBlock,
+      );
+      if (activeAbortController) {
+        activeAbortController.signal.addEventListener('abort', () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            abortController.abort();
+            reject(new Error('AbortError'));
+          }
+        }, { once: true });
+      }
+      timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          abortController.abort();
+          reject(new Error('Translator stream timeout'));
+        }
+      }, 30_000);
+    });
+
+    const parsed = parseTags(fullText);
+    messages.value.push({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: `${from.name} → ${to.name}: ${parsed.text.trim() || fullText.trim()}`,
+      agentName: 'Translator Mode',
+      sentiment: 'neutral',
+      timestamp: Date.now(),
+    });
+    mode.nextDirection = mode.nextDirection === 'source_to_target' ? 'target_to_source' : 'source_to_target';
+  }
+
   // ── Auto-learn (daily-conversation → brain write-back loop) ─────────────
   //
   // After every assistant turn we ask the Rust-side `evaluate_auto_learn`
@@ -1493,27 +1506,6 @@ export const useConversationStore = defineStore('conversation', () => {
   }
 
   async function sendMessage(content: string) {
-    // ── Self-improve learning hook ──
-    // When self-improve is enabled, fire-and-forget a backend call that
-    // asks the Coding LLM whether this message describes a feature
-    // request / bug / improvement and, if so, appends it as a new
-    // chunk to `rules/milestones.md`. The chat pipeline never waits on
-    // or fails because of this — failures are logged only.
-    // Deferred via setTimeout so the call is truly out-of-band: it
-    // cannot affect mock-call ordering in tests, and it cannot delay
-    // the user's perceived response time.
-    setTimeout(() => {
-      try {
-        void Promise.resolve(invoke('learn_from_user_message', { message: content })).catch(
-          (err) => {
-            console.warn('[self-improve] learn-from-message failed:', err);
-          },
-        );
-      } catch (e) {
-        console.warn('[self-improve] learn-from-message dispatch failed:', e);
-      }
-    }, 0);
-
     // ── Concurrency gate: only one generation at a time ──
     // If a stream/generation is already active, queue this message and
     // return immediately.  drainQueue() will pick it up when the current
@@ -1568,90 +1560,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
     const brain = useBrainStore();
 
-    const translatorRequest = detectTranslatorModeRequest(content);
-    if (translatorRequest) {
-      if (!hasTranslatorBrain(brain)) {
-        messages.value.push(createTranslatorBrainRequiredMessage());
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      translatorMode.value = {
-        active: true,
-        source: translatorRequest.source,
-        target: translatorRequest.target,
-        nextDirection: 'source_to_target',
-      };
-      if (isTauriAvailable()) {
-        try {
-          await invoke('plugin_invoke_command', {
-            commandId: 'terransoul-translator.start',
-            args: {
-              source: translatorRequest.source.name,
-              target: translatorRequest.target.name,
-            },
-          });
-        } catch {
-          // The built-in plugin command is informational; chat mode still works.
-        }
-      }
-      messages.value.push({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content:
-          `🌍 Translator mode is on for **${translatorRequest.source.name} ↔ ${translatorRequest.target.name}**.\n\n` +
-          `Send one person's spoken transcript or typed message at a time. I'll translate the next message **${translatorRequest.source.name} → ${translatorRequest.target.name}**, then alternate directions. Type **stop translator mode** to exit.`,
-        agentName: 'Translator Mode',
-        sentiment: 'happy',
-        timestamp: Date.now(),
-      });
-      isThinking.value = false;
-      generationActive.value = false;
-      void drainQueue();
-      return;
-    }
-
-    if (translatorMode.value && isStopTranslatorModeRequest(content)) {
-      if (isTauriAvailable()) {
-        try {
-          await invoke('plugin_invoke_command', {
-            commandId: 'terransoul-translator.stop',
-            args: null,
-          });
-        } catch {
-          // best-effort
-        }
-      }
-      const previous = translatorMode.value;
-      translatorMode.value = null;
-      messages.value.push({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: `Translator mode stopped for **${previous.source.name} ↔ ${previous.target.name}**. Back to normal chat.`,
-        agentName: 'Translator Mode',
-        sentiment: 'neutral',
-        timestamp: Date.now(),
-      });
-      isThinking.value = false;
-      generationActive.value = false;
-      void drainQueue();
-      return;
-    }
-
-    const translatorPromptForTurn = translatorMode.value
-      ? translatorPrompt(content, translatorMode.value)
-      : null;
-    if (translatorPromptForTurn && !hasTranslatorBrain(brain)) {
-      translatorMode.value = null;
-      messages.value.push(createTranslatorBrainRequiredMessage());
-      isThinking.value = false;
-      generationActive.value = false;
-      void drainQueue();
-      return;
-    }
-
-    const llmCmd = translatorPromptForTurn ? null : detectLlmCommand(content);
+    const llmCmd = detectLlmCommand(content);
     // Respect the "Chat-based LLM switching" toggle: when off, ignore commands
     // like "switch to groq" / "use my openai api key …" and let them flow
     // through to the LLM as ordinary messages.
@@ -1670,14 +1579,56 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
+    if (isStopTranslatorModeRequest(content)) {
+      translatorMode.value = null;
+      messages.value.push(translatorStoppedMessage());
+      isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
+      return;
+    }
+
+    const translatorRequest = detectTranslatorModeRequest(content);
+    if (translatorRequest) {
+      if (!canUseTranslatorMode(brain)) {
+        messages.value.push(translatorUnavailableMessage());
+      } else {
+        translatorMode.value = {
+          active: true,
+          source: translatorRequest.source,
+          target: translatorRequest.target,
+          nextDirection: 'source_to_target',
+        };
+        messages.value.push(translatorReadyMessage(translatorMode.value));
+      }
+      isThinking.value = false;
+      generationActive.value = false;
+      void drainQueue();
+      return;
+    }
+
+    if (translatorMode.value?.active) {
+      try {
+        await translateWithBrowserProvider(content, brain);
+      } catch {
+        messages.value.push(translatorUnavailableMessage());
+      } finally {
+        isThinking.value = false;
+        isStreaming.value = false;
+        streamingText.value = '';
+        activeAbortController = null;
+        generationActive.value = false;
+        void drainQueue();
+      }
+      return;
+    }
+
     // ── LLM-powered intent classification ──────────────────────────────
     // Replaces three regex detectors that used to short-circuit here.
     // The configured brain (Free → Paid → Local) decides what to do;
     // failure (no brain, timeout, malformed JSON) maps to `unknown` and
     // falls back to the install-all path so future turns work offline.
-    const decision = translatorPromptForTurn
-      ? ({ kind: 'chat' } as IntentDecision)
-      : await classifyIntent(content, brain.hasBrain);
+    const decision = await classifyIntent(content, brain.hasBrain);
     switch (decision.kind) {
       case 'gated_setup': {
         messages.value.push(executeGatedSetupCommand({ type: decision.setup }));
@@ -1766,7 +1717,7 @@ export const useConversationStore = defineStore('conversation', () => {
         let wasAborted = false;
         try {
           sendOk = await Promise.race([
-            streaming.sendStreaming(translatorPromptForTurn ?? content),
+            streaming.sendStreaming(content),
             new Promise<boolean>((_, reject) =>
               setTimeout(() => reject(new Error('Tauri streaming timeout')), TAURI_STREAM_TIMEOUT_MS),
             ),
@@ -1849,23 +1800,17 @@ export const useConversationStore = defineStore('conversation', () => {
             id: crypto.randomUUID(),
             role: 'assistant',
             content: clean || cleanText,
-            agentName: translatorPromptForTurn ? 'Translator Mode' : 'TerranSoul',
+            agentName: 'TerranSoul',
             sentiment: sentiment as Message['sentiment'],
             timestamp: Date.now(),
             emoji: parsed.emoji ?? undefined,
             motion,
           };
-          if (translatorPromptForTurn && translatorMode.value) {
-            assistantMsg.content = `**${translatorDirectionLabel(translatorMode.value)}**\n\n${assistantMsg.content}`;
-            flipTranslatorDirection(translatorMode.value);
-          }
           stampAgent(assistantMsg);
-          if (!translatorPromptForTurn && warning) applyWarningAsQuest(assistantMsg, warning);
+          if (warning) applyWarningAsQuest(assistantMsg, warning);
           messages.value.push(assistantMsg);
-          if (!translatorPromptForTurn) {
-            maybeShowQuestFromResponse(clean || cleanText, content);
-            maybeShowDontKnowPrompt(clean || cleanText);
-          }
+          maybeShowQuestFromResponse(clean || cleanText, content);
+          maybeShowDontKnowPrompt(clean || cleanText);
         } else {
           // Streaming completed but no text accumulated (events not received or
           // API returned empty) — fall back to non-streaming invoke which also
@@ -1879,23 +1824,16 @@ export const useConversationStore = defineStore('conversation', () => {
           const FALLBACK_TIMEOUT_MS = 30_000;
           const response = await Promise.race([
             invoke<Message>('send_message', {
-              message: translatorPromptForTurn ?? content,
+              message: content,
               agentId: currentAgent.value === 'auto' ? null : currentAgent.value,
             }),
             new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('Fallback invoke timeout')), FALLBACK_TIMEOUT_MS),
             ),
           ]);
-          if (translatorPromptForTurn && translatorMode.value) {
-            response.agentName = 'Translator Mode';
-            response.content = `**${translatorDirectionLabel(translatorMode.value)}**\n\n${response.content}`;
-            flipTranslatorDirection(translatorMode.value);
-          }
           messages.value.push(response);
-          if (!translatorPromptForTurn) {
-            maybeShowQuestFromResponse(response.content, content);
-            maybeShowDontKnowPrompt(response.content);
-          }
+          maybeShowQuestFromResponse(response.content, content);
+          maybeShowDontKnowPrompt(response.content);
         } catch {
           messages.value.push(createPersonaResponse(content));
           pushNetworkOrProviderWarning();
@@ -1920,9 +1858,6 @@ export const useConversationStore = defineStore('conversation', () => {
         const history = buildHistory(
           messages.value.map((m) => ({ role: m.role, content: m.content })),
         );
-        if (translatorPromptForTurn && history.length > 0) {
-          history[history.length - 1].content = translatorPromptForTurn;
-        }
 
         // RAG: fetch relevant memories from Tauri backend if available
         let memoryBlock = '';
@@ -2036,23 +1971,17 @@ export const useConversationStore = defineStore('conversation', () => {
               id: crypto.randomUUID(),
               role: 'assistant',
               content: clean || parsed.text,
-              agentName: translatorPromptForTurn ? 'Translator Mode' : 'TerranSoul',
+              agentName: 'TerranSoul',
               sentiment: sentiment as Message['sentiment'],
               timestamp: Date.now(),
               emoji: parsed.emoji ?? undefined,
               motion: parsed.motion ?? undefined,
             };
-            if (translatorPromptForTurn && translatorMode.value) {
-              assistantMsg.content = `**${translatorDirectionLabel(translatorMode.value)}**\n\n${assistantMsg.content}`;
-              flipTranslatorDirection(translatorMode.value);
-            }
             stampAgent(assistantMsg);
-            if (!translatorPromptForTurn && warning) applyWarningAsQuest(assistantMsg, warning);
+            if (warning) applyWarningAsQuest(assistantMsg, warning);
             messages.value.push(assistantMsg);
-            if (!translatorPromptForTurn) {
-              maybeShowQuestFromResponse(clean || parsed.text, content);
-              maybeShowDontKnowPrompt(clean || parsed.text);
-            }
+            maybeShowQuestFromResponse(clean || parsed.text, content);
+            maybeShowDontKnowPrompt(clean || parsed.text);
             succeeded = true;
             break;
           } catch (err) {
@@ -2092,33 +2021,7 @@ export const useConversationStore = defineStore('conversation', () => {
 
     // Path 3: No brain configured — persona fallback
     await new Promise((r) => setTimeout(r, 500));
-    if (translatorPromptForTurn && translatorMode.value) {
-      const mode = translatorMode.value;
-      const source = mode.nextDirection === 'source_to_target' ? mode.source : mode.target;
-      const target = mode.nextDirection === 'source_to_target' ? mode.target : mode.source;
-      let translated = `[${target.code}] ${content}`;
-      try {
-        const result = await invoke<{ translated: string }>('translate_text', {
-          text: content,
-          sourceLang: source.code,
-          targetLang: target.code,
-        });
-        translated = result.translated;
-      } catch {
-        // Browser-only fallback keeps the plugin usable without a configured brain.
-      }
-      messages.value.push({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: `**${translatorDirectionLabel(mode)}**\n\n${translated}`,
-        agentName: 'Translator Mode',
-        sentiment: 'neutral',
-        timestamp: Date.now(),
-      });
-      flipTranslatorDirection(mode);
-    } else {
-      messages.value.push(createPersonaResponse(content));
-    }
+    messages.value.push(createPersonaResponse(content));
     isThinking.value = false;
     activeAbortController = null;
     generationActive.value = false;
@@ -2197,13 +2100,13 @@ export const useConversationStore = defineStore('conversation', () => {
   return {
     messages,
     currentAgent,
+    translatorMode,
     agentMessages,
     agentSwitchHistory,
     setAgent,
     isThinking,
     streamingText,
     isStreaming,
-    translatorMode,
     sendMessage,
     getConversation,
     addMessage,

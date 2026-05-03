@@ -1,0 +1,14 @@
+{
+  "identifier": "mobile",
+  "description": "Mobile-only capability set for iOS and Android companion shells",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
+  "permissions": [
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-open-app-settings",
+    "notification:default"
+  ]
+}

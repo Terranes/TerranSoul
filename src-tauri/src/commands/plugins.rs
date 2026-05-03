@@ -106,10 +106,7 @@ pub async fn plugin_parse_manifest(json: String) -> Result<PluginManifest, Strin
     plugins::parse_plugin_manifest(&json).map_err(|e| e.to_string())
 }
 
-/// Invoke a contributed command by id (Chunk 22.4).
-///
-/// Returns a [`CommandResult`] echoing the command's metadata. Full
-/// execution lands in Chunk 22.7.
+/// Invoke a contributed command by id.
 #[tauri::command]
 pub async fn plugin_invoke_command(
     command_id: String,
@@ -118,11 +115,11 @@ pub async fn plugin_invoke_command(
 ) -> Result<CommandResult, String> {
     app_state
         .plugin_host
-        .invoke_command(&command_id, args)
+        .invoke_command_with_store(&command_id, args, &app_state.capability_store)
         .await
 }
 
-/// Invoke a slash-command by its name (without `/`) (Chunk 22.4).
+/// Invoke a slash-command by its name (without `/`).
 #[tauri::command]
 pub async fn plugin_invoke_slash_command(
     name: String,
@@ -131,6 +128,6 @@ pub async fn plugin_invoke_slash_command(
 ) -> Result<CommandResult, String> {
     app_state
         .plugin_host
-        .invoke_slash_command(&name, args)
+        .invoke_slash_command_with_store(&name, args, &app_state.capability_store)
         .await
 }

@@ -30,6 +30,39 @@ pub async fn add_memory(
     memory_type: String,
     state: State<'_, AppState>,
 ) -> Result<MemoryEntry, String> {
+    add_memory_inner(content, tags, importance, memory_type, &state).await
+}
+
+async fn add_memory_inner(
+    mut content: String,
+    mut tags: String,
+    mut importance: i64,
+    mut memory_type: String,
+    state: &AppState,
+) -> Result<MemoryEntry, String> {
+    state.plugin_host.activate_for_memory_tags(&tags).await;
+    let pre_hooks = state
+        .plugin_host
+        .run_memory_hooks(
+            crate::plugins::MemoryHookStage::PreStore,
+            crate::plugins::MemoryHookPayload {
+                stage: crate::plugins::MemoryHookStage::PreStore,
+                content,
+                tags,
+                importance,
+                memory_type,
+                entry_id: None,
+            },
+        )
+        .await;
+    for error in &pre_hooks.errors {
+        eprintln!("[plugins] PreStore memory hook failed: {error}");
+    }
+    content = pre_hooks.payload.content;
+    tags = pre_hooks.payload.tags;
+    importance = pre_hooks.payload.importance;
+    memory_type = pre_hooks.payload.memory_type;
+
     let mt = serde_json::from_value(serde_json::Value::String(memory_type))
         .unwrap_or(crate::memory::MemoryType::Fact);
 
@@ -48,7 +81,7 @@ pub async fn add_memory(
 
     // Best-effort embedding — non-blocking, silently ignored on failure.
     // Chunk 16.9: uses cloud embedding API when brain mode is FreeApi/PaidApi.
-    if let Some(emb) = embed(&state, &content).await {
+    if let Some(emb) = embed(state, &content).await {
         // Find near-duplicate while holding the lock, then release.
         let dup_info: Option<(i64, String)> = {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -114,6 +147,28 @@ pub async fn add_memory(
                 }
             }
         }
+    }
+
+    state
+        .plugin_host
+        .activate_for_memory_tags(&entry.tags)
+        .await;
+    let post_hooks = state
+        .plugin_host
+        .run_memory_hooks(
+            crate::plugins::MemoryHookStage::PostStore,
+            crate::plugins::MemoryHookPayload {
+                stage: crate::plugins::MemoryHookStage::PostStore,
+                content: entry.content.clone(),
+                tags: entry.tags.clone(),
+                importance: entry.importance,
+                memory_type: entry.memory_type.as_str().to_string(),
+                entry_id: Some(entry.id),
+            },
+        )
+        .await;
+    for error in &post_hooks.errors {
+        eprintln!("[plugins] PostStore memory hook failed: {error}");
     }
 
     Ok(entry)
@@ -519,7 +574,7 @@ pub async fn backfill_embeddings(state: State<'_, AppState>) -> Result<usize, St
     Ok(count)
 }
 
-/// Return the current database schema version and migration status.
+/// Return the current database schema version and storage status.
 #[tauri::command]
 pub async fn get_schema_info(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -529,7 +584,7 @@ pub async fn get_schema_info(state: State<'_, AppState>) -> Result<serde_json::V
 
     Ok(serde_json::json!({
         "schema_version": version,
-        "target_version": crate::memory::migrations::TARGET_VERSION,
+        "target_version": crate::memory::schema::CANONICAL_SCHEMA_VERSION,
         "total_memories": count,
         "unembedded_count": unembedded,
         "embedded_count": count as usize - unembedded,
@@ -1375,6 +1430,92 @@ pub async fn export_to_obsidian(
     crate::memory::obsidian_export::export_to_vault(path, &entries)
 }
 
+// ── Bidirectional Obsidian sync (Chunk 17.7) ─────────────────────────
+
+/// Run a single bidirectional sync cycle with an Obsidian vault.
+///
+/// Exports new/changed memories → vault and imports vault edits → DB.
+/// LWW conflict resolution: whichever side has the newer timestamp wins.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn obsidian_sync(
+    vault_dir: String,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::obsidian_sync::SyncReport, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(&vault_dir);
+    if !path.exists() {
+        return Err(format!("Vault directory does not exist: {vault_dir}"));
+    }
+    crate::memory::obsidian_sync::sync_bidirectional(path, &store)
+}
+
+/// Start background file-watching for bidirectional Obsidian sync.
+///
+/// Returns immediately. Changes in the vault will be auto-synced with
+/// a 1-second debounce. Call `obsidian_sync_stop` to stop watching.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn obsidian_sync_start(
+    vault_dir: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let path = std::path::PathBuf::from(&vault_dir);
+    if !path.exists() {
+        return Err(format!("Vault directory does not exist: {vault_dir}"));
+    }
+    let app_state = state.inner().clone();
+    let watcher = crate::memory::obsidian_sync::ObsidianWatcher::start_with_state(path, app_state)
+        .map_err(|e| format!("start watcher: {e}"))?;
+    let mut guard = state.obsidian_watcher.lock().await;
+    if let Some(old) = guard.take() {
+        old.stop();
+    }
+    *guard = Some(watcher);
+    Ok(())
+}
+
+/// Stop background Obsidian sync file-watching.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn obsidian_sync_stop(state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.obsidian_watcher.lock().await;
+    if let Some(watcher) = guard.take() {
+        watcher.stop();
+    }
+    Ok(())
+}
+
+// ── GraphRAG community detection + dual-level search (Chunk 16.6) ────
+
+/// Run community detection on the memory knowledge graph and store results.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_rag_detect_communities(state: State<'_, AppState>) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let communities = store
+        .detect_and_store_communities()
+        .map_err(|e| format!("detect communities: {e}"))?;
+    Ok(communities.len())
+}
+
+/// Dual-level GraphRAG search: entity + community retrieval fused via RRF.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_rag_search(
+    query: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::store::MemoryEntry>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let results = store
+        .graph_rag_search(&query, None, limit.unwrap_or(10))
+        .map_err(|e| format!("graph_rag_search: {e}"))?;
+    // Fetch full entries for the result ids.
+    let mut entries = Vec::with_capacity(results.len());
+    for (id, _score) in results {
+        if let Ok(entry) = store.get_by_id(id) {
+            entries.push(entry);
+        }
+    }
+    Ok(entries)
+}
+
 // ── Temporal reasoning queries (Chunk 17.3) ──────────────────────────
 
 /// Result of a temporal query: the parsed time range + matching memories.
@@ -1526,4 +1667,139 @@ pub async fn clear_all_data(state: State<'_, AppState>) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::package_manager::manifest::InstallMethod;
+    use crate::plugins::manifest::{
+        ActivationEvent, ContributedMemoryHook, Contributions, MemoryHookStage, PluginKind,
+        PluginManifest,
+    };
+
+    fn memory_hook_wasm(output_json: &str) -> Vec<u8> {
+        use wasm_encoder::{
+            CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
+            FunctionSection, Instruction, MemorySection, MemoryType, Module, TypeSection, ValType,
+        };
+
+        const OUTPUT_OFFSET: u64 = 1024;
+        let packed = ((OUTPUT_OFFSET << 32) | output_json.len() as u64) as i64;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types
+            .ty()
+            .function([ValType::I32, ValType::I32], [ValType::I64]);
+        module.section(&types);
+
+        let mut functions = FunctionSection::new();
+        functions.function(0);
+        module.section(&functions);
+
+        let mut memories = MemorySection::new();
+        memories.memory(MemoryType {
+            minimum: 1,
+            maximum: None,
+            memory64: false,
+            shared: false,
+            page_size_log2: None,
+        });
+        module.section(&memories);
+
+        let mut exports = ExportSection::new();
+        exports.export("memory", ExportKind::Memory, 0);
+        exports.export("memory_hook", ExportKind::Func, 0);
+        module.section(&exports);
+
+        let mut code = CodeSection::new();
+        let mut function = Function::new([]);
+        function.instruction(&Instruction::I64Const(packed));
+        function.instruction(&Instruction::End);
+        code.function(&function);
+        module.section(&code);
+
+        let mut data = DataSection::new();
+        data.active(
+            0,
+            &ConstExpr::i32_const(OUTPUT_OFFSET as i32),
+            output_json.as_bytes().iter().copied(),
+        );
+        module.section(&data);
+        module.finish()
+    }
+
+    fn memory_plugin_manifest(wasm_path: String) -> PluginManifest {
+        PluginManifest {
+            id: "memory-tag-rewriter".into(),
+            display_name: "Memory Tag Rewriter".into(),
+            version: "1.0.0".into(),
+            description: "Rewrites tags before memory storage".into(),
+            kind: PluginKind::MemoryProcessor,
+            install_method: InstallMethod::Wasm { url: wasm_path },
+            capabilities: Vec::new(),
+            activation_events: vec![ActivationEvent::OnMemoryTag { tag: "seed".into() }],
+            contributes: Contributions {
+                memory_hooks: vec![ContributedMemoryHook {
+                    id: "memory-tag-rewriter.pre-store".into(),
+                    stage: MemoryHookStage::PreStore,
+                    description: "Normalize memory tags".into(),
+                }],
+                ..Default::default()
+            },
+            system_requirements: None,
+            api_version: 1,
+            homepage: None,
+            license: None,
+            author: None,
+            icon: None,
+            publisher: None,
+            signature: None,
+            sha256: None,
+            dependencies: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn add_memory_applies_prestore_wasm_tag_rewriter() {
+        let state = AppState::for_test();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let wasm_path = temp_dir.path().join("tag-rewriter.wasm");
+        std::fs::write(
+            &wasm_path,
+            memory_hook_wasm(
+                r#"{"content":"Hooked memory","tags":"auto:seed, project:test","importance":5}"#,
+            ),
+        )
+        .unwrap();
+
+        state
+            .plugin_host
+            .install(memory_plugin_manifest(
+                wasm_path.to_string_lossy().to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let entry = add_memory_inner(
+            "Original memory".into(),
+            "seed:raw".into(),
+            2,
+            "fact".into(),
+            &state,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(entry.content, "Hooked memory");
+        assert_eq!(entry.tags, "auto:seed, project:test");
+        assert_eq!(entry.importance, 5);
+
+        let stored = {
+            let store = state.memory_store.lock().unwrap();
+            store.get_by_id(entry.id).unwrap()
+        };
+        assert_eq!(stored.content, "Hooked memory");
+        assert_eq!(stored.tags, "auto:seed, project:test");
+    }
 }

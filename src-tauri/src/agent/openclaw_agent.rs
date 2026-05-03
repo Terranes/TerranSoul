@@ -1,12 +1,14 @@
-//! OpenClaw bridge agent — example provider.
+//! OpenClaw bridge agent — legacy provider/parser support.
 //!
-//! This module is the **reference implementation** for integrating an external
-//! agent platform (OpenClaw) with TerranSoul's [`AgentProvider`] trait. It is
-//! installed via the Agent Marketplace as `openclaw-bridge` and demonstrates:
+//! The canonical user-facing OpenClaw integration is now the built-in
+//! `openclaw-bridge` plugin registered in [`crate::plugins::host`], matching the
+//! Translator Mode plugin path. This module remains as a small compatibility
+//! [`AgentProvider`] and reusable parser for `/openclaw` directives. It
+//! demonstrates:
 //!
 //! 1. **Capability gating** — chat / filesystem / network are declared in the
-//!    manifest (see [`crate::registry_server::catalog`]) and the user must
-//!    grant them via the consent dialog before any tool call may run.
+//!    plugin manifest (see [`crate::plugins::host`]) and the user must grant
+//!    them in the Plugins view before any tool call may run.
 //! 2. **Tool-call wiring** — the bridge inspects the user message for
 //!    OpenClaw-style tool directives (`/openclaw read <path>`, `/openclaw fetch <url>`)
 //!    and dispatches them through guarded handlers. Real OpenClaw deployments
@@ -135,7 +137,7 @@ impl OpenClawAgent {
         let cap = tool.required_capability();
         if !self.has_capability(cap).await {
             return Err(format!(
-                "openclaw: capability `{cap}` not granted — install via the Agent Marketplace and approve in the consent dialog"
+                "openclaw: capability `{cap}` not granted — approve the OpenClaw Bridge capability in the Plugins view"
             ));
         }
         if argument.is_empty() {
@@ -320,8 +322,8 @@ mod tests {
 
     #[test]
     fn openclaw_tool_required_capability_matches_manifest() {
-        // These must stay in sync with `registry_server::catalog::all_entries`
-        // for openclaw-bridge. If the manifest grows new capabilities, add a
+        // These must stay in sync with the built-in `openclaw-bridge` plugin
+        // manifest in `plugins::host`. If the plugin grows new tools, add a
         // matching `OpenClawTool` variant.
         assert_eq!(OpenClawTool::Read.required_capability(), "file_read");
         assert_eq!(OpenClawTool::Fetch.required_capability(), "network");

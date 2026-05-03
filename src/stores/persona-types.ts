@@ -29,6 +29,11 @@ export interface PersonaTraits {
   quirks: string[];
   /** Hard "don't" list (negative constraints). */
   avoid: string[];
+  /**
+   * Optional example dialogue lines showing how the persona speaks.
+   * Each entry is a single exchange formatted as "User: ... / Assistant: ...".
+   */
+  exampleDialogue: string[];
   /** Whether the persona block is currently injected into the system prompt. */
   active: boolean;
   /** Last edit timestamp (ms epoch). */
@@ -89,6 +94,49 @@ export interface LearnedMotion {
    * `'camera'` = mirror capture. Optional for backwards compatibility.
    */
   provenance?: 'generated' | 'camera';
+  /** Non-destructive polish provenance for candidates produced from another clip. */
+  polish?: LearnedMotionPolishMetadata;
+}
+
+/** Provenance attached to a polished learned-motion candidate. */
+export interface LearnedMotionPolishMetadata {
+  sourceMotionId: string;
+  backend: 'gaussian-v1' | string;
+  createdAt: number;
+  meanDisplacement: number;
+  maxDisplacement: number;
+  acceptedByUser: boolean;
+  preset?: MotionPolishPreset;
+  sigma?: number;
+  radius?: number | null;
+  pinEndpoints?: boolean;
+}
+
+/** Built-in native Gaussian smoothing presets for learned-motion polish. */
+export type MotionPolishPreset = 'light' | 'medium' | 'heavy';
+
+/** Frontend configuration for native learned-motion polish previews. */
+export interface MotionPolishConfig {
+  preset?: MotionPolishPreset;
+  sigma?: number;
+  radius?: number;
+  pinEndpoints?: boolean;
+}
+
+/** Non-destructive polish preview returned by the backend. */
+export interface MotionPolishPreview {
+  originalMotionId: string;
+  candidateId: string;
+  candidateMotion: LearnedMotion;
+  meanDisplacementByBone: Record<string, number>;
+  maxDisplacement: number;
+  warnings: string[];
+  appliedConfig: {
+    preset: MotionPolishPreset;
+    sigma: number;
+    radius: number | null;
+    pinEndpoints: boolean;
+  };
 }
 
 /** The default persona that materialises on first launch (see § 2.1). */
@@ -101,6 +149,7 @@ export function defaultPersona(): PersonaTraits {
     tone: ['warm', 'concise'],
     quirks: [],
     avoid: ['unsolicited medical, legal, or financial advice'],
+    exampleDialogue: [],
     active: true,
     updatedAt: 0,
   };
@@ -122,6 +171,7 @@ export function migratePersonaTraits(raw: unknown): PersonaTraits {
   if (Array.isArray(r.tone)) out.tone = r.tone.filter((x): x is string => typeof x === 'string');
   if (Array.isArray(r.quirks)) out.quirks = r.quirks.filter((x): x is string => typeof x === 'string');
   if (Array.isArray(r.avoid)) out.avoid = r.avoid.filter((x): x is string => typeof x === 'string');
+  if (Array.isArray(r.exampleDialogue)) out.exampleDialogue = r.exampleDialogue.filter((x): x is string => typeof x === 'string');
   if (typeof r.active === 'boolean') out.active = r.active;
   if (typeof r.updatedAt === 'number') out.updatedAt = r.updatedAt;
   return out;

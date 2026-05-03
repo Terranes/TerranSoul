@@ -1,7 +1,7 @@
 # Brain & Memory — Advanced Architecture Design
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
-> Last updated: 2026-04-25  
+> Last updated: 2026-05-02
 > **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
 
 ---
@@ -22,6 +22,8 @@
 4. [Hybrid RAG Pipeline](#hybrid-rag-pipeline)
    - [6-Signal Scoring Formula](#6-signal-scoring-formula)
    - [RAG Injection Flow](#rag-injection-flow)
+  - [Tool Plugins And Brain Routing](#tool-plugins-and-brain-routing)
+  - [Memory Plugin Hooks](#memory-plugin-hooks)
    - [Embedding & Vector Search](#embedding--vector-search)
 5. [Decay & Garbage Collection](#decay--garbage-collection)
 6. [Knowledge Graph Vision](#knowledge-graph-vision)
@@ -345,7 +347,7 @@ Not all categories belong in all tiers:
 
 **Key insight**: Emotional memories should decay fast in long-term (you don't want "user was stressed on April 3rd" cluttering RAG forever), but personal identity ("user's name is Alex") should essentially never decay.
 
-**Implementation path**: Add a `category` column in a V5 migration, or use structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) to avoid schema changes. Tag prefixes are recommended first — they work with the existing search infrastructure and don't require a migration.
+**Implementation path**: The canonical V13 schema includes an optional `category` column, while structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) remain the primary portable categorisation layer.
 
 > **As-built (2026-04-24).** Tag-prefix approach implemented:
 > - **Chunk 18.4** — `memory::tag_vocabulary` with `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`.
@@ -359,7 +361,7 @@ Not all categories belong in all tiers:
 ## 3.5 Cognitive Memory Axes (Episodic / Semantic / Procedural)
 
 > **Status:** classifier landed at `src-tauri/src/memory/cognitive_kind.rs`
-> alongside ontology tag prefixes; **no V6 schema migration**.
+> alongside ontology tag prefixes; **no extra schema change**.
 
 ### 3.5.1 The question
 
@@ -627,6 +629,7 @@ final_score =
 > - **Contradiction resolution** (Chunk 17.2) — LLM-powered conflict detection + soft-closure
 > - **Temporal reasoning** (Chunk 17.3) — natural-language time-range queries
 > - **Memory versioning** (Chunk 16.12) — non-destructive V8 edit history
+> - **Plugin memory hooks** — sandboxed `pre_store` / `post_store` processors can normalize or index memory payloads without schema changes
 >
 > See the § 19.2 research survey rows and `rules/completion-log.md` for as-built details.
 
@@ -690,6 +693,70 @@ User types: "What are the filing deadlines?"
 │                                                                      │
 │ → LLM generates response grounded in retrieved memories             │
 └──────────────────────────────────────────────────────────────────────┘
+```
+
+### Tool Plugins And Brain Routing
+
+Tool integrations that do not replace the active brain should live in the
+plugin host, not the Agent Marketplace or local-model selector. The
+`openclaw-bridge` built-in plugin is the reference case: `/openclaw read`,
+`/openclaw fetch`, and `/openclaw chat` are command/slash-command contributions
+registered by `PluginHost::with_builtin_plugins()`. The active brain still owns
+conversation planning and any RAG-grounded answer, while OpenClaw owns the
+external tool runtime behind explicit plugin capability consent.
+
+This split keeps the brain surface coherent:
+
+- **Brain mode** chooses the LLM provider and embedding path.
+- **Memory/RAG** decides which long-term context enters the prompt.
+- **Plugin commands** perform bounded side effects or external tool calls.
+- **CapabilityStore** gates sensitive plugin operations by plugin id.
+
+The local Ollama system prompt may recommend OpenClaw as an extension, but it
+must describe it as the `openclaw-bridge` plugin rather than a model tag or
+installable agent package.
+
+### Memory Plugin Hooks
+
+TerranSoul plugins can contribute sandboxed memory processors through
+`contributes.memory_hooks` in `terransoul-plugin.json`. The host keeps these
+hooks lazy by default: a plugin with `activation_events: [{ "type":
+"on_memory_tag", "tag": "project" }]` activates only when an incoming or
+persisted memory has either the exact tag (`project`) or a prefix-qualified tag
+(`project:terran-soul`).
+
+Supported stages:
+
+| Stage | Timing | Can mutate stored memory? | Intended use |
+|---|---|---:|---|
+| `pre_store` | Before `add_memory` parses `MemoryType`, embeds content, and writes to SQLite | Yes | Normalize tags, enrich content, adjust importance, classify type |
+| `post_store` | After SQLite persistence and built-in auto-tagging | No | External indexing, notifications, lightweight audit side effects |
+
+The hook payload is JSON:
+
+```json
+{
+  "stage": "pre_store",
+  "content": "User prefers local-first tools",
+  "tags": "preferences,local",
+  "importance": 3,
+  "memory_type": "preference",
+  "entry_id": null
+}
+```
+
+WASM processors export `memory_hook(input_ptr: i32, input_len: i32) -> i64` and
+an exported `memory`. TerranSoul writes the JSON payload into guest memory,
+runs the hook inside `WasmRunner`, and reads a JSON patch from the returned
+packed pointer/length (`ptr << 32 | len`). Missing fields are left unchanged.
+Invalid JSON or sandbox failures are logged and the original payload continues
+through the memory pipeline, preserving the local-first fallback contract.
+
+```json
+{
+  "tags": "personal:preference, tool:local-first",
+  "importance": 4
+}
 ```
 
 ### Embedding & Vector Search
@@ -901,7 +968,7 @@ schema (April 2026).
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Shipped `memory_edges` table (V5 migration):**
+**Shipped `memory_edges` table (canonical schema):**
 
 ```sql
 CREATE TABLE memory_edges (
@@ -1136,9 +1203,20 @@ For developers and advanced users:
 
 ## 8. SQLite Schema
 
-### Current Schema (V4)
+### Current Canonical Schema (V13)
+
+Chunk 19.1 collapsed the pre-release migration runner into a single canonical
+initializer at `src-tauri/src/memory/schema.rs`. Fresh SQLite databases are
+created directly at V13, and `schema_version` records one canonical row rather
+than a historical migration ledger.
 
 ```sql
+CREATE TABLE schema_version (
+  version     INTEGER PRIMARY KEY,
+  applied_at  INTEGER NOT NULL,
+  description TEXT    NOT NULL DEFAULT ''
+);
+
 CREATE TABLE memories (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     content       TEXT    NOT NULL,
@@ -1153,10 +1231,16 @@ CREATE TABLE memories (
     source_hash   TEXT,                          -- SHA-256 for dedup/staleness
     expires_at    INTEGER,                       -- TTL for auto-expiry
     tier          TEXT    NOT NULL DEFAULT 'long',  -- short|working|long
+    decay_score   REAL    NOT NULL DEFAULT 1.0,  -- 0.01–1.0 freshness
     session_id    TEXT,                          -- Links working memories to session
     parent_id     INTEGER,                       -- Summary → source memory link
     token_count   INTEGER,                       -- Content size in tokens
-    decay_score   REAL    NOT NULL DEFAULT 1.0   -- 0.01–1.0 freshness
+    valid_to      INTEGER,                       -- Soft-close timestamp
+    obsidian_path TEXT,                          -- Vault-relative .md path
+    last_exported INTEGER,                       -- Unix-ms export timestamp
+    category      TEXT,                          -- Optional taxonomy category
+    updated_at    INTEGER,                       -- CRDT LWW timestamp
+    origin_device TEXT                           -- CRDT tiebreaker device id
 );
 
 CREATE INDEX idx_memories_importance ON memories(importance DESC);
@@ -1164,61 +1248,80 @@ CREATE INDEX idx_memories_created    ON memories(created_at DESC);
 CREATE INDEX idx_memories_tier       ON memories(tier);
 CREATE INDEX idx_memories_session    ON memories(session_id);
 CREATE INDEX idx_memories_decay      ON memories(decay_score);
-CREATE INDEX idx_memories_source     ON memories(source_hash);
-
-CREATE TABLE schema_version (
-    version     INTEGER PRIMARY KEY,
-    applied_at  INTEGER NOT NULL,
-    description TEXT    NOT NULL DEFAULT ''
-);
-```
-
-### Proposed Schema Changes
-
-**V6 — Category column (proposed):**
-```sql
-ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general';
+  CREATE INDEX idx_memories_source_hash ON memories(source_hash);
 CREATE INDEX idx_memories_category ON memories(category);
-```
+  CREATE INDEX idx_memories_updated_at ON memories(updated_at);
 
-### Shipped V5 — Entity-relationship edges
-
-```sql
 CREATE TABLE memory_edges (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    src_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    dst_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    rel_type   TEXT    NOT NULL,
-    confidence REAL    NOT NULL DEFAULT 1.0,
-    source     TEXT    NOT NULL DEFAULT 'user',  -- user | llm | auto
-    created_at INTEGER NOT NULL,
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_id      INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    dst_id      INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    rel_type    TEXT    NOT NULL,
+    confidence  REAL    NOT NULL DEFAULT 1.0,
+    source      TEXT    NOT NULL DEFAULT 'user',  -- user | llm | auto
+    created_at  INTEGER NOT NULL,
+    valid_from  INTEGER,
+    valid_to    INTEGER,
+    edge_source TEXT,                             -- e.g. gitnexus:<scope>
     UNIQUE(src_id, dst_id, rel_type)
 );
 
 CREATE INDEX idx_edges_src  ON memory_edges(src_id);
 CREATE INDEX idx_edges_dst  ON memory_edges(dst_id);
 CREATE INDEX idx_edges_type ON memory_edges(rel_type);
+  CREATE INDEX idx_edges_valid_to ON memory_edges(valid_to);
+  CREATE INDEX idx_edges_edge_source ON memory_edges(edge_source);
+
+  CREATE TABLE memory_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id   INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    version_num INTEGER NOT NULL,
+    content     TEXT    NOT NULL,
+    tags        TEXT    NOT NULL DEFAULT '',
+    importance  INTEGER NOT NULL DEFAULT 3,
+    memory_type TEXT    NOT NULL DEFAULT 'fact',
+    created_at  INTEGER NOT NULL,
+    UNIQUE(memory_id, version_num)
+  );
+  CREATE INDEX idx_versions_memory ON memory_versions(memory_id);
+
+  CREATE TABLE memory_conflicts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_a_id  INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    entry_b_id  INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    status      TEXT    NOT NULL DEFAULT 'open',
+    winner_id   INTEGER,
+    created_at  INTEGER NOT NULL,
+    resolved_at INTEGER,
+    reason      TEXT    NOT NULL DEFAULT ''
+  );
+  CREATE INDEX idx_conflicts_status ON memory_conflicts(status);
+
+  CREATE TABLE paired_devices (
+    device_id        TEXT PRIMARY KEY,
+    display_name     TEXT NOT NULL,
+    cert_fingerprint TEXT NOT NULL,
+    capabilities     TEXT NOT NULL DEFAULT '[]',
+    paired_at        INTEGER NOT NULL,
+    last_seen_at     INTEGER
+  );
+
+  CREATE TABLE sync_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    peer_device TEXT    NOT NULL,
+    direction   TEXT    NOT NULL,
+    entry_count INTEGER NOT NULL,
+    timestamp   INTEGER NOT NULL
+  );
+  CREATE INDEX idx_sync_log_peer ON sync_log(peer_device);
 -- PRAGMA foreign_keys=ON enforced at connection open.
 ```
 
-**V7 — External KG mirror provenance (shipped 2026-04-24):**
-```sql
-ALTER TABLE memory_edges ADD COLUMN edge_source TEXT;          -- e.g. 'gitnexus:repo:owner/name@sha'
-CREATE INDEX idx_edges_edge_source ON memory_edges(edge_source);
-```
-Distinct from the existing `source` column (which records who *asserted*
-an edge: `user` / `llm` / `auto`), `edge_source` records which **external
-knowledge graph** the edge was mirrored from. `NULL` is the default for
-every native edge. The Phase 13 Tier 3 `gitnexus_sync` Tauri command
-populates this with `gitnexus:<scope>` strings so `gitnexus_unmirror`
-can roll back exactly one sync without touching native or LLM-extracted
-edges. See `src-tauri/src/memory/gitnexus_mirror.rs`.
-
-**V8 — Obsidian sync metadata (proposed):**
-```sql
-ALTER TABLE memories ADD COLUMN obsidian_path TEXT;      -- vault-relative .md path
-ALTER TABLE memories ADD COLUMN last_exported INTEGER;   -- Unix timestamp
-```
+  `edge_source` remains distinct from the `source` column: `source` records who
+  asserted an edge (`user` / `llm` / `auto`), while `edge_source` records an
+  external mirror scope such as `gitnexus:repo:owner/name@sha`. The Phase 13 Tier
+  3 `gitnexus_sync` Tauri command populates it so `gitnexus_unmirror` can roll
+  back exactly one sync without touching native or LLM-extracted edges.
 
 ---
 
@@ -1715,7 +1818,7 @@ view rather than per-project deep-dives.
 | **Single binary** | Multiple processes to manage | One Tauri binary |
 | **Desktop UX** | Built for servers/APIs | Built for desktop companion |
 | **Performance** | Network overhead | In-process, <5ms search |
-| **Maintenance** | Version compatibility issues | Self-contained, auto-migrating |
+| **Maintenance** | Version compatibility issues | Self-contained canonical schema |
 
 TerranSoul's approach: **take the best ideas** from these frameworks (Mem0's conflict detection, LlamaIndex's chunking, Chroma's Rust-native search, RAGFlow's access tracking, Cognee's entity extraction vision) and **implement them natively in Rust** as part of the Tauri binary.
 
@@ -1737,7 +1840,10 @@ Download from https://sqlitebrowser.org/dl/ — open `memory.db` directly:
 │                                                          │
 │ Tables:                                                  │
 │  ├── memories (15,247 rows)                              │
-│  └── schema_version (4 rows)                             │
+│  ├── memory_edges                                        │
+│  ├── memory_versions                                     │
+│  ├── memory_conflicts                                    │
+│  └── schema_version (1 canonical row)                    │
 │                                                          │
 │ ┌──────────────────────────────────────────────────────┐ │
 │ │ Browse Data │ Execute SQL │ DB Structure │ Edit Prag │ │
@@ -1758,7 +1864,7 @@ Download from https://sqlitebrowser.org/dl/ — open `memory.db` directly:
 ```bash
 sqlite3 "%APPDATA%/com.terransoul.app/memory.db"
 
-.tables        -- → memories  schema_version
+.tables        -- → memories memory_edges memory_versions memory_conflicts paired_devices schema_version sync_log
 .schema memories
 ```
 
@@ -1796,7 +1902,7 @@ FROM memories
 WHERE embedding IS NOT NULL
 LIMIT 5;
 
--- Migration history
+-- Canonical schema marker
 SELECT version, description,
        datetime(applied_at / 1000, 'unixepoch', 'localtime') AS applied
 FROM schema_version
@@ -1925,8 +2031,8 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  │     (multi-select chip row) — Chunk 18.3                         │
 │  └── ✓ Obsidian vault export (one-way) — Chunk 18.5                │
 │                                                                     │
-│  PHASE 3 — Entity Graph (✅ Shipped — V5 schema)                    │
-│  ├── ✓ memory_edges table (V5 migration, FK cascade)               │
+│  PHASE 3 — Entity Graph (✅ Shipped — canonical schema)             │
+│  ├── ✓ memory_edges table (FK cascade)                             │
 │  ├── ✓ LLM-powered edge extraction (extract_edges_via_brain)       │
 │  ├── ✓ Relationship type taxonomy (17 curated types + free-form)   │
 │  ├── ✓ Multi-hop RAG via graph traversal (hybrid_search_with_graph)│
@@ -1970,7 +2076,10 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Memory importance auto-adjustment from access_count         │
 │  │     (`MemoryStore::adjust_importance_by_access`,                  │
 │  │      command `adjust_memory_importance`) — Chunk 17.4            │
-│  └── ○ Cross-device memory merge via CRDT sync                    │
+│  └── ✓ Cross-device memory merge via CRDT sync                    │
+│        (`memory::crdt_sync` LWW deltas + `link::handlers`         │
+│         Soul Link `memory_sync` / `memory_sync_request`,           │
+│         Unix-ms `sync_log` watermarks) — Chunks 17.5a/b            │
 │                                                                     │
 │  PHASE 6 — Modern RAG (April 2026 research absorption — see §19)   │
 │  ├── ✓ Reciprocal Rank Fusion utility (memory/fusion.rs)           │
@@ -1983,8 +2092,8 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  ├── ✓ Contextual Retrieval (Anthropic 2024) — LLM-prepended chunk │
 │  │     context before embedding (`memory::contextualize`,          │
 │  │     `AppSettings.contextual_retrieval`) — Chunk 16.2            │
-│  ├── ◐ Late chunking — `memory::late_chunking` pooling utility    │
-│  │      shipped (Chunk 16.3a); 16.3b wires long-context embedder  │
+│  ├── ✓ Late chunking ingest integration — opt-in whole-document    │
+│  │     token embeddings + pooled chunk vectors via `late_chunking` │
 │  ├── ○ GraphRAG / LightRAG-style community summaries over          │
 │  │     memory_edges (multi-hop + LLM cluster summary)              │
 │  ├── ◐ Self-RAG controller shipped (`orchestrator::self_rag` —    │
@@ -2052,7 +2161,7 @@ console.log(`Embedded ${count} new entries`);
 
 // Check database schema info
 const info = await invoke('get_schema_info');
-// { schema_version: 4, total_memories: 15247, embedded_count: 15200, ... }
+// { schema_version: 13, total_memories: 15247, embedded_count: 15200, ... }
 ```
 
 ### "What's the difference between search and semantic search?"
@@ -2135,11 +2244,11 @@ Quick reference for all diagrams in this document:
 | 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | � | `src-tauri/src/memory/crag.rs` ships the **pure evaluator** — `build_evaluator_prompts` + `parse_verdict` + `aggregate` over CORRECT/AMBIGUOUS/INCORRECT (Chunk 16.5a). Query-rewrite + web-search fallback is the follow-up Chunk 16.5b. |
 | 7 | **GraphRAG** ([Microsoft, 2024](https://github.com/microsoft/graphrag)) | LLM extracts entities + relations into a KG, runs Leiden community detection, summarizes each community; queries hit community summaries first | 🟡 → 🔵 | Foundations: `memory_edges` V5 + `multi_hop_search_memories` (§6). Missing: community detection + LLM community-summary rollups. Phase 6. |
 | 8 | **LightRAG** (HKU, 2024) | GraphRAG variant: dual-level retrieval (low-level entity + high-level theme) with incremental graph updates; cheaper than full GraphRAG | 🔵 | Phase 6 — natural follow-on once community summaries land |
-| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | � | Pooling utility shipped in `memory::late_chunking` (Chunk 16.3a — `mean_pool_token_embeddings`, `pool_chunks`, `spans_from_token_counts`). Chunk 16.3b wires the long-context embedder into the ingest pipeline. |
+| 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | ✅ | `memory::late_chunking` now includes pooling plus chunk↔token alignment (`CharSpan`, `token_spans_for_char_spans`), and `run_ingest_task` uses it behind `AppSettings.late_chunking`. `OllamaAgent::embed_tokens` calls `/api/embed` with `truncate=false` and accepts token-vector response shapes with offsets or token text. If the local model returns standard pooled embeddings, ingestion falls back to the existing per-chunk embedding path. Chunk 16.3b. |
 | 10 | **Cross-encoder reranking** (BGE-reranker-v2-m3, Cohere Rerank 3, etc.) | Second-pass scorer over top-k candidates with a query-doc joint encoder, much higher precision than bi-encoder cosine | ✅ | `src-tauri/src/memory/reranker.rs` (prompt + score parser + reorder logic, 14 unit tests) + `OllamaAgent::rerank_score` + `rerank_search_memories` Tauri command. Uses **LLM-as-judge** with the active brain (no extra model download). Unscored candidates are kept rather than dropped, preserving recall when the brain is flaky. Interface (`(query, document) -> Option<u8>`) is identical to a future BGE/mxbai backend so swapping is a one-line change. |
 | 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | ✅ | `src-tauri/src/memory/matryoshka.rs` — `truncate_and_normalize` + `two_stage_search`, plus `matryoshka_search_memories` Tauri command. Default fast-dim 256 for `nomic-embed-text`. Chunk 16.8. |
 | 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | ✅ | `src-tauri/src/memory/consolidation.rs` — `run_sleep_time_consolidation` job runs during idle, links short→working→long, surfaces stats via `ConsolidationResult`. Chunk 16.7. |
-| 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | ✅ | V6 schema migration adds two nullable Unix-ms columns to `memory_edges` (`valid_from` inclusive, `valid_to` exclusive — open ends mean "always"). `MemoryEdge::is_valid_at(t)` is the pure interval predicate; `MemoryStore::get_edges_for_at(memory, dir, valid_at)` is the point-in-time query (when `valid_at = None` it preserves the legacy "return all edges" behaviour for full back-compat). `MemoryStore::close_edge(id, t)` records supersession; pairing it with `add_edge { valid_from: Some(t) }` expresses "fact X changed value at time t" as two non-destructive rows. The `add_memory_edge` Tauri command gained `valid_from` / `valid_to` parameters; the new `close_memory_edge` command exposes supersession to the frontend. 13 new edge unit tests + 2 new migration tests (round-trip + sentinel). |
+| 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | ✅ | The canonical schema includes two nullable Unix-ms columns on `memory_edges` (`valid_from` inclusive, `valid_to` exclusive — open ends mean "always"). `MemoryEdge::is_valid_at(t)` is the pure interval predicate; `MemoryStore::get_edges_for_at(memory, dir, valid_at)` is the point-in-time query (when `valid_at = None` it preserves the legacy "return all edges" behaviour for full back-compat). `MemoryStore::close_edge(id, t)` records supersession; pairing it with `add_edge { valid_from: Some(t) }` expresses "fact X changed value at time t" as two non-destructive rows. The `add_memory_edge` Tauri command gained `valid_from` / `valid_to` parameters; the `close_memory_edge` command exposes supersession to the frontend. Edge unit tests plus canonical schema tests cover the shape. |
 | 14 | **Agentic RAG** (industry term, 2024–2026) | RAG embedded in an agent loop: plan → retrieve → reflect → re-retrieve → generate, with tool use | 🟡 | Foundations: roster + workflow engine (Chunk 1.5, `agents/roster.rs`). Phase 6: explicit retrieve-as-tool wiring. |
 | 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
 | 16 | **Long-context vs RAG ("just stuff 1M tokens")** | Use 200K–2M token windows instead of retrieval | ⚪ | Rejected for personal companion: cost-prohibitive on local hardware, attention blind spots, privacy. RAG remains primary; long-context is a per-call tactical choice. |
@@ -2202,6 +2311,7 @@ Quick reference for all diagrams in this document:
 │      ▼                                                                     │
 │   RUST DETERMINISTIC ROUTER  (no LLM in this layer)                       │
 │   ├── streaming::stream_chat       → match BrainMode { Free/Paid/Local }   │
+│   ├── phone_control::stream_chat   → same prompt assembly over gRPC-Web    │
 │   ├── ProviderRotator              → fastest healthy free provider         │
 │   ├── OllamaAgent::resolve_embed_model → nomic-embed-text → chat fallback │
 │   ├── MemoryStore::hybrid_search   → score every memory, top-k            │
@@ -2237,8 +2347,8 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 | 5 | **Local Ollama embedding model** | Pure code with cache | `OllamaAgent::resolve_embed_model` — try `nomic-embed-text`, else fall back to active chat model; cache result for 60s; mark unsupported permanently | `brain/ollama_agent.rs` | `nomic-embed-text` → chat model → skip vector signal entirely |
 | 6 | **Memory tier to write into** | User explicit + auto-promotion | `MemoryStore::add_memory(tier=Working/Long)`, `promote()` triggered by importance ≥ 4 | `memory/store.rs` | New entries default to Working |
 | 7 | **Memory tier to search** | Pure code | `hybrid_search` scans **all tiers**, applies `tier_priority` weight (working 1.0 → long 0.5 → short 0.3) | `memory/store.rs:574` | All tiers always considered |
-| 8 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command) | Frontend calls `hybrid_search_memories` for RAG injection; `search_memories` for the explicit search bar | `commands/memory.rs` | `hybrid_search` → degrades to keyword if embedding fails |
-| 9 | **Top-k for RAG injection** | Pure code (constant) | `top 5` after hybrid scoring; **no relevance threshold yet** (Phase 4 gap, §16) | `commands/streaming.rs` | Always inject top 5 |
+| 8 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command / phone-control stream) | Frontend calls `hybrid_search_memories` for explicit search; chat streams call hybrid retrieval for RAG injection | `commands/memory.rs` + `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | `hybrid_search` → degrades to keyword if embedding fails |
+| 9 | **Top-k for RAG injection** | Pure code + user threshold | Top 5 after hybrid scoring, filtered by `AppSettings.relevance_threshold` | `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | Empty block when nothing clears threshold |
 | 10 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
 | 11 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
 | 12 | **Cognitive kind** (episodic / semantic / procedural) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` | Defaults to `Semantic` |
@@ -2252,7 +2362,7 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 
 > User types: "What did the lawyer say about Cook County filings?"
 
-1. **Provider selection (rule 1, 2)** — Frontend calls `stream_chat` Tauri command. Backend reads `state.brain_mode`. If `FreeApi`, the `ProviderRotator` (rule 2) picks the fastest healthy provider; if `LocalOllama`, `stream_ollama` is called with the user-configured model (rule 4).
+1. **Provider selection (rule 1, 2)** — Desktop frontend calls the `send_message_stream` Tauri command; iOS calls `PhoneControl.StreamChatMessage` through `RemoteHost`. Backend reads `state.brain_mode`. If `FreeApi`, the `ProviderRotator` (rule 2) picks the fastest healthy provider; if `LocalOllama`, the user-configured model is used (rule 4).
 2. **History assembly (rule 7)** — Last 20 messages from `state.conversation` (short-term memory) are loaded into the prompt verbatim — no LLM decision, just a FIFO slice.
 3. **Embedding model selection (rule 5)** — Backend calls `OllamaAgent::embed_text(query)`. The cached resolver picks `nomic-embed-text` if installed; otherwise the chat model; otherwise returns `None` and the vector signal is skipped (degrades to 60% RAG quality, see §17 FAQ).
 4. **Hybrid search (rule 7, 8, 9)** — `MemoryStore::hybrid_search(query, embedding, limit=5)` scans **every tier** of every stored memory, scoring each with the 6-signal formula (§4). The cognitive-kind classifier (rule 12) is **not** invoked at search time — it is computed at write time and stored derived.
@@ -2536,7 +2646,7 @@ its own subprocess address space.
 |---|---|---|---|
 | 1 | 2.1 | ✅ done (2026-04-24) | Sidecar bridge + four read-only Tauri commands behind `code_intelligence` capability |
 | 2 | 2.2 | ✅ done (2026-04-24) | Fuse `gitnexus_query` results into `rerank_search_memories` recall stage via existing `memory::fusion::reciprocal_rank_fuse` |
-| 3 | 2.3 | ✅ done (2026-04-24) | V7 SQLite migration adds `edge_source` column to `memory_edges` (+ index). New `memory::gitnexus_mirror` module maps `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` into the existing 17-relation taxonomy and writes mirrored edges with `edge_source = 'gitnexus:<scope>'`. Tauri commands `gitnexus_sync` (opt-in; calls the sidecar's `graph` MCP tool) and `gitnexus_unmirror` (single-scope rollback). 11 unit tests + 4 extractor tests. |
+| 3 | 2.3 | ✅ done (2026-04-24) | The canonical SQLite schema includes the `edge_source` column on `memory_edges` (+ index). New `memory::gitnexus_mirror` module maps `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` into the existing 17-relation taxonomy and writes mirrored edges with `edge_source = 'gitnexus:<scope>'`. Tauri commands `gitnexus_sync` (opt-in; calls the sidecar's `graph` MCP tool) and `gitnexus_unmirror` (single-scope rollback). 11 unit tests + 4 extractor tests. |
 | 4 | 2.4 | ✅ done (2026-04-24) | New `src/components/CodeKnowledgePanel.vue` (sync form + mirror list with last-sync time + edge counts + per-row Unmirror + blast-radius `gitnexus_impact` probe) wired into `BrainView.vue`. New Tauri command `gitnexus_list_mirrors` (powered by `MemoryStore::list_external_mirrors("gitnexus:%")`) returns one row per mirrored scope ordered by most-recent-sync first. 9 Vitest unit tests + 3 new Rust unit tests. |
 
 ---
@@ -2715,6 +2825,25 @@ axum task receives `AppState` directly.
 ### 24.5 Test coverage
 
 22 Rust tests: 4 auth, 6 router, 3 tools, 11 integration (ephemeral ports via `portpicker`).
+
+### 24.6 gRPC-Web and RemoteHost (Phase 24)
+
+The same brain surface now has a browser-safe transport for the mobile companion. The tonic gRPC server uses `tonic_web::GrpcWebLayer` with HTTP/1 enabled, so a WebView can call `terransoul.brain.v1.Brain` without an Envoy proxy while native gRPC clients still use the same service definitions.
+
+Frontend callers do not talk directly to `invoke()` or Connect clients. They depend on `src/transport/remote-host.ts`, a shared `RemoteHost` contract with two implementations:
+
+- **Local desktop:** `createLocalRemoteHost()` adapts existing Tauri commands (`hybrid_search_memories_rrf`, `send_message`, workflow status, paired devices) into the same DTOs.
+- **Paired mobile/WebView:** `createGrpcWebRemoteHost()` uses `@bufbuild/connect` + `@bufbuild/connect-web` against hand-written protobuf-es descriptors in `src/transport/brain_pb.ts` and `src/transport/phone_control_pb.ts`.
+
+The adapter currently exposes `Brain.Health`, unary `Brain.Search`, and server-streaming `Brain.StreamSearch`, plus the Phase 24 phone-control RPCs for system status, VS Code/Copilot session status, workflow progress/continue, chat, and paired devices. Search modes remain the backend modes (`rrf`, `hybrid`, `hyde`); the phone only selects a mode and streams results, while retrieval, ranking, persona context, and memory injection stay server-side.
+
+Chunk 24.9 extends this same boundary to live chat. `PhoneControl.StreamChatMessage(ChatRequest) returns (stream ChatChunk)` runs on the desktop host and assembles the full system prompt there: `SYSTEM_PROMPT_FOR_STREAMING`, hybrid memory lookup above the relevance threshold, `[LONG-TERM MEMORY]`, persona block, and one-shot `[HANDOFF]` block. The stream reuses the Rust `StreamTagParser`, so `<anim>` / `<pose>` blocks are stripped before mobile receives text. The unary `SendChatMessage` remains as a fallback, but iOS chat uses `RemoteHost.streamChatMessage()` from `src/stores/remote-conversation.ts`.
+
+Frontend routing is deliberately boring: `src/stores/chat-store-router.ts` selects the existing local `conversation.ts` store on desktop and `remote-conversation.ts` when `src/utils/runtime-target.ts` detects iOS (or an explicit `remoteConversation` test override). `ChatView.vue` binds to the shared store surface, so message lists, agent thread filtering, queue/stop controls, subtitles, and mobile breakpoints remain the same while the backing stream moves from in-process Tauri IPC to the paired desktop `RemoteHost`.
+
+Chunk 24.10 adds the phone-control tool layer above `RemoteHost`. `src/transport/remote-tools.ts` defines MCP-style tool names — `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` — with JSON-schema-shaped inputs and capability metadata. The tools call existing Phase 24 RPCs through `RemoteHost`: Copilot session probing, workflow run listing, workflow progress lookup, and workflow continue/heartbeat. `remote-conversation.ts` routes headline phone prompts such as “what's Copilot doing on my desktop?” and “continue the next chunk” through these tools before falling back to normal hosted chat streaming, so the phone remains a microphone/screen while the desktop host owns the reasoning, state, and side effects.
+
+Chunk 24.11 adds local paired-mobile notifications for long-running desktop work without APNS or a cloud push relay. `src/stores/mobile-notifications.ts` starts only for the iOS/remote runtime, polls the paired desktop through `RemoteHost.listWorkflowRuns(true)` and `RemoteHost.getCopilotSessionStatus()`, observes local `task-progress` events when available, and sends native notifications through `tauri-plugin-notification` after the configured threshold (`AppSettings.mobile_notification_threshold_ms`, default 30 s). Workflow and task notifications fire only after a previously observed run reaches a terminal state; Copilot sessions notify once when active work crosses the threshold. The mobile shell stores enablement and poll timing in `AppSettings`, while the desktop host still owns workflow, Copilot, chat, RAG, and memory state.
 
 ---
 

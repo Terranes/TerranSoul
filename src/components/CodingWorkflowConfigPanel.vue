@@ -95,10 +95,18 @@ watch(
 </script>
 
 <template>
-  <section class="cw-panel" aria-labelledby="cw-heading">
+  <section
+    class="cw-panel"
+    aria-labelledby="cw-heading"
+  >
     <header class="cw-header">
       <div>
-        <h2 id="cw-heading" class="cw-title">Coding Workflow Context</h2>
+        <h2
+          id="cw-heading"
+          class="cw-title"
+        >
+          Coding Workflow Context
+        </h2>
         <p class="cw-subtitle">
           Choose which project files every coding task can read. Applies to
           the reusable <code>run_coding_task</code> runner and the autonomous
@@ -106,7 +114,10 @@ watch(
           your Coding LLM is Claude, OpenAI, DeepSeek, or a local endpoint.
         </p>
       </div>
-      <div v-if="store.preview?.repo_root" class="cw-repo">
+      <div
+        v-if="store.preview?.repo_root"
+        class="cw-repo"
+      >
         <span class="cw-repo-label">Repo</span>
         <code>{{ store.preview.repo_root }}</code>
       </div>
@@ -115,11 +126,17 @@ watch(
     <div class="cw-grid">
       <!-- Include directories -->
       <div class="cw-field">
-        <label class="cw-label" for="cw-dir-input">
+        <label
+          class="cw-label"
+          for="cw-dir-input"
+        >
           Include directories
           <span class="cw-hint">Repo-relative folders. Markdown files only, non-recursive.</span>
         </label>
-        <div class="cw-chips" role="list">
+        <div
+          class="cw-chips"
+          role="list"
+        >
           <span
             v-for="dir in store.config.include_dirs"
             :key="dir"
@@ -134,7 +151,10 @@ watch(
               @click="removeChip('include_dirs', dir)"
             >×</button>
           </span>
-          <span v-if="store.config.include_dirs.length === 0" class="cw-empty">
+          <span
+            v-if="store.config.include_dirs.length === 0"
+            class="cw-empty"
+          >
             No directories — context will be empty.
           </span>
         </div>
@@ -145,8 +165,13 @@ watch(
             class="cw-input"
             placeholder="e.g. rules"
             @keydown.enter.prevent="addDir"
-          />
-          <button type="button" class="cw-btn-secondary" :disabled="!dirInput.trim()" @click="addDir">
+          >
+          <button
+            type="button"
+            class="cw-btn-secondary"
+            :disabled="!dirInput.trim()"
+            @click="addDir"
+          >
             Add directory
           </button>
         </div>
@@ -154,11 +179,17 @@ watch(
 
       <!-- Include files -->
       <div class="cw-field">
-        <label class="cw-label" for="cw-file-input">
+        <label
+          class="cw-label"
+          for="cw-file-input"
+        >
           Include files
           <span class="cw-hint">Specific repo-relative files, e.g. <code>README.md</code>.</span>
         </label>
-        <div class="cw-chips" role="list">
+        <div
+          class="cw-chips"
+          role="list"
+        >
           <span
             v-for="f in store.config.include_files"
             :key="f"
@@ -173,7 +204,10 @@ watch(
               @click="removeChip('include_files', f)"
             >×</button>
           </span>
-          <span v-if="store.config.include_files.length === 0" class="cw-empty">
+          <span
+            v-if="store.config.include_files.length === 0"
+            class="cw-empty"
+          >
             No explicit files configured.
           </span>
         </div>
@@ -184,8 +218,13 @@ watch(
             class="cw-input"
             placeholder="e.g. README.md"
             @keydown.enter.prevent="addFile"
-          />
-          <button type="button" class="cw-btn-secondary" :disabled="!fileInput.trim()" @click="addFile">
+          >
+          <button
+            type="button"
+            class="cw-btn-secondary"
+            :disabled="!fileInput.trim()"
+            @click="addFile"
+          >
             Add file
           </button>
         </div>
@@ -193,11 +232,17 @@ watch(
 
       <!-- Exclude paths -->
       <div class="cw-field">
-        <label class="cw-label" for="cw-exclude-input">
+        <label
+          class="cw-label"
+          for="cw-exclude-input"
+        >
           Exclude paths
           <span class="cw-hint">Skip these by exact path or basename match.</span>
         </label>
-        <div class="cw-chips" role="list">
+        <div
+          class="cw-chips"
+          role="list"
+        >
           <span
             v-for="p in store.config.exclude_paths"
             :key="p"
@@ -212,7 +257,10 @@ watch(
               @click="removeChip('exclude_paths', p)"
             >×</button>
           </span>
-          <span v-if="store.config.exclude_paths.length === 0" class="cw-empty">
+          <span
+            v-if="store.config.exclude_paths.length === 0"
+            class="cw-empty"
+          >
             Nothing excluded — every matched file is loaded.
           </span>
         </div>
@@ -223,8 +271,13 @@ watch(
             class="cw-input"
             placeholder="e.g. backlog.md"
             @keydown.enter.prevent="addExclude"
-          />
-          <button type="button" class="cw-btn-secondary" :disabled="!excludeInput.trim()" @click="addExclude">
+          >
+          <button
+            type="button"
+            class="cw-btn-secondary"
+            :disabled="!excludeInput.trim()"
+            @click="addExclude"
+          >
             Add exclusion
           </button>
         </div>
@@ -233,7 +286,10 @@ watch(
       <!-- Sliders -->
       <div class="cw-field cw-sliders">
         <div class="cw-slider">
-          <label class="cw-label" for="cw-file-cap">
+          <label
+            class="cw-label"
+            for="cw-file-cap"
+          >
             Per-file limit
             <span class="cw-value">{{ fmtKb(store.config.max_file_chars) }}</span>
           </label>
@@ -245,7 +301,7 @@ watch(
             max="8000"
             step="500"
             class="cw-range"
-          />
+          >
           <div class="cw-range-bounds">
             <span>1.0 KB</span>
             <span>8.0 KB</span>
@@ -253,7 +309,10 @@ watch(
         </div>
 
         <div class="cw-slider">
-          <label class="cw-label" for="cw-total-cap">
+          <label
+            class="cw-label"
+            for="cw-total-cap"
+          >
             Total budget
             <span class="cw-value">{{ fmtKb(store.config.max_total_chars) }}</span>
           </label>
@@ -265,7 +324,7 @@ watch(
             max="60000"
             step="1000"
             class="cw-range"
-          />
+          >
           <div class="cw-range-bounds">
             <span>10 KB</span>
             <span>60 KB</span>
@@ -275,9 +334,14 @@ watch(
     </div>
 
     <!-- Live preview -->
-    <section class="cw-preview" aria-live="polite">
+    <section
+      class="cw-preview"
+      aria-live="polite"
+    >
       <header class="cw-preview-header">
-        <h3 class="cw-preview-title">Live preview</h3>
+        <h3 class="cw-preview-title">
+          Live preview
+        </h3>
         <div class="cw-preview-summary">
           <span class="cw-stat">
             <strong>{{ fileCount }}</strong>
@@ -287,26 +351,45 @@ watch(
             <strong>{{ fmtKb(totalChars) }}</strong>
             <span>of {{ fmtKb(store.config.max_total_chars) }}</span>
           </span>
-          <span v-if="store.previewing" class="cw-stat cw-stat-muted">refreshing…</span>
+          <span
+            v-if="store.previewing"
+            class="cw-stat cw-stat-muted"
+          >refreshing…</span>
         </div>
       </header>
-      <div class="cw-cap-bar" :style="{ '--cap-color': totalCapColor }">
-        <div class="cw-cap-fill" :style="{ width: totalCapPct + '%' }"></div>
+      <div
+        class="cw-cap-bar"
+        :style="{ '--cap-color': totalCapColor }"
+      >
+        <div
+          class="cw-cap-fill"
+          :style="{ width: totalCapPct + '%' }"
+        />
       </div>
-      <ul v-if="store.preview && store.preview.documents.length" class="cw-doc-list">
-        <li v-for="d in store.preview.documents" :key="d.label" class="cw-doc">
+      <ul
+        v-if="store.preview && store.preview.documents.length"
+        class="cw-doc-list"
+      >
+        <li
+          v-for="d in store.preview.documents"
+          :key="d.label"
+          class="cw-doc"
+        >
           <span class="cw-doc-label">{{ d.label }}</span>
           <span class="cw-doc-bar">
             <span
               class="cw-doc-bar-fill"
               :class="{ 'cw-doc-bar-fill--trunc': isTruncated(d.char_count) }"
               :style="{ width: snippetPct(d.char_count) + '%' }"
-            ></span>
+            />
           </span>
           <span class="cw-doc-size">{{ fmtKb(d.char_count) }}</span>
         </li>
       </ul>
-      <p v-else class="cw-empty cw-empty-block">
+      <p
+        v-else
+        class="cw-empty cw-empty-block"
+      >
         No matching files in the bound repository. Add an include directory or
         verify your repo path.
       </p>
@@ -314,7 +397,13 @@ watch(
 
     <!-- Footer -->
     <footer class="cw-footer">
-      <p v-if="store.lastError" class="cw-error" role="alert">{{ store.lastError }}</p>
+      <p
+        v-if="store.lastError"
+        class="cw-error"
+        role="alert"
+      >
+        {{ store.lastError }}
+      </p>
       <div class="cw-footer-actions">
         <button
           type="button"

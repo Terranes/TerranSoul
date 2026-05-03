@@ -74,10 +74,12 @@ never exposed to another process or to the UI.
    If step 2 fails, step 3 MUST NOT execute. The in-memory value stays
    on the previous good state, and the command returns an `Err`.
 2. **Git operations are transactional.** The self-improve loop MUST
-   never leave a half-applied change in the working tree. Every
-   plan→branch→edit→commit cycle ends in one of: clean commit on the
-   feature branch, OR full `git restore` + `git switch` back to base.
-   No "uncommitted dirty branch" terminal states.
+   never leave a half-applied change in the user's working tree. Clean
+   active checkouts can stage generated changes only after review and
+   tests pass; dirty active checkouts MUST run autonomous apply/test in
+   a temporary git worktree and save a patch artifact instead of mixing
+   generated edits with user changes. No "uncommitted dirty branch"
+   terminal states.
 3. **Two-phase tray toggle.** Tray-driven self-improve toggles MUST
    persist the new `SelfImproveSettings` *before* starting/stopping
    the engine. If the engine fails to start, the persisted state is

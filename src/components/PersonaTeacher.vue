@@ -310,55 +310,88 @@ onUnmounted(stopCamera);
 </script>
 
 <template>
-  <div v-if="visible" class="pt-root">
+  <div
+    v-if="visible"
+    class="pt-root"
+  >
     <!-- ── Mode tabs ───────────────────────────────────────────────── -->
     <div class="pt-tabs">
       <button
         class="pt-tab"
         :class="{ 'pt-tab--active': mode === 'expression' }"
         @click="mode = 'expression'"
-      >🎭 Expression</button>
+      >
+        🎭 Expression
+      </button>
       <button
         class="pt-tab"
         :class="{ 'pt-tab--active': mode === 'motion' }"
         @click="mode = 'motion'"
-      >🪩 Motion</button>
+      >
+        🪩 Motion
+      </button>
     </div>
 
     <!-- ── Consent dialog ──────────────────────────────────────────── -->
-    <div v-if="showConsent" class="pt-consent">
+    <div
+      v-if="showConsent"
+      class="pt-consent"
+    >
       <p class="pt-consent-msg">
-        TerranSoul needs camera access to capture your {{ mode === 'expression' ? 'facial expression' : 'body motion' }}.<br />
+        TerranSoul needs camera access to capture your {{ mode === 'expression' ? 'facial expression' : 'body motion' }}.<br>
         <strong>This permission is for this session only</strong> — it is never saved.
       </p>
       <div class="pt-consent-actions">
-        <button class="pt-btn pt-btn--primary" @click="acceptConsent">
+        <button
+          class="pt-btn pt-btn--primary"
+          @click="acceptConsent"
+        >
           Allow This Session
         </button>
-        <button class="pt-btn pt-btn--ghost" @click="declineConsent">
+        <button
+          class="pt-btn pt-btn--ghost"
+          @click="declineConsent"
+        >
           Cancel
         </button>
       </div>
     </div>
 
     <!-- ── Camera off ──────────────────────────────────────────────── -->
-    <div v-else-if="!camera.active.value" class="pt-start">
-      <button class="pt-btn pt-btn--primary" @click="requestCamera">
+    <div
+      v-else-if="!camera.active.value"
+      class="pt-start"
+    >
+      <button
+        class="pt-btn pt-btn--primary"
+        @click="requestCamera"
+      >
         📷 Start Camera
       </button>
-      <p class="pt-hint">Camera is used only during this session.</p>
+      <p class="pt-hint">
+        Camera is used only during this session.
+      </p>
     </div>
 
     <!-- ── Camera active ───────────────────────────────────────────── -->
-    <div v-else class="pt-active">
+    <div
+      v-else
+      class="pt-active"
+    >
       <!-- Live badge -->
       <div class="pt-live-badge">
         <span class="pt-live-dot" /> CAMERA LIVE
-        <span v-if="motionRecording" class="pt-rec-badge">● REC {{ motionFrames.length }} frames</span>
+        <span
+          v-if="motionRecording"
+          class="pt-rec-badge"
+        >● REC {{ motionFrames.length }} frames</span>
       </div>
 
       <!-- Loading indicator -->
-      <div v-if="camera.loading.value" class="pt-loading">
+      <div
+        v-if="camera.loading.value"
+        class="pt-loading"
+      >
         Loading {{ mode === 'expression' ? 'face tracker' : 'pose tracker' }}…
       </div>
 
@@ -376,17 +409,31 @@ onUnmounted(stopCamera);
       <!-- ═══ Expression mode ═══════════════════════════════════════ -->
       <template v-if="mode === 'expression'">
         <!-- Capture / save flow -->
-        <div v-if="!capturedWeights" class="pt-capture-controls">
-          <button class="pt-btn pt-btn--accent" @click="capture">
+        <div
+          v-if="!capturedWeights"
+          class="pt-capture-controls"
+        >
+          <button
+            class="pt-btn pt-btn--accent"
+            @click="capture"
+          >
             📸 Capture Pose
           </button>
-          <button class="pt-btn pt-btn--ghost" @click="stopCamera">
+          <button
+            class="pt-btn pt-btn--ghost"
+            @click="stopCamera"
+          >
             Stop Camera
           </button>
         </div>
 
-        <div v-else class="pt-save-form">
-          <p class="pt-captured-label">✅ Expression captured!</p>
+        <div
+          v-else
+          class="pt-save-form"
+        >
+          <p class="pt-captured-label">
+            ✅ Expression captured!
+          </p>
 
           <label class="pt-field">
             <span>Name</span>
@@ -396,7 +443,7 @@ onUnmounted(stopCamera);
               placeholder="e.g. Smirk, Eyebrow Raise"
               maxlength="50"
               class="pt-input"
-            />
+            >
           </label>
 
           <label class="pt-field">
@@ -407,10 +454,15 @@ onUnmounted(stopCamera);
               placeholder="e.g. smirk, wink"
               maxlength="30"
               class="pt-input"
-            />
+            >
           </label>
 
-          <p v-if="saveError" class="pt-error">{{ saveError }}</p>
+          <p
+            v-if="saveError"
+            class="pt-error"
+          >
+            {{ saveError }}
+          </p>
 
           <div class="pt-save-actions">
             <button
@@ -420,7 +472,10 @@ onUnmounted(stopCamera);
             >
               {{ saving ? 'Saving…' : '💾 Save Expression' }}
             </button>
-            <button class="pt-btn pt-btn--ghost" @click="retake">
+            <button
+              class="pt-btn pt-btn--ghost"
+              @click="retake"
+            >
               ↩ Retake
             </button>
           </div>
@@ -429,7 +484,10 @@ onUnmounted(stopCamera);
 
       <!-- ═══ Motion mode ═══════════════════════════════════════════ -->
       <template v-else>
-        <div v-if="!motionDone" class="pt-capture-controls">
+        <div
+          v-if="!motionDone"
+          class="pt-capture-controls"
+        >
           <button
             v-if="!motionRecording"
             class="pt-btn pt-btn--accent"
@@ -444,12 +502,18 @@ onUnmounted(stopCamera);
           >
             ⏹ Stop ({{ Math.min(motionFrames.length / RECORD_FPS, MAX_RECORD_SECONDS).toFixed(1) }}s)
           </button>
-          <button class="pt-btn pt-btn--ghost" @click="stopCamera">
+          <button
+            class="pt-btn pt-btn--ghost"
+            @click="stopCamera"
+          >
             Stop Camera
           </button>
         </div>
 
-        <div v-else class="pt-save-form">
+        <div
+          v-else
+          class="pt-save-form"
+        >
           <p class="pt-captured-label">
             ✅ Motion captured! {{ motionFrames.length }} frames ({{ (motionFrames.length / RECORD_FPS).toFixed(1) }}s)
           </p>
@@ -462,7 +526,7 @@ onUnmounted(stopCamera);
               placeholder="e.g. Shrug, Wave"
               maxlength="50"
               class="pt-input"
-            />
+            >
           </label>
 
           <label class="pt-field">
@@ -473,10 +537,15 @@ onUnmounted(stopCamera);
               placeholder="e.g. shrug, wave"
               maxlength="30"
               class="pt-input"
-            />
+            >
           </label>
 
-          <p v-if="saveError" class="pt-error">{{ saveError }}</p>
+          <p
+            v-if="saveError"
+            class="pt-error"
+          >
+            {{ saveError }}
+          </p>
 
           <div class="pt-save-actions">
             <button
@@ -486,7 +555,10 @@ onUnmounted(stopCamera);
             >
               {{ saving ? 'Saving…' : '💾 Save Motion' }}
             </button>
-            <button class="pt-btn pt-btn--ghost" @click="discardMotion">
+            <button
+              class="pt-btn pt-btn--ghost"
+              @click="discardMotion"
+            >
               ↩ Discard
             </button>
           </div>
@@ -495,10 +567,19 @@ onUnmounted(stopCamera);
     </div>
 
     <!-- ── Saved expressions list ────────────────────────────────── -->
-    <div v-if="persona.learnedExpressions.length > 0 && mode === 'expression'" class="pt-saved">
-      <h4 class="pt-saved-title">Saved Expressions ({{ persona.learnedExpressions.length }})</h4>
+    <div
+      v-if="persona.learnedExpressions.length > 0 && mode === 'expression'"
+      class="pt-saved"
+    >
+      <h4 class="pt-saved-title">
+        Saved Expressions ({{ persona.learnedExpressions.length }})
+      </h4>
       <ul class="pt-saved-list">
-        <li v-for="expr in persona.learnedExpressions" :key="expr.id" class="pt-saved-item">
+        <li
+          v-for="expr in persona.learnedExpressions"
+          :key="expr.id"
+          class="pt-saved-item"
+        >
           <span class="pt-saved-name">{{ expr.name }}</span>
           <code class="pt-saved-trigger">{{ expr.trigger }}</code>
         </li>
@@ -506,10 +587,19 @@ onUnmounted(stopCamera);
     </div>
 
     <!-- ── Saved motions list ────────────────────────────────────── -->
-    <div v-if="persona.learnedMotions.length > 0 && mode === 'motion'" class="pt-saved">
-      <h4 class="pt-saved-title">Saved Motions ({{ persona.learnedMotions.length }})</h4>
+    <div
+      v-if="persona.learnedMotions.length > 0 && mode === 'motion'"
+      class="pt-saved"
+    >
+      <h4 class="pt-saved-title">
+        Saved Motions ({{ persona.learnedMotions.length }})
+      </h4>
       <ul class="pt-saved-list">
-        <li v-for="motion in persona.learnedMotions" :key="motion.id" class="pt-saved-item">
+        <li
+          v-for="motion in persona.learnedMotions"
+          :key="motion.id"
+          class="pt-saved-item"
+        >
           <span class="pt-saved-name">{{ motion.name }}</span>
           <span class="pt-saved-dur">{{ motion.duration_s.toFixed(1) }}s</span>
           <code class="pt-saved-trigger">{{ motion.trigger }}</code>

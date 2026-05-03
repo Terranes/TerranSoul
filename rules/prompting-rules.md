@@ -183,6 +183,73 @@ cargo clippy -- -D warnings  # must produce zero warnings
 
 ---
 
+## ENFORCEMENT RULE — Bounded Lint and QA Loops
+
+When a user asks to fix all warnings, perform a full audit, or loop until QA
+is clean, the agent MUST run a bounded, measurable loop rather than drifting
+through open-ended formatter/test churn.
+
+Required loop:
+
+1. Capture a baseline before edits: `git status --short`, the exact failing
+   command, and a warning/error count grouped by rule or test file.
+2. Read the current contents of any file named by the environment as changed
+   by the user, formatter, or another tool before editing it.
+3. Fix one coherent batch at a time, preferring narrow edits over broad
+   formatters in a dirty worktree. If a broad formatter is necessary, record
+   the changed-file set immediately after it runs.
+4. Rerun the same command after each batch and confirm that the issue count
+   decreased or the failure class changed in a clearly explained way.
+5. If three consecutive iterations do not reduce the count, or if the agent is
+   debugging its own ad-hoc helper script instead of the product, stop that
+   path. Replace the helper with a canonical repo command or report the blocker
+   to the user with the current evidence.
+6. Do not claim completion until the exact requested gate passes. For ESLint
+   warning cleanup, that means `npm run lint -- --max-warnings=0` exits 0.
+7. Finish with a compact changed-file summary, the commands that passed, and
+   any remaining warnings only if they are intentionally configured outside the
+   requested gate.
+
+This rule is specifically intended to prevent agents from getting stuck in
+recursive QA/lint loops, chasing PowerShell or helper-script mistakes, or
+declaring success from stale diagnostics after formatters changed files.
+
+---
+
+## ENFORCEMENT RULE — Stuck Recovery During Validation
+
+When a user says the agent is stuck, or when a validation/fix loop has spent
+more than two tool cycles without producing a new product change, a smaller
+passing command, or a clearer failure, the agent MUST stop the current loop and
+switch to recovery mode.
+
+Recovery mode requires:
+
+1. Re-baseline with `git status --short`, relevant editor diagnostics, and the
+   current contents of any file the environment says changed since the last
+   request.
+2. State the last completed command, the last failing or inconclusive command,
+   and the single next command that will move the task forward.
+3. Prefer canonical repo commands over custom helper scripts. If a helper script
+   fails because of shell syntax, path quoting, or generated-cache handling,
+   abandon that helper after one fix attempt.
+4. Avoid repeating expensive gates blindly. Run the smallest command that proves
+   the current patch, then run the full gate once at the end.
+5. Clean only artifacts produced by the agent's own validation run, such as
+   `*.tsbuildinfo` or regenerated screenshots, and never revert user edits or
+   unrelated dirty files.
+6. If remote CI logs are unavailable, reproduce the exact workflow command
+   locally and record that limitation. Retry fetching remote logs only after a
+   new signal appears, not in a polling loop.
+7. If the next step is still unclear after recovery mode, pause with the
+   collected evidence instead of continuing to run commands.
+
+This rule exists so future agents recover quickly from terminal/log-reading
+loops, stale diagnostics, and validation side quests while preserving the
+user's worktree.
+
+---
+
 ## Documentation Rules
 
 - Update `rules/milestones.md` after every completed chunk:

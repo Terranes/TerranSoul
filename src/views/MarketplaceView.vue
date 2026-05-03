@@ -543,107 +543,107 @@
 
               <!-- LM Studio sub-panel -->
               <template v-if="llmLocalProvider === 'lm_studio'">
-              <div class="llm-field">
-                <label>Base URL:</label>
-                <input
-                  v-model="llmLmStudioBaseUrl"
-                  type="url"
-                  placeholder="http://127.0.0.1:1234"
-                  class="llm-input"
-                >
-              </div>
-              <div class="llm-field">
-                <label>API token (optional):</label>
-                <input
-                  v-model="llmLmStudioApiKey"
-                  type="password"
-                  placeholder="Optional"
-                  class="llm-input"
-                >
-              </div>
-              <div :class="['bs-status-indicator', brainStore.lmStudioStatus?.running ? 'ok' : 'error']">
-                {{ brainStore.lmStudioStatus?.running ? `✅ LM Studio is running (${brainStore.lmStudioStatus.model_count} models)` : '❌ LM Studio is not running — start its local server' }}
-              </div>
-              <button
-                class="btn-secondary btn-sm"
-                @click="refreshLmStudioRuntime"
-              >
-                Refresh LM Studio
-              </button>
-              <div class="llm-field">
-                <label>Model:</label>
-                <input
-                  v-model="llmLmStudioModel"
-                  type="text"
-                  placeholder="qwen/qwen3-4b or Hugging Face URL"
-                  class="llm-input"
-                >
-              </div>
-              <div class="llm-field">
-                <label>Embedding model (optional):</label>
-                <input
-                  v-model="llmLmStudioEmbeddingModel"
-                  type="text"
-                  placeholder="text-embedding-nomic-embed-text-v1.5"
-                  class="llm-input"
-                >
-              </div>
-              <div
-                v-if="brainStore.lmStudioModels?.length"
-                class="llm-local-models"
-              >
-                <div
-                  v-for="m in brainStore.lmStudioModels"
-                  :key="m.key"
-                  :class="['llm-provider-card', { active: llmLmStudioModel === m.key }]"
-                  @click="llmLmStudioModel = m.key"
-                >
-                  <div class="llm-provider-row">
-                    <strong>{{ m.display_name || m.key }}</strong>
-                    <span
-                      v-if="m.loaded_instances.length"
-                      class="llm-current-badge"
-                    >loaded</span>
-                  </div>
-                  <small>{{ m.publisher || 'Local model' }} · {{ m.type }} · {{ formatBytes(m.size_bytes) }}</small>
-                  <small class="llm-provider-model"><code>{{ m.key }}</code></small>
+                <div class="llm-field">
+                  <label>Base URL:</label>
+                  <input
+                    v-model="llmLmStudioBaseUrl"
+                    type="url"
+                    placeholder="http://127.0.0.1:1234"
+                    class="llm-input"
+                  >
                 </div>
-              </div>
-              <div
-                v-if="brainStore.lmStudioDownload"
-                class="bs-status-indicator ok"
-              >
-                Download status: {{ brainStore.lmStudioDownload.status }}
-              </div>
-              <div
-                v-if="brainStore.lmStudioError"
-                class="bs-status-indicator error"
-              >
-                {{ brainStore.lmStudioError }}
-              </div>
-              <div class="llm-lmstudio-actions">
+                <div class="llm-field">
+                  <label>API token (optional):</label>
+                  <input
+                    v-model="llmLmStudioApiKey"
+                    type="password"
+                    placeholder="Optional"
+                    class="llm-input"
+                  >
+                </div>
+                <div :class="['bs-status-indicator', brainStore.lmStudioStatus?.running ? 'ok' : 'error']">
+                  {{ brainStore.lmStudioStatus?.running ? `✅ LM Studio is running (${brainStore.lmStudioStatus.model_count} models)` : '❌ LM Studio is not running — start its local server' }}
+                </div>
                 <button
                   class="btn-secondary btn-sm"
-                  :disabled="!llmLmStudioModel"
-                  @click="downloadLmStudioModel"
+                  @click="refreshLmStudioRuntime"
                 >
-                  Download
+                  Refresh LM Studio
                 </button>
-                <button
-                  class="btn-secondary btn-sm"
-                  :disabled="!llmLmStudioModel"
-                  @click="loadLmStudioModel"
+                <div class="llm-field">
+                  <label>Model:</label>
+                  <input
+                    v-model="llmLmStudioModel"
+                    type="text"
+                    placeholder="qwen/qwen3-4b or Hugging Face URL"
+                    class="llm-input"
+                  >
+                </div>
+                <div class="llm-field">
+                  <label>Embedding model (optional):</label>
+                  <input
+                    v-model="llmLmStudioEmbeddingModel"
+                    type="text"
+                    placeholder="text-embedding-nomic-embed-text-v1.5"
+                    class="llm-input"
+                  >
+                </div>
+                <div
+                  v-if="brainStore.lmStudioModels?.length"
+                  class="llm-local-models"
                 >
-                  Load
-                </button>
-                <button
-                  class="btn-primary btn-sm llm-apply-btn"
-                  :disabled="!brainStore.lmStudioStatus?.running || !llmLmStudioModel"
-                  @click="applyLmStudioModel"
+                  <div
+                    v-for="m in brainStore.lmStudioModels"
+                    :key="m.key"
+                    :class="['llm-provider-card', { active: llmLmStudioModel === m.key }]"
+                    @click="llmLmStudioModel = m.key"
+                  >
+                    <div class="llm-provider-row">
+                      <strong>{{ m.display_name || m.key }}</strong>
+                      <span
+                        v-if="m.loaded_instances.length"
+                        class="llm-current-badge"
+                      >loaded</span>
+                    </div>
+                    <small>{{ m.publisher || 'Local model' }} · {{ m.type }} · {{ formatBytes(m.size_bytes) }}</small>
+                    <small class="llm-provider-model"><code>{{ m.key }}</code></small>
+                  </div>
+                </div>
+                <div
+                  v-if="brainStore.lmStudioDownload"
+                  class="bs-status-indicator ok"
                 >
-                  Activate {{ llmLmStudioModel || '…' }}
-                </button>
-              </div>
+                  Download status: {{ brainStore.lmStudioDownload.status }}
+                </div>
+                <div
+                  v-if="brainStore.lmStudioError"
+                  class="bs-status-indicator error"
+                >
+                  {{ brainStore.lmStudioError }}
+                </div>
+                <div class="llm-lmstudio-actions">
+                  <button
+                    class="btn-secondary btn-sm"
+                    :disabled="!llmLmStudioModel"
+                    @click="downloadLmStudioModel"
+                  >
+                    Download
+                  </button>
+                  <button
+                    class="btn-secondary btn-sm"
+                    :disabled="!llmLmStudioModel"
+                    @click="loadLmStudioModel"
+                  >
+                    Load
+                  </button>
+                  <button
+                    class="btn-primary btn-sm llm-apply-btn"
+                    :disabled="!brainStore.lmStudioStatus?.running || !llmLmStudioModel"
+                    @click="applyLmStudioModel"
+                  >
+                    Activate {{ llmLmStudioModel || '…' }}
+                  </button>
+                </div>
               </template>
             </div>
 

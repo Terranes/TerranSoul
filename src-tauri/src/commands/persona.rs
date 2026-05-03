@@ -24,6 +24,7 @@
 //! streaming path renders the same block locally from `persona-prompt.ts`
 //! and bypasses this round-trip.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -302,6 +303,12 @@ fn delete_asset(dir: &Path, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn load_asset_json(dir: &Path, id: &str) -> Result<String, String> {
+    validate_id(id)?;
+    let path = dir.join(format!("{id}.json"));
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read learned asset: {e}"))
+}
+
 #[tauri::command]
 pub async fn list_learned_expressions(
     state: State<'_, AppState>,
@@ -346,6 +353,314 @@ pub async fn save_learned_motion(json: String, state: State<'_, AppState>) -> Re
 pub async fn delete_learned_motion(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
     delete_asset(&dir, &id)
+}
+
+/// Named smoothing presets for the native learned-motion polish command.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MotionPolishPreset {
+    Light,
+    Medium,
+    Heavy,
+}
+
+/// User-facing configuration for [`polish_learned_motion`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MotionPolishConfig {
+    #[serde(default)]
+    pub preset: Option<MotionPolishPreset>,
+    #[serde(default)]
+    pub sigma: Option<f64>,
+    #[serde(default)]
+    pub radius: Option<usize>,
+    #[serde(default)]
+    pub pin_endpoints: Option<bool>,
+}
+
+/// Effective smoothing configuration returned with a polish preview.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AppliedMotionPolishConfig {
+    pub preset: MotionPolishPreset,
+    pub sigma: f64,
+    pub radius: Option<usize>,
+    pub pin_endpoints: bool,
+}
+
+/// Non-destructive preview returned by [`polish_learned_motion`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MotionPolishPreview {
+    pub original_motion_id: String,
+    pub candidate_id: String,
+    pub candidate_motion: serde_json::Value,
+    pub mean_displacement_by_bone: BTreeMap<String, f64>,
+    pub max_displacement: f64,
+    pub warnings: Vec<String>,
+    pub applied_config: AppliedMotionPolishConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PolishableMotion {
+    id: String,
+    name: String,
+    trigger: String,
+    fps: f64,
+    duration_s: f64,
+    frames: Vec<crate::persona::motion_smooth::MotionFrame>,
+}
+
+/// Build a non-destructive polished candidate for a saved learned motion.
+///
+/// The command reads `motions/<id>.json`, runs the in-repo zero-phase Gaussian
+/// smoother, and returns a candidate motion object plus displacement stats.
+/// It never writes the candidate; the frontend must preview it and call the
+/// existing `save_learned_motion` only after the user accepts.
+#[tauri::command]
+pub async fn polish_learned_motion(
+    id: String,
+    config: Option<MotionPolishConfig>,
+    state: State<'_, AppState>,
+) -> Result<MotionPolishPreview, String> {
+    let dir = persona_subdir(&state.data_dir, MOTIONS_DIR)?;
+    let raw = load_asset_json(&dir, &id)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    polish_learned_motion_raw(&raw, config.unwrap_or_default(), now_ms)
+}
+
+fn polish_learned_motion_raw(
+    raw: &str,
+    config: MotionPolishConfig,
+    now_ms: i64,
+) -> Result<MotionPolishPreview, String> {
+    let mut source_value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("Invalid learned motion JSON: {e}"))?;
+    if source_value.get("kind").and_then(|value| value.as_str()) != Some("motion") {
+        return Err("Learned asset is not a motion clip".to_string());
+    }
+    let source: PolishableMotion = serde_json::from_value(source_value.clone())
+        .map_err(|e| format!("Learned motion is not polishable: {e}"))?;
+    if source.frames.is_empty() {
+        return Err("Learned motion has no frames to polish".to_string());
+    }
+    if source.frames.iter().all(|frame| frame.bones.is_empty()) {
+        return Err("Learned motion has no bone channels to polish".to_string());
+    }
+
+    let mut warnings = Vec::new();
+    if source.frames.len() <= 2 {
+        warnings
+            .push("Clip has two or fewer frames, so smoothing leaves it unchanged.".to_string());
+    }
+    let (smooth_config, applied_config) = build_smooth_config(config, &mut warnings);
+    let clip = crate::persona::motion_smooth::MotionClip {
+        fps: source.fps,
+        frames: source.frames.clone(),
+    };
+    let result = crate::persona::motion_smooth::smooth_clip(&clip, &smooth_config);
+    let mean_displacement_by_bone: BTreeMap<String, f64> =
+        result.displacement_stats.into_iter().collect();
+    let max_displacement = max_motion_displacement(&source.frames, &result.clip.frames);
+    let mean_displacement = if mean_displacement_by_bone.is_empty() {
+        0.0
+    } else {
+        mean_displacement_by_bone.values().sum::<f64>() / mean_displacement_by_bone.len() as f64
+    };
+
+    let candidate_id = format!("motion-polished-{}", uuid::Uuid::new_v4().simple());
+    let candidate = source_value
+        .as_object_mut()
+        .ok_or_else(|| "Learned motion root must be a JSON object".to_string())?;
+    candidate.insert("id".into(), serde_json::Value::String(candidate_id.clone()));
+    candidate.insert(
+        "name".into(),
+        serde_json::Value::String(format!("{} (polished)", source.name)),
+    );
+    candidate.insert(
+        "trigger".into(),
+        serde_json::Value::String(format!("{}-polished", source.trigger)),
+    );
+    candidate.insert("duration_s".into(), serde_json::json!(source.duration_s));
+    candidate.insert(
+        "frames".into(),
+        serde_json::to_value(&result.clip.frames).map_err(|e| e.to_string())?,
+    );
+    candidate.insert("learnedAt".into(), serde_json::json!(now_ms));
+    candidate.insert(
+        "polish".into(),
+        serde_json::json!({
+            "sourceMotionId": source.id,
+            "backend": "gaussian-v1",
+            "createdAt": now_ms,
+            "meanDisplacement": mean_displacement,
+            "maxDisplacement": max_displacement,
+            "acceptedByUser": false,
+            "preset": applied_config.preset,
+            "sigma": applied_config.sigma,
+            "radius": applied_config.radius,
+            "pinEndpoints": applied_config.pin_endpoints,
+        }),
+    );
+
+    Ok(MotionPolishPreview {
+        original_motion_id: source.id,
+        candidate_id,
+        candidate_motion: source_value,
+        mean_displacement_by_bone,
+        max_displacement,
+        warnings,
+        applied_config,
+    })
+}
+
+fn build_smooth_config(
+    config: MotionPolishConfig,
+    warnings: &mut Vec<String>,
+) -> (
+    crate::persona::motion_smooth::SmoothConfig,
+    AppliedMotionPolishConfig,
+) {
+    let preset = config.preset.unwrap_or(MotionPolishPreset::Medium);
+    let preset_sigma = match preset {
+        MotionPolishPreset::Light => 1.0,
+        MotionPolishPreset::Medium => 2.0,
+        MotionPolishPreset::Heavy => 4.0,
+    };
+    let raw_sigma = config.sigma.unwrap_or(preset_sigma);
+    let sigma = raw_sigma.clamp(0.1, 8.0);
+    if (sigma - raw_sigma).abs() > f64::EPSILON {
+        warnings.push("Smoothing sigma was clamped to the supported range 0.1..=8.0.".into());
+    }
+    let radius = config.radius.map(|radius| {
+        if radius > 60 {
+            warnings.push("Smoothing radius was clamped to 60 frames.".into());
+            60
+        } else {
+            radius
+        }
+    });
+    let pin_endpoints = config.pin_endpoints.unwrap_or(true);
+    (
+        crate::persona::motion_smooth::SmoothConfig {
+            sigma,
+            radius,
+            pin_endpoints,
+        },
+        AppliedMotionPolishConfig {
+            preset,
+            sigma,
+            radius,
+            pin_endpoints,
+        },
+    )
+}
+
+fn max_motion_displacement(
+    original: &[crate::persona::motion_smooth::MotionFrame],
+    polished: &[crate::persona::motion_smooth::MotionFrame],
+) -> f64 {
+    original
+        .iter()
+        .zip(polished.iter())
+        .flat_map(|(source_frame, polished_frame)| {
+            polished_frame
+                .bones
+                .iter()
+                .flat_map(move |(bone, polished_euler)| {
+                    let original_euler = source_frame.bones.get(bone).copied().unwrap_or([0.0; 3]);
+                    (0..3).map(move |axis| (polished_euler[axis] - original_euler[axis]).abs())
+                })
+        })
+        .fold(0.0, f64::max)
+}
+
+#[cfg(test)]
+mod motion_polish_tests {
+    use super::*;
+
+    fn noisy_motion_json() -> String {
+        serde_json::json!({
+            "id": "motion-source",
+            "kind": "motion",
+            "name": "Camera wave",
+            "trigger": "wave",
+            "fps": 30,
+            "duration_s": 0.2,
+            "learnedAt": 1000,
+            "provenance": "camera",
+            "frames": [
+                { "t": 0.0, "bones": { "head": [0.0, 0.0, 0.0] } },
+                { "t": 0.1, "bones": { "head": [0.4, 0.0, 0.0] } },
+                { "t": 0.2, "bones": { "head": [-0.4, 0.0, 0.0] } },
+                { "t": 0.3, "bones": { "head": [0.4, 0.0, 0.0] } },
+                { "t": 0.4, "bones": { "head": [0.0, 0.0, 0.0] } }
+            ]
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn polish_motion_returns_non_destructive_candidate() {
+        let preview = polish_learned_motion_raw(
+            &noisy_motion_json(),
+            MotionPolishConfig {
+                preset: Some(MotionPolishPreset::Heavy),
+                ..Default::default()
+            },
+            1234,
+        )
+        .unwrap();
+
+        assert_eq!(preview.original_motion_id, "motion-source");
+        assert_ne!(preview.candidate_id, "motion-source");
+        assert!(preview.mean_displacement_by_bone.contains_key("head"));
+        assert!(preview.max_displacement > 0.0);
+        assert_eq!(preview.applied_config.preset, MotionPolishPreset::Heavy);
+
+        let candidate = preview.candidate_motion.as_object().unwrap();
+        assert_eq!(candidate["id"], preview.candidate_id);
+        assert_eq!(candidate["kind"], "motion");
+        assert_eq!(candidate["learnedAt"], 1234);
+        assert_eq!(candidate["provenance"], "camera");
+        assert_eq!(candidate["polish"]["sourceMotionId"], "motion-source");
+        assert_eq!(candidate["polish"]["backend"], "gaussian-v1");
+        assert_eq!(candidate["polish"]["acceptedByUser"], false);
+    }
+
+    #[test]
+    fn polish_motion_rejects_non_motion_assets() {
+        let raw = serde_json::json!({
+            "id": "expression-one",
+            "kind": "expression",
+            "frames": []
+        })
+        .to_string();
+
+        let err = polish_learned_motion_raw(&raw, MotionPolishConfig::default(), 1234).unwrap_err();
+        assert!(err.contains("not a motion"));
+    }
+
+    #[test]
+    fn polish_motion_reports_clamped_config() {
+        let preview = polish_learned_motion_raw(
+            &noisy_motion_json(),
+            MotionPolishConfig {
+                sigma: Some(99.0),
+                radius: Some(99),
+                pin_endpoints: Some(false),
+                ..Default::default()
+            },
+            1234,
+        )
+        .unwrap();
+
+        assert_eq!(preview.applied_config.sigma, 8.0);
+        assert_eq!(preview.applied_config.radius, Some(60));
+        assert!(!preview.applied_config.pin_endpoints);
+        assert_eq!(preview.warnings.len(), 2);
+    }
 }
 
 // ── brain-extracted persona suggestion (Chunk 14.2 — Master-Echo loop) ──────

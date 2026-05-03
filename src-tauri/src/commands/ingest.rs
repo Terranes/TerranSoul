@@ -1,3 +1,5 @@
+use crate::brain::BrainMode;
+use crate::memory::late_chunking::CharSpan;
 use crate::memory::{MemoryType, NewMemory};
 use crate::tasks::manager::{
     CrawlCheckpoint, IngestCheckpoint, TaskKind, TaskProgressEvent, TaskStatus,
@@ -15,6 +17,13 @@ pub struct IngestStartResult {
     pub task_id: String,
     pub source: String,
     pub source_type: String,
+}
+
+#[derive(Debug, Clone)]
+struct IngestChunk {
+    text: String,
+    heading: Option<String>,
+    char_span: Option<CharSpan>,
 }
 
 /// Ingest a document from a local file path, URL, or web crawl.
@@ -352,11 +361,7 @@ async fn run_ingest_task(
     };
     let semantic_chunks = crate::memory::chunking::dedup_chunks(raw_chunks);
     let chunk_count = semantic_chunks.len();
-    // Flatten to (text, heading) pairs so the rest of the pipeline works.
-    let chunks: Vec<(String, Option<String>)> = semantic_chunks
-        .into_iter()
-        .map(|c| (c.text, c.heading))
-        .collect();
+    let chunks = build_ingest_chunks(&text, semantic_chunks);
 
     emit_progress(
         app,
@@ -375,10 +380,17 @@ async fn run_ingest_task(
         .lock()
         .map(|s| s.contextual_retrieval)
         .unwrap_or(false);
+    let late_chunking_enabled = state
+        .app_settings
+        .lock()
+        .map(|s| s.late_chunking)
+        .unwrap_or(false);
+
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
 
     let doc_summary = if contextual_retrieval_enabled {
-        let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
-        if let Some(mode) = brain_mode {
+        if let Some(mode) = brain_mode.clone() {
             emit_progress(
                 app,
                 task_id,
@@ -395,11 +407,32 @@ async fn run_ingest_task(
         None
     };
 
+    let late_chunk_embeddings = if late_chunking_enabled {
+        if let Some(model_hint) =
+            local_ollama_model_hint(brain_mode.as_ref(), active_brain.as_deref())
+        {
+            emit_progress(
+                app,
+                task_id,
+                34,
+                "Generating whole-document token embeddings for late chunking…",
+                0,
+                chunk_count,
+            );
+            late_chunk_embeddings_for_chunks(&text, &chunks, &model_hint).await
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Store chunks with progress
     let mut created = 0usize;
-    for (i, (chunk_text, chunk_heading)) in chunks.iter().enumerate() {
+    let mut created_entries: Vec<(i64, String, bool)> = Vec::new();
+    for (i, chunk) in chunks.iter().enumerate() {
         if cancel_flag.load(Ordering::Relaxed) {
-            let plain: Vec<String> = chunks.iter().map(|(t, _)| t.clone()).collect();
+            let plain: Vec<String> = chunks.iter().map(|chunk| chunk.text.clone()).collect();
             save_ingest_checkpoint(state, task_id, source, tags, importance, &plain, i).await;
             return Err("Task cancelled".to_string());
         }
@@ -410,7 +443,8 @@ async fn run_ingest_task(
             let progress = (30 + (i * 50 / chunk_count.max(1))) as u8;
             if let Some(task) = mgr.update_progress(task_id, progress, i, chunk_count) {
                 if task.status == TaskStatus::Paused {
-                    let plain: Vec<String> = chunks.iter().map(|(t, _)| t.clone()).collect();
+                    let plain: Vec<String> =
+                        chunks.iter().map(|chunk| chunk.text.clone()).collect();
                     save_ingest_checkpoint(state, task_id, source, tags, importance, &plain, i)
                         .await;
                     return Err("Auto-paused: exceeded 30-minute limit".to_string());
@@ -418,7 +452,7 @@ async fn run_ingest_task(
             }
         }
 
-        if chunk_text.trim().len() < 10 {
+        if chunk.text.trim().len() < 10 {
             continue;
         }
         let mut chunk_tags = if chunk_count > 1 {
@@ -427,7 +461,7 @@ async fn run_ingest_task(
             tags.to_string()
         };
         // Propagate Markdown heading as a tag when available.
-        if let Some(heading) = chunk_heading {
+        if let Some(heading) = &chunk.heading {
             let slug: String = heading
                 .chars()
                 .map(|c| {
@@ -446,21 +480,20 @@ async fn run_ingest_task(
 
         // Contextual Retrieval: prepend document-level context to the chunk.
         let final_content = if let Some(ref summary) = doc_summary {
-            let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
-            if let Some(mode) = brain_mode {
+            if let Some(mode) = brain_mode.clone() {
                 if let Some(ctx) =
-                    crate::memory::contextualize::contextualise_chunk(summary, chunk_text, &mode)
+                    crate::memory::contextualize::contextualise_chunk(summary, &chunk.text, &mode)
                         .await
                 {
-                    crate::memory::contextualize::prepend_context(&ctx, chunk_text)
+                    crate::memory::contextualize::prepend_context(&ctx, &chunk.text)
                 } else {
-                    chunk_text.clone()
+                    chunk.text.clone()
                 }
             } else {
-                chunk_text.clone()
+                chunk.text.clone()
             }
         } else {
-            chunk_text.clone()
+            chunk.text.clone()
         };
 
         let result = {
@@ -475,7 +508,14 @@ async fn run_ingest_task(
                 ..Default::default()
             })
         };
-        if result.is_ok() {
+        if let Ok(entry) = result {
+            let mut embedded = false;
+            if let Some(Some(embedding)) = late_chunk_embeddings.as_ref().and_then(|v| v.get(i)) {
+                if let Ok(store) = state.memory_store.lock() {
+                    embedded = store.set_embedding(entry.id, embedding).is_ok();
+                }
+            }
+            created_entries.push((entry.id, entry.content.clone(), embedded));
             created += 1;
         }
 
@@ -500,47 +540,121 @@ async fn run_ingest_task(
         chunk_count,
     );
 
-    // Chunk 16.9: use cloud embedding when brain mode is FreeApi/PaidApi.
-    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
-    let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
     if brain_mode.is_some() || active_brain.is_some() {
-        let recent: Vec<crate::memory::MemoryEntry> = {
-            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            store
-                .get_all()
-                .unwrap_or_default()
-                .into_iter()
-                .take(created)
-                .collect()
-        };
-        for (i, entry) in recent.iter().enumerate() {
+        let pending_embeddings: Vec<(i64, String)> = created_entries
+            .iter()
+            .filter(|(_, _, embedded)| !*embedded)
+            .map(|(id, content, _)| (*id, content.clone()))
+            .collect();
+        for (i, (entry_id, content)) in pending_embeddings.iter().enumerate() {
             if cancel_flag.load(Ordering::Relaxed) {
                 break;
             }
-            if let Some(emb) = crate::brain::embed_for_mode(
-                &entry.content,
-                brain_mode.as_ref(),
-                active_brain.as_deref(),
-            )
-            .await
+            if let Some(emb) =
+                crate::brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref())
+                    .await
             {
                 if let Ok(s) = state.memory_store.lock() {
-                    let _ = s.set_embedding(entry.id, &emb);
+                    let _ = s.set_embedding(*entry_id, &emb);
                 }
             }
-            let progress = (85 + ((i + 1) * 15 / recent.len().max(1))) as u8;
+            let progress = (85 + ((i + 1) * 15 / pending_embeddings.len().max(1))) as u8;
             emit_progress(
                 app,
                 task_id,
                 progress,
-                &format!("Embedded {}/{}", i + 1, recent.len()),
+                &format!("Embedded {}/{}", i + 1, pending_embeddings.len()),
                 i + 1,
-                recent.len(),
+                pending_embeddings.len(),
             );
         }
     }
 
     Ok((created, total_chars))
+}
+
+fn build_ingest_chunks(
+    document: &str,
+    chunks: Vec<crate::memory::chunking::Chunk>,
+) -> Vec<IngestChunk> {
+    let spans = locate_chunk_char_spans(document, &chunks);
+    chunks
+        .into_iter()
+        .zip(spans)
+        .map(|(chunk, char_span)| IngestChunk {
+            text: chunk.text,
+            heading: chunk.heading,
+            char_span,
+        })
+        .collect()
+}
+
+fn locate_chunk_char_spans(
+    document: &str,
+    chunks: &[crate::memory::chunking::Chunk],
+) -> Vec<Option<CharSpan>> {
+    let mut cursor = 0usize;
+    chunks
+        .iter()
+        .map(|chunk| {
+            let text = chunk.text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            if let Some(relative) = document.get(cursor..).and_then(|tail| tail.find(text)) {
+                let start = cursor + relative;
+                let end = start + text.len();
+                cursor = end;
+                return Some(CharSpan::new(start, end));
+            }
+            document
+                .find(text)
+                .map(|start| CharSpan::new(start, start + text.len()))
+        })
+        .collect()
+}
+
+async fn late_chunk_embeddings_for_chunks(
+    document: &str,
+    chunks: &[IngestChunk],
+    model_hint: &str,
+) -> Option<Vec<Option<Vec<f32>>>> {
+    let token_response = crate::brain::OllamaAgent::embed_tokens(document, model_hint).await?;
+    let pooled = pool_late_chunk_embeddings(
+        chunks,
+        &token_response.token_embeddings,
+        &token_response.token_char_spans,
+    );
+    if pooled.iter().any(Option::is_some) {
+        Some(pooled)
+    } else {
+        None
+    }
+}
+
+fn pool_late_chunk_embeddings(
+    chunks: &[IngestChunk],
+    token_embeddings: &[Vec<f32>],
+    token_char_spans: &[CharSpan],
+) -> Vec<Option<Vec<f32>>> {
+    let chunk_char_spans: Vec<Option<CharSpan>> =
+        chunks.iter().map(|chunk| chunk.char_span).collect();
+    let token_spans = crate::memory::late_chunking::token_spans_for_char_spans(
+        token_char_spans,
+        &chunk_char_spans,
+    );
+    crate::memory::late_chunking::pool_chunks(token_embeddings, &token_spans)
+}
+
+fn local_ollama_model_hint(
+    brain_mode: Option<&BrainMode>,
+    active_brain: Option<&str>,
+) -> Option<String> {
+    match brain_mode {
+        Some(BrainMode::LocalOllama { model }) => Some(model.clone()),
+        Some(_) => None,
+        None => active_brain.map(str::to_string),
+    }
 }
 
 async fn save_ingest_checkpoint(
@@ -1023,5 +1137,78 @@ mod tests {
         let hash_v1 = hex::encode(Sha256::digest(b"30-day deadline"));
         let hash_v2 = hex::encode(Sha256::digest(b"21-day deadline"));
         assert_ne!(hash_v1, hash_v2);
+    }
+
+    #[test]
+    fn locate_chunk_char_spans_follows_document_order() {
+        let document = "alpha beta alpha gamma";
+        let chunks = vec![
+            crate::memory::chunking::Chunk {
+                index: 0,
+                text: "alpha beta".to_string(),
+                hash: "a".to_string(),
+                heading: None,
+            },
+            crate::memory::chunking::Chunk {
+                index: 1,
+                text: "alpha gamma".to_string(),
+                hash: "b".to_string(),
+                heading: None,
+            },
+        ];
+        let spans = locate_chunk_char_spans(document, &chunks);
+        assert_eq!(
+            spans,
+            vec![Some(CharSpan::new(0, 10)), Some(CharSpan::new(11, 22))]
+        );
+    }
+
+    #[test]
+    fn pool_late_chunk_embeddings_aligns_chunks_to_tokens() {
+        let chunks = vec![
+            IngestChunk {
+                text: "alpha beta".to_string(),
+                heading: None,
+                char_span: Some(CharSpan::new(0, 10)),
+            },
+            IngestChunk {
+                text: "gamma".to_string(),
+                heading: None,
+                char_span: Some(CharSpan::new(11, 16)),
+            },
+        ];
+        let token_embeddings = vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 0.0]];
+        let token_spans = vec![
+            CharSpan::new(0, 5),
+            CharSpan::new(6, 10),
+            CharSpan::new(11, 16),
+        ];
+        let pooled = pool_late_chunk_embeddings(&chunks, &token_embeddings, &token_spans);
+        assert_eq!(pooled.len(), 2);
+        assert!(pooled[0].is_some());
+        assert!(pooled[1].is_some());
+        assert!((pooled[1].as_ref().unwrap()[0] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn local_ollama_model_hint_only_uses_ollama_modes() {
+        let local = BrainMode::LocalOllama {
+            model: "gemma3:4b".to_string(),
+        };
+        assert_eq!(
+            local_ollama_model_hint(Some(&local), Some("legacy")),
+            Some("gemma3:4b".to_string())
+        );
+        let paid = BrainMode::PaidApi {
+            provider: "openai".to_string(),
+            api_key: "sk".to_string(),
+            model: "gpt-4o".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+        };
+        assert_eq!(local_ollama_model_hint(Some(&paid), Some("legacy")), None);
+        assert_eq!(
+            local_ollama_model_hint(None, Some("legacy-model")),
+            Some("legacy-model".to_string())
+        );
     }
 }

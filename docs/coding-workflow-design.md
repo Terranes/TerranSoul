@@ -5,7 +5,7 @@
 > today, and *why* it is shaped the way it is when compared to other
 > agentic-coding systems on the market.
 >
-> **Status.** Living document. Last reviewed **2026-04-29**.
+> **Status.** Living document. Last reviewed **2026-05-02**.
 >
 > **Related rules.** [`rules/coding-workflow-reliability.md`](../rules/coding-workflow-reliability.md),
 > [`rules/prompting-rules.md`](../rules/prompting-rules.md),
@@ -138,6 +138,9 @@ Every persisted artefact in the workflow obeys
 - **Bounded prompt size** — `MAX_CONTEXT_CHARS` and `MAX_FILE_CHARS`
   caps in `CodingWorkflowConfig` prevent runaway token usage on huge
   repos.
+- **Path-scoped context** — Markdown rules/docs can declare `applyTo`
+   frontmatter, and `CodingTask.target_paths` filters scoped files so large
+   repos do not inject unrelated guidance into every prompt.
 
 ### 2.5 The self-improve loop lifecycle
 
@@ -189,6 +192,7 @@ Cloud providers are listed but never auto-selected.
 | **[Temporal.io](https://docs.temporal.io/workflows)** | Durable workflow engine | General-purpose orchestration; deterministic replay; *not* AI-specific |
 | **[GitHub Copilot CLI / coding agent](https://github.blog/ai-and-ml/github-copilot/)** | Agentic IDE/CLI assistant | `/fleet` parallel agents, model picker, GitHub-native PR flow |
 | **[Claude Code](https://code.claude.com/docs/en/overview)** | Terminal coding agent | Anthropic-first; long-running sessions; tool-use; subagents |
+| **Cursor** | Agentic IDE | Project rules, codebase indexing, review/checkpoint flow, context surfacing |
 | **Aider** | Terminal pair-programmer | Diff-based edits; git-aware; multi-provider |
 | **Cline** (open source) | VS Code extension | Plan-then-act with file/terminal tools; multi-provider |
 | **[Roo Code](https://docs.roocode.com/)** | VS Code extension + Cloud | Customisable Modes (Architect/Code), Orchestrator, "trade tokens for quality" — **sunset May 15, 2026** |
@@ -198,22 +202,22 @@ Cloud providers are listed but never auto-selected.
 
 ### 3.2 Architectural philosophy
 
-| Property | Temporal | Copilot CLI / agent | Claude Code | Aider / Cline | Roo Code | OpenHands | **TerranSoul** |
-|---|---|---|---|---|---|---|---|
-| **Primary purpose** | Generic durable workflows | Coding assistant | Coding agent | Pair-programming | Coding suite | Autonomous SWE | Companion app — coding is *one* capability |
-| **Single entry point** | Workflow Definition | Many (chat, fleet, agent) | Many tools | Single CLI | Per-Mode | Multi-agent | **`run_coding_task`** |
-| **Runtime substrate** | Temporal cluster (server + workers) | GitHub cloud + CLI | Local terminal | Local CLI | VS Code + cloud | Sandboxed Docker | Embedded Tauri/Rust process |
-| **Provider model** | N/A (not LLM-specific) | Multi-model picker | Anthropic-first | Multi-provider | Multi-provider | Multi-provider | **OpenAI-compat only** (covers all majors via one client) |
-| **Local-first** | ❌ requires server | ❌ cloud-bound | ⚠️ requires Anthropic API | ✅ | ⚠️ | ✅ | ✅ **Ollama is top-pick by default** |
-| **Privacy default** | N/A | Sends to GitHub | Sends to Anthropic | Sends to chosen provider | Sends to chosen provider | Configurable | **No data leaves the machine when Ollama is used** |
-| **Persistence model** | Event-sourced log | Cloud session | Conversation file | Git commits | Cloud project | Local state | **Atomic JSON configs + append-only JSONL runs** |
-| **Resume after crash** | ✅ deterministic replay | ✅ cloud session | ⚠️ session file | ⚠️ partial | ✅ cloud | ⚠️ | ✅ **`enabled=true` → auto-resume on next launch** |
-| **Cancellation contract** | `WorkflowCancelled` signal | UI / Ctrl-C | UI | Ctrl-C | UI | UI | **AtomicBool flag, only `enabled=false` stops it** |
-| **Output typing** | User-defined | Free text + tool calls | Free text + tools | Diffs | Free text | Free text + tools | **Typed `OutputShape` enum (Plan/JSON/File/Prose)** |
-| **Prompt engineering** | N/A | Internal | Anthropic best practices | Prompt-light | Mode-based | Internal | **Anthropic 10 rules, codified in `prompting.rs`** |
-| **Multi-agent** | Activities + child workflows | `/fleet` parallel agents | Subagents | ❌ | Orchestrator → Modes | Planner+Executor | **Future** (orchestrator already in core, not yet wired to coding) |
-| **Open source** | ✅ Apache-2.0 | ❌ proprietary | ❌ proprietary | ✅ Apache-2.0 | ⚠️ partial (sunsetting) | ✅ MIT | ✅ MIT |
-| **Cost model** | Self-host or Temporal Cloud | Subscription + tokens | Tokens | Tokens | Tokens (premium) | Tokens | **$0 with local Ollama** |
+| Property | Temporal | Copilot CLI / agent | Claude Code | Cursor | Aider / Cline | Roo Code | OpenHands | **TerranSoul** |
+|---|---|---|---|---|---|---|---|---|
+| **Primary purpose** | Generic durable workflows | Coding assistant | Coding agent | Agentic IDE | Pair-programming | Coding suite | Autonomous SWE | Companion app — coding is *one* capability |
+| **Single entry point** | Workflow Definition | Many (chat, fleet, agent) | Many tools | IDE agent + composer | Single CLI | Per-Mode | Multi-agent | **`run_coding_task`** |
+| **Runtime substrate** | Temporal cluster (server + workers) | GitHub cloud + CLI | Local terminal | Editor process + cloud/local model routing | Local CLI | VS Code + cloud | Sandboxed Docker | Embedded Tauri/Rust process |
+| **Provider model** | N/A (not LLM-specific) | Multi-model picker | Anthropic-first | Multi-model picker | Multi-provider | Multi-provider | Multi-provider | **OpenAI-compat only** (covers all majors via one client) |
+| **Local-first** | ❌ requires server | ❌ cloud-bound | ⚠️ requires Anthropic API | ⚠️ depends on model | ✅ | ⚠️ | ✅ | ✅ **Ollama is top-pick by default** |
+| **Privacy default** | N/A | Sends to GitHub | Sends to Anthropic | Sends to selected model/provider | Sends to chosen provider | Sends to chosen provider | Configurable | **No data leaves the machine when Ollama is used** |
+| **Persistence model** | Event-sourced log | Cloud session | Conversation + memory files | Rules, memories, checkpoints | Git commits | Cloud project | Local state | **Atomic JSON configs + append-only JSONL runs** |
+| **Resume after crash** | ✅ deterministic replay | ✅ cloud session | ⚠️ session file | ⚠️ editor/session dependent | ⚠️ partial | ✅ cloud | ⚠️ | ✅ **`enabled=true` → auto-resume on next launch** |
+| **Cancellation contract** | `WorkflowCancelled` signal | UI / Ctrl-C | UI | Stop/checkpoint revert | Ctrl-C | UI | UI | **AtomicBool flag, only `enabled=false` stops it** |
+| **Output typing** | User-defined | Free text + tool calls | Free text + tools | Tool calls + edits | Diffs | Free text | Free text + tools | **Typed `OutputShape` enum (Plan/JSON/File/Prose)** |
+| **Prompt engineering** | N/A | Internal | Anthropic best practices | Project rules + context index | Prompt-light | Mode-based | Internal | **Anthropic 10 rules, codified in `prompting.rs`** |
+| **Multi-agent** | Activities + child workflows | `/fleet` parallel agents | Subagents | Background/agent tasks | ❌ | Orchestrator → Modes | Planner+Executor | **Future** (orchestrator already in core, not yet wired to coding) |
+| **Open source** | ✅ Apache-2.0 | ❌ proprietary | ❌ proprietary | ❌ proprietary | ✅ Apache-2.0 | ⚠️ partial (sunsetting) | ✅ MIT | ✅ MIT |
+| **Cost model** | Self-host or Temporal Cloud | Subscription + tokens | Tokens | Subscription + tokens | Tokens | Tokens (premium) | Tokens | **$0 with local Ollama** |
 
 ### 3.3 Durability — Temporal vs. TerranSoul
 
@@ -277,19 +281,49 @@ multiple agents in parallel and coordinate them. Today TerranSoul runs
 infrastructure already supports multi-agent:
 
 - `crate::orchestrator::*` exists for chat-side agent routing with
-  capability gates.
+   capability gates.
 - The brain gateway (`ai_integrations/gateway.rs`) exposes 8 brain
   operations any future sub-agent can call.
 - `coding::workflow::run_coding_task` is reentrant — N parallel
   Tokio tasks calling it will not corrupt each other (no shared state
   beyond the read-only configs).
+- `coding::dag_runner` now has both sync and async executors; the
+   self-improve engine uses the async path to run its planner, coder,
+   reviewer, apply, tester, and staging nodes in dependency order.
 
-The roadmap (see [`rules/backlog.md`](../rules/backlog.md)) wires the
-orchestrator to the coding workflow so future cycles can dispatch a
-**Planner → Coder → Reviewer** chain similar to Roo's Modes, but
-running entirely on the user's machine.
+Chunk 28.12 wires that orchestration into the coding workflow so cycles
+dispatch a **Planner → Coder → Reviewer → Apply → Tester → Stage** chain
+similar to Roo's Modes, but running entirely on the user's machine.
 
-### 3.6 What we deliberately did **not** copy
+### 3.6 Cursor + Claude Code lessons absorbed in 28.11
+
+Cursor's strongest workflow pattern is not a particular model call; it is the
+IDE loop around the model: keep project rules close to the code, surface the
+relevant indexed context, make edits reviewable, and preserve a checkpoint the
+user or agent can roll back to. Claude Code adds a second useful pattern:
+specialized workers with restricted capability, especially read-only reviewers,
+test runners, and subagents that keep verbose output out of the main context.
+
+Chunk 28.11 turns those lessons into local, provider-agnostic Rust code:
+
+- **Rules and context first:** the planner and coder both load the same
+   `rules/`, `instructions/`, and `docs/` context through
+   `load_workflow_context`, mirroring Cursor project rules and Claude
+   `CLAUDE.md` memory without adopting either proprietary file format.
+   Chunk 28.14 adds `applyTo` frontmatter and target-path filtering so scoped
+   rules/docs only enter prompts for matching files.
+- **Checkpoint before write:** the execution gate snapshots every touched file
+   before applying LLM output. If validation, review, or tests fail, the snapshot
+   is restored and created files are removed.
+- **Specialized gates:** the coder can only emit `<file path="...">` blocks;
+   `reviewer` evaluates a preview diff before disk writes; `test_runner` runs the
+   local green gate after writes and before staging.
+- **No auto-approve drift:** generated changes are staged only after review and
+   tests pass. Dirty working trees now run autonomous apply/test in a temporary
+   git worktree; the user's checkout stays untouched and a review patch is saved
+   under `target/terransoul-self-improve/patches`.
+
+### 3.7 What we deliberately did **not** copy
 
 | Pattern | Where it appears | Why we skipped it |
 |---|---|---|
@@ -321,19 +355,26 @@ running entirely on the user's machine.
 | **Recommendation hygiene** | Test asserts no recommendation has `/v1` suffix in `base_url` |
 | **No-key auth path** | `client_from()` skips bearer when `api_key` is empty |
 | **Live verification** | `tests/ollama_self_improve_smoke.rs` (gated by `OLLAMA_REAL_TEST=1`) |
+| **Checkpointed execution gate** | `engine::execute_chunk_dag` snapshots files, reviews a preview diff, applies, tests, restores on failure, and stages only green changes |
+| **DAG-orchestrated coding gate** | `dag_runner::execute_dag_async` plus `engine::execute_chunk_dag` run planner/coder/reviewer/apply/test/stage nodes with capability validation and skip-on-failure semantics |
+| **Temporary worktree isolation** | `coding::worktree` plus `engine::prepare_execution_workspace` run dirty-checkout autonomous apply/test in a detached git worktree and save an isolated patch artifact |
+| **Path-scoped workflow context** | `workflow::load_workflow_context_for_paths` filters `applyTo`-scoped markdown docs/rules by `CodingTask.target_paths`; self-improve coder prompts derive target hints from the approved plan |
 
 ---
 
 ## 5. Roadmap & future implementations
 
-The current implementation is **planning-only** by design — the
-autonomous loop produces plans; humans (or a future gated chunk) apply
-them. The roadmap, in priority order:
+The autonomous loop now has a conservative execution path: it plans,
+asks the Coding LLM for complete file blocks, reviews a preview diff,
+applies from a file snapshot, runs the local test gate, restores on
+failure, and stages only green changes. The roadmap, in priority order:
 
-1. **Diff application gate.** Take a `<plan>` payload, run a `Coder`
-   sub-task with `OutputShape::BareFileContents`, write through
-   `coding::workflow::apply_file` (does not yet exist) using the same
-   atomic-write contract as configs.
+1. **Diff application gate.** ✅ **Chunk 28.11 shipped (2026-05-02):**
+   `src-tauri/src/coding/engine.rs` wires the planner output into a coder
+   prompt that emits complete `<file path="...">` blocks, reviews a
+   synthetic full-file diff with `coding::reviewer`, applies via
+   `coding::apply_file`, runs `coding::test_runner`, restores the file
+   snapshot on failure, and stages changed files only after a green gate.
 2. **Reviewer sub-agent.** ✅ **Chunk 28.1 shipped (2026-04-30):**
    `src-tauri/src/coding/reviewer.rs` — pure types + prompt builders +
    JSON parser + `decide()` verdict logic. 18 tests. Uses
@@ -347,6 +388,10 @@ them. The roadmap, in priority order:
    `src-tauri/src/coding/dag_runner.rs` — Kahn's-algorithm topological
    layering, parallel within layers, sequential across layers, cycle
    detection. 21 tests.
+   ✅ **Chunk 28.12 shipped (2026-05-02):** added the async DAG executor
+   and wired `coding::engine` through a real planner/coder/reviewer/apply/
+   tester/stage graph with bounded layer parallelism, capability validation,
+   and downstream skip-on-failure behavior.
 5. **Sandboxed test runs.** ✅ **Chunk 28.4 shipped (2026-04-30):**
    `src-tauri/src/coding/test_runner.rs` runs `cargo test` and
    `vitest run` (or any `Custom` suite) in isolated `tokio::process`
@@ -359,22 +404,35 @@ them. The roadmap, in priority order:
    pass/fail/flaky/timeout/spawn-error/mixed/serde. Wiring into the
    orchestrator (so it actually gates `apply_file` commits) is a
    follow-up.
-6. **GitHub PR flow.** ✅ **Chunk 28.5 shipped (2026-04-30):**
+6. **Temporary worktree isolation.** ✅ **Chunk 28.13 shipped (2026-05-03):**
+   `src-tauri/src/coding/worktree.rs` creates detached temporary git
+   worktrees for dirty-checkout execution, captures staged binary diffs,
+   and cleans up with `git worktree remove --force`. The self-improve
+   engine now switches apply/test/stage to that isolated root when the
+   active checkout is dirty and writes the review patch under
+   `target/terransoul-self-improve/patches`.
+7. **GitHub PR flow.** ✅ **Chunk 28.5 shipped (2026-04-30):**
    `src-tauri/src/coding/github.rs` — OAuth device flow
    (`request_device_code`, `poll_for_token`) + per-chunk PR generation
    (`build_chunk_pr_title`, `build_chunk_pr_body`, `chunk_branch_name`).
-7. **Cost / token telemetry.** ✅ **Chunk 28.7 shipped (2026-04-30):**
+8. **Cost / token telemetry.** ✅ **Chunk 28.7 shipped (2026-04-30):**
    `RunRecord` now captures real token usage from each provider; the
    metrics panel surfaces cost-per-chunk by provider.
-8. **Persistent task queue.** ✅ **Chunk 28.6 shipped (2026-04-30):**
+9. **Persistent task queue.** ✅ **Chunk 28.6 shipped (2026-04-30):**
    SQLite-backed queue at `<data>/tasks.sqlite` so external tools
    (MCP, CLI) can enqueue tasks without parsing milestones.md.
-9. **Long-session context handoff.** ✅ **Chunks 28.8 + 28.9 + 28.10 +
+10. **Long-session context handoff.** ✅ **Chunks 28.8 + 28.9 + 28.10 +
    27.2 shipped (2026-04-30):** session-handoff codec, persistent
    handoff, context budget manager, and budget-aware document
    assembly bridge `context_budget` ↔ `prompting`. The full pipeline
    for "very long coding will make out of memory or too much context"
    from `promt/devstress.md`.
+11. **Path-scoped workflow context.** ✅ **Chunk 28.14 shipped (2026-05-03):**
+   markdown files in workflow context can declare YAML-style `applyTo`
+   frontmatter such as `src-tauri/**` or `src/**/*.vue`. Reusable coding
+   tasks pass `target_paths`, and the self-improve coder derives target path
+   hints from the approved plan, so scoped docs/rules are loaded only for
+   matching file paths while unscoped files remain global.
 
 Each item lands as one chunk in [`rules/milestones.md`](../rules/milestones.md)
 under Phase 25, with the same enforcement contract as every other
@@ -407,6 +465,8 @@ let task = CodingTask {
     include_docs: true,
     output_kind: TaskOutputKind::NumberedPlan { max_steps: 3 },
     extra_documents: vec![],
+   target_paths: vec![],
+   prior_handoff: None,
 };
 
 let result = run_coding_task(&cfg, &task, None).await?;

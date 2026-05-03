@@ -1,7 +1,7 @@
 //! Coding LLM + Self-Improve foundation.
 //!
-//! Phase 1 scaffolding for the autonomous self-improving coding system.
-//! See `rules/milestones.md` Phase 25 for the full roadmap.
+//! Foundation for the autonomous self-improving coding system.
+//! See `rules/milestones.md` Phase 28 for the live follow-up roadmap.
 //!
 //! This module currently provides:
 //! - [`CodingLlmConfig`] — provider/model/key config for the dedicated
@@ -11,9 +11,9 @@
 //! - [`coding_llm_recommendations`] — curated provider catalogue
 //!   (Claude, OpenAI, DeepSeek, custom OpenAI-compatible).
 //!
-//! No autonomous loop is implemented yet — that is gated behind future
-//! chunks. The toggle is intentionally inert beyond persistence so the UI
-//! surface, confirmation flow, and storage schema can land safely first.
+//! The autonomous loop is implemented in [`engine`]. It plans one milestone
+//! chunk, runs the planner/coder/reviewer/apply/test/stage DAG, and stages
+//! generated changes only after the local gate passes.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -41,6 +41,7 @@ pub mod reviewer;
 pub mod task_queue;
 pub mod test_runner;
 pub mod workflow;
+pub mod worktree;
 
 pub use conversation_learning::{learn_from_message, LearnedChunk};
 pub use engine::{ProgressEvent, SelfImproveEngine};

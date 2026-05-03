@@ -38,7 +38,6 @@ export default [
       '*.config.js',
       '*.config.cjs',
       '*.config.mjs',
-      'scripts/**',
       'docs/**',
       'tests/**',
       'playwright/**',
@@ -116,6 +115,32 @@ export default [
       'vue/no-v-html': 'warn',
       'no-undef': 'off',
       'prefer-const': ['error', { ignoreReadBeforeAssign: true }],
+    },
+  },
+
+  // ── Scripts (Playwright capture, helpers, generators) ────────────────────
+  // These are plain JS (not TypeScript) — enable CodeQL-equivalent rules so
+  // the CI gate catches the same issues GitHub's quality dashboard flags.
+  {
+    files: ['scripts/**/*.{mjs,cjs,js}'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.es2022 },
+    },
+    rules: {
+      'max-lines': 'off',
+      '@typescript-eslint/no-require-imports': 'off', // CJS scripts need require()
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      'no-shadow': 'error',
+      'no-const-assign': 'error',
+      'no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 

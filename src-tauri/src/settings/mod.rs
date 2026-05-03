@@ -155,6 +155,51 @@ pub struct AppSettings {
     #[serde(default)]
     pub contextual_retrieval: bool,
 
+    /// When `true`, document ingestion first asks a local long-context Ollama
+    /// embedder for per-token vectors over the whole document, then pools those
+    /// vectors per stored chunk (`memory::late_chunking`). Default off; if the
+    /// local model only returns a standard pooled vector, ingestion falls back
+    /// to the normal per-chunk embedding path.
+    ///
+    /// Maps to `docs/brain-advanced-design.md` §19.2 row 9 (chunk 16.3b).
+    #[serde(default)]
+    pub late_chunking: bool,
+
+    /// When `true`, CRAG's web-search fallback is allowed to fetch
+    /// results from DuckDuckGo when local retrieval is rated `Incorrect`.
+    /// Default off — requires explicit user opt-in (capability gate).
+    ///
+    /// Maps to Chunk 16.5b (CRAG query-rewrite + web-search fallback).
+    #[serde(default)]
+    pub web_search_enabled: bool,
+
+    /// When `true`, the MCP/gRPC servers bind to `0.0.0.0` instead of
+    /// `127.0.0.1`, exposing the brain to the local network. Default off
+    /// — never silently expose a brain server to the LAN. Requires
+    /// explicit user opt-in with a clear UI warning.
+    ///
+    /// Maps to Chunk 24.1b (LAN bind config).
+    #[serde(default)]
+    pub lan_enabled: bool,
+
+    /// When `true` (default), a paired mobile shell may show local
+    /// notifications for long-running remote work that completes or crosses
+    /// the mobile threshold. Uses Tauri's local notification plugin only;
+    /// no APNS or cloud push channel is involved. Maps to Chunk 24.11.
+    #[serde(default = "default_true")]
+    pub mobile_notifications_enabled: bool,
+
+    /// Minimum observed duration before mobile local notifications are sent
+    /// for workflow/task completion or Copilot long-run activity. Default 30s.
+    /// Maps to Chunk 24.11.
+    #[serde(default = "default_mobile_notification_threshold_ms")]
+    pub mobile_notification_threshold_ms: u64,
+
+    /// Poll interval for the mobile LAN notification watcher. Default 10s.
+    /// Maps to Chunk 24.11.
+    #[serde(default = "default_mobile_notification_poll_ms")]
+    pub mobile_notification_poll_ms: u64,
+
     /// When `true` (default), every successful `extract_memories_from_session`
     /// run is followed by an automatic `extract_edges_via_brain` pass over the
     /// freshly-grown memory store, so newly-learned facts immediately
@@ -250,12 +295,26 @@ fn default_true() -> bool {
 /// Matches the 23h-cooldown convention in [`crate::brain::maintenance_scheduler::MaintenanceConfig`].
 pub const DEFAULT_MAINTENANCE_INTERVAL_HOURS: u32 = 24;
 
+/// Default mobile notification threshold — 30 seconds.
+pub const DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS: u64 = 30_000;
+
+/// Default mobile notification polling interval — 10 seconds.
+pub const DEFAULT_MOBILE_NOTIFICATION_POLL_MS: u64 = 10_000;
+
 /// Min/max guardrails for `AppSettings::maintenance_interval_hours`.
 pub const MIN_MAINTENANCE_INTERVAL_HOURS: u32 = 1;
 pub const MAX_MAINTENANCE_INTERVAL_HOURS: u32 = 168;
 
 fn default_maintenance_interval_hours() -> u32 {
     DEFAULT_MAINTENANCE_INTERVAL_HOURS
+}
+
+fn default_mobile_notification_threshold_ms() -> u64 {
+    DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS
+}
+
+fn default_mobile_notification_poll_ms() -> u64 {
+    DEFAULT_MOBILE_NOTIFICATION_POLL_MS
 }
 
 /// Default relevance threshold for `[LONG-TERM MEMORY]` injection — see
@@ -304,6 +363,12 @@ impl Default for AppSettings {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            late_chunking: false,
+            web_search_enabled: false,
+            lan_enabled: false,
+            mobile_notifications_enabled: true,
+            mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
+            mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
             expanded_blendshapes: false,
             first_launch_complete: false,
@@ -447,6 +512,12 @@ mod tests {
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
             auto_tag: false,
             contextual_retrieval: false,
+            late_chunking: false,
+            web_search_enabled: false,
+            lan_enabled: false,
+            mobile_notifications_enabled: true,
+            mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
+            mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
             expanded_blendshapes: false,
             first_launch_complete: false,
@@ -529,6 +600,48 @@ mod tests {
             DEFAULT_MAINTENANCE_INTERVAL_HOURS
         );
         assert_eq!(s.maintenance_idle_minimum_minutes, 0);
+    }
+
+    #[test]
+    fn default_late_chunking_is_off() {
+        let s = AppSettings::default();
+        assert!(!s.late_chunking);
+    }
+
+    #[test]
+    fn serde_fills_late_chunking_default_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(!parsed.late_chunking);
+    }
+
+    #[test]
+    fn default_mobile_notifications_are_on_with_threshold() {
+        let s = AppSettings::default();
+        assert!(s.mobile_notifications_enabled);
+        assert_eq!(
+            s.mobile_notification_threshold_ms,
+            DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS
+        );
+        assert_eq!(
+            s.mobile_notification_poll_ms,
+            DEFAULT_MOBILE_NOTIFICATION_POLL_MS
+        );
+    }
+
+    #[test]
+    fn serde_fills_mobile_notification_defaults_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(parsed.mobile_notifications_enabled);
+        assert_eq!(
+            parsed.mobile_notification_threshold_ms,
+            DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS
+        );
+        assert_eq!(
+            parsed.mobile_notification_poll_ms,
+            DEFAULT_MOBILE_NOTIFICATION_POLL_MS
+        );
     }
 
     #[test]

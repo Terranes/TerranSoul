@@ -93,11 +93,11 @@ pub fn version_count(conn: &Connection, memory_id: i64) -> SqlResult<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::migrations::migrate_to_latest;
+    use crate::memory::schema::create_canonical_schema;
 
     fn fresh_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        migrate_to_latest(&conn).unwrap();
+        create_canonical_schema(&conn).unwrap();
         conn.execute("PRAGMA foreign_keys = ON", []).unwrap();
         conn
     }

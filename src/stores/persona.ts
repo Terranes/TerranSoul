@@ -23,6 +23,8 @@ import {
   type PersonaTraits,
   type LearnedExpression,
   type LearnedMotion,
+  type MotionPolishConfig,
+  type MotionPolishPreview,
 } from './persona-types';
 import { buildPersonaBlock, type LearnedMotionRef } from '../utils/persona-prompt';
 
@@ -340,6 +342,47 @@ export const usePersonaStore = defineStore('persona', () => {
   }
 
   /**
+   * Build a non-destructive polished candidate for an existing saved motion.
+   * The backend returns a preview only; callers must play/inspect the candidate
+   * and route acceptance through `saveLearnedMotion` so the source clip is never
+   * overwritten by accident.
+   */
+  async function polishLearnedMotion(
+    id: string,
+    config: MotionPolishConfig = {},
+  ): Promise<MotionPolishPreview> {
+    interface BackendPreview {
+      original_motion_id: string;
+      candidate_id: string;
+      candidate_motion: LearnedMotion;
+      mean_displacement_by_bone: Record<string, number>;
+      max_displacement: number;
+      warnings: string[];
+      applied_config: {
+        preset: MotionPolishPreview['appliedConfig']['preset'];
+        sigma: number;
+        radius: number | null;
+        pin_endpoints: boolean;
+      };
+    }
+    const preview = await invoke<BackendPreview>('polish_learned_motion', { id, config });
+    return {
+      originalMotionId: preview.original_motion_id,
+      candidateId: preview.candidate_id,
+      candidateMotion: preview.candidate_motion,
+      meanDisplacementByBone: preview.mean_displacement_by_bone,
+      maxDisplacement: preview.max_displacement,
+      warnings: preview.warnings,
+      appliedConfig: {
+        preset: preview.applied_config.preset,
+        sigma: preview.applied_config.sigma,
+        radius: preview.applied_config.radius,
+        pinEndpoints: preview.applied_config.pin_endpoints,
+      },
+    };
+  }
+
+  /**
    * Record an accept/reject verdict on a generated motion clip
    * (Chunk 14.16e — self-improve loop). The backend appends a JSONL
    * entry to `<persona-root>/motion_feedback.jsonl` and the next
@@ -529,6 +572,7 @@ export const usePersonaStore = defineStore('persona', () => {
     suggestPersonaFromBrain,
     generateMotionFromText,
     saveLearnedMotion,
+    polishLearnedMotion,
     recordMotionFeedback,
     fetchMotionFeedbackStats,
     exportPack,

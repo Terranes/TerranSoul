@@ -474,4 +474,185 @@ mod tests {
         assert_eq!(report.skipped.len(), 33);
         assert!(report.skipped.last().unwrap().contains("truncated"));
     }
+
+    // ── Schema spec conformance tests (docs/persona-pack-schema.md) ──
+
+    #[test]
+    fn schema_spec_minimal_valid_pack_parses() {
+        let minimal = r#"{
+            "packVersion": 1,
+            "exportedAt": 1714600000000,
+            "traits": {
+                "version": 1,
+                "name": "Soul",
+                "role": "TerranSoul companion",
+                "bio": "",
+                "tone": [],
+                "quirks": [],
+                "avoid": [],
+                "active": true,
+                "updatedAt": 1714600000000
+            }
+        }"#;
+        let pack = parse_pack(minimal).unwrap();
+        assert_eq!(pack.pack_version, 1);
+        assert_eq!(pack.exported_at, 1714600000000);
+        assert!(pack.note.is_none());
+        assert!(pack.expressions.is_empty());
+        assert!(pack.motions.is_empty());
+        assert_eq!(pack.traits["name"], "Soul");
+    }
+
+    #[test]
+    fn schema_spec_full_featured_pack_parses() {
+        let full = r#"{
+            "packVersion": 1,
+            "exportedAt": 1714600000000,
+            "note": "My custom librarian persona with trained expressions",
+            "traits": {
+                "version": 1,
+                "name": "Lia",
+                "role": "studious librarian",
+                "bio": "A quiet bookworm who speaks in measured, precise prose.",
+                "tone": ["warm", "precise", "slightly formal"],
+                "quirks": ["ends sentences with 'indeed'", "references obscure books"],
+                "avoid": ["slang", "unsolicited medical advice"],
+                "exampleDialogue": ["User: What should I read? / Assistant: Indeed, both have their merits."],
+                "active": true,
+                "updatedAt": 1714600000000
+            },
+            "expressions": [{
+                "id": "lex_curious_tilt",
+                "kind": "expression",
+                "name": "Curious tilt",
+                "trigger": "curious",
+                "weights": { "surprised": 0.3, "happy": 0.2 },
+                "lookAt": { "x": 0.6, "y": 0.4 },
+                "learnedAt": 1714500000000
+            }],
+            "motions": [{
+                "id": "lmo_page_turn",
+                "kind": "motion",
+                "name": "Page turn gesture",
+                "trigger": "page-turn",
+                "fps": 30,
+                "duration_s": 0.8,
+                "frames": [
+                    { "t": 0.0, "bones": { "rightUpperArm": [0.0, 0.0, -0.2] } },
+                    { "t": 0.4, "bones": { "rightUpperArm": [0.1, 0.0, -0.3], "rightLowerArm": [-0.2, 0.0, 0.0] } },
+                    { "t": 0.8, "bones": { "rightUpperArm": [0.0, 0.0, -0.2] } }
+                ],
+                "learnedAt": 1714500000000,
+                "provenance": "generated"
+            }]
+        }"#;
+        let pack = parse_pack(full).unwrap();
+        assert_eq!(pack.pack_version, 1);
+        assert_eq!(
+            pack.note.as_deref(),
+            Some("My custom librarian persona with trained expressions")
+        );
+        assert_eq!(pack.traits["name"], "Lia");
+        assert_eq!(
+            pack.traits["exampleDialogue"][0],
+            "User: What should I read? / Assistant: Indeed, both have their merits."
+        );
+        assert_eq!(pack.expressions.len(), 1);
+        assert_eq!(pack.motions.len(), 1);
+        // Validate assets
+        let exp_id = validate_asset(&pack.expressions[0], "expression").unwrap();
+        assert_eq!(exp_id, "lex_curious_tilt");
+        let mot_id = validate_asset(&pack.motions[0], "motion").unwrap();
+        assert_eq!(mot_id, "lmo_page_turn");
+    }
+
+    #[test]
+    fn schema_spec_unknown_traits_keys_round_trip() {
+        let raw = serde_json::to_string_pretty(&json!({
+            "packVersion": 1,
+            "exportedAt": 0,
+            "traits": {
+                "version": 1,
+                "name": "X",
+                "role": "Y",
+                "bio": "",
+                "tone": [],
+                "quirks": [],
+                "avoid": [],
+                "active": true,
+                "updatedAt": 0,
+                "futureField": "hello",
+                "anotherFuture": [1, 2, 3]
+            }
+        }))
+        .unwrap();
+        let pack = parse_pack(&raw).unwrap();
+        // Unknown keys are preserved (opaque Value)
+        assert_eq!(pack.traits["futureField"], "hello");
+        assert_eq!(pack.traits["anotherFuture"][1], 2);
+        // Round-trip preserves them
+        let serialized = pack_to_string(&pack).unwrap();
+        let reparsed = parse_pack(&serialized).unwrap();
+        assert_eq!(reparsed.traits["futureField"], "hello");
+    }
+
+    #[test]
+    fn schema_spec_id_charset_validation() {
+        // Valid IDs
+        assert!(validate_asset(
+            &json!({"id": "lex_A-B_123", "kind": "expression"}),
+            "expression"
+        )
+        .is_ok());
+        assert!(validate_asset(&json!({"id": "a", "kind": "motion"}), "motion").is_ok());
+        assert!(validate_asset(
+            &json!({"id": "A".repeat(128), "kind": "expression"}),
+            "expression"
+        )
+        .is_ok());
+
+        // Invalid IDs
+        assert!(validate_asset(
+            &json!({"id": "has space", "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+        assert!(validate_asset(
+            &json!({"id": "has.dot", "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+        assert!(validate_asset(
+            &json!({"id": "../traversal", "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+        assert!(validate_asset(
+            &json!({"id": "A".repeat(129), "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn schema_spec_provenance_field_optional() {
+        // Motion without provenance is valid
+        let m = json!({
+            "id": "lmo_test",
+            "kind": "motion",
+            "name": "Test",
+            "trigger": "test",
+            "fps": 30,
+            "duration_s": 1.0,
+            "frames": [],
+            "learnedAt": 0
+        });
+        assert!(validate_asset(&m, "motion").is_ok());
+
+        // Provenance doesn't affect validation
+        let mut report = ImportReport::default();
+        note_motion_provenance(&mut report, &m);
+        assert_eq!(report.motions_generated, 0);
+        assert_eq!(report.motions_camera, 0);
+    }
 }

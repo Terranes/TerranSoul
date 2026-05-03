@@ -41,7 +41,7 @@
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "npx vitest run && cargo test",
+      "command": "npx vitest run && cd src-tauri && cargo test",
       "group": "test",
       "presentation": { "reveal": "always" }
     },
