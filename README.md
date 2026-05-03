@@ -143,7 +143,7 @@ TerranSoul is an open-source **3D virtual assistant + AI package manager** that 
 |----------|--------|
 | Desktop | Windows · macOS · Linux |
 | Mobile | iOS · Android |
-| Browser | Product landing page + live pet-mode demo |
+| Browser | Vercel-only static web test environment + live pet-mode demo |
 
 The iOS target now has a Tauri 2 platform overlay (`src-tauri/tauri.ios.conf.json`), shared Vue safe-area layout, and Stronghold-backed secure storage for pairing credentials. Generate the Xcode project on macOS with `npm run tauri:ios:init`; non-macOS hosts can still run `npm run tauri:ios:check` to validate the scaffold.
 
@@ -201,6 +201,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - Animation channel: `llm-animation` events for `<anim>` JSON blocks emitted by the LLM
 - Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
+- Browser-only Vercel onboarding — one-click "Authorize with Google", "Authorize with ChatGPT", or instant free demo choices remembered in the `brain` Pinia store + localStorage, with no Tauri installer, backend account, manual API-key entry, or user-side installation required
 - Persona-based fallback when no LLM is configured
 - **RemoteHost transport adapter** (`src/transport/`) — shared frontend contract for local in-process Tauri IPC and remote gRPC-Web hosts. Browser/WebView clients use `@bufbuild/connect` + `@bufbuild/connect-web` descriptors for `Brain.Health`, `Brain.Search`, `Brain.StreamSearch`, `PhoneControl.SendChatMessage`, and `PhoneControl.StreamChatMessage`, while desktop keeps using the same interface over local `invoke()` calls. The phone tool layer (`remote-tools.ts`) exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` on top of that same contract, and the iOS notification watcher polls the same adapter for long-running workflow/Copilot updates.
 - **LLM-powered intent classifier** (`src-tauri/src/brain/intent_classifier.rs` + `classify_intent` Tauri command) — every chat turn is classified by the configured brain (Free → Paid → Local) into a typed `IntentDecision` (`chat`, `learn_with_docs{topic}`, `teach_ingest{topic}`, `gated_setup{upgrade_gemini|provide_context}`, `unknown`). Replaces three brittle English-only regex detectors so paraphrases, typos and multilingual phrasings (`học luật Việt Nam từ tài liệu của tôi`) all route correctly. 3 s hard timeout + 30 s in-memory LRU cache; on `unknown` the frontend automatically triggers the install-all overlay so a local Ollama brain is set up — guaranteeing every future turn has a working classifier offline. **Every "LLM decides" surface (intent classifier, unknown→install fallback, don't-know gate, post-reply quest suggestions, chat-based LLM-switching commands, yes/no quick-reply buttons, model-capacity auto-upgrade prompt) is user-toggleable** from the Brain panel's "🧭 AI decision-making" section. New code touching AI routing must follow **[`rules/llm-decision-rules.md`](rules/llm-decision-rules.md)** — no regex / `.includes` / keyword arrays driving AI behaviour. See **[docs/brain-advanced-design.md § Intent Classification](docs/brain-advanced-design.md#intent-classification)**.
@@ -298,6 +299,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - `src/views/MemoryView.vue` — list / grid / graph view, tier chips, tag-prefix category filter chips with counts, search + semantic + hybrid search
 - `src/components/MemoryGraph.vue` — Cytoscape.js semantic graph visualization with typed edges
 - `src/stores/memory.ts` — Pinia store (CRUD + search + streaming results)
+- Browser/Vercel mode keeps the million-user demo backend-free: only browser session choices are persisted in Pinia + localStorage today; Rust-backed long-term RAG still requires desktop/mobile or a paired RemoteHost, as detailed in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface).
 
 ### 🎭 Persona System (The "Sense of Self & Mirror Neurons")
 
