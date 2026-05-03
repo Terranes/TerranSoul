@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 29.5 — Sitting-prop lifecycle regression coverage](#chunk-295--sitting-prop-lifecycle-regression-coverage) | 2026-05-03 |
 | [Chunk 29.4 — glib/GTK modernization tracker](#chunk-294--glibgtk-modernization-tracker) | 2026-05-03 |
 | [Chunk 29.3 — Browser app-window UX hardening](#chunk-293--browser-app-window-ux-hardening) | 2026-05-03 |
 | [Chunk 29.2 — Browser brain transport hardening](#chunk-292--browser-brain-transport-hardening) | 2026-05-03 |
@@ -236,6 +237,33 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 29.5 — Sitting-prop lifecycle regression coverage
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Added focused renderer coverage for the sitting prop lifecycle and extracted the chair/teacup lifecycle into a small testable controller. The chair remains absent by default, appears only for sitting VRMA animations, and is removed/disposed once sitting playback ends.
+
+### What changed
+
+- Added `src/renderer/sitting-props-controller.ts` to own sitting prop sync/disposal.
+- Wired `CharacterViewport.vue` through `SittingPropController` instead of keeping private inline lifecycle logic.
+- Added `src/renderer/sitting-props-controller.test.ts` covering:
+  - no prop creation by default or for non-sitting animations;
+  - chair creation/visibility for sitting animations;
+  - scene removal plus geometry/material disposal after sitting ends.
+- Disposed both chair and teacup groups during lifecycle cleanup.
+- Removed the completed 29.5 row from `rules/milestones.md`; no active chunks remain.
+
+### Validation
+
+- `npm run lint` - passed.
+- `npx vitest run src/renderer/sitting-props-controller.test.ts src/renderer/vrma-manager.test.ts` - 6 passed.
 
 ---
 

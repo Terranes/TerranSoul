@@ -33,12 +33,4 @@
 
 ## Next Chunk
 
-Chunk 29.5 — Sitting-prop lifecycle regression coverage.
-
----
-
-## Active Chunks
-
-| Chunk | Status | Goal | Maps to |
-|---|---|---|---|
-| 29.5 | not-started | Sitting-prop lifecycle regression coverage: add targeted frontend/renderer tests or lightweight harness coverage proving the chair is absent by default, appears only for sitting animations, and is disposed/hidden after sitting ends. | `src/components/CharacterViewport.vue`, `src/renderer/props.ts`, `src/renderer/vrma-manager.ts` |
+No active chunks remain.

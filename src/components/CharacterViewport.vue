@@ -482,11 +482,11 @@ import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
-import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender, SITTING_ANIMATION_PATHS } from '../renderer/vrma-manager';
+import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender } from '../renderer/vrma-manager';
 import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
 import { PoseAnimator, type LlmPoseFrame } from '../renderer/pose-animator';
 import { EmotionPoseBias, type BiasEmotion } from '../renderer/emotion-pose-bias';
-import { createSittingProps, type SittingProps } from '../renderer/props';
+import { SittingPropController } from '../renderer/sitting-props-controller';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -817,39 +817,14 @@ const emotionBias = new EmotionPoseBias();
 let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Sitting chair prop ───────────────────────────────────────────────
-let sittingProps: SittingProps | null = null;
+const sittingPropController = new SittingPropController();
 
 function disposeSittingProps() {
-  if (!sittingProps) return;
-  sceneCtx?.scene.remove(sittingProps.chair);
-  sittingProps.chair.traverse((obj) => {
-    if ((obj as THREE.Mesh).isMesh) {
-      const mesh = obj as THREE.Mesh;
-      mesh.geometry?.dispose();
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const material of materials) {
-        material.dispose();
-      }
-    }
-  });
-  sittingProps = null;
+  sittingPropController.dispose(sceneCtx?.scene ?? null);
 }
 
 function syncSittingProps(playing: boolean) {
-  const isSitting = playing && vrmaManager.currentPath != null
-    && SITTING_ANIMATION_PATHS.has(vrmaManager.currentPath);
-
-  if (!isSitting) {
-    disposeSittingProps();
-    return;
-  }
-
-  if (!sceneCtx) return;
-  if (!sittingProps) {
-    sittingProps = createSittingProps();
-    sceneCtx.scene.add(sittingProps.chair);
-  }
-  sittingProps.chair.visible = true;
+  sittingPropController.sync(sceneCtx?.scene ?? null, playing, vrmaManager.currentPath);
 }
 
 // Wire VRMA playback state to the animator + lazy-load sitting props.
