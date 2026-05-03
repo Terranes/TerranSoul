@@ -111,6 +111,16 @@ describe('translator mode intent helpers', () => {
     expect(result?.target).toEqual({ code: 'vi', name: 'Vietnamese' });
   });
 
+  it('detects translator requests for worldwide language names and BCP-47 codes', () => {
+    const byName = detectTranslatorModeRequest('translate between Arabic and Swahili');
+    expect(byName?.source).toEqual({ code: 'ar', name: 'Arabic' });
+    expect(byName?.target).toEqual({ code: 'sw', name: 'Swahili' });
+
+    const byCode = detectTranslatorModeRequest('translator from pt-BR to zu');
+    expect(byCode?.source).toEqual({ code: 'pt-BR', name: 'Brazilian Portuguese' });
+    expect(byCode?.target).toEqual({ code: 'zu', name: 'Zulu' });
+  });
+
   it('detects stop-translator requests', () => {
     expect(isStopTranslatorModeRequest('stop translator mode')).toBe(true);
     expect(isStopTranslatorModeRequest('hello translator')).toBe(false);

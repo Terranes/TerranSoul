@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useTtsPlayback } from './useTtsPlayback';
+import { hasBrowserTtsVoice, useTtsPlayback } from './useTtsPlayback';
 
 // ── Mock Tauri IPC ────────────────────────────────────────────────────────────
 
@@ -426,9 +426,9 @@ describe('useTtsPlayback — multilingual browser voices', () => {
   });
 
   it.each([
-    ['vi', 'vi-VN', 'Vietnamese Voice', 'xin chào. '],
-    ['ja', 'ja-JP', 'Japanese Voice', 'こんにちは。 '],
-    ['es', 'es-ES', 'Spanish Voice', 'hola. '],
+    ['vi', 'vi', 'Vietnamese Voice', 'xin chào. '],
+    ['ja', 'ja', 'Japanese Voice', 'こんにちは。 '],
+    ['es', 'es', 'Spanish Voice', 'hola. '],
   ])('sets SpeechSynthesisUtterance language for translator chunks in %s', async (
     language,
     expectedLang,
@@ -452,8 +452,32 @@ describe('useTtsPlayback — multilingual browser voices', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     const utterance = mockSpeechSynthesis.speak.mock.calls[0][0];
-    expect(utterance.lang).toBe('vi-VN');
+    expect(utterance.lang).toBe('vi');
     expect(utterance.voice?.name).toBe('Vietnamese Voice');
+  });
+
+  it('reports missing browser voices so the UI can prompt installation', async () => {
+    mockSpeechSynthesis.getVoices.mockReturnValue([]);
+    mockInvoke.mockRejectedValue(new Error('TTS error'));
+    const missing: Array<{ language?: string; code?: string; name?: string }> = [];
+    const listener = (event: Event) => {
+      missing.push((event as CustomEvent<{ code?: string; name?: string }>).detail);
+    };
+    window.addEventListener('ts:tts-voice-missing', listener);
+
+    try {
+      const tts = useTtsPlayback();
+      tts.feedChunk('مرحبا. ', { language: 'ar' });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(missing).toContainEqual({ language: 'ar', code: 'ar', name: 'Arabic' });
+    } finally {
+      window.removeEventListener('ts:tts-voice-missing', listener);
+    }
+  });
+
+  it('checks installed browser voices by language prefix', () => {
+    expect(hasBrowserTtsVoice('Vietnamese')).toBe(true);
+    expect(hasBrowserTtsVoice('ar')).toBe(false);
   });
 });
 

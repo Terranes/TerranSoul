@@ -18,6 +18,7 @@
 
 import { ref, readonly, watch, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { normaliseTranslatorLanguage } from '../utils/translator-languages';
 
 /** Sentence-ending punctuation patterns that trigger TTS synthesis. */
 const SENTENCE_END_RE = /[.!?…]\s+|[。！？]+|\n/;
@@ -76,36 +77,9 @@ export interface TtsPlaybackOptions {
   mutedRef?: Ref<boolean>;
 }
 
-const LANGUAGE_NAME_TO_BCP47: Record<string, string> = {
-  english: 'en-US',
-  vietnamese: 'vi-VN',
-  japanese: 'ja-JP',
-  spanish: 'es-ES',
-  french: 'fr-FR',
-  german: 'de-DE',
-  korean: 'ko-KR',
-  chinese: 'zh-CN',
-};
-
-const LANGUAGE_CODE_TO_BCP47: Record<string, string> = {
-  en: 'en-US',
-  vi: 'vi-VN',
-  ja: 'ja-JP',
-  jp: 'ja-JP',
-  es: 'es-ES',
-  fr: 'fr-FR',
-  de: 'de-DE',
-  ko: 'ko-KR',
-  zh: 'zh-CN',
-};
-
 function normaliseBrowserTtsLanguage(language?: string | null): string | undefined {
-  const cleaned = language?.trim();
-  if (!cleaned) return undefined;
-  const lower = cleaned.toLowerCase();
-  return LANGUAGE_CODE_TO_BCP47[lower]
-    ?? LANGUAGE_NAME_TO_BCP47[lower]
-    ?? (lower.includes('-') ? cleaned : undefined);
+  const normalized = normaliseTranslatorLanguage(language ?? '');
+  return normalized?.code;
 }
 
 function inferLanguageFromTranslatorLabel(text: string): string | undefined {
@@ -122,6 +96,25 @@ function selectBrowserVoice(language: string): SpeechSynthesisVoice | undefined 
   if (exact) return exact;
   const languagePrefix = language.split('-')[0]?.toLowerCase();
   return voices.find((voice) => voice.lang.toLowerCase().split('-')[0] === languagePrefix);
+}
+
+export function hasBrowserTtsVoice(language?: string | null): boolean {
+  const normalized = normaliseBrowserTtsLanguage(language);
+  return Boolean(normalized && selectBrowserVoice(normalized));
+}
+
+function dispatchMissingBrowserVoice(language: string): void {
+  if (typeof window === 'undefined') return;
+  const normalized = normaliseTranslatorLanguage(language);
+  window.dispatchEvent(
+    new CustomEvent('ts:tts-voice-missing', {
+      detail: {
+        language,
+        code: normalized?.code ?? language,
+        name: normalized?.name ?? language,
+      },
+    }),
+  );
 }
 
 export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle {
@@ -339,7 +332,11 @@ export function useTtsPlayback(options?: TtsPlaybackOptions): TtsPlaybackHandle 
       if (browserLanguage) {
         utterance.lang = browserLanguage;
         const voice = selectBrowserVoice(browserLanguage);
-        if (voice) utterance.voice = voice;
+        if (voice) {
+          utterance.voice = voice;
+        } else {
+          dispatchMissingBrowserVoice(browserLanguage);
+        }
       }
       utterance.pitch = options?.getBrowserPitch?.() ?? 1.0;
       utterance.rate = options?.getBrowserRate?.() ?? 1.0;
