@@ -120,7 +120,7 @@ async function renderVrmHeadshot(vrmPath: string): Promise<string> {
 
   // Frame the head: find the head bone or fall back to bounding box top
   const headBone = vrm.humanoid?.getNormalizedBoneNode('head');
-  let headY = 1.5; // sensible default
+  let headY: number;
   if (headBone) {
     const wp = new THREE.Vector3();
     headBone.getWorldPosition(wp);
