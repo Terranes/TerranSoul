@@ -99,11 +99,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
 .theme-toggle-icon { font-size: 0.95rem; line-height: 1; }
 
 .theme-popover {
-  position: absolute;
-  top: calc(100% + 0.6rem);
-  right: 0;
-  z-index: 50;
-  width: min(320px, calc(100vw - 2rem));
+  position: fixed;
+  top: auto;
+  right: 1rem;
+  left: 1rem;
+  z-index: 200;
+  width: auto;
+  max-width: 380px;
+  margin: 0 auto;
   padding: var(--ts-space-md);
   border: 1px solid color-mix(in srgb, var(--ts-accent) 25%, var(--ts-border));
   border-radius: var(--ts-radius-lg);
@@ -113,6 +116,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
     var(--ts-shadow-lg);
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+/* On screens wide enough, anchor the popover to the toggle button instead */
+@media (min-width: 480px) {
+  .theme-popover {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 0;
+    left: auto;
+    width: min(320px, calc(100vw - 2rem));
+    margin: 0;
+  }
 }
 
 .theme-pop-enter-active,

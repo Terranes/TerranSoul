@@ -7,7 +7,7 @@ describe('useTheme', () => {
     // Reset to default before each test
     localStorage.removeItem('ts-active-theme');
     const { setTheme } = useTheme();
-    setTheme('default');
+    setTheme(DEFAULT_THEME_ID);
   });
 
   afterEach(() => {
@@ -21,7 +21,7 @@ describe('useTheme', () => {
   it('returns the default theme initially', () => {
     const { themeId, activeTheme } = useTheme();
     expect(themeId.value).toBe(DEFAULT_THEME_ID);
-    expect(activeTheme.value.id).toBe('default');
+    expect(activeTheme.value.id).toBe(DEFAULT_THEME_ID);
   });
 
   it('exposes the full list of built-in themes', () => {
@@ -40,7 +40,7 @@ describe('useTheme', () => {
   it('setTheme is a no-op for unknown IDs', () => {
     const { themeId, setTheme } = useTheme();
     setTheme('nonexistent-theme');
-    expect(themeId.value).toBe('default');
+    expect(themeId.value).toBe(DEFAULT_THEME_ID);
   });
 
   it('applies data-theme attribute instead of CSS custom properties', () => {
@@ -106,12 +106,13 @@ describe('useTheme', () => {
     expect(seen.size).toBe(BUILTIN_THEMES.length);
   });
 
-  it('nextTheme wraps around to the first theme', () => {
+  it('nextTheme wraps around after a full cycle', () => {
     const { themeId, nextTheme } = useTheme();
+    const start = themeId.value;
     for (let i = 0; i < BUILTIN_THEMES.length; i++) {
       nextTheme();
     }
-    expect(themeId.value).toBe(BUILTIN_THEMES[0].id);
+    expect(themeId.value).toBe(start);
   });
 
   it('singleton state is shared across multiple useTheme() calls', () => {

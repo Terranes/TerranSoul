@@ -480,4 +480,43 @@ onBeforeUnmount(() => {
   0%, 100% { opacity: 0.5; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.25); }
 }
+
+/* ── Mobile responsive ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .browser-pet-companion {
+    width: 100%;
+  }
+
+  .pet-frame {
+    max-width: min(280px, calc(100vw - 2rem));
+    /* Keep aspect-ratio but cap height so the model is visible above the fold */
+    max-height: 55vw;
+    aspect-ratio: auto;
+    height: min(calc((100vw - 2rem) * 4 / 3), 55vw);
+  }
+
+  .pet-chat-log {
+    max-height: 140px;
+    min-height: 80px;
+  }
+
+  .pet-console-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .pet-frame {
+    max-width: calc(100vw - 2rem);
+    height: 48vw;
+  }
+
+  .pet-chip,
+  .pet-tool {
+    font-size: 0.78rem;
+    padding: 0.38rem 0.55rem;
+  }
+}
 </style>

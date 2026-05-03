@@ -738,10 +738,7 @@ h3 {
   .pet-stage {
     order: -1;
     align-items: center;
-  }
-
-  .pet-frame {
-    max-width: 280px;
+    width: 100%;
   }
 }
 
