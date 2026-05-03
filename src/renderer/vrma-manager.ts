@@ -71,7 +71,6 @@ export const VALID_MOTION_KEYS: readonly string[] = VRMA_ANIMATIONS
 /** Paths of VRMA animations where the character is in a seated pose. */
 export const SITTING_ANIMATION_PATHS = new Set([
   '/animations/relax.vrma',
-  '/animations/ladylike.vrma',
 ]);
 
 /**
@@ -87,9 +86,9 @@ export function getAnimationForMood(mood: CharacterState): VrmaAnimationEntry | 
  * Female models prefer `ladylike.vrma` most of the time; male models default
  * to the standard `idle.vrma` loop.
  *
- * When `excludeSitting` is true, sitting animations (e.g. `ladylike`) are
- * never returned — used by the floating pet preview / pet mode where there
- * is no chair prop and the model should remain standing.
+ * When `excludeSitting` is true, any idle animation that is also in
+ * `SITTING_ANIMATION_PATHS` is skipped — used by pet mode / the floating
+ * preview where a chair prop would visibly float in mid-air.
  */
 export function getIdleAnimationForGender(
   gender: ModelGender,

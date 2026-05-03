@@ -21,12 +21,11 @@ describe('vrma-manager idle selector', () => {
     expect(high?.motionKey).toBe('idle');
   });
 
-  it('never returns a sitting animation when excludeSitting is true (pet preview)', () => {
-    const low = getIdleAnimationForGender('female', () => 0.01, true);
-    const high = getIdleAnimationForGender('female', () => 0.99, true);
-    expect(low?.motionKey).toBe('idle');
-    expect(high?.motionKey).toBe('idle');
-    expect(low && SITTING_ANIMATION_PATHS.has(low.path)).toBe(false);
+  it('still returns ladylike for female when excludeSitting is true (ladylike is a standing animation)', () => {
+    // ladylike.vrma is NOT a sitting animation — excludeSitting must not filter it out
+    const entry = getIdleAnimationForGender('female', () => 0.01, true);
+    expect(entry?.motionKey).toBe('ladylike');
+    expect(entry && SITTING_ANIMATION_PATHS.has(entry.path)).toBe(false);
   });
 });
 

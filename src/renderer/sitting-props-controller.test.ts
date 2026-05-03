@@ -53,7 +53,7 @@ describe('SittingPropController', () => {
     const scene = new THREE.Scene();
     const controller = new SittingPropController(testProps);
 
-    controller.sync(scene, true, '/animations/ladylike.vrma');
+    controller.sync(scene, true, '/animations/relax.vrma');
     const props = controller.activeProps!;
     const chairMesh = props.chair.children[0] as THREE.Mesh;
     const teacupMesh = props.teacup.children[0] as THREE.Mesh;
@@ -74,7 +74,7 @@ describe('SittingPropController', () => {
     const controller = new SittingPropController(createProps);
     controller.disabled = true;
 
-    controller.sync(scene, true, '/animations/ladylike.vrma');
+    controller.sync(scene, true, '/animations/relax.vrma');
     controller.sync(scene, true, '/animations/relax.vrma');
 
     expect(createProps).not.toHaveBeenCalled();
