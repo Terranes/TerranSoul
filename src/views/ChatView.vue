@@ -644,7 +644,7 @@ const activeQuestQuestion = computed(() => {
   const msg = activeQuestMessage.value;
   if (!msg) return '';
   // Pull first line as a short question, or the whole text if short
-  const first = stripMarkdownForSubtitle(msg.content).split(/[\.\n]/)[0].trim();
+  const first = stripMarkdownForSubtitle(msg.content).split(/[.\n]/)[0].trim();
   return first || 'What would you like to do?';
 });
 
@@ -887,24 +887,22 @@ async function handleSend(message: string) {
   // chat message instead of going through the LLM.
   const dispatch = await tryDispatchSlashCommand(message);
   if (dispatch.handled) {
-    conversationStore.addMessages([
-      {
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: message,
-        timestamp: Date.now(),
-      },
-      {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: dispatch.error
-          ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
-          : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
-        agentName: 'TerranSoul',
-        sentiment: dispatch.error ? 'sad' : 'neutral',
-        timestamp: Date.now(),
-      },
-    ]);
+    conversationStore.addMessage({
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    });
+    conversationStore.addMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: dispatch.error
+        ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
+        : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
+      agentName: 'TerranSoul',
+      sentiment: dispatch.error ? 'sad' : 'neutral',
+      timestamp: Date.now(),
+    });
     return;
   }
 
@@ -978,7 +976,7 @@ const canSkipDialog = computed(
 
 function skipCurrentDialog() {
   tts.stop();
-  streamTtsActive = false;
+  isStreamTtsActive = false;
   if (subtitleHideTimer) {
     clearTimeout(subtitleHideTimer);
     subtitleHideTimer = null;
@@ -1285,12 +1283,12 @@ async function setupTauriEventListener() {
       if (voice.config.tts_provider) {
         if (event.payload.done) {
           tts.flush();
-          streamTtsActive = false;
+          isStreamTtsActive = false;
         } else if (event.payload.text) {
-          if (!streamTtsActive) {
+          if (!isStreamTtsActive) {
             // New AI response started: stop previous speech and only speak latest.
             tts.stop();
-            streamTtsActive = true;
+            isStreamTtsActive = true;
           }
           tts.feedChunk(event.payload.text);
         }
@@ -1352,9 +1350,9 @@ watch(
       // Stream done — set final emotion from parsed tags (once, not per-chunk)
       setAvatarState(sentimentToState(streaming.currentEmotion));
     }
-    if (!active && streamTtsActive) {
+    if (!active && isStreamTtsActive) {
       tts.flush();
-      streamTtsActive = false;
+      isStreamTtsActive = false;
     }
   },
 );

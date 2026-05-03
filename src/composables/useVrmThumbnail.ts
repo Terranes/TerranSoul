@@ -176,7 +176,7 @@ const _failed = new Set<string>();
 async function renderUserModelHeadshot(userModelId: string): Promise<string> {
   const bytes = await invoke<number[] | Uint8Array>('read_user_model_bytes', { id: userModelId });
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const blob = new Blob([u8 as BlobPart], { type: 'model/gltf-binary' });
+  const blob = new Blob([u8 as Uint8Array<ArrayBuffer>], { type: 'model/gltf-binary' });
   const blobUrl = URL.createObjectURL(blob);
   try {
     return await renderVrmHeadshot(blobUrl);
@@ -269,12 +269,28 @@ export function useVrmThumbnail(
 export async function preGenerateUserThumbnail(userModelId: string): Promise<void> {
   const cached = await getCached(userModelId);
   if (cached) return; // Already cached
-  try {
+
+  const existing = _inflight.get(userModelId);
+  if (existing) {
+    await existing;
+    return;
+  }
+
+  const task = (async () => {
     const dataUrl = await renderUserModelHeadshot(userModelId);
     await setCache(userModelId, dataUrl);
+    return dataUrl;
+  })();
+
+  _inflight.set(userModelId, task);
+
+  try {
+    await task;
   } catch (err) {
     _failed.add(userModelId);
     console.error(`[TerranSoul] Pre-generate thumbnail failed for ${userModelId}:`, err);
+  } finally {
+    if (_inflight.get(userModelId) === task) _inflight.delete(userModelId);
   }
 }
 
