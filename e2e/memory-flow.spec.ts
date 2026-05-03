@@ -23,7 +23,6 @@ import {
   collectConsoleErrors,
   assertNoCrashErrors,
   waitForAppReady,
-  getPiniaState,
   navigateToTab,
   TIMEOUTS,
 } from './helpers';
