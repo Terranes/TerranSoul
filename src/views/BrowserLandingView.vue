@@ -166,8 +166,8 @@ defineEmits<{
 
 <style scoped>
 .browser-landing {
-  --landing-pet-width: min(28vw, 260px);
-  --landing-pet-height: min(46vh, 390px);
+  --landing-pet-width: clamp(150px, 18vw, 210px);
+  --landing-pet-height: clamp(210px, 28vh, 300px);
 
   min-height: 100vh;
   min-height: 100dvh;
@@ -369,8 +369,8 @@ h1 {
 
 @media (max-width: 820px) {
   .browser-landing {
-    --landing-pet-width: 168px;
-    --landing-pet-height: 250px;
+    --landing-pet-width: 138px;
+    --landing-pet-height: 205px;
   }
 
   .landing-links {
@@ -388,6 +388,11 @@ h1 {
 }
 
 @media (max-width: 520px) {
+  .browser-landing {
+    --landing-pet-width: 112px;
+    --landing-pet-height: 168px;
+  }
+
   .landing-nav,
   .hero-actions {
     align-items: stretch;
