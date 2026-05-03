@@ -19,6 +19,14 @@ describe('SelfImprovePanel', () => {
     expect(wrapper.text()).toContain('Configure Coding LLM');
   });
 
+  it('renders self-improve improvement chunks for research and Redis scouting', () => {
+    wrapper = mount(SelfImprovePanel);
+    expect(wrapper.find('.si-improvement').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Improvement chunks');
+    expect(wrapper.text()).toContain('Redis');
+    expect(wrapper.text()).toMatch(/model\/tool\/API|model, tool, and API/i);
+  });
+
   it('disables Enable button when no coding LLM is configured', () => {
     wrapper = mount(SelfImprovePanel);
     const enableBtn = wrapper

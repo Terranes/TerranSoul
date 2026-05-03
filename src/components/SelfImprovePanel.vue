@@ -99,6 +99,40 @@
       </ul>
     </div>
 
+    <!-- Research-backed improvement chunks -->
+    <div class="si-improvement">
+      <h3 class="si-section-h">
+        Improvement chunks
+      </h3>
+      <p class="si-improvement-desc">
+        Runtime failures and new ideas become scoped chunks. The loop should
+        verify bugs, research better current approaches online, and review
+        Redis/model/tool/API options before implementation.
+      </p>
+      <ul class="si-improvement-list">
+        <li
+          v-for="chunk in store.improvementChunks"
+          :key="chunk.id"
+          class="si-improvement-item"
+          :class="`si-improvement-item--${chunk.priority}`"
+        >
+          <div class="si-improvement-top">
+            <span class="si-improvement-priority">{{ chunk.priority }}</span>
+            <span class="si-improvement-status">{{ chunk.status }}</span>
+          </div>
+          <div class="si-improvement-title">
+            {{ chunk.title }}
+          </div>
+          <div class="si-improvement-body">
+            {{ chunk.description }}
+          </div>
+          <div class="si-improvement-trigger">
+            Trigger: {{ chunk.trigger }}
+          </div>
+        </li>
+      </ul>
+    </div>
+
     <!-- Activity feed -->
     <div class="si-activity">
       <h3 class="si-section-h">
@@ -793,6 +827,61 @@ async function onClearLog() {
 .si-phase-title { font-size: 0.88rem; font-weight: 600; }
 .si-phase-desc { font-size: 0.78rem; color: var(--ts-text-muted, #94a3b8); margin-top: 2px; line-height: 1.4; }
 .si-phase-blocked { font-size: 0.74rem; color: #fca5a5; margin-top: 4px; }
+
+/* Improvement chunks */
+.si-improvement {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(125, 211, 252, 0.15);
+  border-radius: 10px;
+  padding: 12px;
+}
+.si-improvement-desc {
+  margin: 0 0 10px;
+  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.si-improvement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.si-improvement-item {
+  padding: 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.si-improvement-item--high { border-color: rgba(248, 113, 113, 0.45); }
+.si-improvement-item--medium { border-color: rgba(125, 211, 252, 0.35); }
+.si-improvement-item--low { border-color: rgba(148, 163, 184, 0.24); }
+.si-improvement-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.si-improvement-priority,
+.si-improvement-status {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ts-text-muted, #94a3b8);
+}
+.si-improvement-title {
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+.si-improvement-body,
+.si-improvement-trigger {
+  margin-top: 4px;
+  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
 
 /* Activity feed */
 .si-activity-empty {

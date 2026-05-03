@@ -40,8 +40,34 @@ describe('self-improve store', () => {
         'autonomy-loop',
         'service-tray',
         'resilience',
+        'failure-triage-radar',
+        'online-tool-model-radar',
+        'redis-code-memory',
       ]),
     );
+  });
+
+  it('queues research-backed improvement chunks by default', () => {
+    const store = useSelfImproveStore();
+    const ids = store.improvementChunks.map((chunk) => chunk.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      'research-better-approach',
+      'redis-vector-memory-scout',
+      'model-tool-news-radar',
+    ]));
+    expect(store.improvementChunks.some((chunk) => /redis/i.test(chunk.title))).toBe(true);
+    expect(store.improvementChunks.some((chunk) => /model|api/i.test(chunk.title))).toBe(true);
+  });
+
+  it('promotes a high-priority bug triage chunk when the last run failed', () => {
+    const store = useSelfImproveStore();
+    store.metrics.last_error = 'tests failed';
+    store.metrics.last_error_chunk = '28.9';
+    const triage = store.improvementChunks.find((chunk) => chunk.id === 'bug-triage-from-run');
+    expect(triage).toBeDefined();
+    expect(triage!.priority).toBe('high');
+    expect(triage!.status).toBe('ready');
+    expect(triage!.description).toContain('28.9');
   });
 
   it('flips coding-llm phase to completed once a config is loaded', async () => {
