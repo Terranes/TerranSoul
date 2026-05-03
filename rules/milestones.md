@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-Chunk 29.4 — glib/GTK modernization tracker.
+Chunk 29.5 — Sitting-prop lifecycle regression coverage.
 
 ---
 
@@ -41,5 +41,4 @@ Chunk 29.4 — glib/GTK modernization tracker.
 
 | Chunk | Status | Goal | Maps to |
 |---|---|---|---|
-| 29.4 | not-started | glib/GTK modernization tracker: periodically retry the Tauri/wry/gtk-rs dependency path, remove the `glib 0.18` advisory note only when the Linux stack can actually resolve to `glib >=0.20`, and avoid adding duplicate direct glib dependencies that leave gtk3 transitives in place. | `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, Tauri/wry Linux dependency graph |
 | 29.5 | not-started | Sitting-prop lifecycle regression coverage: add targeted frontend/renderer tests or lightweight harness coverage proving the chair is absent by default, appears only for sitting animations, and is disposed/hidden after sitting ends. | `src/components/CharacterViewport.vue`, `src/renderer/props.ts`, `src/renderer/vrma-manager.ts` |

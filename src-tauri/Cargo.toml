@@ -62,11 +62,12 @@ scylla = { version = "0.14", optional = true }
 # ── Security notes ──────────────────────────────────────────────────────────────────────────
 # glib 0.18.5 (GHSA-cf7g-cm7q-rq7q): VariantStrIter unsoundness fixed in glib 0.20.0.
 # glib 0.20.0 is part of the gtk4-rs ecosystem and is SemVer-incompatible with gtk3 0.18.x.
-# Tauri 2.11.x still depends on gtk3 0.18.x on Linux; `cargo update -p glib
-# --precise 0.20.12` fails because gtk 0.18 requires glib ^0.18. Upgrading
-# glib requires Tauri/wry/gtk to migrate to gtk-rs 0.20+ first. Adding a direct
-# glib 0.20 dependency would only duplicate glib and would not remove the
-# vulnerable transitive gtk3 path, so this remains BLOCKED BY UPSTREAM.
+# Verified 2026-05-03: Tauri 2.11.0 still depends on gtk3 0.18.x on Linux;
+# `cargo update -p glib --precise 0.20.12 --dry-run` fails because gtk 0.18
+# requires glib ^0.18. Upgrading glib requires Tauri/wry/gtk to migrate to
+# gtk-rs 0.20+ first. Adding a direct glib 0.20 dependency would only duplicate
+# glib and would not remove the vulnerable transitive gtk3 path, so this remains
+# BLOCKED BY UPSTREAM.
 # ────────────────────────────────────────────────────────────────────────────────────────────
 usearch = "2"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }

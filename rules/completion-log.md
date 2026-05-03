@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 29.4 — glib/GTK modernization tracker](#chunk-294--glibgtk-modernization-tracker) | 2026-05-03 |
 | [Chunk 29.3 — Browser app-window UX hardening](#chunk-293--browser-app-window-ux-hardening) | 2026-05-03 |
 | [Chunk 29.2 — Browser brain transport hardening](#chunk-292--browser-brain-transport-hardening) | 2026-05-03 |
 | [Chunk 29.1 — Browser-mode QA and responsive landing polish](#chunk-291--browser-mode-qa-and-responsive-landing-polish) | 2026-05-03 |
@@ -235,6 +236,30 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 29.4 — glib/GTK modernization tracker
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Retried the Tauri/wry/gtk-rs dependency path for the `glib 0.18` advisory and confirmed the Linux stack still cannot resolve to `glib >=0.20` without upstream migration away from gtk3 `0.18.x`.
+
+### What changed
+
+- Ran the current reverse dependency graph for `glib v0.18.5`, confirming it is still pulled by `gtk v0.18.2` through `tauri v2.11.0`, `wry v0.55.0`, `webkit2gtk v2.0.2`, `tao v0.35.0`, `muda`, and tray-icon paths.
+- Retried `cargo update -p glib --precise 0.20.12 --dry-run`; it still fails because `gtk v0.18.2` requires `glib ^0.18`.
+- Kept the existing no-duplicate-direct-glib stance: adding `glib 0.20` directly would not remove the vulnerable gtk3 transitive path.
+- Updated the `src-tauri/Cargo.toml` security note with the 2026-05-03 verification result.
+- Removed the completed 29.4 row from `rules/milestones.md`; next chunk is 29.5.
+
+### Validation
+
+- `cargo tree -i glib --locked` - confirmed `glib v0.18.5` remains under gtk3/Tauri Linux transitives.
+- `cargo update -p glib --precise 0.20.12 --dry-run` - failed as expected with `gtk v0.18.2` requiring `glib ^0.18`.
 
 ---
 
