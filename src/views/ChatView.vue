@@ -512,7 +512,7 @@ let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
 let unlistenLlmPose: (() => void) | null = null;
 let unlistenProvidersExhausted: (() => void) | null = null;
-let streamTtsActive = false;
+let isStreamTtsActive = false;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
@@ -527,9 +527,9 @@ const lipSyncBridge = useLipSyncBridge(tts, getAsm);
 function handleBrowserSentenceEvent(event: Event) {
   const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
-  if (!streamTtsActive) {
+  if (!isStreamTtsActive) {
     tts.stop();
-    streamTtsActive = true;
+    isStreamTtsActive = true;
   }
   // Add trailing whitespace so useTtsPlayback's sentence detector flushes
   // browser-direct sentence events immediately instead of waiting for done.
