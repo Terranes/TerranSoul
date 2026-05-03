@@ -109,49 +109,107 @@ impl PostgresBackend {
         .await
         .map_err(|e| StorageError::Migration(e.to_string()))?;
 
-        for column_sql in &[
-            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS valid_to BIGINT",
-            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS obsidian_path TEXT",
-            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_exported BIGINT",
-            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS updated_at BIGINT",
-            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS origin_device TEXT",
-        ] {
-            sqlx::query(column_sql)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| StorageError::Migration(e.to_string()))?;
-        }
-
-        // Create indexes
-        for idx in &[
-            "CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories (importance DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_memories_created ON memories (created_at DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_memories_source_hash ON memories (source_hash)",
-            "CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories (tier)",
-            "CREATE INDEX IF NOT EXISTS idx_memories_session ON memories (session_id)",
-            "CREATE INDEX IF NOT EXISTS idx_memories_decay ON memories (decay_score DESC)",
-        ] {
-            sqlx::query(idx)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| StorageError::Migration(e.to_string()))?;
-        }
-
-        // Record migration version
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
-
-        sqlx::query(
-            "INSERT INTO schema_version (version, description, applied_at)
-             VALUES (4, 'PostgreSQL V4 — full schema', $1)
-             ON CONFLICT (version) DO NOTHING",
+        // V2: Add extended columns (version-tracked)
+        let v2_applied: Option<i64> = sqlx::query_scalar(
+            "SELECT version FROM schema_version WHERE version = 2 LIMIT 1",
         )
-        .bind(now_ms)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
         .map_err(|e| StorageError::Migration(e.to_string()))?;
+
+        if v2_applied.is_none() {
+            for column_sql in &[
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS valid_to BIGINT",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS obsidian_path TEXT",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_exported BIGINT",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS updated_at BIGINT",
+                "ALTER TABLE memories ADD COLUMN IF NOT EXISTS origin_device TEXT",
+            ] {
+                sqlx::query(column_sql)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| StorageError::Migration(e.to_string()))?;
+            }
+
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            sqlx::query(
+                "INSERT INTO schema_version (version, description, applied_at)
+                 VALUES (2, 'PostgreSQL V2 — extended memory columns', $1)
+                 ON CONFLICT (version) DO NOTHING",
+            )
+            .bind(now_ms)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Migration(e.to_string()))?;
+        }
+
+        // V3: Create indexes (version-tracked)
+        let v3_applied: Option<i64> = sqlx::query_scalar(
+            "SELECT version FROM schema_version WHERE version = 3 LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| StorageError::Migration(e.to_string()))?;
+
+        if v3_applied.is_none() {
+            for idx in &[
+                "CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories (importance DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_memories_created ON memories (created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_memories_source_hash ON memories (source_hash)",
+                "CREATE INDEX IF NOT EXISTS idx_memories_tier ON memories (tier)",
+                "CREATE INDEX IF NOT EXISTS idx_memories_session ON memories (session_id)",
+                "CREATE INDEX IF NOT EXISTS idx_memories_decay ON memories (decay_score DESC)",
+            ] {
+                sqlx::query(idx)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| StorageError::Migration(e.to_string()))?;
+            }
+
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            sqlx::query(
+                "INSERT INTO schema_version (version, description, applied_at)
+                 VALUES (3, 'PostgreSQL V3 — indexes', $1)
+                 ON CONFLICT (version) DO NOTHING",
+            )
+            .bind(now_ms)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Migration(e.to_string()))?;
+        }
+
+        // V4: Mark full schema migration complete (version-tracked)
+        let v4_applied: Option<i64> = sqlx::query_scalar(
+            "SELECT version FROM schema_version WHERE version = 4 LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| StorageError::Migration(e.to_string()))?;
+
+        if v4_applied.is_none() {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+
+            sqlx::query(
+                "INSERT INTO schema_version (version, description, applied_at)
+                 VALUES (4, 'PostgreSQL V4 — full schema', $1)
+                 ON CONFLICT (version) DO NOTHING",
+            )
+            .bind(now_ms)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| StorageError::Migration(e.to_string()))?;
+        }
 
         Ok(())
     }
@@ -201,6 +259,13 @@ impl PostgresBackend {
 }
 
 impl StorageBackend for PostgresBackend {
+    /// Run schema migrations for the PostgreSQL backend.
+    ///
+    /// This method is synchronous and performs blocking work internally
+    /// (`run_migrations_sync`). Do not call it directly from an async runtime
+    /// worker thread. If you need to invoke migrations from async code, run this
+    /// method in a dedicated blocking context (for example, `spawn_blocking`) or
+    /// execute it during synchronous startup.
     fn migrate(&self) -> StorageResult<()> {
         self.run_migrations_sync()
     }
@@ -358,15 +423,20 @@ impl StorageBackend for PostgresBackend {
             .map(|(i, _)| format!("(content ILIKE ${} OR tags ILIKE ${})", i + 1, i + 1))
             .collect();
         let where_clause = conditions.join(" OR ");
+        let limit_placeholder = words.len() + 1;
         let sql = format!(
             "SELECT content FROM memories WHERE {where_clause}
-             ORDER BY importance DESC LIMIT {limit}"
+             ORDER BY importance DESC LIMIT ${limit_placeholder}"
         );
+
+        let limit_i64 = i64::try_from(limit)
+            .map_err(|_| StorageError::Other("limit is too large for PostgreSQL BIGINT".into()))?;
 
         let mut query = sqlx::query_scalar::<_, String>(&sql);
         for word in &words {
             query = query.bind(format!("%{word}%"));
         }
+        query = query.bind(limit_i64);
 
         let results = self.block_on(query.fetch_all(&self.pool))?;
         Ok(results)

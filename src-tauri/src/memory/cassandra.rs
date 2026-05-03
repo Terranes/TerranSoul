@@ -16,15 +16,76 @@
 #![cfg(feature = "cassandra")]
 
 use scylla::{Session, SessionBuilder};
+use std::sync::atomic::{AtomicI64, AtomicU16, Ordering};
 
 use super::backend::{StorageBackend, StorageError, StorageResult};
 use super::store::{MemoryEntry, MemoryStats, MemoryTier, MemoryUpdate, NewMemory};
+
+/// Deserialization target for a full `memories` row (22 columns).
+/// Using a named struct bypasses the 16-element tuple limit for `FromRow`.
+#[derive(scylla::FromRow)]
+struct MemoryRow {
+    id: i64,
+    content: String,
+    tags: String,
+    importance: i32,
+    memory_type: String,
+    created_at: i64,
+    last_accessed: Option<i64>,
+    access_count: i32,
+    embedding: Option<Vec<u8>>,
+    tier: String,
+    decay_score: f64,
+    session_id: Option<String>,
+    parent_id: Option<i64>,
+    token_count: i32,
+    source_url: Option<String>,
+    source_hash: Option<String>,
+    expires_at: Option<i64>,
+    valid_to: Option<i64>,
+    obsidian_path: Option<String>,
+    last_exported: Option<i64>,
+    updated_at: Option<i64>,
+    origin_device: Option<String>,
+}
+
+impl MemoryRow {
+    fn into_entry(self) -> MemoryEntry {
+        MemoryEntry {
+            id: self.id,
+            content: self.content,
+            tags: self.tags,
+            importance: self.importance as i64,
+            memory_type: super::store::MemoryType::from_str(&self.memory_type),
+            created_at: self.created_at,
+            last_accessed: self.last_accessed,
+            access_count: self.access_count as i64,
+            embedding: self.embedding.as_deref().map(super::store::bytes_to_embedding),
+            tier: super::store::MemoryTier::from_str(&self.tier),
+            decay_score: self.decay_score,
+            session_id: self.session_id,
+            parent_id: self.parent_id,
+            token_count: self.token_count as i64,
+            source_url: self.source_url,
+            source_hash: self.source_hash,
+            expires_at: self.expires_at,
+            valid_to: self.valid_to,
+            obsidian_path: self.obsidian_path,
+            last_exported: self.last_exported,
+            updated_at: self.updated_at,
+            origin_device: self.origin_device,
+        }
+    }
+}
 
 /// CassandraDB storage backend.
 pub struct CassandraBackend {
     session: Session,
     keyspace: String,
 }
+
+static LAST_TS_MS: AtomicI64 = AtomicI64::new(0);
+static SEQUENCE: AtomicU16 = AtomicU16::new(0);
 
 impl CassandraBackend {
     /// Create a new Cassandra backend.
@@ -91,11 +152,22 @@ impl CassandraBackend {
         tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
     }
 
-    /// Generate a unique ID using timestamp + random component.
+    /// Generate a Snowflake-style unique ID (timestamp + node id + sequence).
     fn next_id() -> i64 {
+        // 41+ bits timestamp (milliseconds), 10 bits node id, 12 bits sequence.
         let ts = Self::now_ms();
-        let rand_part = rand::random::<u16>() as i64;
-        (ts << 16) | rand_part
+        let node_id = (std::process::id() & 0x03ff) as i64;
+
+        let last = LAST_TS_MS.load(Ordering::Relaxed);
+        let seq = if ts == last {
+            (SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1) & 0x0fff
+        } else {
+            LAST_TS_MS.store(ts, Ordering::Relaxed);
+            SEQUENCE.store(0, Ordering::Relaxed);
+            0
+        } as i64;
+
+        (ts << 22) | (node_id << 12) | seq
     }
 
     /// Helper columns list for consistent SELECT ordering.
@@ -153,8 +225,15 @@ impl StorageBackend for CassandraBackend {
                     "CREATE INDEX IF NOT EXISTS {} ON {}.memories ({})",
                     idx.0, self.keyspace, idx.1
                 );
-                // Ignore errors from existing indexes
-                let _ = self.session.query_unpaged(cql, &[]).await;
+                self.session
+                    .query_unpaged(cql, &[])
+                    .await
+                    .map_err(|e| {
+                        StorageError::Migration(format!(
+                            "failed to create index {} on {}.memories({}): {}",
+                            idx.0, self.keyspace, idx.1, e
+                        ))
+                    })?;
             }
 
             // Schema version tracking
@@ -284,7 +363,8 @@ impl StorageBackend for CassandraBackend {
 
     fn get_by_id(&self, id: i64) -> StorageResult<MemoryEntry> {
         self.block_on(async {
-            self.session
+            let result = self
+                .session
                 .query_unpaged(
                     format!(
                         "SELECT {} FROM {}.memories WHERE id = ?",
@@ -296,17 +376,19 @@ impl StorageBackend for CassandraBackend {
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            // CQL doesn't give direct row access the same way — use typed deserialization
-            // For simplicity, we return Other error if not found
-            Err(StorageError::Other(format!(
-                "Memory {id} not found (Cassandra query)"
-            )))
+            let row = result
+                .maybe_first_row_typed::<MemoryRow>()
+                .map_err(|e| StorageError::Cassandra(e.to_string()))?
+                .ok_or_else(|| StorageError::Other(format!("Memory {id} not found (Cassandra query)")))?;
+
+            Ok(row.into_entry())
         })
     }
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            self.session
+            let _result = self
+                .session
                 .query_unpaged(
                     format!("SELECT {} FROM {}.memories", Self::COLS, self.keyspace),
                     &[],
@@ -314,9 +396,9 @@ impl StorageBackend for CassandraBackend {
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
 
-            // Return empty vec if deserialization is complex
-            // Real implementation would use typed rows
-            Ok(vec![])
+            Err(StorageError::Other(
+                "Cassandra get_all deserialization is not yet implemented".to_string(),
+            ))
         })
     }
 
@@ -334,7 +416,9 @@ impl StorageBackend for CassandraBackend {
                 )
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-            Ok(vec![])
+            Err(StorageError::Other(
+                "Cassandra get_by_tier deserialization is not yet implemented".to_string(),
+            ))
         })
     }
 
@@ -356,14 +440,19 @@ impl StorageBackend for CassandraBackend {
 
     fn count(&self) -> StorageResult<i64> {
         self.block_on(async {
-            self.session
+            let result = self.session
                 .query_unpaged(
                     format!("SELECT COUNT(*) FROM {}.memories", self.keyspace),
                     &[],
                 )
                 .await
                 .map_err(|e| StorageError::Cassandra(e.to_string()))?;
-            Ok(self.get_all()?.len() as i64)
+
+            let (count,) = result
+                .first_row_typed::<(i64,)>()
+                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+
+            Ok(count)
         })
     }
 

@@ -141,7 +141,7 @@ impl StorageBackend for MssqlBackend {
                      tier          NVARCHAR(20) NOT NULL DEFAULT 'long',
                      decay_score   FLOAT NOT NULL DEFAULT 1.0,
                      session_id    NVARCHAR(255) NULL,
-                      parent_id     BIGINT NULL REFERENCES memories(id),
+                      parent_id     BIGINT NULL REFERENCES memories(id) ON DELETE SET NULL,
                       token_count   INT NOT NULL DEFAULT 0,
                       valid_to      BIGINT NULL,
                       obsidian_path NVARCHAR(1024) NULL,
@@ -418,16 +418,19 @@ impl StorageBackend for MssqlBackend {
 
     fn relevant_for(&self, message: &str, limit: usize) -> StorageResult<Vec<String>> {
         let pattern = format!("%{}%", message.split_whitespace().next().unwrap_or(""));
+        let limit_i32 = if limit > i32::MAX as usize {
+            i32::MAX
+        } else {
+            limit as i32
+        };
         self.block_on(async {
             let mut client = self.client.lock().await;
             let stream = client
                 .query(
-                    &format!(
-                        "SELECT TOP {limit} content FROM memories
-                     WHERE content LIKE @P1 OR tags LIKE @P1
-                     ORDER BY importance DESC"
-                    ),
-                    &[&pattern],
+                    "SELECT TOP (@P1) content FROM memories
+                     WHERE content LIKE @P2 OR tags LIKE @P2
+                     ORDER BY importance DESC",
+                    &[&limit_i32, &pattern],
                 )
                 .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
