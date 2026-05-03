@@ -36,17 +36,20 @@
           rel="noopener"
         >GitHub</a>
       </nav>
-      <button
-        type="button"
-        class="nav-cta"
-        @click="$emit('open-app-window')"
-      >
-        <span
-          class="cta-dot"
-          aria-hidden="true"
-        />
-        Try the live app
-      </button>
+      <div class="nav-actions">
+        <LandingThemeSwitch />
+        <button
+          type="button"
+          class="nav-cta"
+          @click="$emit('open-app-window')"
+        >
+          <span
+            class="cta-dot"
+            aria-hidden="true"
+          />
+          Try the live app
+        </button>
+      </div>
     </header>
 
     <main
@@ -114,7 +117,7 @@
               class="live-dot"
               aria-hidden="true"
             />
-            Live VRM preview
+            Live VRM preview · drag to rotate
           </p>
         </aside>
       </section>
@@ -287,6 +290,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import CharacterViewport from '../components/CharacterViewport.vue';
+import LandingThemeSwitch from '../components/LandingThemeSwitch.vue';
 
 defineEmits<{
   'open-app-window': [];
@@ -307,6 +311,22 @@ const year = computed(() => new Date().getFullYear());
     radial-gradient(circle at 12% -10%, var(--ts-accent-glow), transparent 38%),
     radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--ts-accent-violet, var(--ts-accent)) 22%, transparent), transparent 32%),
     var(--ts-bg-gradient);
+}
+
+/* ── Futuristic grid lattice overlay (subtle, behind content) ─────── */
+.browser-landing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ts-accent) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ts-accent) 8%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
+  opacity: 0.55;
 }
 
 /* ── Decorative aura orbs ─────────────────────────────────────────────── */
@@ -393,6 +413,13 @@ const year = computed(() => new Date().getFullYear());
   display: flex;
   align-items: center;
   gap: clamp(0.75rem, 2.5vw, 1.6rem);
+}
+
+/* Right-side action cluster (theme switcher + primary CTA). */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ts-space-sm);
 }
 
 .landing-links a,
@@ -604,7 +631,16 @@ h3 {
     0 0 0 1px color-mix(in srgb, var(--ts-accent) 20%, transparent) inset;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  /* Cursor hint: the canvas is interactive (drag to rotate the model). */
+  cursor: grab;
+  transition: box-shadow var(--ts-transition-normal, 0.3s ease);
 }
+.pet-frame:hover {
+  box-shadow:
+    0 40px 80px -25px color-mix(in srgb, var(--ts-accent) 60%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--ts-accent) 35%, transparent) inset;
+}
+.pet-frame:active { cursor: grabbing; }
 
 /* CharacterViewport stretches inside the frame. */
 .pet-frame :deep(canvas),

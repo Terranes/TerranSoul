@@ -1018,11 +1018,20 @@ onMounted(async () => {
   // mode (e.g. re-open to a saved state).
   ctx.setPedestalVisible(!isPetMode.value);
   if (isPetMode.value) {
-    ctx.controls.mouseButtons = {
-      LEFT: null as unknown as THREE.MOUSE,
-      MIDDLE: THREE.MOUSE.ROTATE,
-      RIGHT: null as unknown as THREE.MOUSE,
-    };
+    // Browser landing preview keeps full LEFT-drag rotation so visitors
+    // can interact; real desktop pet mode disables LEFT/RIGHT so the OS
+    // window-drag handler can claim them. (Mirrors the watcher below.)
+    ctx.controls.mouseButtons = props.forcePet
+      ? {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        }
+      : {
+          LEFT: null as unknown as THREE.MOUSE,
+          MIDDLE: THREE.MOUSE.ROTATE,
+          RIGHT: null as unknown as THREE.MOUSE,
+        };
   }
 
   // Persist camera state after user finishes orbiting or zooming.
@@ -1242,20 +1251,32 @@ watch(
 
 // Hide the pedestal (and any other floor decorations) in pet mode so the
 // character floats cleanly on the desktop with nothing visible behind.
-// Remap mouse buttons: left-drag moves the pet (handled by PetOverlayView),
-// middle-click drag rotates the 3D model, scroll wheel zooms.
+// Remap mouse buttons:
+//   • Real pet mode (desktop overlay): left-drag moves the OS window
+//     (handled by PetOverlayView), middle-button rotates the model.
+//   • forcePet preview (browser landing): there is no draggable window,
+//     so left-drag MUST rotate the model — otherwise visitors cannot
+//     interact with the character at all.
 watch(
   () => isPetMode.value,
   (pet) => {
     if (sceneCtx) {
       sceneCtx.setPedestalVisible(!pet);
       if (pet) {
-        // Disable left-click rotation; use middle-button drag to rotate instead
-        sceneCtx.controls.mouseButtons = {
-          LEFT: null as unknown as THREE.MOUSE,
-          MIDDLE: THREE.MOUSE.ROTATE,
-          RIGHT: null as unknown as THREE.MOUSE,
-        };
+        const isLandingPreview = props.forcePet;
+        sceneCtx.controls.mouseButtons = isLandingPreview
+          ? {
+              // Browser landing preview — full interaction.
+              LEFT: THREE.MOUSE.ROTATE,
+              MIDDLE: THREE.MOUSE.DOLLY,
+              RIGHT: THREE.MOUSE.PAN,
+            }
+          : {
+              // Desktop pet overlay — left/right reserved for OS window drag.
+              LEFT: null as unknown as THREE.MOUSE,
+              MIDDLE: THREE.MOUSE.ROTATE,
+              RIGHT: null as unknown as THREE.MOUSE,
+            };
         // Reset camera to full-body zoom so the entire character is visible
         // by default in pet mode (including legs and shoes).
         sceneCtx.resetToFullBody();

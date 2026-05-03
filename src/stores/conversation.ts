@@ -1872,6 +1872,18 @@ export const useConversationStore = defineStore('conversation', () => {
                     }
                     streamingText.value += text;
                   },
+                  onSentence: (sentence) => {
+                    // Sentence-by-sentence event — lets TTS, animation,
+                    // and analytics react before the full response is
+                    // ready. Decoupled via a window CustomEvent so we
+                    // don't pull the TTS/animation modules into the
+                    // conversation store.
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(
+                        new CustomEvent('ts:llm-sentence', { detail: { sentence } }),
+                      );
+                    }
+                  },
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },
                 },

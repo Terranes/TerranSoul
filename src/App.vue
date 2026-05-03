@@ -499,6 +499,8 @@ onMounted(async () => {
     // so the test suite continues to see the normal app shell and chat view.
     if (!import.meta.env.VITE_E2E) {
       browserMode.value = true;
+      // Opt the landing page out of the global overflow:hidden lock.
+      document.documentElement.dataset.tsMode = document.body.dataset.tsMode = 'browser';
     }
     brain.autoConfigureFreeApi();
     skipSetup.value = true;

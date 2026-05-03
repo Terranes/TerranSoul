@@ -75,6 +75,15 @@ export interface ChatMessage {
 export interface StreamCallbacks {
   /** Called for each text delta from the LLM. */
   onChunk: (text: string) => void;
+  /**
+   * Called whenever a complete sentence has been accumulated from the
+   * stream (delimited by `.`, `!`, `?`, `…`, newline, or CJK full-stops).
+   * Useful for sentence-by-sentence TTS, animation triggers, or pacing
+   * — providers that internally buffer the response will still emit
+   * sentence callbacks at natural boundaries instead of dumping the
+   * whole reply in one chunk.
+   */
+  onSentence?: (sentence: string) => void;
   /** Called when the stream is complete with the full response text. */
   onDone: (fullText: string) => void;
   /** Called if an error occurs. */
@@ -161,6 +170,12 @@ export function streamChatCompletion(
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Explicitly request SSE so providers that can choose between buffered
+    // JSON and streaming SSE will pick streaming. Without this, some free
+    // endpoints (e.g. certain Pollinations routes behind a CDN) silently
+    // buffer the whole completion despite `stream: true` in the body and
+    // only emit a single chunk on close.
+    'Accept': 'text/event-stream',
   };
   if (apiKey) {
     headers['Authorization'] = `Bearer ${apiKey}`;
@@ -171,6 +186,40 @@ export function streamChatCompletion(
     messages,
     stream: true,
   });
+
+  // ── Sentence boundary detector ────────────────────────────────────────
+  // Tracks the live tail of un-emitted text. Whenever a sentence
+  // terminator is seen, emit the completed sentence to `onSentence` (if
+  // provided) and trim the buffer. Final remaining text is flushed in
+  // `onDone`.
+  //
+  // Boundaries: . ! ? … and CJK 。 ！ ？ followed by whitespace/newline/EOL,
+  // or a hard newline by itself (paragraph break).
+  let sentenceBuffer = '';
+  const SENTENCE_RE = /([^.!?…。！？\n]*[.!?…。！？]+["')\]]?\s+|[^\n]*\n)/g;
+  function feedSentenceBuffer(text: string): void {
+    if (!callbacks.onSentence || !text) return;
+    sentenceBuffer += text;
+    let match: RegExpExecArray | null;
+    let lastIndex = 0;
+    SENTENCE_RE.lastIndex = 0;
+    while ((match = SENTENCE_RE.exec(sentenceBuffer)) !== null) {
+      const sentence = match[0].trim();
+      if (sentence) {
+        try { callbacks.onSentence(sentence); } catch { /* never break stream */ }
+      }
+      lastIndex = SENTENCE_RE.lastIndex;
+    }
+    if (lastIndex > 0) sentenceBuffer = sentenceBuffer.slice(lastIndex);
+  }
+  function flushSentenceBuffer(): void {
+    if (!callbacks.onSentence) return;
+    const tail = sentenceBuffer.trim();
+    if (tail) {
+      try { callbacks.onSentence(tail); } catch { /* ignore */ }
+    }
+    sentenceBuffer = '';
+  }
 
   // Run the async fetch in the background
   (async () => {
@@ -232,8 +281,10 @@ export function streamChatCompletion(
               if (content) {
                 fullText += content;
                 callbacks.onChunk(content);
+                feedSentenceBuffer(content);
               }
               if (parsed.done) {
+                flushSentenceBuffer();
                 callbacks.onDone(fullText);
                 return;
               }
@@ -251,11 +302,13 @@ export function streamChatCompletion(
             if (content) {
               fullText += content;
               callbacks.onChunk(content);
+              feedSentenceBuffer(content);
             }
           } catch {
             // Skip malformed trailing chunks
           }
         }
+        flushSentenceBuffer();
         callbacks.onDone(fullText);
         return;
       }
@@ -277,6 +330,7 @@ export function streamChatCompletion(
 
           const data = trimmed.slice(6); // Remove "data: " prefix
           if (data === '[DONE]') {
+            flushSentenceBuffer();
             callbacks.onDone(fullText);
             return;
           }
@@ -289,6 +343,7 @@ export function streamChatCompletion(
             if (content) {
               fullText += content;
               callbacks.onChunk(content);
+              feedSentenceBuffer(content);
             }
           } catch {
             // Skip malformed JSON chunks
@@ -297,6 +352,7 @@ export function streamChatCompletion(
       }
 
       // Stream ended without [DONE] — still finalize
+      flushSentenceBuffer();
       callbacks.onDone(fullText);
     } catch (err) {
       if ((err as Error).name === 'AbortError') {

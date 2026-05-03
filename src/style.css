@@ -989,6 +989,31 @@ body {
   overflow: hidden;
 }
 
+/* ── Browser landing mode: opt out of the desktop scroll-lock ──
+   The desktop/pet shell needs html/body/#app locked at 100% with
+   overflow:hidden so the 3D viewport, sidebars and floating chrome
+   sit on a fixed canvas. The browser landing page, however, is a
+   long marketing page with sections that must scroll naturally
+   (and on mobile must let the address bar collapse on scroll).
+   App.vue tags <html> + <body> with data-ts-mode="browser" while
+   the landing page is mounted; this block undoes the global lock
+   without affecting any other layout. */
+html[data-ts-mode="browser"],
+html[data-ts-mode="browser"] body,
+html[data-ts-mode="browser"] #app {
+  position: static;
+  inset: auto;
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+html[data-ts-mode="browser"] body {
+  /* Smooth, modern scroll on the landing page. */
+  scroll-behavior: smooth;
+}
+
 ::-webkit-scrollbar {
   width: 4px;
 }
