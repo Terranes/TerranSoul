@@ -61,18 +61,18 @@ pub async fn start_pairing(state: State<'_, AppState>) -> Result<String, String>
         .map(|a| a.addr.to_string())
         .unwrap_or_else(|| "127.0.0.1".to_string());
 
-    let mcp_port = state
-        .mcp_server
+    let remote_port = state
+        .grpc_server
         .lock()
         .await
         .as_ref()
         .map(|h| h.port)
-        .unwrap_or(7421);
+        .unwrap_or(7422);
 
     // Now acquire again after the await.
     let pairing_mgr = state.pairing_manager.lock().map_err(|e| e.to_string())?;
     let mgr = pairing_mgr.as_ref().unwrap();
-    mgr.start_pairing(&host, mcp_port)
+    mgr.start_pairing(&host, remote_port)
 }
 
 /// Confirm a pending pairing. The phone presents the token it received from the QR code.
@@ -97,7 +97,9 @@ pub async fn confirm_pairing(
     token.copy_from_slice(&token_bytes);
 
     let pairing_mgr = state.pairing_manager.lock().map_err(|e| e.to_string())?;
-    let mgr = pairing_mgr.as_ref().ok_or("no active pairing session — call start_pairing first")?;
+    let mgr = pairing_mgr
+        .as_ref()
+        .ok_or("no active pairing session — call start_pairing first")?;
 
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     mgr.confirm_pairing(store.conn(), &device_id, &display_name, &token)
@@ -105,10 +107,7 @@ pub async fn confirm_pairing(
 
 /// Revoke (unpair) a device by its ID.
 #[tauri::command]
-pub async fn revoke_device(
-    state: State<'_, AppState>,
-    device_id: String,
-) -> Result<bool, String> {
+pub async fn revoke_device(state: State<'_, AppState>, device_id: String) -> Result<bool, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     crate::network::pairing::revoke_device(store.conn(), &device_id)
 }

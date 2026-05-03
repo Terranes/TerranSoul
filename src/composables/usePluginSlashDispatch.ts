@@ -9,10 +9,9 @@
  * names that match an active plugin's
  * `manifest.contributes.slash_commands[].name`.
  *
- * The full execution path for plugin commands lands in Chunk 22.7.
- * For now `plugin_invoke_slash_command` returns a stub `CommandResult`
- * echoing the command title, and we surface that as a chat-side
- * status message.
+ * `plugin_invoke_slash_command` returns the plugin host's `CommandResult`,
+ * which may come from a built-in command, WASM module, native binary, or
+ * sidecar process depending on the owning plugin manifest.
  */
 
 import { usePluginStore } from '../stores/plugins'
@@ -24,7 +23,7 @@ export interface SlashDispatchResult {
   name?: string
   /** Argument string after the command word (trimmed). */
   args?: string
-  /** Plugin's stub output, when invocation succeeded. */
+  /** Plugin output, when invocation succeeded. */
   output?: string
   /** Error string when invocation failed. */
   error?: string

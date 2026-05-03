@@ -251,8 +251,7 @@ impl MemoryStore {
                         .unwrap_or(local_device_id);
 
                     if delta.updated_at > local_ts
-                        || (delta.updated_at == local_ts
-                            && *delta.origin_device > *local_device)
+                        || (delta.updated_at == local_ts && *delta.origin_device > *local_device)
                     {
                         // Remote wins — update local.
                         match &delta.operation {
@@ -311,7 +310,7 @@ impl MemoryStore {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64;
+            .as_millis() as i64;
         conn.execute(
             "INSERT INTO sync_log (peer_device, direction, entry_count, timestamp)
              VALUES (?1, ?2, ?3, ?4)",
@@ -517,7 +516,7 @@ mod tests {
             importance: 3,
             memory_type: "fact".into(),
             created_at: 100,
-            updated_at: 1000, // same timestamp
+            updated_at: 1000,                 // same timestamp
             origin_device: "device-b".into(), // "device-b" > "device-a"
             source_url: None,
             source_hash: Some("shared-hash".into()),
@@ -573,23 +572,47 @@ mod tests {
     fn log_sync_and_last_sync_time() {
         let store = make_store();
         // Ensure schema.
-        store.conn().execute_batch(
-            "CREATE TABLE IF NOT EXISTS sync_log (
+        store
+            .conn()
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS sync_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 peer_device TEXT NOT NULL,
                 direction TEXT NOT NULL,
                 entry_count INTEGER NOT NULL,
                 timestamp INTEGER NOT NULL
-            )"
-        ).unwrap();
+            )",
+            )
+            .unwrap();
 
         store.log_sync("device-b", "outbound", 5).unwrap();
         let ts = store.last_sync_time("device-b").unwrap();
         assert!(ts.is_some());
-        assert!(ts.unwrap() > 0);
+        assert!(ts.unwrap() > 1_000_000_000_000);
 
         let ts_other = store.last_sync_time("device-c").unwrap();
         assert!(ts_other.is_none());
+    }
+
+    #[test]
+    fn last_sync_time_uses_memory_timestamp_units() {
+        let store = make_store();
+        let id = add_memory(&store, "Fresh local memory", Some("fresh-hash"));
+        store
+            .conn()
+            .execute(
+                "UPDATE memories SET updated_at = 2_000, origin_device = 'device-a' WHERE id = ?1",
+                params![id],
+            )
+            .unwrap();
+
+        store.log_sync("device-b", "outbound", 1).unwrap();
+        let since = store.last_sync_time("device-b").unwrap().unwrap();
+        let deltas = store.compute_sync_deltas(since, "device-a").unwrap();
+        assert!(
+            deltas.is_empty(),
+            "sync watermark must be comparable with memory updated_at values"
+        );
     }
 
     #[test]

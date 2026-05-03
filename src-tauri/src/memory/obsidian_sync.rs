@@ -45,7 +45,9 @@ pub fn parse_obsidian_markdown(text: &str) -> Option<ParsedMemory> {
 
     // Find end of frontmatter.
     let after_first = &text[4..]; // skip "---\n"
-    let end_idx = after_first.find("\n---\n").or_else(|| after_first.find("\n---\r\n"))?;
+    let end_idx = after_first
+        .find("\n---\n")
+        .or_else(|| after_first.find("\n---\r\n"))?;
     let frontmatter = &after_first[..end_idx];
     let body_start = 4 + end_idx + 5; // "---\n" + frontmatter + "\n---\n"
     let body = if body_start < text.len() {
@@ -135,16 +137,11 @@ pub struct SyncReport {
 ///
 /// Also scans the vault directory for files not in the DB (new files created
 /// externally) and imports them.
-pub fn sync_bidirectional(
-    vault_dir: &Path,
-    store: &MemoryStore,
-) -> Result<SyncReport, String> {
+pub fn sync_bidirectional(vault_dir: &Path, store: &MemoryStore) -> Result<SyncReport, String> {
     let output_dir = vault_dir.join("TerranSoul");
     fs::create_dir_all(&output_dir).map_err(|e| format!("mkdir: {e}"))?;
 
-    let entries = store
-        .get_all()
-        .map_err(|e| format!("get_all: {e}"))?;
+    let entries = store.get_all().map_err(|e| format!("get_all: {e}"))?;
 
     let long_entries: Vec<&MemoryEntry> = entries
         .iter()
@@ -171,7 +168,9 @@ pub fn sync_bidirectional(
             // File doesn't exist → export.
             let content = render_markdown(entry);
             if let Err(e) = fs::write(&fpath, &content) {
-                report.errors.push(format!("write {}: {e}", fpath.display()));
+                report
+                    .errors
+                    .push(format!("write {}: {e}", fpath.display()));
                 continue;
             }
             let _ = store.set_obsidian_sync(entry.id, &fname, now_ms);
@@ -189,7 +188,9 @@ pub fn sync_bidirectional(
             // DB was modified after last export → re-export.
             let content = render_markdown(entry);
             if let Err(e) = fs::write(&fpath, &content) {
-                report.errors.push(format!("write {}: {e}", fpath.display()));
+                report
+                    .errors
+                    .push(format!("write {}: {e}", fpath.display()));
                 continue;
             }
             let _ = store.set_obsidian_sync(entry.id, &fname, now_ms);
@@ -297,10 +298,7 @@ impl ObsidianWatcher {
     ///
     /// `store_mutex` must live for `'static` (typically `Arc<..>`-owned).
     /// The sync loop debounces events (1s) and runs `sync_bidirectional`.
-    pub fn start(
-        vault_dir: PathBuf,
-        store: Arc<Mutex<MemoryStore>>,
-    ) -> Result<Self, String> {
+    pub fn start(vault_dir: PathBuf, store: Arc<Mutex<MemoryStore>>) -> Result<Self, String> {
         Self::start_inner(vault_dir, store)
     }
 
@@ -309,10 +307,7 @@ impl ObsidianWatcher {
     /// This is the preferred entry point from Tauri commands since AppState
     /// is `Arc<AppStateInner>` and the `memory_store` field is accessible
     /// via `Deref`.
-    pub fn start_with_state(
-        vault_dir: PathBuf,
-        state: crate::AppState,
-    ) -> Result<Self, String> {
+    pub fn start_with_state(vault_dir: PathBuf, state: crate::AppState) -> Result<Self, String> {
         // We can't extract Arc<Mutex<MemoryStore>> from AppState's Mutex field
         // directly, so we wrap the AppState and access .memory_store in the loop.
         let (event_tx, mut event_rx) = mpsc::channel::<()>(16);
@@ -359,10 +354,7 @@ impl ObsidianWatcher {
         })
     }
 
-    fn start_inner(
-        vault_dir: PathBuf,
-        store: Arc<Mutex<MemoryStore>>,
-    ) -> Result<Self, String> {
+    fn start_inner(vault_dir: PathBuf, store: Arc<Mutex<MemoryStore>>) -> Result<Self, String> {
         let (event_tx, mut event_rx) = mpsc::channel::<()>(16);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
 
@@ -440,7 +432,10 @@ Multiple lines here.
         assert_eq!(parsed.memory_type, MemoryType::Fact);
         assert_eq!(parsed.tags, "rust, programming");
         assert_eq!(parsed.source_url, Some("https://example.com".to_string()));
-        assert_eq!(parsed.content, "This is the memory content.\nMultiple lines here.");
+        assert_eq!(
+            parsed.content,
+            "This is the memory content.\nMultiple lines here."
+        );
     }
 
     #[test]
@@ -468,7 +463,6 @@ Multiple lines here.
     #[test]
     fn sync_creates_and_imports_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
         let store = MemoryStore::new(dir.path());
 
         // Add a memory.
@@ -501,7 +495,6 @@ Multiple lines here.
     #[test]
     fn sync_imports_externally_modified_file() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
         let store = MemoryStore::new(dir.path());
 
         let entry = store
@@ -541,7 +534,6 @@ Multiple lines here.
     #[test]
     fn sync_imports_new_external_file() {
         let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
         let store = MemoryStore::new(dir.path());
 
         let vault = dir.path().join("vault");

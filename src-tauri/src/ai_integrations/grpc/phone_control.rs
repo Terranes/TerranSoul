@@ -4,10 +4,15 @@
 //! status, VS Code workspace discovery, Copilot session status, workflow
 //! management, chat, and paired-device listing to the mobile companion.
 
+use std::pin::Pin;
+
+use futures_util::{stream, Stream};
 use sysinfo::System;
+use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
 
 use crate::brain::BrainMode;
+use crate::commands::streaming::{strip_anim_blocks, StreamTagParser};
 use crate::network::vscode_probe;
 use crate::AppState;
 
@@ -55,6 +60,9 @@ fn brain_model_name(mode: &BrainMode) -> String {
 
 #[tonic::async_trait]
 impl PhoneControl for PhoneControlService {
+    type StreamChatMessageStream =
+        Pin<Box<dyn Stream<Item = Result<proto::ChatChunk, Status>> + Send>>;
+
     async fn get_system_status(
         &self,
         _request: Request<proto::SystemStatusRequest>,
@@ -69,10 +77,7 @@ impl PhoneControl for PhoneControlService {
                 .lock()
                 .map_err(|e| Status::internal(e.to_string()))?;
             match mode_guard.as_ref() {
-                Some(mode) => (
-                    brain_mode_label(mode).to_string(),
-                    brain_model_name(mode),
-                ),
+                Some(mode) => (brain_mode_label(mode).to_string(), brain_model_name(mode)),
                 None => ("none".to_string(), String::new()),
             }
         };
@@ -195,7 +200,10 @@ impl PhoneControl for PhoneControlService {
         let id = request.into_inner().workflow_id;
         let engine = self.state.workflow_engine.lock().await;
 
-        match engine.heartbeat(&id, Some("resumed via phone".to_string())).await {
+        match engine
+            .heartbeat(&id, Some("resumed via phone".to_string()))
+            .await
+        {
             Ok(()) => Ok(Response::new(proto::ContinueWorkflowResponse {
                 accepted: true,
                 message: format!("workflow {id} heartbeat sent"),
@@ -212,27 +220,33 @@ impl PhoneControl for PhoneControlService {
         request: Request<proto::ChatRequest>,
     ) -> Result<Response<proto::ChatResponse>, Status> {
         let msg = request.into_inner().message;
-
-        // Non-streaming one-shot completion via the OpenAI-compatible client
-        // (works for free, paid, and LM Studio modes — all expose /v1/chat).
-        let mode = {
-            self.state
-                .brain_mode
-                .lock()
-                .map_err(|e| Status::internal(e.to_string()))?
-                .clone()
-        };
-
-        let reply = match mode {
-            Some(ref brain_mode) => {
-                phone_chat_complete(brain_mode, &msg)
-                    .await
-                    .unwrap_or_else(|e| format!("Error: {e}"))
-            }
-            None => "Brain not configured".to_string(),
-        };
+        let reply = phone_chat_complete(&self.state, &msg)
+            .await
+            .unwrap_or_else(|e| format!("Error: {e}"));
 
         Ok(Response::new(proto::ChatResponse { reply }))
+    }
+
+    async fn stream_chat_message(
+        &self,
+        request: Request<proto::ChatRequest>,
+    ) -> Result<Response<Self::StreamChatMessageStream>, Status> {
+        let msg = request.into_inner().message;
+        let state = self.state.clone();
+        let (tx, rx) = mpsc::unbounded_channel::<Result<proto::ChatChunk, Status>>();
+
+        tokio::spawn(async move {
+            if let Err(err) = phone_chat_stream(state, msg, tx.clone()).await {
+                let _ = tx.send(Err(Status::internal(err)));
+            }
+        });
+
+        let output = stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|item| (item, rx))
+        });
+        Ok(Response::new(
+            Box::pin(output) as Self::StreamChatMessageStream
+        ))
     }
 
     async fn list_paired_devices(
@@ -244,8 +258,8 @@ impl PhoneControl for PhoneControlService {
             .memory_store
             .lock()
             .map_err(|e| Status::internal(e.to_string()))?;
-        let devices = crate::network::pairing::list_paired_devices(store.conn())
-            .map_err(Status::internal)?;
+        let devices =
+            crate::network::pairing::list_paired_devices(store.conn()).map_err(Status::internal)?;
 
         let infos = devices
             .into_iter()
@@ -262,40 +276,236 @@ impl PhoneControl for PhoneControlService {
     }
 }
 
-// ── One-shot chat completion ───────────────────────────────────────────────────
+// ── Chat completion / streaming ────────────────────────────────────────────────
 
-/// Perform a non-streaming chat completion using the configured brain mode.
-async fn phone_chat_complete(
-    mode: &BrainMode,
-    message: &str,
-) -> Result<String, String> {
+type ChatChunkTx = mpsc::UnboundedSender<Result<proto::ChatChunk, Status>>;
+
+/// Perform a non-streaming chat completion using the configured brain mode,
+/// with the same desktop-side persona / memory / handoff prompt assembly used
+/// by the streaming Tauri chat path.
+async fn phone_chat_complete(state: &AppState, message: &str) -> Result<String, String> {
+    append_phone_user_message(state, message)?;
+    let Some((client, messages)) = build_phone_chat_request(state, message).await? else {
+        let reply = "Brain not configured".to_string();
+        store_phone_assistant_message(state, &reply)?;
+        return Ok(reply);
+    };
+    let reply = client.chat(messages).await?;
+    let clean = strip_anim_blocks(&reply);
+    store_phone_assistant_message(state, &clean)?;
+    Ok(clean)
+}
+
+async fn phone_chat_stream(
+    state: AppState,
+    message: String,
+    tx: ChatChunkTx,
+) -> Result<(), String> {
+    append_phone_user_message(&state, &message)?;
+    let Some((client, messages)) = build_phone_chat_request(&state, &message).await? else {
+        let reply = "Brain not configured".to_string();
+        send_chat_chunk(&tx, reply.clone(), false)?;
+        send_chat_chunk(&tx, String::new(), true)?;
+        store_phone_assistant_message(&state, &reply)?;
+        return Ok(());
+    };
+
+    let mut parser = StreamTagParser::new();
+    let tx_for_chunks = tx.clone();
+    let result = client
+        .chat_stream(messages, |chunk_text| {
+            let feed = parser.feed(chunk_text);
+            if !feed.text.is_empty() {
+                let _ = tx_for_chunks.send(Ok(proto::ChatChunk {
+                    text: feed.text,
+                    done: false,
+                }));
+            }
+        })
+        .await;
+
+    match result {
+        Ok(reply) => {
+            let feed = parser.flush();
+            if !feed.text.is_empty() {
+                send_chat_chunk(&tx, feed.text, false)?;
+            }
+            send_chat_chunk(&tx, String::new(), true)?;
+            store_phone_assistant_message(&state, &strip_anim_blocks(&reply))?;
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn build_phone_chat_request(
+    state: &AppState,
+    user_query: &str,
+) -> Result<
+    Option<(
+        crate::brain::openai_client::OpenAiClient,
+        Vec<crate::brain::openai_client::OpenAiMessage>,
+    )>,
+    String,
+> {
     use crate::brain::openai_client::{OpenAiClient, OpenAiMessage};
 
-    let (base_url, model, api_key) = match mode {
-        BrainMode::FreeApi { provider_id, api_key } => {
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+    let active_brain = state
+        .active_brain
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+    let Some((base_url, model, api_key)) = (match brain_mode.as_ref() {
+        Some(BrainMode::FreeApi {
+            provider_id,
+            api_key,
+        }) => {
             let provider = crate::brain::get_free_provider(provider_id)
                 .ok_or_else(|| format!("unknown free provider: {provider_id}"))?;
-            (provider.base_url, provider.model, api_key.clone())
+            Some((provider.base_url, provider.model, api_key.clone()))
         }
-        BrainMode::PaidApi { base_url, model, api_key, .. } => {
-            (base_url.clone(), model.clone(), Some(api_key.clone()))
+        Some(BrainMode::PaidApi {
+            base_url,
+            model,
+            api_key,
+            ..
+        }) => Some((base_url.clone(), model.clone(), Some(api_key.clone()))),
+        Some(BrainMode::LocalOllama { model }) => {
+            Some(("http://127.0.0.1:11434/v1".to_string(), model.clone(), None))
         }
-        BrainMode::LocalOllama { model } => {
-            ("http://127.0.0.1:11434/v1".to_string(), model.clone(), None)
-        }
-        BrainMode::LocalLmStudio { base_url, model, api_key, .. } => {
-            (base_url.clone(), model.clone(), api_key.clone())
-        }
+        Some(BrainMode::LocalLmStudio {
+            base_url,
+            model,
+            api_key,
+            ..
+        }) => Some((base_url.clone(), model.clone(), api_key.clone())),
+        None => active_brain
+            .clone()
+            .map(|model| ("http://127.0.0.1:11434/v1".to_string(), model, None)),
+    }) else {
+        return Ok(None);
     };
 
     let client = OpenAiClient::new(&base_url, &model, api_key.as_deref());
-    let messages = vec![
-        OpenAiMessage {
-            role: "user".to_string(),
-            content: message.to_string(),
-        },
-    ];
-    client.chat(messages).await
+    let history = recent_phone_history(state)?;
+    let mut messages = vec![OpenAiMessage {
+        role: "system".to_string(),
+        content: build_phone_system_prompt(
+            state,
+            user_query,
+            brain_mode.as_ref(),
+            active_brain.as_deref(),
+        )
+        .await,
+    }];
+    for (role, content) in history {
+        messages.push(OpenAiMessage { role, content });
+    }
+    Ok(Some((client, messages)))
+}
+
+async fn build_phone_system_prompt(
+    state: &AppState,
+    user_query: &str,
+    brain_mode: Option<&BrainMode>,
+    active_brain: Option<&str>,
+) -> String {
+    let mut system_prompt = crate::commands::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
+    let query_emb = crate::brain::embed_for_mode(user_query, brain_mode, active_brain).await;
+    let threshold = state
+        .app_settings
+        .lock()
+        .map(|s| s.relevance_threshold)
+        .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
+
+    let relevant = state
+        .memory_store
+        .lock()
+        .ok()
+        .and_then(|store| {
+            store
+                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
+                .ok()
+        })
+        .unwrap_or_default();
+    if !relevant.is_empty() {
+        let memory_block = relevant
+            .iter()
+            .map(|entry| format!("- [{}] {}", entry.tier.as_str(), entry.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        system_prompt.push_str(&format!(
+            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
+        ));
+    }
+
+    if let Ok(persona) = state.persona_block.lock() {
+        if !persona.is_empty() {
+            system_prompt.push_str(persona.as_str());
+        }
+    }
+    if let Ok(mut handoff) = state.handoff_block.lock() {
+        if !handoff.is_empty() {
+            system_prompt.push_str(handoff.as_str());
+            handoff.clear();
+        }
+    }
+    system_prompt
+}
+
+fn append_phone_user_message(state: &AppState, message: &str) -> Result<(), String> {
+    if message.trim().is_empty() {
+        return Err("Message cannot be empty".to_string());
+    }
+    let mut conversation = state.conversation.lock().map_err(|e| e.to_string())?;
+    conversation.push(crate::commands::chat::Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        role: "user".to_string(),
+        content: message.to_string(),
+        agent_name: None,
+        agent_id: None,
+        sentiment: None,
+        timestamp: now_ms(),
+    });
+    Ok(())
+}
+
+fn store_phone_assistant_message(state: &AppState, content: &str) -> Result<(), String> {
+    let mut conversation = state.conversation.lock().map_err(|e| e.to_string())?;
+    conversation.push(crate::commands::chat::Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        role: "assistant".to_string(),
+        content: content.to_string(),
+        agent_name: Some("TerranSoul".to_string()),
+        agent_id: None,
+        sentiment: None,
+        timestamp: now_ms(),
+    });
+    Ok(())
+}
+
+fn recent_phone_history(state: &AppState) -> Result<Vec<(String, String)>, String> {
+    let conversation = state.conversation.lock().map_err(|e| e.to_string())?;
+    Ok(conversation
+        .iter()
+        .rev()
+        .take(20)
+        .rev()
+        .map(|message| (message.role.clone(), message.content.clone()))
+        .collect())
+}
+
+fn send_chat_chunk(tx: &ChatChunkTx, text: String, done: bool) -> Result<(), String> {
+    tx.send(Ok(proto::ChatChunk { text, done }))
+        .map_err(|_| "phone chat receiver closed".to_string())
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 // ── VS Code workspace discovery ────────────────────────────────────────────────

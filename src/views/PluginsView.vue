@@ -318,6 +318,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { usePluginStore, type InstalledPlugin } from '../stores/plugins';
 import { useActivePluginTheme } from '../composables/useActivePluginTheme';
+import { usePluginCapabilityGrants } from '../composables/usePluginCapabilityGrants';
 
 const store = usePluginStore();
 const plugins = computed(() => store.plugins);
@@ -334,7 +335,13 @@ const isDragOver = ref(false);
 const installError = ref<string | null>(null);
 const lastInstalled = ref<string | null>(null);
 const actionErrors = ref<Record<string, string>>({});
-const grants = ref<Record<string, Record<string, boolean>>>({});
+const {
+  grants,
+  capabilityRequiresConsent,
+  canActivate,
+  loadAllGrants,
+  onGrantToggle,
+} = usePluginCapabilityGrants(plugins, store, actionErrors);
 
 // ── Settings (Chunk 22.6) ────────────────────────────────────────
 /** Map of `${pluginId}.${key}` → current value, kept in sync with backend. */
@@ -402,19 +409,6 @@ async function loadAllSettings() {
   await Promise.all(plugins.value.map(loadSettingsForPlugin));
 }
 
-// Sensitive capabilities (mirrors `Capability::requires_consent` in
-// `src-tauri/src/package_manager/manifest.rs`).
-const SENSITIVE_CAPABILITIES = new Set([
-  'filesystem',
-  'clipboard',
-  'network',
-  'remote_exec',
-]);
-
-function capabilityRequiresConsent(cap: string): boolean {
-  return SENSITIVE_CAPABILITIES.has(cap);
-}
-
 function stateLabel(plugin: InstalledPlugin): string {
   const s = plugin.state;
   if (typeof s === 'string') {
@@ -449,28 +443,9 @@ function formatTimestamp(epoch: number | null): string {
   }).format(new Date(ms));
 }
 
-/**
- * Has the user granted every consent-required capability on the manifest?
- * Auto-granted capabilities (chat, character, etc.) are always considered
- * granted.
- */
-function canActivate(plugin: InstalledPlugin): boolean {
-  const id = plugin.manifest.id;
-  const pluginGrants = grants.value[id] ?? {};
-  return plugin.manifest.capabilities.every((cap) => {
-    if (!capabilityRequiresConsent(cap)) return true;
-    return pluginGrants[cap] === true;
-  });
-}
-
-function onGrantToggle(pluginId: string, cap: string, checked: boolean) {
-  if (!grants.value[pluginId]) grants.value[pluginId] = {};
-  grants.value[pluginId][cap] = checked;
-}
-
 async function onRefresh() {
   await store.refresh();
-  await loadAllSettings();
+  await Promise.all([loadAllSettings(), loadAllGrants()]);
 }
 
 async function onPickFile() {
@@ -541,7 +516,7 @@ async function onUninstall(pluginId: string) {
 onMounted(() => {
   store
     .refresh()
-    .then(() => loadAllSettings())
+    .then(() => Promise.all([loadAllSettings(), loadAllGrants()]))
     .catch((e) => {
       console.warn('[PluginsView] initial refresh failed:', e);
     });

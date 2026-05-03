@@ -16,6 +16,9 @@ tonic-prost-build = "0.14.5"
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
+tauri-plugin-stronghold = "2"
+tauri-plugin-barcode-scanner = "2"
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
@@ -40,6 +43,7 @@ futures-util = "0.3"
 local-ip-address = "0.6"
 sha2 = "0.10"
 hex = "0.4"
+glob = "0.3.3"
 axum = { version = "0.8.4", features = [] }
 wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
 thiserror = "2"
@@ -66,6 +70,7 @@ usearch = "2"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }
 tonic-prost = "0.14.5"
 prost = "0.14.3"
+tonic-web = "0.14.5"
 
 [features]
 default = []
@@ -74,8 +79,12 @@ mssql = ["dep:tiberius", "dep:tokio-util"]
 cassandra = ["dep:scylla", "dep:rand"]
 motion-research = []
 
+[profile.dev.package.scrypt]
+opt-level = 3
+
 [dev-dependencies]
 tempfile = "3"
+wasm-encoder = "0.244.0"
 # Enables tauri::test::{mock_app, MockRuntime} for headless integration tests.
 # Resolver=2 (default for edition=2021) keeps this dev-only feature out of the
 # production binary.

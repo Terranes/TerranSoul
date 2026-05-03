@@ -197,9 +197,9 @@ fn build_entry(snippet: Snippet, id: i64, now_ms: i64) -> MemoryEntry {
         expires_at: None,
         valid_to: None,
         obsidian_path: None,
-            last_exported: None,
-            updated_at: None,
-            origin_device: None,
+        last_exported: None,
+        updated_at: None,
+        origin_device: None,
     }
 }
 
@@ -404,7 +404,7 @@ mod tests {
             source_hash: None,
             expires_at: None,
             valid_to: None,
-        obsidian_path: None,
+            obsidian_path: None,
             last_exported: None,
             updated_at: None,
             origin_device: None,
@@ -423,4 +423,3 @@ mod tests {
         assert!(gitnexus_response_to_entries(&v, -1).is_empty());
     }
 }
-

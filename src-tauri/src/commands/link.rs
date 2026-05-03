@@ -58,7 +58,12 @@ pub async fn connect_to_peer(
         addr: format!("{}:{}", host, port),
     };
     let mgr = state.link_manager.lock().await;
-    mgr.connect(&addr, peer).await
+    mgr.connect(&addr, peer).await?;
+    drop(mgr);
+
+    // Start the background receive loop for handling sync messages.
+    crate::link::handlers::start_receive_loop(state.inner().clone());
+    Ok(())
 }
 
 /// Disconnect the current link.
@@ -122,4 +127,12 @@ pub async fn apply_memory_deltas(
         .log_sync(&peer_device_id, "inbound", total)
         .map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+/// Trigger a full memory sync with the currently connected peer.
+///
+/// Sends all local deltas that the peer hasn't seen yet.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn sync_memories_with_peer(state: State<'_, AppState>) -> Result<(), String> {
+    crate::link::handlers::trigger_sync(state.inner()).await
 }

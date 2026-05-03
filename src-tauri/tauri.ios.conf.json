@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "iOS": {
+      "minimumSystemVersion": "14.0"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "TerranSoul",
+        "url": "index.html",
+        "width": 420,
+        "height": 700,
+        "fullscreen": true,
+        "decorations": false,
+        "resizable": false,
+        "transparent": false,
+        "backgroundColor": "#0f172a",
+        "disableInputAccessoryView": true,
+        "allowLinkPreview": false,
+        "zoomHotkeysEnabled": false
+      }
+    ]
+  }
+}

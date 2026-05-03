@@ -80,7 +80,8 @@ pub fn detect_communities(edges: &[MemoryEdge]) -> HashMap<i64, usize> {
         total_weight = 1.0; // avoid div-by-zero
     }
 
-    let nodes: Vec<i64> = adjacency.keys().copied().collect();
+    let mut nodes: Vec<i64> = adjacency.keys().copied().collect();
+    nodes.sort_unstable();
 
     // Node degree (sum of edge weights).
     let degree: HashMap<i64, f64> = adjacency
@@ -89,7 +90,8 @@ pub fn detect_communities(edges: &[MemoryEdge]) -> HashMap<i64, usize> {
         .collect();
 
     // Initial assignment: each node in its own community.
-    let mut community: HashMap<i64, usize> = nodes.iter().enumerate().map(|(i, &n)| (n, i)).collect();
+    let mut community: HashMap<i64, usize> =
+        nodes.iter().enumerate().map(|(i, &n)| (n, i)).collect();
 
     // Greedy modularity optimization (single pass — sufficient for small graphs).
     let mut improved = true;
@@ -123,7 +125,9 @@ pub fn detect_communities(edges: &[MemoryEdge]) -> HashMap<i64, usize> {
                 }
             }
 
-            for (&candidate_comm, &ki_in) in &comm_weights {
+            let mut candidate_weights: Vec<(usize, f64)> = comm_weights.into_iter().collect();
+            candidate_weights.sort_by_key(|(candidate_comm, _)| *candidate_comm);
+            for (candidate_comm, ki_in) in candidate_weights {
                 if candidate_comm == current_comm {
                     continue;
                 }
@@ -145,7 +149,10 @@ pub fn detect_communities(edges: &[MemoryEdge]) -> HashMap<i64, usize> {
     // Renumber communities to be contiguous 0..k.
     let mut remap: HashMap<usize, usize> = HashMap::new();
     let mut next_id = 0;
-    for val in community.values_mut() {
+    for node in &nodes {
+        let val = community
+            .get_mut(node)
+            .expect("community assigned for node");
         let entry = remap.entry(*val).or_insert_with(|| {
             let id = next_id;
             next_id += 1;
@@ -176,9 +183,10 @@ impl MemoryStore {
         )?;
         for c in communities {
             let member_json = serde_json::to_string(&c.member_ids).unwrap_or_default();
-            let emb_bytes: Option<Vec<u8>> = c.embedding.as_ref().map(|e| {
-                super::store::embedding_to_bytes(e)
-            });
+            let emb_bytes: Option<Vec<u8>> = c
+                .embedding
+                .as_ref()
+                .map(|e| super::store::embedding_to_bytes(e));
             stmt.execute(params![
                 c.level,
                 member_json,
@@ -228,7 +236,10 @@ impl MemoryStore {
             groups.entry(comm).or_default().push(node);
         }
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
         let communities: Vec<Community> = groups
             .into_values()
             .map(|members| Community {
@@ -261,7 +272,8 @@ impl MemoryStore {
 
         // Level 2: community-level search.
         let communities = self.load_communities()?;
-        let community_ranking = rank_communities_by_query(query, query_embedding, &communities, limit * 2);
+        let community_ranking =
+            rank_communities_by_query(query, query_embedding, &communities, limit * 2);
 
         // Expand community hits to member ids.
         let community_member_ranking: Vec<i64> = community_ranking
@@ -319,7 +331,11 @@ fn rank_communities_by_query(
         })
         .collect();
 
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     hits.truncate(limit);
     hits
 }
@@ -379,7 +395,6 @@ mod tests {
             .id;
 
         // Strong edges within clusters.
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
         store
             .add_edge(NewMemoryEdge {
                 src_id: m1,
@@ -419,12 +434,23 @@ mod tests {
 
         // Nodes in same cluster should share community.
         let all = store.get_all().unwrap();
-        let ids: Vec<i64> = all.iter().map(|e| e.id).collect();
-        // m1, m2 in same community; m3, m4 in same community.
-        assert_eq!(assignments[&ids[0]], assignments[&ids[1]]);
-        assert_eq!(assignments[&ids[2]], assignments[&ids[3]]);
+        let rust_ids: Vec<i64> = all
+            .iter()
+            .filter(|entry| entry.tags.contains("rust"))
+            .map(|entry| entry.id)
+            .collect();
+        let music_ids: Vec<i64> = all
+            .iter()
+            .filter(|entry| entry.tags.contains("music"))
+            .map(|entry| entry.id)
+            .collect();
+        assert_eq!(rust_ids.len(), 2);
+        assert_eq!(music_ids.len(), 2);
+        // Rust nodes share one community; music nodes share another.
+        assert_eq!(assignments[&rust_ids[0]], assignments[&rust_ids[1]]);
+        assert_eq!(assignments[&music_ids[0]], assignments[&music_ids[1]]);
         // The two clusters are different.
-        assert_ne!(assignments[&ids[0]], assignments[&ids[2]]);
+        assert_ne!(assignments[&rust_ids[0]], assignments[&music_ids[0]]);
     }
 
     #[test]
@@ -448,17 +474,31 @@ mod tests {
 
         // Set up communities with summaries.
         let all = store.get_all().unwrap();
-        let rust_ids: Vec<i64> = all.iter().filter(|e| e.tags.contains("rust")).map(|e| e.id).collect();
-        let music_ids: Vec<i64> = all.iter().filter(|e| e.tags.contains("music")).map(|e| e.id).collect();
+        let rust_ids: Vec<i64> = all
+            .iter()
+            .filter(|e| e.tags.contains("rust"))
+            .map(|e| e.id)
+            .collect();
+        let music_ids: Vec<i64> = all
+            .iter()
+            .filter(|e| e.tags.contains("music"))
+            .map(|e| e.id)
+            .collect();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
         store
             .save_communities(&[
                 Community {
                     id: 0,
                     level: 0,
                     member_ids: rust_ids.clone(),
-                    summary: Some("Programming community about Rust language, ownership, and Cargo tooling.".into()),
+                    summary: Some(
+                        "Programming community about Rust language, ownership, and Cargo tooling."
+                            .into(),
+                    ),
                     embedding: None,
                     updated_at: now,
                 },
@@ -474,7 +514,9 @@ mod tests {
             .unwrap();
 
         // Search for "rust" should rank rust members higher.
-        let results = store.graph_rag_search("rust ownership cargo", None, 10).unwrap();
+        let results = store
+            .graph_rag_search("rust ownership cargo", None, 10)
+            .unwrap();
         assert!(!results.is_empty());
         // First result should be a rust memory.
         let first_id = results[0].0;
@@ -517,4 +559,3 @@ mod tests {
         assert_eq!(hits[0].community_id, 1);
     }
 }
-

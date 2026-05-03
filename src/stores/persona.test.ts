@@ -324,4 +324,53 @@ describe('usePersonaStore', () => {
     const store = usePersonaStore();
     await expect(store.importPack('{}')).rejects.toThrow(/newer than this build/);
   });
+
+  it('polishLearnedMotion maps the backend preview without saving', async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const mock = invoke as ReturnType<typeof vi.fn>;
+    mock.mockImplementationOnce(async () => ({
+      original_motion_id: 'motion-source',
+      candidate_id: 'motion-polished-1',
+      candidate_motion: {
+        id: 'motion-polished-1',
+        kind: 'motion',
+        name: 'Wave (polished)',
+        trigger: 'wave-polished',
+        fps: 30,
+        duration_s: 1,
+        frames: [],
+        learnedAt: 1234,
+        polish: {
+          sourceMotionId: 'motion-source',
+          backend: 'gaussian-v1',
+          createdAt: 1234,
+          meanDisplacement: 0.1,
+          maxDisplacement: 0.2,
+          acceptedByUser: false,
+        },
+      },
+      mean_displacement_by_bone: { head: 0.1 },
+      max_displacement: 0.2,
+      warnings: [],
+      applied_config: {
+        preset: 'light',
+        sigma: 1,
+        radius: null,
+        pin_endpoints: true,
+      },
+    }));
+
+    const store = usePersonaStore();
+    const preview = await store.polishLearnedMotion('motion-source', { preset: 'light' });
+
+    expect(mock).toHaveBeenCalledWith('polish_learned_motion', {
+      id: 'motion-source',
+      config: { preset: 'light' },
+    });
+    expect(preview.originalMotionId).toBe('motion-source');
+    expect(preview.candidateMotion.polish?.backend).toBe('gaussian-v1');
+    expect(preview.meanDisplacementByBone.head).toBe(0.1);
+    expect(preview.appliedConfig.pinEndpoints).toBe(true);
+    expect(store.learnedMotions).toEqual([]);
+  });
 });

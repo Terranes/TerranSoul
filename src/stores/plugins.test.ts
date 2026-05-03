@@ -139,6 +139,30 @@ describe('usePluginStore', () => {
     expect(mockInvoke).toHaveBeenCalledWith('plugin_set_setting', { key: 'my.key', value: 99 })
   })
 
+  it('wraps capability consent commands for plugins', async () => {
+    mockInvoke.mockResolvedValueOnce([{ agent_name: 'openclaw-bridge', capability: 'network', granted: true }])
+    const store = usePluginStore()
+
+    await expect(store.listPluginCapabilities('openclaw-bridge')).resolves.toEqual([
+      { agent_name: 'openclaw-bridge', capability: 'network', granted: true },
+    ])
+    expect(mockInvoke).toHaveBeenCalledWith('list_agent_capabilities', { agentName: 'openclaw-bridge' })
+
+    mockInvoke.mockResolvedValueOnce(undefined)
+    await store.grantPluginCapability('openclaw-bridge', 'file_read')
+    expect(mockInvoke).toHaveBeenCalledWith('grant_agent_capability', {
+      agentName: 'openclaw-bridge',
+      capability: 'file_read',
+    })
+
+    mockInvoke.mockResolvedValueOnce(undefined)
+    await store.revokePluginCapability('openclaw-bridge', 'file_read')
+    expect(mockInvoke).toHaveBeenCalledWith('revoke_agent_capability', {
+      agentName: 'openclaw-bridge',
+      capability: 'file_read',
+    })
+  })
+
   it('parseManifest calls invoke', async () => {
     const manifest = { id: 'test.plugin' }
     mockInvoke.mockResolvedValueOnce(manifest)

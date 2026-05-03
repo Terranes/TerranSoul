@@ -89,13 +89,15 @@ pub async fn serve_with_shutdown(
         return Err(GrpcServeError::PlaintextNonLoopback(addr));
     }
     let brain_svc = BrainGrpcService::new(gateway, caps).into_server();
-    let builder = Server::builder();
-    let mut builder = if let Some(tls) = tls {
+    let builder = Server::builder().accept_http1(true);
+    let builder = if let Some(tls) = tls {
         builder.tls_config(tls)?
     } else {
         builder
     };
-    let router = builder.add_service(brain_svc);
+    let router = builder
+        .layer(tonic_web::GrpcWebLayer::new())
+        .add_service(brain_svc);
     if let Some(state) = app_state {
         let phone_svc = phone_control::PhoneControlService::new(state).into_server();
         router

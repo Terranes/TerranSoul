@@ -1,3 +1,4 @@
+pub mod handlers;
 pub mod manager;
 pub mod quic;
 pub mod ws;

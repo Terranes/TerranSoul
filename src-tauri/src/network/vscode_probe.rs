@@ -121,10 +121,7 @@ mod tests {
         let dir = vscode_user_data_dir();
         if let Some(ref d) = dir {
             // Should end in "User" component.
-            assert_eq!(
-                d.file_name().and_then(|f| f.to_str()),
-                Some("User")
-            );
+            assert_eq!(d.file_name().and_then(|f| f.to_str()), Some("User"));
         }
     }
 

@@ -74,6 +74,13 @@ const CA_CERT_FILE: &str = "pairing_ca_cert.pem";
 const CA_KEY_FILE: &str = "pairing_ca_key.pem";
 /// 5-minute pairing window.
 const PAIRING_WINDOW_MS: u64 = 5 * 60 * 1000;
+pub const DEFAULT_PHONE_CAPABILITIES: &[&str] = &[
+    "chat",
+    "memory:read",
+    "copilot:read",
+    "workflow:read",
+    "workflow:continue",
+];
 
 // ── CA Management ──────────────────────────────────────────────────────────────
 
@@ -84,8 +91,8 @@ impl PairingManager {
         let key_path = data_dir.join(CA_KEY_FILE);
 
         let (ca_cert_pem, ca_key_pem) = if cert_path.exists() && key_path.exists() {
-            let cert = std::fs::read_to_string(&cert_path)
-                .map_err(|e| format!("read CA cert: {e}"))?;
+            let cert =
+                std::fs::read_to_string(&cert_path).map_err(|e| format!("read CA cert: {e}"))?;
             let key =
                 std::fs::read_to_string(&key_path).map_err(|e| format!("read CA key: {e}"))?;
             (cert, key)
@@ -170,8 +177,7 @@ impl PairingManager {
         drop(guard);
 
         // Issue client certificate.
-        let (client_cert_pem, client_key_pem) =
-            issue_client_cert(&self.ca_key_pem, device_id)?;
+        let (client_cert_pem, client_key_pem) = issue_client_cert(&self.ca_key_pem, device_id)?;
 
         let fingerprint = cert_fingerprint_from_pem(&client_cert_pem)?;
 
@@ -179,7 +185,10 @@ impl PairingManager {
             device_id: device_id.to_string(),
             display_name: display_name.to_string(),
             cert_fingerprint: fingerprint,
-            capabilities: vec![],
+            capabilities: DEFAULT_PHONE_CAPABILITIES
+                .iter()
+                .map(|capability| (*capability).to_string())
+                .collect(),
             paired_at: now,
             last_seen_at: None,
         };
@@ -203,12 +212,14 @@ impl PairingManager {
 /// Build the CA `CertificateParams` (shared between generation and re-use).
 fn ca_params() -> CertificateParams {
     let mut params = CertificateParams::default();
-    params
-        .distinguished_name
-        .push(DnType::CommonName, DnValue::Utf8String("TerranSoul Pairing CA".to_string()));
-    params
-        .distinguished_name
-        .push(DnType::OrganizationName, DnValue::Utf8String("TerranSoul".to_string()));
+    params.distinguished_name.push(
+        DnType::CommonName,
+        DnValue::Utf8String("TerranSoul Pairing CA".to_string()),
+    );
+    params.distinguished_name.push(
+        DnType::OrganizationName,
+        DnValue::Utf8String("TerranSoul".to_string()),
+    );
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     // 10-year validity.
@@ -228,12 +239,8 @@ fn generate_ca() -> Result<(String, String), String> {
 }
 
 /// Issue a client certificate signed by the CA.
-fn issue_client_cert(
-    ca_key_pem: &str,
-    device_id: &str,
-) -> Result<(String, String), String> {
-    let ca_key =
-        KeyPair::from_pem(ca_key_pem).map_err(|e| format!("parse CA key: {e}"))?;
+fn issue_client_cert(ca_key_pem: &str, device_id: &str) -> Result<(String, String), String> {
+    let ca_key = KeyPair::from_pem(ca_key_pem).map_err(|e| format!("parse CA key: {e}"))?;
 
     // Reconstruct CA params + issuer.
     let issuer_params = ca_params();
@@ -270,9 +277,9 @@ fn issue_server_cert(ca_key_pem: &str) -> Result<(String, String), String> {
     server_params.not_after = rcgen::date_time_ymd(2027, 5, 1);
     server_params.is_ca = IsCa::NoCa;
     // SAN for local network access.
-    server_params.subject_alt_names = vec![
-        rcgen::SanType::DnsName("terransoul.local".try_into().map_err(|e| format!("{e}"))?),
-    ];
+    server_params.subject_alt_names = vec![rcgen::SanType::DnsName(
+        "terransoul.local".try_into().map_err(|e| format!("{e}"))?,
+    )];
 
     let server_key = KeyPair::generate().map_err(|e| format!("server keygen: {e}"))?;
     let server_cert = server_params
@@ -348,8 +355,7 @@ pub fn list_paired_devices(conn: &Connection) -> Result<Vec<PairedDevice>, Strin
     let rows = stmt
         .query_map([], |row| {
             let caps_json: String = row.get(3)?;
-            let capabilities: Vec<String> =
-                serde_json::from_str(&caps_json).unwrap_or_default();
+            let capabilities: Vec<String> = serde_json::from_str(&caps_json).unwrap_or_default();
             Ok(PairedDevice {
                 device_id: row.get(0)?,
                 display_name: row.get(1)?,
@@ -402,8 +408,7 @@ pub fn find_device_by_fingerprint(
     let mut rows = stmt
         .query_map(rusqlite::params![fingerprint], |row| {
             let caps_json: String = row.get(3)?;
-            let capabilities: Vec<String> =
-                serde_json::from_str(&caps_json).unwrap_or_default();
+            let capabilities: Vec<String> = serde_json::from_str(&caps_json).unwrap_or_default();
             Ok(PairedDevice {
                 device_id: row.get(0)?,
                 display_name: row.get(1)?,
@@ -469,8 +474,7 @@ mod tests {
     #[test]
     fn issue_client_cert_signed_by_ca() {
         let (_, ca_key) = generate_ca().unwrap();
-        let (client_cert, client_key) =
-            issue_client_cert(&ca_key, "test-device-123").unwrap();
+        let (client_cert, client_key) = issue_client_cert(&ca_key, "test-device-123").unwrap();
         assert!(client_cert.contains("BEGIN CERTIFICATE"));
         assert!(client_key.contains("BEGIN PRIVATE KEY"));
         // Fingerprint should be deterministic for same cert.

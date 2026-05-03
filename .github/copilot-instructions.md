@@ -1,7 +1,7 @@
 # TerranSoul — Copilot Instructions
 
 > This file is auto-loaded by GitHub Copilot on every request.
-> Last updated: 2026-04-25
+> Last updated: 2026-05-02
 
 ## What is TerranSoul?
 
@@ -206,6 +206,12 @@ When the "Continue" prompt is received with no other context, follow steps 1–3
 - After each chunk, run the CI gate: `npx vitest run && cargo test && cargo clippy`.
 - If a service is needed (Ollama, dev server), use `scripts/wait-for-service.mjs`.
 - The `scripts/copilot-loop.mjs` script generates resume prompts with context.
+
+### Mobile LAN / gRPC Emulator Testing
+
+- For any change that affects mobile pairing, `RemoteHost`, gRPC, gRPC-Web, LAN discovery, TLS/cert trust, or phone-control chat/workflow RPCs, attempt a real free mobile runtime before closing the task: Android Emulator/AVD via the official Android SDK on Windows/macOS/Linux, and iOS Simulator via Xcode on macOS.
+- Start the desktop host services locally, then verify the emulator/simulator can reach the host over LAN-style addressing and exercise the relevant gRPC/gRPC-Web path from the mobile frontend. Prefer real emulator/simulator runs over mocked unit tests for final confidence.
+- If a required runtime is unavailable on the current OS (for example, iOS Simulator on Windows/Linux) or the SDK/emulator image is not installed, explicitly say what was attempted, include the blocking tool/output, and run the closest available fallback instead of claiming mobile LAN validation passed.
 
 ### MCP Server
 

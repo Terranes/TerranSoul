@@ -7,7 +7,7 @@
 1. **Separation of Concerns** — Each module has a single, well-defined responsibility.
    Frontend owns rendering and UI state; Rust core owns business logic, IPC, and data persistence.
 2. **Dependency Inversion** — Depend on abstractions, not concrete implementations.
-   Agent integrations implement a common `AgentProvider` trait; the orchestrator never knows which concrete agent it talks to.
+  Agent integrations implement a common `AgentProvider` trait; tool integrations route through PluginHost manifests and command handlers.
 3. **Single Codebase, All Platforms** — Tauri 2.0 is the unified shell.
    One Rust backend + one Vue 3 frontend runs on Windows, macOS, Linux, iOS, and Android with zero platform-specific UI forks.
 4. **Async-First Rust** — All Tauri commands are `async`. Use Tokio for all I/O and concurrency.
@@ -16,9 +16,9 @@
    settings, and agent state across all paired devices. No central server dependency.
 6. **End-to-End Encrypted Link** — All inter-device traffic is end-to-end encrypted using Ed25519
    key pairs established during device pairing. No plaintext transport.
-7. **Capability-Based Agent Permissions** — Every agent declares its capabilities in its manifest.
-   The orchestrator only routes to an agent for capabilities it has declared. Sensitive capabilities
-   require explicit user confirmation.
+7. **Capability-Based Extension Permissions** — Every agent or plugin declares its capabilities in its manifest.
+  The orchestrator and plugin host only route work to extensions for capabilities they have declared. Sensitive capabilities
+  require explicit user confirmation.
 8. **Offline-First** — Every core feature (chat, 3D character, installed agents) must work without
    a network connection. TerranSoul Link sync is additive, not a prerequisite.
 9. **Performance Budgets** — Cap `devicePixelRatio` at 2 in the Three.js renderer.
@@ -108,8 +108,8 @@
 │  │               │ │  Phase 3)       │ │  BrainGateway)   │ │
 │  └───────────────┘ └─────────────────┘ └──────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
-│  AI Agents (separate processes / services)                   │
-│  OpenClaw │ Claude Cowork │ local LLM │ stub agent           │
+│  Agents + tool plugins (processes, services, built-ins)      │
+│  Claude Cowork │ local LLM │ stub agent │ OpenClaw Bridge     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -124,7 +124,8 @@
 - `src/views/` — depends on `src/components/` and `src/stores/`
 - Rust `commands/` — depends on internal `orchestrator/` and `agent/` modules only
 - Rust `orchestrator/` — depends on `agent/` trait abstraction; never on concrete agent implementations directly
-- Rust `agent/` — each provider (stub, OpenClaw, etc.) implements the `AgentProvider` trait; no cross-provider dependencies
+- Rust `agent/` — each provider (stub, Claude Cowork, local LLM adapters, etc.) implements the `AgentProvider` trait; no cross-provider dependencies
+- Rust `plugins/host.rs` — built-in and installed tool plugins register manifests, slash commands, command handlers, and capability-gated execution. OpenClaw's canonical path is the built-in `openclaw-bridge` plugin.
 - Rust `link/` — depends on `commands/` state types; never on `agent/` internals
 - Rust `ai_integrations/gateway.rs` — defines `BrainGateway` trait; `AppStateGateway` adapter holds `AppState` (cheaply-clonable Arc newtype)
 - Rust `ai_integrations/mcp/` — MCP server (axum HTTP, JSON-RPC 2.0); depends on `BrainGateway` trait only, never on `AppState` internals directly
@@ -133,9 +134,9 @@
 - Rust `memory/cognitive_kind.rs` — pure-function classifier for the
   episodic/semantic/procedural axis; depends only on `MemoryType`. See
   `docs/brain-advanced-design.md` § 3.5 for the design rationale.
-- Rust `agent/openclaw_agent.rs` — reference `AgentProvider` implementation
-  bridging an external platform (OpenClaw) with capability-gated tool
-  dispatch. See `instructions/OPENCLAW-EXAMPLE.md`.
+- Rust `agent/openclaw_agent.rs` — legacy OpenClaw parser/provider support.
+  New OpenClaw-facing UX and command dispatch belongs to the PluginHost
+  `openclaw-bridge` plugin. See `instructions/OPENCLAW-EXAMPLE.md`.
 - Rust `registry_server/catalog_registry.rs` — in-process default
   `RegistrySource` so the Marketplace browse tab is populated without
   starting the registry HTTP server. The HTTP server remains optional and is

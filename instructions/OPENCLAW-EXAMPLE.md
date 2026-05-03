@@ -1,140 +1,198 @@
-# OpenClaw Example — Using OpenClaw Functions with the TerranSoul AI
+# OpenClaw Plugin Example - Using OpenClaw Effectively With TerranSoul
 
-This walkthrough shows how to use the **OpenClaw bridge agent** that ships in
-TerranSoul's Agent Marketplace. The bridge demonstrates the canonical shape of
-a TerranSoul ↔ external-platform integration: capability gating, tool-call
-dispatch, and sentiment passthrough into the VRM character.
+This walkthrough shows how to use the built-in **OpenClaw Bridge** plugin that
+ships with TerranSoul. It follows the same PluginHost path as Translator Mode:
+the plugin contributes commands, a slash command, activation events, and
+capability-gated execution through the shared plugin command dispatcher.
 
-> **Source:** `src-tauri/src/agent/openclaw_agent.rs`
-> **Manifest:** `src-tauri/src/registry_server/catalog.rs` (`openclaw-bridge`)
-> **Audience:** Anyone integrating an external AI platform (OpenClaw, LangChain,
-> Open Interpreter, custom JSON-RPC services) with TerranSoul.
+> Source: `src-tauri/src/plugins/host.rs` (`openclaw-bridge` built-in plugin)
+> Parser compatibility: `src-tauri/src/agent/openclaw_agent.rs`
+> Related example: `docs/plugin-development.md` (`terransoul-translator`)
 
----
-
-## 1. What OpenClaw is
-
-[OpenClaw](https://openclaw.dev) is an open-source AI tool platform that exposes
-filesystem, network, and chat tools over a JSON-RPC interface. The
-`openclaw-bridge` agent is TerranSoul's first-party adapter for that interface.
-It registers itself as an [`AgentProvider`](../src-tauri/src/agent/mod.rs) so the
-orchestrator can route messages to it the same way it routes to the built-in
-stub agent or any other installed agent.
-
-The bridge defines three tools:
-
-| Directive                              | Capability  | What real OpenClaw does                |
-|----------------------------------------|-------------|----------------------------------------|
-| `/openclaw read <relative-path>`       | `file_read` | JSON-RPC `fs.read` against the runtime |
-| `/openclaw fetch <url>`                | `network`   | JSON-RPC `net.fetch` against the runtime |
-| `/openclaw chat <prompt>`              | `chat`      | Forwards the prompt to OpenClaw's chat tool |
-
-In this repository the dispatch handlers return descriptive placeholder
-responses instead of opening sockets — the boundary is intentional so the
-integration is fully testable without an OpenClaw runtime in CI. Replacing the
-match arms in `OpenClawAgent::handle_command` is all that's needed to wire the
-real JSON-RPC calls.
+OpenClaw is no longer surfaced as an Agent Marketplace entry. The Marketplace
+catalog stays focused on installable agents and sidecars; OpenClaw is a plugin
+tool bridge because its natural shape is explicit command execution rather than
+general chat routing.
 
 ---
 
-## 2. End-to-end usage
+## 1. Integration model
 
-### 2.1 Install via Marketplace
+OpenClaw-style runtimes are strongest when they own external tool execution:
+filesystem reads, network fetches, and runtime-specific tool calls. TerranSoul is
+strongest when it owns context, memory, personality, device trust, and user
+consent. The clean boundary is:
 
-1. Launch TerranSoul (`npm run tauri dev`).
-2. Open the **🏪 Marketplace** tab.
-3. Find the **openclaw-bridge** card (it appears immediately because the
-   default registry is now the in-process [`CatalogRegistry`]
-   (../src-tauri/src/registry_server/catalog_registry.rs) — no need to start
-   the registry HTTP server first).
-4. Click **⬇ Install**. The capability-consent dialog lists the sensitive
-   capabilities the bridge requires:
-   - `filesystem` (mapped to sandbox `file_read` + `file_write`)
-   - `network`
-5. Approve the capabilities you want to grant. The bridge stores its grant set
-   internally — directives whose capability you didn't grant are rejected with
-   a clear error and the character expresses sadness (`Sentiment::Sad`).
+| TerranSoul owns | OpenClaw owns |
+|---|---|
+| Brain mode selection and RAG context | JSON-RPC tool execution |
+| Long-term memory and learned preferences | Runtime-specific filesystem/network tools |
+| Persona, VRM expression, and chat UX | External automation workflows |
+| Capability consent and auditability | Tool result payloads |
+| Cross-device pairing and LAN trust | Optional local/remote OpenClaw service health |
 
-### 2.2 Use OpenClaw tools from chat
+That means the best user experience is not "route all chat to OpenClaw". It is
+"ask TerranSoul to think with its memory, then invoke OpenClaw deliberately when
+a tool action is needed." Explicit `/openclaw ...` commands keep the trust
+boundary visible and make file/network access auditable.
 
-Once installed and granted, type any of these into the main chat:
+---
+
+## 2. What the plugin contributes
+
+The built-in plugin id is `openclaw-bridge`. It contributes these commands:
+
+| Command | Slash/direct usage | Capability |
+|---|---|---|
+| `openclaw-bridge.dispatch` | `/openclaw read README.md` | Depends on parsed tool |
+| `openclaw-bridge.read` | Read a relative path | `file_read` |
+| `openclaw-bridge.fetch` | Fetch a URL | `network` |
+| `openclaw-bridge.chat` | Forward a prompt to OpenClaw chat | none sensitive in the stub path |
+| `openclaw-bridge.status` | Show help/status | none |
+
+The plugin also contributes the slash command `/openclaw`, which dispatches to
+`openclaw-bridge.dispatch`.
+
+Current CI-safe behavior returns descriptive placeholder output, for example
+`[openclaw/read] would read README.md`. That is intentional: the plugin boundary,
+parser, command routing, slash command, and capability checks can be tested
+without requiring an OpenClaw runtime in CI.
+
+---
+
+## 3. Capability grants
+
+Sensitive OpenClaw tools are denied unless the persisted capability store has a
+grant for plugin id `openclaw-bridge`.
+
+Grant strings exposed by the sandbox command layer:
+
+```text
+file_read
+network
+```
+
+Useful examples:
 
 ```text
 /openclaw read README.md
 /openclaw fetch https://example.com
-/openclaw chat Summarise the last paragraph of my open file
+/openclaw chat Summarise the latest design tradeoff
 ```
 
-The bridge will respond with the result of the tool call. Successful tool runs
-trigger `Sentiment::Happy`, which the VRM facial expression pipeline picks up
-just like any first-party agent response.
-
-A plain message (no `/openclaw` prefix) returns a help string explaining the
-available directives.
-
-### 2.3 Swap in your own JSON-RPC client
-
-`OpenClawAgent::handle_command` is the only place that needs to change to talk
-to a real OpenClaw runtime. It already receives the parsed `OpenClawTool` and
-its argument; replace the descriptive placeholder with an
-[`reqwest`](https://docs.rs/reqwest)-backed JSON-RPC call, e.g.:
-
-```rust
-let body = serde_json::json!({
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": match tool {
-        OpenClawTool::Read  => "fs.read",
-        OpenClawTool::Fetch => "net.fetch",
-        OpenClawTool::Chat  => "chat.complete",
-    },
-    "params": { "arg": argument },
-});
-let response = reqwest::Client::new()
-    .post("http://127.0.0.1:8732/rpc")
-    .json(&body)
-    .send().await
-    .map_err(|e| e.to_string())?
-    .text().await
-    .map_err(|e| e.to_string())?;
-Ok((response, Sentiment::Happy))
-```
-
-Capability gating in `handle_command` runs before the network call, so an
-ungranted tool never hits the network — that's the architectural guarantee
-the example provides.
+If `file_read` is missing, reads fail with a clear `FileRead` capability error.
+If `network` is missing, fetches fail with a clear `Network` capability error.
+Chat remains available because it does not exercise filesystem or network inside
+the built-in placeholder path.
 
 ---
 
-## 3. Why this is the canonical integration shape
+## 4. Wiring a real OpenClaw runtime
 
-The OpenClaw bridge is intentionally small (~250 LoC including tests) and
-exemplifies the four invariants every external-platform integration must keep:
+The real-runtime seam is `invoke_openclaw_tool()` in
+`src-tauri/src/plugins/host.rs`. Replace the placeholder output with a thin
+JSON-RPC client after capability checks pass.
 
-1. **One `AgentProvider` impl per platform.** No cross-provider coupling — the
-   orchestrator depends on the trait, not on `OpenClawAgent` (rule:
-   `architecture-rules.md` §Module Dependency Rules).
-2. **Capabilities authoritative inside the agent.** The bridge holds its own
-   `granted_capabilities` set so a misconfigured orchestrator can't bypass
-   consent.
-3. **Pure-function parser.** `parse(message)` is a free function, exhaustively
-   unit-tested. UI layers can reuse it without instantiating an agent.
-4. **Sentiment is part of the contract.** Tool successes return `Happy`,
-   failures return `Sad`, plain chat returns `Neutral`. The VRM pipeline
-   already maps these — no extra wiring needed.
+Recommended JSON-RPC mapping:
 
-## 4. Local LLM models are also Marketplace agents
+| Tool | JSON-RPC method | Params |
+|---|---|---|
+| `read` | `fs.read` | `{ "path": argument }` |
+| `fetch` | `net.fetch` | `{ "url": argument }` |
+| `chat` | `chat.complete` | `{ "prompt": argument }` |
 
-The Marketplace surfaces local Ollama models alongside packaged agents — they
-appear with the `🖥` icon, the `local_llm` capability badge, and a RAM
-estimate. Their **Install & Activate** button calls `pull_ollama_model` to
-pull (if needed) and then `set_active_brain` + `set_brain_mode` to switch the
-active brain — see [`MarketplaceView.vue`](../src/views/MarketplaceView.vue)
-`handleLocalLlmAction()`. This unifies "install an agent" and "switch the
-brain to a local model" under the same browse / install UX.
+Sketch:
 
-## 5. Tests
+```rust
+let method = match tool {
+    OpenClawTool::Read => "fs.read",
+    OpenClawTool::Fetch => "net.fetch",
+    OpenClawTool::Chat => "chat.complete",
+};
 
-- Rust unit tests live alongside the agent: `cargo test -p terransoul --lib openclaw_agent`
-- Integration tests for the marketplace registry: `cargo test -p terransoul --lib catalog_registry`
-- Frontend tests: `npm run test` (existing `MarketplaceView.test.ts` continues to pass).
+let body = serde_json::json!({
+    "jsonrpc": "2.0",
+    "id": uuid::Uuid::new_v4().to_string(),
+    "method": method,
+    "params": { "argument": argument },
+});
+
+let response = reqwest::Client::new()
+    .post("http://127.0.0.1:8732/rpc")
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| e.to_string())?
+    .text()
+    .await
+    .map_err(|e| e.to_string())?;
+
+Ok(CommandResult::success(response))
+```
+
+Keep the client thin. TerranSoul should not fork or embed OpenClaw. It should
+send typed requests to a user-controlled runtime, then return the result through
+the normal plugin command result path.
+
+---
+
+## 5. How TerranSoul and OpenClaw work best together
+
+Use TerranSoul for planning, memory, and coordination:
+
+- Ask TerranSoul to recall relevant project history before invoking a tool.
+- Let TerranSoul summarize OpenClaw results into durable memory only after the
+  user confirms the result matters.
+- Keep persona, expression, and chat narration in TerranSoul so the companion
+  remains consistent across local, cloud, and mobile workflows.
+- Use TerranSoul Link when a phone should monitor progress or continue a
+  workflow on the desktop.
+
+Use OpenClaw for bounded tool work:
+
+- Read a specific file when the user names it.
+- Fetch a specific URL when network access has been granted.
+- Run an OpenClaw-side workflow only after the user has explicitly requested the
+  tool action.
+- Return structured results that TerranSoul can summarize, cite, or store.
+
+Avoid hidden coupling:
+
+- Do not let ordinary chat silently read files or fetch URLs.
+- Do not store raw OpenClaw tool output as memory without summarization or user
+  review.
+- Do not grant `file_write`, `process_spawn`, or remote-exec style capabilities
+  until a specific future plugin command needs them.
+
+---
+
+## 6. Chunk plan for deeper integration
+
+| Chunk | Goal | Status |
+|---|---|---|
+| OpenClaw Plugin Bridge | Register OpenClaw as a built-in PluginHost plugin like Translator, with commands, `/openclaw`, and capability checks. | Complete |
+| Runtime Client | Add configurable JSON-RPC endpoint, health check, timeout, typed error handling, and tests with a mock OpenClaw server. | Future |
+| Structured Results | Normalize OpenClaw responses into `CommandResult` metadata and optional memory summaries. | Future |
+| Workflow Handoff | Let TerranSoul create explicit OpenClaw work orders from chat plans while still requiring user confirmation before tool execution. | Future |
+| Mobile Observation | Expose OpenClaw plugin status and long-running workflow progress through the existing phone-control surface. | Future |
+
+These chunks keep the integration incremental. Each one can be validated without
+changing the core chat orchestrator or weakening plugin capability consent.
+
+---
+
+## 7. Tests
+
+Focused Rust tests live in `src-tauri/src/plugins/host.rs`:
+
+```text
+production_host_registers_openclaw_plugin
+openclaw_read_requires_file_read_capability
+openclaw_slash_dispatch_runs_with_file_read_grant
+openclaw_fetch_requires_network_capability
+openclaw_chat_command_uses_no_sensitive_capability
+```
+
+The legacy parser and compatibility provider tests remain in
+`src-tauri/src/agent/openclaw_agent.rs`. Keep those parser tests because the
+plugin reuses the same directive parser.

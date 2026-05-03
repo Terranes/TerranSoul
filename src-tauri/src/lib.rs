@@ -76,27 +76,29 @@ use commands::{
         remove_trusted_device_cmd,
     },
     ingest::{cancel_ingest_task, get_all_tasks, ingest_document, resume_ingest_task},
-    lan::{confirm_pairing, get_copilot_session_status, list_lan_addresses, list_paired_devices, revoke_device, start_pairing},
+    lan::{
+        confirm_pairing, get_copilot_session_status, list_lan_addresses, list_paired_devices,
+        revoke_device, start_pairing,
+    },
     link::{
-        apply_memory_deltas, connect_to_peer, disconnect_link, get_link_status,
-        get_memory_deltas, start_link_server,
+        apply_memory_deltas, connect_to_peer, disconnect_link, get_link_status, get_memory_deltas,
+        start_link_server, sync_memories_with_peer,
     },
     mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
         close_memory_edge, count_memory_conflicts, delete_memory, delete_memory_edge,
-        dismiss_memory_conflict, evaluate_auto_learn, export_to_obsidian,
-        extract_edges_via_brain, graph_rag_detect_communities, graph_rag_search,
-        obsidian_sync, obsidian_sync_start, obsidian_sync_stop,
+        dismiss_memory_conflict, evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
         get_memory_stats, get_relevant_memories, get_schema_info, get_short_term_memory,
-        hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories,
-        list_memory_conflicts, list_memory_edges, list_relation_types, matryoshka_search_memories,
-        multi_hop_search_memories, promote_memory, rerank_search_memories, resolve_memory_conflict,
-        scan_edge_conflicts, search_memories, semantic_search_memories, set_auto_learn_policy,
-        summarize_session, temporal_query, update_memory,
+        graph_rag_detect_communities, graph_rag_search, hybrid_search_memories,
+        hybrid_search_memories_rrf, hyde_search_memories, list_memory_conflicts, list_memory_edges,
+        list_relation_types, matryoshka_search_memories, multi_hop_search_memories, obsidian_sync,
+        obsidian_sync_start, obsidian_sync_stop, promote_memory, rerank_search_memories,
+        resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
+        set_auto_learn_policy, summarize_session, temporal_query, update_memory,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message, subscribe_agent_topic,
@@ -110,9 +112,9 @@ use commands::{
         check_persona_drift, delete_learned_expression, delete_learned_motion, export_persona_pack,
         extract_persona_from_brain, generate_motion_from_text, get_handoff_block,
         get_motion_feedback_stats, get_persona, get_persona_block, import_persona_pack,
-        list_learned_expressions, list_learned_motions, preview_persona_pack,
-        record_motion_feedback, save_learned_expression, save_learned_motion, save_persona,
-        set_handoff_block, set_persona_block,
+        list_learned_expressions, list_learned_motions, polish_learned_motion,
+        preview_persona_pack, record_motion_feedback, save_learned_expression, save_learned_motion,
+        save_persona, set_handoff_block, set_persona_block,
     },
     plugins::{
         plugin_activate, plugin_deactivate, plugin_get, plugin_get_setting, plugin_host_status,
@@ -414,8 +416,13 @@ pub fn run_stdio() -> std::io::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init());
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+
+    builder
         .invoke_handler(tauri::generate_handler![
             send_message,
             get_conversation,
@@ -434,6 +441,7 @@ pub fn run() {
             // CRDT memory sync (Chunk 17.5)
             get_memory_deltas,
             apply_memory_deltas,
+            sync_memories_with_peer,
             list_pending_commands,
             approve_remote_command,
             deny_remote_command,
@@ -610,6 +618,7 @@ pub fn run() {
             extract_persona_from_brain,
             check_persona_drift,
             generate_motion_from_text,
+            polish_learned_motion,
             record_motion_feedback,
             get_motion_feedback_stats,
             export_persona_pack,
@@ -706,6 +715,16 @@ pub fn run() {
             plugin_parse_manifest,
         ])
         .setup(|app| {
+            let stronghold_dir = app
+                .path()
+                .app_local_data_dir()
+                .unwrap_or_else(|_| PathBuf::from("."));
+            std::fs::create_dir_all(&stronghold_dir)?;
+            let stronghold_salt_path = stronghold_dir.join("stronghold-salt.txt");
+            app.handle().plugin(
+                tauri_plugin_stronghold::Builder::with_argon2(&stronghold_salt_path).build(),
+            )?;
+
             let base_data_dir = app
                 .path()
                 .app_data_dir()

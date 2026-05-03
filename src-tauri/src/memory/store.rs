@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::migrations;
+use super::schema;
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -200,7 +200,7 @@ impl MemoryStore {
     /// Open (or create) the memory database at `data_dir/memory.db`.
     /// Falls back to an in-memory database if the file cannot be opened.
     /// Enables WAL mode for crash durability and creates an auto-backup.
-    /// Runs versioned migrations to bring the schema up to date.
+    /// Creates the canonical memory schema.
     pub fn new(data_dir: &Path) -> Self {
         auto_backup(data_dir);
         let conn = Connection::open(data_dir.join("memory.db")).unwrap_or_else(|_| {
@@ -212,7 +212,7 @@ impl MemoryStore {
         let _ = conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
         );
-        migrations::migrate_to_latest(&conn).expect("memory schema migration failed");
+        schema::create_canonical_schema(&conn).expect("memory schema initialization failed");
         MemoryStore {
             conn,
             ann: std::cell::OnceCell::new(),
@@ -227,7 +227,7 @@ impl MemoryStore {
         // foreign_keys=ON keeps test parity with the on-disk store and
         // exercises the V5 memory_edges cascade behaviour.
         let _ = conn.execute_batch("PRAGMA foreign_keys=ON;");
-        migrations::migrate_to_latest(&conn).expect("memory schema migration failed");
+        schema::create_canonical_schema(&conn).expect("memory schema initialization failed");
         MemoryStore {
             conn,
             ann: std::cell::OnceCell::new(),
@@ -237,7 +237,7 @@ impl MemoryStore {
 
     /// Return the current schema version.
     pub fn schema_version(&self) -> i64 {
-        migrations::get_version(&self.conn).unwrap_or(0)
+        schema::schema_version(&self.conn).unwrap_or(0)
     }
 
     /// Internal accessor to the underlying SQLite connection. `pub(crate)`
@@ -1666,7 +1666,7 @@ use super::backend::{StorageBackend, StorageResult};
 
 impl StorageBackend for MemoryStore {
     fn migrate(&self) -> StorageResult<()> {
-        // Migrations run automatically in MemoryStore::new / in_memory
+        // Schema initialization runs automatically in MemoryStore::new / in_memory
         Ok(())
     }
 
@@ -2110,7 +2110,10 @@ mod tests {
     #[test]
     fn schema_version_returns_latest() {
         let store = MemoryStore::in_memory();
-        assert_eq!(store.schema_version(), super::migrations::TARGET_VERSION);
+        assert_eq!(
+            store.schema_version(),
+            super::schema::CANONICAL_SCHEMA_VERSION
+        );
     }
 
     #[test]
@@ -3080,4 +3083,3 @@ mod tests {
         );
     }
 }
-

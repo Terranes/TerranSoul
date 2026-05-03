@@ -23,16 +23,18 @@
 
 ### Medium Priority
 
-📦 Promoted to `rules/milestones.md` — chunks 094–098.
+✅ Reconciled 2026-05-02 — chunks 094–098 are implemented and backfilled in `rules/completion-log.md`; no active milestone rows remain.
 
 ### Lower Priority
 
-📦 Promoted to `rules/milestones.md` — chunks 115–119 (renumbered from 110–114 to avoid conflict with Chunk 110 BGM).
+✅ Reconciled 2026-05-02 — chunks 116, 118, and 119 are implemented and backfilled in `rules/completion-log.md`; chunks 115 and 117 are closed/demoted below.
 
 ### Demoted from Milestones
 
 | Chunk | Description | Status | Notes |
 |-------|-------------|--------|-------|
+| 115 | Live2D Support | Closed / no-action | VRM remains the sole supported avatar format; Live2D is rejected for licensing/runtime fit in `docs/persona-design.md` and `docs/licensing-audit.md`. |
+| 117 | Docker Containerization | Demoted | Containers are not useful for the Tauri desktop runtime by default; keep Docker/Aspire-style work in research/CI only until explicitly promoted. |
 
 ---
 

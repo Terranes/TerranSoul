@@ -19,8 +19,10 @@ service PhoneControl {
   rpc GetWorkflowProgress(WorkflowProgressRequest) returns (WorkflowProgressResponse);
   rpc ContinueWorkflow(ContinueWorkflowRequest) returns (ContinueWorkflowResponse);
 
-  // Chat (single-shot, non-streaming for MVP).
+  // Chat. The streaming RPC keeps prompt assembly on the desktop host;
+  // mobile receives only clean response text chunks.
   rpc SendChatMessage(ChatRequest) returns (ChatResponse);
+  rpc StreamChatMessage(ChatRequest) returns (stream ChatChunk);
 
   // Device registry query.
   rpc ListPairedDevices(ListDevicesRequest) returns (ListDevicesResponse);
@@ -125,6 +127,11 @@ message ChatRequest {
 
 message ChatResponse {
   string reply = 1;
+}
+
+message ChatChunk {
+  string text = 1;
+  bool done = 2;
 }
 
 // ── Paired Devices ───────────────────────────────────────────────────────────

@@ -312,14 +312,14 @@ mod tests {
             working_count: 2,
             long_count: 7,
             embedded_count: 0,
-            schema_version: 5,
+            schema_version: 13,
         }
     }
     fn dummy_storage() -> StorageSelection {
         StorageSelection {
             backend: "sqlite".to_string(),
             is_local: true,
-            schema_label: "V6 — memory_edges + temporal validity".to_string(),
+            schema_label: "V13 — canonical memory schema".to_string(),
         }
     }
     fn dummy_agents() -> AgentSelection {

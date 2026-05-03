@@ -27,7 +27,7 @@
     <!-- Brain setup card (shown when no brain is configured) -->
     <Transition name="fade-up">
       <div
-        v-if="!brain.hasBrain && !props.chatboxMode"
+        v-if="!usesRemoteConversation && !brain.hasBrain && !props.chatboxMode"
         class="brain-overlay"
       >
         <div class="brain-card">
@@ -148,7 +148,7 @@
     <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
       <div
-        v-if="brain.hasBrain && !props.chatboxMode"
+        v-if="(usesRemoteConversation || brain.hasBrain) && !props.chatboxMode"
         class="brain-status-pill"
       >
         <span class="brain-pill-dot" />
@@ -166,7 +166,7 @@
       <div class="chatbox-header">
         <div class="chatbox-header-left">
           <div
-            v-if="!brain.hasBrain"
+            v-if="!usesRemoteConversation && !brain.hasBrain"
             class="chatbox-brain-setup"
           >
             <span>🧠</span>
@@ -446,7 +446,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useConversationStore, detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
+import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
+import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
@@ -478,7 +479,8 @@ import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
 
-const conversationStore = useConversationStore();
+const usesRemoteConversation = shouldUseRemoteChatStore();
+const conversationStore = useChatConversationStore();
 const characterStore = useCharacterStore();
 const brain = useBrainStore();
 const aiDecisionPolicy = useAiDecisionPolicyStore().policy;
@@ -798,6 +800,7 @@ const STATE_LABELS: Record<CharacterState, string> = {
 const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
 
 const activeProviderName = computed(() => {
+  if (usesRemoteConversation) return 'Remote Desktop';
   const mode = brain.brainMode;
   if (!mode) return '';
   if (mode.mode === 'free_api') {
@@ -1255,6 +1258,7 @@ function handleKnowledgeQuestFinish() {
 
 /** Set up Tauri event listeners for dual-stream LLM events. */
 async function setupTauriEventListener() {
+  if (usesRemoteConversation) return;
   try {
     const { listen } = await import('@tauri-apps/api/event');
 

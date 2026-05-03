@@ -101,8 +101,7 @@ pub async fn run_crag_retrieve(query: &str, state: &AppState) -> Result<CragResu
             let rewritten = rewrite_query(&model, query, state).await;
 
             if let Some(ref new_query) = rewritten {
-                let new_emb =
-                    crate::brain::OllamaAgent::embed_text(new_query, &model).await;
+                let new_emb = crate::brain::OllamaAgent::embed_text(new_query, &model).await;
                 let retry_memories: Vec<MemoryEntry> = {
                     match state.memory_store.lock() {
                         Ok(store) => store
@@ -208,7 +207,13 @@ async fn call_llm_simple(
         "stream": false,
     });
 
-    let resp = state.ollama_client.post(&url).json(&body).send().await.ok()?;
+    let resp = state
+        .ollama_client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .ok()?;
     if !resp.status().is_success() {
         return None;
     }
@@ -371,7 +376,7 @@ mod tests {
             source_hash: None,
             expires_at: None,
             valid_to: None,
-        obsidian_path: None,
+            obsidian_path: None,
             last_exported: None,
             updated_at: None,
             origin_device: None,
@@ -405,4 +410,3 @@ mod tests {
         assert!(snippets[0].contains("Rust programming"));
     }
 }
-

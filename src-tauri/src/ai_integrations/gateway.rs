@@ -1326,7 +1326,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(!pack.fingerprint.is_empty(), "cold call must return fingerprint");
+        assert!(
+            !pack.fingerprint.is_empty(),
+            "cold call must return fingerprint"
+        );
         assert_eq!(pack.fingerprint.len(), 64, "SHA-256 hex is 64 chars");
         assert!(!pack.hits.is_empty(), "cold call must return hits");
     }

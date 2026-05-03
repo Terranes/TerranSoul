@@ -21,6 +21,30 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 28.14 — Path-scoped workflow context loading](#chunk-2814--path-scoped-workflow-context-loading) | 2026-05-03 |
+| [Chunk 28.13 — Temporary-worktree coding execution](#chunk-2813--temporary-worktree-coding-execution) | 2026-05-03 |
+| [Chunk 27.4b — Motion reconstruction backend seam](#chunk-274b--motion-reconstruction-backend-seam) | 2026-05-03 |
+| [Chunk 27.5c — Learned-motion polish preview UI](#chunk-275c--learned-motion-polish-preview-ui) | 2026-05-03 |
+| [Chunk 27.5b — Native learned-motion polish preview command](#chunk-275b--native-learned-motion-polish-preview-command) | 2026-05-02 |
+| [Milestones audit — Doc chunk coverage reconciliation](#milestones-audit--doc-chunk-coverage-reconciliation) | 2026-05-02 |
+| [Chunk 22.8 — OpenClaw bridge plugin alignment](#chunk-228--openclaw-bridge-plugin-alignment) | 2026-05-02 |
+| [Chunk 19.1 — Canonical memory schema collapse](#chunk-191--canonical-memory-schema-collapse) | 2026-05-02 |
+| [Chunk 14.16g — MotionGPT / T2M-GPT inference evaluation](#chunk-1416g--motiongpt--t2m-gpt-inference-evaluation) | 2026-05-02 |
+| [Chunk 27.6 — Neural audio-to-face upgrade evaluation](#chunk-276--neural-audio-to-face-upgrade-evaluation) | 2026-05-02 |
+| [Chunk 27.5 — Offline recorded-motion polish pass](#chunk-275--offline-recorded-motion-polish-pass) | 2026-05-02 |
+| [Chunk 27.4 — MoMask-style full-body reconstruction research spike](#chunk-274--momask-style-full-body-reconstruction-research-spike) | 2026-05-02 |
+| [Chunk 24.11 — Local push notification on long-running task completion](#chunk-2411--local-push-notification-on-long-running-task-completion) | 2026-05-02 |
+| [Chunk 24.10 — Remote command tools + workflow progress narration](#chunk-2410--remote-command-tools--workflow-progress-narration) | 2026-05-02 |
+| [Chunk 24.9 — Mobile chat view streaming through RemoteHost](#chunk-249--mobile-chat-view-streaming-through-remotehost) | 2026-05-02 |
+| [Chunk 24.8 — gRPC-Web client + transport adapter](#chunk-248--grpc-web-client--transport-adapter) | 2026-05-02 |
+| [Chunk 24.7 — iOS pairing UX](#chunk-247--ios-pairing-ux) | 2026-05-02 |
+| [Chunk 24.6 — Tauri iOS target + shared frontend](#chunk-246--tauri-ios-target--shared-frontend) | 2026-05-02 |
+| [Chunk 22.7 — Plugin command execution dispatch](#chunk-227--plugin-command-execution-dispatch) | 2026-05-02 |
+| [Chunk 22.5 — Memory-hook contribution pipeline](#chunk-225--memory-hook-contribution-pipeline) | 2026-05-02 |
+| [Chunk 16.3b — Late chunking ingest integration](#chunk-163b--late-chunking-ingest-integration) | 2026-05-02 |
+| [Chunk 17.5b — Cross-device memory sync Soul Link wire protocol](#chunk-175b--cross-device-memory-sync-soul-link-wire-protocol) | 2026-05-02 |
+| [Chunk 28.12 — Multi-agent coding DAG orchestration wiring](#chunk-2812--multi-agent-coding-dag-orchestration-wiring) | 2026-05-02 |
+| [Chunk 28.11 — Apply/review/test execution gate](#chunk-2811--applyreviewtest-execution-gate) | 2026-05-02 |
 | [Chunk 17.5a — CRDT sync schema + LWW core](#chunk-175a--crdt-sync-schema--lww-core) | 2026-05-02 |
 | [Chunk 16.6 — GraphRAG community summaries](#chunk-166--graphrag-community-summaries) | 2026-05-02 |
 | [Chunk 15.7 — VS Code Copilot incremental-indexing QA](#chunk-157--vs-code-copilot-incremental-indexing-qa) | 2026-05-02 |
@@ -211,6 +235,687 @@ Entries are in **reverse chronological order** (newest first).
 
 ---
 
+## Chunk 28.14 — Path-scoped workflow context loading
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Added path-scoped workflow context loading for coding prompts. Markdown rules/docs can now declare `applyTo` frontmatter, reusable coding tasks can pass target paths, and the self-improve coder prompt derives likely repo path hints from the approved plan so large repos avoid injecting unrelated scoped guidance into every implementation prompt.
+
+### What changed
+
+- Added direct `glob` dependency for path pattern matching using the already-locked `glob 0.3.3` package.
+- Added `CodingTask.target_paths` so callers can request context relevant to expected touched files.
+- Added `workflow::load_workflow_context_for_paths`, preserving legacy loading when no target paths are supplied while filtering `applyTo`-scoped markdown files when paths are present.
+- Supported YAML-style frontmatter patterns such as `applyTo: src-tauri/**`, list syntax, and inline arrays.
+- Updated self-improve coder prompt context loading to derive likely repo path hints from the approved plan before loading scoped docs/rules.
+- Updated `docs/coding-workflow-design.md` and `rules/research-reverse-engineering.md` to mark the final Cursor/Claude Code follow-up shipped.
+- Removed the completed 28.14 row from `rules/milestones.md`; no active chunks remain.
+
+### Validation
+
+- `cargo test coding::workflow` - 17 passed.
+- `cargo test extract_plan_path_hints_finds_repo_paths` - 1 passed.
+- `cargo clippy -- -D warnings` - passed.
+
+### Notes
+
+- Files without `applyTo` remain global, so existing project-wide instructions still load as before.
+- Empty `target_paths` preserves the previous preview/planner behavior and loads all configured context files.
+
+---
+
+## Chunk 28.13 — Temporary-worktree coding execution
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Added temporary git-worktree isolation for dirty-checkout self-improve execution. When the user's active checkout is dirty, the autonomous DAG now runs apply/test/stage in a detached temporary worktree, captures the staged binary diff as a review patch, and cleans up the worktree so generated edits never mix with the user's uncommitted changes.
+
+### What changed
+
+- Added `src-tauri/src/coding/worktree.rs`, a small git-worktree utility that creates detached temporary worktrees from `HEAD`, captures cached binary diffs, and removes/prunes the worktree on cleanup/drop.
+- Wired `coding::engine::execute_chunk_dag` through `prepare_execution_workspace`, keeping clean-checkout behavior unchanged while routing dirty-checkout execution through an isolated worktree root.
+- Saved successful isolated patches under `target/terransoul-self-improve/patches/{chunk}-isolated.patch` for review instead of applying them into the dirty checkout.
+- Updated self-improve progress messaging so isolated runs report the patch artifact path.
+- Updated `docs/coding-workflow-design.md`, `rules/research-reverse-engineering.md`, and `rules/coding-workflow-reliability.md` to mark Chunk 28.13 shipped and keep the remaining follow-up focused on 28.14.
+- Removed the completed 28.13 row from `rules/milestones.md`; the next active chunk is 28.14.
+
+### Validation
+
+- `cargo test coding::worktree` - 2 passed.
+- `cargo test coding::engine::tests` - 15 passed.
+- `cargo clippy -- -D warnings` - passed.
+
+### Notes
+
+- Clean worktrees still use the existing review/apply/test/stage path and stage green changes in the active checkout.
+- Dirty worktrees are isolated by default: generated edits and test side effects stay in the temporary worktree, while the active checkout receives only an ignored patch artifact under `target/`.
+
+---
+
+## Chunk 27.4b — Motion reconstruction backend seam
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Introduced the first saved-landmark motion reconstruction seam without changing live camera behavior. The new feature-gated backend boundary exposes a bundled `geometric` backend that wraps the existing Rust full-body retargeter, plus deterministic static saved-landmark fixtures for future MotionBERT/MMPose sidecar comparisons.
+
+### What changed
+
+- Added `src-tauri/src/persona/motion_reconstruction.rs` behind the existing `motion-research` feature.
+- Added `MotionReconstructionBackend`, `MotionReconstructionBackendId`, `MotionReconstructionConfig`, `SavedLandmarkFrame`, and result/frame metadata types.
+- Implemented `GeometricMotionReconstructionBackend`, which routes saved landmark frames through `retarget_pose` and reports per-frame pose confidence from 17-bone completeness.
+- Added backend metadata with `accepts_live_camera: false`, `requires_sidecar: false`, and bundled `geometric` availability.
+- Added static synthetic saved-landmark fixtures for T-pose and raised-arm clips so future adapters can test against stable non-camera inputs.
+- Updated `docs/momask-full-body-retarget-research.md` and `docs/persona-design.md` to mark the 27.4b seam shipped.
+- Removed the completed 27.4b row from `rules/milestones.md`; the next active chunk is 28.13.
+
+### Validation
+
+- `cargo test --features motion-research motion_reconstruction` - 4 passed.
+- `cargo test --features motion-research persona::retarget` - 12 passed.
+- `cargo clippy --features motion-research -- -D warnings` - passed.
+- `cargo clippy -- -D warnings` - passed.
+
+### Notes
+
+- The default build path remains unchanged because both the existing retargeter and the new reconstruction seam are feature-gated behind `motion-research`.
+- The fixture clip is synthetic and contains no raw camera frames; it exists only to exercise the saved-landmark interface and preserve privacy invariants.
+
+---
+
+## Chunk 27.5c — Learned-motion polish preview UI
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Shipped the Persona-panel UI for non-destructive learned-motion polish previews. Users can choose an existing learned motion, generate a smoothed candidate with light/medium/heavy presets, toggle playback between the original and polished candidate, inspect displacement stats, then explicitly save the candidate as a new clip or discard it.
+
+### What changed
+
+- Added `src/components/PersonaMotionPolishPanel.vue`, a focused panel over the existing `persona.polishLearnedMotion` and `saveLearnedMotion` store APIs.
+- Wired the panel into `src/components/PersonaPanel.vue` directly under the learned-motion library.
+- Preserved the non-destructive contract by marking accepted candidates with `polish.acceptedByUser = true` and saving through the existing new-clip path rather than replacing the source motion.
+- Added `src/components/PersonaMotionPolishPanel.test.ts` for preview generation, original/polished playback toggles, and Save as new clip behavior.
+- Updated `docs/offline-motion-polish-research.md` and `docs/persona-design.md` so the design docs now reflect the shipped UI slice.
+- Removed the completed 27.5c row from `rules/milestones.md`; the next active chunk is 27.4b.
+
+### Validation
+
+- `npm run lint` — 0 errors, 254 warnings.
+- `npx vue-tsc --noEmit` — passed.
+- `npm run build` — passed, with existing Vite chunking advisories.
+- `npm run test` — 111 files / 1521 tests passed.
+- `cargo clippy --all-targets -- -D warnings` — passed.
+- `cargo test --all-targets` — 1981 library tests plus 4 smoke tests passed.
+- `npm run test:e2e` — 5 Playwright specs passed.
+- `npm run tauri:ios:check` — iOS config valid; Xcode project generation skipped on Windows as expected.
+- VS Code diagnostics check on touched code files — no errors found.
+
+### Notes
+
+- The Playwright mobile flow expectation was refreshed for the current seven-tab mobile shell after the Link tab was added.
+- Before 27.5c, CI cleanup also removed stale Rust warning/test blockers: unused Obsidian-sync test locals, plugin view max-line pressure via `usePluginCapabilityGrants`, and registry-server catalog tests expecting the former OpenClaw package entry.
+
+---
+
+## Chunk 27.5b — Native learned-motion polish preview command
+
+**Status:** Complete
+**Date:** 2026-05-02
+
+### Summary
+
+Exposed the native zero-phase Gaussian learned-motion smoother as a non-destructive backend preview command and added the frontend Pinia wrapper/types needed for the upcoming preview UI. The command returns a polished candidate motion plus displacement stats and never writes or overwrites saved clips; acceptance still flows through `save_learned_motion`.
+
+### What changed
+
+- Added `polish_learned_motion(id, config)` in `src-tauri/src/commands/persona.rs`, including light/medium/heavy presets, sigma/radius clamping warnings, applied-config reporting, candidate provenance metadata, and per-bone displacement stats.
+- Registered the command in `src-tauri/src/lib.rs` and moved `persona::motion_smooth` into the default build so the production command compiles without `motion-research`.
+- Fixed `src-tauri/src/persona/motion_smooth.rs` reflection padding for kernels wider than short clips, preventing unsigned underflow during heavy smoothing.
+- Added `MotionPolish*` TypeScript types and optional polish metadata in `src/stores/persona-types.ts`.
+- Added `persona.polishLearnedMotion(id, config)` in `src/stores/persona.ts`, mapping backend snake_case fields to frontend camelCase without mutating `learnedMotions`.
+- Added focused frontend and backend tests for preview mapping, non-destructive candidate generation, clamped configs, non-motion rejection, and the short-clip reflection regression.
+- Updated `docs/offline-motion-polish-research.md` and `docs/persona-design.md` to mark the backend command shipped while leaving visual controls as Chunk 27.5c.
+
+### Validation
+
+- `npx vitest run src/stores/persona.test.ts` — 28 passed.
+- `cargo test motion_polish` — 3 passed.
+- `cargo test convolve_handles_kernel_wider_than_channel` — 1 passed.
+
+### Notes
+
+- Cargo still reports three unrelated existing `unused variable: db_path` warnings in `src-tauri/src/memory/obsidian_sync.rs` tests.
+- Next active chunk is 27.5c, the learned-motion polish preview UI.
+
+---
+
+## Milestones audit — Doc chunk coverage reconciliation
+
+**Status:** Complete
+**Date:** 2026-05-02
+
+### Summary
+
+Reconciled doc/rule chunk references against `rules/milestones.md` so the active tracker stays concise and only contains not-started or in-progress work. Completed or closed items below are intentionally not re-added to milestones.
+
+### Backfilled and closed coverage
+
+- **Chunk 28.4 — Sandboxed test runs.** `docs/coding-workflow-design.md` correctly describes this as shipped. Backfilled the missing completion-log coverage for `src-tauri/src/coding/test_runner.rs`: isolated `tokio::process` test suites, stripped environment, per-suite timeout, retry-once flaky detection, stdout/stderr tail capture, and `TestRunResult { suites, all_green, total_duration_ms, flaky_suites }` for the coding workflow gate.
+- **Chunk 094 — Model Position Saving.** Verified current implementation via `src/composables/useModelCameraStore.ts`, `src/composables/useModelCameraStore.test.ts`, and the `get_model_camera_positions` / `save_model_camera_position` command surface.
+- **Chunk 095 — Procedural Gesture Blending.** Verified current implementation via `src/renderer/gesture-blender.ts`, `src/renderer/gesture-blender.test.ts`, and `CharacterAnimator` integration.
+- **Chunk 096 — Speaker Diarization.** Verified current implementation via the `DiarizationEngine` / `StubDiarization` Rust path, `diarize_audio`, and `src/composables/useDiarization.ts`.
+- **Chunk 097 — Hotword-Boosted ASR.** Verified current implementation via hotword commands (`get_hotwords`, `add_hotword`, `remove_hotword`, `clear_hotwords`) and `src/composables/useHotwords.ts`.
+- **Chunk 098 — Presence / Greeting System.** Verified current implementation via `src/composables/usePresenceDetector.ts` and its test coverage.
+- **Chunk 115 — Live2D Support.** Closed as no-action rather than re-promoted: the current docs make VRM the only supported avatar format and reject Live2D for licensing/runtime fit.
+- **Chunk 116 — Screen Recording / Vision.** Verified current implementation via `src-tauri/src/commands/vision.rs`, `capture_screen`, `analyze_screen`, `ScreenFrame`, `VisionAnalysis`, and `src/composables/useVisionCapture.ts`.
+- **Chunk 117 — Docker Containerization.** Left demoted from active milestones; desktop Tauri runtime work should not depend on Docker unless explicitly promoted for CI/research.
+- **Chunk 118 — Chat Log Export.** Verified current implementation via `export_chat_log` and `src/composables/useChatExport.ts`.
+- **Chunk 119 — Language Translation Layer.** Verified current implementation via `translate_text`, `detect_language`, `list_languages`, and `src/composables/useTranslation.ts`.
+- **Chunk 15.7 — VS Code Copilot incremental-indexing QA.** Corrected the stale `docs/AI-coding-integrations.md` roadmap row to match the existing shipped completion-log entry.
+
+### Validation
+
+- Documentation-only reconciliation. No runtime code changed for this audit entry.
+- Active milestones remain limited to current open work: 27.5c, 27.4b, 28.13, and 28.14.
+
+---
+
+## Chunk 22.8 — OpenClaw bridge plugin alignment
+
+**Status:** Complete
+**Date:** 2026-05-02
+
+### Summary
+
+Aligned OpenClaw with the PluginHost model used by Translator Mode and updated
+the docs so OpenClaw is presented as a capability-gated tool plugin, not an
+Agent Marketplace conversation provider.
+
+### What changed
+
+- Verified `src-tauri/src/plugins/host.rs` registers `openclaw-bridge` as a
+  built-in plugin with `openclaw-bridge.dispatch`, `read`, `fetch`, `chat`,
+  `status`, and `/openclaw` contributions.
+- Verified OpenClaw is no longer in the in-process Agent Marketplace catalog;
+  catalog tests now assert the agent catalog through `stub-agent`,
+  `claude-cowork`, and `gitnexus-sidecar`.
+- Rewrote `instructions/OPENCLAW-EXAMPLE.md` as the canonical plugin example,
+  including the TerranSoul/OpenClaw responsibility split, capability grants,
+  JSON-RPC runtime seam, best-use guidance, and future chunk plan.
+- Added OpenClaw as a second built-in plugin example in
+  `docs/plugin-development.md` next to Translator Mode.
+- Updated `README.md`, `instructions/EXTENDING.md`, and
+  `rules/architecture-rules.md` so OpenClaw is described as a PluginHost tool
+  bridge while `agent/openclaw_agent.rs` is legacy parser/provider support.
+
+### Validation
+
+- `npx vitest run src/stores/plugins.test.ts src/views/PluginsView.test.ts src/views/MarketplaceView.test.ts` — 43 passed.
+- `cargo test openclaw` — 19 passed.
+- `cargo test catalog_registry` — 7 passed.
+- `npx vue-tsc --noEmit` — passed.
+- `get_errors` on changed OpenClaw docs/code surfaces — no diagnostics.
+
+### Notes
+
+- Cargo emitted three existing `unused variable: db_path` warnings in
+  `src-tauri/src/memory/obsidian_sync.rs`; they are unrelated to this chunk.
+- No active row was added to `rules/milestones.md`, keeping the tracker concise
+  and active-only.
+
+---
+
+## Chunk 19.1 — Canonical memory schema collapse
+
+**Date:** 2026-05-02
+
+**Summary:** Collapsed the SQLite memory migration history into one canonical V13 schema initializer. Fresh databases now create the final `memories`, `memory_edges`, `memory_versions`, `memory_conflicts`, `paired_devices`, and `sync_log` tables directly through `memory::schema::create_canonical_schema`. The old append-only `migrations.rs` runner and downgrade/round-trip migration tests were removed.
+
+**Files changed:**
+- `src-tauri/src/memory/schema.rs` — added canonical V13 schema SQL, schema-version recording, final-shape validation, and focused schema tests.
+- `src-tauri/src/memory/migrations.rs` — deleted the versioned migration runner and historical migration tests.
+- `src-tauri/src/memory/store.rs` — switched startup/in-memory setup to `create_canonical_schema` and updated schema-version assertions.
+- `src-tauri/src/memory/mod.rs`, `src-tauri/src/commands/memory.rs`, `src-tauri/src/memory/versioning.rs`, `src-tauri/src/memory/edges.rs` — updated module exports, status reporting, and tests away from `migrations`.
+- `docs/brain-advanced-design.md` and `README.md` — synced the brain/memory docs with canonical V13 schema creation instead of auto-applied migrations.
+- `rules/milestones.md` — removed the final required 19.1 row and marked no tracked chunks remaining.
+
+**Validation:**
+- `cargo test memory::schema; cargo test schema_version_returns_latest; cargo test memory::versioning; cargo test canonical_schema_has_memory_edges_with_cascade` — passed.
+- `cargo test brain::selection` — 9 passed.
+- `cargo test memory:: -- --test-threads=1` — 435 passed.
+- `cargo test -- --test-threads=1` — 1960 unit tests + 4 integration tests + 1 doc test passed.
+- `cargo clippy -- -D warnings` — passed.
+- `get_errors` on changed Rust/Markdown files — no diagnostics reported.
+
+**Notes:**
+- Test compilation still reports existing unused-variable warnings in `src-tauri/src/memory/obsidian_sync.rs` test code during `cargo test`; those warnings predate this chunk and did not fail the targeted test runs or clippy.
+
+---
+
+## Chunk 14.16g — MotionGPT / T2M-GPT inference evaluation
+
+**Date:** 2026-05-02
+
+**Summary:** Completed the optional GPU-gated MotionGPT / T2M-GPT inference evaluation without adding ONNX, CUDA, Python, SMPL, dataset, or model-weight dependencies. The local machine has a capable RTX 3080 Ti, but the upstream model boundary is not clean enough to ship as an in-app dependency. TerranSoul keeps the existing LLM motion generator and feature-gated deterministic `motion_tokens` codec as the product path; neural text-to-motion remains a future local sidecar only.
+
+**Files changed:**
+- `docs/motion-model-inference-evaluation.md` — added the detailed 14.16g evaluation, local GPU probe, candidate matrix, sidecar contract, acceptance gates, and rejected behaviors.
+- `docs/persona-design.md` — added §7.6, updated §14.2 row 8, expanded sources, and clarified the roadmap row for MotionGPT / T2M-GPT.
+- `docs/llm-animation-research.md` — corrected the MotionGPT / T2M-GPT runtime/license posture and added the 14.16g decision.
+- `README.md` — documented `motion_tokens.rs` and the no-bundled-motion-model decision.
+- `rules/milestones.md` — archived the completed Phase 14 optional work and advanced the pointer to final required chunk 19.1.
+
+**Research outcome:**
+- Local GPU probe found `nvidia-smi` available with NVIDIA GeForce RTX 3080 Ti / 12 GB VRAM; `nvcc` is not installed.
+- MotionGPT code is MIT, but the public project depends on SMPL, SMPL-X, PyTorch3D, and datasets with separate licenses.
+- T2M-GPT code is Apache-2.0, but the public project is a Python/PyTorch research stack using HumanML3D/KIT-style assets, pretrained download scripts, evaluator assets, and optional SMPL rendering.
+- Adding Rust `ort` now would add native runtime risk without a verified, checksummed, VRM-native ONNX model artifact to run.
+- A future sidecar must declare license, checksum, input/output schema, skeleton contract, and fallback behavior before it becomes user-facing.
+
+**Validation:**
+- `get_errors` on changed Markdown files — no diagnostics reported.
+- No Rust/TypeScript runtime code changed for this evaluation-only optional chunk.
+
+**Follow-ups (not in this chunk):**
+- Future model integration should start from a concrete model manifest and artifact, not from a runtime dependency.
+- Final required milestone is 19.1, the migration-history collapse, and it should remain last.
+
+---
+
+## Chunk 27.6 — Neural audio-to-face upgrade evaluation
+
+**Date:** 2026-05-02
+
+**Summary:** Completed the neural audio-to-face research and backend-boundary spike without adding runtime dependencies or model weights. The chunk compared the shipped `phoneme-viseme` + `lip-sync` stack against NVIDIA Audio2Face-3D / ACE, FaceFormer, and EmoTalk-class approaches. The decision is to keep TerranSoul's current model-free viseme scheduler as the default, with Audio2Face-3D only as a future optional local NVIDIA sidecar after hardware, license, checksum, and adapter gates pass.
+
+**Files changed:**
+- `docs/neural-audio-to-face-evaluation.md` — added the detailed evaluation, candidate matrix, optional backend contract, UX/safety requirements, acceptance gates, and rejected behaviors.
+- `docs/persona-design.md` — added §7.5, updated §14.2 rows 9 and 11, expanded sources, and updated roadmap row 14.12.
+- `docs/llm-animation-research.md` — added the 27.6 audio-to-face decision and sources.
+- `README.md` — synced the Persona System overview with the default viseme path and optional Audio2Face-3D sidecar posture.
+- `rules/milestones.md` — removed completed row 27.6 and noted that no non-last required chunk remains; optional 14.16g is GPU-gated and 19.1 remains the final required cleanup.
+
+**Research outcome:**
+- The shipped path is stronger than the old roadmap wording: `useLipSyncBridge` already prefers text-driven `VisemeScheduler` timelines when TTS text/duration are available, and falls back to Web Audio FFT/RMS analysis when needed.
+- NVIDIA Audio2Face-3D is the only plausible future neural backend: the SDK is MIT, current model cards use the NVIDIA Open Model License, and outputs are facial pose/motion arrays. It still requires CUDA/TensorRT, NVIDIA hardware, model installation, and a model-specific adapter to TerranSoul's five-viseme / optional expanded-blendshape contracts.
+- NVIDIA Audio2Emotion is not a default dependency because its license is gated and restricts use to the Audio2Face project; it must not be used as standalone emotion recognition.
+- FaceFormer is MIT but research-mesh-oriented, tied to VOCASET/BIWI/FLAME-style vertex outputs and older Python/PyTorch runtime assumptions.
+- EmoTalk is useful conceptually for emotional disentanglement, but no clear public maintained repository was found during this spike.
+
+**Validation:**
+- `get_errors` on changed Markdown files — no diagnostics reported.
+- No code tests were required for this research-only chunk; no Rust/TypeScript runtime code changed.
+
+**Follow-ups (not in this chunk):**
+- Optional 14.16g can be evaluated only when a suitable GPU/model runtime is available.
+- Final required chunk 19.1 should only start after confirming no schema-changing work remains.
+
+---
+
+## Chunk 27.5 — Offline recorded-motion polish pass
+
+**Date:** 2026-05-02
+
+**Summary:** Completed the offline recorded-motion polish research and workflow-design spike without adding runtime dependencies or model weights. The chunk evaluated HunyuanVideo / Hunyuan-Motion-class models, MimicMotion, MagicAnimate, Stable Video Diffusion, and the shipped TerranSoul Gaussian smoother. The recommendation is to expose the existing `motion_smooth` path first as a non-destructive saved-motion polish workflow, while keeping video diffusion systems as optional sidecar research only.
+
+**Files changed:**
+- `docs/offline-motion-polish-research.md` — added the detailed research deliverable, candidate matrix, non-destructive workflow, backend boundary, evaluation gate, and rejected behaviors.
+- `docs/persona-design.md` — updated §7.4, §14.2, sources, and the roadmap row for Hunyuan / MimicMotion / MagicAnimate posture.
+- `docs/llm-animation-research.md` — updated the Hunyuan row and added the 27.5 decision note plus sources.
+- `README.md` — synced the Persona System overview with the existing `motion_smooth` baseline and the no-bundled-video-diffusion decision.
+- `rules/milestones.md` — removed completed row 27.5 and advanced `Next Chunk` to 27.6.
+
+**Research outcome:**
+- `src-tauri/src/persona/motion_smooth.rs` already provides a license-clean, in-repo zero-phase Gaussian smoother over `LearnedMotion` frames with endpoint pinning and displacement stats. This should be the first product polish path.
+- HunyuanVideo / Hunyuan-Motion-class models are useful research references but are not suitable as bundled polish dependencies because the open model stack is GPU-heavy, video-output-oriented, and governed by Tencent community/model license terms.
+- MimicMotion has Apache-2.0 code but depends on Stable Video Diffusion weights, has 8-16 GB+ VRAM requirements, and outputs rendered video rather than reusable VRM bone frames.
+- MagicAnimate has BSD-3-Clause code but depends on Stable Diffusion 1.5, a VAE, MagicAnimate checkpoints, CUDA, and ffmpeg; it also outputs rendered image animation rather than `LearnedMotion` frames.
+- Stable Video Diffusion has gated access and a Stability AI community license with commercial thresholds, so it is not a default TerranSoul dependency.
+
+**Validation:**
+- `get_errors` on changed Markdown files — no diagnostics reported.
+- No code tests were required for this research-only chunk; no Rust/TypeScript runtime code changed.
+
+**Follow-ups (not in this chunk):**
+- Chunk 27.6: evaluate neural audio-to-face upgrades against the shipped phoneme-aware viseme mapper.
+- Future polish implementation: expose `motion_smooth::smooth_clip` through a non-destructive preview command/UI before considering any ML sidecar.
+
+---
+
+## Chunk 27.4 — MoMask-style full-body reconstruction research spike
+
+**Date:** 2026-05-02
+
+**Summary:** Completed the MoMask-style full-body retarget research spike without adding runtime dependencies or vendoring model weights. The spike evaluated MoMask, MotionBERT-Lite, MMPose / RTMPose3D, VideoPose3D, and the shipped TerranSoul geometric retarget baseline. The recommendation is to keep `src-tauri/src/persona/retarget.rs` as the default offline full-body baseline, avoid bundling MoMask for now, and make any future ML reconstruction an optional saved-landmark sidecar that never processes live camera frames.
+
+**Files changed:**
+- `docs/momask-full-body-retarget-research.md` — added the detailed research deliverable, candidate matrix, MoMask fit analysis, sidecar interface sketch, privacy constraints, and future acceptance gate.
+- `docs/persona-design.md` — updated §7.2 / §7.3, §14.2, sources, and the roadmap row to reflect the 27.4 decision.
+- `docs/llm-animation-research.md` — corrected the MoMask row, added MotionBERT-Lite, and linked the 27.4 decision.
+- `README.md` — synced the Persona System overview with the current research posture and the feature-gated Rust retarget baseline.
+- `rules/milestones.md` — removed completed row 27.4 and advanced `Next Chunk` to 27.5.
+
+**Research outcome:**
+- MoMask code is MIT and has a CPU WebUI path, but its app-facing outputs are 22-joint arrays / BVH and its temporal editing path expects HumanML3D 263D source features. Its README also flags separate licenses for SMPL, SMPL-X, PyTorch3D, and datasets. Treat it as a later offline inpainting/synthesis candidate, not a default BlazePose-to-VRM dependency.
+- MotionBERT-Lite is the best first ML-lift candidate if a prototype is built: Apache-2.0 code, H36M 17-keypoint sequence input, 3D pose/mesh tasks, and a published small checkpoint. It still needs a BlazePose-to-H36M remap and sidecar/runtime audit.
+- MMPose / RTMPose3D is a useful Apache-2.0 research harness but too heavy for the default Tauri app bundle.
+- VideoPose3D is rejected for bundled use because the upstream license is CC BY-NC.
+
+**Validation:**
+- `get_errors` on changed Markdown files — no diagnostics reported.
+- No code tests were required for this research-only chunk; no Rust/TypeScript runtime code changed.
+
+**Follow-ups (not in this chunk):**
+- Chunk 27.5: design the optional offline recorded-motion polish workflow for Hunyuan-Motion / MimicMotion / MagicAnimate-style references.
+- If ML reconstruction is later implemented, add a model-agnostic `MotionReconstructionBackend` boundary and validate it against `persona::retarget` geometric fixtures before surfacing it in the UI.
+
+---
+
+## Chunk 24.11 — Local push notification on long-running task completion
+
+**Date:** 2026-05-02
+
+**Summary:** Added paired-mobile local notifications for long-running desktop work without APNS or a cloud push relay. The new `mobile-notifications.ts` watcher starts only for the iOS/remote runtime, polls the paired desktop through `RemoteHost.listWorkflowRuns(true)` and `RemoteHost.getCopilotSessionStatus()`, observes local `task-progress` events when available, and sends native notifications via `tauri-plugin-notification` once the configured threshold is met. Workflow and task notifications fire only after a previously observed run reaches a terminal state; Copilot sessions notify once when active work crosses the threshold.
+
+**Files changed:**
+- `src/stores/mobile-notifications.ts` — added the notification tracker, RemoteHost polling watcher, task-progress listener, threshold/poll clamping, native notification permission flow, and test adapters.
+- `src/stores/mobile-notifications.test.ts` — covered workflow completion, short-run suppression, ingest-task completion, Copilot threshold notifications, and store polling.
+- `src/App.vue` — started/stopped the mobile notification watcher from the main app lifecycle.
+- `src/stores/settings.ts` — mirrored the new mobile notification settings in frontend defaults and types.
+- `src-tauri/src/settings/mod.rs`, `src-tauri/src/commands/settings.rs`, and `src-tauri/src/settings/config_store.rs` — added persisted `mobile_notifications_enabled`, `mobile_notification_threshold_ms`, and `mobile_notification_poll_ms` defaults plus serde/default tests.
+- `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`, `src-tauri/capabilities/default.json`, and `src-tauri/capabilities/mobile.json` — registered `tauri-plugin-notification` in JS/Rust and granted the notification capability to desktop/mobile shells.
+- `README.md` and `docs/brain-advanced-design.md` — documented the paired-mobile notification watcher and settings.
+- `rules/milestones.md` — removed completed row 24.11 and advanced `Next Chunk` to 27.4.
+
+**Validation:**
+- `npx vitest run src/stores/mobile-notifications.test.ts` — 1 file / 5 tests passed.
+- `npx vue-tsc --noEmit` — passed with no output.
+- `cd src-tauri; cargo check && cargo clippy -- -D warnings` — passed.
+- `cd src-tauri; cargo test settings::` — 36 settings/config-store tests passed; cargo printed 3 pre-existing unused-variable warnings in `memory/obsidian_sync.rs` test code.
+- Full CI gate (`npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`) — frontend tests, typecheck, and clippy passed; the final parallel `cargo test` stage failed on the unrelated `memory::obsidian_sync::tests::sync_creates_and_imports_roundtrip` assertion. That same test passed in isolation, and `cargo test -- --test-threads=1` passed 1970 lib tests, 4 smoke tests, and 1 doctest, confirming a parallel-sensitive existing test issue rather than a 24.11 regression.
+- Mobile runtime probe on Windows: Android Emulator/AVD validation blocked because `adb`, `emulator`, `avdmanager`, and `sdkmanager` were not installed and `ANDROID_HOME` / `ANDROID_SDK_ROOT` were unset. iOS Simulator validation blocked because `xcrun` is unavailable on Windows; `npm run tauri:ios:check` passed iOS config validation and skipped Xcode-only checks on `win32`.
+
+**Follow-ups (not in this chunk):**
+- Run real Android Emulator and iOS Simulator/device LAN notification validation from hosts with the required SDKs installed.
+- Expose the mobile notification threshold/toggle in a dedicated settings panel if users need a visible control beyond persisted `AppSettings`.
+
+---
+
+## Chunk 24.10 — Remote command tools + workflow progress narration
+
+**Date:** 2026-05-02
+
+**Summary:** Added the phone-side RemoteHost tool layer for the user's headline workflow: asking the phone what Copilot is doing on the desktop, asking for current workflow progress, and saying "continue the next chunk" from mobile chat. The new `remote-tools.ts` layer exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` as capability-gated tools over existing PhoneControl RPCs, and `remote-conversation.ts` now detects those prompts before falling back to streamed chat. New pairings now receive default phone capabilities, and mobile Stronghold credentials persist those capabilities so the chat store can enforce the phone's allowed actions.
+
+**Files changed:**
+- `src/transport/remote-tools.ts` — added remote tool definitions, intent detection, capability checks, workflow selection, and narration formatting.
+- `src/transport/index.ts` — exported the remote tool surface from the transport barrel.
+- `src/stores/remote-conversation.ts` — routed Copilot/workflow/continue prompts through the remote tool dispatcher before normal chat streaming and read saved pairing capabilities.
+- `src/utils/secure-pairing-store.ts` — extended stored pairing credentials with optional capability metadata.
+- `src/stores/mobile-pairing.ts` — saved paired-device capabilities into the Stronghold credential bundle during pairing confirmation.
+- `src-tauri/src/network/pairing.rs` — added `DEFAULT_PHONE_CAPABILITIES` and assigned chat/read/workflow permissions to newly confirmed phone pairings.
+- `src/transport/remote-tools.test.ts` and `src/stores/remote-conversation.test.ts` — added focused coverage for tool definitions, narration, capability denial, intent detection, and remote chat tool routing.
+- `README.md` and `docs/brain-advanced-design.md` — documented the phone-side tool layer, supported tool names, pairing capabilities, and remote chat routing.
+- `rules/milestones.md` — removed completed row 24.10 and advanced `Next Chunk` to 24.11.
+
+**Validation:**
+- `npx vitest run src/transport/remote-tools.test.ts src/stores/remote-conversation.test.ts` — 2 files / 11 tests passed.
+- `npx vue-tsc --noEmit` — passed through the VS Code task with no reported output.
+- `cargo test network::pairing` — 10 focused pairing tests passed; cargo printed 3 pre-existing unused-variable warnings in `memory/obsidian_sync.rs` test code.
+- `cargo test phone_control` — 4 focused phone-control tests passed; cargo printed the same pre-existing unused-variable warnings.
+- `cargo clippy -- -D warnings` — passed.
+- `get_errors` on the 24.10 touched files — no diagnostics reported.
+- Mobile runtime probe on Windows: Android Emulator/AVD validation blocked because `adb`, `emulator`, `avdmanager`, and `sdkmanager` were not installed and `ANDROID_HOME` / `ANDROID_SDK_ROOT` were unset. iOS Simulator validation blocked because `xcrun` is unavailable on Windows; `npm run tauri:ios:check` passed iOS config validation and skipped Xcode-only checks on `win32`.
+
+**Follow-ups (not in this chunk):**
+- Chunk 24.11: add local notification delivery for long-running task completion while a phone is paired and connected.
+- Add server-side enforcement for the same phone capability names if the desktop RPC layer later exposes higher-risk workflow actions.
+- Run real Android Emulator and iOS Simulator/device LAN gRPC-Web validation from hosts with the required SDKs installed.
+
+---
+
+## Chunk 24.9 — Mobile chat view streaming through RemoteHost
+
+**Date:** 2026-05-02
+
+**Summary:** Refit the mobile chat path so iOS uses a `remote-conversation.ts` store backed by `RemoteHost.streamChatMessage()` while desktop keeps the existing in-process conversation store. The phone-control proto now has `StreamChatMessage(ChatRequest) returns (stream ChatChunk)`, and the Rust service assembles the full desktop prompt server-side with `SYSTEM_PROMPT_FOR_STREAMING`, hybrid long-term memory injection, persona context, and one-shot handoff context before streaming clean text chunks to mobile. `ChatView.vue` now binds to a shared local/remote store surface, preserving agent filtering, queue/stop controls, subtitles, and mobile breakpoints.
+
+**Files changed:**
+- `src-tauri/proto/terransoul/phone_control.v1.proto` — added `ChatChunk` and the server-streaming `StreamChatMessage` RPC.
+- `src-tauri/src/ai_integrations/grpc/phone_control.rs` — implemented desktop-side phone chat streaming, prompt assembly, memory/persona/handoff injection, clean text chunking, conversation persistence, and unary fallback parity.
+- `src-tauri/src/commands/streaming.rs` — exposed `StreamTagParser` and `strip_anim_blocks` within the crate for the phone-control stream.
+- `src/transport/phone_control_pb.ts`, `src/transport/remote-host.ts`, and `src/transport/grpc_web.ts` — added protobuf-es descriptors, `RemoteChatChunk`, and local/gRPC-Web `streamChatMessage()` implementations.
+- `src/stores/remote-conversation.ts` — added the iOS remote chat Pinia store with streaming, unary fallback, queue/stop controls, agent filtering, and test adapters.
+- `src/stores/chat-store-router.ts` and `src/utils/runtime-target.ts` — added runtime selection so iOS, or explicit test/query overrides, choose the remote store.
+- `src/views/ChatView.vue` — switched to the store router, suppressed local brain setup chrome for remote chat, and skipped local Tauri streaming listeners on iOS remote mode.
+- `src/utils/runtime-target.test.ts`, `src/stores/chat-store-router.test.ts`, `src/stores/remote-conversation.test.ts`, and `src/transport/grpc_web.test.ts` — added focused coverage for runtime detection, store routing, remote streaming, fallback behavior, and gRPC-Web chunk mapping.
+- `README.md` and `docs/brain-advanced-design.md` — documented remote mobile chat streaming, server-side prompt injection, and the updated RemoteHost surface.
+- `rules/milestones.md` — removed completed row 24.9 and advanced `Next Chunk` to 24.10.
+
+**Validation:**
+- `npx vitest run src/utils/runtime-target.test.ts src/stores/chat-store-router.test.ts src/stores/remote-conversation.test.ts src/transport/grpc_web.test.ts` — 4 files / 10 tests passed.
+- `npx vue-tsc --noEmit` — passed.
+- `cargo check` — passed.
+- `cargo test phone_control` — 4 focused phone-control tests passed; cargo printed 3 pre-existing unused-variable warnings in `memory/obsidian_sync.rs` test code.
+- `cargo clippy -- -D warnings` — passed.
+- `Full CI Gate` task — passed through frontend tests, Vue type-check, Rust clippy, Rust unit tests (`1968 passed`), Ollama smoke tests (`4 passed`), and doctest (`1 passed`).
+- Mobile runtime probe on Windows: Android Emulator/AVD validation blocked because `adb`, `emulator`, `sdkmanager`, and `avdmanager` were not installed, `ANDROID_HOME` / `ANDROID_SDK_ROOT` were unset, and `%LOCALAPPDATA%\Android\Sdk` did not exist. iOS Simulator validation blocked because `xcrun` / `xcodebuild` are unavailable on Windows; `npm run tauri:ios:check` passed config validation and skipped Xcode-only checks by design.
+
+**Follow-ups (not in this chunk):**
+- Chunk 24.10: add phone-side workflow/Copilot progress narration and the remote “continue next step” command surface.
+- Run real Android Emulator and iOS Simulator/device LAN gRPC-Web validation from hosts with the required SDKs installed.
+
+---
+
+## Chunk 24.8 — gRPC-Web client + transport adapter
+
+**Date:** 2026-05-02
+
+**Summary:** Added the shared `RemoteHost` transport seam so Vue components can call the desktop brain either through local Tauri IPC or through browser-native gRPC-Web from an iOS WebView. The frontend now has Connect/protobuf descriptors for the Brain and PhoneControl RPC surfaces, a gRPC-Web adapter with unary and server-streaming memory search, and local IPC mapping for the same DTOs. The Rust gRPC server now enables `tonic_web::GrpcWebLayer` with HTTP/1 support, and pairing payloads advertise the LAN gRPC/phone-control port (`7422`) instead of the MCP port.
+
+**Files changed:**
+- `package.json` and `package-lock.json` — added `@bufbuild/connect`, `@bufbuild/connect-web`, and `@bufbuild/protobuf` for WebView gRPC-Web clients.
+- `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` — added `tonic-web`.
+- `src-tauri/src/ai_integrations/grpc/mod.rs` — enabled gRPC-Web translation via `GrpcWebLayer` and HTTP/1 while preserving the existing Brain and PhoneControl services.
+- `src-tauri/src/commands/lan.rs` — switched pairing URI generation to the gRPC server handle/port with a `7422` fallback.
+- `src/transport/brain_pb.ts` and `src/transport/phone_control_pb.ts` — added protobuf-es descriptors for the Brain health/search/streaming surface and the Phase 24 phone-control RPCs.
+- `src/transport/remote-host.ts`, `src/transport/grpc_web.ts`, and `src/transport/index.ts` — added the local-vs-remote host abstraction, local Tauri IPC adapter, gRPC-Web adapter, endpoint helpers, DTO mapping, and server-streaming search support.
+- `src/stores/mobile-pairing.ts` — routed default trust-list loading through `RemoteHost` so the pairing store can use the same seam as upcoming mobile chat.
+- `src/transport/grpc_web.test.ts` — added focused adapter tests for phone-control DTO mapping, streaming brain search, and endpoint helper validation.
+- `README.md` and `docs/brain-advanced-design.md` — documented the RemoteHost/gRPC-Web brain transport and mobile memory-search surface.
+- `rules/milestones.md` — removed completed row 24.8 and advanced `Next Chunk` to 24.9.
+
+**Validation:**
+- `npx vitest run src/transport/grpc_web.test.ts src/stores/mobile-pairing.test.ts src/utils/mobile-pairing.test.ts src/views/MobilePairingView.test.ts` — 4 files / 10 tests passed.
+- `npx vue-tsc --noEmit` — passed.
+- `cargo check` — passed after switching from the removed `tonic_web::enable` helper to `GrpcWebLayer`.
+- `cargo clippy -- -D warnings` — passed.
+
+**Follow-ups (not in this chunk):**
+- Chunk 24.9: refit mobile chat to stream through `RemoteHost`, using the gRPC-Web adapter when running against a paired desktop.
+- Generate protobuf descriptors in a build step once the frontend proto toolchain is standardised; the hand-written descriptors intentionally cover only the Phase 24 surfaces needed now.
+
+---
+
+## Chunk 24.7 — iOS pairing UX
+
+**Date:** 2026-05-02
+
+**Summary:** Added the iOS/mobile pairing UX for scanning `terransoul://pair` QR payloads, reviewing the desktop endpoint/fingerprint, confirming pairing through an adapter-ready workflow, and storing certificate bundles plus desktop trust metadata in the Stronghold-backed secure pairing store. The flow now detects saved desktop fingerprint mismatches and requires an explicit re-pair/trust action before overwriting credentials. Because this session ran on Windows, the QR camera path is scaffolded and unit-tested through adapters; physical iOS camera validation remains a macOS/device follow-up.
+
+**Files changed:**
+- `package.json` and `package-lock.json` — added `@tauri-apps/plugin-barcode-scanner`.
+- `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/src/lib.rs` — added `tauri-plugin-barcode-scanner` and register it only under Tauri's `mobile` cfg, matching the crate's mobile-only Rust API.
+- `src-tauri/Info.ios.plist` and `src-tauri/capabilities/mobile.json` — added the iOS camera usage string plus mobile barcode scanner permissions.
+- `scripts/tauri-ios-check.mjs` — extended the iOS scaffold check to verify scanner registration, `NSCameraUsageDescription`, and mobile capability permissions.
+- `src/utils/secure-pairing-store.ts` — extended the stored credential bundle with optional desktop host/port, desktop fingerprint, and pairing token metadata while preserving existing records.
+- `src/utils/mobile-pairing.ts` and `src/utils/mobile-pairing.test.ts` — added the TypeScript mirror of the Rust pairing URI codec, scanner payload normalization, endpoint/fingerprint helpers, and focused tests.
+- `src/stores/mobile-pairing.ts` and `src/stores/mobile-pairing.test.ts` — added the Pinia workflow for scan/manual URI review, secure-store unlock/save/remove, IPC-backed confirmation, trust-list loading, and fingerprint mismatch re-pair handling with injectable adapters for 24.8's remote transport.
+- `src/views/MobilePairingView.vue`, `src/views/MobileSettingsView.vue`, and `src/views/MobilePairingView.test.ts` — added the mobile pairing screen, trust-list/settings panel, and component coverage for scan/review/confirm.
+- `src/App.vue` — added the Link tab and panel-only route for the mobile pairing UX.
+- `rules/milestones.md` — removed completed row 24.7 and advanced `Next Chunk` to 24.8.
+
+**Validation:**
+- `npx vitest run src/utils/mobile-pairing.test.ts src/stores/mobile-pairing.test.ts src/views/MobilePairingView.test.ts` — 3 files / 7 tests passed.
+- `npm run tauri:ios:check` — passed; validates iOS config and scanner scaffold on Windows, then skips Xcode-only checks by design.
+- `npx vue-tsc --noEmit` — passed.
+- `Cargo Check + Clippy` task — passed after gating scanner registration to mobile targets.
+- `Full CI Gate` task — passed: frontend tests (104 files, 1492 tests), Vue type-check, Rust clippy, Rust unit tests including Ollama smoke tests (4 passed), and doctest (1 passed). Cargo test still prints 3 pre-existing unused-variable warnings in `memory/obsidian_sync.rs`.
+
+**Follow-ups (not in this chunk):**
+- Chunk 24.8: replace the current local IPC confirmation seam with the `RemoteHost` / gRPC-Web transport adapter so the same pairing workflow can talk to a LAN desktop from the iOS WebView.
+- Run real QR camera validation and signed iOS simulator/device checks from macOS with Xcode.
+
+---
+
+## Chunk 24.6 — Tauri iOS target + shared frontend
+
+**Date:** 2026-05-02
+
+**Summary:** Added the Tauri 2 iOS app-shell scaffold while keeping one shared Vue frontend. The repo now has an iOS config overlay, safe-area-aware mobile navigation, Stronghold-backed secure pairing credential storage, guarded macOS/Xcode init checks, and a macOS CI smoke job. Because this session ran on Windows, `tauri ios init` / Xcode project generation is intentionally guarded and documented instead of claimed as locally built.
+
+**Files changed:**
+- `src-tauri/tauri.ios.conf.json` — added the iOS platform-specific config overlay with minimum iOS version, opaque full-screen main window, disabled input accessory view, and disabled link previews.
+- `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` — added `tauri-plugin-stronghold` and the recommended dev profile override for `scrypt`.
+- `package.json` and `package-lock.json` — added `@tauri-apps/plugin-stronghold` plus `tauri:ios:check` / `tauri:ios:init` scripts.
+- `src-tauri/capabilities/default.json` and `src-tauri/src/lib.rs` — granted `stronghold:default` and registered the Stronghold plugin with an app-local Argon2 salt file.
+- `src/utils/secure-pairing-store.ts` and `src/utils/secure-pairing-store.test.ts` — added a typed Stronghold wrapper for pairing certificate bundles with caller-supplied vault passwords and unit coverage using a fake loader.
+- `index.html`, `src/style.css`, and `src/App.vue` — added `viewport-fit=cover` plus reusable safe-area tokens so mobile content and bottom navigation clear iOS notches/home indicators.
+- `.github/workflows/terransoul-ci.yml` — added a macOS `ios-smoke` job that runs the guarded iOS scaffold checker.
+- `scripts/tauri-ios-check.mjs` — added non-mutating config/tooling validation plus a macOS-only `--init` path for `npx tauri ios init`.
+- `README.md` and `instructions/PLATFORM-SUPPORT.md` — documented the iOS scaffold, Stronghold storage, safe shared frontend, CI reality, and macOS signing/build requirements.
+- `rules/milestones.md` — removed completed row 24.6 and advanced `Next Chunk` to 24.7.
+
+**Validation:**
+- `npm run tauri:ios:check` — passed; validated config on Windows and skipped Xcode-only checks by design.
+- `npx vitest run src/utils/secure-pairing-store.test.ts` — 5 tests passed.
+- `npx vue-tsc --noEmit` — passed after aligning the local Stronghold interface with the plugin's `remove` return type.
+- `Cargo Check + Clippy` task — passed (`cargo check` + `cargo clippy -- -D warnings`).
+- `Full CI Gate` task — passed: frontend tests (101 files, 1485 tests), Vue type-check, Rust clippy, Rust unit tests (1968 passed), Ollama smoke tests (4 passed), and doctest (1 passed). Cargo test still prints 3 pre-existing unused-variable warnings in `memory/obsidian_sync.rs`.
+
+**Follow-ups (not in this chunk):**
+- Chunk 24.7: build the iOS pairing UX, QR scan flow, and mobile trust-list settings on top of this shell.
+- Run `npm run tauri:ios:init` and the first signed simulator/device build from a macOS machine with Xcode and `APPLE_DEVELOPMENT_TEAM` configured.
+- Android remains a later mobile target using the same shared frontend/Rust core.
+
+---
+
+## Chunk 22.7 — Plugin command execution dispatch
+
+**Date:** 2026-05-02
+
+**Summary:** Replaced the plugin command echo stub with real command execution. Plugin commands now lazily activate on `OnCommand`, dispatch through built-in handlers, WASM `handle_command`, native binary argv, or sidecar stdin/stdout contracts, and enforce persisted sandbox capabilities before sensitive execution.
+
+**Files changed:**
+- `src-tauri/src/plugins/host.rs` — added `invoke_command_with_store` / `invoke_slash_command_with_store`, lazy `OnCommand` activation, capability snapshot checks, `ProcessSpawn` enforcement for binaries/sidecars, WASM command execution, stdout/stderr/exit-code capture, and runtime dispatch tests.
+- `src-tauri/src/sandbox/wasm_runner.rs` — added `run_command_json` for the `handle_command(ptr, len) -> packed_ptr_len` ABI plus a compact WASM fixture test.
+- `src-tauri/src/commands/plugins.rs` — routed Tauri command invocation through `AppState.capability_store` so frontend calls use the user's persisted grants.
+- `docs/plugin-development.md` — documented command runtime contracts, argv/stdin payloads, WASM command ABI, lazy command activation, and capability mapping.
+- `rules/milestones.md` — removed completed Phase 22 row 22.7 and the now-empty Phase 22 section.
+
+**Validation:**
+- `cargo test test_run_command_json_returns_output` — WASM command ABI test passed.
+- `cargo test plugins::host::tests::invoke_` — 11 plugin command/slash dispatch tests passed, including WASM, binary, sidecar, capability denial, and lazy activation cases.
+- `Cargo Check + Clippy` task — passed (`cargo check` + `cargo clippy -- -D warnings`).
+- `Full CI Gate` task — first run hit a transient existing `memory::obsidian_sync::tests::sync_creates_and_imports_roundtrip` assertion; rerunning that single test passed. Second full run passed: frontend tests/typecheck, clippy, Rust unit tests (1968 passed), Ollama smoke tests (4 passed), and doctest (1 passed).
+
+**Follow-ups (not in this chunk):**
+- Surface binary/sidecar command stderr and exit codes in the plugin UI if users need richer troubleshooting affordances.
+- Add sample plugin packages that exercise `/hello`, a theme, and a memory hook for Phase 22 end-to-end acceptance QA.
+
+---
+
+## Chunk 22.5 — Memory-hook contribution pipeline
+
+**Date:** 2026-05-02
+
+**Summary:** Wired plugin `memory_hooks` contributions into the real memory write path. `add_memory` now lazily activates plugins for matching `OnMemoryTag` events, runs sandboxed `pre_store` hooks before SQLite persistence, applies JSON patches for content/tags/importance/type, and runs `post_store` hooks after persistence as notification-only processors.
+
+**Files changed:**
+- `src-tauri/src/plugins/host.rs` — added the active memory-hook registry, `MemoryHookPayload` / `MemoryHookPatch` / `MemoryHookRunResult`, lazy `activate_for_memory_tags`, 200 ms sandbox execution through `WasmRunner`, optional SHA-256 verification, Windows-safe local WASM path handling, and hook registry tests.
+- `src-tauri/src/sandbox/wasm_runner.rs` — added the `memory_hook(input_ptr, input_len) -> packed_ptr_len` ABI runner and a WASM-encoder fixture test proving JSON patch output is read back correctly.
+- `src-tauri/src/commands/memory.rs` — split `add_memory_inner` for tests, fired `pre_store` / `post_store` hooks around the existing embedding/store/auto-tag flow, and added an integration-style sample WASM tag-rewriter test.
+- `src-tauri/src/plugins/mod.rs`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` — exported the new host types and added `wasm-encoder` as a direct dev dependency for compact WASM fixtures.
+- `README.md` and `docs/brain-advanced-design.md` — documented sandboxed plugin memory hooks in the brain/memory architecture docs.
+- `rules/milestones.md` — removed completed row 22.5.
+
+**Validation:**
+- `cargo test memory_hook` — 3 targeted hook/ABI tests passed.
+- `cargo test memory_tag_activation_matches_prefix_tags` — 1 lazy activation test passed.
+- `cargo test add_memory_applies_prestore` — sample WASM tag-rewriter integration test passed.
+- `Cargo Check + Clippy` task — passed (`cargo check` + `cargo clippy -- -D warnings`).
+- `Full CI Gate` task — completed successfully: frontend test/typecheck stage, clippy, Rust unit tests (1962 passed), Ollama smoke tests (4 passed), and doctest (1 passed).
+
+**Follow-ups (not in this chunk):**
+- Chunk 22.7 still needs real Tool / Sidecar / WASM command execution dispatch.
+- Add retrieval/consolidation hook stages only when the host has concrete call sites for them.
+
+---
+
+## Chunk 16.3b — Late chunking ingest integration
+
+**Date:** 2026-05-02
+
+**Summary:** Wired late chunking into document ingestion behind `AppSettings.late_chunking`. When a local Ollama embedder returns per-token whole-document vectors, ingestion aligns semantic chunks back to text spans, converts them to token spans, pools chunk embeddings with `memory::late_chunking::pool_chunks`, and stores those vectors through the existing SQLite embedding column. If the embedder only returns the standard pooled `/api/embed` shape, ingestion gracefully falls back to the existing per-chunk embedding path.
+
+**Files changed:**
+- `src-tauri/src/memory/late_chunking.rs` — added `CharSpan` and `token_spans_for_char_spans` for chunk-to-token alignment.
+- `src-tauri/src/brain/ollama_agent.rs` — added `OllamaAgent::embed_tokens` plus token-vector response parsing for offsets, token text, and batched shapes.
+- `src-tauri/src/commands/ingest.rs` — added `AppSettings.late_chunking` gating, whole-document token embedding, pooled vector storage, and created-entry embedding bookkeeping.
+- `src-tauri/src/settings/mod.rs`, `src-tauri/src/settings/config_store.rs`, `src-tauri/src/commands/settings.rs`, `src/stores/settings.ts`, and `src/views/BrainView.test.ts` — added the persisted `late_chunking` setting with default-off serde/TS support.
+- `docs/brain-advanced-design.md` and `README.md` — documented the shipped late-chunking ingest path.
+- `rules/milestones.md` — removed completed row 16.3b.
+
+**Validation:**
+- `cargo test memory::late_chunking -- --nocapture` — 18 tests passed.
+- `cargo test brain::ollama_agent -- --nocapture` — 24 tests passed.
+- `cargo test commands::ingest -- --nocapture` — 12 tests passed.
+- `cargo test settings:: -- --nocapture` — 34 settings/command tests passed.
+- `Full CI Gate` — passed after fixing one Clippy style warning: frontend tests (1480 passed), `npx vue-tsc --noEmit`, `cargo clippy -- -D warnings`, Rust unit tests (1958 passed), Ollama smoke tests (4 passed), and doctest (1 passed).
+
+**Follow-ups (not in this chunk):**
+- Add a Brain hub toggle for `late_chunking` if users need an in-app control instead of saving the setting programmatically.
+- Add live-model QA once an Ollama model exposes per-token embeddings through `/api/embed` on the user's machine.
+
+---
+
+## Chunk 17.5b — Cross-device memory sync Soul Link wire protocol
+
+**Date:** 2026-05-02
+
+**Summary:** Finished the Soul Link wire protocol for CRDT memory sync. Inbound `memory_sync` messages now apply LWW deltas, reply with local deltas captured before inbound application, and record sync watermarks. `memory_sync_request` returns local deltas for a requested timestamp, `sync_memories_with_peer` triggers outbound sync, and the receive loop starts sync on connect/reconnect.
+
+**Files changed:**
+- `src-tauri/src/link/handlers.rs` — added message dispatch, memory sync/request handlers, reconnect-triggered sync, peer-address parsing, and protocol tests.
+- `src-tauri/src/commands/link.rs` — starts the receive loop on connect and exposes `sync_memories_with_peer`.
+- `src-tauri/src/link/mod.rs` — exports the handlers module.
+- `src-tauri/src/lib.rs` — registers the sync command.
+- `src-tauri/src/memory/crdt_sync.rs` — stores `sync_log` watermarks in Unix-ms units so they compare correctly with memory `updated_at` values.
+- `docs/brain-advanced-design.md` and `README.md` — documented the shipped cross-device memory sync protocol.
+- `rules/milestones.md` — removed completed row 17.5b.
+
+**Validation:**
+- `cargo test link::handlers -- --nocapture` — 7 handler/protocol tests passed.
+- `cargo test memory::crdt_sync -- --nocapture` — 9 CRDT sync tests passed.
+- `Full CI Gate` — passed: frontend tests/typecheck, `cargo clippy -- -D warnings`, Rust unit tests (1946 passed), Ollama smoke tests (4 passed), and doctest (1 passed).
+
+**Follow-ups (not in this chunk):**
+- Add a frontend action in `src/stores/link.ts` for manual memory sync if the Link panel needs an explicit button.
+- Move the receive loop off the outer `AppState.link_manager` mutex if future transports need concurrent send/receive from multiple commands.
+
+---
+
 ## Chunk 16.1 — Relevance threshold for `[LONG-TERM MEMORY]` injection
 
 **Date.** 2026-04-24
@@ -245,6 +950,54 @@ Entries are in **reverse chronological order** (newest first).
 **Follow-ups (not in this chunk).**
 - Frontend: surface the threshold in the Brain hub "Active Selection" preview panel so users can preview what *would* be injected at the current threshold (deferred to a small frontend chunk; the Rust surface already supports it).
 - 16.2 (Contextual Retrieval) — next chunk in Phase 16; orthogonal to this one.
+
+---
+
+## Chunk 28.12 — Multi-agent coding DAG orchestration wiring
+
+**Date:** 2026-05-02
+
+**Summary:** Wired the self-improve coding loop through the existing DAG orchestration layer. `coding::dag_runner` now includes an async executor with bounded parallelism per topological layer, and `coding::engine` runs each chunk as a Planner → Coder → Reviewer → Apply → Tester → Stage graph with capability validation and skip-on-failure behavior.
+
+**Files changed:**
+- `src-tauri/src/coding/dag_runner.rs` — added `execute_dag_async` and async tests for success and predecessor-failure skipping.
+- `src-tauri/src/coding/engine.rs` — replaced the linear plan/apply path with `execute_chunk_dag`, explicit DAG nodes, capability config, shared node state, and failure summaries.
+- `src-tauri/src/coding/mod.rs` — updated stale module overview now that the autonomous loop is live.
+- `docs/coding-workflow-design.md` — documented Chunk 28.12 and the graph-backed coding gate.
+- `rules/research-reverse-engineering.md` — marked the DAG wiring lesson as implemented and kept remaining follow-ups focused on worktree isolation and path-scoped context.
+- `rules/milestones.md` — removed completed row 28.12.
+
+**Validation:**
+- `cargo test coding:: -- --nocapture` — 252 coding-module tests passed.
+- `Full CI Gate` — passed after fixing the order-independent GraphRAG community test: frontend tests/typecheck, `cargo clippy -- -D warnings`, Rust unit tests (1942 passed), Ollama smoke tests (4 passed), and doctests (1 passed).
+
+**Follow-ups (not in this chunk):**
+- Add optional temporary-worktree execution for dirty or high-risk runs.
+- Add path-scoped context loading so large repos can load only rules relevant to touched files.
+
+---
+
+## Chunk 28.11 — Apply/review/test execution gate
+
+**Date:** 2026-05-02
+
+**Summary:** Upgraded the autonomous coding self-improve loop from plan-only output to a conservative execution gate. The engine now asks the coding LLM for complete typed file blocks, previews synthetic diffs through the reviewer, snapshots touched files, applies accepted changes, runs configured test suites, restores on failure, and stages paths only after validation passes.
+
+**Files changed:**
+- `src-tauri/src/coding/engine.rs` — added coder prompt contract, preview diff review, file snapshots, restore-on-failure, test summaries, and post-pass staging.
+- `docs/coding-workflow-design.md` — documented Cursor + Claude Code workflow lessons and marked the checkpointed execution gate as shipped.
+- `rules/research-reverse-engineering.md` — added Cursor/Claude Code reverse-engineering notes and follow-up workflow patterns.
+- `rules/milestones.md` — removed completed row 28.11; 28.12 is now the next Phase 28 chunk.
+
+**Validation:**
+- `cargo test coding::engine` — 10 passed.
+- `cargo check` — passed.
+- `cargo clippy -- -D warnings` — passed.
+- Follow-up local CI sweep fixed stale frontend contracts and task wiring, then passed `npx vue-tsc --noEmit`, `npx vitest run`, `cargo test`, and `cd src-tauri && cargo check && cargo clippy -- -D warnings`.
+
+**Follow-ups (not in this chunk):**
+- Chunk 28.12: wire multi-agent coding DAG orchestration into the execution gate.
+- Add temporary worktree execution and path-scoped context loading so future generated patches can be isolated even more tightly.
 
 ---
 

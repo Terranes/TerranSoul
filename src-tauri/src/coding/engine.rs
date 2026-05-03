@@ -4,16 +4,17 @@
 //! 1. User toggles self-improve on (gated through warning dialog).
 //! 2. Engine spawns a Tokio task that detects the workspace git repo,
 //!    reads `rules/milestones.md`, picks the next `not-started` chunk,
-//!    asks the configured Coding LLM for an implementation **plan**
-//!    (planner mode — does NOT yet apply diffs), persists progress, and
-//!    emits `self-improve-progress` Tauri events for the live UI.
+//!    runs the configured Coding LLM through a checkpointed
+//!    planner/coder/reviewer/apply/test/stage DAG, persists progress,
+//!    and emits `self-improve-progress` Tauri events for the live UI.
 //! 3. On error or pause, the task exits gracefully; on next app launch
 //!    the engine auto-resumes if `enabled = true`.
 //!
 //! Resilience: the task lives behind an [`AtomicBool`] cancellation flag.
 //! The only way to stop the loop is to flip self-improve to disabled.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,12 +24,19 @@ use tokio::task::JoinHandle;
 
 use crate::brain::openai_client::OpenAiMessage;
 
+use super::apply_file::{self, FileBlock};
 use super::client;
+use super::dag_runner;
 use super::git_ops;
 use super::github;
 use super::metrics::MetricsLog;
 use super::milestones::{next_not_started, parse_chunks, ChunkRow};
-use super::repo::{detect_repo, feature_branch_name, guess_repo_root, RepoState};
+use super::repo::{
+    detect_repo, feature_branch_name, guess_repo_root, sanitize_branch_segment, RepoState,
+};
+use super::reviewer::{self, ReviewVerdict, ReviewerConfig};
+use super::test_runner::{self, TestRunConfig};
+use super::worktree;
 use super::{CodingLlmConfig, CodingLlmProvider};
 
 /// Maximum chunks the loop will attempt in a single session before
@@ -194,15 +202,24 @@ fn load_planner_context(
     repo: &RepoState,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
 ) -> Vec<crate::coding::prompting::DocSnippet> {
+    load_context_for_target_paths(repo, workflow_cfg, &[])
+}
+
+fn load_context_for_target_paths(
+    repo: &RepoState,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    target_paths: &[String],
+) -> Vec<crate::coding::prompting::DocSnippet> {
     let Some(root) = repo.root.as_deref() else {
         return Vec::new();
     };
-    crate::coding::workflow::load_workflow_context(
+    crate::coding::workflow::load_workflow_context_for_paths(
         std::path::Path::new(root),
         workflow_cfg,
         true,
         true,
         true,
+        target_paths,
     )
 }
 
@@ -284,8 +301,607 @@ async fn plan_one_chunk<R: Runtime>(
     }
 }
 
-fn provider_label(p: &CodingLlmProvider) -> &'static str {
-    match p {
+/// Build the implementation prompt that asks the Coding LLM for
+/// explicit `<file path="...">...</file>` blocks. The reply is reviewed
+/// before any block is written to disk.
+fn coder_prompt(
+    repo: &RepoState,
+    chunk: &ChunkRow,
+    plan: &str,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+) -> Vec<OpenAiMessage> {
+    let user_task = format!(
+        "Implement exactly one TerranSoul milestone chunk using the approved plan.\n\
+         \n\
+         <repository>\n  \
+           <root>{}</root>\n  \
+           <branch>{}</branch>\n  \
+           <clean>{}</clean>\n\
+         </repository>\n\
+         <chunk>\n  \
+           <id>{}</id>\n  \
+           <title>{}</title>\n\
+         </chunk>\n\
+         <approved_plan>\n{}\n</approved_plan>\n\
+         \n\
+         Output only complete file replacement blocks in this exact form:\n\
+         <file path=\"repo/relative/path.ext\">full file contents</file>\n\
+         Return one block per file you need to create or replace. Do not use markdown fences.\n\
+         Do not include files that do not need changes.",
+        repo.root.as_deref().unwrap_or("unknown"),
+        repo.current_branch.as_deref().unwrap_or("unknown"),
+        repo.clean,
+        chunk.id,
+        chunk.title,
+        plan.trim(),
+    );
+
+    let mut constraints = crate::coding::workflow::default_negative_constraints();
+    constraints.push(
+        "Do not output patches or partial snippets; each <file> block must contain the complete final file contents."
+            .to_string(),
+    );
+    constraints.push(
+        "Do not modify generated, vendored, lockfile, target/, node_modules/, or test-output files unless the chunk explicitly requires it."
+            .to_string(),
+    );
+
+    let target_paths = extract_plan_path_hints(plan);
+    let prompt = crate::coding::prompting::CodingPrompt {
+        role: crate::coding::workflow::default_coding_role(),
+        task: user_task,
+        negative_constraints: constraints,
+        documents: load_context_for_target_paths(repo, workflow_cfg, &target_paths),
+        output: crate::coding::prompting::OutputShape::Prose,
+        example: Some(
+            "<file path=\"src/example.ts\">\nexport const value = 1\n</file>".to_string(),
+        ),
+        assistant_prefill: None,
+        error_handling: crate::coding::workflow::default_error_handling(),
+    };
+    prompt.build()
+}
+
+fn extract_plan_path_hints(plan: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for raw_token in plan.split_whitespace() {
+        let candidate = raw_token
+            .trim_matches(|character: char| {
+                matches!(
+                    character,
+                    '`' | '"' | '\'' | ',' | ';' | ':' | '.' | '(' | ')' | '[' | ']' | '{' | '}'
+                )
+            })
+            .trim_start_matches("./")
+            .replace('\\', "/");
+        if !is_probable_repo_path(&candidate) || paths.contains(&candidate) {
+            continue;
+        }
+        paths.push(candidate);
+    }
+    paths
+}
+
+fn is_probable_repo_path(candidate: &str) -> bool {
+    !candidate.starts_with("http")
+        && candidate.contains('/')
+        && candidate.contains('.')
+        && !candidate.contains("..")
+}
+
+/// End-to-end execution gate result for a single chunk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExecutionGateResult {
+    applied_paths: Vec<String>,
+    test_summary: String,
+    isolated_patch_path: Option<String>,
+}
+
+#[derive(Debug)]
+struct ExecutionWorkspace {
+    repo: RepoState,
+    repo_root: PathBuf,
+    temporary_worktree: Option<worktree::TemporaryWorktree>,
+}
+
+impl ExecutionWorkspace {
+    fn active(repo: &RepoState, repo_root: &Path) -> Self {
+        Self {
+            repo: repo.clone(),
+            repo_root: repo_root.to_path_buf(),
+            temporary_worktree: None,
+        }
+    }
+
+    fn isolated(temporary_worktree: worktree::TemporaryWorktree) -> Self {
+        let repo_root = temporary_worktree.path().to_path_buf();
+        Self {
+            repo: detect_repo(&repo_root),
+            repo_root,
+            temporary_worktree: Some(temporary_worktree),
+        }
+    }
+
+    fn is_isolated(&self) -> bool {
+        self.temporary_worktree.is_some()
+    }
+
+    fn cached_diff(&self) -> Result<String, String> {
+        match &self.temporary_worktree {
+            Some(temporary_worktree) => temporary_worktree.cached_diff(),
+            None => Ok(String::new()),
+        }
+    }
+}
+
+const DAG_NODE_PLAN: &str = "planner";
+const DAG_NODE_CODE: &str = "coder";
+const DAG_NODE_REVIEW: &str = "reviewer";
+const DAG_NODE_APPLY: &str = "apply";
+const DAG_NODE_TEST: &str = "tester";
+const DAG_NODE_STAGE: &str = "stage";
+
+#[derive(Debug, Default)]
+struct ChunkDagState {
+    plan: Option<String>,
+    blocks: Vec<FileBlock>,
+    snapshot: Option<FileSnapshot>,
+    applied_paths: Vec<String>,
+    test_summary: Option<String>,
+}
+
+fn self_improve_execution_graph() -> dag_runner::WorkflowGraph {
+    fn node(id: &str, label: &str, capabilities: &[&str]) -> dag_runner::DagNode {
+        dag_runner::DagNode {
+            id: id.to_string(),
+            label: label.to_string(),
+            capabilities: capabilities.iter().map(|cap| (*cap).to_string()).collect(),
+        }
+    }
+    fn edge(from: &str, to: &str) -> dag_runner::DagEdge {
+        dag_runner::DagEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+        }
+    }
+
+    dag_runner::WorkflowGraph {
+        nodes: vec![
+            node(DAG_NODE_PLAN, "Planner", &["llm_call"]),
+            node(DAG_NODE_CODE, "Coder", &["llm_call"]),
+            node(DAG_NODE_REVIEW, "Reviewer", &["llm_call", "review"]),
+            node(DAG_NODE_APPLY, "Apply", &["file_write"]),
+            node(DAG_NODE_TEST, "Tester", &["test_run"]),
+            node(DAG_NODE_STAGE, "Stage", &["git_write"]),
+        ],
+        edges: vec![
+            edge(DAG_NODE_PLAN, DAG_NODE_CODE),
+            edge(DAG_NODE_CODE, DAG_NODE_REVIEW),
+            edge(DAG_NODE_REVIEW, DAG_NODE_APPLY),
+            edge(DAG_NODE_APPLY, DAG_NODE_TEST),
+            edge(DAG_NODE_TEST, DAG_NODE_STAGE),
+        ],
+    }
+}
+
+fn self_improve_dag_config() -> dag_runner::DagRunnerConfig {
+    dag_runner::DagRunnerConfig {
+        max_parallel: 2,
+        skip_on_failure: true,
+        available_capabilities: vec![
+            "llm_call".to_string(),
+            "review".to_string(),
+            "file_write".to_string(),
+            "test_run".to_string(),
+            "git_write".to_string(),
+        ],
+    }
+}
+
+fn format_dag_failure(result: &dag_runner::DagRunResult) -> String {
+    let failed = result
+        .results
+        .iter()
+        .filter(|node| matches!(node.status, dag_runner::NodeStatus::Failed))
+        .map(|node| format!("{}: {}", node.node_id, node.message))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let skipped = if result.skipped_nodes.is_empty() {
+        String::new()
+    } else {
+        format!(" skipped: {}", result.skipped_nodes.join(", "))
+    };
+    if failed.is_empty() {
+        format!("DAG failed with no failing node.{skipped}")
+    } else {
+        format!("DAG failed: {failed}.{skipped}")
+    }
+}
+
+/// Plan -> code -> review -> apply -> test -> stage for one chunk,
+/// orchestrated through the coding DAG runner.
+async fn execute_chunk_dag<R: Runtime>(
+    app: &AppHandle<R>,
+    config: &CodingLlmConfig,
+    repo: &RepoState,
+    repo_root: &Path,
+    chunk: &ChunkRow,
+    metrics: &MetricsLog,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    cancel: &Arc<AtomicBool>,
+) -> Result<ExecutionGateResult, String> {
+    let original_repo_root = repo_root.to_path_buf();
+    let execution_workspace = prepare_execution_workspace(app, repo, repo_root, chunk)?;
+    let execution_repo_root = execution_workspace.repo_root.clone();
+    let execution_repo = execution_workspace.repo.clone();
+
+    let graph = self_improve_execution_graph();
+    let dag_config = self_improve_dag_config();
+    dag_runner::validate_graph(&graph, &dag_config).map_err(|e| e.to_string())?;
+    let layers = dag_runner::compute_layers(&graph)
+        .into_iter()
+        .map(|layer| layer.join("+"))
+        .collect::<Vec<_>>()
+        .join(" -> ");
+    emit(
+        app,
+        ProgressEvent::info("dag", format!("Running coding DAG: {layers}"))
+            .with_chunk(&chunk.id)
+            .with_progress(8),
+    );
+
+    let state = Arc::new(TokioMutex::new(ChunkDagState::default()));
+    let app_handle = app.clone();
+    let config = config.clone();
+    let repo = execution_repo.clone();
+    let repo_root = execution_repo_root.clone();
+    let chunk = chunk.clone();
+    let metrics = metrics.clone();
+    let workflow_cfg = workflow_cfg.clone();
+    let cancel = cancel.clone();
+
+    let result = dag_runner::execute_dag_async(&graph, &dag_config, |node_id| {
+        let app = app_handle.clone();
+        let config = config.clone();
+        let repo = repo.clone();
+        let repo_root = repo_root.clone();
+        let chunk = chunk.clone();
+        let metrics = metrics.clone();
+        let workflow_cfg = workflow_cfg.clone();
+        let cancel = cancel.clone();
+        let state = state.clone();
+
+        async move {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(format!("cancelled before {node_id}"));
+            }
+            match node_id.as_str() {
+                DAG_NODE_PLAN => {
+                    let plan =
+                        plan_one_chunk(&app, &config, &repo, &chunk, &metrics, &workflow_cfg)
+                            .await?;
+                    state.lock().await.plan = Some(plan);
+                    Ok("plan ready".to_string())
+                }
+                DAG_NODE_CODE => {
+                    emit(
+                        &app,
+                        ProgressEvent::info("code", "Generating file blocks for execution gate")
+                            .with_chunk(&chunk.id)
+                            .with_progress(35),
+                    );
+                    let plan = state
+                        .lock()
+                        .await
+                        .plan
+                        .clone()
+                        .ok_or_else(|| "planner produced no plan".to_string())?;
+                    let reply = client::client_from(&config)
+                        .chat(coder_prompt(&repo, &chunk, &plan, &workflow_cfg))
+                        .await?;
+                    let blocks = apply_file::parse_file_blocks(&reply);
+                    if blocks.is_empty() {
+                        return Err("coding LLM returned no <file path=...> blocks".to_string());
+                    }
+                    let count = blocks.len();
+                    state.lock().await.blocks = blocks;
+                    Ok(format!("generated {count} file block(s)"))
+                }
+                DAG_NODE_REVIEW => {
+                    let blocks = state.lock().await.blocks.clone();
+                    let preview = preview_diff(&repo_root, &blocks)?;
+                    emit(
+                        &app,
+                        ProgressEvent::info(
+                            "review",
+                            format!("Reviewing {} file block(s)", blocks.len()),
+                        )
+                        .with_chunk(&chunk.id)
+                        .with_progress(45),
+                    );
+                    let review_task = reviewer::build_review_task(
+                        &format!("self-improve-review-{}", chunk.id),
+                        &preview,
+                        Vec::new(),
+                    );
+                    let review = crate::coding::workflow::run_coding_task(
+                        &config,
+                        &review_task,
+                        Some(&workflow_cfg),
+                    )
+                    .await?;
+                    let review_result = reviewer::parse_review_result(&review.payload)
+                        .ok_or_else(|| "reviewer returned invalid JSON".to_string())?;
+                    match reviewer::decide(&review_result, &ReviewerConfig::default()) {
+                        ReviewVerdict::Accept => Ok("review accepted".to_string()),
+                        ReviewVerdict::Reject { reason, .. } => {
+                            Err(format!("review rejected diff: {reason}"))
+                        }
+                    }
+                }
+                DAG_NODE_APPLY => {
+                    let blocks = state.lock().await.blocks.clone();
+                    let snapshot = FileSnapshot::capture(&repo_root, &blocks)?;
+                    emit(
+                        &app,
+                        ProgressEvent::info(
+                            "apply",
+                            format!("Applying {} reviewed file block(s)", blocks.len()),
+                        )
+                        .with_chunk(&chunk.id)
+                        .with_progress(60),
+                    );
+                    let applied = apply_file::apply_blocks(&repo_root, &blocks, false);
+                    if !applied.rejected.is_empty() {
+                        snapshot.restore(&repo_root)?;
+                        return Err(format_apply_rejections(&applied.rejected));
+                    }
+                    let paths: Vec<String> =
+                        applied.applied.iter().map(|a| a.path.clone()).collect();
+                    let mut guard = state.lock().await;
+                    guard.snapshot = Some(snapshot);
+                    guard.applied_paths = paths.clone();
+                    Ok(format!("applied {} file(s)", paths.len()))
+                }
+                DAG_NODE_TEST => {
+                    emit(
+                        &app,
+                        ProgressEvent::info("test", "Running autonomous execution test gate")
+                            .with_chunk(&chunk.id)
+                            .with_progress(75),
+                    );
+                    let tests =
+                        test_runner::run_tests(&TestRunConfig::default_ci_gate(repo_root.clone()))
+                            .await;
+                    let summary = summarize_tests(&tests);
+                    if !tests.all_green {
+                        if let Some(snapshot) = state.lock().await.snapshot.clone() {
+                            snapshot.restore(&repo_root)?;
+                        }
+                        return Err(format!("tests failed; restored touched files: {summary}"));
+                    }
+                    state.lock().await.test_summary = Some(summary.clone());
+                    Ok(summary)
+                }
+                DAG_NODE_STAGE => {
+                    let paths = state.lock().await.applied_paths.clone();
+                    stage_paths(&repo_root, &paths)?;
+                    Ok(format!("staged {} file(s)", paths.len()))
+                }
+                _ => Err(format!("unknown DAG node: {node_id}")),
+            }
+        }
+    })
+    .await;
+
+    if !result.all_success {
+        return Err(format_dag_failure(&result));
+    }
+
+    let final_state = state.lock().await;
+    let isolated_patch_path = if execution_workspace.is_isolated() {
+        let patch = execution_workspace.cached_diff()?;
+        if patch.trim().is_empty() {
+            None
+        } else {
+            Some(write_isolated_patch(
+                &original_repo_root,
+                &chunk.id,
+                &patch,
+            )?)
+        }
+    } else {
+        None
+    };
+    Ok(ExecutionGateResult {
+        applied_paths: final_state.applied_paths.clone(),
+        test_summary: final_state
+            .test_summary
+            .clone()
+            .unwrap_or_else(|| "no tests recorded".to_string()),
+        isolated_patch_path,
+    })
+}
+
+fn prepare_execution_workspace<R: Runtime>(
+    app: &AppHandle<R>,
+    repo: &RepoState,
+    repo_root: &Path,
+    chunk: &ChunkRow,
+) -> Result<ExecutionWorkspace, String> {
+    if git_ops::working_tree_clean(repo_root) {
+        return Ok(ExecutionWorkspace::active(repo, repo_root));
+    }
+
+    emit(
+        app,
+        ProgressEvent::info(
+            "worktree",
+            "Working tree is dirty; using a temporary git worktree for autonomous apply/test",
+        )
+        .with_chunk(&chunk.id)
+        .with_progress(6),
+    );
+    let temporary_worktree = worktree::create_temporary_worktree(repo_root, &chunk.id)?;
+    emit(
+        app,
+        ProgressEvent::info(
+            "worktree",
+            format!(
+                "Temporary worktree ready at {}",
+                temporary_worktree.path().display()
+            ),
+        )
+        .with_chunk(&chunk.id)
+        .with_progress(7),
+    );
+    Ok(ExecutionWorkspace::isolated(temporary_worktree))
+}
+
+fn write_isolated_patch(repo_root: &Path, chunk_id: &str, patch: &str) -> Result<String, String> {
+    let patch_dir = repo_root
+        .join("target")
+        .join("terransoul-self-improve")
+        .join("patches");
+    std::fs::create_dir_all(&patch_dir)
+        .map_err(|error| format!("create isolated patch dir: {error}"))?;
+    let patch_path = patch_dir.join(format!(
+        "{}-isolated.patch",
+        sanitize_branch_segment(chunk_id)
+    ));
+    std::fs::write(&patch_path, patch)
+        .map_err(|error| format!("write isolated patch {}: {error}", patch_path.display()))?;
+    Ok(patch_path.to_string_lossy().to_string())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileSnapshot {
+    entries: Vec<SnapshotEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SnapshotEntry {
+    path: String,
+    original: Option<String>,
+}
+
+impl FileSnapshot {
+    fn capture(repo_root: &Path, blocks: &[FileBlock]) -> Result<Self, String> {
+        let mut entries = Vec::with_capacity(blocks.len());
+        for block in blocks {
+            apply_file::validate_path(repo_root, &block.path)?;
+            let path = repo_root.join(&block.path);
+            let original = match std::fs::read_to_string(&path) {
+                Ok(body) => Some(body),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(format!("snapshot {}: {e}", block.path)),
+            };
+            entries.push(SnapshotEntry {
+                path: block.path.clone(),
+                original,
+            });
+        }
+        Ok(Self { entries })
+    }
+
+    fn restore(&self, repo_root: &Path) -> Result<(), String> {
+        for entry in &self.entries {
+            let path = repo_root.join(&entry.path);
+            match &entry.original {
+                Some(body) => {
+                    if let Some(parent) = path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .map_err(|e| format!("restore parent {}: {e}", parent.display()))?;
+                    }
+                    std::fs::write(&path, body)
+                        .map_err(|e| format!("restore {}: {e}", entry.path))?;
+                }
+                None => match std::fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(format!("remove created {}: {e}", entry.path)),
+                },
+            }
+        }
+        Ok(())
+    }
+}
+
+fn preview_diff(repo_root: &Path, blocks: &[FileBlock]) -> Result<String, String> {
+    let mut diff = String::new();
+    for block in blocks {
+        apply_file::validate_path(repo_root, &block.path)?;
+        let old = std::fs::read_to_string(repo_root.join(&block.path)).unwrap_or_default();
+        diff.push_str(&format!("diff --git a/{0} b/{0}\n", block.path));
+        diff.push_str(&format!("--- a/{}\n+++ b/{}\n", block.path, block.path));
+        diff.push_str("@@ full-file replacement @@\n");
+        for line in old.lines() {
+            diff.push('-');
+            diff.push_str(line);
+            diff.push('\n');
+        }
+        for line in block.content.lines() {
+            diff.push('+');
+            diff.push_str(line);
+            diff.push('\n');
+        }
+    }
+    Ok(diff)
+}
+
+fn stage_paths(repo_root: &Path, paths: &[String]) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut cmd = Command::new("git");
+    cmd.arg("add").arg("--").args(paths).current_dir(repo_root);
+    let out = cmd.output().map_err(|e| format!("git add: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if stderr.is_empty() {
+        "git add failed".to_string()
+    } else {
+        format!("git add failed: {stderr}")
+    })
+}
+
+fn summarize_tests(result: &test_runner::TestRunResult) -> String {
+    result
+        .suites
+        .iter()
+        .map(|suite| format!("{}={:?}/{}", suite.name, suite.status, suite.attempts))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_apply_rejections(rejections: &[apply_file::ApplyRejection]) -> String {
+    let joined = rejections
+        .iter()
+        .map(|rejection| format!("{}: {}", rejection.path, rejection.reason))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("apply rejected file block(s): {joined}")
+}
+
+fn format_execution_success(chunk_id: &str, result: &ExecutionGateResult) -> String {
+    match &result.isolated_patch_path {
+        Some(patch_path) => format!(
+            "Chunk {chunk_id} validated {} file(s) in a temporary worktree; patch saved at {patch_path}; tests: {}",
+            result.applied_paths.len(),
+            result.test_summary
+        ),
+        None => format!(
+            "Chunk {chunk_id} applied {} file(s); tests: {}",
+            result.applied_paths.len(),
+            result.test_summary
+        ),
+    }
+}
+
+fn provider_label(provider: &CodingLlmProvider) -> &'static str {
+    match provider {
         CodingLlmProvider::Anthropic => "anthropic",
         CodingLlmProvider::Openai => "openai",
         CodingLlmProvider::Deepseek => "deepseek",
@@ -442,29 +1058,32 @@ pub async fn start<R: Runtime>(
             // switched branches manually between cycles.
             repo = detect_repo(&repo_root);
 
-            match plan_one_chunk(&app, &config, &repo, &next, &metrics, &workflow_cfg).await {
-                Ok(plan) => {
-                    let summary = plan.lines().take(2).collect::<Vec<_>>().join(" ");
-                    emit(
-                        &app,
-                        ProgressEvent::success(
-                            "complete",
-                            format!("Chunk {} planned: {}", next.id, summary),
-                        )
+            match execute_chunk_dag(
+                &app,
+                &config,
+                &repo,
+                &repo_root,
+                &next,
+                &metrics,
+                &workflow_cfg,
+                &cancel,
+            )
+            .await
+            {
+                Ok(result) => emit(
+                    &app,
+                    ProgressEvent::success("complete", format_execution_success(&next.id, &result))
                         .with_chunk(&next.id)
                         .with_progress(100),
-                    );
-                }
-                Err(e) => {
-                    emit(
-                        &app,
-                        ProgressEvent::error(
-                            "plan",
-                            format!("Plan for chunk {} failed: {}", next.id, e),
-                        )
-                        .with_chunk(&next.id),
-                    );
-                }
+                ),
+                Err(e) => emit(
+                    &app,
+                    ProgressEvent::error(
+                        "gate",
+                        format!("Execution DAG for chunk {} failed: {}", next.id, e),
+                    )
+                    .with_chunk(&next.id),
+                ),
             }
 
             // Pause between cycles so we don't spam the LLM API. The
@@ -609,6 +1228,198 @@ mod tests {
         assert!(msgs[1].content.contains("Autonomous loop MVP"));
         // Pre-fill steers the model into the analysis tag.
         assert_eq!(msgs[2].content, "<analysis>");
+    }
+
+    #[test]
+    fn coder_prompt_requires_path_file_blocks() {
+        let repo = RepoState {
+            is_git_repo: true,
+            root: Some("/tmp".to_string()),
+            current_branch: Some("feature/self-improve-28-11".to_string()),
+            remote_url: None,
+            clean: true,
+        };
+        let chunk = ChunkRow {
+            id: "28.11".to_string(),
+            title: "Apply/review/test execution gate".to_string(),
+            status: "not-started".to_string(),
+        };
+        let msgs = coder_prompt(
+            &repo,
+            &chunk,
+            "1. Touch engine.rs",
+            &crate::coding::CodingWorkflowConfig::default(),
+        );
+        assert_eq!(msgs.len(), 2);
+        assert!(msgs[1].content.contains("<approved_plan>"));
+        assert!(msgs[1]
+            .content
+            .contains("<file path=\"repo/relative/path.ext\">"));
+        assert!(msgs[1].content.contains("complete file replacement blocks"));
+    }
+
+    #[test]
+    fn extract_plan_path_hints_finds_repo_paths() {
+        let paths = extract_plan_path_hints(
+            "1. Update `src-tauri/src/coding/workflow.rs`.\n2. Add tests in src/App.test.ts; ignore https://example.com/docs.",
+        );
+
+        assert_eq!(
+            paths,
+            vec![
+                "src-tauri/src/coding/workflow.rs".to_string(),
+                "src/App.test.ts".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn preview_diff_renders_full_file_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "pub fn old() {}\n").unwrap();
+        let blocks = vec![FileBlock {
+            path: "src/lib.rs".to_string(),
+            content: "pub fn new() {}\n".to_string(),
+        }];
+        let diff = preview_diff(dir.path(), &blocks).unwrap();
+        assert!(diff.contains("diff --git a/src/lib.rs b/src/lib.rs"));
+        assert!(diff.contains("-pub fn old() {}"));
+        assert!(diff.contains("+pub fn new() {}"));
+    }
+
+    #[test]
+    fn file_snapshot_restores_existing_and_removes_created() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "old").unwrap();
+        let blocks = vec![
+            FileBlock {
+                path: "src/lib.rs".to_string(),
+                content: "new".to_string(),
+            },
+            FileBlock {
+                path: "src/new.rs".to_string(),
+                content: "created".to_string(),
+            },
+        ];
+        let snapshot = FileSnapshot::capture(dir.path(), &blocks).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "new").unwrap();
+        std::fs::write(dir.path().join("src/new.rs"), "created").unwrap();
+        snapshot.restore(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap(),
+            "old"
+        );
+        assert!(!dir.path().join("src/new.rs").exists());
+    }
+
+    #[test]
+    fn summarize_tests_reports_suite_statuses() {
+        let result = test_runner::TestRunResult {
+            suites: vec![test_runner::SuiteResult {
+                name: "vitest".to_string(),
+                status: test_runner::SuiteStatus::Pass,
+                attempts: 1,
+                duration_ms: 10,
+                exit_code: Some(0),
+                stdout_tail: String::new(),
+                stderr_tail: String::new(),
+                spawn_error: None,
+            }],
+            all_green: true,
+            total_duration_ms: 10,
+            flaky_suites: Vec::new(),
+        };
+        assert_eq!(summarize_tests(&result), "vitest=Pass/1");
+    }
+
+    #[test]
+    fn write_isolated_patch_uses_target_patch_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let patch_path = write_isolated_patch(dir.path(), "28.13", "diff --git a/a b/a\n").unwrap();
+
+        assert!(patch_path.ends_with("28.13-isolated.patch"));
+        assert!(patch_path.contains("terransoul-self-improve"));
+        assert_eq!(
+            std::fs::read_to_string(&patch_path).unwrap(),
+            "diff --git a/a b/a\n"
+        );
+    }
+
+    #[test]
+    fn format_execution_success_mentions_isolated_patch() {
+        let result = ExecutionGateResult {
+            applied_paths: vec!["src/lib.rs".to_string()],
+            test_summary: "vitest=Pass/1".to_string(),
+            isolated_patch_path: Some(
+                "target/terransoul-self-improve/patches/28.13.patch".to_string(),
+            ),
+        };
+
+        let message = format_execution_success("28.13", &result);
+
+        assert!(message.contains("temporary worktree"));
+        assert!(message.contains("patch saved"));
+        assert!(message.contains("vitest=Pass/1"));
+    }
+
+    #[test]
+    fn self_improve_execution_graph_is_linear_safe_gate() {
+        let graph = self_improve_execution_graph();
+        let config = self_improve_dag_config();
+        dag_runner::validate_graph(&graph, &config).unwrap();
+        let layers = dag_runner::compute_layers(&graph);
+        assert_eq!(
+            layers,
+            vec![
+                vec![DAG_NODE_PLAN.to_string()],
+                vec![DAG_NODE_CODE.to_string()],
+                vec![DAG_NODE_REVIEW.to_string()],
+                vec![DAG_NODE_APPLY.to_string()],
+                vec![DAG_NODE_TEST.to_string()],
+                vec![DAG_NODE_STAGE.to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn self_improve_dag_config_declares_required_capabilities() {
+        let config = self_improve_dag_config();
+        for expected in ["llm_call", "review", "file_write", "test_run", "git_write"] {
+            assert!(config
+                .available_capabilities
+                .contains(&expected.to_string()));
+        }
+        assert!(config.skip_on_failure);
+        assert_eq!(config.max_parallel, 2);
+    }
+
+    #[test]
+    fn format_dag_failure_includes_failed_and_skipped_nodes() {
+        let result = dag_runner::DagRunResult {
+            results: vec![
+                dag_runner::NodeResult {
+                    node_id: DAG_NODE_REVIEW.to_string(),
+                    status: dag_runner::NodeStatus::Failed,
+                    message: "review rejected diff".to_string(),
+                    duration_ms: 1,
+                },
+                dag_runner::NodeResult {
+                    node_id: DAG_NODE_APPLY.to_string(),
+                    status: dag_runner::NodeStatus::Skipped,
+                    message: "Skipped: predecessor failed".to_string(),
+                    duration_ms: 0,
+                },
+            ],
+            all_success: false,
+            total_duration_ms: 1,
+            failed_nodes: vec![DAG_NODE_REVIEW.to_string()],
+            skipped_nodes: vec![DAG_NODE_APPLY.to_string()],
+        };
+        let message = format_dag_failure(&result);
+        assert!(message.contains("reviewer: review rejected diff"));
+        assert!(message.contains("skipped: apply"));
     }
 
     #[test]

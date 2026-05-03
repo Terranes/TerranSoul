@@ -66,6 +66,20 @@ export interface PluginHostStatus {
   total_themes: number
 }
 
+export interface ConsentInfo {
+  agent_name: string
+  capability: string
+  granted: boolean
+}
+
+export interface CommandResult {
+  success: boolean
+  output: string | null
+  error: string | null
+  exit_code?: number | null
+  stderr?: string | null
+}
+
 export const usePluginStore = defineStore('plugins', () => {
   const plugins = ref<InstalledPlugin[]>([])
   const commands = ref<CommandEntry[]>([])
@@ -137,17 +151,29 @@ export const usePluginStore = defineStore('plugins', () => {
     return invoke<PluginManifest>('plugin_parse_manifest', { json })
   }
 
-  /** Invoke a contributed command by its `command_id` (Chunk 22.4). */
+  async function listPluginCapabilities(pluginId: string) {
+    return invoke<ConsentInfo[]>('list_agent_capabilities', { agentName: pluginId })
+  }
+
+  async function grantPluginCapability(pluginId: string, capability: string) {
+    await invoke<void>('grant_agent_capability', { agentName: pluginId, capability })
+  }
+
+  async function revokePluginCapability(pluginId: string, capability: string) {
+    await invoke<void>('revoke_agent_capability', { agentName: pluginId, capability })
+  }
+
+  /** Invoke a contributed command by its `command_id`. */
   async function invokeCommand(commandId: string, args?: unknown) {
-    return invoke<{ success: boolean; output: string | null; error: string | null }>(
+    return invoke<CommandResult>(
       'plugin_invoke_command',
       { commandId, args: args ?? null },
     )
   }
 
-  /** Invoke a slash-command by name (without `/`) (Chunk 22.4). */
+  /** Invoke a slash-command by name (without `/`). */
   async function invokeSlashCommand(name: string, args?: unknown) {
-    return invoke<{ success: boolean; output: string | null; error: string | null }>(
+    return invoke<CommandResult>(
       'plugin_invoke_slash_command',
       { name, args: args ?? null },
     )
@@ -169,6 +195,9 @@ export const usePluginStore = defineStore('plugins', () => {
     uninstall,
     getSetting,
     setSetting,
+    listPluginCapabilities,
+    grantPluginCapability,
+    revokePluginCapability,
     parseManifest,
     invokeCommand,
     invokeSlashCommand,

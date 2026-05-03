@@ -94,6 +94,49 @@ export interface LearnedMotion {
    * `'camera'` = mirror capture. Optional for backwards compatibility.
    */
   provenance?: 'generated' | 'camera';
+  /** Non-destructive polish provenance for candidates produced from another clip. */
+  polish?: LearnedMotionPolishMetadata;
+}
+
+/** Provenance attached to a polished learned-motion candidate. */
+export interface LearnedMotionPolishMetadata {
+  sourceMotionId: string;
+  backend: 'gaussian-v1' | string;
+  createdAt: number;
+  meanDisplacement: number;
+  maxDisplacement: number;
+  acceptedByUser: boolean;
+  preset?: MotionPolishPreset;
+  sigma?: number;
+  radius?: number | null;
+  pinEndpoints?: boolean;
+}
+
+/** Built-in native Gaussian smoothing presets for learned-motion polish. */
+export type MotionPolishPreset = 'light' | 'medium' | 'heavy';
+
+/** Frontend configuration for native learned-motion polish previews. */
+export interface MotionPolishConfig {
+  preset?: MotionPolishPreset;
+  sigma?: number;
+  radius?: number;
+  pinEndpoints?: boolean;
+}
+
+/** Non-destructive polish preview returned by the backend. */
+export interface MotionPolishPreview {
+  originalMotionId: string;
+  candidateId: string;
+  candidateMotion: LearnedMotion;
+  meanDisplacementByBone: Record<string, number>;
+  maxDisplacement: number;
+  warnings: string[];
+  appliedConfig: {
+    preset: MotionPolishPreset;
+    sigma: number;
+    radius: number | null;
+    pinEndpoints: boolean;
+  };
 }
 
 /** The default persona that materialises on first launch (see § 2.1). */

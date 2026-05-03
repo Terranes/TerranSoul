@@ -301,7 +301,7 @@ All writers must:
 
 ---
 
-## VS Code Copilot — incremental indexing pact (Not yet implemented — Chunk 15.7)
+## VS Code Copilot — incremental indexing pact (Shipped — Chunk 15.7)
 
 The single most important property for the Copilot use case: **don't make
 Copilot re-scan the codebase every chat turn**.
@@ -349,7 +349,7 @@ See **Phase 15** in [`rules/milestones.md`](../rules/milestones.md).
 | 15.4 | ✅ shipped 2026-05-02 | Control Panel sub-view + Pinia store |
 | 15.5 | ✅ shipped 2026-04-29 | Voice / chat intents to start / stop / set up |
 | 15.6 | ✅ shipped 2026-04-25 | Auto-setup writers for Copilot, Claude Desktop, Codex (HTTP transport) |
-| 15.7 | not-started | VS Code Copilot incremental-indexing QA + e2e |
+| 15.7 | ✅ shipped 2026-05-02 | VS Code Copilot incremental-indexing QA + e2e |
 | 15.8 | ✅ shipped 2026-05-02 | Final doc pass — all "Planned" sections replaced with as-built reality |
 | 15.9 | ✅ shipped 2026-04-29 | MCP stdio transport shim (`terransoul --mcp-stdio` + `setup_*_mcp_stdio` Tauri commands) |
 | 15.10 | ✅ shipped 2026-04-29 | VS Code workspace surfacing (`vscode_open_project`, `vscode_list_known_windows`, `vscode_forget_window` Tauri commands; self-launched window registry; PID-liveness pruning) |

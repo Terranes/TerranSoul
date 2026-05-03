@@ -150,6 +150,20 @@ Register executable commands that appear in the command palette and can be trigg
 - Command IDs must contain at least one dot (e.g., `my-plugin.command-name`)
 - The `title` is shown in the UI
 - `icon`, `keybinding`, and `category` are optional
+- `OnCommand` activation is lazy: invoking a command activates an installed plugin before dispatching
+
+### Command Runtime Contracts
+
+Command dispatch depends on the plugin `install_method`:
+
+| Install method | Invocation contract |
+|---|---|
+| `BuiltIn` | Runs the host's registered built-in handler. Unknown built-ins return a metadata fallback for local development. |
+| `Wasm` | Calls exported `handle_command(ptr, len) -> i64` with JSON input `{ "command_id": string, "args": any }`. |
+| `Binary` | Starts the configured executable and passes `command_id` as argv[1], followed by JSON-encoded args as argv[2] when args are present. |
+| `Sidecar` | Starts the configured executable, writes one JSON line to stdin, then captures stdout, stderr, and exit code. |
+
+Binary and sidecar command execution requires the sandbox `ProcessSpawn` grant for the plugin ID. Manifest capabilities are also checked before execution: `Filesystem` maps to `FileRead` and `FileWrite`, `Clipboard` maps to `Clipboard`, `Network` maps to `Network`, and `RemoteExec` maps to `ProcessSpawn`.
 
 ### Views
 
@@ -336,8 +350,19 @@ my-plugin/
 ```
 
 The WASM module must export:
-- `_start()` — entry point called on activation
-- `handle_command(cmd_ptr: i32, cmd_len: i32) -> i32` — command handler
+- `memory` — linear memory used for JSON input/output exchange
+- `handle_command(cmd_ptr: i32, cmd_len: i32) -> i64` — command handler
+
+`handle_command` receives UTF-8 JSON at `cmd_ptr..cmd_ptr + cmd_len`:
+
+```json
+{
+  "command_id": "my-plugin.analyze",
+  "args": { "selection": "..." }
+}
+```
+
+Return `0` for success with no output, or pack the output pointer and length as `(output_ptr << 32) | output_len`. Output is interpreted as UTF-8 text and surfaced in the command result.
 
 ---
 
@@ -465,6 +490,71 @@ User flow:
 - Stop: “stop translator mode”
 
 Use this plugin as the smallest complete example for a new chat-mode plugin: one manifest, one contributed command, one optional slash command, deterministic activation text, tests for state transitions, and documentation of the user-facing flow.
+
+### OpenClaw Bridge Reference Plugin
+
+TerranSoul also ships a built-in plugin named `openclaw-bridge`. It is the
+reference pattern for external tool runtimes: TerranSoul owns the conversation,
+memory, persona, and consent model, while OpenClaw owns the actual tool runtime
+behind a narrow command boundary.
+
+Use this pattern when the integration is a tool surface rather than a full brain
+provider. OpenClaw should not appear as a selectable local model or Agent
+Marketplace package. It contributes `/openclaw` and command ids that can be
+called from chat, tests, or future UI buttons:
+
+```json
+{
+  "id": "openclaw-bridge",
+  "display_name": "OpenClaw Bridge",
+  "version": "1.0.0",
+  "description": "Built-in plugin for invoking OpenClaw-style read, fetch, and chat tools from TerranSoul.",
+  "kind": "tool",
+  "install_method": "built_in",
+  "capabilities": ["chat", "filesystem", "network"],
+  "activation_events": [
+    { "type": "on_chat_message", "pattern": "/openclaw" }
+  ],
+  "contributes": {
+    "commands": [
+      { "id": "openclaw-bridge.read", "title": "OpenClaw Read" },
+      { "id": "openclaw-bridge.fetch", "title": "OpenClaw Fetch" },
+      { "id": "openclaw-bridge.chat", "title": "OpenClaw Chat" },
+      { "id": "openclaw-bridge.status", "title": "OpenClaw Bridge Status" }
+    ],
+    "slash_commands": [
+      {
+        "name": "openclaw",
+        "description": "Run OpenClaw tools, e.g. /openclaw read README.md",
+        "command_id": "openclaw-bridge.dispatch"
+      }
+    ]
+  },
+  "api_version": 1
+}
+```
+
+Capability mapping:
+
+| Manifest capability | Sandbox grants written by the Plugins view | Used by |
+|---|---|---|
+| `filesystem` | `file_read`, `file_write` | `/openclaw read ...` currently requires `file_read` |
+| `network` | `network` | `/openclaw fetch ...` |
+| `chat` | none; low-risk chat capability | `/openclaw chat ...` |
+
+Best practice for real OpenClaw deployments:
+
+- Add a plugin setting for the OpenClaw runtime URL rather than hardcoding it.
+- Validate that the runtime is loopback or explicitly trusted before network
+  calls leave the app.
+- Keep JSON-RPC request bodies small and auditable.
+- Summarize large tool outputs through the active brain instead of dumping raw
+  data into chat.
+- Offer a memory-save action for useful tool results and include source/tool
+  provenance.
+
+See [`instructions/OPENCLAW-EXAMPLE.md`](../instructions/OPENCLAW-EXAMPLE.md)
+for the detailed usage and future chunk plan.
 
 ### Code Analyzer
 

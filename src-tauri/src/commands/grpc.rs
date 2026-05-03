@@ -66,7 +66,11 @@ pub async fn grpc_server_start(state: State<'_, AppState>) -> Result<GrpcServerS
         .lan_enabled;
 
     let port: u16 = 7422;
-    let ip: [u8; 4] = if lan_enabled { [0, 0, 0, 0] } else { [127, 0, 0, 1] };
+    let ip: [u8; 4] = if lan_enabled {
+        [0, 0, 0, 0]
+    } else {
+        [127, 0, 0, 1]
+    };
     let addr = SocketAddr::from((ip, port));
 
     // Build TLS config if LAN mode.
@@ -75,8 +79,7 @@ pub async fn grpc_server_start(state: State<'_, AppState>) -> Result<GrpcServerS
         {
             let mut pmgr = state.pairing_manager.lock().map_err(|e| e.to_string())?;
             if pmgr.is_none() {
-                let mgr =
-                    crate::network::pairing::PairingManager::load_or_create(&state.data_dir)?;
+                let mgr = crate::network::pairing::PairingManager::load_or_create(&state.data_dir)?;
                 *pmgr = Some(mgr);
             }
         }

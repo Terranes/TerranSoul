@@ -91,7 +91,7 @@ function makeInvokeMock(opts: {
         version: 2, selected_model_id: 'shinra', camera_azimuth: 0,
         camera_distance: 2.8, bgm_enabled: false, bgm_volume: 0.15,
         bgm_track_id: 'prelude', bgm_custom_tracks: [], auto_tag: false,
-        contextual_retrieval: false,
+        contextual_retrieval: false, late_chunking: false,
       });
       default:
         // Other unrelated commands — return a reasonable default.

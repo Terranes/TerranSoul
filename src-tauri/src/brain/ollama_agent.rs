@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::agent::stub_agent::Sentiment;
 use crate::agent::AgentProvider;
+use crate::memory::late_chunking::CharSpan;
 
 pub const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
 
@@ -20,12 +21,12 @@ Your capabilities:
 - Recommending AI tools and software based on the user's needs
 - Guiding users through installing packages via the TerranSoul Package Manager
 
-Available packages you can recommend:
-- **OpenClaw** (model tag: "openclaw-bridge"): An open-source AI interface that connects to powerful language model APIs. Great for users who want cloud-based AI alongside local models.
+Available extensions you can recommend:
+- **OpenClaw Bridge** (built-in plugin: "openclaw-bridge"): An OpenClaw-style tool bridge for `/openclaw read`, `/openclaw fetch`, and `/openclaw chat` workflows. Great for users who want TerranSoul to coordinate an external tool runtime while preserving plugin capability consent.
 - **Claude Cowork** (model tag: "claude-cowork"): A collaborative AI workspace powered by Anthropic's Claude. Perfect for document analysis, long-context reasoning, and team workflows.
 - **stub-agent**: The built-in lightweight agent. Always available offline.
 
-When recommending a package, mention its name and briefly explain why it suits the user's request. Keep responses concise and warm."#;
+When recommending an extension or package, mention its name and briefly explain why it suits the user's request. Keep responses concise and warm."#;
 
 // ── Ollama API types ───────────────────────────────────────────────────────────
 
@@ -62,6 +63,18 @@ pub struct TagsResponse {
 pub struct OllamaStatus {
     pub running: bool,
     pub model_count: usize,
+}
+
+/// Per-token embedding response from an Ollama-compatible long-context
+/// embedder. Standard Ollama embedders usually return one pooled vector;
+/// late chunking only activates when the response contains one vector per
+/// token plus character spans or token text that can be aligned back to the
+/// original document.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OllamaTokenEmbeddings {
+    pub model: String,
+    pub token_embeddings: Vec<Vec<f32>>,
+    pub token_char_spans: Vec<CharSpan>,
 }
 
 // ── OllamaAgent ────────────────────────────────────────────────────────────────
@@ -566,6 +579,60 @@ impl OllamaAgent {
         }
     }
 
+    /// Generate per-token embeddings for a whole document via Ollama.
+    ///
+    /// This is intentionally best-effort. If the selected model or Ollama
+    /// build returns the standard pooled `/api/embed` shape, the parser returns
+    /// `None` and callers should fall back to per-chunk embeddings.
+    pub async fn embed_tokens(text: &str, model_hint: &str) -> Option<OllamaTokenEmbeddings> {
+        if text.trim().is_empty() {
+            return None;
+        }
+
+        let embed_model = resolve_late_chunk_model(model_hint).await;
+        if is_known_unsupported(&embed_model).await {
+            return None;
+        }
+
+        let client = match Client::builder().timeout(Duration::from_secs(60)).build() {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
+
+        let body = serde_json::json!({
+            "model": embed_model,
+            "input": text,
+            "truncate": false,
+            "options": {
+                "truncate": false
+            }
+        });
+
+        let resp = match client
+            .post(format!("{OLLAMA_BASE_URL}/api/embed"))
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return None,
+        };
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            mark_unsupported(&embed_model, status).await;
+            return None;
+        }
+
+        let json: serde_json::Value = resp.json().await.ok()?;
+        let (token_embeddings, token_char_spans) = parse_token_embedding_response(&json, text)?;
+        Some(OllamaTokenEmbeddings {
+            model: embed_model,
+            token_embeddings,
+            token_char_spans,
+        })
+    }
+
     /// Check if a model name is available locally in Ollama.
     /// Result is cached for 60 s by [`resolve_embed_model`].
     async fn model_exists(name: &str) -> bool {
@@ -694,6 +761,16 @@ const EMBED_MODEL_FALLBACKS: &[&str] = &[
     "all-minilm",             // 384d, tiny last-resort
 ];
 
+/// Candidate local embedders that are plausible long-context / token-vector
+/// providers. Most current Ollama builds still return pooled vectors only;
+/// the late-chunking parser verifies the response shape before using it.
+const LATE_CHUNK_MODEL_FALLBACKS: &[&str] = &[
+    "jina-embeddings-v3",
+    "bge-m3",
+    "mxbai-embed-large",
+    PREFERRED_EMBED_MODEL,
+];
+
 fn embed_model_cache() -> &'static Mutex<Option<EmbedModelChoice>> {
     static CACHE: OnceLock<Mutex<Option<EmbedModelChoice>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
@@ -763,6 +840,177 @@ async fn pick_embed_model(model_hint: &str) -> String {
     // Last resort — the active chat model. Likely won't support embed,
     // but we let `embed_text` discover that and mark it unsupported.
     model_hint.to_string()
+}
+
+async fn resolve_late_chunk_model(model_hint: &str) -> String {
+    for candidate in LATE_CHUNK_MODEL_FALLBACKS {
+        if is_known_unsupported(candidate).await {
+            continue;
+        }
+        if OllamaAgent::model_exists(candidate).await {
+            return (*candidate).to_string();
+        }
+    }
+    resolve_embed_model(model_hint).await
+}
+
+fn parse_token_embedding_response(
+    json: &serde_json::Value,
+    input: &str,
+) -> Option<(Vec<Vec<f32>>, Vec<CharSpan>)> {
+    let token_embeddings = parse_token_embedding_matrix(json)?;
+    if token_embeddings.len() < 2 {
+        return None;
+    }
+    let token_char_spans = parse_token_char_spans(json, input)?;
+    if token_char_spans.len() != token_embeddings.len() {
+        return None;
+    }
+    Some((token_embeddings, token_char_spans))
+}
+
+fn parse_token_embedding_matrix(json: &serde_json::Value) -> Option<Vec<Vec<f32>>> {
+    if let Some(matrix) = json
+        .get("token_embeddings")
+        .and_then(parse_embedding_matrix)
+    {
+        return Some(matrix);
+    }
+
+    let embeddings = json.get("embeddings")?.as_array()?;
+    let first = embeddings.first()?.as_array()?;
+    if first.first().is_some_and(|value| value.is_array()) {
+        return parse_embedding_matrix(embeddings.first()?);
+    }
+    if embeddings.len() > 1 {
+        return parse_embedding_matrix(json.get("embeddings")?);
+    }
+    None
+}
+
+fn parse_embedding_matrix(value: &serde_json::Value) -> Option<Vec<Vec<f32>>> {
+    let rows = value.as_array()?;
+    let mut matrix = Vec::with_capacity(rows.len());
+    for row in rows {
+        let values = row.as_array()?;
+        let vector: Vec<f32> = values
+            .iter()
+            .map(|value| value.as_f64().map(|number| number as f32))
+            .collect::<Option<Vec<_>>>()?;
+        if vector.is_empty() {
+            return None;
+        }
+        matrix.push(vector);
+    }
+    Some(matrix)
+}
+
+fn parse_token_char_spans(json: &serde_json::Value, input: &str) -> Option<Vec<CharSpan>> {
+    for key in ["token_spans", "token_offsets", "offsets"] {
+        if let Some(spans) = json.get(key).and_then(parse_offset_spans) {
+            return Some(spans);
+        }
+    }
+
+    let tokens = first_batched_array(json.get("tokens")?)?;
+    if tokens.first().is_some_and(|value| value.is_object()) {
+        return parse_object_token_spans(tokens);
+    }
+
+    let token_texts: Vec<String> = tokens
+        .iter()
+        .map(|value| value.as_str().map(normalise_token_text))
+        .collect::<Option<Vec<_>>>()?;
+    infer_token_spans_from_text(input, &token_texts)
+}
+
+fn first_batched_array(value: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    let arr = value.as_array()?;
+    if arr.first().is_some_and(|first| first.is_array()) {
+        arr.first()?.as_array()
+    } else {
+        Some(arr)
+    }
+}
+
+fn parse_offset_spans(value: &serde_json::Value) -> Option<Vec<CharSpan>> {
+    let offsets = offset_span_array(value)?;
+    offsets
+        .iter()
+        .map(|value| {
+            if let Some(arr) = value.as_array() {
+                let start = arr.first()?.as_u64()? as usize;
+                let end = arr.get(1)?.as_u64()? as usize;
+                return Some(CharSpan::new(start, end));
+            }
+            parse_object_span(value)
+        })
+        .collect()
+}
+
+fn offset_span_array(value: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    let arr = value.as_array()?;
+    let first = arr.first()?;
+    let first_inner = first.as_array();
+    if first_inner
+        .and_then(|inner| inner.first())
+        .is_some_and(|value| value.is_array() || value.is_object())
+    {
+        first_inner
+    } else {
+        Some(arr)
+    }
+}
+
+fn parse_object_token_spans(tokens: &[serde_json::Value]) -> Option<Vec<CharSpan>> {
+    tokens.iter().map(parse_object_span).collect()
+}
+
+fn parse_object_span(value: &serde_json::Value) -> Option<CharSpan> {
+    let start = value
+        .get("start")
+        .or_else(|| value.get("start_offset"))
+        .or_else(|| value.get("offset_start"))
+        .and_then(|value| value.as_u64())? as usize;
+    let end = value
+        .get("end")
+        .or_else(|| value.get("end_offset"))
+        .or_else(|| value.get("offset_end"))
+        .and_then(|value| value.as_u64())? as usize;
+    Some(CharSpan::new(start, end))
+}
+
+fn normalise_token_text(token: &str) -> String {
+    token.replace(['▁', 'Ġ'], " ").replace('Ċ', "\n")
+}
+
+fn infer_token_spans_from_text(input: &str, tokens: &[String]) -> Option<Vec<CharSpan>> {
+    let mut spans = Vec::with_capacity(tokens.len());
+    let mut cursor = 0usize;
+    for token in tokens {
+        let token = normalise_token_text(token);
+        if token.is_empty() {
+            spans.push(CharSpan::new(cursor, cursor));
+            continue;
+        }
+        let haystack = input.get(cursor..)?;
+        let (relative, matched_len) = if let Some(relative) = haystack.find(&token) {
+            (relative, token.len())
+        } else {
+            let trimmed = token.trim_start();
+            if trimmed.is_empty() {
+                spans.push(CharSpan::new(cursor, cursor));
+                continue;
+            }
+            let relative = haystack.find(trimmed)?;
+            (relative, trimmed.len())
+        };
+        let start = cursor + relative;
+        let end = start + matched_len;
+        spans.push(CharSpan::new(start, end));
+        cursor = end;
+    }
+    Some(spans)
 }
 
 async fn is_known_unsupported(model: &str) -> bool {
@@ -1045,6 +1293,46 @@ pub async fn delete_model(client: &Client, base_url: &str, model_name: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_token_embedding_response_accepts_token_embeddings_with_offsets() {
+        let json = serde_json::json!({
+            "token_embeddings": [[1.0, 0.0], [0.0, 1.0]],
+            "offsets": [[0, 5], [5, 11]]
+        });
+        let (embeddings, spans) = parse_token_embedding_response(&json, "Hello world").unwrap();
+        assert_eq!(embeddings.len(), 2);
+        assert_eq!(spans, vec![CharSpan::new(0, 5), CharSpan::new(5, 11)]);
+    }
+
+    #[test]
+    fn parse_token_embedding_response_accepts_batched_embeddings_with_token_text() {
+        let json = serde_json::json!({
+            "embeddings": [[[1.0, 0.0], [0.0, 1.0]]],
+            "tokens": [["Hello", " world"]]
+        });
+        let (embeddings, spans) = parse_token_embedding_response(&json, "Hello world").unwrap();
+        assert_eq!(embeddings.len(), 2);
+        assert_eq!(spans, vec![CharSpan::new(0, 5), CharSpan::new(5, 11)]);
+    }
+
+    #[test]
+    fn parse_token_embedding_response_rejects_pooled_embedding_response() {
+        let json = serde_json::json!({
+            "embeddings": [[0.1, 0.2, 0.3]]
+        });
+        assert!(parse_token_embedding_response(&json, "Hello world").is_none());
+    }
+
+    #[test]
+    fn infer_token_spans_handles_sentencepiece_space_marker() {
+        let spans = infer_token_spans_from_text(
+            "Hello world",
+            &["Hello".to_string(), "▁world".to_string()],
+        )
+        .unwrap();
+        assert_eq!(spans, vec![CharSpan::new(0, 5), CharSpan::new(5, 11)]);
+    }
 
     #[test]
     fn ollama_agent_id() {

@@ -309,6 +309,9 @@
       </p>
     </div>
 
+    <!-- ── Learned-motion polish preview (Chunk 27.5c) ──────────────── -->
+    <PersonaMotionPolishPanel />
+
     <!-- ── LLM-as-Animator: generate motion from text (Chunk 14.16c3) ─ -->
     <PersonaMotionGenerator />
 
@@ -332,6 +335,7 @@ import {
 import { buildPersonaBlock } from '../utils/persona-prompt';
 import PersonaListEditor from './PersonaListEditor.vue';
 import PersonaPackPanel from './PersonaPackPanel.vue';
+import PersonaMotionPolishPanel from './PersonaMotionPolishPanel.vue';
 import PersonaMotionGenerator from './PersonaMotionGenerator.vue';
 
 const store = usePersonaStore();

@@ -200,7 +200,9 @@ pub fn build_rewriter_prompts(original_query: &str) -> (String, String) {
         - Do NOT answer the question — just rewrite it for better retrieval."
         .to_string();
 
-    let user = format!("Original query that got poor retrieval results:\n{original_query}\n\nRewritten query:");
+    let user = format!(
+        "Original query that got poor retrieval results:\n{original_query}\n\nRewritten query:"
+    );
 
     (system, user)
 }

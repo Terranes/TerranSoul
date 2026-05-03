@@ -21,4 +21,7 @@ pub use manifest::{
     PLUGIN_API_VERSION,
 };
 
-pub use host::{CommandEntry, CommandResult, PluginHost, PluginHostStatus, SlashCommandEntry};
+pub use host::{
+    CommandEntry, CommandResult, MemoryHookEntry, MemoryHookPatch, MemoryHookPayload,
+    MemoryHookRunResult, PluginHost, PluginHostStatus, SlashCommandEntry,
+};

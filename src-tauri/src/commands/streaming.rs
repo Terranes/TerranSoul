@@ -78,7 +78,7 @@ const ALL_BLOCKS: &[BlockKind] = &[BlockKind::Anim, BlockKind::Pose];
 /// State-machine parser that extracts `<anim>{…}</anim>` and
 /// `<pose>{…}</pose>` blocks from a stream of text chunks. Returns
 /// clean text plus typed payloads — no regex needed on the frontend.
-struct StreamTagParser {
+pub(crate) struct StreamTagParser {
     buffer: String,
     in_block: Option<BlockKind>,
     block_buffer: String,
@@ -86,7 +86,7 @@ struct StreamTagParser {
 }
 
 impl StreamTagParser {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             buffer: String::new(),
             in_block: None,
@@ -96,7 +96,7 @@ impl StreamTagParser {
     }
 
     /// Feed a chunk of text. Returns clean text plus any complete blocks.
-    fn feed(&mut self, chunk: &str) -> StreamFeed {
+    pub(crate) fn feed(&mut self, chunk: &str) -> StreamFeed {
         self.buffer.push_str(chunk);
 
         // Strip leading newline left over from a previous </tag> boundary.
@@ -172,7 +172,7 @@ impl StreamTagParser {
     }
 
     /// Flush remaining buffered content (call when the stream ends).
-    fn flush(&mut self) -> StreamFeed {
+    pub(crate) fn flush(&mut self) -> StreamFeed {
         let remaining = std::mem::take(&mut self.buffer);
         let block_remaining = std::mem::take(&mut self.block_buffer);
         let in_block = self.in_block.take();
@@ -219,7 +219,7 @@ fn partial_prefix_len(buffer: &str, tag: &str) -> usize {
 
 /// Strip `<anim>...</anim>` and `<pose>...</pose>` blocks from a
 /// completed response (for storage).
-fn strip_anim_blocks(input: &str) -> String {
+pub(crate) fn strip_anim_blocks(input: &str) -> String {
     let mut result = String::new();
     let mut remaining = input;
     loop {
@@ -843,26 +843,19 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
 
     let final_answer: String = loop {
         // ── Step 1: Embed + retrieve ──────────────────────────────────
-        let query_emb =
-            crate::brain::OllamaAgent::embed_text(&message, &model).await;
+        let query_emb = crate::brain::OllamaAgent::embed_text(&message, &model).await;
 
         let relevant: Vec<crate::memory::MemoryEntry> = {
             match state.memory_store.lock() {
                 Ok(store) => store
-                    .hybrid_search_with_threshold(
-                        &message,
-                        query_emb.as_deref(),
-                        5,
-                        threshold,
-                    )
+                    .hybrid_search_with_threshold(&message, query_emb.as_deref(), 5, threshold)
                     .unwrap_or_default(),
                 Err(_) => vec![],
             }
         };
 
         // ── Step 2: Build system prompt with RAG + Self-RAG addendum ──
-        let mut system_prompt =
-            super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
+        let mut system_prompt = super::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
 
         if !relevant.is_empty() {
             let memory_block: String = relevant
@@ -923,8 +916,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
         let mut stream = resp.bytes_stream();
 
         while let Some(chunk_result) = stream.next().await {
-            let bytes =
-                chunk_result.map_err(|e| format!("stream error: {e}"))?;
+            let bytes = chunk_result.map_err(|e| format!("stream error: {e}"))?;
             let text = String::from_utf8_lossy(&bytes);
 
             for line in text.lines() {
@@ -932,9 +924,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                 if line.is_empty() {
                     continue;
                 }
-                if let Ok(parsed) =
-                    serde_json::from_str::<OllamaStreamChunk>(line)
-                {
+                if let Ok(parsed) = serde_json::from_str::<OllamaStreamChunk>(line) {
                     if let Some(msg) = &parsed.message {
                         if !msg.content.is_empty() {
                             full_response.push_str(&msg.content);
@@ -949,8 +939,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                                 );
                             }
                             for cmd in feed.anim_commands {
-                                let _ =
-                                    app_handle.emit("llm-animation", cmd);
+                                let _ = app_handle.emit("llm-animation", cmd);
                             }
                             for frame in feed.pose_frames {
                                 let _ = app_handle.emit("llm-pose", frame);

@@ -129,3 +129,25 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # ── iOS: config + host-tooling smoke check (no signing/build yet) ───────
+  ios-smoke:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Validate Tauri iOS scaffold
+        run: npm run tauri:ios:check

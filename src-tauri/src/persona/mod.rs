@@ -14,12 +14,13 @@ pub mod drift;
 pub mod extract;
 pub mod motion_clip;
 pub mod motion_feedback;
+#[cfg(feature = "motion-research")]
+pub mod motion_reconstruction;
+pub mod motion_smooth;
 pub mod pack;
 pub mod pose_frame;
 pub mod prosody;
 
-#[cfg(feature = "motion-research")]
-pub mod motion_smooth;
 #[cfg(feature = "motion-research")]
 pub mod motion_tokens;
 #[cfg(feature = "motion-research")]

@@ -39,14 +39,15 @@ desktop app talking to a local Ollama daemon.
 
 | # | Technique | Reference | Output | Inference latency | Model size | Quality | License |
 |---|---|---|---|---|---|---|---|
-| 1 | **MotionGPT** | Jiang et al. 2024 (ICML) | text → motion-token sequence → SMPL-X joints | ~150 ms / clip on CPU after ONNX export | ~600 MB | ⭐⭐⭐⭐ | Open (BSD-style for code; SMPL-X has its own licence — research-only by default; commercial use requires an SMPL-X commercial licence agreement) |
+| 1 | **MotionGPT** | Jiang et al. 2024 (NeurIPS) | text -> motion-token sequence -> SMPL-family / dataset motion representation | Python research runtime; ONNX/export path not app-ready | model/download based | ⭐⭐⭐⭐ | MIT code; SMPL/SMPL-X/PyTorch3D/data licenses separate |
 | 2 | **MotionDiffuse** | Zhang et al. 2022 | text → diffusion → joint angle frames | ~1 s / 60-frame clip on GPU; 5–10 s on CPU | ~400 MB | ⭐⭐⭐⭐⭐ | Apache-2.0 (code) |
-| 3 | **MoMask** | Guo et al. 2024 | masked motion prediction from sparse keypoints | ~80 ms / frame on CPU | ~250 MB | ⭐⭐⭐⭐ | MIT (code) |
+| 3 | **MoMask** | Guo et al. 2024 | masked motion generation/inpainting; useful reference for motion reconstruction, but its public runtime is text/prompt or HumanML3D-feature oriented rather than direct BlazePose -> VRM | CPU WebUI exists; app-side sidecar still unproven | model-download based | ⭐⭐⭐⭐ | MIT code; third-party model/data/SMPL-family licenses must be audited |
 | 4 | **AI4Animation MANN** | Holden et al. 2020 | mode-adaptive neural network, expert blending | ~5 ms / frame | ~50 MB | ⭐⭐⭐ | MIT |
-| 5 | **T2M-GPT** | Zhang et al. 2023 | VQ-VAE motion tokens + GPT-2 decoder | ~200 ms / clip on CPU | ~50 MB (codebook) | ⭐⭐⭐⭐ | MIT |
+| 5 | **T2M-GPT** | Zhang et al. 2023 | VQ-VAE motion tokens + GPT-2 decoder | Python 3.8 / PyTorch 1.8.1 research stack; model artifact not app-ready | pretrained downloads + dataset stats | ⭐⭐⭐⭐ | Apache-2.0 code; HumanML3D/KIT/SMPL assets separate |
 | 6 | **LLM-as-animator** (novel) | TerranSoul-internal | structured JSON pose tags from chat LLM | shares chat latency (~free) | 0 (reuses chat model) | ⭐⭐⭐ | n/a — pure prompting |
-| 7 | **Hunyuan-Motion** | Tencent 2025 | text → 60 fps motion clip | ~3 s / clip on RTX 30+ | ~1.2 GB | ⭐⭐⭐⭐⭐ | Apache-2.0 |
+| 7 | **HunyuanVideo / Hunyuan-Motion-class** | Tencent 2024-2026 | text/image/video-conditioned diffusion -> rendered video or motion reference | 45-60 GB+ VRAM class for open HunyuanVideo models | very large | ⭐⭐⭐⭐⭐ | Tencent community/model license; not bundled |
 | 8 | **PriorMDM** | Tevet et al. 2024 | motion-prior diffusion conditioned on a sparse-pose prior | ~2 s / clip on CPU | ~300 MB | ⭐⭐⭐⭐ | MIT |
+| 9 | **MotionBERT-Lite** | Zhu et al. 2023 | 2D skeleton sequence -> 3D pose / mesh representation | sidecar only; 243-frame window max per README | ~61 MB lite checkpoint | ⭐⭐⭐⭐ | Apache-2.0 code |
 
 ### 2.2 Categorisation
 
@@ -167,6 +168,86 @@ shipped over multiple sessions.
 
 ---
 
+## 7.1 Chunk 27.4 MoMask-Style Retarget Decision
+
+Chunk 27.4 revisited the MoMask row after the geometric retargeter and
+MotionGPT token codec had shipped. The detailed deliverable is
+[`docs/momask-full-body-retarget-research.md`](momask-full-body-retarget-research.md).
+
+The short version: keep TerranSoul's Rust geometric retargeter as the baseline,
+do not vendor MoMask, and prototype any ML reconstruction as an optional sidecar
+that consumes saved landmark frames only. MoMask remains interesting for offline
+temporal inpainting or motion synthesis, but MotionBERT-Lite or MMPose
+RTMPose3D-style models are a cleaner first fit for lifting 2D/normalized
+BlazePose landmarks into 3D pose.
+
+Implementation remains out of scope for 27.4. A future implementation must:
+
+- stay disabled by default;
+- never process live camera frames;
+- expose model license, checksum, source, and download size before first use;
+- return TerranSoul-native `VrmBonePose` / `LearnedMotion` frames;
+- beat the geometric baseline on continuity, dropout recovery, or visible pose
+   quality before it becomes user-facing.
+
+---
+
+## 7.2 Chunk 27.5 Offline Motion Polish Decision
+
+Chunk 27.5 evaluated Hunyuan-Motion / HunyuanVideo-class systems,
+MimicMotion, and MagicAnimate as possible offline polish engines for saved
+teach-session clips. The detailed deliverable is
+[`docs/offline-motion-polish-research.md`](offline-motion-polish-research.md).
+
+The decision: keep the in-repo Gaussian smoother as the first product path and
+do not bundle video diffusion. TerranSoul needs reusable `LearnedMotion` bone
+frames, while the named systems primarily produce rendered videos or require a
+large image/video diffusion stack. They remain useful references for a future
+optional sidecar, but only if that sidecar returns TerranSoul-native frames,
+records model/license metadata, and uses saved artifacts only.
+
+---
+
+## 7.3 Chunk 27.6 Neural Audio-To-Face Decision
+
+Chunk 27.6 evaluated the shipped lip-sync stack against Audio2Face-3D,
+FaceFormer, and EmoTalk-class systems. The detailed deliverable is
+[`docs/neural-audio-to-face-evaluation.md`](neural-audio-to-face-evaluation.md).
+
+The decision: keep the existing `phoneme-viseme` scheduler plus `lip-sync` FFT
+fallback as the default. Audio2Face-3D is the only plausible future neural
+backend because the current SDK is MIT and the current Audio2Face-3D model cards
+use the NVIDIA Open Model License, but it still requires a local NVIDIA
+CUDA/TensorRT setup and a model-license flow. FaceFormer and EmoTalk remain
+research references because their public surfaces are mesh/dataset oriented or
+not clearly available as maintained VRM-ready runtimes.
+
+A future backend must be sidecar-style, local-only by default, and return
+TerranSoul-native facial frames that degrade to the five existing VRM visemes.
+
+---
+
+## 7.4 Chunk 14.16g Motion Model Inference Decision
+
+Optional Chunk 14.16g evaluated MotionGPT / T2M-GPT inference after the
+deterministic `motion_tokens` codec and LLM motion generator had shipped. The
+detailed deliverable is
+[`docs/motion-model-inference-evaluation.md`](motion-model-inference-evaluation.md).
+
+The decision: do not add `ort`, Python, CUDA, model downloads, or SMPL-family
+assets to TerranSoul yet. The local machine has an RTX 3080 Ti, but the upstream
+model contract is the real blocker: MotionGPT and T2M-GPT have permissive code
+licenses but rely on separate model, dataset, SMPL/SMPL-X, and research-runtime
+assets. There is no verified, checksummed, VRM-native ONNX artifact to wire into
+Rust.
+
+TerranSoul should keep using `generate_motion_from_text` plus the
+feature-gated `motion_tokens` codec. A future neural backend must be a local
+sidecar with a manifest describing license, checksum, runtime, input/output
+schema, skeleton contract, and fallback behavior.
+
+---
+
 ## 8. References
 
 1. Jiang, B. et al. *MotionGPT: Human Motion as a Foreign Language.*
@@ -182,9 +263,22 @@ shipped over multiple sessions.
 6. Tevet, G. et al. *PriorMDM: Human Motion Diffusion as a Generative
    Prior.* ICLR 2024.
 7. Tencent. *Hunyuan-Motion 1.0 Technical Report.* 2025.
-8. `docs/persona-design.md` § 14.7 — Master-Mirror reference for the
+8. Zhu, W. et al. *MotionBERT: A Unified Perspective on Learning Human
+   Motion Representations.* ICCV 2023.
+9. OpenMMLab. *MMPose Pose Estimation Toolbox.*
+10. Tencent. *MimicMotion: High-Quality Human Motion Video Generation
+   with Confidence-aware Pose Guidance.* 2024/2025.
+11. Xu, Z. et al. *MagicAnimate: Temporally Consistent Human Image
+   Animation using Diffusion Model.* 2023.
+12. Stability AI. *Stable Video Diffusion 1.1 Image-to-Video Model Card.*
+13. NVIDIA. *Audio2Face-3D SDK* and *Audio2Face-3D v2.3/v3.0 Model Cards.*
+14. Fan, Y. et al. *FaceFormer: Speech-Driven 3D Facial Animation with
+   Transformers.* CVPR 2022.
+15. Peng, Z. et al. *EmoTalk: Speech-Driven Emotional Disentanglement for
+   3D Face Animation.* ICCV 2023.
+16. `docs/persona-design.md` § 14.7 — Master-Mirror reference for the
    11-bone VRM contract used here.
-9. `docs/research-reverse-engineering.md` § 7 — earlier MANN analysis.
+17. `docs/research-reverse-engineering.md` § 7 — earlier MANN analysis.
 
 ---
 

@@ -94,11 +94,13 @@ pub trait AgentProvider: Send + Sync {
    ```
 4. The `Sentiment` enum (`Happy`, `Sad`, `Neutral`) drives character animations — return the appropriate sentiment from your agent
 
-> **Reference implementation:** see
-> [`src-tauri/src/agent/openclaw_agent.rs`](../src-tauri/src/agent/openclaw_agent.rs)
-> for a fully-tested example bridging an external platform (OpenClaw) with
-> capability gating, tool-call parsing, and sentiment passthrough. Walkthrough
-> in [`OPENCLAW-EXAMPLE.md`](./OPENCLAW-EXAMPLE.md).
+> **External tool runtimes:** if the integration adds commands/tools rather
+> than a new brain provider, prefer a PluginHost plugin. OpenClaw is now the
+> built-in `openclaw-bridge` plugin registered in
+> [`src-tauri/src/plugins/host.rs`](../src-tauri/src/plugins/host.rs); its
+> legacy parser support remains in
+> [`src-tauri/src/agent/openclaw_agent.rs`](../src-tauri/src/agent/openclaw_agent.rs).
+> Walkthrough in [`OPENCLAW-EXAMPLE.md`](./OPENCLAW-EXAMPLE.md).
 
 > **Local LLMs are agents too.** The Marketplace surfaces local Ollama models
 > as virtual agents (capability `local_llm`) — installing one runs the same

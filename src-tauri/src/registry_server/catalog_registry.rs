@@ -94,21 +94,20 @@ mod tests {
         let reg = CatalogRegistry::new();
         let results = reg.search("").await.unwrap();
         assert!(
-            results.len() >= 3,
-            "catalog should contain at least 3 agents"
+            results.len() >= 2,
+            "catalog should contain at least 2 agents"
         );
         let names: Vec<_> = results.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"stub-agent"));
-        assert!(names.contains(&"openclaw-bridge"));
         assert!(names.contains(&"claude-cowork"));
     }
 
     #[tokio::test]
     async fn query_filters_by_name() {
         let reg = CatalogRegistry::new();
-        let results = reg.search("openclaw").await.unwrap();
+        let results = reg.search("gitnexus").await.unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "openclaw-bridge");
+        assert_eq!(results[0].name, "gitnexus-sidecar");
     }
 
     #[tokio::test]

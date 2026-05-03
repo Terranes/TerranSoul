@@ -548,9 +548,15 @@ mod tests {
         }"#;
         let pack = parse_pack(full).unwrap();
         assert_eq!(pack.pack_version, 1);
-        assert_eq!(pack.note.as_deref(), Some("My custom librarian persona with trained expressions"));
+        assert_eq!(
+            pack.note.as_deref(),
+            Some("My custom librarian persona with trained expressions")
+        );
         assert_eq!(pack.traits["name"], "Lia");
-        assert_eq!(pack.traits["exampleDialogue"][0], "User: What should I read? / Assistant: Indeed, both have their merits.");
+        assert_eq!(
+            pack.traits["exampleDialogue"][0],
+            "User: What should I read? / Assistant: Indeed, both have their merits."
+        );
         assert_eq!(pack.expressions.len(), 1);
         assert_eq!(pack.motions.len(), 1);
         // Validate assets
@@ -593,15 +599,39 @@ mod tests {
     #[test]
     fn schema_spec_id_charset_validation() {
         // Valid IDs
-        assert!(validate_asset(&json!({"id": "lex_A-B_123", "kind": "expression"}), "expression").is_ok());
+        assert!(validate_asset(
+            &json!({"id": "lex_A-B_123", "kind": "expression"}),
+            "expression"
+        )
+        .is_ok());
         assert!(validate_asset(&json!({"id": "a", "kind": "motion"}), "motion").is_ok());
-        assert!(validate_asset(&json!({"id": "A".repeat(128), "kind": "expression"}), "expression").is_ok());
+        assert!(validate_asset(
+            &json!({"id": "A".repeat(128), "kind": "expression"}),
+            "expression"
+        )
+        .is_ok());
 
         // Invalid IDs
-        assert!(validate_asset(&json!({"id": "has space", "kind": "expression"}), "expression").is_err());
-        assert!(validate_asset(&json!({"id": "has.dot", "kind": "expression"}), "expression").is_err());
-        assert!(validate_asset(&json!({"id": "../traversal", "kind": "expression"}), "expression").is_err());
-        assert!(validate_asset(&json!({"id": "A".repeat(129), "kind": "expression"}), "expression").is_err());
+        assert!(validate_asset(
+            &json!({"id": "has space", "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+        assert!(validate_asset(
+            &json!({"id": "has.dot", "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+        assert!(validate_asset(
+            &json!({"id": "../traversal", "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
+        assert!(validate_asset(
+            &json!({"id": "A".repeat(129), "kind": "expression"}),
+            "expression"
+        )
+        .is_err());
     }
 
     #[test]
