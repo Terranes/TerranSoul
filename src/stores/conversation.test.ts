@@ -14,6 +14,8 @@ import { setActivePinia, createPinia } from 'pinia';
 import { detectTranslatorModeRequest, isStopTranslatorModeRequest, useConversationStore } from './conversation';
 import { useBrainStore } from './brain';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
+import { useSkillTreeStore } from './skill-tree';
+import { useVoiceStore } from './voice';
 import type { Message } from '../types';
 
 // Mock the Tauri invoke API
@@ -651,6 +653,45 @@ describe('conversation store — new quest trigger behavior', () => {
     expect(store.messages).toHaveLength(2);
     const hasScholarQuest = store.messages.some((m) => m.questId === 'scholar-quest');
     expect(hasScholarQuest).toBe(false);
+  });
+
+  it('does NOT auto-trigger a quest when the user asks what the companion can do', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    mockStreamChat.mockImplementation(
+      (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
+        cb.onDone('I can chat, remember context, help with voice, and guide you through quests in the skill tree.');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('what can you do?');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages.some((m) => m.agentName === 'Quest Guide')).toBe(false);
+  });
+
+  it('triggers the matching quest after the user says they like a specific action', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+    const skillTree = useSkillTreeStore();
+    const voice = useVoiceStore();
+    skillTree.markComplete('avatar');
+    await voice.setTtsProvider('web-speech');
+    mockStreamChat.mockImplementation(
+      (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
+        cb.onDone('Pet Mode keeps me close while you work.');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('I like Pet Mode');
+
+    const quest = store.messages.find((m) => m.questId === 'pet-mode');
+    expect(quest).toBeDefined();
+    expect(quest!.agentName).toBe('Quest Guide');
   });
 
   it('shows the don\'t-know prompt when the LLM answer signals uncertainty', async () => {

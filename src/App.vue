@@ -405,6 +405,15 @@ async function focusBrowserAppWindow() {
 
 
 function handleSkillNavigate(target: string) {
+  if (target === 'pet-mode') {
+    if (browserMode.value) {
+      browserAppWindowOpen.value = false;
+    } else {
+      void windowStore.setMode('pet');
+    }
+    return;
+  }
+
   const tabMap: Record<string, typeof activeTab.value> = {
     chat: 'chat',
     memory: 'memory',
