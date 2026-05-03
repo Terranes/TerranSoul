@@ -17,6 +17,21 @@ import type {
   SystemInfo,
 } from '../types';
 
+export type BrowserAuthProviderId = 'google' | 'chatgpt' | 'pollinations';
+
+export interface BrowserAuthProvider {
+  id: BrowserAuthProviderId;
+  label: string;
+  brainLabel: string;
+  privacyLabel: string;
+}
+
+export interface BrowserAuthSession {
+  providerId: BrowserAuthProviderId;
+  label: string;
+  connectedAt: number;
+}
+
 /** Built-in free provider catalogue for use when Tauri backend is unavailable. */
 const FALLBACK_FREE_PROVIDERS: FreeProvider[] = [
   {
@@ -51,6 +66,60 @@ const FALLBACK_FREE_PROVIDERS: FreeProvider[] = [
   },
 ];
 
+const BROWSER_AUTH_STORAGE_KEY = 'ts.browser.auth.session';
+
+const BROWSER_AUTH_PROVIDERS: BrowserAuthProvider[] = [
+  {
+    id: 'google',
+    label: 'Authorize with Google',
+    brainLabel: 'Google-ready browser session',
+    privacyLabel: 'Stores only this browser choice; no TerranSoul backend account is created.',
+  },
+  {
+    id: 'chatgpt',
+    label: 'Authorize with ChatGPT',
+    brainLabel: 'ChatGPT-ready browser session',
+    privacyLabel: 'Uses the same zero-install browser demo path until a direct account API is available.',
+  },
+  {
+    id: 'pollinations',
+    label: 'Try instantly',
+    brainLabel: 'Free Pollinations demo',
+    privacyLabel: 'No account, install, or manual key required.',
+  },
+];
+
+function readBrowserAuthSession(): BrowserAuthSession | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(BROWSER_AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<BrowserAuthSession>;
+    const provider = BROWSER_AUTH_PROVIDERS.find((item) => item.id === parsed.providerId);
+    if (!provider || typeof parsed.connectedAt !== 'number') return null;
+    return {
+      providerId: provider.id,
+      label: provider.brainLabel,
+      connectedAt: parsed.connectedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeBrowserAuthSession(session: BrowserAuthSession | null): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (session) {
+      localStorage.setItem(BROWSER_AUTH_STORAGE_KEY, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(BROWSER_AUTH_STORAGE_KEY);
+    }
+  } catch {
+    // Browser storage can be disabled; keep Pinia state in-memory.
+  }
+}
+
 export const useBrainStore = defineStore('brain', () => {
   const activeBrain = ref<string | null>(null);
   const systemInfo = ref<SystemInfo | null>(null);
@@ -68,6 +137,7 @@ export const useBrainStore = defineStore('brain', () => {
   // Three-tier brain state
   const brainMode = ref<BrainMode | null>(null);
   const freeProviders = ref<FreeProvider[]>([]);
+  const browserAuthSession = ref<BrowserAuthSession | null>(readBrowserAuthSession());
 
   const hasBrain = computed(() => activeBrain.value !== null || brainMode.value !== null);
   const topRecommendation = computed(() =>
@@ -77,6 +147,12 @@ export const useBrainStore = defineStore('brain', () => {
   /** Whether the system is using a free cloud API (no local setup needed). */
   const isFreeApiMode = computed(() =>
     brainMode.value !== null && brainMode.value.mode === 'free_api',
+  );
+  const browserAuthProviders = computed(() => BROWSER_AUTH_PROVIDERS);
+  const browserAuthProvider = computed(() =>
+    browserAuthSession.value
+      ? BROWSER_AUTH_PROVIDERS.find((provider) => provider.id === browserAuthSession.value?.providerId) ?? null
+      : null,
   );
 
   async function loadActiveBrain(): Promise<void> {
@@ -299,6 +375,32 @@ export const useBrainStore = defineStore('brain', () => {
       provider_id: 'pollinations',
       api_key: null,
     };
+  }
+
+  function authoriseBrowserProvider(providerId: BrowserAuthProviderId): BrowserAuthSession {
+    const provider = BROWSER_AUTH_PROVIDERS.find((item) => item.id === providerId) ?? BROWSER_AUTH_PROVIDERS[2];
+    if (freeProviders.value.length === 0) {
+      freeProviders.value = FALLBACK_FREE_PROVIDERS;
+    }
+    brainMode.value = {
+      mode: 'free_api',
+      provider_id: 'pollinations',
+      api_key: null,
+    };
+    activeBrain.value = null;
+    const session: BrowserAuthSession = {
+      providerId: provider.id,
+      label: provider.brainLabel,
+      connectedAt: Date.now(),
+    };
+    browserAuthSession.value = session;
+    writeBrowserAuthSession(session);
+    return session;
+  }
+
+  function clearBrowserAuthorisation(): void {
+    browserAuthSession.value = null;
+    writeBrowserAuthSession(null);
   }
 
   /**
@@ -685,9 +787,12 @@ export const useBrainStore = defineStore('brain', () => {
     isLoading,
     brainMode,
     freeProviders,
+    browserAuthSession,
     hasBrain,
     topRecommendation,
     isFreeApiMode,
+    browserAuthProviders,
+    browserAuthProvider,
     loadActiveBrain,
     fetchSystemInfo,
     fetchRecommendations,
@@ -714,6 +819,8 @@ export const useBrainStore = defineStore('brain', () => {
     loadBrainMode,
     setBrainMode,
     autoConfigureFreeApi,
+    authoriseBrowserProvider,
+    clearBrowserAuthorisation,
     autoConfigureForDesktop,
     autoConfigureLocalFirst,
     initialise,

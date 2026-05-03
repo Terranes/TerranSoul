@@ -59,6 +59,7 @@ describe('brain store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    localStorage.removeItem('ts.browser.auth.session');
   });
 
   it('hasBrain is false when activeBrain is null and brainMode is null', () => {
@@ -268,6 +269,40 @@ describe('brain store', () => {
     expect(store.isFreeApiMode).toBe(false);
     store.autoConfigureFreeApi();
     expect(store.isFreeApiMode).toBe(true);
+  });
+
+  it('authoriseBrowserProvider persists a one-click browser session and free brain mode', () => {
+    const store = useBrainStore();
+    const session = store.authoriseBrowserProvider('google');
+
+    expect(session.providerId).toBe('google');
+    expect(store.browserAuthSession?.label).toContain('Google');
+    expect(store.brainMode).toEqual({
+      mode: 'free_api',
+      provider_id: 'pollinations',
+      api_key: null,
+    });
+    expect(JSON.parse(localStorage.getItem('ts.browser.auth.session') ?? '{}')).toMatchObject({
+      providerId: 'google',
+      label: 'Google-ready browser session',
+    });
+  });
+
+  it('loads remembered browser authorisation from localStorage', () => {
+    localStorage.setItem('ts.browser.auth.session', JSON.stringify({
+      providerId: 'chatgpt',
+      label: 'ChatGPT-ready browser session',
+      connectedAt: 123,
+    }));
+    setActivePinia(createPinia());
+
+    const store = useBrainStore();
+    expect(store.browserAuthSession).toEqual({
+      providerId: 'chatgpt',
+      label: 'ChatGPT-ready browser session',
+      connectedAt: 123,
+    });
+    expect(store.browserAuthProvider?.id).toBe('chatgpt');
   });
 
   it('isFreeApiMode is false for local_ollama', async () => {

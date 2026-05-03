@@ -23,6 +23,17 @@ import type {
   Message,
   NewMemory,
 } from '../types';
+import {
+  addBrowserMemory,
+  browserHybridSearch,
+  browserKeywordSearch,
+  browserMemoryStats,
+  clearBrowserMemories,
+  exportBrowserRagSyncPayload,
+  importBrowserRagSyncPayload,
+  listBrowserMemories,
+  type BrowserRagSyncPayload,
+} from '../transport/browser-rag';
 
 export const useMemoryStore = defineStore('memory', () => {
   const memories = ref<MemoryEntry[]>([]);
@@ -36,9 +47,11 @@ export const useMemoryStore = defineStore('memory', () => {
     isLoading.value = true;
     error.value = null;
     try {
-      memories.value = await invoke<MemoryEntry[]>('get_memories');
+      const result = await invoke<MemoryEntry[]>('get_memories');
+      memories.value = Array.isArray(result) ? result : await listBrowserMemories();
     } catch (e) {
       error.value = String(e);
+      memories.value = await listBrowserMemories();
     } finally {
       isLoading.value = false;
     }
@@ -46,18 +59,20 @@ export const useMemoryStore = defineStore('memory', () => {
 
   async function search(query: string): Promise<MemoryEntry[]> {
     try {
-      return await invoke<MemoryEntry[]>('search_memories', { query });
+      const result = await invoke<MemoryEntry[]>('search_memories', { query });
+      return Array.isArray(result) ? result : browserKeywordSearch(query);
     } catch {
-      return [];
+      return browserKeywordSearch(query);
     }
   }
 
   /** Brain-powered semantic search — uses the active Ollama model. */
   async function semanticSearch(query: string, limit = 10): Promise<MemoryEntry[]> {
     try {
-      return await invoke<MemoryEntry[]>('semantic_search_memories', { query, limit });
+      const result = await invoke<MemoryEntry[]>('semantic_search_memories', { query, limit });
+      return Array.isArray(result) ? result : browserHybridSearch(query, limit);
     } catch {
-      return [];
+      return browserHybridSearch(query, limit);
     }
   }
 
@@ -69,11 +84,14 @@ export const useMemoryStore = defineStore('memory', () => {
         importance: m.importance,
         memoryType: m.memory_type,
       });
+      if (!entry || typeof entry.id !== 'number') throw new Error('Invalid memory entry');
       memories.value.unshift(entry);
       return entry;
     } catch (e) {
       error.value = String(e);
-      return null;
+      const entry = await addBrowserMemory(m);
+      memories.value.unshift(entry);
+      return entry;
     }
   }
 
@@ -119,6 +137,11 @@ export const useMemoryStore = defineStore('memory', () => {
       edgeStats.value = null;
     } catch (e) {
       error.value = String(e);
+      await clearBrowserMemories();
+      memories.value = [];
+      stats.value = null;
+      edges.value = [];
+      edgeStats.value = null;
     }
   }
 
@@ -157,9 +180,10 @@ export const useMemoryStore = defineStore('memory', () => {
   /** Hybrid search: vector + keyword + recency + importance + decay scoring. */
   async function hybridSearch(query: string, limit = 5): Promise<MemoryEntry[]> {
     try {
-      return await invoke<MemoryEntry[]>('hybrid_search_memories', { query, limit });
+      const result = await invoke<MemoryEntry[]>('hybrid_search_memories', { query, limit });
+      return Array.isArray(result) ? result : browserHybridSearch(query, limit);
     } catch {
-      return [];
+      return browserHybridSearch(query, limit);
     }
   }
 
@@ -170,8 +194,20 @@ export const useMemoryStore = defineStore('memory', () => {
       stats.value = s;
       return s;
     } catch {
-      return null;
+      const s = await browserMemoryStats();
+      stats.value = s;
+      return s;
     }
+  }
+
+  async function exportBrowserSyncPayload(): Promise<BrowserRagSyncPayload> {
+    return exportBrowserRagSyncPayload();
+  }
+
+  async function importBrowserSyncPayload(payload: BrowserRagSyncPayload): Promise<number> {
+    const count = await importBrowserRagSyncPayload(payload);
+    memories.value = await listBrowserMemories();
+    return count;
   }
 
   /** Apply time-based decay to all memory scores. */
@@ -407,6 +443,8 @@ export const useMemoryStore = defineStore('memory', () => {
     exportToObsidian,
     getMemoryHistory,
     adjustImportance,
+    exportBrowserSyncPayload,
+    importBrowserSyncPayload,
     // Contradiction resolution (Chunk 17.2)
     listConflicts,
     resolveConflict,

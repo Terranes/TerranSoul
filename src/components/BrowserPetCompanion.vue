@@ -55,6 +55,18 @@ const statusLabel = computed(() => {
   if (tts.isSpeaking.value) return 'Speaking…';
   return 'Ready';
 });
+const emotionBubble = computed(() => {
+  switch (character.state) {
+    case 'thinking': return { emoji: '💭', label: 'Thinking' };
+    case 'talking': return { emoji: '💬', label: 'Talking' };
+    case 'happy': return { emoji: '✨', label: 'Happy' };
+    case 'sad': return { emoji: '💧', label: 'Sad' };
+    case 'angry': return { emoji: '💢', label: 'Angry' };
+    case 'relaxed': return { emoji: '🌿', label: 'Relaxed' };
+    case 'surprised': return { emoji: '❗', label: 'Surprised' };
+    default: return null;
+  }
+});
 
 function scrollToBottom() {
   const el = messagesRef.value;
@@ -227,6 +239,22 @@ onBeforeUnmount(() => {
   <div class="browser-pet-companion">
     <div class="pet-frame">
       <CharacterViewport force-pet />
+      <Transition name="emotion-pop">
+        <div
+          v-if="emotionBubble"
+          class="pet-emotion-bubble"
+          role="status"
+          aria-live="polite"
+          :aria-label="emotionBubble.label"
+        >
+          <span class="pet-emotion-emoji">{{ emotionBubble.emoji }}</span>
+          <span class="pet-emotion-text">{{ emotionBubble.label }}</span>
+          <span
+            class="pet-emotion-tail"
+            aria-hidden="true"
+          />
+        </div>
+      </Transition>
     </div>
 
     <section
@@ -393,6 +421,61 @@ onBeforeUnmount(() => {
 }
 
 .pet-frame:active { cursor: grabbing; }
+
+.pet-emotion-bubble {
+  position: absolute;
+  top: 12%;
+  right: 8%;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 5.4rem;
+  padding: 0.52rem 0.7rem;
+  border: 2px solid color-mix(in srgb, var(--ts-text-primary) 70%, var(--ts-accent));
+  border-radius: 999px 999px 999px 0.35rem;
+  color: var(--ts-text-primary);
+  background: color-mix(in srgb, var(--ts-bg-panel) 92%, white 8%);
+  box-shadow:
+    0 12px 24px -14px color-mix(in srgb, var(--ts-accent) 70%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--ts-bg-panel) 48%, transparent);
+  pointer-events: none;
+}
+
+.pet-emotion-emoji {
+  font-size: 1.18rem;
+  line-height: 1;
+}
+
+.pet-emotion-text {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pet-emotion-tail {
+  position: absolute;
+  right: 1.1rem;
+  bottom: -0.48rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-right: 2px solid color-mix(in srgb, var(--ts-text-primary) 70%, var(--ts-accent));
+  border-bottom: 2px solid color-mix(in srgb, var(--ts-text-primary) 70%, var(--ts-accent));
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.emotion-pop-enter-active,
+.emotion-pop-leave-active {
+  transition: opacity var(--ts-transition-fast, 0.15s ease), transform var(--ts-transition-fast, 0.15s ease);
+}
+
+.emotion-pop-enter-from,
+.emotion-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.92);
+}
 
 .pet-frame :deep(canvas),
 .pet-frame :deep(.viewport-wrapper) {
