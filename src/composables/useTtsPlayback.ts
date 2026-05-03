@@ -20,7 +20,7 @@ import { ref, readonly, watch, type Ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 
 /** Sentence-ending punctuation patterns that trigger TTS synthesis. */
-const SENTENCE_END_RE = /[.!?…]\s+|\n/;
+const SENTENCE_END_RE = /[.!?…]\s+|[。！？]+|\n/;
 
 /** Minimum sentence length to bother synthesizing (filters out stray punctuation). */
 const MIN_SENTENCE_CHARS = 4;

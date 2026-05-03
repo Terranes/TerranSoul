@@ -74,7 +74,7 @@ const mockSpeechSynthesis = {
     // Simulate async completion
     Promise.resolve().then(() => utterance.onend?.());
   }),
-  getVoices: vi.fn(() => []),
+  getVoices: vi.fn((): SpeechSynthesisVoice[] => []),
   cancel: vi.fn(),
   pause: vi.fn(),
   resume: vi.fn(),
