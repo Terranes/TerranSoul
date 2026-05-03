@@ -754,7 +754,7 @@ onMounted(() => {
   }
   window.addEventListener('resize', handleResize);
   if (typeof ResizeObserver !== 'undefined' && viewportRef.value) {
-    resizeObserver = new ResizeObserver(() => {
+    resizeObserver = new ResizeObserver((_entries) => {
       measureViewport();
     });
     resizeObserver.observe(viewportRef.value);
