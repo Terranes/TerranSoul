@@ -16,6 +16,7 @@ import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import { useAgentRosterStore } from './agent-roster';
 import { buildHandoffBlock } from '../utils/handoff-prompt';
 import { browserDirectFallbackProviders, resolveBrowserBrainTransport } from '../transport/browser-brain';
+import { normaliseTranslatorLanguage, type TranslatorLanguage } from '../utils/translator-languages';
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
@@ -30,38 +31,11 @@ export type IntentDecision =
   | { kind: 'gated_setup'; setup: GatedSetupKind }
   | { kind: 'unknown' };
 
-export interface TranslatorLanguage {
-  code: string;
-  name: string;
-}
-
 interface TranslatorModeState {
   active: boolean;
   source: TranslatorLanguage;
   target: TranslatorLanguage;
   nextDirection: 'source_to_target' | 'target_to_source';
-}
-
-const TRANSLATOR_LANGUAGES: TranslatorLanguage[] = [
-  { code: 'en', name: 'English' },
-  { code: 'vi', name: 'Vietnamese' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'jp', name: 'Japanese' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'zh', name: 'Chinese' },
-];
-
-function normaliseTranslatorLanguage(value: string): TranslatorLanguage | null {
-  const cleaned = value.trim().toLowerCase().replace(/[.?!,]/g, '');
-  if (!cleaned) return null;
-  const found = TRANSLATOR_LANGUAGES.find((lang) => (
-    lang.code.toLowerCase() === cleaned || lang.name.toLowerCase() === cleaned
-  ));
-  if (!found) return null;
-  return found.code === 'jp' ? { code: 'ja', name: 'Japanese' } : found;
 }
 
 export function detectTranslatorModeRequest(userInput: string): { source: TranslatorLanguage; target: TranslatorLanguage } | null {
@@ -1385,7 +1359,7 @@ export const useConversationStore = defineStore('conversation', () => {
           onSentence: (sentence) => {
             if (typeof window !== 'undefined') {
               window.dispatchEvent(
-                new CustomEvent('ts:llm-sentence', { detail: { sentence } }),
+                new CustomEvent('ts:llm-sentence', { detail: { sentence, language: to.code } }),
               );
             }
           },

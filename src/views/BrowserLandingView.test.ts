@@ -31,6 +31,8 @@ describe('BrowserLandingView', () => {
     expect(wrapper.get('.pet-stage').attributes('aria-label')).toBe('Live TerranSoul pet companion');
     expect(wrapper.text()).toContain('Live voice');
     expect(wrapper.text()).toContain('Translator demo');
+    expect(wrapper.text()).toContain('From');
+    expect(wrapper.text()).toContain('To');
   });
 
   it('emits open-app-window from both browser launch buttons', async () => {

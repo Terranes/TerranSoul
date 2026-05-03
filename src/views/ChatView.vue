@@ -525,7 +525,8 @@ function getAsm(): AvatarStateMachine | null {
 const lipSyncBridge = useLipSyncBridge(tts, getAsm);
 
 function handleBrowserSentenceEvent(event: Event) {
-  const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
+  const detail = (event as CustomEvent<{ sentence?: string; language?: string }>).detail;
+  const sentence = detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
   if (!isStreamTtsActive) {
     tts.stop();
@@ -533,7 +534,7 @@ function handleBrowserSentenceEvent(event: Event) {
   }
   // Add trailing whitespace so useTtsPlayback's sentence detector flushes
   // browser-direct sentence events immediately instead of waiting for done.
-  tts.feedChunk(`${sentence} `);
+  tts.feedChunk(`${sentence} `, { language: detail?.language });
 }
 
 /**
