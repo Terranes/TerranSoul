@@ -104,7 +104,7 @@
               class="brain-local-btn"
               @click="activateBrain"
             >
-              ⬇ Install &amp; activate {{ selectedBrain }}
+              ⬇ Install & activate {{ selectedBrain }}
             </button>
           </div>
         </div>
@@ -1040,12 +1040,14 @@ async function handleUpgradeAccept(optionId: string) {
     }
   } else if (optionId === 'local') {
     // Install local model via Ollama
-    const model = brain.topRecommendation?.model_tag;
+    const recommendation = brain.topRecommendation;
+    const model = recommendation?.model_tag;
+    const displayName = recommendation?.display_name ?? model;
     if (model) {
       conversationStore.messages.push({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `Great choice! I'm downloading ${brain.topRecommendation!.display_name} now. This may take a few minutes...`,
+        content: `Great choice! I'm downloading ${displayName} now. This may take a few minutes...`,
         agentName: 'TerranSoul',
         sentiment: 'happy',
         timestamp: Date.now(),
@@ -1061,7 +1063,7 @@ async function handleUpgradeAccept(optionId: string) {
         conversationStore.messages.push({
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `${brain.topRecommendation!.display_name} is installed and active! I'm much smarter now. Try asking me something complex!`,
+          content: `${displayName} is installed and active! I'm much smarter now. Try asking me something complex!`,
           agentName: 'TerranSoul',
           sentiment: 'happy',
           timestamp: Date.now(),
@@ -1166,7 +1168,7 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
           await conversationStore.addMessage({
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: `Perfect! I've enabled Web Speech (your browser's built-in voice synthesis — free, offline-capable, no third-party API). You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
+            content: `Perfect! I've enabled Web Speech (your browser's built-in voice synthesis - free, offline-capable, no third-party API). You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
             agentName: 'TerranSoul',
             sentiment: 'happy',
             timestamp: Date.now(),
