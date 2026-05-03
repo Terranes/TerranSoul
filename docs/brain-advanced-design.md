@@ -131,6 +131,24 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Browser mode surface
+
+The Vue bundle also supports a browser-only mode for the public TerranSoul
+landing page and live model testing. When `App.vue` cannot reach Tauri IPC, it
+routes to a product landing page instead of the desktop shell, auto-configures
+the free cloud brain path, and keeps the real Three.js/VRM character mounted as
+a forced pet-mode preview in the bottom-right corner. Opening "3D" or "Chat"
+from the landing page creates a compact in-page app window; it uses the same
+Pinia stores as desktop, but native-only commands fall back to in-memory or
+localStorage behavior and Rust-backed memory/LLM operations remain unavailable
+unless a remote host is paired.
+
+Browser mode therefore exercises the real frontend brain contract without
+claiming local desktop capabilities: Free API chat can run directly in the web
+client, paid/local/remote brain paths still require user configuration or a
+paired TerranSoul host, and persistent RAG storage remains a desktop/mobile
+backend responsibility.
+
 ---
 
 ## 2. Three-Tier Memory Model

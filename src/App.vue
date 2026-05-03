@@ -1,7 +1,50 @@
 <template>
+  <template v-if="browserMode">
+    <BrowserLandingView @open-app-window="openBrowserAppWindow('desktop')" />
+    <Transition name="browser-window">
+      <section
+        v-if="browserAppWindowOpen"
+        class="browser-app-window"
+        aria-label="TerranSoul browser app window"
+      >
+        <header class="browser-window-header">
+          <div>
+            <p class="browser-window-kicker">
+              Browser mode
+            </p>
+            <h2>TerranSoul live app</h2>
+          </div>
+          <div class="browser-window-actions">
+            <button
+              :class="{ active: browserDisplayMode === 'desktop' }"
+              @click="browserDisplayMode = 'desktop'"
+            >
+              3D
+            </button>
+            <button
+              :class="{ active: browserDisplayMode === 'chatbox' }"
+              @click="browserDisplayMode = 'chatbox'"
+            >
+              Chat
+            </button>
+            <button @click="browserAppWindowOpen = false">
+              Pet
+            </button>
+          </div>
+        </header>
+        <div class="browser-window-body">
+          <ChatView
+            :chatbox-mode="browserDisplayMode === 'chatbox'"
+            @navigate="handleSkillNavigate"
+          />
+        </div>
+      </section>
+    </Transition>
+  </template>
+
   <!-- Panel-only window: opened from pet mode context menu -->
   <div
-    v-if="panelOnly"
+    v-else-if="panelOnly"
     class="app-shell panel-window"
   >
     <main class="app-main panel-main">
@@ -226,6 +269,7 @@ import { useSettingsStore } from './stores/settings';
 import { useMobileNotificationsStore } from './stores/mobile-notifications';
 import { useTheme } from './composables/useTheme';
 import ChatView from './views/ChatView.vue';
+import BrowserLandingView from './views/BrowserLandingView.vue';
 import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import MobilePairingView from './views/MobilePairingView.vue';
@@ -255,6 +299,9 @@ const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | '
 const appLoading = ref(true);
 const skipSetup = ref(false);
 const tauriAvailable = ref(false);
+const browserMode = ref(false);
+const browserAppWindowOpen = ref(false);
+const browserDisplayMode = ref<'desktop' | 'chatbox'>('desktop');
 const questConstellationOpen = ref(false);
 const showFirstLaunchWizard = ref(false);
 
@@ -300,6 +347,11 @@ async function togglePetMode() {
 
 async function setDisplayMode(mode: 'desktop' | 'chatbox') {
   await settingsStore.setChatboxMode(mode === 'chatbox');
+}
+
+function openBrowserAppWindow(mode: 'desktop' | 'chatbox') {
+  browserDisplayMode.value = mode;
+  browserAppWindowOpen.value = true;
 }
 
 
@@ -387,6 +439,7 @@ onMounted(async () => {
     await windowStore.loadDevBuildFlag();
   } catch {
     // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
+    browserMode.value = true;
     brain.autoConfigureFreeApi();
     skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
@@ -489,6 +542,87 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
 .app-shell.pet-mode { background: transparent; }
 .app-shell.panel-window { display: block; }
 .panel-main { height: 100vh; height: 100dvh; overflow-y: auto; }
+
+.browser-app-window {
+  position: fixed;
+  right: clamp(var(--ts-space-md), 4vw, var(--ts-space-2xl));
+  top: clamp(5rem, 12vh, 7rem);
+  z-index: var(--ts-z-overlay);
+  width: min(680px, calc(100vw - 2 * var(--ts-space-md)));
+  height: min(720px, calc(100vh - 7rem));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-xl);
+  background: color-mix(in srgb, var(--ts-bg-panel) 92%, transparent);
+  box-shadow: var(--ts-shadow-lg);
+}
+
+.browser-window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ts-space-md);
+  padding: var(--ts-space-md);
+  border-bottom: 1px solid var(--ts-border);
+  background: var(--ts-bg-panel);
+}
+
+.browser-window-kicker,
+.browser-window-header h2 {
+  margin: 0;
+}
+
+.browser-window-kicker {
+  color: var(--ts-accent);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.browser-window-header h2 {
+  font-size: 1rem;
+}
+
+.browser-window-actions {
+  display: flex;
+  gap: var(--ts-space-xs);
+}
+
+.browser-window-actions button {
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-pill);
+  padding: 0.48rem 0.7rem;
+  color: var(--ts-text-secondary);
+  background: var(--ts-bg-input);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.browser-window-actions button.active {
+  color: var(--ts-text-on-accent);
+  background: var(--ts-accent);
+  border-color: transparent;
+}
+
+.browser-window-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.browser-window-enter-active,
+.browser-window-leave-active {
+  transition: opacity var(--ts-transition-normal), transform var(--ts-transition-normal);
+}
+
+.browser-window-enter-from,
+.browser-window-leave-to {
+  opacity: 0;
+  transform: translateY(14px) scale(0.98);
+}
 
 /* ── Desktop sidebar navigation ── */
 .app-nav {
