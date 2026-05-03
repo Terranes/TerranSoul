@@ -15,6 +15,7 @@ const DB_VERSION = 1;
 
 // ── IndexedDB cache ─────────────────────────────────────────────────────────
 
+const _inflightOwners = new Map<string, symbol>();
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -276,12 +277,14 @@ export async function preGenerateUserThumbnail(userModelId: string): Promise<voi
     return;
   }
 
+  const owner = Symbol(userModelId);
   const task = (async () => {
     const dataUrl = await renderUserModelHeadshot(userModelId);
     await setCache(userModelId, dataUrl);
     return dataUrl;
   })();
 
+  _inflightOwners.set(userModelId, owner);
   _inflight.set(userModelId, task);
 
   try {
@@ -290,7 +293,10 @@ export async function preGenerateUserThumbnail(userModelId: string): Promise<voi
     _failed.add(userModelId);
     console.error(`[TerranSoul] Pre-generate thumbnail failed for ${userModelId}:`, err);
   } finally {
-    if (_inflight.get(userModelId) === task) _inflight.delete(userModelId);
+    if (_inflightOwners.get(userModelId) === owner) {
+      _inflightOwners.delete(userModelId);
+      _inflight.delete(userModelId);
+    }
   }
 }
 
