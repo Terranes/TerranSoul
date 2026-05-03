@@ -93,12 +93,12 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.isThinking).toBe(false);
   });
 
-  it('does not activate translator mode without a keyed free provider or local brain', async () => {
+  it('does not activate translator mode without an available brain', async () => {
     const store = useConversationStore();
     await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
     expect(store.translatorMode).toBeNull();
     expect(store.messages[1].agentName).toBe('Translator Mode');
-    expect(store.messages[1].content).toContain('free cloud LLM with an API key');
+    expect(store.messages[1].content).toContain('available free browser LLM');
   });
 });
 
@@ -218,6 +218,18 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.messages[3].content).toContain('English → Vietnamese');
     expect(store.messages[3].content).toContain('xin chào');
     expect(store.translatorMode?.nextDirection).toBe('target_to_source');
+  });
+
+  it('activates translator mode for browser-free providers without API keys', async () => {
+    const brain = useBrainStore();
+    brain.autoConfigureFreeApi();
+
+    const store = useConversationStore();
+    await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
+
+    expect(store.translatorMode?.active).toBe(true);
+    expect(store.messages[1].agentName).toBe('Translator Mode');
+    expect(store.messages[1].content).toContain('English ↔ Vietnamese');
   });
 
   it('stops translator mode from normal chat', async () => {

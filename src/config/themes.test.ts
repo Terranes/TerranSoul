@@ -50,8 +50,8 @@ describe('theme definitions', () => {
     expect(BUILTIN_THEMES.length).toBeGreaterThanOrEqual(9);
   });
 
-  it('default theme ID is "default"', () => {
-    expect(DEFAULT_THEME_ID).toBe('default');
+  it('default theme ID is "corporate-dark"', () => {
+    expect(DEFAULT_THEME_ID).toBe('corporate-dark');
   });
 
   it('every theme has a unique ID', () => {

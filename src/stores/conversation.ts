@@ -1127,7 +1127,10 @@ function resolveBrowserProvider(brain: ReturnType<typeof useBrainStore>): {
 function canUseTranslatorMode(brain: ReturnType<typeof useBrainStore>): boolean {
   const mode = brain.brainMode;
   if (!mode) return false;
-  if (mode.mode === 'free_api') return Boolean(mode.api_key);
+  if (mode.mode === 'free_api') {
+    const provider = brain.freeProviders.find((item) => item.id === mode.provider_id);
+    return Boolean(provider && (!provider.requires_api_key || mode.api_key));
+  }
   return mode.mode === 'paid_api' || mode.mode === 'local_ollama' || mode.mode === 'local_lm_studio';
 }
 
@@ -1136,7 +1139,7 @@ function translatorUnavailableMessage(): Message {
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      'Translator mode needs a free cloud LLM with an API key, a paid API, or a local brain before it can translate reliably.',
+      'Translator mode needs an available free browser LLM, a paid API, or a local brain before it can translate reliably.',
     agentName: 'Translator Mode',
     sentiment: 'neutral',
     timestamp: Date.now(),
@@ -1309,6 +1312,13 @@ export const useConversationStore = defineStore('conversation', () => {
           onChunk: (text) => {
             if (!isStreaming.value && text) isStreaming.value = true;
             streamingText.value += text;
+          },
+          onSentence: (sentence) => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('ts:llm-sentence', { detail: { sentence } }),
+              );
+            }
           },
           onDone: (full) => {
             if (!settled) {
@@ -1871,6 +1881,18 @@ export const useConversationStore = defineStore('conversation', () => {
                       isStreaming.value = true;
                     }
                     streamingText.value += text;
+                  },
+                  onSentence: (sentence) => {
+                    // Sentence-by-sentence event — lets TTS, animation,
+                    // and analytics react before the full response is
+                    // ready. Decoupled via a window CustomEvent so we
+                    // don't pull the TTS/animation modules into the
+                    // conversation store.
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(
+                        new CustomEvent('ts:llm-sentence', { detail: { sentence } }),
+                      );
+                    }
                   },
                   onDone: (full) => { if (!settled) { settled = true; clearTimeout(timeout); resolve(full); } },
                   onError: (err) => { if (!settled) { settled = true; clearTimeout(timeout); reject(new Error(err)); } },

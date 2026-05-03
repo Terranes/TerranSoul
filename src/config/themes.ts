@@ -143,4 +143,4 @@ export const THEME_MAP: ReadonlyMap<string, ThemeDefinition> = new Map(
 );
 
 /** The default theme ID applied on first launch. */
-export const DEFAULT_THEME_ID = 'default';
+export const DEFAULT_THEME_ID = 'corporate-dark';

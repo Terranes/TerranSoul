@@ -9,6 +9,7 @@ import { useConversationStore } from './conversation';
 import { useMemoryStore } from './memory';
 import { streamChatCompletion, type ChatMessage } from '../utils/free-api-client';
 import type { QuestChoice } from '../types';
+import { DEFAULT_THEME_ID } from '../config/themes';
 
 // ── Skill Node Types ──────────────────────────────────────────────────────────
 
@@ -1471,7 +1472,7 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       case 'themes': {
         // Auto-active once the user has picked any non-default theme.
         try {
-          return (localStorage.getItem('ts-active-theme') ?? 'default') !== 'default';
+          return (localStorage.getItem('ts-active-theme') ?? DEFAULT_THEME_ID) !== DEFAULT_THEME_ID;
         } catch {
           return false;
         }

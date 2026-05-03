@@ -53,7 +53,7 @@ describe('SittingPropController', () => {
     const scene = new THREE.Scene();
     const controller = new SittingPropController(testProps);
 
-    controller.sync(scene, true, '/animations/ladylike.vrma');
+    controller.sync(scene, true, '/animations/relax.vrma');
     const props = controller.activeProps!;
     const chairMesh = props.chair.children[0] as THREE.Mesh;
     const teacupMesh = props.teacup.children[0] as THREE.Mesh;
@@ -66,5 +66,33 @@ describe('SittingPropController', () => {
     expect((chairMesh.material as THREE.Material).dispose).toHaveBeenCalled();
     expect(teacupMesh.geometry.dispose).toHaveBeenCalled();
     expect((teacupMesh.material as THREE.Material).dispose).toHaveBeenCalled();
+  });
+
+  it('never spawns props when disabled (e.g. floating pet preview)', () => {
+    const scene = new THREE.Scene();
+    const createProps = vi.fn(testProps);
+    const controller = new SittingPropController(createProps);
+    controller.disabled = true;
+
+    controller.sync(scene, true, '/animations/relax.vrma');
+    controller.sync(scene, true, '/animations/relax.vrma');
+
+    expect(createProps).not.toHaveBeenCalled();
+    expect(scene.children).toHaveLength(0);
+    expect(controller.activeProps).toBeNull();
+  });
+
+  it('disposes existing props when disabled flips to true mid-sit', () => {
+    const scene = new THREE.Scene();
+    const controller = new SittingPropController(testProps);
+
+    controller.sync(scene, true, '/animations/relax.vrma');
+    expect(controller.activeProps).not.toBeNull();
+
+    controller.disabled = true;
+    controller.sync(scene, true, '/animations/relax.vrma');
+
+    expect(controller.activeProps).toBeNull();
+    expect(scene.children).toHaveLength(0);
   });
 });
