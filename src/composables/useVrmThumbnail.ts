@@ -15,7 +15,6 @@ const DB_VERSION = 1;
 
 // ── IndexedDB cache ─────────────────────────────────────────────────────────
 
-const _inflightOwners = new Map<string, symbol>();
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
