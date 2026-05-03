@@ -289,7 +289,7 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
 function hasQuestOptInSignal(inputLower: string): boolean {
   const normalized = inputLower.trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
-  return /\b(?:i\s+(?:like|love|want|prefer|choose|pick)|i(?:'|’)d\s+like|i\s+would\s+like|i(?:'|’)m\s+interested\s+in|i\s+am\s+interested\s+in|that\s+sounds\s+good|sounds\s+good|looks\s+good|let(?:'|’)s\s+(?:do|try|start|begin|use)|can\s+we\s+(?:do|try|start|use)|please\s+(?:start|begin|show|open)|start\s+that|try\s+that|do\s+that|use\s+that)\b/i.test(normalized);
+  return /\b(?:i\s+(?:like|love|prefer|choose|pick)|i\s+want\s+to\s+(?:try|use|start|open|enable)|i(?:'|’)d\s+like|i\s+would\s+like|i(?:'|’)m\s+interested\s+in|i\s+am\s+interested\s+in|that\s+sounds\s+good|sounds\s+good|looks\s+good|let(?:'|’)s\s+(?:do|try|start|begin|use)|can\s+we\s+(?:do|try|start|use)|please\s+(?:start|begin|show|open)|start\s+that|try\s+that|do\s+that|use\s+that)\b/i.test(normalized);
 }
 
 function findPreferredQuestFromInput(
