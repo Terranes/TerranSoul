@@ -143,6 +143,7 @@ TerranSoul is an open-source **3D virtual assistant + AI package manager** that 
 |----------|--------|
 | Desktop | Windows · macOS · Linux |
 | Mobile | iOS · Android |
+| Browser | Product landing page + live pet-mode demo |
 
 The iOS target now has a Tauri 2 platform overlay (`src-tauri/tauri.ios.conf.json`), shared Vue safe-area layout, and Stronghold-backed secure storage for pairing credentials. Generate the Xcode project on macOS with `npm run tauri:ios:init`; non-macOS hosts can still run `npm run tauri:ios:check` to validate the scaffold.
 
@@ -224,7 +225,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - **Cross-device memory sync:** `memory::crdt_sync` computes LWW deltas keyed by `source_hash` or `(content_prefix, created_at)`; Soul Link dispatches `memory_sync` / `memory_sync_request` messages through `link::handlers`, applies inbound deltas, replies with pre-apply local deltas, and records Unix-ms `sync_log` watermarks so paired devices do not replay already-synced memories.
 - **Mobile/remote memory + chat/workflow surface:** `RemoteHost.searchMemories()` and `RemoteHost.streamSearchMemories()` expose the same RRF/HYBRID/HyDE search modes to browser-native gRPC-Web clients, and `RemoteHost.streamChatMessage()` lets iOS `ChatView` consume desktop-hosted chat streams. `[PERSONA]`, `[LONG-TERM MEMORY]`, and `[HANDOFF]` prompt injection stay server-side; the phone receives clean text chunks. Phone prompts such as “what's Copilot doing?” and “continue the next chunk” route through named RemoteHost tools for Copilot-session narration and workflow progress/continue actions. Paired iOS shells also use `mobile-notifications.ts` + `tauri-plugin-notification` for local long-running workflow, ingest-task, and Copilot threshold notifications over the LAN connection.
 - **Sandboxed plugin memory hooks:** `plugins::PluginHost` exposes `memory_hooks` contributions with `pre_store` / `post_store` stages. Plugins can lazily activate via `on_memory_tag`, run inside `WasmRunner`, and return JSON patches that transform content / tags / importance / type before `add_memory` writes to SQLite; post-store hooks are notification/indexing-only.
-- **Pluggable storage backends** via `StorageBackend` trait: SQLite (default), PostgreSQL (`sqlx`), SQL Server (`tiberius`), CassandraDB (`scylla`)
+- **Pluggable storage backends** via `StorageBackend` trait: SQLite (default), PostgreSQL (`sqlx`), SQL Server (`tiberius`), CassandraDB (`scylla`); the optional distributed schemas mirror the canonical memory lifecycle columns (`valid_to`, `obsidian_path`, `last_exported`, `updated_at`, `origin_device`) used by Obsidian export and CRDT sync.
 - **LLM-powered memory ops:** `extract_facts`, `summarize`, `semantic_search_entries`, `embed_text`
 - **Canonical SQLite schema at V13** with `PRAGMA foreign_keys=ON`; fresh databases are created directly from `memory/schema.rs` with `memories`, `memory_edges`, `memory_versions`, `memory_conflicts`, `paired_devices`, and `sync_log` tables.
 
@@ -258,7 +259,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 
 **Core modules** (`src-tauri/src/memory/`)
 - `store.rs` — `MemoryStore` (default SQLite + WAL, schema **V13**), `MemoryEntry`, `MemoryTier` (short / working / long), `MemoryType`, `NewMemory`, `MemoryUpdate`, `MemoryStats`, `cosine_similarity`, `bytes_to_embedding` / `embedding_to_bytes`, `hybrid_search` (6-signal weighted-sum scoring), `hybrid_search_rrf` (RRF-fused vector + keyword + freshness retrievers), `apply_decay`, `promote`
-- `backend.rs` — `StorageBackend` trait + `StorageConfig` + `StorageError` (the seam every backend implements)
+- `backend.rs` — `StorageBackend` trait + `StorageConfig` + `StorageError` (the seam every backend implements); feature-gated PostgreSQL, SQL Server, and Cassandra backends keep the same Obsidian/CRDT lifecycle fields as the canonical SQLite memory entry shape.
 - `schema.rs` — canonical SQLite schema initializer at V13 (`memories` + `memory_edges` with temporal `valid_from` / `valid_to` columns and `edge_source` external-KG provenance, `memory_versions` edit history, `memory_conflicts`, `paired_devices`, V13 `updated_at` / `origin_device`, and `sync_log`, `PRAGMA foreign_keys=ON`)
 - `edges.rs` — `MemoryEdge`, `NewMemoryEdge` (with V7 `edge_source: Option<String>`), `EdgeDirection`, `EdgeSource`, `EdgeStats`, `COMMON_RELATION_TYPES` (17-type taxonomy), `normalise_rel_type`, `parse_llm_edges`, `format_memories_for_extraction`, `delete_edges_by_edge_source`
 - `gitnexus_mirror.rs` — Phase 13 Tier 3 mapper: GitNexus `CONTAINS`/`CALLS`/`IMPORTS`/`EXTENDS`/`HANDLES_ROUTE` → 17-relation taxonomy; `mirror_kg(store, scope, payload)` / `unmirror(store, scope)` pure functions; idempotent across re-syncs (uses `source_hash` for node dedup)
@@ -395,6 +396,7 @@ Built on **Tauri 2.0** as a unified shell across desktop + mobile:
 **Platform notes:**
 
 - **Desktop:** transparent always-on-top overlay window + system tray
+- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a small forced pet-mode preview in the bottom-right, and switching to app modes opens a compact responsive in-page window instead of a native window. Pinia stores use browser-safe fallbacks: direct free/paid cloud chat, in-memory/localStorage settings, disabled native-only commands, and RemoteHost pairing for desktop-local LLM or memory capabilities.
 - **iOS:** full-screen Tauri WebView with `tauri.ios.conf.json`, shared Vue frontend, safe-area navigation, Stronghold-secured pairing credential storage, and gRPC-Web `RemoteHost` transport for paired desktop control. `ChatView` selects `remote-conversation.ts` on iOS so chat streams from the paired desktop brain instead of the phone-local store. Local notifications use `tauri-plugin-notification` while paired to report long-running workflow, ingest, and Copilot activity.
 - **Android:** planned follow-up target using the same shared frontend and Rust core
 - **Mobile backlog:** background sync later
@@ -451,7 +453,7 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 │  ├── Skill Tree / Quest Board (License Board UI)    │
 │  ├── Setup Wizards (Brain, Voice)                   │
 │  ├── Memory Graph (Cytoscape.js)                    │
-│  ├── Pet Overlay / Window Modes                     │
+│  ├── Pet Overlay / Window Modes / Browser Landing   │
 │  └── BGM Player (procedural Web Audio)              │
 ├─────────────────────────────────────────────────────┤
 │  Pinia Stores (state management)                    │
@@ -477,6 +479,18 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 │  └── Community integrations                         │
 └─────────────────────────────────────────────────────┘
 ```
+
+When the same Vue bundle runs in a normal browser, it does not boot the
+full-screen desktop shell by default. `App.vue` detects that Tauri IPC is
+unavailable, auto-configures the free browser-safe brain path, and renders the
+landing page with the live TerranSoul model anchored as a small pet preview.
+Desktop and chat modes remain available for testing through a small responsive
+in-page app window; native-only actions gracefully no-op or show browser
+fallbacks. Browser chat only talks directly to browser-safe free/paid cloud
+providers; desktop-local Ollama, LM Studio, and Rust-backed memory require an
+explicit RemoteHost pairing path. The landing surface has focused regression
+coverage for content anchors, forced pet-preview wiring, and browser-window
+launch events.
 
 ---
 

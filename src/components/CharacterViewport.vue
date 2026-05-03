@@ -482,11 +482,11 @@ import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
-import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender, SITTING_ANIMATION_PATHS } from '../renderer/vrma-manager';
+import { VrmaManager, getAnimationForMood, getAnimationForMotion, getIdleAnimationForGender } from '../renderer/vrma-manager';
 import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } from '../renderer/learned-motion-player';
 import { PoseAnimator, type LlmPoseFrame } from '../renderer/pose-animator';
 import { EmotionPoseBias, type BiasEmotion } from '../renderer/emotion-pose-bias';
-import { createSittingProps, type SittingProps } from '../renderer/props';
+import { SittingPropController } from '../renderer/sitting-props-controller';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
 import SystemInfoPanel from './SystemInfoPanel.vue';
@@ -499,6 +499,13 @@ const emit = defineEmits<{
   'request-add-music': [];
 }>();
 
+const props = withDefaults(defineProps<{
+  /** Force transparent pet rendering even when the app window is in normal mode. */
+  forcePet?: boolean;
+}>(), {
+  forcePet: false,
+});
+
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const characterStore = useCharacterStore();
 const backgroundStore = useBackgroundStore();
@@ -508,7 +515,7 @@ const windowStoreLocal = useWindowStore();
 const personaStore = usePersonaStore();
 /** Viewport behaves differently in pet mode: no background, no chrome,
  *  transparent clear colour, and pedestal hidden in the 3D scene. */
-const isPetMode = computed(() => windowStoreLocal.mode === 'pet');
+const isPetMode = computed(() => props.forcePet || windowStoreLocal.mode === 'pet');
 
 /** Human-readable labels for the AI state pill rendered in the corner cluster. */
 const STATE_LABELS: Record<CharacterState, string> = {
@@ -810,19 +817,21 @@ const emotionBias = new EmotionPoseBias();
 let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── Sitting chair prop ───────────────────────────────────────────────
-let sittingProps: SittingProps | null = null;
+const sittingPropController = new SittingPropController();
 
-// Wire VRMA playback state to the animator + toggle chair visibility
+function disposeSittingProps() {
+  sittingPropController.dispose(sceneCtx?.scene ?? null);
+}
+
+function syncSittingProps(playing: boolean) {
+  sittingPropController.sync(sceneCtx?.scene ?? null, playing, vrmaManager.currentPath);
+}
+
+// Wire VRMA playback state to the animator + lazy-load sitting props.
 vrmaManager.onPlaybackChange((playing) => {
   animator.setVrmaPlaying(playing);
   poseAnimator.setVrmaPlaying(playing);
-
-  // Show the chair when a sitting animation plays, hide it otherwise.
-  if (sittingProps) {
-    const isSitting = playing && vrmaManager.currentPath != null
-      && SITTING_ANIMATION_PATHS.has(vrmaManager.currentPath);
-    sittingProps.chair.visible = isSitting;
-  }
+  syncSittingProps(playing);
 });
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
@@ -994,10 +1003,6 @@ onMounted(async () => {
   disposeScene = ctx.dispose;
   getRendererInfo = ctx.getRendererInfo;
 
-  // Create the sitting chair prop and add it to the scene (starts hidden).
-  sittingProps = createSittingProps();
-  ctx.scene.add(sittingProps.chair);
-
   // Apply the current pet-mode state now that the scene is available.
   // The reactive watch below only fires on subsequent changes — this
   // initial call catches the case where the user mounted already in pet
@@ -1127,6 +1132,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   cancelAnimationFrame(animFrameId);
+  disposeSittingProps();
   disposeScene?.();
   bgm.stop();
   bgmDeferredCleanup?.();

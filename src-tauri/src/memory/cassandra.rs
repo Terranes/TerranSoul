@@ -101,7 +101,8 @@ impl CassandraBackend {
     /// Helper columns list for consistent SELECT ordering.
     const COLS: &'static str = "id, content, tags, importance, memory_type, created_at, \
          last_accessed, access_count, embedding, tier, decay_score, \
-         session_id, parent_id, token_count, source_url, source_hash, expires_at";
+         session_id, parent_id, token_count, source_url, source_hash, expires_at, \
+         valid_to, obsidian_path, last_exported, updated_at, origin_device";
 }
 
 impl StorageBackend for CassandraBackend {
@@ -128,7 +129,12 @@ impl StorageBackend for CassandraBackend {
                             token_count   int,
                             source_url    text,
                             source_hash   text,
-                            expires_at    bigint
+                            expires_at    bigint,
+                            valid_to      bigint,
+                            obsidian_path text,
+                            last_exported bigint,
+                            updated_at    bigint,
+                            origin_device text
                         )",
                         self.keyspace
                     ),
@@ -226,8 +232,8 @@ impl StorageBackend for CassandraBackend {
                         "INSERT INTO {}.memories
                             (id, content, tags, importance, memory_type, created_at,
                              access_count, tier, decay_score, session_id, token_count,
-                             source_url, source_hash, expires_at)
-                         VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1.0, ?, ?, ?, ?, ?)",
+                             source_url, source_hash, expires_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1.0, ?, ?, ?, ?, ?, ?)",
                         self.keyspace
                     ),
                     (
@@ -243,6 +249,7 @@ impl StorageBackend for CassandraBackend {
                         &m.source_url,
                         &m.source_hash,
                         m.expires_at,
+                        now,
                     ),
                 )
                 .await
@@ -267,6 +274,10 @@ impl StorageBackend for CassandraBackend {
                 source_hash: m.source_hash,
                 expires_at: m.expires_at,
                 valid_to: None,
+                obsidian_path: None,
+                last_exported: None,
+                updated_at: Some(now),
+                origin_device: None,
             })
         })
     }

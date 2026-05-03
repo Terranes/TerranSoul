@@ -93,7 +93,11 @@ impl MssqlBackend {
             source_url: row.get::<&str, _>("source_url").map(|s| s.to_string()),
             source_hash: row.get::<&str, _>("source_hash").map(|s| s.to_string()),
             expires_at: row.get::<i64, _>("expires_at"),
-            valid_to: None,
+            valid_to: row.get::<i64, _>("valid_to"),
+            obsidian_path: row.get::<&str, _>("obsidian_path").map(|s| s.to_string()),
+            last_exported: row.get::<i64, _>("last_exported"),
+            updated_at: row.get::<i64, _>("updated_at"),
+            origin_device: row.get::<&str, _>("origin_device").map(|s| s.to_string()),
         }
     }
 }
@@ -137,13 +141,31 @@ impl StorageBackend for MssqlBackend {
                      tier          NVARCHAR(20) NOT NULL DEFAULT 'long',
                      decay_score   FLOAT NOT NULL DEFAULT 1.0,
                      session_id    NVARCHAR(255) NULL,
-                     parent_id     BIGINT NULL REFERENCES memories(id),
-                     token_count   INT NOT NULL DEFAULT 0
-                 )",
+                      parent_id     BIGINT NULL REFERENCES memories(id),
+                      token_count   INT NOT NULL DEFAULT 0,
+                      valid_to      BIGINT NULL,
+                      obsidian_path NVARCHAR(1024) NULL,
+                      last_exported BIGINT NULL,
+                      updated_at    BIGINT NULL,
+                      origin_device NVARCHAR(128) NULL
+                  )",
                     &[],
                 )
                 .await
                 .map_err(|e| StorageError::Mssql(e.to_string()))?;
+
+            for alter_sql in &[
+                "IF COL_LENGTH('memories', 'valid_to') IS NULL ALTER TABLE memories ADD valid_to BIGINT NULL",
+                "IF COL_LENGTH('memories', 'obsidian_path') IS NULL ALTER TABLE memories ADD obsidian_path NVARCHAR(1024) NULL",
+                "IF COL_LENGTH('memories', 'last_exported') IS NULL ALTER TABLE memories ADD last_exported BIGINT NULL",
+                "IF COL_LENGTH('memories', 'updated_at') IS NULL ALTER TABLE memories ADD updated_at BIGINT NULL",
+                "IF COL_LENGTH('memories', 'origin_device') IS NULL ALTER TABLE memories ADD origin_device NVARCHAR(128) NULL",
+            ] {
+                client
+                    .execute(*alter_sql, &[])
+                    .await
+                    .map_err(|e| StorageError::Mssql(e.to_string()))?;
+            }
 
             // Create indexes
             for idx_sql in &[
@@ -221,9 +243,9 @@ impl StorageBackend for MssqlBackend {
                     "INSERT INTO memories
                     (content, tags, importance, memory_type, created_at, access_count,
                      tier, decay_score, session_id, token_count,
-                     source_url, source_hash, expires_at)
+                     source_url, source_hash, expires_at, updated_at)
                  OUTPUT INSERTED.*
-                 VALUES (@P1, @P2, @P3, @P4, @P5, 0, @P6, 1.0, @P7, @P8, @P9, @P10, @P11)",
+                 VALUES (@P1, @P2, @P3, @P4, @P5, 0, @P6, 1.0, @P7, @P8, @P9, @P10, @P11, @P12)",
                     &[
                         &content,
                         &tags,
@@ -236,6 +258,7 @@ impl StorageBackend for MssqlBackend {
                         &src_url,
                         &src_hash,
                         &expires,
+                        &now,
                     ],
                 )
                 .await

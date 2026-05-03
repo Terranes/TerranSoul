@@ -131,6 +131,30 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Browser mode surface
+
+The Vue bundle also supports a browser-only mode for the public TerranSoul
+landing page and live model testing. When `App.vue` cannot reach Tauri IPC, it
+routes to a product landing page instead of the desktop shell, auto-configures
+the free cloud brain path, and keeps the real Three.js/VRM character mounted as
+a small forced pet-mode preview in the bottom-right corner. Opening "3D" or "Chat"
+from the landing page creates a compact responsive in-page app window with
+dialog semantics and mobile-safe sizing; it uses the same Pinia stores as
+desktop, but native-only commands fall back to in-memory or
+localStorage behavior and Rust-backed memory/LLM operations remain unavailable
+unless a remote host is paired.
+
+Browser mode therefore exercises the real frontend brain contract without
+claiming local desktop capabilities: Free API chat can run directly in the web
+client, paid API chat can run directly when the user supplies a key, and
+local/remote brain paths require an explicit paired TerranSoul host. The browser
+transport resolver rejects local Ollama/LM Studio as direct browser transports
+so the UI never implies Rust-backed memory or localhost LLM access is available
+without RemoteHost pairing; persistent RAG storage remains a desktop/mobile
+backend responsibility. Browser-mode QA is covered by focused Vue tests for
+landing anchors, forced pet-preview wiring, and app-window launch events; CSS
+keeps enough bottom padding for the fixed live model on mobile viewports.
+
 ---
 
 ## 2. Three-Tier Memory Model
@@ -1242,6 +1266,14 @@ CREATE TABLE memories (
     updated_at    INTEGER,                       -- CRDT LWW timestamp
     origin_device TEXT                           -- CRDT tiebreaker device id
 );
+
+The feature-gated distributed backends (`postgres.rs`, `mssql.rs`,
+`cassandra.rs`) mirror the same lifecycle metadata for cross-device and vault
+workflows: `valid_to` for non-destructive supersession, `obsidian_path` /
+`last_exported` for Obsidian export state, and `updated_at` / `origin_device`
+for LWW sync deltas. SQLite remains canonical, but `StorageBackend` implementors
+must keep those `MemoryEntry` fields populated or explicitly `NULL` so
+all-feature Rust validation covers the same shape.
 
 CREATE INDEX idx_memories_importance ON memories(importance DESC);
 CREATE INDEX idx_memories_created    ON memories(created_at DESC);

@@ -21,6 +21,11 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 29.5 — Sitting-prop lifecycle regression coverage](#chunk-295--sitting-prop-lifecycle-regression-coverage) | 2026-05-03 |
+| [Chunk 29.4 — glib/GTK modernization tracker](#chunk-294--glibgtk-modernization-tracker) | 2026-05-03 |
+| [Chunk 29.3 — Browser app-window UX hardening](#chunk-293--browser-app-window-ux-hardening) | 2026-05-03 |
+| [Chunk 29.2 — Browser brain transport hardening](#chunk-292--browser-brain-transport-hardening) | 2026-05-03 |
+| [Chunk 29.1 — Browser-mode QA and responsive landing polish](#chunk-291--browser-mode-qa-and-responsive-landing-polish) | 2026-05-03 |
 | [Chunk 28.14 — Path-scoped workflow context loading](#chunk-2814--path-scoped-workflow-context-loading) | 2026-05-03 |
 | [Chunk 28.13 — Temporary-worktree coding execution](#chunk-2813--temporary-worktree-coding-execution) | 2026-05-03 |
 | [Chunk 27.4b — Motion reconstruction backend seam](#chunk-274b--motion-reconstruction-backend-seam) | 2026-05-03 |
@@ -232,6 +237,140 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 29.5 — Sitting-prop lifecycle regression coverage
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Added focused renderer coverage for the sitting prop lifecycle and extracted the chair/teacup lifecycle into a small testable controller. The chair remains absent by default, appears only for sitting VRMA animations, and is removed/disposed once sitting playback ends.
+
+### What changed
+
+- Added `src/renderer/sitting-props-controller.ts` to own sitting prop sync/disposal.
+- Wired `CharacterViewport.vue` through `SittingPropController` instead of keeping private inline lifecycle logic.
+- Added `src/renderer/sitting-props-controller.test.ts` covering:
+  - no prop creation by default or for non-sitting animations;
+  - chair creation/visibility for sitting animations;
+  - scene removal plus geometry/material disposal after sitting ends.
+- Disposed both chair and teacup groups during lifecycle cleanup.
+- Removed the completed 29.5 row from `rules/milestones.md`; no active chunks remain.
+
+### Validation
+
+- `npm run lint` - passed.
+- `npx vitest run src/renderer/sitting-props-controller.test.ts src/renderer/vrma-manager.test.ts` - 6 passed.
+
+---
+
+## Chunk 29.4 — glib/GTK modernization tracker
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Retried the Tauri/wry/gtk-rs dependency path for the `glib 0.18` advisory and confirmed the Linux stack still cannot resolve to `glib >=0.20` without upstream migration away from gtk3 `0.18.x`.
+
+### What changed
+
+- Ran the current reverse dependency graph for `glib v0.18.5`, confirming it is still pulled by `gtk v0.18.2` through `tauri v2.11.0`, `wry v0.55.0`, `webkit2gtk v2.0.2`, `tao v0.35.0`, `muda`, and tray-icon paths.
+- Retried `cargo update -p glib --precise 0.20.12 --dry-run`; it still fails because `gtk v0.18.2` requires `glib ^0.18`.
+- Kept the existing no-duplicate-direct-glib stance: adding `glib 0.20` directly would not remove the vulnerable gtk3 transitive path.
+- Updated the `src-tauri/Cargo.toml` security note with the 2026-05-03 verification result.
+- Removed the completed 29.4 row from `rules/milestones.md`; next chunk is 29.5.
+
+### Validation
+
+- `cargo tree -i glib --locked` - confirmed `glib v0.18.5` remains under gtk3/Tauri Linux transitives.
+- `cargo update -p glib --precise 0.20.12 --dry-run` - failed as expected with `gtk v0.18.2` requiring `glib ^0.18`.
+
+---
+
+## Chunk 29.3 — Browser app-window UX hardening
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Refined the browser-mode in-page app window so it behaves more like an accessible lightweight substitute for a native window while preserving quick switching between pet preview, 3D, and chat layouts.
+
+### What changed
+
+- Added a focusable app-window root with dialog semantics and non-modal browser behavior.
+- Added explicit toolbar semantics and accessible labels for 3D, Chat, and Pet controls.
+- Added `aria-pressed` mode state to the 3D and Chat buttons.
+- Added Escape handling to close the browser app window back to the pet preview.
+- Focuses the in-page window when opened or when display mode changes.
+- Added `src/App.browser-window.test.ts` covering opening, mode switching, and closing the browser app window.
+- Removed the completed 29.3 row from `rules/milestones.md`; next chunk is 29.4.
+
+### Validation
+
+- `npm run lint` - passed.
+- `npx vitest run src/App.browser-window.test.ts src/views/BrowserLandingView.test.ts` - 5 passed.
+
+---
+
+## Chunk 29.2 — Browser brain transport hardening
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Hardened browser-mode brain routing so direct browser chat only uses browser-safe cloud transports. Local Ollama and LM Studio are no longer resolved as localhost browser providers; those Rust/local capabilities are represented as requiring an explicit RemoteHost pairing path.
+
+### What changed
+
+- Added `src/transport/browser-brain.ts` to centralize browser brain transport resolution.
+- Resolved no-key free providers and paid API modes as direct browser transports.
+- Rejected keyed free providers without API keys and local Ollama/LM Studio modes without a RemoteHost.
+- Filtered browser fallback-provider rotation so providers requiring API keys are not tried without configured keys.
+- Kept optional RemoteHost pairing as the path for desktop-local LLM/memory capabilities through the existing `remote-conversation` store.
+- Shrank the default browser pet preview across desktop, tablet, and mobile so it stays unobtrusive; users can still resize pet mode larger where pet-mode resizing is available.
+- Updated `README.md` and `docs/brain-advanced-design.md` to describe browser-safe cloud chat versus RemoteHost-local capabilities.
+- Removed the completed 29.2 row from `rules/milestones.md`; next chunk is 29.3.
+
+### Validation
+
+- `npm ci` - passed.
+- `npm run lint` - passed.
+- `npx vitest run src/views/BrowserLandingView.test.ts` - 3 passed.
+- `npx vitest run src/transport/browser-brain.test.ts src/stores/conversation.test.ts src/stores/brain.test.ts src/transport/grpc_web.test.ts` - 125 passed.
+
+---
+
+## Chunk 29.1 — Browser-mode QA and responsive landing polish
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Polished the browser-only landing surface so it behaves better across desktop and mobile browser sizes while keeping the live VRM pet preview mounted. The compact in-page app window now has dialog semantics, mobile-safe sizing, and explicit pressed/close controls for the browser substitute path.
+
+### What changed
+
+- Added responsive landing-page spacing based on the fixed pet preview height so the live model does not cover the final content on narrow screens.
+- Added small-screen layout handling for the landing nav, hero actions, and pet caption.
+- Updated the browser app window in `App.vue` with `role="dialog"`, `aria-pressed` mode buttons, an accessible close label, and mobile `inset` sizing.
+- Added `src/views/BrowserLandingView.test.ts` covering landing anchors/content, forced `CharacterViewport` pet-preview wiring, and launch-button `open-app-window` events.
+- Updated browser-mode documentation in `README.md` and `docs/brain-advanced-design.md`.
+- Removed the completed 29.1 row from `rules/milestones.md`; next chunk is 29.2.
+
+### Validation
+
+- `npm ci` - passed.
+- `npm run lint` - passed before and after changes.
+- `npx vitest run src/views/PetOverlayView.test.ts src/components/QuestBubble.test.ts` - 22 passed before changes.
+- `npx vitest run src/views/BrowserLandingView.test.ts src/views/PetOverlayView.test.ts src/components/QuestBubble.test.ts` - 25 passed.
+- `npm run build` - passed (existing Vite chunk-size warnings only).
 
 ---
 

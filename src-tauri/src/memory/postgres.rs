@@ -97,12 +97,30 @@ impl PostgresBackend {
                 decay_score   DOUBLE PRECISION NOT NULL DEFAULT 1.0,
                 session_id    TEXT,
                 parent_id     BIGINT REFERENCES memories(id),
-                token_count   INTEGER NOT NULL DEFAULT 0
+                token_count   INTEGER NOT NULL DEFAULT 0,
+                valid_to      BIGINT,
+                obsidian_path TEXT,
+                last_exported BIGINT,
+                updated_at    BIGINT,
+                origin_device TEXT
             )",
         )
         .execute(&self.pool)
         .await
         .map_err(|e| StorageError::Migration(e.to_string()))?;
+
+        for column_sql in &[
+            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS valid_to BIGINT",
+            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS obsidian_path TEXT",
+            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_exported BIGINT",
+            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS updated_at BIGINT",
+            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS origin_device TEXT",
+        ] {
+            sqlx::query(column_sql)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| StorageError::Migration(e.to_string()))?;
+        }
 
         // Create indexes
         for idx in &[
@@ -173,7 +191,11 @@ impl PostgresBackend {
             source_url: row.get("source_url"),
             source_hash: row.get("source_hash"),
             expires_at: row.get("expires_at"),
-            valid_to: None,
+            valid_to: row.try_get("valid_to").ok(),
+            obsidian_path: row.try_get("obsidian_path").ok(),
+            last_exported: row.try_get("last_exported").ok(),
+            updated_at: row.try_get("updated_at").ok(),
+            origin_device: row.try_get("origin_device").ok(),
         }
     }
 }
@@ -214,8 +236,8 @@ impl StorageBackend for PostgresBackend {
                 "INSERT INTO memories
                     (content, tags, importance, memory_type, created_at, access_count,
                      tier, decay_score, session_id, token_count,
-                     source_url, source_hash, expires_at)
-                 VALUES ($1, $2, $3, $4, $5, 0, $6, 1.0, $7, $8, $9, $10, $11)
+                     source_url, source_hash, expires_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, 0, $6, 1.0, $7, $8, $9, $10, $11, $12)
                  RETURNING *",
             )
             .bind(&m.content)
@@ -229,6 +251,7 @@ impl StorageBackend for PostgresBackend {
             .bind(&m.source_url)
             .bind(&m.source_hash)
             .bind(m.expires_at)
+            .bind(now)
             .fetch_one(&self.pool),
         )?;
 

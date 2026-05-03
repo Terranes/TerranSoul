@@ -33,11 +33,4 @@
 
 ## Next Chunk
 
-No active chunks remain. Promote a row from `rules/backlog.md` before starting more chunk work.
-
----
-
-## Active Chunks
-
-| Chunk | Status | Goal | Maps to |
-|---|---|---|---|
+No active chunks remain.
