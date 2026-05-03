@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 29.1 — Browser-mode QA and responsive landing polish](#chunk-291--browser-mode-qa-and-responsive-landing-polish) | 2026-05-03 |
 | [Chunk 28.14 — Path-scoped workflow context loading](#chunk-2814--path-scoped-workflow-context-loading) | 2026-05-03 |
 | [Chunk 28.13 — Temporary-worktree coding execution](#chunk-2813--temporary-worktree-coding-execution) | 2026-05-03 |
 | [Chunk 27.4b — Motion reconstruction backend seam](#chunk-274b--motion-reconstruction-backend-seam) | 2026-05-03 |
@@ -232,6 +233,34 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 29.1 — Browser-mode QA and responsive landing polish
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Polished the browser-only landing surface so it behaves better across desktop and mobile browser sizes while keeping the live VRM pet preview mounted. The compact in-page app window now has dialog semantics, mobile-safe sizing, and explicit pressed/close controls for the browser substitute path.
+
+### What changed
+
+- Added responsive landing-page spacing based on the fixed pet preview height so the live model does not cover the final content on narrow screens.
+- Added small-screen layout handling for the landing nav, hero actions, and pet caption.
+- Updated the browser app window in `App.vue` with `role="dialog"`, `aria-pressed` mode buttons, an accessible close label, and mobile `inset` sizing.
+- Added `src/views/BrowserLandingView.test.ts` covering landing anchors/content, forced `CharacterViewport` pet-preview wiring, and launch-button `open-app-window` events.
+- Updated browser-mode documentation in `README.md` and `docs/brain-advanced-design.md`.
+- Removed the completed 29.1 row from `rules/milestones.md`; next chunk is 29.2.
+
+### Validation
+
+- `npm ci` - passed.
+- `npm run lint` - passed before and after changes.
+- `npx vitest run src/views/PetOverlayView.test.ts src/components/QuestBubble.test.ts` - 22 passed before changes.
+- `npx vitest run src/views/BrowserLandingView.test.ts src/views/PetOverlayView.test.ts src/components/QuestBubble.test.ts` - 25 passed.
+- `npm run build` - passed (existing Vite chunk-size warnings only).
 
 ---
 

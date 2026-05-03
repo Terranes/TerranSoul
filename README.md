@@ -396,7 +396,7 @@ Built on **Tauri 2.0** as a unified shell across desktop + mobile:
 **Platform notes:**
 
 - **Desktop:** transparent always-on-top overlay window + system tray
-- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a forced pet-mode preview in the bottom-right, and switching to app modes opens a compact in-page window instead of a native window. Pinia stores use their existing browser fallbacks (free cloud brain, in-memory/localStorage settings, and disabled native-only commands).
+- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a forced pet-mode preview in the bottom-right, and switching to app modes opens a compact responsive in-page window instead of a native window. Pinia stores use their existing browser fallbacks (free cloud brain, in-memory/localStorage settings, and disabled native-only commands).
 - **iOS:** full-screen Tauri WebView with `tauri.ios.conf.json`, shared Vue frontend, safe-area navigation, Stronghold-secured pairing credential storage, and gRPC-Web `RemoteHost` transport for paired desktop control. `ChatView` selects `remote-conversation.ts` on iOS so chat streams from the paired desktop brain instead of the phone-local store. Local notifications use `tauri-plugin-notification` while paired to report long-running workflow, ingest, and Copilot activity.
 - **Android:** planned follow-up target using the same shared frontend and Rust core
 - **Mobile backlog:** background sync later
@@ -484,8 +484,10 @@ When the same Vue bundle runs in a normal browser, it does not boot the
 full-screen desktop shell by default. `App.vue` detects that Tauri IPC is
 unavailable, auto-configures the free browser-safe brain path, and renders the
 landing page with the live TerranSoul model anchored as a pet preview. Desktop
-and chat modes remain available for testing through a small in-page app window;
-native-only actions gracefully no-op or show browser fallbacks.
+and chat modes remain available for testing through a small responsive in-page
+app window; native-only actions gracefully no-op or show browser fallbacks. The
+landing surface has focused regression coverage for content anchors, forced pet
+preview wiring, and browser-window launch events.
 
 ---
 
