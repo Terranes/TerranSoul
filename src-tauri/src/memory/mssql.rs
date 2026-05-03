@@ -145,7 +145,7 @@ impl StorageBackend for MssqlBackend {
                      tier          NVARCHAR(20) NOT NULL DEFAULT 'long',
                      decay_score   FLOAT NOT NULL DEFAULT 1.0,
                      session_id    NVARCHAR(255) NULL,
-                      parent_id     BIGINT NULL REFERENCES memories(id) ON DELETE SET NULL,
+                      parent_id     BIGINT NULL REFERENCES memories(id),
                       token_count   INT NOT NULL DEFAULT 0,
                       valid_to      BIGINT NULL,
                       obsidian_path NVARCHAR(1024) NULL,

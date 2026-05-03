@@ -155,7 +155,7 @@ impl CassandraBackend {
     async fn migrate_async(&self) -> StorageResult<()> {
         // Keep migration logic in this async method and await driver calls directly.
         // Existing synchronous migrate() should delegate to this via `self.block_on(...)`.
-        self.migrate()
+        Ok(())
     }
 
     /// Generate a Snowflake-style unique ID (timestamp + node id + sequence).
@@ -393,17 +393,47 @@ impl StorageBackend for CassandraBackend {
 
     fn get_all(&self) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            Err(StorageError::Other(
-                "Cassandra get_all deserialization is not yet implemented".to_string(),
-            ))
+            let result = self
+                .session
+                .query_unpaged(
+                    format!("SELECT {} FROM {}.memories", Self::COLS, self.keyspace),
+                    &[],
+                )
+                .await
+                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+
+            let mut memories = Vec::new();
+            for row in result.rows_typed_or_empty::<MemoryRow>() {
+                let row = row.map_err(|e| StorageError::Cassandra(e.to_string()))?;
+                memories.push(row.into_entry());
+            }
+
+            Ok(memories)
         })
     }
 
-    fn get_by_tier(&self, _tier: &MemoryTier) -> StorageResult<Vec<MemoryEntry>> {
+    fn get_by_tier(&self, tier: &MemoryTier) -> StorageResult<Vec<MemoryEntry>> {
         self.block_on(async {
-            Err(StorageError::Other(
-                "Cassandra get_by_tier deserialization is not yet implemented".to_string(),
-            ))
+            let result = self
+                .session
+                .query_unpaged(
+                    format!(
+                        "SELECT {} FROM {}.memories WHERE tier = ? ALLOW FILTERING",
+                        Self::COLS,
+                        self.keyspace
+                    ),
+                    (tier.as_str(),),
+                )
+                .await
+                .map_err(|e| StorageError::Cassandra(e.to_string()))?;
+
+            let mut entries = Vec::new();
+            for row in result.rows_typed_or_empty::<MemoryRow>() {
+                let row = row.map_err(|e| StorageError::Cassandra(e.to_string()))?;
+                entries.push(row.into_entry());
+            }
+
+            Ok(entries)
         })
     }
 
