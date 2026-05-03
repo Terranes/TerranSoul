@@ -49,7 +49,7 @@
               v-if="brain.systemInfo"
               class="brain-hw"
             >
-              {{ brain.systemInfo.cpu_name }} · {{ formatRam(brain.systemInfo.total_ram_mb) }} RAM
+              {{ brain.systemInfo?.cpu_name }} · {{ formatRam(brain.systemInfo?.total_ram_mb) }} RAM
             </p>
             <p
               v-if="brain.topRecommendation"
@@ -512,7 +512,7 @@ let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
 let unlistenLlmPose: (() => void) | null = null;
 let unlistenProvidersExhausted: (() => void) | null = null;
-let streamTtsActive = false;
+let isStreamTtsActive = false;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
 
@@ -527,9 +527,9 @@ const lipSyncBridge = useLipSyncBridge(tts, getAsm);
 function handleBrowserSentenceEvent(event: Event) {
   const sentence = (event as CustomEvent<{ sentence?: string }>).detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
-  if (!streamTtsActive) {
+  if (!isStreamTtsActive) {
     tts.stop();
-    streamTtsActive = true;
+    isStreamTtsActive = true;
   }
   // Add trailing whitespace so useTtsPlayback's sentence detector flushes
   // browser-direct sentence events immediately instead of waiting for done.
@@ -644,7 +644,7 @@ const activeQuestQuestion = computed(() => {
   const msg = activeQuestMessage.value;
   if (!msg) return '';
   // Pull first line as a short question, or the whole text if short
-  const first = stripMarkdownForSubtitle(msg.content).split(/[.\n]/)[0].trim();
+  const first = stripMarkdownForSubtitle(msg.content).split(/[\.\n]/)[0].trim();
   return first || 'What would you like to do?';
 });
 
@@ -887,22 +887,24 @@ async function handleSend(message: string) {
   // chat message instead of going through the LLM.
   const dispatch = await tryDispatchSlashCommand(message);
   if (dispatch.handled) {
-    conversationStore.messages.push({
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: message,
-      timestamp: Date.now(),
-    });
-    conversationStore.messages.push({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: dispatch.error
-        ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
-        : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
-      agentName: 'TerranSoul',
-      sentiment: dispatch.error ? 'sad' : 'neutral',
-      timestamp: Date.now(),
-    });
+    conversationStore.addMessages([
+      {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      },
+      {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: dispatch.error
+          ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
+          : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
+        agentName: 'TerranSoul',
+        sentiment: dispatch.error ? 'sad' : 'neutral',
+        timestamp: Date.now(),
+      },
+    ]);
     return;
   }
 
@@ -1126,6 +1128,13 @@ function handleStartQuest() {
   }
 }
 
+/**
+ * Matches common "learn X" phrasings and captures the topic in group 1.
+ * Supported prompts include: "learn about ...", "teach me about ...",
+ * "study ...", "deep dive into ...", and "learn ...".
+ */
+const LEARNING_TOPIC_REGEX = /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/;
+
 /** Handle quest choice button clicks from hot-seat overlay or ChatMessageList. */
 async function handleQuestChoice(questId: string, choiceValue: string) {
   // Record which message we picked from BEFORE dismissing, because
@@ -1142,7 +1151,7 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
     for (let i = msgs.length - 1; i >= 0; i--) {
       if (msgs[i].role === 'user') {
         const lower = msgs[i].content.toLowerCase();
-        const match = lower.match(/(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/);
+        const match = lower.match(LEARNING_TOPIC_REGEX);
         if (match) topic = match[1].trim();
         break;
       }

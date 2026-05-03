@@ -22,7 +22,6 @@ import {
   collectConsoleErrors,
   assertNoCrashErrors,
   waitForAppReady,
-  sendMessage,
   waitForAssistantResponse,
   TIMEOUTS,
 } from './helpers';
