@@ -115,6 +115,21 @@ describe('useSkillTreeStore — skill nodes catalogue', () => {
       expect(node.videoRef).toBeTruthy();
     }
   });
+
+  it('includes a web-compatible pet mode quest with a navigation choice', async () => {
+    const store = useSkillTreeStore();
+    const conversation = useConversationStore();
+    const node = store.nodes.find(n => n.id === 'pet-mode');
+    expect(node).toBeDefined();
+    expect(node!.platforms).toContain('web');
+    expect(node!.questSteps[0].target).toBe('pet-mode');
+
+    store.triggerQuestEvent('pet-mode');
+    await store.handleQuestChoice('pet-mode', 'accept');
+
+    const lastAssistant = conversation.messages[conversation.messages.length - 1];
+    expect(lastAssistant.questChoices?.some(choice => choice.value === 'navigate:pet-mode')).toBe(true);
+  });
 });
 
 describe('useSkillTreeStore — status detection', () => {

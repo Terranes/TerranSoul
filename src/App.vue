@@ -388,9 +388,7 @@ function openBrowserAppWindow(mode: 'desktop' | 'chatbox') {
   browserAppWindowOpen.value = true;
 }
 
-function closeBrowserAppWindow() {
-  browserAppWindowOpen.value = false;
-}
+function closeBrowserAppWindow() { browserAppWindowOpen.value = false; }
 
 function setBrowserDisplayMode(mode: 'desktop' | 'chatbox') {
   browserDisplayMode.value = mode;
@@ -401,10 +399,8 @@ async function focusBrowserAppWindow() {
   await nextTick();
   browserAppWindowRef.value?.focus();
 }
-
-
-
 function handleSkillNavigate(target: string) {
+  if (target === 'pet-mode') { if (browserMode.value) browserAppWindowOpen.value = false; else void windowStore.setMode('pet'); return; }
   const tabMap: Record<string, typeof activeTab.value> = {
     chat: 'chat',
     memory: 'memory',

@@ -255,30 +255,99 @@ function maybeShowQuestFromResponse(responseText: string, userInput?: string): v
   const responseLower = responseText.toLowerCase();
   const inputLower = (userInput ?? '').toLowerCase();
 
-  // Signal 1: LLM response specifically mentions quests (word-boundary match to avoid
-  // false positives like "requests" containing "quest" as a substring)
-  const questWordRe = /\bquest\b/i;
-  const hasResponseSignal = questWordRe.test(responseText) || responseLower.includes('skill tree');
-
-  // Signal 2: User's intent is getting-started (broad keyword matching, not strict regex)
-  const gettingStartedWords = ['start', 'begin', 'first', 'should i do', 'can i do', 'what next', 'get started', 'where do i', 'how do i'];
-  const hasInputSignal = gettingStartedWords.some(w => inputLower.includes(w));
-
-  if (!hasResponseSignal && !hasInputSignal) return;
+  // Capability questions like "what can you do?" should be answered naturally
+  // by the LLM first. Only open a quest overlay after the user explicitly
+  // signals that they like/want a specific capability or accepts a suggested
+  // next action.
+  if (!hasQuestOptInSignal(inputLower)) return;
 
   try {
     const skillTree = useSkillTreeStore();
+    const preferredQuest = findPreferredQuestFromInput(skillTree, inputLower);
+
+    // Response-side quest mentions are still useful context for generic
+    // approvals like "that sounds good", but they no longer trigger quests by
+    // themselves.
+    const questWordRe = /\bquests?\b/i;
+    const hasResponseSignal = questWordRe.test(responseText) || responseLower.includes('skill tree');
+
+    if (!preferredQuest && !hasResponseSignal) return;
+
     const availableQuests = skillTree.nodes.filter(n => {
       try { return skillTree.getSkillStatus(n.id) === 'available'; }
       catch { return false; }
     });
-    if (availableQuests.length > 0) {
-      skillTree.triggerQuestEvent(availableQuests[0].id);
+    const questId = preferredQuest?.id ?? availableQuests[0]?.id;
+    if (questId) {
+      skillTree.triggerQuestEvent(questId);
     }
   } catch {
     // Skill tree not ready — skip quest overlay
   }
 }
+
+function hasQuestOptInSignal(inputLower: string): boolean {
+  const normalized = inputLower.trim().replace(/\s+/g, ' ');
+  if (!normalized) return false;
+  return /\b(?:i\s+(?:like|love|prefer|choose|pick)|i\s+want\s+to\s+(?:try|use|start|open|enable)|i(?:'|’)d\s+like|i\s+would\s+like|i(?:'|’)m\s+interested\s+in|i\s+am\s+interested\s+in|that\s+sounds\s+good|sounds\s+good|looks\s+good|let(?:'|’)s\s+(?:do|try|start|begin|use)|can\s+we\s+(?:do|try|start|use)|please\s+(?:start|begin|show|open)|start\s+that|try\s+that|do\s+that|use\s+that)\b/i.test(normalized);
+}
+
+function findPreferredQuestFromInput(
+  skillTree: ReturnType<typeof useSkillTreeStore>,
+  inputLower: string,
+) {
+  const candidates = skillTree.nodes.filter((node) => {
+    try {
+      const status = skillTree.getSkillStatus(node.id);
+      return status !== 'active' && !skillTree.tracker.dismissedQuestIds.includes(node.id);
+    } catch {
+      return false;
+    }
+  });
+
+  let best: { id: string; score: number } | null = null;
+  for (const node of candidates) {
+    const aliases = [
+      node.id.replace(/-/g, ' '),
+      node.name,
+      node.tagline,
+      ...node.rewards,
+    ].map((value) => value.toLowerCase());
+    let score = 0;
+    if (aliases.some((alias) => alias.length > 2 && inputLower.includes(alias))) {
+      score += 6;
+    }
+    const tokens = new Set(
+      [node.id, node.name, node.tagline, node.description, ...node.rewards]
+        .join(' ')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((token) => token.length >= 4 && !QUEST_MATCH_STOP_WORDS.has(token)),
+    );
+    for (const token of tokens) {
+      if (inputLower.includes(token)) score += 1;
+    }
+    if (score > (best?.score ?? 0)) best = { id: node.id, score };
+  }
+  return best && best.score >= 2
+    ? skillTree.nodes.find((node) => node.id === best.id) ?? null
+    : null;
+}
+
+const QUEST_MATCH_STOP_WORDS = new Set([
+  'your',
+  'with',
+  'from',
+  'this',
+  'that',
+  'mode',
+  'quest',
+  'skill',
+  'tree',
+  'companion',
+  'terran',
+  'soul',
+]);
 
 /**
  * Push the Scholar's Quest message for an explicit teach/ingest intent

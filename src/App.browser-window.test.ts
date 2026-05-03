@@ -22,7 +22,12 @@ async function mountBrowserApp() {
           emits: ['open-app-window'],
           template: '<button class="mock-open" @click="$emit(\'open-app-window\')">Open</button>',
         },
-        ChatView: { template: '<div class="mock-chat"></div>', props: ['chatboxMode'] },
+        ChatView: {
+          name: 'ChatView',
+          emits: ['navigate'],
+          props: ['chatboxMode'],
+          template: '<button class="mock-chat" @click="$emit(\'navigate\', \'pet-mode\')">Chat</button>',
+        },
         BackgroundScene: true,
         BrainSetupView: true,
         BrainView: true,
@@ -74,6 +79,16 @@ describe('App browser app window', () => {
     expect(wrapper.get('button[aria-label="Switch browser app window to chat view"]').attributes('aria-pressed')).toBe('true');
 
     await wrapper.get('button[aria-label="Close app window and return to pet preview"]').trigger('click');
+    expect(wrapper.find('.browser-app-window').exists()).toBe(false);
+  });
+
+  it('returns to browser pet preview when a quest navigates to pet mode', async () => {
+    const wrapper = await mountBrowserApp();
+    await wrapper.get('.mock-open').trigger('click');
+    await wrapper.vm.$nextTick();
+
+    await wrapper.get('.mock-chat').trigger('click');
+
     expect(wrapper.find('.browser-app-window').exists()).toBe(false);
   });
 });

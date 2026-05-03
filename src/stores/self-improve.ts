@@ -37,6 +37,15 @@ export interface SelfImproveActivity {
   message: string;
 }
 
+export interface SelfImproveChunk {
+  id: string;
+  title: string;
+  description: string;
+  trigger: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'queued' | 'ready' | 'blocked';
+}
+
 /**
  * Phase 25 — Self-Improve foundation store.
  *
@@ -164,6 +173,24 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
       description: 'Persist task queue in SQLite; auto-resume on launch; only "untick" stops it.',
       status: 'not-started',
     },
+    {
+      id: 'failure-triage-radar',
+      title: 'Failure triage & improvement radar',
+      description: 'When a self-improve run hits a bug, convert the failure into a scoped repair chunk with evidence and verification gates.',
+      status: 'not-started',
+    },
+    {
+      id: 'online-tool-model-radar',
+      title: 'Online tool/model/API research radar',
+      description: 'Regularly compare better current approaches, model APIs, and developer tools before planning self-improve work.',
+      status: 'not-started',
+    },
+    {
+      id: 'redis-code-memory',
+      title: 'Redis-backed code memory option',
+      description: 'Evaluate Redis hybrid/vector search as an optional codebase memory index for faster self-improve retrieval.',
+      status: 'not-started',
+    },
   ];
   const phases = ref<SelfImprovePhase[]>(ROADMAP.map((p) => ({ ...p })));
 
@@ -198,6 +225,51 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
   const nextPhase = computed<SelfImprovePhase | null>(
     () => livePhases.value.find((p) => p.status === 'not-started' || p.status === 'in-progress') ?? null,
   );
+
+  const improvementChunks = computed<SelfImproveChunk[]>(() => {
+    const failedRuns = runs.value.filter((run) => run.outcome === 'failure');
+    const chunks: SelfImproveChunk[] = [];
+    if (metrics.value.last_error || failedRuns.length > 0) {
+      const chunk = metrics.value.last_error_chunk ?? failedRuns[0]?.chunk_id ?? 'unknown';
+      chunks.push({
+        id: 'bug-triage-from-run',
+        title: 'Bug triage from latest self-improve run',
+        description: metrics.value.last_error
+          ? `Capture the failure from ${chunk}, find a safer implementation path, and add a verification gate before retry.`
+          : `Review ${failedRuns.length} failed run(s), group recurring errors, and promote the smallest repair chunk.`,
+        trigger: 'Runtime/test failure observed during self-improve',
+        priority: 'high',
+        status: 'ready',
+      });
+    }
+    chunks.push(
+      {
+        id: 'research-better-approach',
+        title: 'Research better implementation approach online',
+        description: 'Before non-trivial self-improve work, compare official docs and recent engineering writeups; record the chosen approach in the chunk plan.',
+        trigger: 'Any new feature, bug fix, tool integration, or API decision',
+        priority: 'medium',
+        status: 'queued',
+      },
+      {
+        id: 'redis-vector-memory-scout',
+        title: 'Scout Redis hybrid/vector search for code memory',
+        description: 'Evaluate Redis as an optional semantic code/documentation index for self-improve retrieval, with SQLite/usearch kept as the default path.',
+        trigger: 'Large-codebase retrieval, repeated context misses, or RAG performance bottlenecks',
+        priority: 'medium',
+        status: 'queued',
+      },
+      {
+        id: 'model-tool-news-radar',
+        title: 'Refresh model, tool, and API recommendations',
+        description: 'Check current model/API/tool news and benchmarks so the coding-LLM picker and autonomous loop can prefer stronger, cheaper, or safer options.',
+        trigger: 'Provider errors, high cost, stale recommendations, or monthly self-improve review',
+        priority: 'low',
+        status: 'queued',
+      },
+    );
+    return chunks;
+  });
 
   function logActivity(level: SelfImproveActivity['level'], message: string): void {
     activity.value.unshift({
@@ -595,6 +667,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     totalCount,
     progressPercent,
     nextPhase,
+    improvementChunks,
     isEnabled,
     isConfigured,
     canEnable,

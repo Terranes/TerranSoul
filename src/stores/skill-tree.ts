@@ -667,16 +667,16 @@ const SKILL_NODES: SkillNode[] = [
   {
     id: 'pet-mode',
     name: 'Desktop Familiar',
-    tagline: 'Floating companion on your desktop',
-    description: 'Your character breaks free of the app window and floats on your desktop as a transparent overlay. Chat from any app!',
+    tagline: 'Floating companion for desktop and web',
+    description: 'Your character breaks free of the normal chat layout: a transparent desktop overlay in Tauri, or a browser pet preview on the web.',
     icon: '🐾',
     tier: 'ultimate',
     requires: ['avatar', 'tts'],
-    rewards: ['Transparent desktop overlay', 'Always-visible companion', 'Chat from any application'],
-    rewardIcons: ['🪟', '📌', '💬'],
+    rewards: ['Transparent desktop overlay', 'Browser pet preview', 'Always-visible companion', 'Chat from any application'],
+    rewardIcons: ['🪟', '🌐', '📌', '💬'],
     questSteps: [
-      { label: 'Run TerranSoul desktop app (Tauri required)', action: 'info' },
-      { label: 'Click the paw icon in the sidebar to enter Pet Mode', action: 'navigate', target: 'pet-mode' },
+      { label: 'Open Pet Mode from the paw button or browser pet preview', action: 'navigate', target: 'pet-mode' },
+      { label: 'For transparent desktop overlay mode, run TerranSoul as the Tauri desktop app', action: 'info' },
     ],
     category: 'avatar',
     combos: [
@@ -687,7 +687,7 @@ const SKILL_NODES: SkillNode[] = [
         icon: '🦊',
       },
     ],
-    platforms: ['windows', 'macos', 'linux'], // Desktop only
+    platforms: ['windows', 'macos', 'linux', 'web'],
   },
   
   // ── WINDOWS-SPECIFIC FEATURES ──────────────────────────────────────────
