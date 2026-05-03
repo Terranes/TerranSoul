@@ -124,10 +124,19 @@ describe('useSkillTreeStore — skill nodes catalogue', () => {
     expect(node!.platforms).toContain('web');
     expect(node!.questSteps[0].target).toBe('pet-mode');
 
+    expect(store.questEventActive).toBe(false);
+    expect(store.questEventNode?.id).toBeUndefined();
+
     store.triggerQuestEvent('pet-mode');
+    expect(store.questEventActive).toBe(true);
+    expect(store.questEventNode?.id).toBe('pet-mode');
+
+    const beforeMessages = conversation.messages.length;
     await store.handleQuestChoice('pet-mode', 'accept');
 
+    expect(conversation.messages.length).toBeGreaterThan(beforeMessages);
     const lastAssistant = conversation.messages[conversation.messages.length - 1];
+    expect(lastAssistant).toBeDefined();
     expect(lastAssistant.questChoices?.some(choice => choice.value === 'navigate:pet-mode')).toBe(true);
   });
 });
@@ -137,8 +146,17 @@ describe('useSkillTreeStore — status detection', () => {
     const store = useSkillTreeStore();
     // Avatar no longer auto-detects — prevents showing as "completed" on first launch
     expect(store.getSkillStatus('avatar')).toBe('available');
+
+    const before = store.tracker.activationTimestamps['avatar'];
     store.markComplete('avatar');
     expect(store.getSkillStatus('avatar')).toBe('active');
+
+    store.recordActivations();
+    const after = store.tracker.activationTimestamps['avatar'];
+    expect(after).toBeDefined();
+    if (before !== undefined) {
+      expect(after).not.toBe(before);
+    }
   });
 
   it('unknown skill returns locked', () => {
@@ -153,15 +171,10 @@ describe('useSkillTreeStore — status detection', () => {
   });
 
   it('advanced skills with unmet prereqs are locked', () => {
-    // Without brain configured, 'asr' (requires free-brain) should be locked
-    // unless free-brain auto-configures. Since there's no brain mode set:
+    // With default test setup and no prerequisite completion, asr should stay locked.
     const store = useSkillTreeStore();
-    // In test environment, brain.hasBrain is false, so free-brain is not active
-    // Therefore asr (requires free-brain) should be locked
-    // But actually brain.autoConfigureFreeApi may not have run...
-    // Let's just verify the function doesn't throw
     const status = store.getSkillStatus('asr');
-    expect(['locked', 'available', 'active']).toContain(status);
+    expect(status).toBe('locked');
   });
 });
 
