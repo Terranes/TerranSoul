@@ -644,7 +644,7 @@ const activeQuestQuestion = computed(() => {
   const msg = activeQuestMessage.value;
   if (!msg) return '';
   // Pull first line as a short question, or the whole text if short
-  const first = stripMarkdownForSubtitle(msg.content).split(/[.\n]/)[0].trim();
+  const first = stripMarkdownForSubtitle(msg.content).split(/[\.\n]/)[0].trim();
   return first || 'What would you like to do?';
 });
 
