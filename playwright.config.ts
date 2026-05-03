@@ -26,6 +26,10 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
+    env: {
+      ...process.env,
+      TERRANSOUL_E2E_LOCAL_LLM: '1',
+    },
     url: 'http://localhost:1420',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

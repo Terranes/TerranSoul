@@ -89,15 +89,3 @@ wasm-encoder = "0.244.0"
 # Resolver=2 (default for edition=2021) keeps this dev-only feature out of the
 # production binary.
 tauri = { version = "2", features = ["tray-icon", "test"] }
-
-# ────────────────────────────────────────────────────────────────────────────────────────────
-# Security patch: RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g
-# glib 0.18.5 has UB in VariantStrIter::impl_get (passes &p instead of &mut p).
-# Fixed in glib 0.20.0, but Tauri 2.x pins gtk 0.18 which requires glib ^0.18.
-# This patch points to a community fork that backports the 2-line fix to 0.18.5.
-# Linux-only transitive dep — not compiled on Windows/macOS.
-# Remove once Tauri upgrades to gtk4-rs (glib 0.20+).
-# Track: https://github.com/tauri-apps/tauri/issues/12048
-# ────────────────────────────────────────────────────────────────────────────────────────────
-[patch.crates-io]
-glib = { git = "https://github.com/Quickture/gtk-rs-core.git", branch = "quickture-glib-0.18.5-fix-rustsec-2024-0429" }

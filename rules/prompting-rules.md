@@ -216,6 +216,40 @@ declaring success from stale diagnostics after formatters changed files.
 
 ---
 
+## ENFORCEMENT RULE — Stuck Recovery During Validation
+
+When a user says the agent is stuck, or when a validation/fix loop has spent
+more than two tool cycles without producing a new product change, a smaller
+passing command, or a clearer failure, the agent MUST stop the current loop and
+switch to recovery mode.
+
+Recovery mode requires:
+
+1. Re-baseline with `git status --short`, relevant editor diagnostics, and the
+   current contents of any file the environment says changed since the last
+   request.
+2. State the last completed command, the last failing or inconclusive command,
+   and the single next command that will move the task forward.
+3. Prefer canonical repo commands over custom helper scripts. If a helper script
+   fails because of shell syntax, path quoting, or generated-cache handling,
+   abandon that helper after one fix attempt.
+4. Avoid repeating expensive gates blindly. Run the smallest command that proves
+   the current patch, then run the full gate once at the end.
+5. Clean only artifacts produced by the agent's own validation run, such as
+   `*.tsbuildinfo` or regenerated screenshots, and never revert user edits or
+   unrelated dirty files.
+6. If remote CI logs are unavailable, reproduce the exact workflow command
+   locally and record that limitation. Retry fetching remote logs only after a
+   new signal appears, not in a polling loop.
+7. If the next step is still unclear after recovery mode, pause with the
+   collected evidence instead of continuing to run commands.
+
+This rule exists so future agents recover quickly from terminal/log-reading
+loops, stale diagnostics, and validation side quests while preserving the
+user's worktree.
+
+---
+
 ## Documentation Rules
 
 - Update `rules/milestones.md` after every completed chunk:
