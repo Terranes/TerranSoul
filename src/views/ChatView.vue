@@ -887,22 +887,24 @@ async function handleSend(message: string) {
   // chat message instead of going through the LLM.
   const dispatch = await tryDispatchSlashCommand(message);
   if (dispatch.handled) {
-    conversationStore.messages.push({
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: message,
-      timestamp: Date.now(),
-    });
-    conversationStore.messages.push({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: dispatch.error
-        ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
-        : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
-      agentName: 'TerranSoul',
-      sentiment: dispatch.error ? 'sad' : 'neutral',
-      timestamp: Date.now(),
-    });
+    conversationStore.addMessages([
+      {
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      },
+      {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: dispatch.error
+          ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
+          : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
+        agentName: 'TerranSoul',
+        sentiment: dispatch.error ? 'sad' : 'neutral',
+        timestamp: Date.now(),
+      },
+    ]);
     return;
   }
 
