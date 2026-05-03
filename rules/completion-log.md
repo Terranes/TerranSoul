@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 29.3 — Browser app-window UX hardening](#chunk-293--browser-app-window-ux-hardening) | 2026-05-03 |
 | [Chunk 29.2 — Browser brain transport hardening](#chunk-292--browser-brain-transport-hardening) | 2026-05-03 |
 | [Chunk 29.1 — Browser-mode QA and responsive landing polish](#chunk-291--browser-mode-qa-and-responsive-landing-polish) | 2026-05-03 |
 | [Chunk 28.14 — Path-scoped workflow context loading](#chunk-2814--path-scoped-workflow-context-loading) | 2026-05-03 |
@@ -234,6 +235,32 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 29.3 — Browser app-window UX hardening
+
+**Status:** Complete
+**Date:** 2026-05-03
+
+### Summary
+
+Refined the browser-mode in-page app window so it behaves more like an accessible lightweight substitute for a native window while preserving quick switching between pet preview, 3D, and chat layouts.
+
+### What changed
+
+- Added a focusable app-window root with dialog semantics and non-modal browser behavior.
+- Added explicit toolbar semantics and accessible labels for 3D, Chat, and Pet controls.
+- Added `aria-pressed` mode state to the 3D and Chat buttons.
+- Added Escape handling to close the browser app window back to the pet preview.
+- Focuses the in-page window when opened or when display mode changes.
+- Added `src/App.browser-window.test.ts` covering opening, mode switching, and closing the browser app window.
+- Removed the completed 29.3 row from `rules/milestones.md`; next chunk is 29.4.
+
+### Validation
+
+- `npm run lint` - passed.
+- `npx vitest run src/App.browser-window.test.ts src/views/BrowserLandingView.test.ts` - 5 passed.
 
 ---
 

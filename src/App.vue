@@ -4,9 +4,13 @@
     <Transition name="browser-window">
       <section
         v-if="browserAppWindowOpen"
+        ref="browserAppWindowRef"
         class="browser-app-window"
         role="dialog"
+        aria-modal="false"
         aria-label="TerranSoul browser app window"
+        tabindex="-1"
+        @keydown.escape.stop="closeBrowserAppWindow"
       >
         <header class="browser-window-header">
           <div>
@@ -15,24 +19,33 @@
             </p>
             <h2>TerranSoul live app</h2>
           </div>
-          <div class="browser-window-actions">
+          <div
+            class="browser-window-actions"
+            role="toolbar"
+            aria-label="Browser app display mode"
+          >
             <button
+              type="button"
               :class="{ active: browserDisplayMode === 'desktop' }"
               :aria-pressed="browserDisplayMode === 'desktop'"
-              @click="browserDisplayMode = 'desktop'"
+              aria-label="Switch browser app window to 3D view"
+              @click="setBrowserDisplayMode('desktop')"
             >
               3D
             </button>
             <button
+              type="button"
               :class="{ active: browserDisplayMode === 'chatbox' }"
               :aria-pressed="browserDisplayMode === 'chatbox'"
-              @click="browserDisplayMode = 'chatbox'"
+              aria-label="Switch browser app window to chat view"
+              @click="setBrowserDisplayMode('chatbox')"
             >
               Chat
             </button>
             <button
+              type="button"
               aria-label="Close app window and return to pet preview"
-              @click="browserAppWindowOpen = false"
+              @click="closeBrowserAppWindow"
             >
               Pet
             </button>
@@ -265,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue';
 import { useBrainStore } from './stores/brain';
 import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
@@ -307,6 +320,7 @@ const skipSetup = ref(false);
 const tauriAvailable = ref(false);
 const browserMode = ref(false);
 const browserAppWindowOpen = ref(false);
+const browserAppWindowRef = ref<HTMLElement | null>(null);
 const browserDisplayMode = ref<'desktop' | 'chatbox'>('desktop');
 const questConstellationOpen = ref(false);
 const showFirstLaunchWizard = ref(false);
@@ -360,6 +374,20 @@ function openBrowserAppWindow(mode: 'desktop' | 'chatbox') {
   browserAppWindowOpen.value = true;
 }
 
+function closeBrowserAppWindow() {
+  browserAppWindowOpen.value = false;
+}
+
+function setBrowserDisplayMode(mode: 'desktop' | 'chatbox') {
+  browserDisplayMode.value = mode;
+  void focusBrowserAppWindow();
+}
+
+async function focusBrowserAppWindow() {
+  await nextTick();
+  browserAppWindowRef.value?.focus();
+}
+
 
 
 function handleSkillNavigate(target: string) {
@@ -409,10 +437,18 @@ watch(
 // mode.  Guards against any scenario where the toggle pill might be
 // unreachable (e.g. covered by another app on top).
 function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && browserMode.value && browserAppWindowOpen.value) {
+    browserAppWindowOpen.value = false;
+    return;
+  }
   if (e.key === 'Escape' && isPetMode.value) {
     windowStore.setMode('window');
   }
 }
+
+watch(browserAppWindowOpen, (open) => {
+  if (open) void focusBrowserAppWindow();
+});
 
 onMounted(async () => {
   // Panel-only windows (opened from pet mode) skip the full init sequence.
