@@ -388,7 +388,7 @@ export async function initScene(canvas: HTMLCanvasElement): Promise<SceneContext
   // checkResize() in the render loop is the primary mechanism; this
   // observer triggers a render tick so idle-throttled frames pick up
   // the change promptly.
-  const resizeObserver = new ResizeObserver(() => {
+  const resizeObserver = new ResizeObserver((_entries, _observer) => {
     // Handled by checkResize() in the render loop — just poke a render.
     checkResize();
   });
