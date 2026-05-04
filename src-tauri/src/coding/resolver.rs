@@ -665,14 +665,14 @@ impl AppConfig {
         // run_http_server should be called from main (incoming).
         let caller_names: Vec<&str> = graph.incoming.iter().map(|e| e.symbol_name.as_str()).collect();
         assert!(
-            caller_names.iter().any(|n| *n == "main") || !graph.incoming.is_empty(),
+            caller_names.contains(&"main") || !graph.incoming.is_empty(),
             "run_http_server should have incoming calls (callers): {caller_names:?}"
         );
 
         // run_http_server calls start_server (outgoing).
         let callee_names: Vec<&str> = graph.outgoing.iter().map(|e| e.symbol_name.as_str()).collect();
         assert!(
-            callee_names.iter().any(|n| *n == "start_server"),
+            callee_names.contains(&"start_server"),
             "run_http_server should call start_server: {callee_names:?}"
         );
     }
