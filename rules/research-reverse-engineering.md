@@ -20,6 +20,7 @@
 9. [Integration Analysis — What We Can Learn & Implement](#9-integration-analysis)
 10. [Cursor + Claude Code — Coding Workflow Lessons](#10-cursor--claude-code)
 11. [CocoIndex — Incremental Code Indexing Architecture](#11-cocoindex)
+12. [Claudia — Persistent Brain + Judgment Rules + Slash-Skill Workflows](#12-claudia)
 
 ---
 
@@ -1197,3 +1198,37 @@ this takes seconds; for a 10,000-file monorepo it's minutes.
 This alone gives 80–90% of CocoIndex's performance benefit with zero new
 dependencies. The rest (embedding memoization, code-change invalidation)
 can layer on later.
+
+---
+
+## 12. Claudia
+
+**Repo:** https://github.com/kbanc85/claudia
+**License:** PolyForm Noncommercial 1.0.0 — **patterns and ideas only, no
+code copy.** All adoption work must be a clean-room reimplementation.
+
+### Why this section exists
+
+The full reverse-engineering analysis already lives in
+[`mcp-data/shared/claudia-research.md`](../mcp-data/shared/claudia-research.md)
+(212 lines): architecture, scheduled jobs, slash-skill catalogue, hybrid-search
+weight comparison, two-tier agent team layout, judgment-rules pattern, and
+ten concrete adoption proposals mapped onto existing TerranSoul modules. That
+document is the durable single source of truth — it is also seeded into the
+brain via `mcp-data/shared/memory-seed.sql` so any agent session can retrieve
+it through `brain_search` without re-reading the upstream repo.
+
+### Promotable chunks
+
+The ten adoption proposals are tracked as `Phase 33B` in
+[`rules/backlog.md`](backlog.md#phase-33b--claudia-adoption-catalogue-reverse-engineered-from-kbanc85claudia).
+Promote individual rows to `rules/milestones.md` when they're ready to schedule;
+do not inline-duplicate the analysis here.
+
+### License-boundary reminder
+
+Claudia ships under PolyForm-NC 1.0.0, which forbids commercial use. TerranSoul
+must therefore (a) never copy Claudia source files into the repo, (b) credit
+the project in `CREDITS.md` (already done), and (c) implement adopted patterns
+from scratch using TerranSoul's own modules. This is the same rule the brain
+seed enforces via the `LICENSE BOUNDARY (claudia adoption)` memory entry.

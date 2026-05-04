@@ -354,3 +354,29 @@ SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
   AND d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%';
+
+-- ============================================================================
+-- STACK COVERAGE ANCHOR (single hub node any agent can land on first)
+-- ============================================================================
+-- Documents which memory/retrieval layer each seeded fact-cluster exercises.
+-- Future Phase 33 work (see rules/milestones.md) must keep this in sync.
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'STACK COVERAGE: the mcp-data seed exercises the full TerranSoul retrieval stack — SQLite schema V13 (every row), FTS5 (auto-indexed on insert), KG edges (memory_edges populated by content-LIKE subqueries below), RRF fusion (5 non-vector signals always live; vector signal lights up after Phase 33 chunk 33.1 backfill), HyDE expansion (works on any populated row at query time), and LLM-as-judge reranker (off by default until Phase 33 chunk 33.5 flips it on). See rules/milestones.md Phase 33 for outstanding optimisation chunks.',
+  'mcp-data,architecture,retrieval-stack,phase-33,non-negotiable',
+  10, 'fact', 1746316800000, 'long', 1.0, 'general', 'principle'
+);
+
+-- Wire the anchor to every other seed hub so RRF + KG traversal both land here first.
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
+  AND (
+       d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
+    OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
+    OR d.content LIKE 'CORE LESSON (Stop Calling It Memory%'
+    OR d.content LIKE '%lessons-learned.md captures durable%'
+    OR d.content LIKE '%project-index.md is the single source of truth%'
+    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
+  );
