@@ -241,6 +241,7 @@ export interface MemoryStats {
   long_count: number;
   total_tokens: number;
   avg_decay: number;
+  storage_bytes?: number;
 }
 
 export interface NewMemory {
@@ -550,4 +551,3 @@ export interface TranslationResult {
   target_lang: string;
   confidence: number | null;
 }
-

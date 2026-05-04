@@ -100,6 +100,8 @@ mod tests {
             background_maintenance_enabled: true,
             maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
+            max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -161,6 +163,8 @@ mod tests {
             background_maintenance_enabled: true,
             maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
+            max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -207,6 +211,8 @@ mod tests {
             background_maintenance_enabled: true,
             maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
+            max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
         };
         save(dir.path(), &s).unwrap();
 

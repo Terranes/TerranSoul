@@ -255,4 +255,17 @@ describe('memory store', () => {
     expect(result?.total_edges).toBe(3);
     expect(store.edgeStats?.connected_memories).toBe(4);
   });
+
+  it('enforceStorageLimit calls backend and refreshes after cleanup', async () => {
+    mockInvoke
+      .mockResolvedValueOnce({ before_bytes: 20, after_bytes: 8, max_bytes: 10, deleted: 1 })
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ total: 0, short_count: 0, working_count: 0, long_count: 0, total_tokens: 0, avg_decay: 1, storage_bytes: 8 });
+    const store = useMemoryStore();
+    const report = await store.enforceStorageLimit();
+    expect(report?.deleted).toBe(1);
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'enforce_memory_storage_limit');
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'get_memories');
+    expect(mockInvoke).toHaveBeenNthCalledWith(3, 'get_memory_stats');
+  });
 });

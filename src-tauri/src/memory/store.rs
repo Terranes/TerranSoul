@@ -177,12 +177,25 @@ pub struct MemoryUpdate {
 #[derive(Debug, Clone, Serialize)]
 pub struct MemoryStats {
     pub total: i64,
+    #[serde(rename = "short_count")]
     pub short: i64,
+    #[serde(rename = "working_count")]
     pub working: i64,
+    #[serde(rename = "long_count")]
     pub long: i64,
     pub embedded: i64,
     pub total_tokens: i64,
     pub avg_decay: f64,
+    pub storage_bytes: i64,
+}
+
+/// Result of pruning memory rows to satisfy the configured storage cap.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryCleanupReport {
+    pub before_bytes: i64,
+    pub after_bytes: i64,
+    pub max_bytes: i64,
+    pub deleted: usize,
 }
 
 /// SQLite-backed persistent memory store.
@@ -357,6 +370,39 @@ impl MemoryStore {
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
         rows.collect()
+    }
+
+    /// Return the broad memory list capped by estimated in-memory bytes.
+    ///
+    /// This bounds UI/cache memory without deleting any persisted rows.
+    pub fn get_all_within_storage_bytes(&self, max_bytes: u64) -> SqlResult<Vec<MemoryEntry>> {
+        let max_bytes = max_bytes.min(i64::MAX as u64) as i64;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device,
+                    length(content)
+                    + length(tags)
+                    + COALESCE(length(embedding), 0)
+                    + COALESCE(length(source_url), 0)
+                    + COALESCE(length(source_hash), 0)
+                    + COALESCE(length(obsidian_path), 0)
+                    + 128 AS row_bytes
+             FROM memories ORDER BY importance DESC, created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row_to_entry(row)?, row.get::<_, i64>(21)?)))?;
+
+        let mut used = 0i64;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (entry, row_bytes) = row?;
+            let row_bytes = row_bytes.max(0);
+            if used > 0 && used.saturating_add(row_bytes) > max_bytes {
+                break;
+            }
+            used = used.saturating_add(row_bytes);
+            entries.push(entry);
+        }
+        Ok(entries)
     }
 
     /// Return memories in a specific tier.
@@ -1489,6 +1535,82 @@ impl MemoryStore {
         Ok(deleted)
     }
 
+    /// Estimate the active storage used by memory/RAG rows.
+    pub fn active_storage_bytes(&self) -> SqlResult<i64> {
+        self.conn.query_row(
+            "SELECT COALESCE(SUM(
+                length(content)
+                + length(tags)
+                + COALESCE(length(embedding), 0)
+                + COALESCE(length(source_url), 0)
+                + COALESCE(length(source_hash), 0)
+                + COALESCE(length(obsidian_path), 0)
+                + 128
+            ), 0) FROM memories",
+            [],
+            |r| r.get(0),
+        )
+    }
+
+    /// Prune the least-useful memories until estimated active storage is under `max_bytes`.
+    pub fn enforce_size_limit(&self, max_bytes: u64) -> SqlResult<MemoryCleanupReport> {
+        let max_bytes = max_bytes.min(i64::MAX as u64) as i64;
+        let before = self.active_storage_bytes()?;
+        if before <= max_bytes {
+            return Ok(MemoryCleanupReport {
+                before_bytes: before,
+                after_bytes: before,
+                max_bytes,
+                deleted: 0,
+            });
+        }
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id,
+                    length(content)
+                    + length(tags)
+                    + COALESCE(length(embedding), 0)
+                    + COALESCE(length(source_url), 0)
+                    + COALESCE(length(source_hash), 0)
+                    + COALESCE(length(obsidian_path), 0)
+                    + 128 AS row_bytes
+             FROM memories
+             ORDER BY
+                CASE tier WHEN 'short' THEN 0 WHEN 'working' THEN 1 ELSE 2 END ASC,
+                importance ASC,
+                decay_score ASC,
+                COALESCE(last_accessed, 0) ASC,
+                access_count ASC,
+                created_at ASC",
+        )?;
+        let candidates: Vec<(i64, i64)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<SqlResult<Vec<_>>>()?;
+        drop(stmt);
+
+        let mut current = before;
+        let mut deleted = 0usize;
+        for (id, row_bytes) in candidates {
+            if current <= max_bytes {
+                break;
+            }
+            self.delete(id)?;
+            current = current.saturating_sub(row_bytes.max(0));
+            deleted += 1;
+        }
+
+        if deleted > 0 && self.data_dir.is_some() {
+            let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        }
+
+        Ok(MemoryCleanupReport {
+            before_bytes: before,
+            after_bytes: self.active_storage_bytes()?,
+            max_bytes,
+            deleted,
+        })
+    }
+
     /// Delete **all** memories, edges, and conflicts. Returns the count of
     /// deleted memory rows. The ANN index is rebuilt empty.
     ///
@@ -1547,6 +1669,7 @@ impl MemoryStore {
             [],
             |r| r.get(0),
         )?;
+        let storage_bytes = self.active_storage_bytes()?;
         Ok(MemoryStats {
             total,
             short,
@@ -1555,6 +1678,7 @@ impl MemoryStore {
             embedded,
             total_tokens,
             avg_decay,
+            storage_bytes,
         })
     }
 }
@@ -2237,6 +2361,66 @@ mod tests {
         assert_eq!(stats.short, 1);
         assert_eq!(stats.working, 1);
         assert_eq!(stats.long, 2);
+        assert!(stats.storage_bytes > 0);
+    }
+
+    #[test]
+    fn get_all_within_storage_bytes_limits_memory_cache_not_storage() {
+        let store = MemoryStore::in_memory();
+        let first = store
+            .add(NewMemory {
+                content: "important cached row".repeat(20),
+                tags: "test".into(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                content: "second persisted row".repeat(20),
+                tags: "test".into(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let capped = store.get_all_within_storage_bytes(1).unwrap();
+
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0].id, first.id);
+        assert_eq!(store.count(), 2);
+    }
+
+    #[test]
+    fn enforce_size_limit_prunes_low_utility_memories_first() {
+        let store = MemoryStore::in_memory();
+        let old = store
+            .add(NewMemory {
+                content: "old low utility memory with enough text to consume space".into(),
+                tags: "test".into(),
+                importance: 1,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let keep = store
+            .add(NewMemory {
+                content: "important recent memory with enough text to consume space".into(),
+                tags: "test".into(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let before = store.active_storage_bytes().unwrap();
+
+        let report = store.enforce_size_limit((before - 1) as u64).unwrap();
+
+        assert_eq!(report.deleted, 1);
+        assert!(store.get_by_id(old.id).is_err());
+        assert!(store.get_by_id(keep.id).is_ok());
+        assert!(report.after_bytes <= report.max_bytes);
     }
 
     #[test]

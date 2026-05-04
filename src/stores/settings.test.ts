@@ -25,6 +25,8 @@ const SCHEMA_V1_SETTINGS: AppSettings = {
   bgm_volume: 0.15,
   bgm_track_id: 'prelude',
   bgm_custom_tracks: [],
+  max_memory_gb: 10,
+  max_memory_mb: 10,
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -44,6 +46,8 @@ describe('useSettingsStore', () => {
     expect(store.settings.bgm_enabled).toBe(false);
     expect(store.settings.bgm_volume).toBeCloseTo(0.15);
     expect(store.settings.bgm_track_id).toBe('prelude');
+    expect(store.settings.max_memory_gb).toBe(10);
+    expect(store.settings.max_memory_mb).toBe(10);
   });
 
   it('loadSettings populates settings from Tauri IPC', async () => {
@@ -158,5 +162,25 @@ describe('useSettingsStore', () => {
     await store.setChatboxMode(true);
     await store.setChatboxMode(false);
     expect(store.settings.chatbox_mode).toBe(false);
+  });
+
+  it('saveMaxMemoryGb persists a clamped memory cap', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveMaxMemoryGb(12.5);
+    expect(store.settings.max_memory_gb).toBe(12.5);
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ max_memory_gb: 12.5 }),
+    });
+  });
+
+  it('saveMaxMemoryMb persists a clamped in-memory RAG cap', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveMaxMemoryMb(12);
+    expect(store.settings.max_memory_mb).toBe(12);
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ max_memory_mb: 12 }),
+    });
   });
 });

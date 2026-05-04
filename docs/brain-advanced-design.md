@@ -901,6 +901,19 @@ Decay Score
   • GC removes: decay < 0.05 AND importance ≤ 2
 ```
 
+### Configurable Memory + Storage Caps
+
+Brain memory/RAG has two separate user-configurable limits:
+
+- **Memory configuration** — `AppSettings.max_memory_mb` defaults to **10 MB** and is clamped to `1..=1024` MB. Broad list/cache calls use `MemoryStore::get_all_within_storage_bytes(max_bytes)` so the app only keeps a bounded brain memory/RAG working set in memory.
+- **Storage configuration** — `AppSettings.max_memory_gb` defaults to **10 GB** and is clamped to `1..=100` GB. The full corpus is persisted to storage until this cap requires pruning.
+- `MemoryView` exposes numeric inputs and draggable range controls for both "Brain memory & RAG in memory" and "Brain memory & RAG in storage".
+- `MemoryStore::stats()` reports estimated active memory storage (`storage_bytes`) so the UI can show current usage against the cap.
+- `MemoryStore::enforce_size_limit(max_bytes)` prunes rows until estimated active storage is under the cap, ordering candidates by lowest tier priority, lowest importance, lowest decay score, oldest access, lowest access count, and oldest creation time.
+- The cap is enforced after manual memory writes, LLM fact extraction, summaries, replay extraction, manual GC, and the background maintenance garbage-collection job.
+
+This keeps the in-memory working set small while persisting everything to storage by default, then keeps the stored RAG index fresh by deleting low-utility stale memories first only when the 10 GB storage cap is exceeded.
+
 ### Category-Aware Decay (Proposed)
 
 Different categories should decay at different rates:
