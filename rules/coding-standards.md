@@ -32,6 +32,55 @@
 - **No empty trait implementations.** Every trait `impl` has working method bodies.
 - **Every committed file must compile and function.** No non-functional scaffolding.
 
+---
+
+## Multi-Agent Instruction Sync
+
+> **ENFORCEMENT RULE — Agent instructions must work for ALL AI coding agents,
+> not just GitHub Copilot.**
+
+TerranSoul is developed by multiple AI coding agents: GitHub Copilot, Claude
+Code, Codex CLI, Cursor, Continue.dev, Aider, and others. Each agent has its
+own auto-loaded instruction file format:
+
+| Agent | Auto-loaded file |
+|---|---|
+| GitHub Copilot | `.github/copilot-instructions.md` |
+| Claude Code | `CLAUDE.md` (repo root) |
+| Codex CLI / OpenAI agents | `AGENTS.md` (repo root) |
+| Cursor | `.cursorrules` (repo root) |
+
+**Canonical source:** `.github/copilot-instructions.md` is the single source
+of truth for project-wide instructions. It contains the full architecture,
+coding standards, session protocol, and operational rules.
+
+**Satellite files:** `CLAUDE.md`, `AGENTS.md`, and `.cursorrules` are thin
+pointers that:
+1. Declare the canonical source (`.github/copilot-instructions.md`)
+2. List the files to read for full context (in priority order)
+3. Provide a minimal "Quick Reference" so the agent has enough context to
+   start without reading every file
+
+**Rules:**
+
+1. **Never edit satellite files directly.** All substantive content lives in
+   `.github/copilot-instructions.md`. Satellite files only point to it.
+2. **When you add a new rule or change instructions** in
+   `.github/copilot-instructions.md`, verify the satellite files' Quick
+   Reference still matches. If the change is significant (new section,
+   renamed command, removed pattern), update the Quick Reference in all
+   satellite files in the same commit.
+3. **When a new AI agent becomes popular** and has its own instruction file
+   convention, add a satellite file for it and update this table.
+4. **MCP bootstrap is agent-agnostic.** The `rules/agent-mcp-bootstrap.md`
+   file is already addressed to all agents. It must never contain
+   Copilot-specific language or assume VS Code is the editor.
+5. **The `CodingWorkflowConfig`** (in `src-tauri/src/coding/mod.rs`) already
+   includes `AGENTS.md` in its default `include_files` — this means the
+   self-improve engine and coding workflows also see the instructions.
+
+---
+
 ## Third-Party Naming & Licensing Hygiene
 
 - Do not name modules, files, commands, Tauri IPC identifiers, types, seed IDs,

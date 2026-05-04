@@ -1,0 +1,32 @@
+# TerranSoul MCP Mode — Docker Compose
+#
+# Runs the headless MCP brain server in a container, fully isolated
+# from dev (port 1420/7422) and release (port 7421) modes.
+#
+# Usage:
+#   npm run mcp            # build + start (detached)
+#   npm run mcp:stop       # stop
+#   npm run mcp:logs       # tail logs
+#   npm run mcp:rebuild    # rebuild after code changes
+#
+# Data persists in the `terransoul-mcp-data` Docker volume across
+# container rebuilds. To wipe: docker volume rm terransoul-mcp-data
+
+services:
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: terransoul-mcp
+    ports:
+      - "7423:7423"
+    volumes:
+      - terransoul-mcp-data:/home/terransoul/mcp-data
+    restart: unless-stopped
+    environment:
+      - TERRANSOUL_MCP_DATA_DIR=/home/terransoul/mcp-data
+      - RUST_LOG=info
+
+volumes:
+  terransoul-mcp-data:
+    name: terransoul-mcp-data

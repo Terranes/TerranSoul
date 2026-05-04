@@ -35,20 +35,20 @@ clone GitNexus.
 
 | Capability | GitNexus | TerranSoul today | Gap | Tracked |
 |---|---|---|---|---|
-| **Index pipeline** | tree-sitter native bindings, 14 languages, multi-phase pipeline (structure / parse / resolve / cluster / process / search) | None — no code parser, no AST, no symbol table | Total | Chunk 31.3 (proposed) |
+| **Index pipeline** | tree-sitter native bindings, 14 languages, multi-phase pipeline (structure / parse / resolve / cluster / process / search) | tree-sitter Rust + TypeScript parsing, single-pass symbol + edge extraction, `code_symbols` + `code_edges` SQLite tables, `code_index_repo` Tauri command | Partial (2/14 languages, no multi-phase) | Chunk 31.3 (**shipped**) |
 | **Storage** | LadybugDB embedded graph DB (formerly KuzuDB), Cypher queries, vector index | SQLite memory store, FTS5 keyword + HNSW vector ANN, no graph schema for code | Total — different DB shape | Chunk 31.4 (proposed) |
-| **Symbol-level retrieval** | Functions/classes/methods/interfaces with file+line, heritage, exports, imports | Free-text chunks only | Total | Chunk 31.3 |
-| **Call graph (CALLS)** | Cross-file resolved call edges with confidence scores | None | Total | Chunk 31.3 |
-| **Import graph (IMPORTS)** | Cross-file import resolution + named bindings + re-exports | None | Total | Chunk 31.3 |
+| **Symbol-level retrieval** | Functions/classes/methods/interfaces with file+line, heritage, exports, imports | Functions/methods/structs/enums/classes/interfaces/traits with file+line+kind+parent, `query_symbols_by_name` + `query_symbols_in_file` | Partial (no heritage/re-exports yet) | Chunk 31.3 (**shipped**) |
+| **Call graph (CALLS)** | Cross-file resolved call edges with confidence scores | Cross-file resolved call edges with `exact`/`inferred` confidence, `code_call_graph(symbol)` Tauri command returning incoming + outgoing | Partial (name-based resolution, no full type inference) | Chunk 31.3 + 31.4 (**shipped**) |
+| **Import graph (IMPORTS)** | Cross-file import resolution + named bindings + re-exports | Import resolution via symbol-name matching with file-proximity heuristic, `exact`/`inferred` confidence | Partial (no re-exports, no path-level Rust module resolution yet) | Chunk 31.3 + 31.4 (**shipped**) |
 | **Heritage graph (EXTENDS / IMPLEMENTS)** | Per-language heritage extraction | None | Total | Chunk 31.3 |
 | **Type resolution / receiver inference** | Constructor inference, `self`/`this` mapping, return-aware loop inference | None | Total | Chunk 31.3 |
 | **Functional clustering** | Leiden community detection on the symbol graph | None | Total | Chunk 31.5 |
 | **Execution-flow / process tracing** | Entry-point scoring → call-chain traces → `process_id` indexing | None | Total | Chunk 31.5 |
 | **Hybrid search** | BM25 + semantic (HF transformers.js) + RRF, process-grouped | BM25 + ANN + RRF over text chunks (no symbol awareness) | Partial — engine exists, not aimed at code | Chunk 31.6 |
-| **`query` MCP tool (process-grouped search)** | Returns processes + step-indexed symbols + definitions | `brain_search` returns text chunks | Partial | Chunk 31.6 |
-| **`context` MCP tool (360° symbol view)** | incoming/outgoing CALLS, IMPORTS, processes, depth grouping | None | Total | Chunk 31.6 |
-| **`impact` MCP tool (blast-radius)** | Upstream/downstream traversal with confidence + relation filters | None | Total | Chunk 31.6 |
-| **`detect_changes` MCP tool (git-diff impact)** | Maps changed lines to affected processes via symbol resolution | None — we have git mirror but no symbol map | Total | Chunk 31.6 |
+| **`query` MCP tool (process-grouped search)** | Returns processes + step-indexed symbols + definitions | `brain_search` returns text chunks; `code_query` MCP tool delegates to GitNexus sidecar when configured | Partial | Chunk 31.2 (**shipped**), Chunk 31.6 (native) |
+| **`context` MCP tool (360° symbol view)** | incoming/outgoing CALLS, IMPORTS, processes, depth grouping | `code_context` MCP tool delegates to GitNexus sidecar | Partial (sidecar-dependent) | Chunk 31.2 (**shipped**), Chunk 31.6 (native) |
+| **`impact` MCP tool (blast-radius)** | Upstream/downstream traversal with confidence + relation filters | `code_impact` MCP tool delegates to GitNexus sidecar | Partial (sidecar-dependent) | Chunk 31.2 (**shipped**), Chunk 31.6 (native) |
+| **`detect_changes` MCP tool (git-diff impact)** | Maps changed lines to affected processes via symbol resolution | `code_detect_changes` MCP tool delegates to GitNexus sidecar | Partial (sidecar-dependent) | Chunk 31.2 (**shipped**), Chunk 31.6 (native) |
 | **`rename` MCP tool (multi-file)** | Graph-coordinated rename + text fallback, dry-run + edit list | None | Total | Chunk 31.7 |
 | **`cypher` MCP tool (raw graph)** | Direct Cypher over LadybugDB | None | Total | Skip — depends on DB choice |
 | **Multi-repo `group_*` tools** | Cross-repo contract extraction + matching, group queries | None | Total | Out of scope (single-machine companion) |
@@ -95,8 +95,8 @@ ordered so each chunk produces a usable increment:
 
 | Chunk | What it adds | Why it's first |
 |---|---|---|
-| 31.1 | Pet-mode Web UI (already queued) | Immediate visibility; no code-graph dependency. |
-| 31.2 | This audit doc + matrix | Done in this PR. |
+| 31.1 | MCP app mode + pet-mode runner | Immediate visibility; no code-graph dependency. |
+| 31.2 | 5 code-intelligence MCP tools delegating to GitNexus sidecar | ✅ Shipped — external agents can now reach `code_query`/`code_context`/`code_impact`/`code_detect_changes`/`code_graph_sync` via `tools/list` when `code_read` is granted. |
 | 31.3 | tree-sitter ingest + symbol table (Rust + TS first) | Foundation for all code-aware tools. |
 | 31.4 | Symbol/edge SQLite schema + migration | Storage layer. |
 | 31.5 | Cluster detection + entry-point scoring + processes | Enables `query` process-grouping. |

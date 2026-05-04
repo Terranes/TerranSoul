@@ -39,8 +39,10 @@ pub mod multi_agent;
 pub mod promotion_plan;
 pub mod prompting;
 pub mod repo;
+pub mod resolver;
 pub mod reviewer;
 pub mod session_chat;
+pub mod symbol_index;
 pub mod task_queue;
 pub mod test_runner;
 pub mod workflow;
@@ -277,6 +279,12 @@ pub struct SelfImproveSettings {
     /// audit trails. Empty string when never enabled.
     #[serde(default)]
     pub last_provider: String,
+    /// Custom directory for self-improve worktrees. When set, worktrees are
+    /// created here instead of the OS temp directory. This lets users inspect
+    /// the worktree with `git worktree list`, open it in GitHub Desktop, or
+    /// browse it in a file manager. Empty or missing = OS temp dir (default).
+    #[serde(default)]
+    pub worktree_dir: String,
 }
 
 /// Load the self-improve settings (defaults to disabled).
@@ -472,6 +480,7 @@ mod tests {
             updated_at: 1714000000,
             last_acknowledged_at: 1714000000,
             last_provider: "anthropic".to_string(),
+            worktree_dir: String::new(),
         };
         save_self_improve(dir.path(), &s).unwrap();
 

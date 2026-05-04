@@ -16,7 +16,8 @@
     "tauri": "tauri",
     "tauri:ios:check": "node scripts/tauri-ios-check.mjs",
     "tauri:ios:init": "node scripts/tauri-ios-check.mjs --init",
-    "mcp": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-http"
+    "mcp": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-http",
+    "mcp:app": "npx vite build && cargo run --release --manifest-path src-tauri/Cargo.toml -- --mcp-app"
   },
   "dependencies": {
     "@bufbuild/connect": "^0.13.0",

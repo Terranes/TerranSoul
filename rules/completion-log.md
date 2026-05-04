@@ -21,6 +21,10 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 31.3 — tree-sitter symbol-table ingest (Rust + TS)](#chunk-313--tree-sitter-symbol-table-ingest-rust--ts) | 2026-05-04 |
+| [Chunk 31.2 — Surface GitNexus tools through MCP](#chunk-312--surface-gitnexus-tools-through-mcp) | 2026-05-04 |
+| [Chunk 31.1b — MCP Mode live model activity + speech](#chunk-311b--mcp-mode-live-model-activity--speech) | 2026-05-04 |
+| [Chunk 31.1 — MCP Mode launches the full Tauri app with an "MCP" badge](#chunk-311--mcp-mode-launches-the-full-tauri-app-with-an-mcp-badge) | 2026-05-04 |
 | [Chunk 30.7.5 — Headless MCP "pet mode" runner (`npm run mcp`)](#chunk-3075--headless-mcp-pet-mode-runner-npm-run-mcp) | 2026-05-04 |
 | [Chunk 30.7 — Charisma turn-level bulk rating](#chunk-307--charisma-turn-level-bulk-rating) | 2026-05-04 |
 | [Chunk 30.6 — Self-improve session transcript auto-append](#chunk-306--self-improve-session-transcript-auto-append) | 2026-05-04 |
@@ -246,6 +250,160 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 31.3 — tree-sitter symbol-table ingest (Rust + TS)
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Add a local symbol-table ingest pipeline using tree-sitter so TerranSoul can answer code-intelligence queries without the GitNexus sidecar.
+
+**Architecture:**
+- New module `src-tauri/src/coding/symbol_index.rs` (~850 lines)
+- tree-sitter 0.24 + tree-sitter-rust 0.23 + tree-sitter-typescript 0.23 (MIT licensed)
+- Separate `code_index.sqlite` database (WAL mode) with 3 tables: `code_repos`, `code_symbols`, `code_edges`
+- Walks repo → filters `.rs`/`.ts`/`.tsx` → parses ASTs → extracts symbols (11 kinds) + edges (CALLS/IMPORTS)
+- `index_repo(data_dir, repo_path)` main entry, returns `IndexStats`
+- `query_symbols_by_name` / `query_symbols_in_file` query helpers
+- Tauri command `code_index_repo(repo_path)` via `tokio::task::spawn_blocking`
+- 3 test functions (Rust parsing, TS parsing, edge extraction)
+
+**Files changed:**
+- `src-tauri/Cargo.toml` — added tree-sitter dependencies
+- `src-tauri/src/coding/symbol_index.rs` — new module
+- `src-tauri/src/coding/mod.rs` — added `pub mod symbol_index`
+- `src-tauri/src/commands/coding.rs` — added `code_index_repo` command
+- `src-tauri/src/lib.rs` — registered command in invoke_handler
+- `docs/gitnexus-capability-matrix.md` — marked index pipeline + symbol-level retrieval rows shipped
+
+---
+
+## Chunk 31.2 — Surface GitNexus tools through MCP
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Expose the 5 GitNexus sidecar code-intelligence methods (`query`, `context`, `impact`, `detect_changes`, `graph`) as MCP tools visible to external AI coding agents via `tools/list`.
+
+**Architecture:**
+- 5 new MCP tool definitions (`code_query`, `code_context`, `code_impact`, `code_detect_changes`, `code_graph_sync`) in `src-tauri/src/ai_integrations/mcp/tools.rs`
+- `definitions(caps)` conditionally includes code tools when `caps.code_read = true` (13 total tools vs 8 brain-only)
+- `dispatch()` now accepts optional `app_state: Option<&AppState>` for code tools
+- `dispatch_code_tool()` checks `code_read` capability, resolves `AppState`, delegates to `ensure_sidecar()` → `GitNexusSidecar` methods
+- `ensure_sidecar()` checks `code_intelligence` capability grant, returns cached bridge or spawns fresh sidecar
+- On "sidecar not configured" returns structured `isError: true` response pointing at `configure_gitnexus_sidecar`
+- `McpRouterState` now carries `app_state: Option<AppState>` for code tool access
+- `dispatch_method` is split into `dispatch_method` (backward-compat wrapper) + `dispatch_method_with_state` (full version with app_state)
+- MCP server caps now default to `code_read: true` (MCP clients are coding agents)
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — tool definitions + dispatch + `ensure_sidecar` + 7 unit tests
+- `src-tauri/src/ai_integrations/mcp/router.rs` — `McpRouterState.app_state` field, `dispatch_method_with_state`
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — pass `app_state` + `code_read: true` in caps
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — updated to 13 tools + 5 code tool error tests
+- `docs/brain-advanced-design.md` — § 24.6.1 code-intelligence MCP tools table
+- `docs/gitnexus-capability-matrix.md` — code tool rows marked "shipped (Chunk 31.2)"
+- `README.md` — already documented from prior session
+
+**Tests:** 7 unit tests (tools.rs) + 5 integration tests (integration_tests.rs) = 12 total new test cases
+
+---
+
+## Chunk 31.1b — MCP Mode live model activity + speech
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+### Summary
+
+Added a live activity bridge for MCP app mode so the visible companion shows
+which brain provider/model is active, what MCP tool an external coding agent is
+using, and a concise narration of the current work. Spoken snapshots reuse the
+existing frontend TTS pipeline instead of adding a second speech stack.
+
+### Changes
+
+- `src-tauri/src/ai_integrations/mcp/activity.rs` — new
+  `McpActivityReporter` + `McpActivitySnapshot` model, with startup, ready,
+  tool-start, tool-success, and tool-error phases.
+- `src-tauri/src/ai_integrations/mcp/router.rs` — wraps `tools/call` dispatch
+  to record activity before and after each MCP tool run.
+- `src-tauri/src/ai_integrations/mcp/mod.rs` and `src-tauri/src/lib.rs` — start
+  the MCP server with an optional `AppHandle`, emit `mcp-activity`, and keep the
+  last snapshot on `AppStateInner.mcp_activity`.
+- `src-tauri/src/commands/mcp.rs` — new `get_mcp_activity` command for late
+  frontend joiners.
+- `src/stores/mcp-activity.ts` and `src/components/McpActivityPanel.vue` — Pinia
+  event listener + fixed MCP activity HUD that displays provider/model/work and
+  speaks snapshots through `useTtsPlayback`.
+- `src/App.vue` — mounts the activity panel only in MCP mode.
+- `README.md` and `docs/brain-advanced-design.md` — documented the MCP activity
+  channel, `get_mcp_activity`, and spoken HUD behavior.
+
+### Verification
+
+- `cargo check` clean.
+- `cargo clippy -- -D warnings` clean.
+- `npx vue-tsc --noEmit` clean.
+- `npx vitest run` — **124/124 files, 1623/1623 tests pass.**
+- `cargo test` built the Rust test binary but Windows failed to launch it with
+  `STATUS_ENTRYPOINT_NOT_FOUND` before the harness started; a single-test run
+  failed the same way, so this appears to be a local Windows loader/runtime
+  issue rather than a test assertion failure.
+
+---
+
+## Chunk 31.1 — MCP Mode launches the full Tauri app with an "MCP" badge
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+### Summary
+
+Pivoted Chunk 31.1 from an embedded HTML/JS dashboard to launching the
+**actual TerranSoul Tauri app** in a dedicated "MCP mode" — same UI, same
+RAG/memory/brain plumbing, just isolated state and a different bottom-left
+badge. External coding agents (Copilot/Codex/Claude Code/Clawcode) can now
+attach to the live app without colliding with `npm run dev` or a release
+build, and developers see the full live state instead of a stripped-down
+dashboard.
+
+### Changes
+
+- `src-tauri/src/main.rs` — `--mcp-app` (legacy alias `--mcp-http`) sets
+  `TERRANSOUL_MCP_APP_MODE=1` and falls through to the regular Tauri
+  bootstrap (`terransoul_lib::run()`).
+- `src-tauri/src/lib.rs` — at Tauri `setup` time, when the env var is
+  set, the app: (a) calls `ai_integrations::mcp::enable_mcp_pet_mode()`
+  so the JSON-RPC `initialize` and `/status` advertise
+  `serverInfo.name = "terransoul-brain-mcp"` + `buildMode = "mcp"`,
+  (b) overrides the data dir to `<cwd>/mcp-data/` (or
+  `TERRANSOUL_MCP_DATA_DIR`), (c) auto-spawns the MCP HTTP server on
+  `HEADLESS_MCP_PORT = 7423` with a bearer token, parking the handle on
+  `AppState::mcp_server` so the existing UI controls keep working.
+- `src-tauri/src/commands/window.rs` — new Tauri command `is_mcp_mode`
+  paralleling `is_dev_build`.
+- `src/stores/window.ts` — `isMcpMode` ref + `loadMcpModeFlag()`.
+- `src/App.vue` — three build-mode badge sites (pet overlay top-left,
+  desktop sidebar, mobile bottom bar) now render "MCP" with a teal/info
+  tone when in MCP mode, falling back to the "DEV" badge otherwise.
+- `src/components/ui/FloatingBadge.vue` + `src/style.css` — added the
+  `info` tone variant.
+- `package.json` — `"mcp": "vite build && cargo run --release ... -- --mcp-app"` —
+  builds frontend with Vite in production mode, then launches the Tauri
+  release binary in MCP mode (fully isolated from dev toolchain).
+
+### Verification
+
+- `cargo check` clean.
+- `npx vue-tsc --noEmit` clean.
+- `npx vitest run` — **122/122 files, 1620/1620 tests pass.**
 
 ---
 

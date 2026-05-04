@@ -102,11 +102,16 @@ pub async fn set_self_improve_enabled(
     };
 
     let now = now_secs();
+    let existing_worktree_dir = {
+        let s = state.self_improve.lock().map_err(|e| e.to_string())?;
+        s.worktree_dir.clone()
+    };
     let next = SelfImproveSettings {
         enabled,
         updated_at: now,
         last_acknowledged_at: if enabled { now } else { 0 },
         last_provider: if enabled { provider } else { String::new() },
+        worktree_dir: existing_worktree_dir,
     };
     coding::save_self_improve(&state.data_dir, &next)?;
     let mut slot = state.self_improve.lock().map_err(|e| e.to_string())?;
@@ -213,7 +218,12 @@ pub async fn start_self_improve(app: AppHandle, state: State<'_, AppState>) -> R
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
-    coding::engine::start(app, engine, cfg, workflow_cfg, repo_hint).await;
+    let worktree_dir = {
+        let s = state.self_improve.lock().map_err(|e| e.to_string())?;
+        let d = s.worktree_dir.clone();
+        if d.is_empty() { None } else { Some(d) }
+    };
+    coding::engine::start(app, engine, cfg, workflow_cfg, worktree_dir, repo_hint).await;
     Ok(())
 }
 
@@ -699,6 +709,124 @@ pub async fn list_local_coding_models(
 
 fn strip_trailing_slash(s: &str) -> &str {
     s.trim_end_matches('/')
+}
+
+// ---------------------------------------------------------------------------
+// Self-improve worktree management
+// ---------------------------------------------------------------------------
+
+/// Set (or clear) the custom worktree directory used for self-improve
+/// execution. Pass an empty string to revert to the default (OS temp dir).
+///
+/// The path is persisted alongside the other self-improve settings.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_self_improve_worktree_dir(
+    dir: String,
+    state: State<'_, AppState>,
+) -> Result<SelfImproveSettings, String> {
+    let mut slot = state.self_improve.lock().map_err(|e| e.to_string())?;
+    slot.worktree_dir = dir;
+    coding::save_self_improve(&state.data_dir, &slot)?;
+    Ok(slot.clone())
+}
+
+/// List all git worktrees attached to the TerranSoul repo.
+///
+/// Returns an array of `{ path, head, branch }` objects. Self-improve
+/// worktrees appear with branch "(detached)".
+///
+/// Users can open a worktree in their editor/terminal:
+/// - VS Code: `code <path>`
+/// - GitHub Desktop: File → Add Local Repository → paste the path
+/// - Terminal: `cd <path>`
+/// - Or run `git worktree list` from the main repo
+#[tauri::command]
+pub async fn list_self_improve_worktrees(
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::worktree::WorktreeInfo>, String> {
+    let repo = coding_repo::detect_repo(&state.data_dir);
+    let repo_root = repo.root.as_deref()
+        .ok_or_else(|| "No git repository detected".to_string())?;
+    let repo_root = std::path::Path::new(repo_root);
+    coding::worktree::list_worktrees(repo_root)
+}
+
+/// Index a repository's Rust and TypeScript source files into the local
+/// symbol table. Returns stats (files parsed, symbols/edges extracted).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_index_repo(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<coding::symbol_index::IndexStats, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || coding::symbol_index::index_repo(&data_dir, &repo).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Resolve cross-file import/call edges for an already-indexed repo.
+/// Returns stats on how many edges were resolved.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_resolve_edges(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<coding::resolver::ResolveStats, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || coding::resolver::resolve_edges(&data_dir, &repo).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Get the call graph for a symbol: incoming callers + outgoing callees.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_call_graph(
+    repo_path: String,
+    symbol_name: String,
+    state: State<'_, AppState>,
+) -> Result<coding::resolver::CallGraph, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        let symbol = symbol_name.clone();
+        move || {
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
+            let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+            let repo_str = repo.to_string_lossy().to_string();
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_str],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_str}"))?;
+            coding::resolver::call_graph(&conn, repo_id, &symbol).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
 }
 
 #[cfg(test)]

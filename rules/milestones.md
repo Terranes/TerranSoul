@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 30.8 — Obsidian Credits Audit.**
+**Chunk 31.4 — Cross-file resolution + call graph.**
 
 ---
 
@@ -45,11 +45,25 @@
 
 ---
 
-## Phase 31 — Headless MCP Pet Mode
+## Phase 31 — MCP Mode
+
+> The `npm run mcp` runner exposes TerranSoul's brain to AI coding
+> agents (Copilot/Codex/Claude Code/Clawcode) via MCP. These chunks
+> close the gap between TerranSoul's existing GitNexus sidecar
+> integration (Chunks 2.1, 2.3 — already shipped, see
+> `src-tauri/src/agent/gitnexus_sidecar.rs`,
+> `commands/gitnexus.rs`, `memory/gitnexus_mirror.rs`) and the
+> capability surface external agents see today. See
+> [`docs/gitnexus-capability-matrix.md`](../docs/gitnexus-capability-matrix.md).
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 31.1 | not-started | MCP Pet Mode Web UI | The headless `npm run mcp` runner currently has no UI — only `GET /status` and `POST /mcp`. Add a small **read-only-by-default Vue/Vite frontend** served by the same axum process so developers can monitor and adjust the brain's RAG/memory state live during a coding session. Scope: (1) static SPA built with Vite, output bundled into the Rust binary via `rust-embed` or `include_dir!` (no extra runtime, no separate `npm run` step); (2) routes — Dashboard (live `/status` poll: provider, model, RAG quality, memory total, server uptime), Memory Browser (list_recent + search), Ingest panel (paste text or URL → call `brain_ingest`), Health/Logs (recent server-side errors), Settings (brain provider/model picker reusing the existing `BrainSelection` types — local Ollama default, paid/free cloud opt-in). (3) Auth — UI loads bearer token from a query param on first navigation (`/?token=...`), stores it in `sessionStorage`, and adds it to every fetch; `npm run mcp` prints the full URL with embedded token at startup. (4) Hard scope rules from `rules/agent-mcp-bootstrap.md` still apply: no quest prompts, no charisma onboarding, no persona drift UI, no voice setup, no notifications — this UI exposes brain/RAG/memory **only**. (5) New axum routes: `GET /` (index.html), `GET /assets/*` (Vite bundle). (6) Tests: Vitest for the Vue components (mocked fetch), Rust integration test confirming `/` returns 200 with HTML. Update `rules/agent-mcp-bootstrap.md`, `docs/brain-advanced-design.md`, and `README.md` per the brain-doc-sync rule. |
-| 31.2 | not-started | GitNexus Competitive Audit & Catch-up | Audit TerranSoul's current GitNexus surface (`src-tauri/src/agent/gitnexus_sidecar.rs`, `commands/gitnexus.rs`, `memory/gitnexus_mirror.rs`) against the public GitNexus capability set (repo introspection, semantic code search, symbol-level retrieval, dependency graph, change impact analysis, PR review hooks, multi-repo workspaces, CI integration, branch/PR-aware memory, MCP exposure). For each capability: (a) document current TerranSoul status (have / partial / missing) in a new `docs/gitnexus-capability-matrix.md`, (b) cite the exact file/function or note the gap, (c) for each gap that is plausibly within scope of a local-first companion (loopback only, no cloud sync of code), add a follow-up chunk row in this file with a one-line goal. Out of scope on purpose: anything that requires hosting code in a vendor cloud, PR-creation against arbitrary remotes (already covered by `coding/github.rs`), or paid features that conflict with TerranSoul's local-first stance. End state: this chunk produces the matrix doc + the new chunk rows; the actual catch-up implementation work happens in those follow-up chunks. Update `docs/brain-advanced-design.md` and `README.md` if the audit reveals brain-surface gaps (graph-aware retrieval, symbol-keyed memory, etc.) per the brain-doc-sync rule. |
+| 31.4 | not-started | Cross-file resolution + call graph | Build on Chunk 31.3. Add a second pass that resolves imports → file paths and call sites → callee symbol ids using a per-language scope resolver (Rust: `use` paths + `crate::`/`super::` rules; TypeScript: `import { X }` + `tsconfig.json` paths). Populate the `code_edges` table with typed `CALLS` and `IMPORTS` rows + a confidence score (`exact` / `inferred`). New module `src-tauri/src/coding/resolver.rs`. Add `code_call_graph(symbol)` Tauri command returning incoming + outgoing edges. Tests: assert that `run_http_server` calls `start_server` and is called from `main`. Update the capability matrix (rows: call graph, import graph, type resolution). |
+| 31.5 | not-started | Functional clustering + entry-point scoring + processes | Build on Chunk 31.4. Use the `petgraph` crate (MIT) to load the symbol/edge graph, run a Louvain-style community-detection pass for clusters, score entry points by in-degree + name heuristics (`main`, `run_*`, route handlers), and trace execution flows (BFS along `CALLS` edges from each entry point, capped at depth N). Persist clusters and process traces in `code_clusters` / `code_processes` tables. New module `src-tauri/src/coding/processes.rs`. Tests: cluster the indexed `mcp-data/` repo, assert `run_http_server` appears in a process traced from `main`. Update the capability matrix. |
+| 31.6 | not-started | Code-aware MCP tools + resources + prompts | Build on Chunks 31.3–31.5. Replace the GitNexus-delegating `code_*` tools from Chunk 31.2 with first-class TerranSoul-native versions backed by the symbol index, falling back to GitNexus when the index is empty. Tools: `code_query` (process-grouped hybrid search), `code_context` (360-degree view: incoming/outgoing edges, processes), `code_impact` (BFS blast-radius with depth grouping). Add MCP `resources` (`terransoul://repos`, `terransoul://repo/{name}/context`, `/clusters`, `/processes`) and two `prompts` (`detect_impact`, `generate_map`). Wire into `router.rs`. Tests: integration tests calling each tool via JSON-RPC. Update the capability matrix. |
+| 31.7 | not-started | code_rename multi-file tool | Build on Chunks 31.3–31.6. Add a `code_rename` MCP tool that takes `{symbol_name, new_name, dry_run}` and produces an edit plan: graph-resolved edits (via the symbol index, high confidence) + text-search edits (via the existing `MemoryStore` FTS index over file contents, lower confidence). Apply on confirmation. Tests: rename a TerranSoul Rust function in a test fixture and verify the edit list. |
+| 31.8 | not-started | Editor pre/post-tool-use hooks | Add MCP `notification` handlers + a sidecar HTTP route that AI coding editors (Claude Code, Cursor) can hit before and after tool calls. Pre-hook enriches search queries with cluster + process context. Post-hook detects stale index after `git commit` and fires a `code_index_repo` re-run in the background. Tests: integration test simulating Claude Code's PreToolUse + PostToolUse pings. |
+| 31.9 | not-started | Wiki generation from the symbol graph | Reuse `brain_summarize` on each cluster from Chunk 31.5 to produce per-module Markdown pages with mermaid call graphs, write to `mcp-data/wiki/`. Tauri command `code_generate_wiki()`. Tests: assert wiki output contains a page per cluster with a non-empty body. |
+| 31.10 | not-started | terransoul mcp setup auto-config writer | Add a `--mcp-setup` CLI subcommand that detects `.vscode/`, `~/.cursor/`, `~/.codex/`, `~/.claude/`, `~/.config/opencode/` and writes the correct MCP entry into each editor's config (creating files atomically, preserving any unrelated entries). Reuse `src-tauri/src/ai_integrations/mcp/auto_setup.rs`. Tests: the existing auto_setup tests. |
 
 ---

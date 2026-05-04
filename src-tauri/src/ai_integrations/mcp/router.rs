@@ -18,7 +18,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::ai_integrations::gateway::*;
+use crate::AppState;
 
+use super::activity::McpActivityReporter;
 use super::tools;
 
 // ─── Shared state for the axum router ───────────────────────────────────────
@@ -28,6 +30,9 @@ pub struct McpRouterState {
     pub gw: Arc<dyn BrainGateway>,
     pub caps: GatewayCaps,
     pub token: String,
+    pub activity: Option<McpActivityReporter>,
+    /// Full app state for code-intelligence tools that need the GitNexus sidecar.
+    pub app_state: Option<AppState>,
 }
 
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
@@ -92,6 +97,18 @@ pub(crate) async fn dispatch_method(
     params: Value,
     id: Value,
 ) -> JsonRpcResponse {
+    dispatch_method_with_state(gw, caps, method, params, id, None).await
+}
+
+/// Extended dispatch that accepts an optional `AppState` for code tools.
+pub(crate) async fn dispatch_method_with_state(
+    gw: &dyn BrainGateway,
+    caps: &GatewayCaps,
+    method: &str,
+    params: Value,
+    id: Value,
+    app_state: Option<&AppState>,
+) -> JsonRpcResponse {
     match method {
         "initialize" => {
             let (build_mode, server_name) = if super::is_mcp_pet_mode() {
@@ -114,7 +131,7 @@ pub(crate) async fn dispatch_method(
         }
 
         "tools/list" => {
-            let result = json!({ "tools": tools::definitions() });
+            let result = json!({ "tools": tools::definitions(caps) });
             JsonRpcResponse::ok(id, result)
         }
 
@@ -125,7 +142,7 @@ pub(crate) async fn dispatch_method(
                 .cloned()
                 .unwrap_or(Value::Object(Default::default()));
 
-            match tools::dispatch(gw, caps, name, &args).await {
+            match tools::dispatch(gw, caps, name, &args, app_state).await {
                 Ok(text) => {
                     let result = json!({
                         "content": [{ "type": "text", "text": text }],
@@ -189,8 +206,57 @@ async fn handle_request(
     }
 
     let params = req.params.unwrap_or(Value::Null);
+    let tool_activity = if req.method == "tools/call" {
+        let tool_name = params["name"].as_str().unwrap_or("").to_string();
+        let args = params
+            .get("arguments")
+            .cloned()
+            .unwrap_or(Value::Object(Default::default()));
+        if !tool_name.is_empty() {
+            if let Some(activity) = &state.activity {
+                activity.tool_started(&tool_name, &args);
+            }
+            Some((tool_name, state.activity.clone()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
-    let resp = dispatch_method(state.gw.as_ref(), &state.caps, &req.method, params, id).await;
+    let resp = dispatch_method_with_state(
+        state.gw.as_ref(),
+        &state.caps,
+        &req.method,
+        params,
+        id,
+        state.app_state.as_ref(),
+    )
+    .await;
+
+    if let Some((tool_name, Some(activity))) = tool_activity {
+        let is_error = resp
+            .result
+            .as_ref()
+            .and_then(|result| result.get("isError"))
+            .and_then(Value::as_bool)
+            .unwrap_or(resp.error.is_some());
+        if is_error {
+            let message = resp
+                .result
+                .as_ref()
+                .and_then(|result| result.get("content"))
+                .and_then(Value::as_array)
+                .and_then(|content| content.first())
+                .and_then(|item| item.get("text"))
+                .and_then(Value::as_str)
+                .or_else(|| resp.error.as_ref().map(|error| error.message.as_str()))
+                .unwrap_or("unknown MCP tool error");
+            activity.tool_failed(&tool_name, message);
+        } else {
+            activity.tool_finished(&tool_name);
+        }
+    }
 
     (StatusCode::OK, Json(resp)).into_response()
 }

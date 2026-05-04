@@ -2862,6 +2862,7 @@ External AI assistant
 │  ├── mod.rs      — start/stop, McpServerHandle
 │  ├── auth.rs     — SHA-256 bearer token (mcp-token.txt)
 │  ├── router.rs   — JSON-RPC dispatch + auth middleware
+│  ├── activity.rs — live model/tool activity snapshots
 │  └── tools.rs    — 8 tool definitions + dispatch
 └──────────────────┬────────────────────────┘
                    │ dyn BrainGateway (8 ops)
@@ -2880,8 +2881,10 @@ axum task receives `AppState` directly.
 ### 24.2 Exposed MCP tools
 
 > Source of truth: `src-tauri/src/ai_integrations/mcp/tools.rs`. The
-> 8-tool surface below mirrors that file's `tool_definitions()` /
-> `dispatch_tool()` exactly.
+> 13-tool surface below mirrors that file's `definitions()` /
+> `dispatch()` exactly.
+
+**Brain tools (always visible):**
 
 | Tool | BrainGateway op | Description |
 |---|---|---|
@@ -2894,6 +2897,21 @@ axum task receives `AppState` directly.
 | `brain_ingest_url` | `ingest_url()` | Crawl + chunk + embed a URL into the memory store |
 | `brain_health` | `health()` | Provider status + model info |
 
+**Code-intelligence tools (visible when `caps.code_read = true`, Chunk 31.2):**
+
+| Tool | GitNexus sidecar method | Description |
+|---|---|---|
+| `code_query` | `query()` | Natural-language code-intelligence query via the sidecar |
+| `code_context` | `context()` | 360° symbol view: definitions, usages, surrounding code |
+| `code_impact` | `impact()` | Blast-radius analysis for a symbol change |
+| `code_detect_changes` | `detect_changes()` | Diff-aware change summary between two git refs |
+| `code_graph_sync` | `graph()` | Mirror sidecar KG into TerranSoul's memory store |
+
+Code tools check `GatewayCaps.code_read` + the `code_intelligence`
+capability grant for the `gitnexus-sidecar` agent. On "sidecar not
+configured" they return a structured error pointing the agent at
+`configure_gitnexus_sidecar`.
+
 ### 24.3 Security
 
 - **Bearer-token auth** — SHA-256 hash of a UUID v4 stored in
@@ -2903,14 +2921,69 @@ axum task receives `AppState` directly.
 
 ### 24.4 Tauri commands
 
-- `mcp_server_start` / `mcp_server_stop` / `mcp_server_status` / `mcp_regenerate_token`
+- `mcp_server_start` / `mcp_server_stop` / `mcp_server_status` / `mcp_regenerate_token` / `get_mcp_activity`
 - Lifecycle managed through `AppStateInner.mcp_server: TokioMutex<Option<McpServerHandle>>`
+- Live visible activity managed through `AppStateInner.mcp_activity: Mutex<McpActivitySnapshot>`
 
-### 24.5 Test coverage
+### 24.5 MCP app live activity and speech
 
-22 Rust tests: 4 auth, 6 router, 3 tools, 11 integration (ephemeral ports via `portpicker`).
+MCP app mode starts the visible Tauri UI while the MCP HTTP server listens on
+the agent port (`127.0.0.1:7423`). The backend creates an
+`McpActivityReporter` around that server. On startup, readiness, and every
+`tools/call`, the reporter records a `McpActivitySnapshot` containing:
 
-### 24.6 gRPC-Web and RemoteHost (Phase 24)
+- status (`idle`, `working`, `success`, `error`)
+- phase (`startup`, `ready`, `tool_start`, `tool_done`, `tool_error`)
+- speakable message text
+- MCP tool name/title
+- active brain provider and model
+- Unix-ms update timestamp
+- `speak` flag for frontend TTS
+
+`router.rs` wraps successful and failed `tools/call` dispatches, so external
+agents make the companion visibly change state while they use the brain. The
+snapshot is stored for late joiners through `get_mcp_activity` and emitted to
+the WebView as the `mcp-activity` event whenever an `AppHandle` is available.
+
+The frontend `mcp-activity` Pinia store loads the latest snapshot, listens for
+events, and powers `McpActivityPanel.vue`. That panel shows the current
+provider/model and current work item, and reuses the shared TTS pipeline to say
+spoken snapshots aloud. This keeps MCP mode legible: the user can see which
+model is working and hear what the external agent is asking it to do.
+
+### 24.6 Test coverage
+
+Rust tests cover auth, router dispatch, tool definitions, activity snapshot formatting/defaults, and integration cases with ephemeral ports via `portpicker`. Frontend Vitest coverage verifies the MCP activity store and spoken HUD update path.
+
+### 24.6.1 Code-intelligence MCP tools (Chunk 31.2)
+
+Five code-intelligence tools are exposed via the MCP `tools/list` surface when
+`GatewayCaps.code_read` is granted (true by default for MCP server clients):
+
+| Tool | Delegates to | Description |
+|---|---|---|
+| `code_query` | `GitNexusSidecar::query` | Natural-language code-intelligence query |
+| `code_context` | `GitNexusSidecar::context` | 360° symbol context (definitions, usages) |
+| `code_impact` | `GitNexusSidecar::impact` | Blast-radius analysis for a symbol |
+| `code_detect_changes` | `GitNexusSidecar::detect_changes` | Git-diff-aware change summary |
+| `code_graph_sync` | `GitNexusSidecar::graph` | KG sync into TerranSoul memory store |
+
+**Architecture:**
+
+- Tool definitions live in `tools::code_tool_definitions()` and are appended
+  to `tools::definitions(caps)` only when `caps.code_read == true`.
+- Dispatch routes through `dispatch_code_tool()` which checks the capability
+  gate, resolves `AppState` (passed via `McpRouterState.app_state`), then
+  calls `ensure_sidecar()` — the same lazy-spawn + capability-check pattern
+  as the Tauri commands in `commands/gitnexus.rs`.
+- When the sidecar is not configured or the `code_intelligence` capability
+  has not been granted, tools return a structured `isError: true` response
+  pointing the agent at `configure_gitnexus_sidecar`.
+- Chunks 31.3–31.6 will add TerranSoul-native code intelligence (tree-sitter
+  symbol table, call graph, clustering) as a fallback when no sidecar is
+  installed.
+
+### 24.7 gRPC-Web and RemoteHost (Phase 24)
 
 The same brain surface now has a browser-safe transport for the mobile companion. The tonic gRPC server uses `tonic_web::GrpcWebLayer` with HTTP/1 enabled, so a WebView can call `terransoul.brain.v1.Brain` without an Envoy proxy while native gRPC clients still use the same service definitions.
 

@@ -63,9 +63,37 @@ pub fn create_temporary_worktree(
     repo_root: &Path,
     chunk_id: &str,
 ) -> Result<TemporaryWorktree, String> {
+    create_worktree_in(repo_root, chunk_id, None)
+}
+
+/// Create a temporary worktree, optionally in a custom base directory.
+///
+/// When `base_dir` is `Some(path)`, the worktree is created under that
+/// directory (e.g. `D:\Git\TerranSoul-worktrees\`). When `None`, uses
+/// the OS temp directory.
+///
+/// Users can inspect the worktree with:
+/// ```sh
+/// git worktree list              # from the main repo
+/// cd <worktree-path>             # open in terminal
+/// # Or open in GitHub Desktop: File → Add Local Repository → <worktree-path>
+/// ```
+pub fn create_worktree_in(
+    repo_root: &Path,
+    chunk_id: &str,
+    base_dir: Option<&Path>,
+) -> Result<TemporaryWorktree, String> {
     ensure_git_repo(repo_root)?;
     let sanitized_chunk = sanitize_branch_segment(chunk_id);
-    let path = std::env::temp_dir().join(format!(
+    let base = match base_dir {
+        Some(dir) => {
+            std::fs::create_dir_all(dir)
+                .map_err(|e| format!("create worktree base dir: {e}"))?;
+            dir.to_path_buf()
+        }
+        None => std::env::temp_dir(),
+    };
+    let path = base.join(format!(
         "terransoul-self-improve-{sanitized_chunk}-{}",
         Uuid::new_v4().simple()
     ));
@@ -126,6 +154,64 @@ fn run_git_output(cwd: &Path, args: &[&str], trim_stdout: bool) -> Result<String
         return Ok(stdout);
     }
     Err(if stderr.is_empty() { stdout } else { stderr })
+}
+
+/// Information about a git worktree, as returned by `git worktree list`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorktreeInfo {
+    /// Absolute path to the worktree directory.
+    pub path: String,
+    /// The HEAD commit hash (short form).
+    pub head: String,
+    /// Branch name or "(detached)" / "(bare)".
+    pub branch: String,
+}
+
+/// List all git worktrees for the repository at `repo_root`.
+///
+/// Returns a list of `WorktreeInfo` entries. The first entry is always
+/// the main working tree. Self-improve worktrees appear as detached HEAD.
+///
+/// Users can use these paths to:
+/// - Open in GitHub Desktop: File → Add Local Repository → paste the path
+/// - Open in VS Code: `code <path>`
+/// - Browse in terminal: `cd <path>`
+pub fn list_worktrees(repo_root: &Path) -> Result<Vec<WorktreeInfo>, String> {
+    let output = run_git(repo_root, &["worktree", "list", "--porcelain"])?;
+    let mut worktrees = Vec::new();
+    let mut current_path = String::new();
+    let mut current_head = String::new();
+    let mut current_branch = String::new();
+
+    for line in output.lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            if !current_path.is_empty() {
+                worktrees.push(WorktreeInfo {
+                    path: std::mem::take(&mut current_path),
+                    head: std::mem::take(&mut current_head),
+                    branch: std::mem::take(&mut current_branch),
+                });
+            }
+            current_path = p.to_string();
+        } else if let Some(h) = line.strip_prefix("HEAD ") {
+            current_head = h[..h.len().min(8)].to_string();
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            current_branch = b.strip_prefix("refs/heads/").unwrap_or(b).to_string();
+        } else if line == "detached" {
+            current_branch = "(detached)".to_string();
+        } else if line == "bare" {
+            current_branch = "(bare)".to_string();
+        }
+    }
+    if !current_path.is_empty() {
+        worktrees.push(WorktreeInfo {
+            path: current_path,
+            head: current_head,
+            branch: current_branch,
+        });
+    }
+
+    Ok(worktrees)
 }
 
 #[cfg(test)]

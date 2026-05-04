@@ -13,16 +13,26 @@ fn main() {
     }
 
     // CLI flag: `terransoul --mcp-http` runs the headless MCP HTTP
-    // server (a.k.a. "MCP pet mode") used by `npm run mcp` so external
-    // AI coding agents (Copilot, Codex, Claude Code, Clawcode, …) can
-    // attach to the brain/RAG/memory surface without launching Tauri
-    // or colliding with `npm run dev` / a release build.
+    // server in a container or background process. No GUI, no Tauri
+    // window — just axum on port 7423 with state in `mcp-data/`.
+    // Used by `npm run mcp` (Docker) for full isolation from dev/release.
     if std::env::args().any(|a| a == "--mcp-http") {
         if let Err(e) = terransoul_lib::run_http_server() {
             eprintln!("[mcp-http] fatal: {e}");
             std::process::exit(1);
         }
         return;
+    }
+
+    // CLI flag: `terransoul --mcp-app` runs the **full Tauri app** in
+    // MCP mode so developers can visually observe the brain/RAG/memory
+    // surface live. Same UI as the normal app, but the bottom-left badge
+    // reads "MCP", state lives in `<repo>/mcp-data/`, and the MCP HTTP
+    // server auto-binds to port 7423.
+    if std::env::args().any(|a| a == "--mcp-app") {
+        // SAFETY: set before any other thread spawns. We are still the
+        // sole thread on `main`. The flag is read at Tauri setup time.
+        unsafe { std::env::set_var("TERRANSOUL_MCP_APP_MODE", "1") };
     }
 
     terransoul_lib::run()

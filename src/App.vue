@@ -124,9 +124,19 @@
         v-if="isPetMode"
         class="pet-mode-wrapper"
       >
-        <!-- DEV badge — inline in the pet mode layout, top-left -->
+        <!-- Build-mode badge — inline in the pet mode layout, top-left.
+             MCP mode (npm run mcp) takes priority over DEV. -->
         <FloatingBadge
-          v-if="windowStore.isDevBuild"
+          v-if="windowStore.isMcpMode"
+          class="pet-mcp-badge"
+          tone="info"
+          readonly
+          title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
+        >
+          MCP
+        </FloatingBadge>
+        <FloatingBadge
+          v-else-if="windowStore.isDevBuild"
           class="pet-dev-badge"
           tone="warning"
           readonly
@@ -181,9 +191,19 @@
               <span class="nav-label">Brain</span>
             </button>
 
-            <!-- DEV badge — inline in the sidebar, below spacer -->
+            <!-- Build-mode badge — inline in the sidebar, below spacer.
+                 MCP mode (npm run mcp) takes priority over DEV. -->
             <FloatingBadge
-              v-if="windowStore.isDevBuild"
+              v-if="windowStore.isMcpMode"
+              class="nav-mcp-badge"
+              tone="info"
+              readonly
+              title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
+            >
+              MCP
+            </FloatingBadge>
+            <FloatingBadge
+              v-else-if="windowStore.isDevBuild"
               class="nav-dev-badge"
               tone="warning"
               readonly
@@ -195,9 +215,15 @@
 
           <!-- Mobile bottom tab bar (replaces hamburger menu) -->
           <nav class="mobile-bottom-nav">
-            <!-- DEV indicator — sits as first item in the tab row -->
+            <!-- Build-mode indicator — first item in the tab row.
+                 MCP mode takes priority over DEV. -->
             <span
-              v-if="windowStore.isDevBuild"
+              v-if="windowStore.isMcpMode"
+              class="mobile-mcp-indicator"
+              title="MCP mode"
+            >MCP</span>
+            <span
+              v-else-if="windowStore.isDevBuild"
               class="mobile-dev-indicator"
               title="Development build"
             >DEV</span>
@@ -288,6 +314,8 @@
         </template>
       </template>
     </div>
+
+    <McpActivityPanel v-if="windowStore.isMcpMode && !appLoading" />
   </template>
 </template>
 
@@ -319,6 +347,7 @@ import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
 import FloatingBadge from './components/ui/FloatingBadge.vue';
 import BackgroundScene from './components/BackgroundScene.vue';
 import AppTabIcon from './components/AppTabIcon.vue';
+import McpActivityPanel from './components/McpActivityPanel.vue';
 
 const brain = useBrainStore();
 const voice = useVoiceStore();
@@ -489,6 +518,9 @@ onMounted(async () => {
     await windowStore.loadMode();
     // Load dev/release build flag for DEV badge
     await windowStore.loadDevBuildFlag();
+    // Load MCP-mode flag (replaces DEV badge with MCP when running
+    // as `npm run mcp` / `--mcp-app`).
+    await windowStore.loadMcpModeFlag();
   } catch {
     // No Tauri backend available (dev server / E2E tests) — prepare browser-safe provider choices.
     // Only activate the browser landing page when NOT running under Playwright E2E,
@@ -867,7 +899,8 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
 /* ── DEV badge (layout-aware, no fixed positioning) ── */
 
 /* Desktop sidebar: sits at the bottom of the flex column, after nav-spacer */
-.nav-dev-badge {
+.nav-dev-badge,
+.nav-mcp-badge {
   margin-top: 4px;
   margin-bottom: 4px;
   font-size: 0.6rem;
@@ -875,7 +908,8 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
 }
 
 /* Mobile bottom bar: inline indicator as the first flex item */
-.mobile-dev-indicator {
+.mobile-dev-indicator,
+.mobile-mcp-indicator {
   display: none; /* hidden on desktop, shown via media query */
   align-items: center;
   justify-content: center;
@@ -890,9 +924,14 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
   flex-shrink: 0;
   opacity: 0.8;
 }
+.mobile-mcp-indicator {
+  background: var(--ts-info, #38bdf8);
+}
 @media (max-width: 640px) {
-  .nav-dev-badge { display: none; } /* sidebar hidden on mobile */
-  .mobile-dev-indicator { display: flex; }
+  .nav-dev-badge,
+  .nav-mcp-badge { display: none; } /* sidebar hidden on mobile */
+  .mobile-dev-indicator,
+  .mobile-mcp-indicator { display: flex; }
 }
 
 /* Pet mode: inline top-left inside the pet-mode-wrapper */
@@ -901,7 +940,8 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
   width: 100%;
   height: 100%;
 }
-.pet-dev-badge {
+.pet-dev-badge,
+.pet-mcp-badge {
   position: absolute;
   top: 4px;
   left: 4px;
@@ -910,5 +950,8 @@ body { margin: 0; color: var(--ts-text-primary, #f0f2f8); font-family: var(--ts-
   background: var(--ts-warning);
   backdrop-filter: blur(4px);
   border: 1px solid var(--ts-border);
+}
+.pet-mcp-badge {
+  background: var(--ts-info, #38bdf8);
 }
 </style>

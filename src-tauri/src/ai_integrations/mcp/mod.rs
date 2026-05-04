@@ -14,6 +14,7 @@
 //! The stdio transport ([`stdio`]) reuses the same dispatch surface
 //! over newline-delimited JSON-RPC on stdin/stdout. See Chunk 15.9.
 
+pub mod activity;
 pub mod auth;
 pub mod auto_setup;
 pub mod router;
@@ -114,12 +115,33 @@ pub async fn start_server(
     token: String,
     lan_enabled: bool,
 ) -> Result<McpServerHandle, String> {
-    let gw = Arc::new(AppStateGateway::new(state))
+    start_server_with_activity(state, port, token, lan_enabled, None).await
+}
+
+/// Start the MCP HTTP server and optionally emit live activity events to
+/// the Tauri frontend.
+pub async fn start_server_with_activity(
+    state: AppState,
+    port: u16,
+    token: String,
+    lan_enabled: bool,
+    app: Option<tauri::AppHandle>,
+) -> Result<McpServerHandle, String> {
+    let activity = activity::McpActivityReporter::new(state.clone(), app);
+    activity.startup(format!("Starting MCP brain server on port {port}."));
+    let gw = Arc::new(AppStateGateway::new(state.clone()))
         as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
+    let caps = GatewayCaps {
+        brain_read: true,
+        brain_write: false,
+        code_read: true,
+    };
     let router_state = McpRouterState {
         gw,
-        caps: GatewayCaps::default(),
+        caps,
         token: token.clone(),
+        activity: Some(activity.clone()),
+        app_state: Some(state),
     };
 
     let app = router::build(router_state);
@@ -147,17 +169,21 @@ pub async fn start_server(
                 last_err = format!("port {try_port}: {e}");
                 // If this is AddrInUse, try next; otherwise it's a real error
                 if e.kind() != std::io::ErrorKind::AddrInUse {
-                    return Err(format!("failed to bind MCP server on {addr}: {e}"));
+                    let message = format!("failed to bind MCP server on {addr}: {e}");
+                    activity.failed(message.clone());
+                    return Err(message);
                 }
             }
         }
     }
 
     let listener = listener_opt.ok_or_else(|| {
-        format!(
+        let message = format!(
             "failed to bind MCP server: ports {port}–{} all in use ({last_err})",
             port.saturating_add(PORT_FALLBACK_RANGE)
-        )
+        );
+        activity.failed(message.clone());
+        message
     })?;
 
     if bound_port != port {
@@ -165,12 +191,15 @@ pub async fn start_server(
     }
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    activity.ready(bound_port);
+    let server_activity = activity.clone();
 
     let task = tokio::spawn(async move {
         let server = axum::serve(listener, app);
         tokio::select! {
             result = server => {
                 if let Err(e) = result {
+                    server_activity.failed(format!("MCP server error: {e}"));
                     eprintln!("[mcp] server error: {e}");
                 }
             }

@@ -199,6 +199,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - Authorize-first provider setup — browser, static-web chat, Marketplace, and the Tauri setup wizard launch provider pages first, with manual key/token entry kept as a secondary direct-call option and selectable free-provider models persisted in `BrainMode::FreeApi.model`
 - Streaming responses (SSE → `llm-chunk` Tauri event, parsed by `StreamTagParser` state machine)
 - Animation channel: `llm-animation` events for `<anim>` JSON blocks emitted by the LLM
+- MCP app activity channel: backend MCP tool calls emit `mcp-activity` snapshots with active provider/model, phase, tool title, and speakable status text so MCP mode visibly and audibly narrates what the configured brain is doing.
 - Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
 - Browser-only Vercel onboarding — the landing page shows only a provider button; chat and pet mode open the provider chooser when no backend brain is connected. Current recommendations put OpenRouter first for free model breadth, with Gemini, NVIDIA NIM, ChatGPT/OpenAI, and Pollinations available through provider-page authorization plus an optional manual key/token step. Choices are remembered in the `brain` Pinia store + localStorage, with a visible Reconfigure LLM button and no Tauri installer or backend account required.
@@ -360,11 +361,11 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 
 > Architectural reference: **[docs/AI-coding-integrations.md](docs/AI-coding-integrations.md)** — full protocol details, security model, auto-setup writers, and the VS Code Copilot incremental-indexing pact.
 
-- **MCP server** (Chunk 15.1) — HTTP/JSON-RPC 2.0 on `127.0.0.1:7421` via axum Streamable HTTP transport. Bearer-token auth (`mcp-token.txt`). 8 brain tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`).
+- **MCP server** (Chunk 15.1) — HTTP/JSON-RPC 2.0 on `127.0.0.1:7421` via axum Streamable HTTP transport, plus dev/app ports `7422` / `7423`. Bearer-token auth (`mcp-token.txt`). 8 brain tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`) + 5 code-intelligence tools (`code_query`, `code_context`, `code_impact`, `code_detect_changes`, `code_graph_sync`) gated behind `code_read` capability, delegating to the GitNexus sidecar. MCP app mode auto-configures a usable brain and emits live `mcp-activity` events for the on-screen/audible model status panel.
 - **BrainGateway trait** (Chunk 15.3) — single typed op surface shared by MCP and future gRPC transports. `AppStateGateway` adapter, capability gating (`GatewayCaps`), typed errors, delta-stable fingerprint for VS Code Copilot cache.
 - **gRPC/gRPC-Web server** — tonic server on the LAN gRPC port accepts native HTTP/2 and browser-native gRPC-Web (`tonic_web::GrpcWebLayer`) for `terransoul.brain.v1.Brain` plus the paired phone-control surface, including streamed chat and workflow/Copilot remote tools. The Vue `RemoteHost` adapter uses `@bufbuild/connect-web`, so the same components can run locally or from an iOS WebView.
 - **AppState Arc newtype** — `AppState(Arc<AppStateInner>)` with `Deref + Clone`. Enables cheap sharing with background servers without changing any of the 150+ existing Tauri commands.
-- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`
+- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`, `get_mcp_activity`
 - Control Panel (15.4) and auto-setup writers (15.6) — shipped; see the completion log for details.
 
 ### 🖥️ Window Modes

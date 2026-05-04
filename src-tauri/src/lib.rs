@@ -58,6 +58,21 @@ use commands::{
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
+    coding::{
+        clear_self_improve_log, coding_session_clear_handoff, coding_session_list_handoffs,
+        coding_session_load_handoff, coding_session_save_handoff, code_call_graph,
+        code_index_repo, code_resolve_edges,
+        detect_self_improve_repo,
+        get_coding_llm_config, get_coding_workflow_config, get_github_config,
+        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
+        get_self_improve_status, learn_from_user_message, list_coding_llm_recommendations,
+        list_local_coding_models, list_self_improve_worktrees, open_self_improve_pr,
+        preview_coding_workflow_context, pull_main_for_self_improve,
+        reset_coding_workflow_config, run_coding_task, set_coding_llm_config,
+        set_coding_workflow_config, set_github_config, set_self_improve_autostart,
+        set_self_improve_enabled, set_self_improve_worktree_dir, start_self_improve,
+        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
+    },
     coding_sessions::{
         coding_session_append_message, coding_session_clear_chat, coding_session_fork,
         coding_session_list, coding_session_load_chat, coding_session_purge,
@@ -90,7 +105,10 @@ use commands::{
         apply_memory_deltas, connect_to_peer, disconnect_link, get_link_status, get_memory_deltas,
         start_link_server, sync_memories_with_peer,
     },
-    mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
+    mcp::{
+        get_mcp_activity, mcp_regenerate_token, mcp_server_start, mcp_server_status,
+        mcp_server_stop,
+    },
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
@@ -159,9 +177,9 @@ use commands::{
     vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
     window::{
         close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build,
-        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
-        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
-        toggle_window_mode,
+        is_mcp_mode, open_panel_window, set_cursor_passthrough, set_pet_mode_bounds,
+        set_pet_window_size, set_window_mode, start_pet_cursor_poll, start_window_drag,
+        stop_pet_cursor_poll, toggle_window_mode,
     },
     workflow_plans::{
         workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
@@ -266,6 +284,16 @@ pub struct AppStateInner {
     pub activity_tracker: memory::consolidation::ActivityTracker,
     /// Obsidian bidirectional sync watcher (Chunk 17.7). `None` when not watching.
     pub obsidian_watcher: TokioMutex<Option<memory::obsidian_sync::ObsidianWatcher>>,
+    /// Last MCP activity snapshot shown/spoken in MCP app mode.
+    pub mcp_activity: Mutex<ai_integrations::mcp::activity::McpActivitySnapshot>,
+    /// Configured coding LLM for self-improve mode (Chunk 25).
+    pub coding_llm_config: Mutex<Option<coding::CodingLlmConfig>>,
+    /// Self-improve settings (enabled flag, worktree dir, etc.).
+    pub self_improve: Mutex<coding::SelfImproveSettings>,
+    /// Autonomous self-improve engine handle.
+    pub self_improve_engine: Arc<coding::engine::SelfImproveEngine>,
+    /// Coding workflow configuration (context injection, target paths, etc.).
+    pub coding_workflow_config: Mutex<coding::CodingWorkflowConfig>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -338,6 +366,13 @@ impl AppState {
             plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
             obsidian_watcher: TokioMutex::new(None),
+            mcp_activity: Mutex::new(
+                ai_integrations::mcp::activity::McpActivitySnapshot::default(),
+            ),
+            coding_llm_config: Mutex::new(coding::load_coding_llm(data_dir)),
+            self_improve: Mutex::new(coding::load_self_improve(data_dir)),
+            self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
+            coding_workflow_config: Mutex::new(coding::load_coding_workflow_config(data_dir)),
         }))
     }
 
@@ -389,6 +424,13 @@ impl AppState {
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
             obsidian_watcher: TokioMutex::new(None),
+            mcp_activity: Mutex::new(
+                ai_integrations::mcp::activity::McpActivitySnapshot::default(),
+            ),
+            coding_llm_config: Mutex::new(None),
+            self_improve: Mutex::new(coding::SelfImproveSettings::default()),
+            self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
+            coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
         }))
     }
 }
@@ -515,26 +557,88 @@ fn resolve_headless_mcp_port() -> u16 {
 /// `npm run mcp` invocation never shadows a running app. Returns the
 /// label of the first port that answers, or `None` when neither is up.
 ///
-/// Uses a 250 ms TCP connect probe (loopback only). Failure to connect
-/// is treated as "not running" — we deliberately do not speak the MCP
-/// handshake here so we don't leak the bearer token or trigger any
-/// auth-rate-limit on the running app.
+/// **Service-name verification** — relying on an open port alone is
+/// unreliable (any process can squat on 7421/7422). We therefore
+/// follow up the TCP probe with an unauthenticated MCP `initialize`
+/// JSON-RPC call. The response is **always** delivered (the MCP
+/// dispatch layer answers `initialize` before checking the bearer
+/// token, by spec — see `router::dispatch_method`), so we can read
+/// `serverInfo.name` and confirm we are talking to TerranSoul before
+/// refusing to start. If the probe answers but the handshake doesn't
+/// look like TerranSoul, we treat the port as a foreign tenant and
+/// continue startup on `7423` instead of refusing.
 fn detect_running_terransoul_mcp() -> Option<&'static str> {
-    use std::net::{SocketAddr, TcpStream};
-    use std::time::Duration;
-
-    let probe = |port: u16| -> bool {
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
-    };
-
-    if probe(ai_integrations::mcp::DEFAULT_PORT) {
+    let release = ai_integrations::mcp::DEFAULT_PORT;
+    let dev = ai_integrations::mcp::DEFAULT_DEV_PORT;
+    if probe_terransoul_on(release) {
         Some("release")
-    } else if probe(ai_integrations::mcp::DEFAULT_DEV_PORT) {
+    } else if probe_terransoul_on(dev) {
         Some("dev")
     } else {
         None
     }
+}
+
+/// Confirm a TerranSoul MCP server is bound to `127.0.0.1:<port>` by
+/// (1) opening a TCP connection and (2) issuing the unauthenticated
+/// MCP `initialize` handshake, then checking that
+/// `serverInfo.name` starts with `terransoul-brain`.
+fn probe_terransoul_on(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(250)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+
+    // Minimal JSON-RPC initialize. Auth is not required for
+    // initialize per the MCP spec, and our router answers it before
+    // running the bearer check (see router::dispatch_method).
+    let body = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+    let req = format!(
+        "POST /mcp HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {len}\r\n\
+         Connection: close\r\n\
+         \r\n",
+        len = body.len()
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    if stream.write_all(body).is_err() {
+        return false;
+    }
+
+    let mut buf = Vec::with_capacity(2048);
+    let mut chunk = [0u8; 1024];
+    let deadline = std::time::Instant::now() + Duration::from_millis(750);
+    loop {
+        if buf.len() > 16 * 1024 {
+            break; // hard cap; server name lives near the top
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&buf);
+    // We don't need to parse the full HTTP response; the JSON
+    // payload is in the body and contains the marker we care about.
+    text.contains("\"name\"")
+        && (text.contains("\"terransoul-brain\"")
+            || text.contains("\"terransoul-brain-dev\"")
+            || text.contains("\"terransoul-brain-mcp\""))
 }
 
 /// Run TerranSoul as a headless MCP **HTTP** server.
@@ -601,6 +705,10 @@ pub fn run_http_server() -> std::io::Result<()> {
         .build()?;
 
     runtime.block_on(async move {
+        // Auto-configure brain if not yet set up (Ollama → free API fallback)
+        brain::mcp_auto_config::auto_configure_mcp_brain(&data_dir).await;
+        brain::mcp_auto_config::apply_config_to_state(&state, &data_dir);
+
         match ai_integrations::mcp::start_server(state, port, token.clone(), false).await {
             Ok(handle) => {
                 eprintln!(
@@ -767,6 +875,7 @@ pub fn run() {
             stop_pet_cursor_poll,
             exit_app,
             is_dev_build,
+            is_mcp_mode,
             open_panel_window,
             close_panel_window,
             send_message_stream,
@@ -886,6 +995,7 @@ pub fn run() {
             mcp_server_stop,
             mcp_server_status,
             mcp_regenerate_token,
+            get_mcp_activity,
             // gRPC Brain server — Chunk 24.3 (Phase 24)
             grpc_server_start,
             grpc_server_stop,
@@ -906,6 +1016,42 @@ pub fn run() {
             run_sleep_consolidation,
             touch_activity,
             get_idle_status,
+            // Self-improve engine commands (Chunk 25)
+            list_coding_llm_recommendations,
+            get_coding_llm_config,
+            set_coding_llm_config,
+            get_self_improve_settings,
+            set_self_improve_enabled,
+            set_self_improve_worktree_dir,
+            detect_self_improve_repo,
+            suggest_self_improve_branch,
+            get_self_improve_status,
+            start_self_improve,
+            stop_self_improve,
+            set_self_improve_autostart,
+            get_self_improve_metrics,
+            get_self_improve_runs,
+            clear_self_improve_log,
+            test_coding_llm_connection,
+            list_local_coding_models,
+            get_coding_workflow_config,
+            set_coding_workflow_config,
+            reset_coding_workflow_config,
+            preview_coding_workflow_context,
+            list_self_improve_worktrees,
+            code_index_repo,
+            code_resolve_edges,
+            code_call_graph,
+            get_github_config,
+            set_github_config,
+            open_self_improve_pr,
+            pull_main_for_self_improve,
+            learn_from_user_message,
+            run_coding_task,
+            coding_session_save_handoff,
+            coding_session_load_handoff,
+            coding_session_list_handoffs,
+            coding_session_clear_handoff,
             // Self-improve coding sessions (Chunk 30.2)
             coding_session_list,
             coding_session_append_message,
@@ -982,10 +1128,30 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
-            // In dev builds, use a separate data directory so dev never
-            // touches release data.  Wipe it on every launch to guarantee
-            // a fresh-install experience.
-            let data_dir = if cfg!(debug_assertions) {
+            // MCP mode (`npm run mcp` / `--mcp-app`) takes priority over
+            // dev/release: persist in `<repo>/mcp-data/` so the runtime
+            // never touches the user's companion data dir, and flip the
+            // pet-mode flag so the MCP server / frontend report "mcp"
+            // instead of "dev" / "release".
+            let mcp_app_mode = std::env::var("TERRANSOUL_MCP_APP_MODE")
+                .map(|v| v == "1")
+                .unwrap_or(false);
+            let data_dir = if mcp_app_mode {
+                ai_integrations::mcp::enable_mcp_pet_mode();
+                let mcp_dir = std::env::var("TERRANSOUL_MCP_DATA_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
+                        std::env::current_dir()
+                            .unwrap_or_else(|_| PathBuf::from("."))
+                            .join("mcp-data")
+                    });
+                std::fs::create_dir_all(&mcp_dir)
+                    .expect("failed to create MCP data directory");
+                mcp_dir
+            } else if cfg!(debug_assertions) {
+                // In dev builds, use a separate data directory so dev never
+                // touches release data.  Wipe it on every launch to guarantee
+                // a fresh-install experience.
                 let dev_dir = base_data_dir.join("dev");
                 if dev_dir.exists() {
                     let _ = std::fs::remove_dir_all(&dev_dir);
@@ -998,6 +1164,55 @@ pub fn run() {
 
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
+
+            // Auto-start the MCP HTTP server on the headless port (7423)
+            // when running in MCP mode so external coding agents can talk
+            // to the live app without the user clicking through the
+            // Control Panel.
+            if mcp_app_mode {
+                let app_state_inner = state.inner().clone();
+                let mcp_data_dir = data_dir.clone();
+                let app_handle = app.handle().clone();
+                ai_integrations::mcp::activity::McpActivityReporter::new(
+                    app_state_inner.clone(),
+                    Some(app_handle.clone()),
+                )
+                .startup("Auto-configuring the MCP brain.".to_string());
+                tauri::async_runtime::spawn(async move {
+                    // Auto-configure brain if not yet set up
+                    brain::mcp_auto_config::auto_configure_mcp_brain(&mcp_data_dir).await;
+                    brain::mcp_auto_config::apply_config_to_state(&app_state_inner, &mcp_data_dir);
+
+                    let token = match ai_integrations::mcp::auth::load_or_create(&mcp_data_dir) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("[mcp-app] failed to load/create token: {e}");
+                            return;
+                        }
+                    };
+                    match ai_integrations::mcp::start_server_with_activity(
+                        app_state_inner.clone(),
+                        HEADLESS_MCP_PORT,
+                        token.clone(),
+                        false,
+                        Some(app_handle),
+                    )
+                    .await
+                    {
+                        Ok(handle) => {
+                            eprintln!(
+                                "[mcp-app] MCP server listening on http://127.0.0.1:{} (POST /mcp)",
+                                handle.port
+                            );
+                            eprintln!("[mcp-app] bearer token: {token}");
+                            // Park the handle on AppState so the UI's
+                            // existing controls (status/stop) work.
+                            *app_state_inner.mcp_server.lock().await = Some(handle);
+                        }
+                        Err(e) => eprintln!("[mcp-app] failed to start MCP server: {e}"),
+                    }
+                });
+            }
 
             let identity = load_or_generate_identity(&data_dir)
                 .unwrap_or_else(|_| identity::DeviceIdentity::generate());

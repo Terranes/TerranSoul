@@ -380,6 +380,17 @@ pub fn is_dev_build() -> bool {
     cfg!(debug_assertions)
 }
 
+/// Returns `true` when this Tauri instance was launched in MCP mode
+/// (`npm run mcp` / `terransoul --mcp-app`).
+///
+/// The frontend uses this to display an "MCP" badge instead of "DEV"
+/// in pet/sidebar/mobile layouts so developers can tell at a glance
+/// that they are talking to the repo-local MCP runtime.
+#[tauri::command]
+pub fn is_mcp_mode() -> bool {
+    crate::ai_integrations::mcp::is_mcp_pet_mode()
+}
+
 // ── Pet-mode panel windows ───────────────────────────────────────────────────
 // In pet mode, each tab (Brain, Memory, Quests, Market, Voice) opens as its
 // own floating window instead of being part of the single app shell.

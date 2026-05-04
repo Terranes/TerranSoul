@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_8_tools() {
+    async fn tools_list_returns_13_tools() {
         let (handle, url, token) = start_test_server().await;
 
         let (status, body) = rpc(
@@ -102,11 +102,15 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 13);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
         assert!(tools[0]["inputSchema"].is_object());
+
+        // Verify code tools are present.
+        assert_eq!(tools[8]["name"], "code_query");
+        assert_eq!(tools[12]["name"], "code_graph_sync");
 
         handle.stop();
     }
@@ -310,5 +314,137 @@ mod tests {
             .send()
             .await;
         assert!(result.is_err(), "server should be stopped");
+    }
+
+    // ─── Code tool integration tests ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn code_query_returns_structured_error_when_no_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_query",
+                    "arguments": { "prompt": "find main function" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+        let text = body["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("code_intelligence") || text.contains("sidecar not configured"),
+            "expected sidecar-not-configured error, got: {text}"
+        );
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_context_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_context",
+                    "arguments": { "target": "AppState" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_impact_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_impact",
+                    "arguments": { "symbol": "run" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_detect_changes_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_detect_changes",
+                    "arguments": { "from_ref": "main", "to_ref": "HEAD" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_graph_sync_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_graph_sync",
+                    "arguments": { "repo_label": "test-repo" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
     }
 }

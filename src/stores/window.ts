@@ -13,6 +13,8 @@ export const useWindowStore = defineStore('window', () => {
   const isLoading = ref(false);
   /** True when running a dev/debug build (separate MCP port, DEV badge). */
   const isDevBuild = ref(false);
+  /** True when launched via `npm run mcp` (`--mcp-app`). Shown as "MCP". */
+  const isMcpMode = ref(false);
 
   /** Query the backend for the build profile (dev vs release). */
   async function loadDevBuildFlag(): Promise<boolean> {
@@ -23,6 +25,18 @@ export const useWindowStore = defineStore('window', () => {
     } catch {
       // Tauri unavailable (browser/test) — not a Tauri dev build
       isDevBuild.value = false;
+      return false;
+    }
+  }
+
+  /** Query the backend for MCP mode (overrides DEV badge with "MCP"). */
+  async function loadMcpModeFlag(): Promise<boolean> {
+    try {
+      const mcp = await invoke<boolean>('is_mcp_mode');
+      isMcpMode.value = mcp;
+      return mcp;
+    } catch {
+      isMcpMode.value = false;
       return false;
     }
   }
@@ -198,8 +212,10 @@ export const useWindowStore = defineStore('window', () => {
     error,
     isLoading,
     isDevBuild,
+    isMcpMode,
     loadMode,
     loadDevBuildFlag,
+    loadMcpModeFlag,
     setMode,
     toggleMode,
     setCursorPassthrough,

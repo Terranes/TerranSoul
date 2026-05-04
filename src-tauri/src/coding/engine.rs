@@ -520,6 +520,7 @@ fn format_dag_failure(result: &dag_runner::DagRunResult) -> String {
 
 /// Plan -> code -> review -> apply -> test -> stage for one chunk,
 /// orchestrated through the coding DAG runner.
+#[allow(clippy::too_many_arguments)]
 async fn execute_chunk_dag<R: Runtime>(
     app: &AppHandle<R>,
     config: &CodingLlmConfig,
@@ -528,10 +529,11 @@ async fn execute_chunk_dag<R: Runtime>(
     chunk: &ChunkRow,
     metrics: &MetricsLog,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    worktree_dir: Option<&str>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<ExecutionGateResult, String> {
     let original_repo_root = repo_root.to_path_buf();
-    let execution_workspace = prepare_execution_workspace(app, repo, repo_root, chunk)?;
+    let execution_workspace = prepare_execution_workspace(app, repo, repo_root, chunk, worktree_dir)?;
     let execution_repo_root = execution_workspace.repo_root.clone();
     let execution_repo = execution_workspace.repo.clone();
 
@@ -728,6 +730,7 @@ fn prepare_execution_workspace<R: Runtime>(
     repo: &RepoState,
     repo_root: &Path,
     chunk: &ChunkRow,
+    worktree_dir: Option<&str>,
 ) -> Result<ExecutionWorkspace, String> {
     if git_ops::working_tree_clean(repo_root) {
         return Ok(ExecutionWorkspace::active(repo, repo_root));
@@ -742,7 +745,10 @@ fn prepare_execution_workspace<R: Runtime>(
         .with_chunk(&chunk.id)
         .with_progress(6),
     );
-    let temporary_worktree = worktree::create_temporary_worktree(repo_root, &chunk.id)?;
+    let base_dir = worktree_dir
+        .filter(|s| !s.is_empty())
+        .map(std::path::Path::new);
+    let temporary_worktree = worktree::create_worktree_in(repo_root, &chunk.id, base_dir)?;
     emit(
         app,
         ProgressEvent::info(
@@ -924,6 +930,7 @@ pub async fn start<R: Runtime>(
     engine: Arc<SelfImproveEngine>,
     config: CodingLlmConfig,
     workflow_cfg: crate::coding::CodingWorkflowConfig,
+    worktree_dir: Option<String>,
     repo_hint: PathBuf,
 ) {
     if engine.running.swap(true, Ordering::Relaxed) {
@@ -1066,6 +1073,7 @@ pub async fn start<R: Runtime>(
                 &next,
                 &metrics,
                 &workflow_cfg,
+                worktree_dir.as_deref(),
                 &cancel,
             )
             .await

@@ -2,7 +2,7 @@
 //!
 //! Four commands: start, stop, status, regenerate-token.
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::ai_integrations::mcp;
 use crate::AppState;
@@ -30,7 +30,10 @@ pub struct McpServerStatus {
 /// to clipboard). If the server is already running, returns the existing
 /// status.
 #[tauri::command]
-pub async fn mcp_server_start(state: State<'_, AppState>) -> Result<McpServerStatus, String> {
+pub async fn mcp_server_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<McpServerStatus, String> {
     let mut guard = state.mcp_server.lock().await;
 
     // Already running — return current status.
@@ -50,7 +53,14 @@ pub async fn mcp_server_start(state: State<'_, AppState>) -> Result<McpServerSta
         .lock()
         .map_err(|e| e.to_string())?
         .lan_enabled;
-    let handle = mcp::start_server(state.inner().clone(), port, token, lan_enabled).await?;
+    let handle = mcp::start_server_with_activity(
+        state.inner().clone(),
+        port,
+        token,
+        lan_enabled,
+        Some(app),
+    )
+    .await?;
 
     let status = McpServerStatus {
         running: true,
@@ -61,6 +71,18 @@ pub async fn mcp_server_start(state: State<'_, AppState>) -> Result<McpServerSta
 
     *guard = Some(handle);
     Ok(status)
+}
+
+/// Last visible MCP activity snapshot for MCP app mode.
+#[tauri::command]
+pub fn get_mcp_activity(
+    state: State<'_, AppState>,
+) -> Result<mcp::activity::McpActivitySnapshot, String> {
+    state
+        .mcp_activity
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|e| e.to_string())
 }
 
 /// Stop the MCP HTTP server.
