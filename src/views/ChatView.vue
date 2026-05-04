@@ -49,7 +49,7 @@
               v-if="brain.systemInfo"
               class="brain-hw"
             >
-              {{ brain.systemInfo?.cpu_name }} · {{ formatRam(brain.systemInfo?.total_ram_mb) }} RAM
+              {{ brain.systemInfo?.cpu_name || 'Unknown CPU' }} · {{ formatRam(brain.systemInfo?.total_ram_mb ?? 0) }} RAM
             </p>
             <p
               v-if="brain.topRecommendation"
@@ -878,6 +878,13 @@ function handleAddMusicRequest() {
   handleSend('Can you suggest some good background music for me?');
 }
 
+function precomputePendingEmotionForStreaming(message: string): void {
+  // Pre-compute user emotion before the async send starts so streaming UI
+  // can use this value instead of a generic 'talking' state.
+  const userSentiment = detectSentiment(message);
+  pendingEmotion.value = sentimentToState(userSentiment);
+}
+
 async function handleSend(message: string) {
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
@@ -910,11 +917,8 @@ async function handleSend(message: string) {
   // Store user query for capacity detection.
   lastUserQuery = message;
 
-  // Detect emotion from user input immediately for responsive UI feedback.
-  // This is stored so the streaming watcher can show the correct emotion
-  // instead of generic 'talking' while the API call is in progress.
-  const userSentiment = detectSentiment(message);
-  pendingEmotion.value = sentimentToState(userSentiment);
+  // Explicitly pre-compute emotion now for later streaming-phase UI usage.
+  precomputePendingEmotionForStreaming(message);
 
   setAvatarState('thinking');
   await conversationStore.sendMessage(message);
@@ -1131,8 +1135,10 @@ function handleStartQuest() {
  * Matches common "learn X" phrasings and captures the topic in group 1.
  * Supported prompts include: "learn about ...", "teach me about ...",
  * "study ...", "deep dive into ...", and "learn ...".
+ * Intentionally captures the remainder of the user message as topic text,
+ * including multi-sentence input.
  */
-const LEARNING_TOPIC_REGEX = /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+?)(?:\.|$)/;
+const LEARNING_TOPIC_REGEX = /(?:learn about|teach me about|study|deep dive into|learn)\s+(.+\S)\s*$/;
 
 /** Handle quest choice button clicks from hot-seat overlay or ChatMessageList. */
 async function handleQuestChoice(questId: string, choiceValue: string) {

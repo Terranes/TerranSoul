@@ -150,12 +150,15 @@ async function renderVrmHeadshot(vrmPath: string): Promise<string> {
       else if (mat) mat.dispose();
     }
   });
-  // Remove lights
+  // Remove lights (collect first to avoid mutating scene graph during traversal)
+  const lightsToRemove: THREE.Light[] = [];
   scene.traverse((obj) => {
     if ((obj as THREE.Light).isLight) {
-      const light = obj as THREE.Light;
-      light.parent?.remove(light);
+      lightsToRemove.push(obj as THREE.Light);
     }
+  });
+  lightsToRemove.forEach((light) => {
+    light.parent?.remove(light);
   });
 
   return dataUrl;
@@ -284,14 +287,27 @@ export async function preGenerateUserThumbnail(userModelId: string): Promise<voi
   }
 
   const owner = Symbol(userModelId);
-  const task = (async () => {
-    const dataUrl = await renderUserModelHeadshot(userModelId);
-    await setCache(userModelId, dataUrl);
-    return dataUrl;
-  })();
 
+  let resolveTask!: (value: string) => void;
+  let rejectTask!: (reason?: unknown) => void;
+  const task = new Promise<string>((resolve, reject) => {
+    resolveTask = resolve;
+    rejectTask = reject;
+  });
+
+  // Reserve in-flight slot before starting async work to avoid races.
   _inflightOwners.set(userModelId, owner);
   _inflight.set(userModelId, task);
+
+  void (async () => {
+    try {
+      const dataUrl = await renderUserModelHeadshot(userModelId);
+      await setCache(userModelId, dataUrl);
+      resolveTask(dataUrl);
+    } catch (err) {
+      rejectTask(err);
+    }
+  })();
 
   try {
     await task;
