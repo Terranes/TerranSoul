@@ -291,6 +291,12 @@ pub struct AppSettings {
     /// when the store grows beyond this cap. Default 10 GB.
     #[serde(default = "default_max_memory_gb")]
     pub max_memory_gb: f64,
+
+    /// Maximum brain memory/RAG rows kept in app memory for list/cache views.
+    /// The full corpus remains persisted to storage; this only bounds the
+    /// in-memory working set returned by broad list calls. Default 10 MB.
+    #[serde(default = "default_max_memory_mb")]
+    pub max_memory_mb: f64,
 }
 
 fn default_true() -> bool {
@@ -316,12 +322,21 @@ pub const DEFAULT_MAX_MEMORY_GB: f64 = 10.0;
 pub const MIN_MAX_MEMORY_GB: f64 = 1.0;
 pub const MAX_MAX_MEMORY_GB: f64 = 100.0;
 
+/// Default maximum in-memory brain memory/RAG cache: 10 MB.
+pub const DEFAULT_MAX_MEMORY_MB: f64 = 10.0;
+pub const MIN_MAX_MEMORY_MB: f64 = 1.0;
+pub const MAX_MAX_MEMORY_MB: f64 = 1024.0;
+
 fn default_maintenance_interval_hours() -> u32 {
     DEFAULT_MAINTENANCE_INTERVAL_HOURS
 }
 
 fn default_max_memory_gb() -> f64 {
     DEFAULT_MAX_MEMORY_GB
+}
+
+fn default_max_memory_mb() -> f64 {
+    DEFAULT_MAX_MEMORY_MB
 }
 
 fn default_mobile_notification_threshold_ms() -> u64 {
@@ -396,6 +411,7 @@ impl Default for AppSettings {
             maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: DEFAULT_MAX_MEMORY_MB,
         }
     }
 }
@@ -424,6 +440,17 @@ impl AppSettings {
             DEFAULT_MAX_MEMORY_GB
         };
         (gb * 1024.0 * 1024.0 * 1024.0).round() as u64
+    }
+
+    /// Return the configured in-memory brain memory/RAG cache cap in bytes.
+    pub fn max_memory_cache_bytes(&self) -> u64 {
+        let mb = if self.max_memory_mb.is_finite() {
+            self.max_memory_mb
+                .clamp(MIN_MAX_MEMORY_MB, MAX_MAX_MEMORY_MB)
+        } else {
+            DEFAULT_MAX_MEMORY_MB
+        };
+        (mb * 1024.0 * 1024.0).round() as u64
     }
 }
 
@@ -557,6 +584,7 @@ mod tests {
             maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: DEFAULT_MAX_MEMORY_MB,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -629,6 +657,7 @@ mod tests {
         );
         assert_eq!(s.maintenance_idle_minimum_minutes, 0);
         assert_eq!(s.max_memory_gb, DEFAULT_MAX_MEMORY_GB);
+        assert_eq!(s.max_memory_mb, DEFAULT_MAX_MEMORY_MB);
     }
 
     #[test]
@@ -684,6 +713,7 @@ mod tests {
         );
         assert_eq!(parsed.maintenance_idle_minimum_minutes, 0);
         assert_eq!(parsed.max_memory_gb, DEFAULT_MAX_MEMORY_GB);
+        assert_eq!(parsed.max_memory_mb, DEFAULT_MAX_MEMORY_MB);
     }
 
     #[test]
@@ -699,6 +729,21 @@ mod tests {
             ..AppSettings::default()
         };
         assert_eq!(high.max_memory_bytes(), 100 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn max_memory_cache_bytes_clamps_to_supported_range() {
+        let low = AppSettings {
+            max_memory_mb: 0.1,
+            ..AppSettings::default()
+        };
+        assert_eq!(low.max_memory_cache_bytes(), 1024 * 1024);
+
+        let high = AppSettings {
+            max_memory_mb: 2_000.0,
+            ..AppSettings::default()
+        };
+        assert_eq!(high.max_memory_cache_bytes(), 1024 * 1024 * 1024);
     }
 
     /// `maintenance_cooldown_ms` clamps to the documented 1h..168h

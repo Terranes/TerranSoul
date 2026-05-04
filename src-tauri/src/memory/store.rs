@@ -372,6 +372,39 @@ impl MemoryStore {
         rows.collect()
     }
 
+    /// Return the broad memory list capped by estimated in-memory bytes.
+    ///
+    /// This bounds UI/cache memory without deleting any persisted rows.
+    pub fn get_all_within_storage_bytes(&self, max_bytes: u64) -> SqlResult<Vec<MemoryEntry>> {
+        let max_bytes = max_bytes.min(i64::MAX as u64) as i64;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device,
+                    length(content)
+                    + length(tags)
+                    + COALESCE(length(embedding), 0)
+                    + COALESCE(length(source_url), 0)
+                    + COALESCE(length(source_hash), 0)
+                    + COALESCE(length(obsidian_path), 0)
+                    + 128 AS row_bytes
+             FROM memories ORDER BY importance DESC, created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row_to_entry(row)?, row.get::<_, i64>(21)?)))?;
+
+        let mut used = 0i64;
+        let mut entries = Vec::new();
+        for row in rows {
+            let (entry, row_bytes) = row?;
+            let row_bytes = row_bytes.max(0);
+            if used > 0 && used.saturating_add(row_bytes) > max_bytes {
+                break;
+            }
+            used = used.saturating_add(row_bytes);
+            entries.push(entry);
+        }
+        Ok(entries)
+    }
+
     /// Return memories in a specific tier.
     pub fn get_by_tier(&self, tier: &MemoryTier) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
@@ -2329,6 +2362,34 @@ mod tests {
         assert_eq!(stats.working, 1);
         assert_eq!(stats.long, 2);
         assert!(stats.storage_bytes > 0);
+    }
+
+    #[test]
+    fn get_all_within_storage_bytes_limits_memory_cache_not_storage() {
+        let store = MemoryStore::in_memory();
+        let first = store
+            .add(NewMemory {
+                content: "important cached row".repeat(20),
+                tags: "test".into(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                content: "second persisted row".repeat(20),
+                tags: "test".into(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let capped = store.get_all_within_storage_bytes(1).unwrap();
+
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0].id, first.id);
+        assert_eq!(store.count(), 2);
     }
 
     #[test]

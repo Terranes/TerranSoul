@@ -59,6 +59,8 @@ export interface AppSettings {
   last_update_check_date?: string;
   /** Maximum persistent memory/RAG storage in GB before automatic cleanup. */
   max_memory_gb?: number;
+  /** Maximum brain memory/RAG list cache in MB; storage still keeps the full corpus. */
+  max_memory_mb?: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -83,6 +85,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   dismissed_model_updates: [],
   last_update_check_date: '',
   max_memory_gb: 10,
+  max_memory_mb: 10,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -143,6 +146,11 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ max_memory_gb: clamped });
   }
 
+  async function saveMaxMemoryMb(mb: number): Promise<void> {
+    const clamped = Math.min(1024, Math.max(1, Number.isFinite(mb) ? mb : 10));
+    await saveSettings({ max_memory_mb: clamped });
+  }
+
   return {
     // state
     settings,
@@ -156,5 +164,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveBgmState,
     setChatboxMode,
     saveMaxMemoryGb,
+    saveMaxMemoryMb,
   };
 });

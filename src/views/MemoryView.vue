@@ -88,13 +88,42 @@
       </div>
     </div>
 
-    <section class="mv-storage-cap">
+    <section class="mv-rag-config">
       <div class="mv-storage-summary">
-        <strong>Memory cap</strong>
-        <span>{{ formatBytes(memoryStorageBytes) }} / {{ maxMemoryGb.toFixed(1) }} GB</span>
+        <strong>Memory configuration</strong>
+        <span>Brain memory &amp; RAG in memory: {{ formatBytes(memoryCacheBytes) }} / {{ maxMemoryMb.toFixed(0) }} MB</span>
       </div>
       <label class="mv-storage-control">
-        <span>Maximum allowed memory</span>
+        <span>Maximum in-memory RAG cache</span>
+        <input
+          v-model.number="maxMemoryMb"
+          type="range"
+          min="1"
+          max="1024"
+          step="1"
+          @change="saveMemoryCacheCap"
+        >
+      </label>
+      <label class="mv-storage-number">
+        <input
+          v-model.number="maxMemoryMb"
+          type="number"
+          min="1"
+          max="1024"
+          step="1"
+          @change="saveMemoryCacheCap"
+        >
+        <span>MB</span>
+      </label>
+    </section>
+
+    <section class="mv-rag-config">
+      <div class="mv-storage-summary">
+        <strong>Storage configuration</strong>
+        <span>Brain memory &amp; RAG in storage: {{ formatBytes(memoryStorageBytes) }} / {{ maxMemoryGb.toFixed(1) }} GB</span>
+      </div>
+      <label class="mv-storage-control">
+        <span>Maximum persistent RAG storage</span>
         <input
           v-model.number="maxMemoryGb"
           type="range"
@@ -530,7 +559,11 @@ const tabs: Array<'Graph' | 'List' | 'Session'> = ['List', 'Graph', 'Session'];
 const allTypes: MemoryType[] = ['fact', 'preference', 'context', 'summary'];
 const allTiers: MemoryTier[] = ['short', 'working', 'long'];
 const maxMemoryGb = ref(10);
+const maxMemoryMb = ref(10);
 const memoryStorageBytes = computed(() => store.stats?.storage_bytes ?? 0);
+const memoryCacheBytes = computed(() =>
+  store.memories.reduce((sum, m) => sum + m.content.length + m.tags.length + 128, 0),
+);
 
 // Search & filter
 const searchQuery = ref('');
@@ -751,6 +784,13 @@ async function saveMemoryCap() {
   }
 }
 
+async function saveMemoryCacheCap() {
+  const mb = Math.min(1024, Math.max(1, Number(maxMemoryMb.value) || 10));
+  maxMemoryMb.value = mb;
+  await settingsStore.saveMaxMemoryMb(mb);
+  await store.fetchAll();
+}
+
 // Obsidian export
 const showObsidianExport = ref(false);
 const obsidianVaultDir = ref('');
@@ -771,6 +811,7 @@ async function handleObsidianExport() {
 onMounted(async () => {
   await settingsStore.loadSettings();
   maxMemoryGb.value = settingsStore.settings.max_memory_gb ?? 10;
+  maxMemoryMb.value = settingsStore.settings.max_memory_mb ?? 10;
   await store.fetchAll();
   await Promise.all([loadShortTerm(), store.getStats(), store.fetchEdges(), store.getEdgeStats()]);
 });

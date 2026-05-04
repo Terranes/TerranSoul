@@ -103,6 +103,7 @@ mod tests {
             maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -154,6 +155,7 @@ mod tests {
             maintenance_interval_hours: crate::settings::DEFAULT_MAINTENANCE_INTERVAL_HOURS,
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
+            max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

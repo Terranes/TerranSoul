@@ -11,6 +11,14 @@ fn configured_memory_limit_bytes(state: &AppState) -> u64 {
         .unwrap_or((crate::settings::DEFAULT_MAX_MEMORY_GB * 1024.0 * 1024.0 * 1024.0) as u64)
 }
 
+fn configured_memory_cache_limit_bytes(state: &AppState) -> u64 {
+    state
+        .app_settings
+        .lock()
+        .map(|s| s.max_memory_cache_bytes())
+        .unwrap_or((crate::settings::DEFAULT_MAX_MEMORY_MB * 1024.0 * 1024.0) as u64)
+}
+
 fn enforce_configured_memory_limit(
     state: &AppState,
 ) -> Result<crate::memory::MemoryCleanupReport, String> {
@@ -196,8 +204,11 @@ async fn add_memory_inner(
 /// Return all stored memories.
 #[tauri::command]
 pub async fn get_memories(state: State<'_, AppState>) -> Result<Vec<MemoryEntry>, String> {
+    let max_bytes = configured_memory_cache_limit_bytes(&state);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.get_all().map_err(|e| e.to_string())
+    store
+        .get_all_within_storage_bytes(max_bytes)
+        .map_err(|e| e.to_string())
 }
 
 /// Search memories by keyword.
