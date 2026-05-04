@@ -7,8 +7,17 @@ headless TerranSoul brain server used by coding agents.
 
 Only `mcp-data/shared/` is committed. It contains safe, reviewable seed
 knowledge that every clone can use to bootstrap MCP with TerranSoul project
-context. Contributors and self-improve runs may update this shared dataset when
-architecture, workflows, or agent guidance changes.
+context:
+
+- `memory-seed.sql` — curated facts inserted into a fresh `memory.db`
+- `project-index.md` — full repo map (modules, stores, composables, docs, rules)
+- `lessons-learned.md` — durable gotchas / decisions from `rules/completion-log.md`
+- `brain_config.json` / `app_settings.json` — safe headless defaults
+
+Contributors and self-improve runs may update this shared dataset when
+architecture, workflows, or agent guidance changes. Treat it as the
+**default TerranSoul knowledge base** so the same problem is never solved
+twice and the codebase never has to be rescanned from scratch.
 
 ## What is ignored
 

@@ -51,4 +51,121 @@ VALUES
 -- Recommended First Steps for New Contributors
 ('Recommended first steps after cloning: (1) npm ci, (2) npm run mcp to start the brain server, (3) Read rules/milestones.md for current work queue, (4) Read rules/completion-log.md for recent history, (5) Run the CI gate to verify everything builds. The MCP server pre-loads shared TerranSoul knowledge from mcp-data/shared/.', 'onboarding,setup,quickstart', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'onboarding'),
 
-('Key directories: src/ (Vue frontend), src-tauri/src/ (Rust backend), rules/ (project rules + milestones), docs/ (design docs), scripts/ (dev utilities), public/ (static assets — models, animations, audio), mcp-data/shared/ (committed seed knowledge for MCP brain), mcp-data/ runtime files (ignored).', 'project-structure,directories', 4, 'fact', 1746316800000, 'long', 1.0, 50, 'architecture');
+('Key directories: src/ (Vue frontend), src-tauri/src/ (Rust backend), rules/ (project rules + milestones), docs/ (design docs), scripts/ (dev utilities), public/ (static assets — models, animations, audio), mcp-data/shared/ (committed seed knowledge for MCP brain), mcp-data/ runtime files (ignored).', 'project-structure,directories', 4, 'fact', 1746316800000, 'long', 1.0, 50, 'architecture'),
+
+-- ====================================================================
+-- Pointers to the rest of the shared dataset (read these for full detail)
+-- ====================================================================
+('mcp-data/shared/project-index.md is the single source of truth for navigating TerranSoul without rescanning the codebase. It catalogues every Rust module, Pinia store, composable, design doc, and rules file with one-line purposes. Read it (or query the brain for "project index") before scanning.', 'project-index,navigation,onboarding,shared-doc', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'onboarding'),
+
+('mcp-data/shared/lessons-learned.md captures durable gotchas and decisions distilled from rules/completion-log.md so the same problem is never solved twice. Append a new entry whenever a non-obvious trade-off, retry-only bug fix, or architectural decision is worth keeping. Read it before designing new features or debugging build/MCP issues.', 'lessons-learned,gotchas,self-improve,shared-doc', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'self-improve'),
+
+-- ====================================================================
+-- Brain submodule map (src-tauri/src/brain/)
+-- ====================================================================
+('Brain module map: brain_config.rs (persisted provider/model/keys), brain_store.rs (state container), cloud_embeddings.rs (paid/free embed_for_mode), context_budget.rs (token budgeting), doc_catalogue.rs (brain-aware doc catalogue), docker_ollama.rs (auto-setup Ollama via Docker), free_api.rs (Pollinations/OpenRouter free tier), intent_classifier.rs, lm_studio.rs, maintenance_runtime.rs + maintenance_scheduler.rs (decay/GC/summarization), mcp_auto_config.rs (headless brain auto-config), model_recommender.rs (RAM-based catalogue), ollama_agent.rs (embed_text + hyde_complete + rerank_score), ollama_lifecycle.rs, openai_client.rs, provider_rotator.rs, ram_budget.rs, segmenter.rs, selection.rs, system_info.rs.', 'brain,module-map,architecture', 5, 'fact', 1746316800000, 'long', 1.0, 120, 'brain'),
+
+-- ====================================================================
+-- Memory submodule map (src-tauri/src/memory/)
+-- ====================================================================
+('Memory module map: schema.rs (canonical V13 SQLite schema), store.rs (default SQLite memory store with hybrid_search + hybrid_search_rrf + ANN bridge), ann_index.rs (HNSW via usearch), backend.rs (StorageBackend trait/factory), cassandra.rs / mssql.rs / postgres.rs (optional backends), chunking.rs + late_chunking.rs (semantic chunking), code_rag.rs, cognitive_kind.rs, conflicts.rs + edge_conflict_scan.rs (LLM contradiction resolution), consolidation.rs, context_pack.rs ([RETRIEVED CONTEXT] assembly), contextualize.rs (Anthropic Contextual Retrieval), crag.rs, crdt_sync.rs, edges.rs (typed/directional KG edges), fusion.rs (RRF k=60), gitnexus_mirror.rs, graph_rag.rs, hyde.rs (HyDE), matryoshka.rs, obsidian_export.rs + obsidian_sync.rs, query_intent.rs, replay.rs, reranker.rs (LLM-as-judge), tag_vocabulary.rs, temporal.rs, versioning.rs.', 'memory,module-map,architecture', 5, 'fact', 1746316800000, 'long', 1.0, 150, 'memory'),
+
+('Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs: vector(40%) + keyword(20%) + recency(15%) + importance(10%) + decay(10%) + tier(5%). RRF fusion uses k=60. HyDE and cross-encoder rerank are optional per-query; default for cold/abstract queries is HyDE on, rerank on, threshold 0.', 'memory,search,signals,rag', 5, 'fact', 1746316800000, 'long', 1.0, 60, 'memory'),
+
+('SQLite schema is at version 13 (CANONICAL_SCHEMA_VERSION in src-tauri/src/memory/schema.rs). memories columns: content, tags, importance, memory_type, created_at, last_accessed, access_count, embedding, source_url, source_hash, expires_at, tier, decay_score, session_id, parent_id, token_count, valid_to, obsidian_path, last_exported, category, updated_at, origin_device. Edges in memory_edges (typed, directional). Versions in memory_versions. FTS5 virtual table for keyword search.', 'memory,schema,sqlite', 5, 'fact', 1746316800000, 'long', 1.0, 90, 'memory'),
+
+-- ====================================================================
+-- ai_integrations submodule map
+-- ====================================================================
+('ai_integrations exposes the brain to external AI assistants. gateway.rs defines the BrainGateway trait + AppStateGateway adapter (8 ops: search, get, list_recent, kg_neighbors, summarize, suggest_context, ingest_url, health). mcp/ holds the MCP HTTP server (bearer-token auth, tools/prompts/resources). grpc/ holds the brain.v1 transport for desktop-mobile bridge.', 'ai-integrations,mcp,grpc,gateway', 5, 'fact', 1746316800000, 'long', 1.0, 80, 'ai-integrations'),
+
+-- ====================================================================
+-- Persona / motion / charisma
+-- ====================================================================
+('Persona module map: pack.rs (persona pack import/export schema), extract.rs + drift.rs (trait extraction + drift detection), charisma.rs (charisma teaching system), motion_clip.rs (motion clip parser/validator), motion_tokens.rs (MotionGPT motion token codec), motion_reconstruction.rs (MoMask-style full-body reconstruction), motion_smooth.rs + motion_feedback.rs (offline polish + self-improve loop), pose_frame.rs (LLM-as-Animator pose-frame parser), prosody.rs, retarget.rs.', 'persona,motion,module-map', 5, 'fact', 1746316800000, 'long', 1.0, 90, 'persona'),
+
+('Pose pipeline: <pose> tag in StreamTagParser emits llm-pose event consumed by frontend PoseAnimator (Chunks 14.16b1/b2/b3). Emotion-reactive procedural pose bias (14.16d). generate_motion_from_text Tauri command + Persona-panel UI (14.16c2/c3). ARKit blendshape passthrough is the canonical face rig (Chunk 27.3).', 'persona,pose,animation,arkit', 4, 'fact', 1746316800000, 'long', 1.0, 65, 'persona'),
+
+-- ====================================================================
+-- Voice
+-- ====================================================================
+('Voice module map: config_store.rs (persisted voice config), stub_asr.rs / stub_diarization.rs / stub_tts.rs (default offline stubs), whisper_api.rs (Whisper-compatible ASR endpoint). Defaults: Web Speech TTS, stub ASR/diarization. VoiceConfig serde-stable across hotword field rollouts.', 'voice,module-map,asr,tts', 4, 'fact', 1746316800000, 'long', 1.0, 60, 'voice'),
+
+-- ====================================================================
+-- Self-improve / coding workflow
+-- ====================================================================
+('coding/ module map: engine.rs + workflow.rs + autostart.rs + client.rs (self-improve engine), apply_file.rs + git_ops.rs + worktree.rs (patch application + temporary git worktrees), context_budget.rs + context_engineering.rs + prompting.rs (prompt assembly), conversation_learning.rs + session_chat.rs + task_queue.rs (session learning), cost.rs + metrics.rs, dag_runner.rs + multi_agent.rs + resolver.rs + reviewer.rs + processes.rs (DAG orchestration), github.rs (GitHub PR flow), handoff.rs + handoff_store.rs + milestones.rs + promotion_plan.rs (handoff + promotion), repo.rs + rename.rs + symbol_index.rs + wiki.rs + test_runner.rs.', 'self-improve,coding,module-map', 5, 'fact', 1746316800000, 'long', 1.0, 130, 'self-improve'),
+
+('Self-improve flow: detect target repo -> create temporary git worktree (chunk 28.13) -> path-scoped workflow context loading (28.14) -> coding intent router (28.2) -> multi-agent DAG runner (28.3 + 28.12) -> apply/review/test execution gate (28.11) -> GitHub PR flow with OAuth device authorization (28.5). Session transcripts auto-append to mcp-data via Chunk 30.6. Isolated patch auto-merge added in 32.4. Chunk completion + retry in 32.3.', 'self-improve,workflow,history', 5, 'fact', 1746316800000, 'long', 1.0, 90, 'self-improve'),
+
+-- ====================================================================
+-- Identity, link, sync, network, messaging
+-- ====================================================================
+('Device identity uses Ed25519. Files: identity/device.rs (DeviceIdentity), key_store.rs, qr.rs (pairing QR), trusted_devices.rs (registry). LAN gRPC enforces mTLS to paired devices (Chunks 24.2b/24.3). Phone-control RPC surface (24.4). gRPC-Web client + transport adapter for browser (24.8).', 'identity,sync,grpc,mtls', 4, 'fact', 1746316800000, 'long', 1.0, 70, 'sync'),
+
+('Sync primitives in src-tauri/src/sync/: lww_register.rs, or_set.rs, append_log.rs. Soul Link wire protocol (Chunks 17.5a + 17.5b). link/ module: manager.rs, quic.rs, ws.rs (QUIC + WebSocket transports), handlers.rs.', 'sync,link,crdt,transport', 4, 'fact', 1746316800000, 'long', 1.0, 55, 'sync'),
+
+-- ====================================================================
+-- Plugins, sandbox, agents, orchestrator, workflows, tasks
+-- ====================================================================
+('Plugins run in a WASM sandbox: src-tauri/src/sandbox/wasm_runner.rs + capability.rs (capability gating) + host_api.rs. Plugin host: plugins/host.rs + manifest.rs. Capability grants prompted via composables/usePluginCapabilityGrants. Plugin command dispatch in commands/plugins.rs (Chunk 22.7).', 'plugins,sandbox,wasm,capabilities', 4, 'fact', 1746316800000, 'long', 1.0, 65, 'plugins'),
+
+('Orchestrator submodules: agent_orchestrator.rs (agent routing with capability gates), agentic_rag.rs, coding_router.rs, self_rag.rs (Self-RAG orchestrator loop, Chunk 16.4b). Workflows engine: workflows/engine.rs + resilience.rs (retry, circuit breaker, watchdog). Tasks: tasks/manager.rs (long-running task tracking).', 'orchestrator,workflows,tasks', 4, 'fact', 1746316800000, 'long', 1.0, 60, 'orchestrator'),
+
+-- ====================================================================
+-- Frontend Pinia stores (high-level inventory)
+-- ====================================================================
+('Frontend Pinia stores in src/stores/: brain (active provider config), conversation (local chat history + streaming), memory (memory CRUD + search), persona (traits + learned expressions), skill-tree (~1500 lines, gamified quest system with auto-detection), voice (TTS/ASR), settings, character (active VRM + emotion), audio, background, charisma, ai-decision-policy, ai-integrations, agent-roster, browser-lan, chat-store-router, coding-workflow, identity, link, mcp-activity (live MCP tool-use UI badge), messaging, mobile-notifications, mobile-pairing, package, plugins, provider-health, remote-conversation, routing, sandbox, self-improve, streaming, sync, tasks, teachable-capabilities, window (Window vs Pet mode), workflow-plans.', 'frontend,stores,pinia,inventory', 4, 'fact', 1746316800000, 'long', 1.0, 130, 'frontend'),
+
+('Frontend composables in src/composables/: useAsrManager + useTtsPlayback + useDiarization + useHotwords + useLipSyncBridge (voice pipeline), useChatExpansion + useChatExport (chat UI), useCameraCapture + usePresenceDetector (vision), useTheme + useActivePluginTheme, useTranslation (worldwide translator), usePluginCapabilityGrants + usePluginSlashDispatch (plugin UX), useVrmThumbnail (offscreen VRM rendering), useModelCameraStore (per-model framing), useBgmPlayer, useKeyboardDetector.', 'frontend,composables,inventory', 4, 'fact', 1746316800000, 'long', 1.0, 90, 'frontend'),
+
+-- ====================================================================
+-- Tauri command surface inventory
+-- ====================================================================
+('commands/ files (~150 Tauri commands): agent.rs + agents_roster.rs (agents), auto_setup.rs (first-launch), brain.rs + chat.rs + streaming.rs (chat pipeline), character.rs + emotion.rs + vision.rs, charisma.rs + persona.rs, coding.rs + coding_sessions.rs (self-improve), consolidation.rs + crag.rs + gitnexus.rs + ingest.rs + memory.rs (memory ops), docker.rs + lan.rs + link.rs + routing.rs (network), github_auth.rs (GitHub OAuth device flow), grpc.rs + mcp.rs (transport lifecycle), identity.rs + messaging.rs, package.rs + plugins.rs + registry.rs + sandbox.rs (plugins), quest.rs (skill tree), settings.rs + window.rs + workflow_plans.rs, teachable_capabilities.rs, translation.rs, user_models.rs, voice.rs, vscode.rs, ipc_contract_tests.rs.', 'commands,inventory,architecture', 4, 'fact', 1746316800000, 'long', 1.0, 130, 'commands'),
+
+-- ====================================================================
+-- Design docs (one-line summaries)
+-- ====================================================================
+('Design docs (docs/): AI-coding-integrations.md (MCP/gRPC for VS Code Copilot/Cursor/Codex/Claude Code), brain-advanced-design.md (brain architecture + schema + RAG pipeline + roadmap, kept in sync with code), charisma-teaching-tutorial.md, coding-workflow-design.md (self-improve), gitnexus-capability-matrix.md, licensing-audit.md, llm-animation-research.md, momask-full-body-retarget-research.md, motion-model-inference-evaluation.md (MotionGPT/T2M-GPT eval), multi-agent-workflows-tutorial.md, neural-audio-to-face-evaluation.md, offline-motion-polish-research.md, persona-design.md + persona-pack-schema.md, plugin-development.md, teachable-capabilities.md.', 'docs,inventory,design', 4, 'fact', 1746316800000, 'long', 1.0, 110, 'docs'),
+
+-- ====================================================================
+-- Rules (one-line summaries)
+-- ====================================================================
+('Rules files (rules/): agent-mcp-bootstrap.md (how agents connect to npm run mcp), architecture-rules.md (incl. brain doc-sync rule), backlog.md, coding-standards.md (incl. Multi-Agent Instruction Sync, CREDITS rule), coding-workflow-reliability.md, completion-log.md (permanent done-chunk record, 10k-line cap then archived), llm-decision-rules.md, local-first-brain.md, milestones.md (active queue: only not-started/in-progress), prompting-rules.md (incl. enforcement rules), quality-pillars.md, reality-filter.md (no pretend code), research-reverse-engineering.md, ui-ux-standards.md.', 'rules,inventory,governance', 5, 'fact', 1746316800000, 'long', 1.0, 110, 'rules'),
+
+-- ====================================================================
+-- Lessons learned (durable; never re-solve)
+-- ====================================================================
+('LESSON: Tauri requires Linux WebKit/GTK system deps before any cargo command on Linux: libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev pkg-config libglib2.0-dev libssl-dev. The Copilot cloud agent installs these in .github/workflows/copilot-setup-steps.yml.', 'lesson,build,linux,tauri', 5, 'procedure', 1746316800000, 'long', 1.0, 50, 'lessons'),
+
+('LESSON: First `npm run mcp` build is slow (full Rust crate, ~3-5 min). Subsequent runs are warm via src-tauri/target. Always wait on GET /health via scripts/wait-for-service.mjs before issuing tool calls. In sandboxed environments, use setsid to detach so npm run mcp survives short tool calls.', 'lesson,mcp,build,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 55, 'lessons'),
+
+('LESSON: clippy lint items_after_test_module rejects items declared after a `#[cfg(test)] mod ...` block in the same file. Always place test modules at the very bottom of lib.rs / module roots.', 'lesson,clippy,rust,testing', 5, 'procedure', 1746316800000, 'long', 1.0, 40, 'lessons'),
+
+('LESSON: The MCP seed (mcp-data/shared/memory-seed.sql) is applied ONLY on first run when memory.db does not yet exist. Existing runtime DBs must be re-ingested via brain_ingest_* tools when shared seed content changes — there is no automatic re-seed.', 'lesson,mcp,seed,memory', 5, 'procedure', 1746316800000, 'long', 1.0, 50, 'lessons'),
+
+('LESSON: Cypress was removed; do not reintroduce. Frontend tests use Vitest + Playwright only (docs/licensing-audit.md).', 'lesson,testing,dependencies', 4, 'preference', 1746316800000, 'long', 1.0, 30, 'lessons'),
+
+('LESSON: GitHub Actions on the agent first push may show conclusion=action_required with zero jobs/logs. This means the workflow needs human approval, not that the code failed. Code-side validation (lint/build/test/clippy) is the source of truth.', 'lesson,ci,github-actions', 4, 'fact', 1746316800000, 'long', 1.0, 45, 'lessons'),
+
+('LESSON: Per the Brain Documentation Sync rule (rules/architecture-rules.md rule 10), any change touching the brain surface (LLM providers, memory store, RAG pipeline, ingestion, embeddings, cognitive-kind classification, knowledge graph, decay/GC, brain-gating quests, brain Tauri commands or Pinia stores) MUST update both docs/brain-advanced-design.md and README.md in the same PR.', 'lesson,brain,docs,governance', 5, 'procedure', 1746316800000, 'long', 1.0, 70, 'lessons'),
+
+('LESSON: AppState is Arc<AppStateInner> with auto-Deref, so background servers (MCP, gRPC) can hold cheap clones without lifetime issues. Use it for any server task that must outlive the originating Tauri command.', 'lesson,rust,architecture,state', 4, 'fact', 1746316800000, 'long', 1.0, 50, 'lessons'),
+
+('LESSON: When making frontend changes, do NOT bulk-rewrite unrelated lint warnings — fix only what your change touches. ESLint enforces vue/max-attributes-per-line, self-closing void elements, and singleline-element newlines but tolerates pre-existing warnings.', 'lesson,frontend,lint,scope', 4, 'preference', 1746316800000, 'long', 1.0, 50, 'lessons'),
+
+('LESSON: Never .unwrap() in library code. Use ? + thiserror. The crate roots use #![deny(unused_must_use)] so every Result must be handled.', 'lesson,rust,error-handling', 5, 'preference', 1746316800000, 'long', 1.0, 35, 'lessons'),
+
+('LESSON: Use var(--ts-*) design tokens from src/style.css; never hardcode hex colors. Vue components use <script setup lang="ts"> with scoped styles only.', 'lesson,frontend,css,vue', 4, 'preference', 1746316800000, 'long', 1.0, 40, 'lessons'),
+
+('LESSON: Do not commit MCP runtime state. .gitignore covers mcp-token.txt, memory.db, *.db-shm, *.db-wal, tasks.db*, workflows.sqlite, *.idx, *.lock, sessions/, worktrees/. Only mcp-data/shared/** and mcp-data/README.md are tracked.', 'lesson,mcp,gitignore,data-policy', 5, 'preference', 1746316800000, 'long', 1.0, 60, 'lessons'),
+
+('LESSON: Self-improve runs in temporary git worktrees so the main checkout is never disturbed. Always read rules/milestones.md (next not-started chunk) and the top of rules/completion-log.md (recent context) before starting.', 'lesson,self-improve,git,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 55, 'lessons'),
+
+-- ====================================================================
+-- Standing user requirement (May 2026) — verbatim, never forget
+-- ====================================================================
+('STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data is refined and attached to git repo. Please analysis and choose wisely gitignore stuffs for mcp-data to expose shared data in GitHub repo for mcp usage of TerranSoul. Other people changes and self-improve will update these dataset. Make sure that the entire TerranSoul is saved in mcp-data as default dataset so we never forgot anything and repeat same problems twice and continue implement new features without duplication or rescan entire code base." Implementation: only mcp-data/shared/** + mcp-data/README.md are tracked; runtime tokens/DBs/indexes/logs/locks/sessions/worktrees are ignored. Shared dataset = memory-seed.sql + project-index.md + lessons-learned.md + brain_config.json + app_settings.json. Update them in any PR that adds durable knowledge. Every agent session must read project-index.md and lessons-learned.md (or query the brain) before scanning code or attempting features.', 'requirement,user,mcp-data,policy,governance', 5, 'preference', 1746316800000, 'long', 1.0, 200, 'requirements'),
+
+('STANDING REQUIREMENT (user, 2026-05-04): every agent session must actively USE the MCP brain (start `npm run mcp`, verify GET /health, set TERRANSOUL_MCP_TOKEN_MCP from mcp-data/mcp-token.txt, then query brain_search / brain_suggest_context for project context BEFORE rescanning the codebase or implementing features). Self-improve writes new durable knowledge back to mcp-data/shared/ in the same PR.', 'requirement,user,mcp,session-protocol', 5, 'preference', 1746316800000, 'long', 1.0, 90, 'requirements');
