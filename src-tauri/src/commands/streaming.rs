@@ -466,9 +466,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
             .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
             .collect::<Vec<_>>()
             .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
     }
 
     // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
@@ -638,9 +636,7 @@ async fn stream_ollama<R: tauri::Runtime>(
             .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
             .collect::<Vec<_>>()
             .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
     }
 
     // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
@@ -876,9 +872,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                 .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
                 .collect::<Vec<_>>()
                 .join("\n");
-            system_prompt.push_str(&format!(
-                "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-            ));
+            system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
         }
 
         // Append Self-RAG reflection instructions

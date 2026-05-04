@@ -40,6 +40,7 @@ source code unless a dependency table below says otherwise.
 | [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code) | See upstream | `SelfImproveSessionsPanel.vue`, `coding::session_chat`, resume/fork/rename/delete session UX | Thank you for the open session-management patterns that helped turn TerranSoul's coding workflow into a resumable experience. |
 | OpenClaw public project | Public project materials; verify upstream terms before any code reuse | Self-improve UX research alongside claw-code and Claude Code | Thank you for the public exploration work around Claude Code-style agent UX that informed our session and slash-command design. |
 | [Obsidian](https://obsidian.md/) | Proprietary freeware (EULA) by Erica Xu & Shida Li / Dynalist Inc. | Vault export/sync architecture, YAML frontmatter schema, wikilink relationship model, local-first philosophy | Thank you for demonstrating that personal knowledge graphs work best as local-first, portable Markdown files with YAML frontmatter and graph-view wikilinks. Obsidian's vault structure directly inspired TerranSoul's memory export (`src-tauri/src/memory/obsidian_export.rs`), bidirectional sync (`obsidian_sync.rs`), the `obsidian_path`/`last_exported` schema columns, and the `[[wikilink]]` edge generation from memory relationships. See `docs/brain-advanced-design.md` § Layer 2 for full architecture. |
+| Jonathan Edwards — ["Stop Calling It Memory — The Problem"](https://limitededitionjonathan.substack.com/p/stop-calling-it-memory-the-problem) | Public Substack article; original text not copied | `src-tauri/src/memory/context_pack.rs`, `src/stores/conversation.ts`, `docs/brain-advanced-design.md`, README RAG wording | Thank you for the critique that agent "memory" should be treated as queryable external context/database retrieval rather than prompt-stuffed files or an exhaustive human-memory metaphor. TerranSoul adapted that idea by adding an explicit retrieved-context contract around RAG injections while keeping neutral project terminology. |
 
 ## Frontend dependencies (npm)
 
@@ -120,4 +121,3 @@ shipped. See `docs/licensing-audit.md` for full rationale.
 | NVIDIA Audio2Emotion | License gated; restricted to the Audio2Face project, not standalone use |
 | Stable Video Diffusion | Stability AI community license has commercial thresholds |
 | HunyuanVideo / Hunyuan-Motion (bundled) | Tencent community/model license terms; GPU-heavy and video-output-oriented |
-

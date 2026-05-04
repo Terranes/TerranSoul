@@ -10,6 +10,7 @@ pub mod cognitive_kind;
 pub mod conflicts;
 pub mod consolidation;
 pub mod contextualize;
+pub mod context_pack;
 pub mod crag;
 pub mod crdt_sync;
 pub mod edge_conflict_scan;
@@ -41,6 +42,7 @@ pub mod postgres;
 pub use auto_learn::{evaluate as evaluate_auto_learn, AutoLearnDecision, AutoLearnPolicy};
 pub use backend::{StorageBackend, StorageConfig, StorageError, StorageResult};
 pub use cognitive_kind::{classify as classify_cognitive_kind, CognitiveKind};
+pub use context_pack::format_retrieved_context_pack;
 pub use edges::{
     format_memories_for_extraction, normalise_rel_type, parse_llm_edges, EdgeDirection, EdgeSource,
     EdgeStats, MemoryEdge, NewMemoryEdge, COMMON_RELATION_TYPES,

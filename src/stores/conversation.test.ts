@@ -229,6 +229,9 @@ describe('conversation store — brain configured (browser-side free API)', () =
     const store = useConversationStore();
     await store.sendMessage('What do you remember about Vercel RAG?');
 
+    expect(systemPrompt).toContain('[RETRIEVED CONTEXT]');
+    expect(systemPrompt).toContain('queryable memory/RAG store');
+    expect(systemPrompt).toContain('not an exhaustive transcript or complete database');
     expect(systemPrompt).toContain('[LONG-TERM MEMORY]');
     expect(systemPrompt).toContain('million-user Vercel browser RAG');
   });

@@ -178,7 +178,7 @@ freshness rankings with RRF (`k=60`), exposes a HyDE prompt builder for direct
 provider calls, applies a simplified local rerank through the same hybrid score,
 and exports/imports a versioned sync payload that can be stored in the user's
 Google Drive file flow. Browser chat injects top browser-RAG hits as the same
-`[LONG-TERM MEMORY]` block used by desktop and writes completed browser chat
+`[RETRIEVED CONTEXT]` / `[LONG-TERM MEMORY]` context-pack contract used by desktop and writes completed browser chat
 turns back into local memory. Browser-mode QA is covered by focused Vue tests for
 landing anchors, one-click browser authorization, forced pet-preview wiring,
 manga-style pet emotion bubbles, app-window launch events, browser memory
@@ -722,6 +722,9 @@ User types: "What are the filing deadlines?"
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Step 3: FORMAT MEMORY BLOCK                                          │
 │                                                                      │
+│ [RETRIEVED CONTEXT]                                                 │
+│ Source: TerranSoul queryable memory/RAG store.                      │
+│ Contract: retrieved records, not an exhaustive transcript/database. │
 │ [LONG-TERM MEMORY]                                                  │
 │ - [long] Cook County Rule 14.3: 30-day notice required              │
 │ - [long] Emergency motions: same-day filing allowed                 │
@@ -729,6 +732,7 @@ User types: "What are the filing deadlines?"
 │ - [long] Court hours: 8:30am–4:30pm for filings                   │
 │ - [long] E-filing portal: odysseyfileandserve.com                  │
 │ [/LONG-TERM MEMORY]                                                 │
+│ [/RETRIEVED CONTEXT]                                                │
 └──────────────────────────┬───────────────────────────────────────────┘
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -736,10 +740,15 @@ User types: "What are the filing deadlines?"
 │                                                                      │
 │ system: "You are a helpful AI companion. {personality}               │
 │                                                                      │
+│          [RETRIEVED CONTEXT]                                         │
+│          Source: TerranSoul queryable memory/RAG store.              │
+│          Contract: use these retrieved records when relevant; say    │
+│          when context is insufficient.                               │
 │          [LONG-TERM MEMORY]                                          │
 │          - [long] Cook County Rule 14.3: 30-day notice...           │
-│          ... (top 5 memories)                                       │
+│          ... (top 5 records)                                        │
 │          [/LONG-TERM MEMORY]                                         │
+│          [/RETRIEVED CONTEXT]                                        │
 │                                                                      │
 │          Use these memories to inform your response."                │
 │                                                                      │
@@ -748,6 +757,29 @@ User types: "What are the filing deadlines?"
 │ → LLM generates response grounded in retrieved memories             │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+### Retrieved Context Pack Contract
+
+TerranSoul treats memory injection as a **database retrieval result**, not as
+"the AI remembering everything." Inspired by critiques of file/prompt-stuffed
+"agent memory," live chat now wraps every retrieved memory block in an outer
+`[RETRIEVED CONTEXT]` section. The inner `[LONG-TERM MEMORY]` marker remains
+for compatibility with existing prompt tests and LLM instructions, but the outer
+contract tells the model:
+
+1. the snippets came from TerranSoul's queryable memory/RAG store;
+2. the snippets are not an exhaustive transcript or complete database dump;
+3. irrelevant snippets may be ignored; and
+4. if retrieved context is insufficient, the model should say so instead of
+   pretending the database was fully searched.
+
+Implementation points:
+
+- Rust desktop/local/cloud streaming: `src-tauri/src/memory/context_pack.rs`,
+  used by `commands/chat.rs`, `commands/streaming.rs`,
+  `ai_integrations/grpc/phone_control.rs`, and `brain/ollama_agent.rs`.
+- Browser/Vercel direct-provider chat mirrors the same format in
+  `src/stores/conversation.ts` before appending browser-native RAG hits.
 
 ### Tool Plugins And Brain Routing
 

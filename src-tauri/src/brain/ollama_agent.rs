@@ -153,7 +153,10 @@ impl OllamaAgent {
             SYSTEM_PROMPT.to_string()
         } else {
             let mem_block = memories.join("\n- ");
-            format!("{SYSTEM_PROMPT}\n\n[LONG-TERM MEMORY]\n- {mem_block}\n[/LONG-TERM MEMORY]")
+            format!(
+                "{SYSTEM_PROMPT}{}",
+                crate::memory::format_retrieved_context_pack(&format!("- {mem_block}"))
+            )
         };
 
         let mut msgs = vec![ChatMessage {
@@ -1389,6 +1392,8 @@ mod tests {
         let agent = OllamaAgent::new("gemma3:4b");
         let mems = vec!["User likes Python".to_string()];
         let msgs = agent.build_messages("tell me about coding", &[], &mems);
+        assert!(msgs[0].content.contains("RETRIEVED CONTEXT"));
+        assert!(msgs[0].content.contains("not an exhaustive transcript"));
         assert!(msgs[0].content.contains("LONG-TERM MEMORY"));
         assert!(msgs[0].content.contains("User likes Python"));
     }

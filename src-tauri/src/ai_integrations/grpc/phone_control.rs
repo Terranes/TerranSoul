@@ -440,9 +440,7 @@ async fn build_phone_system_prompt(
             .map(|entry| format!("- [{}] {}", entry.tier.as_str(), entry.content))
             .collect::<Vec<_>>()
             .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
     }
 
     if let Ok(persona) = state.persona_block.lock() {

@@ -1213,6 +1213,17 @@ function translatorStoppedMessage(): Message {
   };
 }
 
+function formatRetrievedContextPack(memoryLines: string[]): string {
+  return '\n\n[RETRIEVED CONTEXT]\n'
+    + 'Source: TerranSoul queryable memory/RAG store.\n'
+    + 'Contract: These are relevant retrieved records, not an exhaustive transcript or complete database. Use them when helpful, ignore irrelevant records, and say when retrieved context is insufficient.\n'
+    + '[LONG-TERM MEMORY]\n'
+    + 'The following facts from your memory were retrieved for this turn:\n'
+    + memoryLines.join('\n')
+    + '\n[/LONG-TERM MEMORY]\n'
+    + '[/RETRIEVED CONTEXT]';
+}
+
 // Re-export detectLlmCommand for tests
 export { detectLlmCommand };
 
@@ -1967,9 +1978,7 @@ export const useConversationStore = defineStore('conversation', () => {
         try {
           const results = await useMemoryStore().hybridSearch(content, 5);
           if (results && results.length > 0) {
-            memoryBlock = '\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n'
-              + results.map((m) => `- ${m.content}`).join('\n')
-              + '\n[/LONG-TERM MEMORY]';
+            memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
           }
         } catch {
           // No memories — continue without RAG.

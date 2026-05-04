@@ -70,7 +70,7 @@ fn sentiment_str(s: &Sentiment) -> &'static str {
 /// chat prompt: persona is kept verbatim, retrieved memories are
 /// trimmed by score, and old history turns are dropped to stay within
 /// the per-mode token budget. Returns the assembled system prompt
-/// (persona + `[LONG-TERM MEMORY]` block) and the trimmed history.
+/// (persona + retrieved context pack) and the trimmed history.
 ///
 /// `relevant` is assumed to be sorted best-first (as
 /// [`crate::memory::MemoryStore::hybrid_search`] returns) — we
@@ -117,9 +117,7 @@ pub(super) fn build_budgeted_prompt(
             .map(|c| c.content.clone())
             .collect::<Vec<_>>()
             .join("\n");
-        system.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system.push_str(&crate::memory::format_retrieved_context_pack(&mem_block));
     }
 
     let trimmed_history: Vec<(String, String)> = result
