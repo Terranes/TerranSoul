@@ -20,8 +20,9 @@ mode**:
 - `serverInfo.name` = `terransoul-brain-mcp`
 - `serverInfo.buildMode` = `mcp` (not `dev`, not `release`)
 - Bound to **127.0.0.1:7423** (loopback only, never LAN)
-- Persists state in **`<repo>/mcp-data/`** (gitignored)
+- Persists runtime state in **`<repo>/mcp-data/`**
 - Bearer token at **`<repo>/mcp-data/mcp-token.txt`**
+- Loads committed shared seed data from **`<repo>/mcp-data/shared/`**
 
 It is intentionally a **separate process** with a **separate data
 dir** and a **separate port** so it never collides with:
@@ -85,9 +86,12 @@ that touch this surface MUST NOT:
 4. **Bind anything but loopback.** Even if `lan_enabled` is set in
    the user's app settings, the headless runner ignores it and
    binds `127.0.0.1` only.
-5. **Survive `git clean`.** `mcp-data/` is gitignored. Wiping it
-   only costs the agent its locally-ingested dev knowledge; nothing
-   user-owned is lost.
+5. **Separate shared data from runtime state.** `mcp-data/shared/`
+   is committed reviewable seed knowledge. Runtime files under
+   `mcp-data/` (token, SQLite DB, WAL/SHM, vector indexes, logs,
+   locks, sessions, worktrees) are ignored. Wiping ignored runtime
+   state only costs the agent its locally-ingested dev knowledge;
+   nothing user-owned is lost.
 6. **Trigger any user-facing onboarding.** The headless runner has
    **no UI surface** — no Vue app, no skill tree, no charisma
    panel, no persona drift prompts, no notifications, no system
@@ -148,14 +152,18 @@ Every AI coding agent in this repo follows the same procedure:
    `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`
    from the MCP tool list before falling back to manual
    `grep_search`/`file_search`/`read_file`.
-5. **Never commit `mcp-data/`.** It is gitignored; agents must not
-   force-add it.
+5. **Commit only shared MCP data.** It is valid to update
+   `mcp-data/shared/**` when durable project knowledge should help
+   future MCP sessions. Never force-add ignored runtime files such as
+   `mcp-token.txt`, `memory.db*`, indexes, logs, locks, sessions, or
+   worktrees.
 
 ## 6. Seed data — pre-populated brain on first run
 
-The committed directory `mcp-data-seed/` contains architecture
+The committed directory `mcp-data/shared/` contains architecture
 knowledge that is automatically applied on the **first** `npm run mcp`
-invocation (when `mcp-data/memory.db` does not yet exist):
+invocation (when `mcp-data/memory.db` does not yet exist). This is the
+only Git-tracked part of `mcp-data/`:
 
 | File | Role |
 |---|---|
@@ -169,14 +177,15 @@ invocation (when `mcp-data/memory.db` does not yet exist):
 2. If `memory.db` is missing, the function creates it with the
    canonical schema and runs `memory-seed.sql`.
 3. Config files are written only when missing.
-4. If `mcp-data/` already exists (from a previous session), nothing
-   is overwritten — incremental knowledge stays intact.
+4. If `mcp-data/memory.db` already exists (from a previous session),
+   nothing is overwritten — incremental knowledge stays intact.
 
 **Updating seed knowledge:**
 
-Edit `mcp-data-seed/memory-seed.sql` with new INSERT statements
-following the same column pattern. The seed is compiled into the
-binary via `include_str!`, so a `cargo build` picks up changes.
+Edit `mcp-data/shared/memory-seed.sql` with new INSERT statements
+following the same column pattern. `npm run mcp` reads the shared file
+at runtime before falling back to compiled defaults, so self-improve
+and contributor changes can update the shared dataset in normal PRs.
 
 ## 7. Live monitor / adjust loop
 

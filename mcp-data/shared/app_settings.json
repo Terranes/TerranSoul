@@ -1,0 +1,10 @@
+{
+  "auto_start_mcp": false,
+  "lan_enabled": false,
+  "relevance_threshold": 0.05,
+  "contextual_retrieval": true,
+  "late_chunking": false,
+  "auto_tag": true,
+  "max_memory_mb": 10,
+  "max_memory_gb": 10
+}

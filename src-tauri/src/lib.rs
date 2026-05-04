@@ -553,11 +553,18 @@ fn resolve_headless_mcp_port() -> u16 {
         .unwrap_or(HEADLESS_MCP_PORT)
 }
 
+/// Load a shared MCP seed file from `<data_dir>/shared/`, falling back to the
+/// compiled-in repository default when the runtime shared dataset is absent.
+fn load_mcp_seed_text(data_dir: &std::path::Path, file_name: &str, fallback: &str) -> String {
+    let shared_path = data_dir.join("shared").join(file_name);
+    std::fs::read_to_string(shared_path).unwrap_or_else(|_| fallback.to_string())
+}
+
 /// Apply seed data to a fresh `mcp-data/` directory.
 ///
 /// On **first run** (no existing `memory.db`), this function:
-/// 1. Copies `brain_config.json` and `app_settings.json` from compile-time
-///    embedded seed files into `data_dir`.
+/// 1. Copies `brain_config.json` and `app_settings.json` from the committed
+///    `mcp-data/shared/` dataset (or compiled fallback) into `data_dir`.
 /// 2. Creates `memory.db` with the canonical schema and executes the
 ///    seed SQL to pre-populate TerranSoul knowledge.
 ///
@@ -573,7 +580,11 @@ fn seed_mcp_data(data_dir: &std::path::Path) {
     // Write config files (only if missing)
     let brain_cfg_path = data_dir.join("brain_config.json");
     if !brain_cfg_path.exists() {
-        let seed_brain_cfg = include_str!("../../mcp-data-seed/brain_config.json");
+        let seed_brain_cfg = load_mcp_seed_text(
+            data_dir,
+            "brain_config.json",
+            include_str!("../../mcp-data/shared/brain_config.json"),
+        );
         if let Err(e) = std::fs::write(&brain_cfg_path, seed_brain_cfg) {
             eprintln!("[mcp-http] warning: failed to write seed brain_config.json: {e}");
         }
@@ -581,7 +592,11 @@ fn seed_mcp_data(data_dir: &std::path::Path) {
 
     let app_cfg_path = data_dir.join("app_settings.json");
     if !app_cfg_path.exists() {
-        let seed_app_cfg = include_str!("../../mcp-data-seed/app_settings.json");
+        let seed_app_cfg = load_mcp_seed_text(
+            data_dir,
+            "app_settings.json",
+            include_str!("../../mcp-data/shared/app_settings.json"),
+        );
         if let Err(e) = std::fs::write(&app_cfg_path, seed_app_cfg) {
             eprintln!("[mcp-http] warning: failed to write seed app_settings.json: {e}");
         }
@@ -594,8 +609,12 @@ fn seed_mcp_data(data_dir: &std::path::Path) {
                 eprintln!("[mcp-http] warning: failed to initialize schema: {e}");
                 return;
             }
-            let seed_sql = include_str!("../../mcp-data-seed/memory-seed.sql");
-            if let Err(e) = conn.execute_batch(seed_sql) {
+            let seed_sql = load_mcp_seed_text(
+                data_dir,
+                "memory-seed.sql",
+                include_str!("../../mcp-data/shared/memory-seed.sql"),
+            );
+            if let Err(e) = conn.execute_batch(&seed_sql) {
                 eprintln!("[mcp-http] warning: failed to apply memory-seed.sql: {e}");
             } else {
                 eprintln!("[mcp-http] seed data applied successfully");
@@ -1460,4 +1479,30 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod mcp_seed_tests {
+    use super::load_mcp_seed_text;
+
+    #[test]
+    fn load_mcp_seed_text_prefers_tracked_shared_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let shared = tmp.path().join("shared");
+        std::fs::create_dir_all(&shared).expect("shared dir");
+        std::fs::write(shared.join("memory-seed.sql"), "-- shared seed").expect("write seed");
+
+        let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
+
+        assert_eq!(loaded, "-- shared seed");
+    }
+
+    #[test]
+    fn load_mcp_seed_text_falls_back_when_shared_file_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+
+        let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
+
+        assert_eq!(loaded, "-- fallback seed");
+    }
 }
