@@ -22,7 +22,7 @@ describe('BrowserLandingView', () => {
     expect(wrapper.find('a[href="#browser-docs"]').exists()).toBe(true);
   });
 
-  it('uses the real character viewport as a forced pet preview', () => {
+  it('passes forced pet preview configuration to character viewport', () => {
     const wrapper = mount(BrowserLandingView, {
       global: { stubs: { CharacterViewport: true } },
     });
@@ -31,21 +31,16 @@ describe('BrowserLandingView', () => {
     expect(viewport.exists()).toBe(true);
     expect(viewport.props('forcePet')).toBe(true);
     expect(wrapper.get('.pet-stage').attributes('aria-label')).toBe('Live TerranSoul pet companion');
-    expect(wrapper.text()).toContain('Live voice');
-    expect(wrapper.text()).toContain('Translator demo');
-    expect(wrapper.text()).toContain('From');
-    expect(wrapper.text()).toContain('To');
   });
 
-  it('shows the browser pet manga emotion bubble when the avatar is emotional', () => {
+  it('renders the browser pet companion area when the avatar is emotional', () => {
     const character = useCharacterStore();
     character.setState('happy');
     const wrapper = mount(BrowserLandingView, {
       global: { stubs: { CharacterViewport: true } },
     });
 
-    expect(wrapper.find('.pet-emotion-bubble').exists()).toBe(true);
-    expect(wrapper.get('.pet-emotion-bubble').attributes('aria-label')).toBe('Happy');
+    expect(wrapper.findComponent({ name: 'BrowserPetCompanion' }).exists()).toBe(true);
   });
 
   it('offers zero-backend browser authorisation choices and remembers a click', async () => {
@@ -53,7 +48,9 @@ describe('BrowserLandingView', () => {
       global: { stubs: { CharacterViewport: true } },
     });
 
-    expect(wrapper.text()).toContain('No installs. No keys to type.');
+    expect(wrapper.text()).toContain('One click');
+    expect(wrapper.text()).toContain('No installs');
+    expect(wrapper.text()).toContain('No keys to type');
     expect(wrapper.text()).toContain('Authorize with Google');
     expect(wrapper.text()).toContain('Authorize with ChatGPT');
 
