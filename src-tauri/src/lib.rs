@@ -830,6 +830,21 @@ pub fn run_http_server() -> std::io::Result<()> {
                     handle.port
                 );
                 eprintln!("[mcp-http] bearer token: {token}");
+                eprintln!(
+                    "[mcp-http] health check: GET http://127.0.0.1:{}/health (no auth)",
+                    handle.port
+                );
+
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                match write_mcp_token_file(&cwd, &token) {
+                    Ok(token_file) => {
+                        eprintln!("[mcp-http] token written to {}", token_file.display())
+                    }
+                    Err(e) => {
+                        eprintln!("[mcp-http] warning: failed to write .vscode/.mcp-token: {e}")
+                    }
+                }
+
                 eprintln!("[mcp-http] press Ctrl+C to stop");
                 if let Err(e) = tokio::signal::ctrl_c().await {
                     eprintln!("[mcp-http] ctrl_c listener error: {e}");
@@ -846,6 +861,17 @@ pub fn run_http_server() -> std::io::Result<()> {
             }
         }
     })
+}
+
+fn write_mcp_token_file(
+    workspace_root: &std::path::Path,
+    token: &str,
+) -> std::io::Result<PathBuf> {
+    let vscode_dir = workspace_root.join(".vscode");
+    std::fs::create_dir_all(&vscode_dir)?;
+    let token_file = vscode_dir.join(".mcp-token");
+    std::fs::write(&token_file, token)?;
+    Ok(token_file)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

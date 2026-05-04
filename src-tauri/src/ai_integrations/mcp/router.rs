@@ -32,6 +32,8 @@ pub struct McpRouterState {
     pub gw: Arc<dyn BrainGateway>,
     pub caps: GatewayCaps,
     pub token: String,
+    pub port: u16,
+    pub seed_loaded: bool,
     pub activity: Option<McpActivityReporter>,
     /// Full app state for code-intelligence tools that need the GitNexus sidecar.
     pub app_state: Option<AppState>,
@@ -216,6 +218,7 @@ pub(crate) async fn dispatch_method_with_state(
 pub fn build(state: McpRouterState) -> Router {
     Router::new()
         .route("/mcp", post(handle_request))
+        .route("/health", get(handle_health))
         .route("/hooks/pre_tool", post(handle_pre_tool_hook))
         .route("/hooks/post_tool", post(handle_post_tool_hook))
         .route("/status", get(handle_status))
@@ -238,6 +241,14 @@ async fn handle_request(
         }
     };
 
+    let response_id = req.id.clone().unwrap_or(Value::Null);
+
+    // Bearer-token authentication. Enforce before notification dispatch too.
+    if !validate_auth(&headers, &state.token) {
+        let resp = JsonRpcResponse::err(response_id, -32000, "unauthorized".into());
+        return (StatusCode::UNAUTHORIZED, Json(resp)).into_response();
+    }
+
     // Notifications (no id) — dispatch to hook handlers, then acknowledge.
     if req.id.is_none() {
         let params = req.params.unwrap_or(Value::Null);
@@ -252,12 +263,6 @@ async fn handle_request(
     }
 
     let id = req.id.unwrap_or(Value::Null);
-
-    // Bearer-token authentication.
-    if !validate_auth(&headers, &state.token) {
-        let resp = JsonRpcResponse::err(id, -32000, "unauthorized".into());
-        return (StatusCode::UNAUTHORIZED, Json(resp)).into_response();
-    }
 
     let params = req.params.unwrap_or(Value::Null);
     let tool_activity = if req.method == "tools/call" {
@@ -315,26 +320,28 @@ async fn handle_request(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+// ─── Health endpoint (no auth required) ─────────────────────────────────────
+
+/// Unauthenticated health check for agent auto-discovery.
+///
+/// Returns `200 OK` with `{"status":"ok","port":N}` so agents
+/// can verify the server is running without needing the bearer token first.
+/// No sensitive data is exposed.
+async fn handle_health(State(state): State<McpRouterState>) -> Response {
+    let body = json!({
+        "status": "ok",
+        "port": state.port,
+    });
+
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+// ─── Status endpoint (auth required) ────────────────────────────────────────
+
 /// `GET /status` — bearer-authenticated live snapshot of the running
 /// MCP server. Lets the user (or any agent) monitor RAG/memory health
 /// without speaking JSON-RPC.
-///
-/// Response shape:
-/// ```json
-/// {
-///   "name": "terransoul-brain-mcp",
-///   "version": "...",
-///   "buildMode": "mcp" | "dev" | "release",
-///   "petMode": true,
-///   "health": { "version": "...", "brain_provider": "...",
-///               "brain_model": "...", "rag_quality_pct": 80,
-///               "memory_total": 123 }
-/// }
-/// ```
-async fn handle_status(
-    State(state): State<McpRouterState>,
-    headers: HeaderMap,
-) -> Response {
+async fn handle_status(State(state): State<McpRouterState>, headers: HeaderMap) -> Response {
     if !validate_auth(&headers, &state.token) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
@@ -363,6 +370,8 @@ async fn handle_status(
         "version": env!("CARGO_PKG_VERSION"),
         "buildMode": build_mode,
         "petMode": super::is_mcp_pet_mode(),
+        "actual_port": state.port,
+        "seed_loaded": state.seed_loaded,
         "health": health,
     });
 
@@ -397,7 +406,8 @@ async fn handle_post_tool_hook(
 }
 
 /// Validate the `Authorization: Bearer <token>` header.
-fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {    headers
+fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {
+    headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))

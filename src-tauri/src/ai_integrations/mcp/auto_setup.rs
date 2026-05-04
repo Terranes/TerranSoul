@@ -291,11 +291,7 @@ pub fn write_opencode_config(url: &str, token: &str) -> Result<SetupResult, Stri
 ///
 /// `workspace_root` is used for VS Code's `.vscode/mcp.json`.
 /// Returns a list of results for each client attempted.
-pub fn setup_all_clients(
-    workspace_root: &Path,
-    url: &str,
-    token: &str,
-) -> Vec<SetupResult> {
+pub fn setup_all_clients(workspace_root: &Path, url: &str, token: &str) -> Vec<SetupResult> {
     let mut results = Vec::new();
 
     // VS Code (workspace-local)

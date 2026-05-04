@@ -14,6 +14,7 @@ playwright-report/
 # state used by external AI coding agents (Copilot/Codex/Claude Code/
 # Clawcode). Never commit; see rules/agent-mcp-bootstrap.md.
 mcp-data/
+.vscode/.mcp-token
 
 # Agent / dev session scratch — never commit (see rules/prompting-rules.md
 # "Clean Up Temporary Files After Each Session").

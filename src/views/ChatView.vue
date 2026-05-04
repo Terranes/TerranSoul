@@ -168,7 +168,7 @@
         <span class="brain-pill-dot" />
         <span>{{ activeProviderName }}</span>
         <button
-          v-if="browserRuntime"
+          v-if="browserRuntime && !usesRemoteConversation"
           type="button"
           class="brain-reconfigure-btn"
           @click="showBrowserLlmConfig = !showBrowserLlmConfig"
@@ -209,7 +209,7 @@
         </div>
         <div class="chatbox-header-right">
           <button
-            v-if="browserRuntime"
+            v-if="browserRuntime && !usesRemoteConversation"
             type="button"
             class="chatbox-reconfigure-btn"
             @click="showBrowserLlmConfig = !showBrowserLlmConfig"
@@ -498,6 +498,7 @@ import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
+import { loadBrowserLanHost } from '../utils/browser-lan';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
@@ -561,7 +562,6 @@ const showBrowserLlmPrompt = computed(() =>
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
-let unlistenLlmPose: (() => void) | null = null;
 let unlistenProvidersExhausted: (() => void) | null = null;
 let isStreamTtsActive = false;
 
@@ -863,7 +863,10 @@ const STATE_LABELS: Record<CharacterState, string> = {
 const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
 
 const activeProviderName = computed(() => {
-  if (usesRemoteConversation) return 'Remote Desktop';
+  if (usesRemoteConversation) {
+    const browserLanHost = loadBrowserLanHost();
+    return browserLanHost ? `LAN Desktop · ${browserLanHost.host}:${browserLanHost.port}` : 'Remote Desktop';
+  }
   if (browserRuntime.value && !brain.browserAuthSession) return '';
   const mode = brain.brainMode;
   if (!mode) return '';
@@ -1393,12 +1396,6 @@ async function setupTauriEventListener() {
     });
     unlistenLlmAnimation = unlistenAnim;
 
-    // Pose stream — LLM-as-Animator <pose> tags (Chunk 14.16b3).
-    const unlistenPose = await listen<import('../renderer/pose-animator').LlmPoseFrame>('llm-pose', (event) => {
-      viewportRef.value?.playPose?.(event.payload);
-    });
-    unlistenLlmPose = unlistenPose;
-
     // Provider exhaustion — show upgrade quest
     const unlistenExhausted = await listen('providers-exhausted', () => {
       conversationStore.pushProviderWarning();
@@ -1426,7 +1423,9 @@ watch(
       setAvatarState('talking');
     } else if (streaming.currentEmotion) {
       // Stream done — set final emotion from parsed tags (once, not per-chunk)
-      setAvatarState(sentimentToState(streaming.currentEmotion));
+      characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
+      const asm = getAsm();
+      if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion);
     }
     if (!active && isStreamTtsActive) {
       tts.flush();
@@ -1548,10 +1547,6 @@ onUnmounted(() => {
   if (unlistenLlmAnimation) {
     unlistenLlmAnimation();
     unlistenLlmAnimation = null;
-  }
-  if (unlistenLlmPose) {
-    unlistenLlmPose();
-    unlistenLlmPose = null;
   }
   if (unlistenProvidersExhausted) {
     unlistenProvidersExhausted();

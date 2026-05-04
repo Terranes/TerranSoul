@@ -33,6 +33,21 @@
 
 ## Next Chunk
 
-No remaining chunks. All phases complete. Check `rules/backlog.md` for future work ideas.
+**Chunk 32.6 — MCP seed verification + status enrichment.**
+
+---
+
+## Phase 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+> Close the remaining gaps so any agent (Copilot, Codex, Cursor, Claude Code)
+> can connect to `npm run mcp` with zero manual setup, the self-improve loop
+> actually completes chunks end-to-end, animation pose streaming works live,
+> and documentation covers the full contributor onboarding flow.
+
+| ID | Status | Title | Goal |
+|---|---|---|---|
+| 32.6 | not-started | MCP seed verification + status enrichment | Add `seed_loaded: bool` and `actual_port: u16` to `/status` response. Verify seed was applied by checking memory count > 0 on startup. Test: assert `/status` includes both fields. |
+| 32.7 | not-started | vue-tsc + clippy hardening pass | Fix any remaining type errors across all `.vue`/`.ts` files. Ensure `cargo clippy -- -D warnings` has zero suppressed lints. Add `#![deny(unused_must_use)]` to lib.rs. Run full CI gate. |
+| 32.8 | not-started | Animation emotion intensity pipeline | Wire avatar-state emotion scores (from streaming text analysis) into `EmotionPoseBias.setEmotion(emotion, intensity)`. Map LLM stream tag `<emotion:happy:0.8>` to intensity. Test: unit test emotion tag parsing + bias application. |
 
 ---

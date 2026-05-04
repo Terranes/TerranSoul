@@ -489,6 +489,7 @@ import { EmotionPoseBias, type BiasEmotion } from '../renderer/emotion-pose-bias
 import { SittingPropController } from '../renderer/sitting-props-controller';
 import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
 import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
+import { subscribeLlmPoseFrames, type LlmPoseListen } from '../utils/llm-pose-events';
 import SystemInfoPanel from './SystemInfoPanel.vue';
 import AudioControlsPanel from './AudioControlsPanel.vue';
 import FloatingChip from './ui/FloatingChip.vue';
@@ -815,6 +816,8 @@ const motionPlayer = new LearnedMotionPlayer(vrmaManager);
 const poseAnimator = new PoseAnimator();
 const emotionBias = new EmotionPoseBias();
 let expressionPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+let unlistenLlmPose: (() => void) | null = null;
+let viewportUnmounted = false;
 
 // ── Sitting chair prop ───────────────────────────────────────────────
 const sittingPropController = new SittingPropController();
@@ -830,6 +833,22 @@ watch(isPetMode, (pet) => {
 
 function disposeSittingProps() {
   sittingPropController.dispose(sceneCtx?.scene ?? null);
+}
+
+async function subscribeToLlmPoseEvents() {
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    const unlisten = await subscribeLlmPoseFrames(listen as LlmPoseListen, (frame) => {
+      poseAnimator.applyFrame(frame);
+    });
+    if (viewportUnmounted) {
+      unlisten();
+    } else {
+      unlistenLlmPose = unlisten;
+    }
+  } catch {
+    // Browser mode has no Tauri event bus; pose frames arrive only in native shells.
+  }
 }
 
 function syncSittingProps(playing: boolean) {
@@ -999,8 +1018,10 @@ function handleContextRestored() {
 }
 
 onMounted(async () => {
+  viewportUnmounted = false;
   window.addEventListener('keydown', handleKeyDown);
   document.addEventListener('click', handleClickOutside);
+  void subscribeToLlmPoseEvents();
 
   backgroundStore.ensureValidSelection();
 
@@ -1149,7 +1170,10 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  viewportUnmounted = true;
   cancelAnimationFrame(animFrameId);
+  unlistenLlmPose?.();
+  unlistenLlmPose = null;
   disposeSittingProps();
   disposeScene?.();
   bgm.stop();
@@ -1185,7 +1209,7 @@ watch(
       relaxed: 'relaxed',
       surprised: 'surprised',
     };
-    emotionBias.setEmotion(biasMap[newState] ?? 'neutral', 1);
+    emotionBias.setEmotion(biasMap[newState] ?? 'neutral', characterStore.emotionIntensity);
     // Skip mood auto-play when an explicit motion is active (e.g. LLM said "clapping")
     if (vrmaManager.isMoodSuppressed) return;
     // Idle special-case: use character-gender weighted loop selection.

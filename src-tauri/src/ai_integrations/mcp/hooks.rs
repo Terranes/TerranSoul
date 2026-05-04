@@ -99,7 +99,9 @@ fn read_git_head(repo_path: &str) -> Option<String> {
     if let Some(ref_path) = content.strip_prefix("ref: ") {
         // Read the actual commit from the ref file
         let ref_file = std::path::Path::new(repo_path).join(".git").join(ref_path);
-        std::fs::read_to_string(ref_file).ok().map(|s| s.trim().to_string())
+        std::fs::read_to_string(ref_file)
+            .ok()
+            .map(|s| s.trim().to_string())
     } else {
         // Detached HEAD — content is the commit hash
         Some(content.to_string())
@@ -166,14 +168,12 @@ pub fn handle_pre_tool_use(
 
         if !symbols.is_empty() {
             // Get clusters
-            let clusters = crate::coding::processes::list_clusters(&conn, repo_id)
-                .unwrap_or_default();
+            let clusters =
+                crate::coding::processes::list_clusters(&conn, repo_id).unwrap_or_default();
 
             // Get symbol IDs for this file
             let sym_ids: Vec<i64> = conn
-                .prepare(
-                    "SELECT id FROM code_symbols WHERE repo_id = ?1 AND file = ?2",
-                )
+                .prepare("SELECT id FROM code_symbols WHERE repo_id = ?1 AND file = ?2")
                 .ok()
                 .map(|mut stmt| {
                     stmt.query_map(rusqlite::params![repo_id, rel_path], |r| r.get(0))
@@ -189,12 +189,14 @@ pub fn handle_pre_tool_use(
             }
 
             // Get processes
-            let processes = crate::coding::processes::list_processes(&conn, repo_id)
-                .unwrap_or_default();
+            let processes =
+                crate::coding::processes::list_processes(&conn, repo_id).unwrap_or_default();
             for proc in &processes {
-                if proc.steps.iter().any(|s| {
-                    symbols.iter().any(|sym| sym.name == s.name)
-                }) {
+                if proc
+                    .steps
+                    .iter()
+                    .any(|s| symbols.iter().any(|sym| sym.name == s.name))
+                {
                     process_names.push(proc.entry_point.clone());
                 }
             }
@@ -327,8 +329,7 @@ pub fn handle_notification(
             let app_state_clone = app_state.cloned();
             tokio::spawn(async move {
                 let mut guard = tracker.lock().await;
-                let _response =
-                    handle_post_tool_use(&req, &mut guard, app_state_clone.as_ref());
+                let _response = handle_post_tool_use(&req, &mut guard, app_state_clone.as_ref());
             });
             true
         }

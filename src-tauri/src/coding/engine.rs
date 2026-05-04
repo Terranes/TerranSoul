@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
@@ -154,6 +154,33 @@ fn planner_prompt(
     chunk: &ChunkRow,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
 ) -> Vec<OpenAiMessage> {
+    planner_prompt_for_attempt(repo, chunk, workflow_cfg, None)
+}
+
+fn repair_planner_prompt(
+    repo: &RepoState,
+    chunk: &ChunkRow,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    failure_context: &str,
+) -> Vec<OpenAiMessage> {
+    planner_prompt_for_attempt(repo, chunk, workflow_cfg, Some(failure_context))
+}
+
+fn planner_prompt_for_attempt(
+    repo: &RepoState,
+    chunk: &ChunkRow,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    failure_context: Option<&str>,
+) -> Vec<OpenAiMessage> {
+    let retry_block = failure_context
+        .map(|context| {
+            format!(
+                "\n<failed_test_gate>\n{}\n</failed_test_gate>\n\
+                 This is the only automatic retry. Produce a repair plan that directly addresses the failed test gate and preserves any already-correct parts of the first attempt.\n",
+                context.trim()
+            )
+        })
+        .unwrap_or_default();
     let user_task = format!(
         "Plan the implementation for one chunk from TerranSoul's milestones.\n\
          \n\
@@ -166,6 +193,7 @@ fn planner_prompt(
            <id>{}</id>\n  \
            <title>{}</title>\n\
          </chunk>\n\
+         {retry_block}\
          \n\
          Produce the plan now. Do not output code — only the file list and \
          reasoning. Consult the supplied <documents> for project rules and \
@@ -232,6 +260,7 @@ async fn plan_one_chunk<R: Runtime>(
     chunk: &ChunkRow,
     metrics: &MetricsLog,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    retry_context: Option<&str>,
 ) -> Result<String, String> {
     let provider = provider_label(&config.provider);
     let started_at = metrics.record_start(&chunk.id, &chunk.title, provider, &config.model);
@@ -255,7 +284,10 @@ async fn plan_one_chunk<R: Runtime>(
     );
 
     let openai = client::client_from(config);
-    let messages = planner_prompt(repo, chunk, workflow_cfg);
+    let messages = match retry_context {
+        Some(context) => repair_planner_prompt(repo, chunk, workflow_cfg, context),
+        None => planner_prompt(repo, chunk, workflow_cfg),
+    };
     match openai.chat_with_usage(messages).await {
         Ok((plan, usage)) => {
             let token_usage = match usage {
@@ -395,6 +427,7 @@ struct ExecutionGateResult {
     applied_paths: Vec<String>,
     test_summary: String,
     isolated_patch_path: Option<String>,
+    applied_isolated_patch_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -440,6 +473,7 @@ const DAG_NODE_REVIEW: &str = "reviewer";
 const DAG_NODE_APPLY: &str = "apply";
 const DAG_NODE_TEST: &str = "tester";
 const DAG_NODE_STAGE: &str = "stage";
+const TEST_FAILURE_RETRY_MARKER: &str = "retryable test failure";
 
 #[derive(Debug, Default)]
 struct ChunkDagState {
@@ -530,10 +564,12 @@ async fn execute_chunk_dag<R: Runtime>(
     metrics: &MetricsLog,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
     worktree_dir: Option<&str>,
+    retry_context: Option<String>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<ExecutionGateResult, String> {
     let original_repo_root = repo_root.to_path_buf();
-    let execution_workspace = prepare_execution_workspace(app, repo, repo_root, chunk, worktree_dir)?;
+    let execution_workspace =
+        prepare_execution_workspace(app, repo, repo_root, chunk, worktree_dir)?;
     let execution_repo_root = execution_workspace.repo_root.clone();
     let execution_repo = execution_workspace.repo.clone();
 
@@ -572,6 +608,7 @@ async fn execute_chunk_dag<R: Runtime>(
         let workflow_cfg = workflow_cfg.clone();
         let cancel = cancel.clone();
         let state = state.clone();
+        let retry_context = retry_context.clone();
 
         async move {
             if cancel.load(Ordering::Relaxed) {
@@ -579,9 +616,16 @@ async fn execute_chunk_dag<R: Runtime>(
             }
             match node_id.as_str() {
                 DAG_NODE_PLAN => {
-                    let plan =
-                        plan_one_chunk(&app, &config, &repo, &chunk, &metrics, &workflow_cfg)
-                            .await?;
+                    let plan = plan_one_chunk(
+                        &app,
+                        &config,
+                        &repo,
+                        &chunk,
+                        &metrics,
+                        &workflow_cfg,
+                        retry_context.as_deref(),
+                    )
+                    .await?;
                     state.lock().await.plan = Some(plan);
                     Ok("plan ready".to_string())
                 }
@@ -680,7 +724,10 @@ async fn execute_chunk_dag<R: Runtime>(
                         if let Some(snapshot) = state.lock().await.snapshot.clone() {
                             snapshot.restore(&repo_root)?;
                         }
-                        return Err(format!("tests failed; restored touched files: {summary}"));
+                        let details = format_test_failure_for_retry(&tests);
+                        return Err(format!(
+                            "{TEST_FAILURE_RETRY_MARKER}: tests failed; restored touched files: {summary}\n{details}"
+                        ));
                     }
                     state.lock().await.test_summary = Some(summary.clone());
                     Ok(summary)
@@ -701,28 +748,97 @@ async fn execute_chunk_dag<R: Runtime>(
     }
 
     let final_state = state.lock().await;
-    let isolated_patch_path = if execution_workspace.is_isolated() {
+    let applied_paths = final_state.applied_paths.clone();
+    let test_summary = final_state
+        .test_summary
+        .clone()
+        .unwrap_or_else(|| "no tests recorded".to_string());
+    drop(final_state);
+
+    let (isolated_patch_path, applied_isolated_patch_path) = if execution_workspace.is_isolated() {
         let patch = execution_workspace.cached_diff()?;
         if patch.trim().is_empty() {
-            None
+            (None, None)
         } else {
-            Some(write_isolated_patch(
-                &original_repo_root,
-                &chunk.id,
-                &patch,
-            )?)
+            let patch_path = write_isolated_patch(&original_repo_root, &chunk.id, &patch)?;
+            apply_isolated_patch_to_working_branch(&original_repo_root, Path::new(&patch_path))?;
+            stage_paths(&original_repo_root, &applied_paths)?;
+            (Some(patch_path.clone()), Some(patch_path))
         }
     } else {
-        None
+        (None, None)
     };
     Ok(ExecutionGateResult {
-        applied_paths: final_state.applied_paths.clone(),
-        test_summary: final_state
-            .test_summary
-            .clone()
-            .unwrap_or_else(|| "no tests recorded".to_string()),
+        applied_paths,
+        test_summary,
         isolated_patch_path,
+        applied_isolated_patch_path,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execute_chunk_dag_with_retry<R: Runtime>(
+    app: &AppHandle<R>,
+    config: &CodingLlmConfig,
+    repo: &RepoState,
+    repo_root: &Path,
+    chunk: &ChunkRow,
+    metrics: &MetricsLog,
+    workflow_cfg: &crate::coding::CodingWorkflowConfig,
+    worktree_dir: Option<&str>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<ExecutionGateResult, String> {
+    let first = execute_chunk_dag(
+        app,
+        config,
+        repo,
+        repo_root,
+        chunk,
+        metrics,
+        workflow_cfg,
+        worktree_dir,
+        None,
+        cancel,
+    )
+    .await;
+
+    let first_error = match first {
+        Ok(result) => return Ok(result),
+        Err(error) => error,
+    };
+
+    if !is_retryable_test_failure(&first_error) || cancel.load(Ordering::Relaxed) {
+        return Err(first_error);
+    }
+
+    emit(
+        app,
+        ProgressEvent::info(
+            "retry",
+            "Test gate failed; retrying once with a repair planner prompt",
+        )
+        .with_chunk(&chunk.id)
+        .with_progress(82),
+    );
+
+    execute_chunk_dag(
+        app,
+        config,
+        repo,
+        repo_root,
+        chunk,
+        metrics,
+        workflow_cfg,
+        worktree_dir,
+        Some(first_error.clone()),
+        cancel,
+    )
+    .await
+    .map_err(|retry_error| format!("{first_error}\nRetry failed: {retry_error}"))
+}
+
+fn is_retryable_test_failure(message: &str) -> bool {
+    message.contains(TEST_FAILURE_RETRY_MARKER)
 }
 
 fn prepare_execution_workspace<R: Runtime>(
@@ -778,6 +894,30 @@ fn write_isolated_patch(repo_root: &Path, chunk_id: &str, patch: &str) -> Result
     std::fs::write(&patch_path, patch)
         .map_err(|error| format!("write isolated patch {}: {error}", patch_path.display()))?;
     Ok(patch_path.to_string_lossy().to_string())
+}
+
+fn apply_isolated_patch_to_working_branch(
+    repo_root: &Path,
+    patch_path: &Path,
+) -> Result<(), String> {
+    let out = Command::new("git")
+        .arg("apply")
+        .arg("--whitespace=nowarn")
+        .arg(patch_path)
+        .current_dir(repo_root)
+        .output()
+        .map_err(|error| format!("git apply unavailable: {error}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let details = if stderr.is_empty() { stdout } else { stderr };
+    Err(if details.is_empty() {
+        format!("git apply failed for {}", patch_path.display())
+    } else {
+        format!("git apply failed for {}: {details}", patch_path.display())
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -882,6 +1022,30 @@ fn summarize_tests(result: &test_runner::TestRunResult) -> String {
         .join(", ")
 }
 
+fn format_test_failure_for_retry(result: &test_runner::TestRunResult) -> String {
+    result
+        .suites
+        .iter()
+        .filter(|suite| !suite.status.is_green())
+        .map(|suite| {
+            let stdout = suite.stdout_tail.trim();
+            let stderr = suite.stderr_tail.trim();
+            let spawn_error = suite.spawn_error.as_deref().unwrap_or("").trim();
+            format!(
+                "suite={} status={:?} attempts={} exit={:?}\nstdout_tail:\n{}\nstderr_tail:\n{}\nspawn_error:\n{}",
+                suite.name,
+                suite.status,
+                suite.attempts,
+                suite.exit_code,
+                if stdout.is_empty() { "<empty>" } else { stdout },
+                if stderr.is_empty() { "<empty>" } else { stderr },
+                if spawn_error.is_empty() { "<none>" } else { spawn_error },
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 fn format_apply_rejections(rejections: &[apply_file::ApplyRejection]) -> String {
     let joined = rejections
         .iter()
@@ -892,18 +1056,288 @@ fn format_apply_rejections(rejections: &[apply_file::ApplyRejection]) -> String 
 }
 
 fn format_execution_success(chunk_id: &str, result: &ExecutionGateResult) -> String {
-    match &result.isolated_patch_path {
-        Some(patch_path) => format!(
+    match (&result.isolated_patch_path, &result.applied_isolated_patch_path) {
+        (Some(patch_path), Some(applied_path)) => format!(
+            "Chunk {chunk_id} validated {} file(s) in a temporary worktree; patch saved at {patch_path} and applied from {applied_path}; tests: {}",
+            result.applied_paths.len(),
+            result.test_summary
+        ),
+        (Some(patch_path), None) => format!(
             "Chunk {chunk_id} validated {} file(s) in a temporary worktree; patch saved at {patch_path}; tests: {}",
             result.applied_paths.len(),
             result.test_summary
         ),
-        None => format!(
+        (None, _) => format!(
             "Chunk {chunk_id} applied {} file(s); tests: {}",
             result.applied_paths.len(),
             result.test_summary
         ),
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompletionArchiveResult {
+    modified_paths: Vec<String>,
+    next_chunk_id: Option<String>,
+}
+
+fn archive_completed_chunk(
+    repo_root: &Path,
+    chunk: &ChunkRow,
+    result: &ExecutionGateResult,
+) -> Result<CompletionArchiveResult, String> {
+    let rules_dir = repo_root.join("rules");
+    let milestones_path = rules_dir.join("milestones.md");
+    let completion_log_path = rules_dir.join("completion-log.md");
+    let date = current_utc_date();
+
+    let milestones = std::fs::read_to_string(&milestones_path)
+        .map_err(|error| format!("read milestones for archive: {error}"))?;
+    let (without_chunk, removed) = remove_chunk_row(&milestones, &chunk.id);
+    if !removed {
+        return Err(format!("chunk {} was not found in milestones.md", chunk.id));
+    }
+    let without_empty_phases = remove_empty_phase_sections(&without_chunk);
+    let remaining_chunks = parse_chunks(&without_empty_phases);
+    let next_chunk = next_not_started(&remaining_chunks).cloned();
+    let updated_milestones = update_next_chunk_section(&without_empty_phases, next_chunk.as_ref());
+    atomic_write_string(&milestones_path, &updated_milestones)?;
+
+    let completion_log = std::fs::read_to_string(&completion_log_path)
+        .map_err(|error| format!("read completion log for archive: {error}"))?;
+    let updated_completion_log = insert_completion_log_entry(&completion_log, chunk, result, &date);
+    atomic_write_string(&completion_log_path, &updated_completion_log)?;
+
+    Ok(CompletionArchiveResult {
+        modified_paths: vec![
+            "rules/milestones.md".to_string(),
+            "rules/completion-log.md".to_string(),
+        ],
+        next_chunk_id: next_chunk.map(|chunk| chunk.id),
+    })
+}
+
+fn remove_chunk_row(markdown: &str, chunk_id: &str) -> (String, bool) {
+    let mut removed = false;
+    let mut next = String::new();
+    for line in markdown.split_inclusive('\n') {
+        if table_row_id(line).as_deref() == Some(chunk_id) {
+            removed = true;
+            continue;
+        }
+        next.push_str(line);
+    }
+    (next, removed)
+}
+
+fn table_row_id(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') {
+        return None;
+    }
+    let inner = trimmed.trim_start_matches('|').trim_end_matches('|');
+    let first = inner.split('|').next()?.trim();
+    if first.chars().any(|character| character.is_ascii_digit()) {
+        Some(first.to_string())
+    } else {
+        None
+    }
+}
+
+fn remove_empty_phase_sections(markdown: &str) -> String {
+    let mut output = String::new();
+    let mut section = String::new();
+    let mut in_phase = false;
+
+    for line in markdown.split_inclusive('\n') {
+        if line.starts_with("## Phase ") {
+            flush_phase_section(&mut output, &mut section, in_phase);
+            in_phase = true;
+        }
+
+        if in_phase {
+            section.push_str(line);
+        } else {
+            output.push_str(line);
+        }
+    }
+    flush_phase_section(&mut output, &mut section, in_phase);
+    output
+}
+
+fn flush_phase_section(output: &mut String, section: &mut String, in_phase: bool) {
+    if !in_phase || !parse_chunks(section).is_empty() {
+        output.push_str(section);
+    }
+    section.clear();
+}
+
+fn update_next_chunk_section(markdown: &str, next_chunk: Option<&ChunkRow>) -> String {
+    let Some(start) = markdown.find("## Next Chunk") else {
+        return markdown.to_string();
+    };
+    let after_heading = start + "## Next Chunk".len();
+    let Some(end_relative) = markdown[after_heading..].find("\n---") else {
+        return markdown.to_string();
+    };
+    let end = after_heading + end_relative;
+    let next_text = match next_chunk {
+        Some(chunk) => format!(
+            "**Chunk {} — {}.**",
+            chunk.id,
+            clean_chunk_title(&chunk.title).trim_end_matches('.')
+        ),
+        None => "No remaining chunks. All phases complete. Check `rules/backlog.md` for future work ideas.".to_string(),
+    };
+    format!(
+        "{}## Next Chunk\n\n{}\n{}",
+        &markdown[..start],
+        next_text,
+        &markdown[end..]
+    )
+}
+
+fn insert_completion_log_entry(
+    markdown: &str,
+    chunk: &ChunkRow,
+    result: &ExecutionGateResult,
+    date: &str,
+) -> String {
+    let title = format!("Chunk {} — {}", chunk.id, clean_chunk_title(&chunk.title));
+    let anchor = completion_log_anchor(&title);
+    let toc_row = format!("| [{title}](#{anchor}) | {date} |\n");
+    let mut next = if markdown.contains(&toc_row) {
+        markdown.to_string()
+    } else if let Some(index) = markdown.find("|-------|------|\n") {
+        let insert_at = index + "|-------|------|\n".len();
+        let mut updated = String::with_capacity(markdown.len() + toc_row.len());
+        updated.push_str(&markdown[..insert_at]);
+        updated.push_str(&toc_row);
+        updated.push_str(&markdown[insert_at..]);
+        updated
+    } else {
+        markdown.to_string()
+    };
+
+    let entry = completion_log_entry(&title, chunk, result, date);
+    if next.contains(&format!("## {title}\n")) {
+        return next;
+    }
+
+    let search_start = next.find("## Table of Contents").unwrap_or(0);
+    if let Some(relative) = next[search_start..].find("\n---\n\n## ") {
+        let insert_at = search_start + relative + "\n---\n\n".len();
+        next.insert_str(insert_at, &entry);
+        next
+    } else {
+        if !next.ends_with('\n') {
+            next.push('\n');
+        }
+        next.push_str("\n---\n\n");
+        next.push_str(&entry);
+        next
+    }
+}
+
+fn completion_log_entry(
+    title: &str,
+    chunk: &ChunkRow,
+    result: &ExecutionGateResult,
+    date: &str,
+) -> String {
+    let files = if result.applied_paths.is_empty() {
+        "- No applied paths were reported by the execution gate.".to_string()
+    } else {
+        result
+            .applied_paths
+            .iter()
+            .map(|path| format!("- `{path}`"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let isolated_note = match (
+        result.isolated_patch_path.as_ref(),
+        result.applied_isolated_patch_path.as_ref(),
+    ) {
+        (Some(path), Some(applied_path)) => format!(
+            "- Execution used a temporary worktree; the validated patch was saved at `{path}` and applied to the active checkout from `{applied_path}`."
+        ),
+        (Some(path), None) => format!(
+            "- Execution used a temporary worktree; the validated patch was saved at `{path}`."
+        ),
+        (None, _) => "- Execution applied changes directly in the active workspace.".to_string(),
+    };
+
+    format!(
+        "## {title}\n\n\
+         **Status:** Complete\n\
+         **Date:** {date}\n\
+         **Phase:** Self-improve autonomous loop\n\n\
+         **Goal:** Complete milestone chunk `{}` — {}.\n\n\
+         **Architecture:**\n\
+         - Completed by the self-improve DAG after planner, coder, reviewer, apply, test, and stage gates passed.\n\
+         - Archived automatically by the self-improve engine so the chunk will not repeat on the next cycle.\n\
+         {isolated_note}\n\n\
+         **Files modified:**\n\
+         {files}\n\n\
+         **Validation:**\n\
+         - Autonomous test gate — passed: {}\n\n\
+         ---\n\n",
+        chunk.id,
+        clean_chunk_title(&chunk.title),
+        result.test_summary,
+    )
+}
+
+fn clean_chunk_title(title: &str) -> String {
+    title.replace("**", "").trim().to_string()
+}
+
+fn completion_log_anchor(title: &str) -> String {
+    let mut anchor = String::new();
+    let mut last_was_dash = false;
+    for character in title.to_ascii_lowercase().chars() {
+        if character.is_ascii_alphanumeric() {
+            anchor.push(character);
+            last_was_dash = false;
+        } else if !last_was_dash {
+            anchor.push('-');
+            last_was_dash = true;
+        }
+    }
+    anchor.trim_matches('-').to_string()
+}
+
+fn atomic_write_string(path: &Path, content: &str) -> Result<(), String> {
+    let tmp = path.with_extension("md.tmp");
+    std::fs::write(&tmp, content).map_err(|error| format!("write {}: {error}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|error| format!("rename {}: {error}", path.display()))
+}
+
+fn current_utc_date() -> String {
+    let days = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        / 86_400;
+    let (year, month, day) = civil_from_days(days as i64);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i32, u32, u32) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    (year as i32, month as u32, day as u32)
 }
 
 fn provider_label(provider: &CodingLlmProvider) -> &'static str {
@@ -1065,7 +1499,7 @@ pub async fn start<R: Runtime>(
             // switched branches manually between cycles.
             repo = detect_repo(&repo_root);
 
-            match execute_chunk_dag(
+            match execute_chunk_dag_with_retry(
                 &app,
                 &config,
                 &repo,
@@ -1078,12 +1512,50 @@ pub async fn start<R: Runtime>(
             )
             .await
             {
-                Ok(result) => emit(
-                    &app,
-                    ProgressEvent::success("complete", format_execution_success(&next.id, &result))
-                        .with_chunk(&next.id)
-                        .with_progress(100),
-                ),
+                Ok(result) => {
+                    let success_message = format_execution_success(&next.id, &result);
+                    match archive_completed_chunk(&repo_root, &next, &result) {
+                        Ok(archive) => {
+                            if let Err(error) = stage_paths(&repo_root, &archive.modified_paths) {
+                                emit(
+                                    &app,
+                                    ProgressEvent::error(
+                                        "archive",
+                                        format!(
+                                            "Archived chunk {}, but staging failed: {error}",
+                                            next.id
+                                        ),
+                                    )
+                                    .with_chunk(&next.id),
+                                );
+                            }
+                            let next_message = archive
+                                .next_chunk_id
+                                .map(|id| format!(" next chunk: {id}"))
+                                .unwrap_or_else(|| " all milestone chunks complete".to_string());
+                            emit(
+                                &app,
+                                ProgressEvent::success(
+                                    "complete",
+                                    format!("{success_message}; archived.{next_message}"),
+                                )
+                                .with_chunk(&next.id)
+                                .with_progress(100),
+                            );
+                        }
+                        Err(error) => emit(
+                            &app,
+                            ProgressEvent::error(
+                                "archive",
+                                format!(
+                                    "Chunk {} passed, but archive update failed: {error}",
+                                    next.id
+                                ),
+                            )
+                            .with_chunk(&next.id),
+                        ),
+                    }
+                }
                 Err(e) => emit(
                     &app,
                     ProgressEvent::error(
@@ -1239,6 +1711,32 @@ mod tests {
     }
 
     #[test]
+    fn repair_planner_prompt_includes_failed_test_gate() {
+        let repo = RepoState {
+            is_git_repo: true,
+            root: Some("/tmp".to_string()),
+            current_branch: Some("master".to_string()),
+            remote_url: None,
+            clean: true,
+        };
+        let chunk = ChunkRow {
+            id: "32.3".to_string(),
+            title: "Self-improve chunk completion + retry".to_string(),
+            status: "not-started".to_string(),
+        };
+        let msgs = repair_planner_prompt(
+            &repo,
+            &chunk,
+            &crate::coding::CodingWorkflowConfig::default(),
+            "vitest=Fail/2\nexpected archive row",
+        );
+
+        assert!(msgs[1].content.contains("<failed_test_gate>"));
+        assert!(msgs[1].content.contains("vitest=Fail/2"));
+        assert!(msgs[1].content.contains("only automatic retry"));
+    }
+
+    #[test]
     fn coder_prompt_requires_path_file_blocks() {
         let repo = RepoState {
             is_git_repo: true,
@@ -1363,13 +1861,89 @@ mod tests {
             isolated_patch_path: Some(
                 "target/terransoul-self-improve/patches/28.13.patch".to_string(),
             ),
+            applied_isolated_patch_path: Some(
+                "target/terransoul-self-improve/patches/28.13.patch".to_string(),
+            ),
         };
 
         let message = format_execution_success("28.13", &result);
 
         assert!(message.contains("temporary worktree"));
         assert!(message.contains("patch saved"));
+        assert!(message.contains("applied from"));
         assert!(message.contains("vitest=Pass/1"));
+    }
+
+    #[test]
+    fn apply_isolated_patch_to_working_branch_modifies_temp_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        run_git_for_test(dir.path(), &["init"]).unwrap();
+        std::fs::write(dir.path().join("tracked.txt"), "base\n").unwrap();
+        let patch_path = dir.path().join("change.patch");
+        std::fs::write(
+            &patch_path,
+            "diff --git a/tracked.txt b/tracked.txt\n--- a/tracked.txt\n+++ b/tracked.txt\n@@ -1 +1 @@\n-base\n+patched\n",
+        )
+        .unwrap();
+
+        apply_isolated_patch_to_working_branch(dir.path(), &patch_path).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
+            "patched\n"
+        );
+    }
+
+    #[test]
+    fn archive_completed_chunk_updates_milestones_and_completion_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules_dir = dir.path().join("rules");
+        std::fs::create_dir_all(&rules_dir).unwrap();
+        std::fs::write(
+            rules_dir.join("milestones.md"),
+            "# TerranSoul — Milestones\n\n---\n\n## Next Chunk\n\n**Chunk 32.3 — Self-improve chunk completion + retry.**\n\n---\n\n## Phase 32 — Self Improve\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n| 32.3 | not-started | Self-improve chunk completion + retry | Archive successful chunks. |\n| 32.4 | not-started | Self-improve isolated patch auto-merge | Apply isolated patches. |\n\n---\n",
+        )
+        .unwrap();
+        std::fs::write(
+            rules_dir.join("completion-log.md"),
+            "# TerranSoul — Completion Log\n\n---\n\n## Table of Contents\n\n| Entry | Date |\n|-------|------|\n| [Old](#old) | 2026-01-01 |\n\n---\n\n## Old\n\nDone.\n",
+        )
+        .unwrap();
+        let chunk = ChunkRow {
+            id: "32.3".to_string(),
+            title: "Self-improve chunk completion + retry".to_string(),
+            status: "not-started".to_string(),
+        };
+        let gate = ExecutionGateResult {
+            applied_paths: vec!["src-tauri/src/coding/engine.rs".to_string()],
+            test_summary: "cargo test=Pass/1".to_string(),
+            isolated_patch_path: None,
+            applied_isolated_patch_path: None,
+        };
+
+        let archive = archive_completed_chunk(dir.path(), &chunk, &gate).unwrap();
+
+        assert_eq!(archive.next_chunk_id.as_deref(), Some("32.4"));
+        assert_eq!(
+            archive.modified_paths,
+            vec![
+                "rules/milestones.md".to_string(),
+                "rules/completion-log.md".to_string(),
+            ]
+        );
+        let milestones = std::fs::read_to_string(rules_dir.join("milestones.md")).unwrap();
+        assert!(!milestones.contains("| 32.3 |"));
+        assert!(milestones.contains("**Chunk 32.4 — Self-improve isolated patch auto-merge.**"));
+        let log = std::fs::read_to_string(rules_dir.join("completion-log.md")).unwrap();
+        assert!(log.contains("Chunk 32.3 — Self-improve chunk completion + retry"));
+        assert!(log.contains("src-tauri/src/coding/engine.rs"));
+        assert!(log.contains("Autonomous test gate — passed: cargo test=Pass/1"));
+    }
+
+    #[test]
+    fn civil_from_days_formats_unix_epoch() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(20_819), (2027, 1, 1));
     }
 
     #[test]
@@ -1462,6 +2036,23 @@ mod tests {
             .with_progress(75);
         assert_eq!(e.chunk_id.as_deref(), Some("25.4"));
         assert_eq!(e.progress, 75);
+    }
+
+    fn run_git_for_test(cwd: &Path, args: &[&str]) -> Result<(), String> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .map_err(|error| format!("git unavailable: {error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(if stderr.is_empty() {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        } else {
+            stderr
+        })
     }
 
     #[test]

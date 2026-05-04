@@ -21,6 +21,11 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 32.5 — README MCP Quick Setup section](#chunk-325--readme-mcp-quick-setup-section) | 2026-05-05 |
+| [Chunk 32.4 — Self-improve isolated patch auto-merge](#chunk-324--self-improve-isolated-patch-auto-merge) | 2026-05-05 |
+| [Chunk 32.3 — Self-improve chunk completion + retry](#chunk-323--self-improve-chunk-completion--retry) | 2026-05-05 |
+| [Chunk 32.2 — Wire llm-pose event to PoseAnimator](#chunk-322--wire-llm-pose-event-to-poseanimator) | 2026-05-05 |
+| [Chunk 32.1 — MCP unauthenticated health endpoint + token auto-print](#chunk-321--mcp-unauthenticated-health-endpoint--token-auto-print) | 2026-05-05 |
 | [Chunk 30.8 — Obsidian Credits Audit](#chunk-308--obsidian-credits-audit) | 2026-05-05 |
 | [Chunk 31.10 — terransoul mcp setup auto-config writer](#chunk-3110--terransoul-mcp-setup-auto-config-writer) | 2026-05-05 |
 | [Chunk 31.9 — Wiki generation from the symbol graph](#chunk-319--wiki-generation-from-the-symbol-graph) | 2026-05-05 |
@@ -258,6 +263,154 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 32.5 — README MCP Quick Setup section
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Document the shortest path for AI coding agents to start the headless MCP brain, load its token in VS Code, and verify access with `brain_health`.
+
+**Architecture:**
+- Added a README `MCP Quick Setup` section under AI Coding Integrations covering `npm run mcp`, `.vscode/.mcp-token`, `TERRANSOUL_MCP_TOKEN_MCP`, `/health`, and `brain_health`.
+- Updated `.github/copilot-instructions.md` MCP guidance with the same token/env/health verification path and refreshed its timestamp.
+- Synced the AGENTS and CLAUDE Quick Reference bullets because the canonical instruction quick setup changed.
+
+**Files modified:**
+- `README.md` — MCP Quick Setup section
+- `.github/copilot-instructions.md` — canonical MCP quick setup note
+- `AGENTS.md` — satellite Quick Reference sync
+- `CLAUDE.md` — satellite Quick Reference sync
+- `rules/completion-log.md` — archived this chunk
+- `rules/milestones.md` — removed 32.5 and advanced Next Chunk
+
+**Validation:**
+- `git diff --check -- README.md .github/copilot-instructions.md AGENTS.md CLAUDE.md rules/completion-log.md rules/milestones.md` — passed
+- `grep` verified the quick setup text, token env var, `/health`, and `brain_health` references are present in the README and agent instruction files.
+
+---
+
+## Chunk 32.4 — Self-improve isolated patch auto-merge
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** When the self-improve DAG succeeds in a temporary worktree, apply the validated patch back to the active checkout via `git apply` and report the applied patch path.
+
+**Architecture:**
+- Extended `ExecutionGateResult` with `applied_isolated_patch_path` so success messages and completion-log entries distinguish saved-only patches from patches actually applied to the active checkout.
+- After a temporary-worktree DAG succeeds, the engine now writes the cached staged diff, runs `git apply --whitespace=nowarn <patch>` in the original repo, and stages the generated file paths on the active branch.
+- Added a focused `git apply` helper with stderr/stdout error reporting so patch conflicts fail the chunk instead of silently declaring success.
+- Kept the existing temporary-worktree behavior for dirty checkouts; the new merge step happens only after planner, coder, reviewer, apply, test, and stage gates have all passed in isolation.
+
+**Files modified:**
+- `src-tauri/src/coding/engine.rs` — isolated patch apply helper, result reporting, archive note, git-apply regression test
+- `rules/completion-log.md` — archived this chunk
+- `rules/milestones.md` — removed 32.4 and advanced Next Chunk
+
+**Validation:**
+- `cargo check` — passed
+- `cargo clippy -- -D warnings` — passed
+- `cargo test --lib --no-run` — passed; Rust test harness compiled
+- Focused `cargo test coding::engine::tests::apply_isolated_patch_to_working_branch_modifies_temp_repo --lib` could not execute because the Windows test binary exited before running tests with the pre-existing `STATUS_ENTRYPOINT_NOT_FOUND` harness/runtime failure.
+- Manual `git apply --whitespace=nowarn` smoke in a temporary repo — passed
+- `git diff --check -- src-tauri/src/coding/engine.rs src-tauri/src/coding/milestones.rs rules/completion-log.md rules/milestones.md` — passed, with only Git's CRLF normalization warnings
+
+---
+
+## Chunk 32.3 — Self-improve chunk completion + retry
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Make the autonomous self-improve loop complete chunks end-to-end by archiving successful DAG runs and retrying one failed test gate with a repair planner prompt.
+
+**Architecture:**
+- Made `rules/milestones.md` parsing header-aware so both legacy `ID | Title | Status` and current `ID | Status | Title | Goal` tables produce correct `ChunkRow` values.
+- Added retry-aware DAG execution: when the first attempt reaches the tester node and fails, touched files are restored as before, then the loop retries exactly once with a planner prompt containing the failed test-gate summary and output tails.
+- Added archive helpers that remove the completed milestone row, update the `Next Chunk` section, drop empty phase sections, insert a reverse-chronological completion-log TOC row/entry, and stage the milestone/log files after successful archive writes.
+- Kept non-test DAG failures non-retryable, so review/apply/planning failures still stop cleanly instead of looping on bad output.
+
+**Files modified:**
+- `src-tauri/src/coding/engine.rs` — retry wrapper, repair prompt, archive-on-success path, tests
+- `src-tauri/src/coding/milestones.rs` — header-aware milestone parser and current-table regression test
+- `rules/completion-log.md` — archived this chunk
+- `rules/milestones.md` — removed 32.3 and advanced Next Chunk
+
+**Validation:**
+- `cargo check` — passed
+- `cargo clippy -- -D warnings` — passed
+- `cargo test --lib --no-run` — passed; Rust test harness compiled
+- Focused `cargo test coding::engine::tests::archive_completed_chunk_updates_milestones_and_completion_log --lib` could not execute because the Windows test binary exited before running tests with the pre-existing `STATUS_ENTRYPOINT_NOT_FOUND` harness/runtime failure observed earlier in this session.
+- `git diff --check -- src-tauri/src/coding/engine.rs src-tauri/src/coding/milestones.rs` — passed, with only Git's CRLF normalization warnings
+
+---
+
+## Chunk 32.2 — Wire llm-pose event to PoseAnimator
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Move live `llm-pose` event application into the viewport animation owner so streamed pose frames reach `PoseAnimator` exactly once in every shell that hosts the character.
+
+**Architecture:**
+- Added a small `subscribeLlmPoseFrames()` helper that binds the Tauri `llm-pose` event to a `PoseAnimator.applyFrame()` callback behind a mockable listener API.
+- `CharacterViewport.vue` now dynamically imports the Tauri event bus, subscribes on mount, calls `poseAnimator.applyFrame(frame)`, and unregisters on unmount.
+- Browser mode cleanly ignores the missing Tauri event bus, preserving the existing web landing/chat runtime.
+- Removed duplicate parent-view `llm-pose` forwarding from `ChatView.vue` and `PetOverlayView.vue`, preventing double application of the same streamed pose frame.
+
+**Files created:**
+- `src/utils/llm-pose-events.ts` — testable `llm-pose` subscription helper
+- `src/utils/llm-pose-events.test.ts` — mock listener regression coverage
+
+**Files modified:**
+- `src/components/CharacterViewport.vue` — viewport-owned `llm-pose` subscription and cleanup
+- `src/views/ChatView.vue` — removed parent pose-event forwarding
+- `src/views/PetOverlayView.vue` — removed parent pose-event forwarding
+
+**Validation:**
+- `npx vitest run src/utils/llm-pose-events.test.ts src/views/PetOverlayView.test.ts src/views/BrowserLandingView.test.ts src/stores/character.test.ts src/stores/streaming.test.ts` — passed: 5 files, 63 tests
+- `npx vue-tsc --noEmit` — passed
+- `npx vitest run` — passed: 127 files, 1639 tests
+- `git diff --check -- src/utils/llm-pose-events.ts src/utils/llm-pose-events.test.ts src/components/CharacterViewport.vue src/views/ChatView.vue src/views/PetOverlayView.vue` — passed
+
+---
+
+## Chunk 32.1 — MCP unauthenticated health endpoint + token auto-print
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Let agents verify a running headless MCP server and discover its token without already having authentication configured.
+
+**Architecture:**
+- Added `GET /health` to the MCP axum router as an unauthenticated endpoint returning only `{"status":"ok","port":N}`.
+- Carried the actual bound port into `McpRouterState` after fallback-port binding, so health reports the real listener instead of the requested/default port.
+- Moved `/mcp` bearer-token validation ahead of notification dispatch so missing-auth notifications are rejected like normal JSON-RPC requests.
+- Headless `--mcp-http` startup now prints the health URL, prints the bearer token, creates `.vscode/` when needed, and writes `.vscode/.mcp-token` for editor/agent setup.
+
+**Files modified:**
+- `.gitignore` — ignored `.vscode/.mcp-token`
+- `src-tauri/src/ai_integrations/mcp/router.rs` — `/health`, actual-port response, stricter `/mcp` auth ordering
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — build router state after binding and pass the bound port
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — added health/no-auth regression tests
+- `src-tauri/src/lib.rs` — startup health/token output and token-file writer
+
+**Validation:**
+- `cargo check` — passed
+- `cargo clippy -- -D warnings` — passed
+- Manual headless MCP runtime on port 7591 — passed:
+  - `/health` without auth returned `200 {"port":7591,"status":"ok"}`
+  - `/mcp` without auth returned `401 unauthorized`
+  - `.vscode/.mcp-token` authenticated `ping` returned `200 {"jsonrpc":"2.0","id":2,"result":{}}`
+- Added Rust integration tests for the same behavior. Local `cargo test` could not execute because the Windows test binary exited before running any test with `STATUS_ENTRYPOINT_NOT_FOUND`; a tiny pre-existing test (`validate_auth_accepts_correct_token`) failed the same way, so this was treated as a local harness/runtime blocker rather than a chunk behavior failure.
 
 ---
 

@@ -5,9 +5,13 @@ import {
   setRemoteConversationRuntimeOverride,
   shouldUseRemoteConversation,
 } from './runtime-target';
+import { BROWSER_LAN_HOST_STORAGE_KEY, parseBrowserLanEndpoint, saveBrowserLanHost } from './browser-lan';
 
 describe('runtime target detection', () => {
-  afterEach(() => resetRuntimeTargetOverrides());
+  afterEach(() => {
+    resetRuntimeTargetOverrides();
+    localStorage.removeItem(BROWSER_LAN_HOST_STORAGE_KEY);
+  });
 
   it('detects iPhone and iPad runtimes', () => {
     expect(isIosRuntime({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' })).toBe(true);
@@ -21,5 +25,11 @@ describe('runtime target detection', () => {
 
     setRemoteConversationRuntimeOverride(true);
     expect(shouldUseRemoteConversation({ search: '?remoteConversation=0' })).toBe(true);
+  });
+
+  it('uses remote conversation when a browser LAN host is saved', () => {
+    saveBrowserLanHost(parseBrowserLanEndpoint('https://desktop.local:7422'));
+
+    expect(shouldUseRemoteConversation({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })).toBe(true);
   });
 });

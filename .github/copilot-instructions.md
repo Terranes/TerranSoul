@@ -1,7 +1,7 @@
 # TerranSoul — Copilot Instructions
 
 > This file is auto-loaded by GitHub Copilot on every request.
-> Last updated: 2026-05-02
+> Last updated: 2026-05-05
 
 ## What is TerranSoul?
 
@@ -228,6 +228,9 @@ during coding sessions.
 For dev/coding work, prefer the headless runner: `npm run mcp` starts
 the brain on `127.0.0.1:7423` with state in `<repo>/mcp-data/` (no
 collision with `npm run dev` or a running app, no end-user data
-touched). Full procedure, scope limits, and per-agent setup live in
+touched). It writes the current bearer token to `.vscode/.mcp-token`;
+set `TERRANSOUL_MCP_TOKEN_MCP` from that file for VS Code's
+`terransoul-brain-mcp` profile, verify `GET http://127.0.0.1:7423/health`,
+then call `brain_health`. Full procedure, scope limits, and per-agent setup live in
 [rules/agent-mcp-bootstrap.md](rules/agent-mcp-bootstrap.md) — read it
 before invoking `npm run mcp`.

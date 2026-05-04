@@ -1182,7 +1182,9 @@ watch(
   () => streaming.currentEmotion,
   (emotion) => {
     if (emotion) {
-      setAvatarState(sentimentToState(emotion));
+      characterStore.setState(sentimentToState(emotion), streaming.currentEmotionIntensity);
+      const asm = getAsm();
+      if (asm) asm.setEmotion(emotion === 'neutral' ? 'neutral' : emotion);
       setTimeout(() => setAvatarState('idle'), 6000);
     }
   },
@@ -1203,7 +1205,9 @@ watch(
     if (active) {
       setAvatarState('talking');
     } else if (streaming.currentEmotion) {
-      setAvatarState(sentimentToState(streaming.currentEmotion));
+      characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
+      const asm = getAsm();
+      if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion);
     }
   },
 );
@@ -1226,7 +1230,6 @@ watch(tts.isSpeaking, (speaking) => {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
-let unlistenLlmPose: (() => void) | null = null;
 let streamTtsActive = false;
 
 onMounted(async () => {
@@ -1298,11 +1301,6 @@ onMounted(async () => {
       }
     });
 
-    // Pose stream — LLM-as-Animator (Chunk 14.16b3).
-    unlistenLlmPose = await listen<import('../renderer/pose-animator').LlmPoseFrame>('llm-pose', (event) => {
-      viewportRef.value?.playPose?.(event.payload);
-    });
-
     // Start cursor-position polling from Rust.  On each event we decide
     // whether the cursor is over an interactive component and toggle
     // set_ignore_cursor_events accordingly.
@@ -1350,10 +1348,6 @@ onUnmounted(() => {
   if (unlistenLlmAnimation) {
     unlistenLlmAnimation();
     unlistenLlmAnimation = null;
-  }
-  if (unlistenLlmPose) {
-    unlistenLlmPose();
-    unlistenLlmPose = null;
   }
   tts.stop();
   lipSyncBridge.dispose();

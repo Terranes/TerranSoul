@@ -24,6 +24,7 @@ Read the following files for full project context (in order of priority):
 - **Tests:** `npx vitest run` (frontend), `cargo test` (backend), `cargo clippy -- -D warnings`
 - **CI Gate:** `npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`
 - **MCP Brain:** `npm run mcp` (Docker, headless) or `npm run mcp:app` (local GUI with MCP badge)
+- **MCP Quick Setup:** `npm run mcp`, set `TERRANSOUL_MCP_TOKEN_MCP` from `.vscode/.mcp-token`, verify with `brain_health`
 - **Dev Server:** `npm run dev` (Vite on :1420)
 
 ## Session Protocol

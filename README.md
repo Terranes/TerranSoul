@@ -143,7 +143,7 @@ TerranSoul is an open-source **3D virtual assistant + AI package manager** that 
 |----------|--------|
 | Desktop | Windows · macOS · Linux |
 | Mobile | iOS · Android |
-| Browser | Vercel-only static web test environment + live pet-mode demo |
+| Browser | Vercel-only static web test environment + live pet-mode demo + known-host LAN bridge |
 
 The iOS target now has a Tauri 2 platform overlay (`src-tauri/tauri.ios.conf.json`), shared Vue safe-area layout, and Stronghold-backed secure storage for pairing credentials. Generate the Xcode project on macOS with `npm run tauri:ios:init`; non-macOS hosts can still run `npm run tauri:ios:check` to validate the scaffold.
 
@@ -202,10 +202,11 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - MCP app activity channel: backend MCP tool calls emit `mcp-activity` snapshots with active provider/model, phase, tool title, and speakable status text so MCP mode visibly and audibly narrates what the configured brain is doing.
 - Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
-- Browser-only Vercel onboarding — the landing page shows only a provider button; chat and pet mode open the provider chooser when no backend brain is connected. Current recommendations put OpenRouter first for free model breadth, with Gemini, NVIDIA NIM, ChatGPT/OpenAI, and Pollinations available through provider-page authorization plus an optional manual key/token step. Choices are remembered in the `brain` Pinia store + localStorage, with a visible Reconfigure LLM button and no Tauri installer or backend account required.
+- Browser-only Vercel onboarding — the landing page shows provider and LAN buttons; chat and pet mode open the provider chooser when no backend brain is connected. Current recommendations put OpenRouter first for free model breadth, with Gemini, NVIDIA NIM, ChatGPT/OpenAI, and Pollinations available through provider-page authorization plus an optional manual key/token step. Choices are remembered in the `brain` Pinia store + localStorage, with a visible Reconfigure LLM button and no Tauri installer or backend account required.
+- Browser LAN bridge — the static page can save and probe a user-entered TerranSoul host (`ts.browser.lan.host`) and then open the existing `remote-conversation` chat surface through `RemoteHost`. It does **not** auto-detect every LAN TerranSoul: backendless HTTPS browsers cannot listen for mDNS/UDP advertisements, inspect router/ARP tables, or safely scan private subnets. A Vercel HTTPS page also cannot call plaintext `http://192.168.x.x` hosts; direct browser LAN calls require same-machine loopback, local development over HTTP, or a browser-trusted HTTPS host that allows the origin. Native mobile/desktop pairing remains the reliable LAN path.
 - Browser-native RAG for the static web demo — direct provider chat can inject local `[LONG-TERM MEMORY]` blocks without a TerranSoul backend by using the browser memory adapter documented in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface)
 - Persona-based fallback when no LLM is configured
-- **RemoteHost transport adapter** (`src/transport/`) — shared frontend contract for local in-process Tauri IPC and remote gRPC-Web hosts. Browser/WebView clients use `@bufbuild/connect` + `@bufbuild/connect-web` descriptors for `Brain.Health`, `Brain.Search`, `Brain.StreamSearch`, `PhoneControl.SendChatMessage`, and `PhoneControl.StreamChatMessage`, while desktop keeps using the same interface over local `invoke()` calls. The phone tool layer (`remote-tools.ts`) exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` on top of that same contract, and the iOS notification watcher polls the same adapter for long-running workflow/Copilot updates.
+- **RemoteHost transport adapter** (`src/transport/`) — shared frontend contract for local in-process Tauri IPC and remote gRPC-Web hosts. Browser/WebView clients use `@bufbuild/connect` + `@bufbuild/connect-web` descriptors for `Brain.Health`, `Brain.Search`, `Brain.StreamSearch`, `PhoneControl.SendChatMessage`, and `PhoneControl.StreamChatMessage`, while desktop keeps using the same interface over local `invoke()` calls. The phone tool layer (`remote-tools.ts`) exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` on top of that same contract, and the iOS notification watcher polls the same adapter for long-running workflow/Copilot updates. Browser mode can opt into this same store from a saved known LAN host, but discovery still requires native pairing or a rendezvous/signaling service.
 - **LLM-powered intent classifier** (`src-tauri/src/brain/intent_classifier.rs` + `classify_intent` Tauri command) — every chat turn is classified by the configured brain (Free → Paid → Local) into a typed `IntentDecision` (`chat`, `learn_with_docs{topic}`, `teach_ingest{topic}`, `gated_setup{upgrade_gemini|provide_context}`, `unknown`). Replaces three brittle English-only regex detectors so paraphrases, typos and multilingual phrasings (`học luật Việt Nam từ tài liệu của tôi`) all route correctly. 3 s hard timeout + 30 s in-memory LRU cache; on `unknown` the frontend automatically triggers the install-all overlay so a local Ollama brain is set up — guaranteeing every future turn has a working classifier offline. **Every "LLM decides" surface (intent classifier, unknown→install fallback, don't-know gate, post-reply quest suggestions, chat-based LLM-switching commands, yes/no quick-reply buttons, model-capacity auto-upgrade prompt) is user-toggleable** from the Brain panel's "🧭 AI decision-making" section. New code touching AI routing must follow **[`rules/llm-decision-rules.md`](rules/llm-decision-rules.md)** — no regex / `.includes` / keyword arrays driving AI behaviour. See **[docs/brain-advanced-design.md § Intent Classification](docs/brain-advanced-design.md#intent-classification)**.
 - 60s streaming timeout + 30s fallback timeout to prevent stuck states
 
@@ -368,6 +369,22 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`, `get_mcp_activity`
 - Control Panel (15.4) and auto-setup writers (15.6) — shipped; see the completion log for details.
 
+### 🧠 MCP Quick Setup
+
+For coding agents, use the headless brain runner so it cannot collide with the desktop app or dev server:
+
+1. Start the headless MCP brain: `npm run mcp`.
+2. Copy the generated bearer token from `.vscode/.mcp-token`. The runner also keeps its data-root copy at `mcp-data/mcp-token.txt`.
+3. Set VS Code's MCP env var for the headless profile, then restart VS Code or launch it from that shell:
+
+  ```powershell
+  $env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content .vscode/.mcp-token
+  ```
+
+4. Verify the server is reachable with `GET http://127.0.0.1:7423/health`, then call the `brain_health` MCP tool on `terransoul-brain-mcp`.
+
+The checked-in `.vscode/mcp.json` already points `terransoul-brain-mcp` at `http://127.0.0.1:7423/mcp` and reads `TERRANSOUL_MCP_TOKEN_MCP` for bearer auth. Release and dev app profiles use ports `7421` and `7422` with their own token env vars.
+
 ### 🖥️ Window Modes
 - Standard desktop window
 - Transparent always-on-top overlay
@@ -403,7 +420,7 @@ Built on **Tauri 2.0** as a unified shell across desktop + mobile:
 **Platform notes:**
 
 - **Desktop:** transparent always-on-top overlay window + system tray
-- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a small forced pet-mode preview in the bottom-right, and switching to app modes opens a compact responsive in-page window instead of a native window. Pinia stores use browser-safe fallbacks: direct free/paid cloud chat, in-memory/localStorage settings, disabled native-only commands, and RemoteHost pairing for desktop-local LLM or memory capabilities.
+- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a small forced pet-mode preview in the bottom-right, and switching to app modes opens a compact responsive in-page window instead of a native window. Pinia stores use browser-safe fallbacks: direct free/paid cloud chat, in-memory/localStorage settings, disabled native-only commands, and an explicit known-host `RemoteHost` bridge for desktop-local LLM or memory capabilities. Automatic LAN discovery is intentionally not claimed in browser mode; it needs native help or a backend rendezvous service.
 - **iOS:** full-screen Tauri WebView with `tauri.ios.conf.json`, shared Vue frontend, safe-area navigation, Stronghold-secured pairing credential storage, and gRPC-Web `RemoteHost` transport for paired desktop control. `ChatView` selects `remote-conversation.ts` on iOS so chat streams from the paired desktop brain instead of the phone-local store. Local notifications use `tauri-plugin-notification` while paired to report long-running workflow, ingest, and Copilot activity.
 - **Android:** planned follow-up target using the same shared frontend and Rust core
 - **Mobile backlog:** background sync later
@@ -497,7 +514,10 @@ fallbacks. Browser chat asks for OpenRouter, Gemini, NVIDIA, ChatGPT/OpenAI, or
 Pollinations with a user-owned key/token and selected model, then talks directly to browser-safe
 free/paid cloud providers;
 desktop-local Ollama, LM Studio, and Rust-backed memory require an
-explicit RemoteHost pairing path. The landing surface has focused regression
+explicit RemoteHost pairing or known-host LAN path. The Vercel page cannot
+auto-discover all LAN hosts without a backend, browser extension, or native
+helper; it can only try a host the user supplies and only when browser TLS,
+mixed-content, CORS, and private-network rules allow the request. The landing surface has focused regression
 coverage for content anchors, live pet companion wiring, and browser-window
 launch events.
 

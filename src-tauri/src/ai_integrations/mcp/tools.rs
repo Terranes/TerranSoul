@@ -308,12 +308,13 @@ async fn dispatch_code_tool(
     app_state: Option<&AppState>,
 ) -> Result<String, String> {
     if !caps.code_read {
-        return Err("permission denied: capability `code_read` is not granted to this client".into());
+        return Err(
+            "permission denied: capability `code_read` is not granted to this client".into(),
+        );
     }
 
-    let state = app_state.ok_or_else(|| {
-        "code tools require app state: use --mcp-app mode".to_string()
-    })?;
+    let state =
+        app_state.ok_or_else(|| "code tools require app state: use --mcp-app mode".to_string())?;
 
     let data_dir = state.data_dir.clone();
     let conn = crate::coding::symbol_index::open_db(&data_dir)
@@ -328,9 +329,11 @@ async fn dispatch_code_tool(
         )
         .map_err(|_| format!("repo not indexed: {repo_path}"))?
     } else {
-        conn.query_row("SELECT id FROM code_repos ORDER BY indexed_at DESC LIMIT 1", [], |r| {
-            r.get(0)
-        })
+        conn.query_row(
+            "SELECT id FROM code_repos ORDER BY indexed_at DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
         .map_err(|_| "no repos indexed yet — run code_index_repo first".to_string())?
     };
 
@@ -357,14 +360,13 @@ async fn dispatch_code_tool(
                 .as_str()
                 .ok_or_else(|| "missing required param: symbol".to_string())?;
 
-            let call_graph =
-                crate::coding::resolver::call_graph(&conn, repo_id, symbol_name)
-                    .map_err(|e| e.to_string())?;
+            let call_graph = crate::coding::resolver::call_graph(&conn, repo_id, symbol_name)
+                .map_err(|e| e.to_string())?;
 
             // Try to find cluster membership
             let cluster: Option<crate::coding::processes::Cluster> = {
-                let clusters = crate::coding::processes::list_clusters(&conn, repo_id)
-                    .unwrap_or_default();
+                let clusters =
+                    crate::coding::processes::list_clusters(&conn, repo_id).unwrap_or_default();
                 // Look up the symbol's DB id for cluster matching
                 let sym_id: Option<i64> = conn
                     .query_row(
@@ -382,8 +384,8 @@ async fn dispatch_code_tool(
 
             // Find processes this symbol participates in
             let processes: Vec<_> = {
-                let all_procs = crate::coding::processes::list_processes(&conn, repo_id)
-                    .unwrap_or_default();
+                let all_procs =
+                    crate::coding::processes::list_processes(&conn, repo_id).unwrap_or_default();
                 all_procs
                     .into_iter()
                     .filter(|p| {
@@ -408,9 +410,8 @@ async fn dispatch_code_tool(
             let max_depth = args["depth"].as_u64().unwrap_or(5) as u32;
 
             // Get the call graph (incoming edges = direct callers)
-            let call_graph =
-                crate::coding::resolver::call_graph(&conn, repo_id, symbol_name)
-                    .map_err(|e| e.to_string())?;
+            let call_graph = crate::coding::resolver::call_graph(&conn, repo_id, symbol_name)
+                .map_err(|e| e.to_string())?;
 
             // BFS over incoming callers to find transitive impact
             let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -447,9 +448,7 @@ async fn dispatch_code_tool(
                     if !visited.insert(caller.clone()) {
                         continue;
                     }
-                    if let Ok(cg) =
-                        crate::coding::resolver::call_graph(&conn, repo_id, caller)
-                    {
+                    if let Ok(cg) = crate::coding::resolver::call_graph(&conn, repo_id, caller) {
                         for edge in &cg.incoming {
                             if !visited.contains(&edge.symbol_name) {
                                 affected_at_depth.push(json!({
@@ -552,7 +551,9 @@ pub fn read_resource(uri: &str, app_state: Option<&AppState>) -> Result<Value, S
     match uri {
         "terransoul://repos" => {
             let mut stmt = conn
-                .prepare("SELECT id, path, label, indexed_at FROM code_repos ORDER BY indexed_at DESC")
+                .prepare(
+                    "SELECT id, path, label, indexed_at FROM code_repos ORDER BY indexed_at DESC",
+                )
                 .map_err(|e| e.to_string())?;
             let repos: Vec<Value> = stmt
                 .query_map([], |row| {
@@ -630,11 +631,7 @@ pub fn prompt_definitions() -> Vec<Value> {
 }
 
 /// Execute a prompt template, returning messages for the LLM.
-pub fn get_prompt(
-    name: &str,
-    args: &Value,
-    app_state: Option<&AppState>,
-) -> Result<Value, String> {
+pub fn get_prompt(name: &str, args: &Value, app_state: Option<&AppState>) -> Result<Value, String> {
     let state = app_state.ok_or_else(|| "prompts require app state".to_string())?;
     let data_dir = &state.data_dir;
 
@@ -700,10 +697,10 @@ pub fn get_prompt(
         }
 
         "generate_map" => {
-            let clusters = crate::coding::processes::list_clusters(&conn, repo_id)
-                .unwrap_or_default();
-            let processes = crate::coding::processes::list_processes(&conn, repo_id)
-                .unwrap_or_default();
+            let clusters =
+                crate::coding::processes::list_clusters(&conn, repo_id).unwrap_or_default();
+            let processes =
+                crate::coding::processes::list_processes(&conn, repo_id).unwrap_or_default();
 
             let cluster_desc = clusters
                 .iter()
@@ -799,12 +796,7 @@ mod tests {
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();
-        let expected = [
-            "code_query",
-            "code_context",
-            "code_impact",
-            "code_rename",
-        ];
+        let expected = ["code_query", "code_context", "code_impact", "code_rename"];
         assert_eq!(code_names, expected);
     }
 
@@ -831,7 +823,14 @@ mod tests {
         let defs = resource_definitions(None);
         assert_eq!(defs.len(), 3);
         let uris: Vec<&str> = defs.iter().map(|d| d["uri"].as_str().unwrap()).collect();
-        assert_eq!(uris, ["terransoul://repos", "terransoul://clusters", "terransoul://processes"]);
+        assert_eq!(
+            uris,
+            [
+                "terransoul://repos",
+                "terransoul://clusters",
+                "terransoul://processes"
+            ]
+        );
     }
 
     #[test]

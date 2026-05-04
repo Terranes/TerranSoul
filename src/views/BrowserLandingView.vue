@@ -19,6 +19,7 @@
       >
         <a href="#features">Features</a>
         <a href="#brain">Brain</a>
+        <a href="#lan">LAN</a>
         <a href="#quests">Quests</a>
         <a href="#browser-docs">Docs</a>
         <a
@@ -82,6 +83,10 @@
             >
               Connect web LLM
             </button>
+            <a
+              class="secondary-action"
+              href="#lan"
+            >Connect LAN</a>
           </div>
           <ul
             class="hero-meta"
@@ -116,6 +121,105 @@
           <strong>Companion layer</strong>
           <span>VRM character, emotions, voice, translator toggle, and pet mode.</span>
         </article>
+      </section>
+
+      <section
+        id="lan"
+        class="lan-section"
+        aria-labelledby="lan-title"
+      >
+        <header class="section-head">
+          <p class="card-kicker">
+            LAN link
+          </p>
+          <h2 id="lan-title">
+            Connect to a desktop host you already trust.
+          </h2>
+        </header>
+        <div class="lan-layout">
+          <article class="lan-limit-panel">
+            <strong>Automatic discovery is unavailable</strong>
+            <p>{{ browserLan.autoDiscovery.reason }}</p>
+          </article>
+
+          <form
+            class="lan-connect-panel"
+            @submit.prevent="probeLanHost"
+          >
+            <div class="lan-fields">
+              <label class="lan-field host-field">
+                <span>Host</span>
+                <input
+                  v-model="browserLan.hostInput"
+                  type="text"
+                  inputmode="url"
+                  placeholder="192.168.1.42 or https://desktop.local:7422"
+                >
+              </label>
+              <label class="lan-field port-field">
+                <span>Port</span>
+                <input
+                  v-model="browserLan.portInput"
+                  type="number"
+                  min="1"
+                  max="65535"
+                >
+              </label>
+              <label class="lan-secure-toggle">
+                <input
+                  v-model="browserLan.secure"
+                  type="checkbox"
+                >
+                <span>HTTPS</span>
+              </label>
+            </div>
+
+            <p
+              v-if="browserLan.endpointPreview"
+              class="lan-endpoint"
+            >
+              {{ browserLan.endpointPreview }}
+            </p>
+            <p
+              v-if="browserLan.remoteSummary"
+              class="lan-status success"
+            >
+              Connected: {{ browserLan.remoteSummary }}
+            </p>
+            <p
+              v-if="browserLan.error"
+              class="lan-status error"
+            >
+              {{ browserLan.error }}
+            </p>
+
+            <div class="lan-actions">
+              <button
+                type="submit"
+                class="secondary-action lan-button"
+                :disabled="browserLan.status === 'probing'"
+              >
+                {{ browserLan.status === 'probing' ? 'Testing…' : 'Test host' }}
+              </button>
+              <button
+                type="button"
+                class="primary-action lan-button"
+                :disabled="browserLan.status === 'probing' || (!browserLan.canOpenRemoteChat && !browserLan.hostInput.trim())"
+                @click="openRemoteLanChat"
+              >
+                Open remote chat
+              </button>
+              <button
+                v-if="browserLan.savedHost"
+                type="button"
+                class="secondary-action lan-button"
+                @click="browserLan.clearSaved"
+              >
+                Forget host
+              </button>
+            </div>
+          </form>
+        </div>
       </section>
 
       <section
@@ -347,6 +451,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import BrowserAuthPanel from '../components/BrowserAuthPanel.vue';
 import BrowserPetCompanion from '../components/BrowserPetCompanion.vue';
 import LandingThemeSwitch from '../components/LandingThemeSwitch.vue';
+import { useBrowserLanStore } from '../stores/browser-lan';
+import { setRemoteConversationRuntimeOverride } from '../utils/runtime-target';
 
 const emit = defineEmits<{
   'open-app-window': [];
@@ -356,6 +462,7 @@ const year = computed(() => new Date().getFullYear());
 const brandIconSrc = '/icon.png';
 const skillTreeImageUrl = new URL('../../recording/skill-tree.png', import.meta.url).href;
 const showProviderModal = ref(false);
+const browserLan = useBrowserLanStore();
 
 function openAppWindow(): void {
   emit('open-app-window');
@@ -369,7 +476,22 @@ function closeProviderModal(): void {
   showProviderModal.value = false;
 }
 
+async function probeLanHost(): Promise<void> {
+  await browserLan.probeAndSave();
+}
+
+async function openRemoteLanChat(): Promise<void> {
+  let host = browserLan.loadSaved();
+  if (!host) {
+    host = await browserLan.probeAndSave();
+  }
+  if (!host) return;
+  setRemoteConversationRuntimeOverride(true);
+  emit('open-app-window');
+}
+
 onMounted(() => {
+  browserLan.loadSaved();
   window.addEventListener('ts:browser-llm-config-request', openProviderModal);
 });
 
@@ -684,6 +806,125 @@ h3 {
   font-size: 0.93rem;
 }
 
+/* ── LAN link ─────────────────────────────────────────────────────────── */
+.lan-section {
+  display: grid;
+  gap: var(--ts-space-lg);
+}
+
+.lan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--ts-space-md);
+  align-items: start;
+}
+
+.lan-limit-panel,
+.lan-connect-panel {
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-lg);
+  background: color-mix(in srgb, var(--ts-bg-panel) 78%, transparent);
+  box-shadow: var(--ts-shadow-sm);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.lan-limit-panel {
+  display: grid;
+  gap: 0.45rem;
+  padding: clamp(1rem, 2vw, 1.35rem);
+}
+
+.lan-limit-panel strong {
+  color: var(--ts-text-primary);
+  font-weight: 900;
+}
+
+.lan-limit-panel p {
+  margin: 0;
+  color: var(--ts-text-secondary);
+  line-height: 1.55;
+}
+
+.lan-connect-panel {
+  display: grid;
+  gap: var(--ts-space-md);
+  padding: clamp(1rem, 2vw, 1.35rem);
+}
+
+.lan-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 0.24fr) auto;
+  gap: var(--ts-space-sm);
+  align-items: end;
+}
+
+.lan-field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--ts-text-secondary);
+  font-size: var(--ts-text-sm);
+  font-weight: 700;
+}
+
+.lan-field input {
+  min-width: 0;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-sm);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
+  font: inherit;
+  padding: 0.68rem 0.75rem;
+}
+
+.lan-secure-toggle {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ts-text-secondary);
+  font-size: var(--ts-text-sm);
+  font-weight: 800;
+}
+
+.lan-endpoint,
+.lan-status {
+  margin: 0;
+  border-radius: var(--ts-radius-sm);
+  padding: 0.62rem 0.75rem;
+  overflow-wrap: anywhere;
+  font-size: var(--ts-text-sm);
+  line-height: 1.45;
+}
+
+.lan-endpoint {
+  color: var(--ts-text-secondary);
+  background: color-mix(in srgb, var(--ts-bg-input) 75%, transparent);
+  font-family: var(--ts-font-mono);
+}
+
+.lan-status.success {
+  color: var(--ts-success);
+  background: var(--ts-success-bg);
+}
+
+.lan-status.error {
+  color: var(--ts-error);
+  background: var(--ts-error-bg);
+}
+
+.lan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-space-sm);
+}
+
+.lan-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 /* ── Feature cards ────────────────────────────────────────────────────── */
 .feature-cards {
   display: grid;
@@ -888,6 +1129,7 @@ h3 {
   }
 
   .proof-strip,
+  .lan-layout,
   .skill-showcase,
   .brain-layout {
     grid-template-columns: 1fr;
@@ -946,6 +1188,10 @@ h3 {
   .secondary-action {
     justify-content: center;
     text-align: center;
+  }
+
+  .lan-fields {
+    grid-template-columns: 1fr;
   }
 }
 </style>

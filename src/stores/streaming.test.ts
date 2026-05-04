@@ -156,4 +156,25 @@ describe('streaming store — IPC integration', () => {
     store.handleAnimation({ emotion: 'sad' });
     expect(store.currentEmotion).toBe('sad');
   });
+
+  it('handleAnimation sets intensity when provided', () => {
+    const store = useStreamingStore();
+    store.handleAnimation({ emotion: 'happy', intensity: 0.6 });
+    expect(store.currentEmotion).toBe('happy');
+    expect(store.currentEmotionIntensity).toBe(0.6);
+  });
+
+  it('handleAnimation defaults intensity to 1 when absent', () => {
+    const store = useStreamingStore();
+    store.handleAnimation({ emotion: 'angry' });
+    expect(store.currentEmotionIntensity).toBe(1);
+  });
+
+  it('handleAnimation clamps intensity to [0, 1]', () => {
+    const store = useStreamingStore();
+    store.handleAnimation({ emotion: 'sad', intensity: 2.5 });
+    expect(store.currentEmotionIntensity).toBe(1);
+    store.handleAnimation({ emotion: 'sad', intensity: -0.3 });
+    expect(store.currentEmotionIntensity).toBe(0);
+  });
 });

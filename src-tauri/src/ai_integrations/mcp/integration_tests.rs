@@ -27,8 +27,16 @@ mod tests {
         // Give the server a tick to start accepting connections.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let url = format!("http://127.0.0.1:{port}/mcp");
+        let url = format!("http://127.0.0.1:{}/mcp", handle.port);
         (handle, url, token)
+    }
+
+    fn health_url(mcp_url: &str) -> String {
+        format!("{}/health", mcp_url.trim_end_matches("/mcp"))
+    }
+
+    fn status_url(mcp_url: &str) -> String {
+        format!("{}/status", mcp_url.trim_end_matches("/mcp"))
     }
 
     /// Pick a random high port that's likely free.
@@ -215,6 +223,88 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("unauthorized"));
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn health_returns_ok_without_auth() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .get(health_url(&url))
+            .send()
+            .await
+            .expect("health request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("health body should be JSON");
+
+        assert_eq!(status, 200);
+        assert_eq!(body, json!({ "status": "ok", "port": handle.port }));
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn status_includes_actual_port_and_seed_loaded() {
+        let (handle, url, token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .get(status_url(&url))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .expect("status request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("status body should be JSON");
+
+        assert_eq!(status, 200);
+        assert_eq!(body["actual_port"], handle.port);
+        assert!(body["seed_loaded"].is_boolean());
+        assert!(body["health"].is_object());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn mcp_rejects_missing_auth_header() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&json!({ "jsonrpc": "2.0", "id": 16, "method": "ping" }))
+            .send()
+            .await
+            .expect("request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("error body should be JSON");
+
+        assert_eq!(status, 401);
+        assert_eq!(body["error"]["message"], "unauthorized");
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn mcp_notification_rejects_missing_auth_header() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }))
+            .send()
+            .await
+            .expect("request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("error body should be JSON");
+
+        assert_eq!(status, 401);
+        assert_eq!(body["error"]["message"], "unauthorized");
 
         handle.stop();
     }

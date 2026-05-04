@@ -68,8 +68,7 @@ pub fn is_dev_build() -> bool {
 /// external agents (Copilot, Codex, Claude Code, Clawcode, etc.) can
 /// tell at a glance that they are talking to the repo-local headless
 /// server, not a running app.
-static MCP_PET_MODE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static MCP_PET_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Mark the current process as running in MCP pet mode. Called by
 /// `terransoul_lib::run_http_server` before the server starts.
@@ -80,6 +79,18 @@ pub fn enable_mcp_pet_mode() {
 /// Whether the current process is running as the headless MCP server.
 pub fn is_mcp_pet_mode() -> bool {
     MCP_PET_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn seed_loaded_from_state(state: &AppState) -> bool {
+    if !is_mcp_pet_mode() {
+        return false;
+    }
+    state
+        .memory_store
+        .lock()
+        .ok()
+        .and_then(|store| store.stats().ok())
+        .is_some_and(|stats| stats.total > 0)
 }
 
 /// Handle to a running MCP server. Stored in
@@ -137,18 +148,6 @@ pub async fn start_server_with_activity(
         brain_write: false,
         code_read: true,
     };
-    let router_state = McpRouterState {
-        gw,
-        caps,
-        token: token.clone(),
-        activity: Some(activity.clone()),
-        app_state: Some(state),
-        staleness_tracker: Arc::new(tokio::sync::Mutex::new(
-            hooks::IndexStalenessTracker::new(),
-        )),
-    };
-
-    let app = router::build(router_state);
 
     // Try the requested port first, then fallbacks.
     let mut last_err = String::new();
@@ -197,6 +196,18 @@ pub async fn start_server_with_activity(
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
     activity.ready(bound_port);
     let server_activity = activity.clone();
+    let seed_loaded = seed_loaded_from_state(&state);
+    let router_state = McpRouterState {
+        gw,
+        caps,
+        token: token.clone(),
+        port: bound_port,
+        seed_loaded,
+        activity: Some(activity.clone()),
+        app_state: Some(state),
+        staleness_tracker: Arc::new(tokio::sync::Mutex::new(hooks::IndexStalenessTracker::new())),
+    };
+    let app = router::build(router_state);
 
     let task = tokio::spawn(async move {
         let server = axum::serve(listener, app);

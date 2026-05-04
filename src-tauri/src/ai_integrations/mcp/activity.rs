@@ -221,9 +221,7 @@ impl McpActivityReporter {
                 provider, model, ..
             }) => (provider, Some(model)),
             Some(BrainMode::LocalOllama { model }) => ("ollama".to_string(), Some(model)),
-            Some(BrainMode::LocalLmStudio { model, .. }) => {
-                ("lmstudio".to_string(), Some(model))
-            }
+            Some(BrainMode::LocalLmStudio { model, .. }) => ("lmstudio".to_string(), Some(model)),
             None => match active {
                 Some(model) => ("ollama".to_string(), Some(model)),
                 None => ("none".to_string(), None),
@@ -244,24 +242,40 @@ fn describe_tool(tool_name: &str, args: &Value) -> (String, String) {
     match tool_name {
         "brain_search" => {
             let query = arg_text(args, "query").unwrap_or_else(|| "the requested topic".into());
-            ("Brain search".into(), format!("searching memory for {query}"))
+            (
+                "Brain search".into(),
+                format!("searching memory for {query}"),
+            )
         }
         "brain_get_entry" => {
             let id = args["id"]
                 .as_i64()
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| "the requested entry".into());
-            ("Memory entry lookup".into(), format!("loading memory entry {id}"))
+            (
+                "Memory entry lookup".into(),
+                format!("loading memory entry {id}"),
+            )
         }
-        "brain_list_recent" => ("Recent memory list".into(), "listing recent memories".into()),
+        "brain_list_recent" => (
+            "Recent memory list".into(),
+            "listing recent memories".into(),
+        ),
         "brain_kg_neighbors" => (
             "Knowledge graph lookup".into(),
             "checking nearby knowledge graph memories".into(),
         ),
-        "brain_summarize" => ("Brain summary".into(), "summarizing the requested material".into()),
+        "brain_summarize" => (
+            "Brain summary".into(),
+            "summarizing the requested material".into(),
+        ),
         "brain_suggest_context" => {
-            let query = arg_text(args, "query").unwrap_or_else(|| "the active editor context".into());
-            ("Context suggestion".into(), format!("building context for {query}"))
+            let query =
+                arg_text(args, "query").unwrap_or_else(|| "the active editor context".into());
+            (
+                "Context suggestion".into(),
+                format!("building context for {query}"),
+            )
         }
         "brain_ingest_url" => {
             let url = arg_text(args, "url").unwrap_or_else(|| "the requested source".into());

@@ -18,6 +18,8 @@ export const useStreamingStore = defineStore('streaming', () => {
   const streamRawText = ref('');
   /** Latest emotion detected during streaming. */
   const currentEmotion = ref<EmotionTag | null>(null);
+  /** Intensity of the current emotion in [0, 1]. Defaults to 1. */
+  const currentEmotionIntensity = ref(1);
   /** Latest motion/gesture detected during streaming. */
   const currentMotion = ref<string | null>(null);
   /** Error, if any. */
@@ -35,6 +37,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamText.value = '';
     streamRawText.value = '';
     currentEmotion.value = null;
+    currentEmotionIntensity.value = 1;
     currentMotion.value = null;
     error.value = null;
 
@@ -72,7 +75,7 @@ export const useStreamingStore = defineStore('streaming', () => {
    * Process a structured animation command from the `llm-animation` event.
    * Called by the ChatView event listener.
    */
-  function handleAnimation(cmd: { emotion?: string; motion?: string }) {
+  function handleAnimation(cmd: { emotion?: string; motion?: string; intensity?: number }) {
     if (cmd.emotion) {
       const lower = cmd.emotion.toLowerCase();
       const valid: ReadonlySet<string> = new Set([
@@ -80,6 +83,9 @@ export const useStreamingStore = defineStore('streaming', () => {
       ]);
       if (valid.has(lower)) {
         currentEmotion.value = lower as EmotionTag;
+        currentEmotionIntensity.value = typeof cmd.intensity === 'number'
+          ? Math.max(0, Math.min(1, cmd.intensity))
+          : 1;
       }
     }
     if (cmd.motion) {
@@ -93,6 +99,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamText.value = '';
     streamRawText.value = '';
     currentEmotion.value = null;
+    currentEmotionIntensity.value = 1;
     currentMotion.value = null;
     error.value = null;
   }
@@ -102,6 +109,7 @@ export const useStreamingStore = defineStore('streaming', () => {
     streamText,
     streamRawText,
     currentEmotion,
+    currentEmotionIntensity,
     currentMotion,
     error,
     sendStreaming,

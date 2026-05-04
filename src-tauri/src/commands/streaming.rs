@@ -24,6 +24,9 @@ pub struct AnimationCommand {
     pub emotion: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion: Option<String>,
+    /// Emotion intensity in `[0, 1]`. Defaults to 1.0 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intensity: Option<f32>,
 }
 
 /// Ollama streaming response shape — each line of the NDJSON stream.
@@ -1205,6 +1208,7 @@ mod tests {
         let cmd = AnimationCommand {
             emotion: Some("happy".to_string()),
             motion: None,
+            intensity: None,
         };
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(json.contains("happy"));

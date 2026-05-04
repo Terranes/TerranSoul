@@ -154,9 +154,20 @@ entry is present only as the secondary direct-call option required by a
 backendless static deployment. The selected web test session is remembered in
 the `brain` Pinia store plus localStorage, and ChatView exposes a Reconfigure LLM
 button so Vercel users do not have to leave the conversation to switch providers.
-Local/remote brain paths still require an explicit paired TerranSoul host. The browser transport resolver rejects local
-Ollama/LM Studio as direct browser transports so the UI never implies Rust-backed
-memory or localhost LLM access is available without RemoteHost pairing.
+Local/remote brain paths still require an explicit TerranSoul host. Browser mode
+now includes a known-host LAN bridge on the landing page: the user can enter a
+host/port, the page probes the existing gRPC-Web `RemoteHost`, stores the host
+in `ts.browser.lan.host`, and opens `ChatView` through `remote-conversation`.
+That is the maximum backendless browser shape. A Vercel HTTPS page cannot
+auto-discover all LAN TerranSoul instances because browsers cannot receive
+mDNS/UDP advertisements, inspect router/ARP state, or safely scan private
+subnets from a public origin. It also cannot call plaintext private-LAN HTTP
+from HTTPS; direct browser LAN calls require same-machine loopback, local HTTP
+development, or a browser-trusted HTTPS host with the right CORS/private-network
+allowance. Native mobile/desktop pairing remains the reliable LAN discovery and
+trust path. The browser transport resolver rejects local Ollama/LM Studio as
+direct browser transports so the UI never implies Rust-backed memory or
+localhost LLM access is available without a RemoteHost.
 
 Browser RAG is implemented by `src/transport/browser-rag.ts` and backs the
 `memory` Pinia store whenever Tauri IPC is unavailable. It persists memory
@@ -2996,7 +3007,9 @@ The adapter currently exposes `Brain.Health`, unary `Brain.Search`, and server-s
 
 Chunk 24.9 extends this same boundary to live chat. `PhoneControl.StreamChatMessage(ChatRequest) returns (stream ChatChunk)` runs on the desktop host and assembles the full system prompt there: `SYSTEM_PROMPT_FOR_STREAMING`, hybrid memory lookup above the relevance threshold, `[LONG-TERM MEMORY]`, persona block, and one-shot `[HANDOFF]` block. The stream reuses the Rust `StreamTagParser`, so `<anim>` / `<pose>` blocks are stripped before mobile receives text. The unary `SendChatMessage` remains as a fallback, but iOS chat uses `RemoteHost.streamChatMessage()` from `src/stores/remote-conversation.ts`.
 
-Frontend routing is deliberately boring: `src/stores/chat-store-router.ts` selects the existing local `conversation.ts` store on desktop and `remote-conversation.ts` when `src/utils/runtime-target.ts` detects iOS (or an explicit `remoteConversation` test override). `ChatView.vue` binds to the shared store surface, so message lists, agent thread filtering, queue/stop controls, subtitles, and mobile breakpoints remain the same while the backing stream moves from in-process Tauri IPC to the paired desktop `RemoteHost`.
+Frontend routing is deliberately boring: `src/stores/chat-store-router.ts` selects the existing local `conversation.ts` store on desktop and `remote-conversation.ts` when `src/utils/runtime-target.ts` detects iOS, an explicit `remoteConversation` test override, or a saved browser LAN host from `src/utils/browser-lan.ts`. `ChatView.vue` binds to the shared store surface, so message lists, agent thread filtering, queue/stop controls, subtitles, and mobile breakpoints remain the same while the backing stream moves from in-process Tauri IPC to the paired or known-host desktop `RemoteHost`.
+
+Browser LAN discovery is intentionally a negative capability: `browserLanAutoDiscoverySupport()` always returns unsupported with the browser security reason, and the landing page only probes a user-supplied host. Implementing true "find every TerranSoul on this LAN" from `https://terran-soul.vercel.app/` would require a rendezvous/signaling backend, browser extension, or native helper.
 
 Chunk 24.10 adds the phone-control tool layer above `RemoteHost`. `src/transport/remote-tools.ts` defines MCP-style tool names — `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` — with JSON-schema-shaped inputs and capability metadata. The tools call existing Phase 24 RPCs through `RemoteHost`: Copilot session probing, workflow run listing, workflow progress lookup, and workflow continue/heartbeat. `remote-conversation.ts` routes headline phone prompts such as “what's Copilot doing on my desktop?” and “continue the next chunk” through these tools before falling back to normal hosted chat streaming, so the phone remains a microphone/screen while the desktop host owns the reasoning, state, and side effects.
 
