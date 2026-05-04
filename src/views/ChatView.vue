@@ -611,14 +611,14 @@ function setAvatarState(charState: CharacterState): void {
   const asm = getAsm();
   if (!asm) return;
   switch (charState) {
-    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
-    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
-    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
-    case 'happy':     asm.setEmotion('happy');     break;
-    case 'sad':       asm.setEmotion('sad');       break;
-    case 'angry':     asm.setEmotion('angry');     break;
-    case 'relaxed':   asm.setEmotion('relaxed');   break;
-    case 'surprised': asm.setEmotion('surprised'); break;
+    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');                                    break;
+    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');                                    break;
+    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');                                    break;
+    case 'happy':     asm.setEmotion('happy',     characterStore.emotionIntensity); break;
+    case 'sad':       asm.setEmotion('sad',       characterStore.emotionIntensity); break;
+    case 'angry':     asm.setEmotion('angry',     characterStore.emotionIntensity); break;
+    case 'relaxed':   asm.setEmotion('relaxed',   characterStore.emotionIntensity); break;
+    case 'surprised': asm.setEmotion('surprised', characterStore.emotionIntensity); break;
   }
 }
 
@@ -1425,7 +1425,7 @@ watch(
       // Stream done — set final emotion from parsed tags (once, not per-chunk)
       characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
-      if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion);
+      if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
     }
     if (!active && isStreamTtsActive) {
       tts.flush();

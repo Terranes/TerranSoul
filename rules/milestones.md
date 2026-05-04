@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 32.6 — MCP seed verification + status enrichment.**
+**TBD — See `rules/completion-log.md` for next available chunk.**
 
 ---
 
@@ -46,8 +46,5 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 32.6 | not-started | MCP seed verification + status enrichment | Add `seed_loaded: bool` and `actual_port: u16` to `/status` response. Verify seed was applied by checking memory count > 0 on startup. Test: assert `/status` includes both fields. |
-| 32.7 | not-started | vue-tsc + clippy hardening pass | Fix any remaining type errors across all `.vue`/`.ts` files. Ensure `cargo clippy -- -D warnings` has zero suppressed lints. Add `#![deny(unused_must_use)]` to lib.rs. Run full CI gate. |
-| 32.8 | not-started | Animation emotion intensity pipeline | Wire avatar-state emotion scores (from streaming text analysis) into `EmotionPoseBias.setEmotion(emotion, intensity)`. Map LLM stream tag `<emotion:happy:0.8>` to intensity. Test: unit test emotion tag parsing + bias application. |
 
 ---

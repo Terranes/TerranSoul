@@ -21,6 +21,9 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 32.8 — Animation emotion intensity pipeline](#chunk-328--animation-emotion-intensity-pipeline) | 2026-05-04 |
+| [Chunk 32.7 — vue-tsc + clippy hardening pass](#chunk-327--vue-tsc--clippy-hardening-pass) | 2026-05-04 |
+| [Chunk 32.6 — MCP seed verification + status enrichment](#chunk-326--mcp-seed-verification--status-enrichment) | 2026-05-04 |
 | [Chunk 32.5 — README MCP Quick Setup section](#chunk-325--readme-mcp-quick-setup-section) | 2026-05-05 |
 | [Chunk 32.4 — Self-improve isolated patch auto-merge](#chunk-324--self-improve-isolated-patch-auto-merge) | 2026-05-05 |
 | [Chunk 32.3 — Self-improve chunk completion + retry](#chunk-323--self-improve-chunk-completion--retry) | 2026-05-05 |
@@ -263,6 +266,65 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 32.8 — Animation emotion intensity pipeline
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Wire avatar-state emotion scores (from streaming text analysis) into `EmotionPoseBias.setEmotion(emotion, intensity)` and `CharacterAnimator.setState(state, intensity)`. Scale VRM facial expression weights by `emotionIntensity` so `<anim>{"emotion":"happy","intensity":0.8}</anim>` produces 80% of the full blendshape weights.
+
+**Architecture:**
+- `AvatarState` gained `emotionIntensity: number` field (default 1)
+- `AvatarStateMachine.setEmotion(emotion, intensity?)` now stores and clamps intensity
+- `CharacterAnimator.setState(state, intensity?)` propagates intensity through `bridgeStateToAvatar` to `asm.setEmotion`
+- `CharacterAnimator.computeExpressionTargets` scales `STATE_EXPRESSIONS` values by `asm.state.emotionIntensity`
+- `CharacterViewport.vue` watcher passes `characterStore.emotionIntensity` to `animator.setState`
+- `ChatView.vue` and `PetOverlayView.vue` pass `streaming.currentEmotionIntensity` to `asm.setEmotion`
+- `CharacterAnimator.getExpressionTarget(name)` added for test introspection
+
+**Files modified:**
+- `src/renderer/avatar-state.ts` — added `emotionIntensity` to `AvatarState`, updated `setEmotion` signature + `reset()`
+- `src/renderer/character-animator.ts` — added intensity to `setState`, `bridgeStateToAvatar`, `computeExpressionTargets`, added `getExpressionTarget`
+- `src/components/CharacterViewport.vue` — pass `characterStore.emotionIntensity` to `animator.setState`
+- `src/views/ChatView.vue` — pass intensity to `asm.setEmotion` in streaming watchers and switch cases
+- `src/views/PetOverlayView.vue` — same as ChatView
+
+**Tests:** +6 avatar-state tests, +2 character-animator tests (113 total passing)
+
+---
+
+## Chunk 32.7 — vue-tsc + clippy hardening pass
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Ensure zero TypeScript type errors (vue-tsc clean) and zero Clippy warnings (-D warnings clean). Add `#![deny(unused_must_use)]` to lib.rs.
+
+**Files modified:**
+- `src-tauri/src/lib.rs` — added `#![deny(unused_must_use)]`
+
+---
+
+## Chunk 32.6 — MCP seed verification + status enrichment
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 32 — MCP Agent-Ready, Self-Improve Autonomy, Animation Wiring & Hardening
+
+**Goal:** Add `seed_loaded: bool` and `actual_port: u16` to MCP `/status` response. Verify seed via memory count > 0.
+
+**Architecture:**
+- `seed_loaded_from_state()` in `mcp/mod.rs` checks `memory_store.stats().total > 0`
+- `McpRouterState` gained `seed_loaded` and `port` fields
+- `handle_status` includes both in the JSON response
+- Test: `status_includes_actual_port_and_seed_loaded` (integration test)
+
+**Files:** Already implemented in previous session; verified test passes.
 
 ---
 

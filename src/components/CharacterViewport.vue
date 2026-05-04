@@ -1195,7 +1195,7 @@ onUnmounted(() => {
 watch(
   () => characterStore.state,
   (newState) => {
-    animator.setState(newState);
+    animator.setState(newState, characterStore.emotionIntensity);
     // Drive the emotion-reactive procedural pose bias (Chunk 14.16d).
     // `thinking` / `talking` are body states with no postural mood —
     // map them to neutral so we don't double-stack with talking gestures.
