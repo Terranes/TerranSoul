@@ -168,4 +168,189 @@ VALUES
 -- ====================================================================
 ('STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data is refined and attached to git repo. Please analysis and choose wisely gitignore stuffs for mcp-data to expose shared data in GitHub repo for mcp usage of TerranSoul. Other people changes and self-improve will update these dataset. Make sure that the entire TerranSoul is saved in mcp-data as default dataset so we never forgot anything and repeat same problems twice and continue implement new features without duplication or rescan entire code base." Implementation: only mcp-data/shared/** + mcp-data/README.md are tracked; runtime tokens/DBs/indexes/logs/locks/sessions/worktrees are ignored. Shared dataset = memory-seed.sql + project-index.md + lessons-learned.md + brain_config.json + app_settings.json. Update them in any PR that adds durable knowledge. Every agent session must read project-index.md and lessons-learned.md (or query the brain) before scanning code or attempting features.', 'requirement,user,mcp-data,policy,governance', 5, 'preference', 1746316800000, 'long', 1.0, 200, 'requirements'),
 
-('STANDING REQUIREMENT (user, 2026-05-04): every agent session must actively USE the MCP brain (start `npm run mcp`, verify GET /health, set TERRANSOUL_MCP_TOKEN_MCP from mcp-data/mcp-token.txt, then query brain_search / brain_suggest_context for project context BEFORE rescanning the codebase or implementing features). Self-improve writes new durable knowledge back to mcp-data/shared/ in the same PR.', 'requirement,user,mcp,session-protocol', 5, 'preference', 1746316800000, 'long', 1.0, 90, 'requirements');
+('STANDING REQUIREMENT (user, 2026-05-04): every agent session must actively USE the MCP brain (start `npm run mcp`, verify GET /health, set TERRANSOUL_MCP_TOKEN_MCP from mcp-data/mcp-token.txt, then query brain_search / brain_suggest_context for project context BEFORE rescanning the codebase or implementing features). Self-improve writes new durable knowledge back to mcp-data/shared/ in the same PR.', 'requirement,user,mcp,session-protocol', 5, 'preference', 1746316800000, 'long', 1.0, 90, 'requirements'),
+
+-- ====================================================================
+-- Memory philosophy (markdown != memory) — see mcp-data/shared/memory-philosophy.md
+-- ====================================================================
+('CORE LESSON (Stop Calling It Memory, Jonathan Edwards 2026-03): Markdown files are NOT a memory system, NOT a database, NOT infrastructure — they are a notebook. .md files (CLAUDE.md, MEMORY.md, Obsidian vaults) are instruction-delivery mechanisms (prompts/config/sticky notes), not data stores. Treating them as memory creates 5 predictable failure modes: no querying, no relationships, scale ceiling (token cost grows linearly with vault), no schema enforcement (same fact gets formatted three ways), no concurrent access (silent corruption). Real memory needs a database with schema + indexes + query language. TerranSoul already implements this: SQLite + FTS5 + HNSW (usearch) + memory_edges KG + RRF k=60 fusion + HyDE + LLM-as-judge reranker + maintenance scheduler. Read mcp-data/shared/memory-philosophy.md for the full mapping table and the 7 non-negotiable rules for future PRs.', 'lesson,memory,architecture,philosophy,markdown,database', 5, 'fact', 1746316800000, 'long', 1.0, 200, 'memory'),
+
+('RULE (memory philosophy): Markdown is for INSTRUCTIONS, not facts. The only files in the repo allowed to CONTAIN memory data (vs. describe it) are mcp-data/shared/memory-seed.sql and the runtime SQLite memory.db. Everything in rules/, docs/, .github/copilot-instructions.md, AGENTS.md, CLAUDE.md, .cursorrules, and mcp-data/shared/*.md is INSTRUCTION — prose pointing at where the data lives. Never propose "store memories as .md / Obsidian as the source of truth" — Obsidian is a one-way projection via obsidian_export.rs.', 'rule,memory,architecture,governance', 5, 'preference', 1746316800000, 'long', 1.0, 100, 'memory'),
+
+('RULE (memory access pattern): Never bulk-load a whole "memory file" into the prompt context. Always retrieve via memory/store.rs hybrid_search_rrf, optionally HyDE + reranker, and inject through memory/context_pack.rs which wraps results in a [RETRIEVED CONTEXT] block that explicitly tells the LLM the contents are query results, not the whole DB. Never bypass the StorageBackend trait with ad-hoc file I/O for memory; new backends go alongside postgres.rs / cassandra.rs / mssql.rs.', 'rule,memory,rag,context-pack', 5, 'preference', 1746316800000, 'long', 1.0, 90, 'memory'),
+
+('RULE (provenance): Every memory must populate source_url / source_hash / parent_id where applicable so we can answer "how do you know that?" — same pattern Claudia calls "show your sources" and the Substack article calls "the receipt." TerranSoul also has memory_versions for non-destructive history (versioning.rs), session_id, origin_device, and obsidian_path/last_exported for export tracking.', 'rule,memory,provenance,versioning', 5, 'preference', 1746316800000, 'long', 1.0, 80, 'memory'),
+
+-- ====================================================================
+-- Claudia (kbanc85/claudia) reverse-engineering — see mcp-data/shared/claudia-research.md
+-- ====================================================================
+('REFERENCE PROJECT — kbanc85/claudia (PolyForm Noncommercial 1.0.0): A Claude-Code-hosted personal companion that tracks people, commitments, and judgment rules. Architecture: markdown TEMPLATE LAYER (41 skills, identity, rules — instructions only) + Python MEMORY DAEMON (one SQLite DB shared by a per-session MCP daemon and a 24/7 standalone scheduler daemon). Hybrid search 50% vector + 25% importance + 10% recency + 15% FTS, with rehearsal-effect access boost. Scheduled jobs: adaptive decay (2 AM), consolidation/dedupe (3 AM), vault sync (3:15 AM, one-way to PARA-organised Obsidian), pattern detection (every 6 h). Slash skills include /morning-brief, /meditate, /memory-audit, /brain (3-D visualiser), /what-am-i-missing, /capture-meeting, /research, /follow-up-draft. README explicitly: "SQLite is the source of truth; the vault is a read-only projection." Read mcp-data/shared/claudia-research.md for the full inventory and the 10 adoption proposals mapped to existing TerranSoul modules.', 'reference,claudia,reverse-engineering,memory,architecture', 5, 'fact', 1746316800000, 'long', 1.0, 230, 'references'),
+
+('CLAUDIA LICENSE (CRITICAL): kbanc85/claudia is licensed under PolyForm Noncommercial 1.0.0. Do NOT copy any source files, prompts, skill markdown, scheduler scripts, or asset names. Adopt PATTERNS and PRODUCT IDEAS from the public README only — that is standard reverse engineering and is allowed. TerranSoul ships as a free product, so commercial copy of PolyForm-NC code is forbidden. Credited in CREDITS.md.', 'rule,license,claudia,polyform-noncommercial', 5, 'preference', 1746316800000, 'long', 1.0, 80, 'licensing'),
+
+('CLAUDIA ADOPTION PROPOSALS (from research file, in order of leverage): (1) judgment_rules persisted artefact (extend memories with category=judgment + memory_type=preference and inject into chat system prompt), (2) /meditate slash command exposing existing Chunks 30.2 + 30.6 session reflection, (3) /morning-brief daily quest (uses temporal.rs + hybrid_search_rrf), (4) /memory-audit view joining memories + memory_versions + memory_edges with provenance tree, (5) BrainGraphViewport.vue 3-D visualiser using Three.js (already loaded for VRM), (6) capability tags on agent roster routed by coding/coding_router.rs, (7) per-workspace data_root setting, (8) /health + /status — already aligned, (9) optional stdio MCP transport adapter on top of BrainGateway, (10) PARA-organised opt-in template for obsidian_export.rs. Each must be filed as a chunk in rules/milestones.md before implementation.', 'reference,claudia,adoption,roadmap', 4, 'fact', 1746316800000, 'long', 1.0, 180, 'references'),
+
+('ANTI-PATTERN (claudia): Do NOT bolt on a Python memory daemon — TerranSoul memory is Rust in src-tauri/src/memory/ behind StorageBackend. Do NOT make Obsidian the user-facing primary surface — TerranSoul primary surface is chat + character + brain panel; Obsidian export stays opt-in. Do NOT introduce branded names ("claudia", literal /meditate label, "morning brief" as product noun) — pick neutral names per rules/coding-standards.md.', 'rule,claudia,anti-pattern,naming', 4, 'preference', 1746316800000, 'long', 1.0, 80, 'references'),
+
+-- ====================================================================
+-- Storage invariant — the seed itself eats the SQLite + KG-edges + RRF
+-- + HyDE + reranker dog food. Documents how each layer is exercised so
+-- agents don't suspect the seed is a "markdown vault in disguise."
+-- ====================================================================
+('STORAGE INVARIANT (mcp-data seed): mcp-data/shared/memory-seed.sql is REAL SQL inserted into the canonical SQLite memories + memory_edges schema (V13, schema.rs) — not a markdown vault. The seed actively exercises the full stack: (a) **schema** = memory_type/tier/decay_score/importance/category populated for every row, (b) **FTS5** = content is indexed automatically by schema.rs CREATE VIRTUAL TABLE, (c) **knowledge graph** = the `-- KNOWLEDGE GRAPH EDGES` section below populates ~40 typed memory_edges (part_of / cites / supports / derived_from / related_to) so brain_kg_neighbors works on day one, (d) **RRF fusion + HyDE + reranker** = all run at query time on whatever signals are populated. **HNSW vectors** are populated lazily: when a brain provider is configured, call the `backfill_embeddings` Tauri command (commands/memory.rs:593) — it walks store.unembedded_ids() and calls embed_for_mode for each. Until then, the 5 non-vector signals (keyword/recency/importance/decay/tier) still fully power RRF, brain_search, and brain_suggest_context.', 'storage,invariant,seed,architecture,kg,embeddings,backfill', 5, 'fact', 1746316800000, 'long', 1.0, 220, 'storage'),
+
+('EMBEDDING BACKFILL PROCEDURE: After first MCP startup with the shared seed, vector signals are 0 until embeddings are populated. Two paths: (1) inside the running app, the maintenance scheduler (brain/maintenance_scheduler.rs) eventually backfills via the same embed_for_mode pipeline; (2) explicit one-shot via the Tauri command `backfill_embeddings` (commands/memory.rs:593) which iterates store.unembedded_ids() and calls embed_for_mode(content, brain_mode, active_brain) per row, then store.set_embedding(id, &emb). For headless `npm run mcp` with no embed provider configured, this is a no-op by design — RRF + HyDE + reranker still work on the keyword/recency/importance/decay/tier signals, plus the KG traversal layer (brain_kg_neighbors) and FTS5 keyword search work fully without vectors.', 'procedure,embeddings,backfill,mcp,headless', 5, 'procedure', 1746316800000, 'long', 1.0, 130, 'procedures');
+
+-- ====================================================================
+-- KNOWLEDGE GRAPH EDGES
+--
+-- Wire the seeded memories into a typed graph so the KG layer
+-- (memory_edges, brain_kg_neighbors, graph_rag.rs) is exercised
+-- immediately on first run, instead of being dead weight until LLM
+-- extraction populates it.
+--
+-- We match by unique substring of `content` rather than hard-coded
+-- AUTOINCREMENT IDs so the seed is robust to row reordering. Each
+-- edge uses INSERT OR IGNORE against the UNIQUE(src_id, dst_id,
+-- rel_type) constraint, so re-running the seed (e.g. against a fresh
+-- DB on a different machine) is idempotent.
+--
+-- rel_type vocabulary follows POSITIVE_REL_TYPES from
+-- edge_conflict_scan.rs: supports, implies, related_to, derived_from,
+-- cites, part_of. `normalise_rel_type` (edges.rs:199) lowercases and
+-- strips, so the literals below already match the stored form.
+-- ====================================================================
+
+-- Hub edges: every inventory fact is part_of the project-index pointer
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE d.content LIKE '%mcp-data/shared/project-index.md is the single source of truth%'
+  AND (
+       s.content LIKE 'Brain module map:%'
+    OR s.content LIKE 'Memory module map:%'
+    OR s.content LIKE 'ai_integrations exposes the brain%'
+    OR s.content LIKE 'Persona module map:%'
+    OR s.content LIKE 'Voice module map:%'
+    OR s.content LIKE 'coding/ module map:%'
+    OR s.content LIKE 'commands/ files (~150 Tauri commands):%'
+    OR s.content LIKE 'Frontend Pinia stores in src/stores/:%'
+    OR s.content LIKE 'Frontend composables in src/composables/:%'
+    OR s.content LIKE 'Design docs (docs/):%'
+    OR s.content LIKE 'Rules files (rules/):%'
+    OR s.content LIKE 'Pose pipeline:%'
+    OR s.content LIKE 'Orchestrator submodules:%'
+    OR s.content LIKE 'Plugins run in a WASM sandbox:%'
+    OR s.content LIKE 'Sync primitives in src-tauri/src/sync/:%'
+    OR s.content LIKE 'Device identity uses Ed25519.%'
+    OR s.content LIKE 'Self-improve flow:%'
+  );
+
+-- Hub edges: every LESSON is part_of the lessons-learned pointer
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE d.content LIKE '%mcp-data/shared/lessons-learned.md captures durable%'
+  AND s.content LIKE 'LESSON:%';
+
+-- Memory-philosophy cluster: rules derive_from the core lesson; the
+-- core lesson cites the concrete TerranSoul implementation it endorses
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE d.content LIKE 'CORE LESSON (Stop Calling It Memory%'
+  AND (
+       s.content LIKE 'RULE (memory philosophy):%'
+    OR s.content LIKE 'RULE (memory access pattern):%'
+    OR s.content LIKE 'RULE (provenance):%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'cites', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CORE LESSON (Stop Calling It Memory%'
+  AND (
+       d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
+    OR d.content LIKE 'SQLite schema is at version 13%'
+    OR d.content LIKE 'Memory module map:%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULE (memory philosophy):%'
+  AND d.content LIKE 'MCP shared data policy: mcp-data/shared is committed%';
+
+-- Claudia cluster: adoption + license + anti-pattern are part_of the
+-- reference; the reference cites the memory-philosophy core lesson
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE d.content LIKE 'REFERENCE PROJECT — kbanc85/claudia%'
+  AND (
+       s.content LIKE 'CLAUDIA LICENSE (CRITICAL):%'
+    OR s.content LIKE 'CLAUDIA ADOPTION PROPOSALS%'
+    OR s.content LIKE 'ANTI-PATTERN (claudia):%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CLAUDIA ADOPTION PROPOSALS%'
+  AND d.content LIKE 'REFERENCE PROJECT — kbanc85/claudia%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'cites', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'REFERENCE PROJECT — kbanc85/claudia%'
+  AND d.content LIKE 'CORE LESSON (Stop Calling It Memory%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 0.8, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CLAUDIA ADOPTION PROPOSALS%'
+  AND (
+       d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'coding/ module map:%'
+    OR d.content LIKE 'commands/ files (~150 Tauri commands):%'
+    OR d.content LIKE 'Frontend Pinia stores in src/stores/:%'
+  );
+
+-- Standing requirements cluster: explicit support + relation links
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data%'
+  AND d.content LIKE 'MCP shared data policy: mcp-data/shared is committed%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'STANDING REQUIREMENT (user, 2026-05-04): every agent session%'
+  AND d.content LIKE 'To start MCP headless server:%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data%'
+  AND (
+       d.content LIKE '%mcp-data/shared/project-index.md is the single source of truth%'
+    OR d.content LIKE '%mcp-data/shared/lessons-learned.md captures durable%'
+  );
+
+-- Storage invariant + backfill procedure connect to the architectural facts
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
+  AND (
+       d.content LIKE 'CORE LESSON (Stop Calling It Memory%'
+    OR d.content LIKE 'SQLite schema is at version 13%'
+    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
+  AND d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%';

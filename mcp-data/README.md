@@ -12,6 +12,8 @@ context:
 - `memory-seed.sql` — curated facts inserted into a fresh `memory.db`
 - `project-index.md` — full repo map (modules, stores, composables, docs, rules)
 - `lessons-learned.md` — durable gotchas / decisions from `rules/completion-log.md`
+- `memory-philosophy.md` — *the* lesson on why markdown ≠ memory and why TerranSoul uses SQLite + HNSW + KG edges; non-negotiable rules for future PRs (credit: Jonathan Edwards, *Stop Calling It Memory*)
+- `claudia-research.md` — reverse-engineering notes on `kbanc85/claudia` (PolyForm-NC) with 10 adoption proposals mapped onto existing TerranSoul modules
 - `brain_config.json` / `app_settings.json` — safe headless defaults
 
 Contributors and self-improve runs may update this shared dataset when

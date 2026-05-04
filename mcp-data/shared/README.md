@@ -9,6 +9,8 @@ These files seed the headless MCP brain used by coding agents:
 | `memory-seed.sql` | Curated TerranSoul project memories inserted into a fresh `memory.db` |
 | `project-index.md` | Single source of truth for navigating the repo without rescanning (modules, stores, composables, docs, rules) |
 | `lessons-learned.md` | Durable gotchas/decisions distilled from `rules/completion-log.md` so the same problem is never re-solved |
+| `memory-philosophy.md` | Why markdown ≠ memory and why TerranSoul uses a real database; non-negotiable rules for any future "memory" PR (credit: Jonathan Edwards, *Stop Calling It Memory*) |
+| `claudia-research.md` | Reverse-engineering notes on `kbanc85/claudia` (PolyForm-NC) with 10 adoption proposals mapped onto existing TerranSoul modules |
 
 `npm run mcp` reads this directory on first run before falling back to compiled
 defaults. If `mcp-data/memory.db` already exists, startup never overwrites it.

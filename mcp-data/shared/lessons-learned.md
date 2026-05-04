@@ -143,3 +143,15 @@
   change touches.
 - Don't add `console.log` debugging in shipped code; use the existing
   logger.
+- **Don't propose "store memories as `.md` / Obsidian as the source of
+  truth"**. See `mcp-data/shared/memory-philosophy.md` — markdown is
+  for instructions; SQLite + HNSW + `memory_edges` is the source of
+  truth; `obsidian_export.rs` is a one-way projection. This is a
+  non-negotiable architectural rule absorbed from Jonathan Edwards'
+  "Stop Calling It Memory" essay.
+- **Don't copy source/prompts/skill markdown/scheduler scripts/asset
+  names from `kbanc85/claudia`** — PolyForm Noncommercial 1.0.0
+  forbids redistribution. Adopt patterns/product ideas from the public
+  README only (see `mcp-data/shared/claudia-research.md`). Use neutral
+  TerranSoul names; never ship literal `/meditate`, "morning brief",
+  or any branded label.
