@@ -561,9 +561,8 @@ const allTiers: MemoryTier[] = ['short', 'working', 'long'];
 const maxMemoryGb = ref(10);
 const maxMemoryMb = ref(10);
 const memoryStorageBytes = computed(() => store.stats?.storage_bytes ?? 0);
-const memoryCacheBytes = computed(() =>
-  store.memories.reduce((sum, m) => sum + m.content.length + m.tags.length + 128, 0),
-);
+// Use backend-provided stats to avoid O(n) client-side reductions on large memory sets.
+const memoryCacheBytes = computed(() => store.stats?.storage_bytes ?? 0);
 
 // Search & filter
 const searchQuery = ref('');
@@ -574,6 +573,7 @@ const searchResults = ref<MemoryEntry[] | null>(null);
 
 /** Curated tag prefixes — must match Rust `CURATED_PREFIXES`. */
 const TAG_PREFIXES = ['personal', 'domain', 'project', 'tool', 'code', 'external', 'session', 'quest'] as const;
+const TAG_PREFIX_SET = new Set<string>(TAG_PREFIXES as readonly string[]);
 
 /** Count memories per curated tag prefix. */
 const tagPrefixCounts = computed(() => {
@@ -587,7 +587,7 @@ const tagPrefixCounts = computed(() => {
       const colonIdx = trimmed.indexOf(':');
       if (colonIdx <= 0) continue;
       const prefix = trimmed.slice(0, colonIdx).toLowerCase();
-      if (!seen.has(prefix) && (TAG_PREFIXES as readonly string[]).includes(prefix)) {
+      if (!seen.has(prefix) && TAG_PREFIX_SET.has(prefix)) {
         seen.add(prefix);
         counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
       }

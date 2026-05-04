@@ -252,9 +252,7 @@ async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<St
                 .app_settings
                 .lock()
                 .map(|s| s.max_memory_bytes())
-                .unwrap_or(
-                    (crate::settings::DEFAULT_MAX_MEMORY_GB * 1024.0 * 1024.0 * 1024.0) as u64,
-                );
+                .unwrap_or_else(|_| crate::settings::AppSettings::default().max_memory_bytes());
             let capped = store
                 .enforce_size_limit(max_bytes)
                 .map_err(|e| e.to_string())?;

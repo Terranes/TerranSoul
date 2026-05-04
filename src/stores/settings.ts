@@ -63,6 +63,14 @@ export interface AppSettings {
   max_memory_mb?: number;
 }
 
+const MIN_MAX_MEMORY_GB = 1;
+const MAX_MAX_MEMORY_GB = 100;
+const DEFAULT_MAX_MEMORY_GB = 10;
+
+const MIN_MAX_MEMORY_MB = 1;
+const MAX_MAX_MEMORY_MB = 1024;
+const DEFAULT_MAX_MEMORY_MB = 10;
+
 const DEFAULT_SETTINGS: AppSettings = {
   version: 2,
   selected_model_id: 'shinra',
@@ -84,8 +92,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   prefer_local_brain: true,
   dismissed_model_updates: [],
   last_update_check_date: '',
-  max_memory_gb: 10,
-  max_memory_mb: 10,
+  max_memory_gb: DEFAULT_MAX_MEMORY_GB,
+  max_memory_mb: DEFAULT_MAX_MEMORY_MB,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -142,12 +150,18 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function saveMaxMemoryGb(gb: number): Promise<void> {
-    const clamped = Math.min(100, Math.max(1, Number.isFinite(gb) ? gb : 10));
+    const clamped = Math.min(
+      MAX_MAX_MEMORY_GB,
+      Math.max(MIN_MAX_MEMORY_GB, Number.isFinite(gb) ? gb : DEFAULT_MAX_MEMORY_GB),
+    );
     await saveSettings({ max_memory_gb: clamped });
   }
 
   async function saveMaxMemoryMb(mb: number): Promise<void> {
-    const clamped = Math.min(1024, Math.max(1, Number.isFinite(mb) ? mb : 10));
+    const clamped = Math.min(
+      MAX_MAX_MEMORY_MB,
+      Math.max(MIN_MAX_MEMORY_MB, Number.isFinite(mb) ? mb : DEFAULT_MAX_MEMORY_MB),
+    );
     await saveSettings({ max_memory_mb: clamped });
   }
 
