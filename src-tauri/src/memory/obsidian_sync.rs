@@ -160,7 +160,7 @@ pub fn sync_bidirectional(vault_dir: &Path, store: &MemoryStore) -> Result<SyncR
         let fpath = output_dir.join(&fname);
         known_files.insert(fpath.clone(), true);
 
-        let file_mtime_ms = file_mtime_ms(&fpath);
+        let current_file_mtime_ms = file_mtime_ms(&fpath);
         let last_exported = entry.last_exported.unwrap_or(0);
         let memory_updated_ms = entry.last_accessed.unwrap_or(entry.created_at);
 
@@ -173,9 +173,11 @@ pub fn sync_bidirectional(vault_dir: &Path, store: &MemoryStore) -> Result<SyncR
                     .push(format!("write {}: {e}", fpath.display()));
                 continue;
             }
-            let _ = store.set_obsidian_sync(entry.id, &fname, now_ms);
+            let exported_at = file_mtime_ms(&fpath).max(now_ms);
+            let _ = store.set_obsidian_sync(entry.id, &fname, exported_at);
             report.exported += 1;
-        } else if file_mtime_ms > last_exported && file_mtime_ms > memory_updated_ms {
+        } else if current_file_mtime_ms > last_exported && current_file_mtime_ms > memory_updated_ms
+        {
             // File is newer than both last export AND last DB modification → import.
             match import_file_to_entry(&fpath, entry.id, store) {
                 Ok(()) => {
@@ -193,7 +195,8 @@ pub fn sync_bidirectional(vault_dir: &Path, store: &MemoryStore) -> Result<SyncR
                     .push(format!("write {}: {e}", fpath.display()));
                 continue;
             }
-            let _ = store.set_obsidian_sync(entry.id, &fname, now_ms);
+            let exported_at = file_mtime_ms(&fpath).max(now_ms);
+            let _ = store.set_obsidian_sync(entry.id, &fname, exported_at);
             report.exported += 1;
         } else {
             report.skipped += 1;

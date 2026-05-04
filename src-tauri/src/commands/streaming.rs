@@ -321,6 +321,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         Some(BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         }) => {
             // Check rotator for a healthy provider, falling back to configured one
             let effective_provider_id = {
@@ -337,6 +338,9 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 &history,
                 &effective_provider_id,
                 api_key.as_deref(),
+                model
+                    .as_deref()
+                    .filter(|_| effective_provider_id == provider_id.as_str()),
                 None,
             )
             .await
@@ -354,6 +358,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 &history,
                 "paid",
                 Some(&api_key),
+                None,
                 Some((&base_url, &model)),
             )
             .await
@@ -374,6 +379,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 &history,
                 "lm_studio",
                 api_key.as_deref(),
+                None,
                 Some((&base_url, &model)),
             )
             .await
@@ -398,6 +404,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
     history: &[(String, String)],
     provider_id: &str,
     api_key: Option<&str>,
+    free_model_override: Option<&str>,
     paid_override: Option<(&str, &str)>, // (base_url, model) for paid API
 ) -> Result<(), String> {
     // Resolve base_url and model
@@ -407,7 +414,10 @@ async fn stream_openai_api<R: tauri::Runtime>(
         // Look up free provider
         let provider = crate::brain::get_free_provider(provider_id)
             .ok_or_else(|| format!("Unknown free provider: {provider_id}"))?;
-        (provider.base_url, provider.model)
+        (
+            provider.base_url,
+            free_model_override.unwrap_or(&provider.model).to_string(),
+        )
     };
 
     let client = OpenAiClient::new(&base_url, &model, api_key);
@@ -1136,6 +1146,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".to_string(),
             api_key: None,
+            model: None,
         };
         match &mode {
             BrainMode::FreeApi { provider_id, .. } => assert_eq!(provider_id, "groq"),

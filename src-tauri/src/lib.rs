@@ -30,6 +30,7 @@ pub mod sandbox;
 pub mod settings;
 pub mod sync;
 pub mod tasks;
+pub mod teachable_capabilities;
 pub mod voice;
 pub mod vscode_workspace;
 pub mod workflows;
@@ -57,8 +58,12 @@ use commands::{
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
-    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
-    crag::crag_retrieve,
+    coding_sessions::{
+        coding_session_append_message, coding_session_clear_chat, coding_session_fork,
+        coding_session_list, coding_session_load_chat, coding_session_purge,
+        coding_session_rename,
+    },
+    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},    crag::crag_retrieve,
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
@@ -70,6 +75,7 @@ use commands::{
         gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
         gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
+    github_auth::{github_poll_device_token, github_request_device_code},
     grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -156,6 +162,22 @@ use commands::{
         open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
         set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
         toggle_window_mode,
+    },
+    workflow_plans::{
+        workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
+        workflow_plan_delete, workflow_plan_list, workflow_plan_load,
+        workflow_plan_override_llm, workflow_plan_save, workflow_plan_update_step,
+        workflow_plan_validate,
+    },
+    charisma::{
+        charisma_delete, charisma_list, charisma_promote, charisma_rate_turn,
+        charisma_record_usage, charisma_set_rating, charisma_summary,
+    },
+    teachable_capabilities::{
+        teachable_capabilities_list, teachable_capabilities_promote,
+        teachable_capabilities_record_usage, teachable_capabilities_reset,
+        teachable_capabilities_set_config, teachable_capabilities_set_enabled,
+        teachable_capabilities_set_rating, teachable_capabilities_summary,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -402,8 +424,42 @@ fn resolve_data_dir_for_cli() -> PathBuf {
 /// stdin reaches EOF.
 ///
 /// Triggered by `terransoul --mcp-stdio` from `main.rs`. See Chunk 15.9.
+///
+/// Honors `TERRANSOUL_MCP_DATA_DIR` so VS Code (and other agents) can
+/// launch a repo-local stdio brain via `.vscode/mcp.json` without
+/// touching the user's companion data dir. When the override is set,
+/// pet mode is enabled so `serverInfo.name` advertises
+/// `terransoul-brain-mcp`.
 pub fn run_stdio() -> std::io::Result<()> {
-    let data_dir = resolve_data_dir_for_cli();
+    let (data_dir, repo_local) = if let Ok(p) = std::env::var("TERRANSOUL_MCP_DATA_DIR") {
+        let trimmed = p.trim();
+        if trimmed.is_empty() {
+            (resolve_data_dir_for_cli(), false)
+        } else {
+            (PathBuf::from(trimmed), true)
+        }
+    } else {
+        (resolve_data_dir_for_cli(), false)
+    };
+
+    if repo_local {
+        // Pet-mode stdio launches honor the same release > dev > mcp
+        // priority as `--mcp-http`. If the app is already running, we
+        // emit a clear stderr message and exit cleanly so VS Code (or
+        // any stdio MCP host) surfaces the reason instead of opening a
+        // duplicate brain on a stale repo-local data dir.
+        if let Some(label) = detect_running_terransoul_mcp() {
+            eprintln!(
+                "[mcp-stdio] TerranSoul {label} build is already serving MCP — \
+                 refusing to start pet-mode stdio. Use the running app's MCP \
+                 entry instead."
+            );
+            return Ok(());
+        }
+        let _ = std::fs::create_dir_all(&data_dir);
+        ai_integrations::mcp::enable_mcp_pet_mode();
+    }
+
     eprintln!("[mcp-stdio] data dir: {}", data_dir.display());
 
     let state = AppState::new(&data_dir);
@@ -413,6 +469,161 @@ pub fn run_stdio() -> std::io::Result<()> {
         .build()?;
 
     runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
+}
+
+/// Default port used by the headless `--mcp-http` runtime.
+///
+/// Chosen so it does not collide with the in-app servers (release =
+/// `7421`, dev `cargo tauri dev` = `7422`). External agents (Copilot,
+/// Codex, Claude Code, Clawcode, etc.) launch this via `npm run mcp`
+/// without conflicting with a running app.
+pub const HEADLESS_MCP_PORT: u16 = 7423;
+
+/// Resolve the data directory for the headless `--mcp-http` runtime.
+///
+/// The headless server is meant for repo-local agent sessions, so it
+/// keeps state in `<cwd>/mcp-data/` by default — distinct from the
+/// per-OS app-data dir that the GUI/stdio modes use, so a
+/// `npm run mcp` session never touches the user's persistent companion
+/// state.
+///
+/// Override with the `TERRANSOUL_MCP_DATA_DIR` env var when needed.
+fn resolve_headless_mcp_data_dir() -> PathBuf {
+    if let Ok(p) = std::env::var("TERRANSOUL_MCP_DATA_DIR") {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    cwd.join("mcp-data")
+}
+
+/// Read `TERRANSOUL_MCP_PORT`, falling back to [`HEADLESS_MCP_PORT`].
+fn resolve_headless_mcp_port() -> u16 {
+    std::env::var("TERRANSOUL_MCP_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(HEADLESS_MCP_PORT)
+}
+
+/// Probe the canonical TerranSoul MCP HTTP ports (release 7421, dev
+/// 7422) to see if the user already has a brain server running.
+///
+/// Priority order is **release > dev > mcp**: if either of the
+/// app-owned ports answers, the headless runner refuses to start so a
+/// `npm run mcp` invocation never shadows a running app. Returns the
+/// label of the first port that answers, or `None` when neither is up.
+///
+/// Uses a 250 ms TCP connect probe (loopback only). Failure to connect
+/// is treated as "not running" — we deliberately do not speak the MCP
+/// handshake here so we don't leak the bearer token or trigger any
+/// auth-rate-limit on the running app.
+fn detect_running_terransoul_mcp() -> Option<&'static str> {
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+
+    let probe = |port: u16| -> bool {
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok()
+    };
+
+    if probe(ai_integrations::mcp::DEFAULT_PORT) {
+        Some("release")
+    } else if probe(ai_integrations::mcp::DEFAULT_DEV_PORT) {
+        Some("dev")
+    } else {
+        None
+    }
+}
+
+/// Run TerranSoul as a headless MCP **HTTP** server.
+///
+/// This mode does **not** launch Tauri or the WebView; it only spins up
+/// the brain/memory/RAG/gitnexus surface needed to serve MCP tool calls
+/// to external AI coding agents over JSON-RPC on
+/// `http://127.0.0.1:<port>/mcp`.
+///
+/// On startup it prints the bound URL, the bearer token (also persisted
+/// to `<data_dir>/mcp-token.txt`), and blocks until Ctrl+C.
+///
+/// Triggered by `terransoul --mcp-http` from `main.rs`, which is the
+/// binary `npm run mcp` invokes.
+pub fn run_http_server() -> std::io::Result<()> {
+    // Priority: release > dev > mcp. If the user already has the app
+    // running with its MCP HTTP server bound, refuse to start so we
+    // never shadow live companion state with a stale headless brain.
+    if let Some(label) = detect_running_terransoul_mcp() {
+        let port = if label == "release" {
+            ai_integrations::mcp::DEFAULT_PORT
+        } else {
+            ai_integrations::mcp::DEFAULT_DEV_PORT
+        };
+        eprintln!(
+            "[mcp-http] TerranSoul {label} build is already serving MCP on \
+             127.0.0.1:{port} — refusing to start headless pet mode."
+        );
+        eprintln!(
+            "[mcp-http] Use the running app's MCP server instead, or stop \
+             the app and re-run `npm run mcp`."
+        );
+        return Ok(());
+    }
+
+    let data_dir = resolve_headless_mcp_data_dir();
+    let port = resolve_headless_mcp_port();
+
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        eprintln!(
+            "[mcp-http] failed to create data dir {}: {e}",
+            data_dir.display()
+        );
+        return Err(e);
+    }
+
+    // Mark this process as MCP pet mode so the JSON-RPC initialize
+    // handshake and `/status` endpoint advertise `buildMode: "mcp"`.
+    ai_integrations::mcp::enable_mcp_pet_mode();
+
+    eprintln!("[mcp-http] data dir: {}", data_dir.display());
+
+    let state = AppState::new(&data_dir);
+    let token = match ai_integrations::mcp::auth::load_or_create(&data_dir) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[mcp-http] failed to load/create token: {e}");
+            return Err(std::io::Error::other(e));
+        }
+    };
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(async move {
+        match ai_integrations::mcp::start_server(state, port, token.clone(), false).await {
+            Ok(handle) => {
+                eprintln!(
+                    "[mcp-http] listening on http://127.0.0.1:{} (POST /mcp)",
+                    handle.port
+                );
+                eprintln!("[mcp-http] bearer token: {token}");
+                eprintln!("[mcp-http] press Ctrl+C to stop");
+                if let Err(e) = tokio::signal::ctrl_c().await {
+                    eprintln!("[mcp-http] ctrl_c listener error: {e}");
+                }
+                eprintln!("[mcp-http] shutting down");
+                handle.stop();
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("[mcp-http] failed to start: {e}");
+                Err(std::io::Error::other(e))
+            }
+        }
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -695,6 +906,45 @@ pub fn run() {
             run_sleep_consolidation,
             touch_activity,
             get_idle_status,
+            // Self-improve coding sessions (Chunk 30.2)
+            coding_session_list,
+            coding_session_append_message,
+            coding_session_load_chat,
+            coding_session_clear_chat,
+            coding_session_rename,
+            coding_session_fork,
+            coding_session_purge,
+            // Multi-agent workflow plans + calendar (Chunk 30.3)
+            workflow_plan_list,
+            workflow_plan_load,
+            workflow_plan_save,
+            workflow_plan_delete,
+            workflow_plan_create_blank,
+            workflow_plan_validate,
+            workflow_plan_update_step,
+            workflow_plan_override_llm,
+            workflow_calendar_events,
+            workflow_agent_recommendations,
+            // Charisma teaching system (Chunk 30.4)
+            charisma_list,
+            charisma_rate_turn,
+            charisma_record_usage,
+            charisma_set_rating,
+            charisma_delete,
+            charisma_promote,
+            charisma_summary,
+            // Teachable configurable capabilities (Chunk 30.5)
+            teachable_capabilities_list,
+            teachable_capabilities_set_enabled,
+            teachable_capabilities_set_config,
+            teachable_capabilities_record_usage,
+            teachable_capabilities_set_rating,
+            teachable_capabilities_reset,
+            teachable_capabilities_promote,
+            teachable_capabilities_summary,
+            // GitHub browser authorization for self-improve mode
+            github_request_device_code,
+            github_poll_device_token,
             // CRAG retrieval (Chunk 16.5b)
             crag_retrieve,
             // VS Code workspace surfacing — Chunk 15.10 (Phase 15)

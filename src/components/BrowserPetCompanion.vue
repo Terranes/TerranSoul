@@ -4,13 +4,19 @@ import CharacterViewport from './CharacterViewport.vue';
 import { useAsrManager } from '../composables/useAsrManager';
 import { hasBrowserTtsVoice, useTtsPlayback } from '../composables/useTtsPlayback';
 import { useCharacterStore } from '../stores/character';
+import { useBrainStore } from '../stores/brain';
 import { useConversationStore } from '../stores/conversation';
 import { useVoiceStore } from '../stores/voice';
 import { TRANSLATOR_LANGUAGE_OPTIONS } from '../utils/translator-languages';
 
 const conversation = useConversationStore();
+const brain = useBrainStore();
 const voice = useVoiceStore();
 const character = useCharacterStore();
+
+const emit = defineEmits<{
+  'request-provider-connect': [];
+}>();
 
 const inputText = ref('');
 const messagesRef = ref<HTMLElement | null>(null);
@@ -19,6 +25,7 @@ const asrError = ref<string | null>(null);
 const ttsInstallPrompt = ref<string | null>(null);
 const translatorSourceLanguage = ref('en');
 const translatorTargetLanguage = ref('vi');
+const translatorControlsOpen = ref(false);
 const ttsStreamActive = ref(false);
 let spokenSentenceCount = 0;
 let liveRestartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -143,6 +150,12 @@ watch(
 async function submitText(text: string): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed || conversation.isThinking || conversation.isStreaming) return;
+  if (!brain.browserAuthSession) {
+    asrError.value = 'Choose a web LLM provider to continue.';
+    emit('request-provider-connect');
+    window.dispatchEvent(new CustomEvent('ts:browser-llm-config-request'));
+    return;
+  }
 
   await ensureBrowserVoice();
   asrError.value = null;
@@ -207,8 +220,9 @@ async function toggleLiveVoice(): Promise<void> {
   }
 }
 
-async function startTranslatorDemo(): Promise<void> {
+async function startTranslatorMode(): Promise<void> {
   liveVoice.value = false;
+  translatorControlsOpen.value = true;
   promptForMissingTranslatorVoices();
   await submitText(`Become a translator to help me translate between ${translatorSourceLanguage.value} and ${translatorTargetLanguage.value}.`);
   liveVoice.value = true;
@@ -217,8 +231,17 @@ async function startTranslatorDemo(): Promise<void> {
 
 async function stopTranslator(): Promise<void> {
   liveVoice.value = false;
+  translatorControlsOpen.value = false;
   asr.stopListening();
   await submitText('stop translator mode');
+}
+
+function toggleTranslatorControls(): void {
+  if (translatorMode.value?.active) {
+    void stopTranslator();
+    return;
+  }
+  translatorControlsOpen.value = !translatorControlsOpen.value;
 }
 
 onMounted(() => {
@@ -287,7 +310,7 @@ onBeforeUnmount(() => {
           v-if="recentMessages.length === 0"
           class="pet-empty"
         >
-          Type, tap mic, or start translator mode. I can answer and speak back sentence by sentence.
+          Type, tap mic, or toggle Translator. I can answer and speak back sentence by sentence.
         </p>
         <div
           v-for="message in recentMessages"
@@ -317,7 +340,10 @@ onBeforeUnmount(() => {
         {{ ttsInstallPrompt }}
       </p>
 
-      <div class="pet-translator-selectors">
+      <div
+        v-if="translatorControlsOpen || translatorMode?.active"
+        class="pet-translator-selectors"
+      >
         <label>
           From
           <select v-model="translatorSourceLanguage">
@@ -356,11 +382,19 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="pet-tool"
-          :class="{ active: translatorMode?.active }"
-          :disabled="translatorSelectionInvalid"
-          @click="translatorMode?.active ? stopTranslator() : startTranslatorDemo()"
+          :class="{ active: translatorControlsOpen || translatorMode?.active }"
+          @click="toggleTranslatorControls"
         >
-          {{ translatorMode?.active ? 'Stop translator' : 'Translator demo' }}
+          {{ translatorMode?.active ? 'Stop translator' : 'Translator' }}
+        </button>
+        <button
+          v-if="translatorControlsOpen && !translatorMode?.active"
+          type="button"
+          class="pet-tool"
+          :disabled="translatorSelectionInvalid"
+          @click="startTranslatorMode"
+        >
+          Start
         </button>
       </div>
 

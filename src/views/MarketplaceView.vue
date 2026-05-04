@@ -103,7 +103,7 @@
                   v-for="p in brainStore.freeProviders"
                   :key="p.id"
                   :class="['llm-provider-card', { active: llmSelectedProvider === p.id }]"
-                  @click="llmSelectedProvider = p.id"
+                  @click="selectFreeProvider(p.id)"
                 >
                   <div class="llm-provider-row">
                     <strong>{{ p.display_name }}</strong>
@@ -112,24 +112,59 @@
                       class="llm-current-badge"
                     >current</span>
                     <span
-                      v-if="p.id === 'pollinations'"
+                      v-if="p.id === 'openrouter'"
                       class="llm-rec-badge"
-                    >⭐ no key needed</span>
+                    >Recommended</span>
                   </div>
                   <small>{{ p.notes }}</small>
                   <small class="llm-provider-model">Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM{{ p.requires_api_key ? ' · API key required' : '' }}</small>
                 </div>
+                <a
+                  v-if="selectedFreeProviderAuthUrl"
+                  class="btn-primary btn-sm llm-auth-link"
+                  :href="selectedFreeProviderAuthUrl"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Open provider page
+                </a>
+                <button
+                  type="button"
+                  class="btn-secondary btn-sm llm-manual-toggle"
+                  :aria-expanded="llmManualFreeKeyOpen"
+                  @click="llmManualFreeKeyOpen = !llmManualFreeKeyOpen"
+                >
+                  {{ llmManualFreeKeyOpen ? 'Hide manual key/token' : 'Manual API key/token option' }}
+                </button>
                 <div
-                  v-if="selectedFreeProviderNeedsKey"
+                  v-if="selectedFreeProviderNeedsKey && llmManualFreeKeyOpen"
                   class="llm-field"
                 >
-                  <label>API Key:</label>
+                  <label>API key/token:</label>
                   <input
                     v-model="llmFreeApiKey"
                     type="password"
-                    placeholder="Enter API key…"
+                    placeholder="Enter API key or token..."
                     class="llm-input"
                   >
+                </div>
+                <div
+                  v-if="selectedFreeProviderModelOptions.length"
+                  class="llm-field"
+                >
+                  <label>Free model:</label>
+                  <select
+                    v-model="llmFreeModel"
+                    class="llm-select"
+                  >
+                    <option
+                      v-for="option in selectedFreeProviderModelOptions"
+                      :key="option.model"
+                      :value="option.model"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
                 </div>
                 <button
                   class="btn-primary btn-sm llm-apply-btn"
@@ -145,59 +180,73 @@
                 v-if="llmTier === 'paid'"
                 class="llm-paid-form"
               >
-                <div class="llm-field">
-                  <label>Provider:</label>
-                  <select
-                    v-model="llmPaidProvider"
-                    class="llm-select"
+                <div class="llm-auth-provider-grid">
+                  <button
+                    v-for="provider in paidProviderOptions"
+                    :key="provider.id"
+                    type="button"
+                    :class="['llm-auth-provider-btn', { active: llmPaidProvider === provider.id }]"
+                    @click="selectPaidProvider(provider.id)"
                   >
-                    <option value="openai">
-                      OpenAI
-                    </option>
-                    <option value="anthropic">
-                      Anthropic
-                    </option>
-                    <option value="custom">
-                      Custom endpoint
-                    </option>
-                  </select>
+                    <strong>{{ provider.label }}</strong>
+                    <small>{{ provider.hint }}</small>
+                  </button>
                 </div>
-                <div class="llm-field">
-                  <label>API Key:</label>
-                  <input
-                    v-model="llmPaidApiKey"
-                    type="password"
-                    placeholder="sk-…"
-                    class="llm-input"
-                  >
-                </div>
-                <div class="llm-field">
-                  <label>Model:</label>
-                  <input
-                    v-model="llmPaidModel"
-                    type="text"
-                    placeholder="gpt-4o"
-                    class="llm-input"
-                  >
-                </div>
-                <div
-                  v-if="llmPaidProvider === 'custom'"
-                  class="llm-field"
+                <a
+                  v-if="selectedPaidProviderAuthUrl"
+                  class="btn-primary btn-sm llm-auth-link"
+                  :href="selectedPaidProviderAuthUrl"
+                  target="_blank"
+                  rel="noopener"
                 >
-                  <label>Base URL:</label>
-                  <input
-                    v-model="llmPaidBaseUrl"
-                    type="url"
-                    placeholder="https://api.example.com"
-                    class="llm-input"
+                  Open provider page
+                </a>
+                <button
+                  type="button"
+                  class="btn-secondary btn-sm llm-manual-toggle"
+                  :aria-expanded="llmManualPaidKeyOpen"
+                  @click="llmManualPaidKeyOpen = !llmManualPaidKeyOpen"
+                >
+                  {{ llmManualPaidKeyOpen ? 'Hide manual API key' : 'Manual API key option' }}
+                </button>
+                <template v-if="llmManualPaidKeyOpen">
+                  <div class="llm-field">
+                    <label>API Key:</label>
+                    <input
+                      v-model="llmPaidApiKey"
+                      type="password"
+                      placeholder="sk-..."
+                      class="llm-input"
+                    >
+                  </div>
+                  <div class="llm-field">
+                    <label>Model:</label>
+                    <input
+                      v-model="llmPaidModel"
+                      type="text"
+                      placeholder="gpt-4o"
+                      class="llm-input"
+                    >
+                  </div>
+                  <div
+                    v-if="llmPaidProvider === 'custom'"
+                    class="llm-field"
                   >
-                </div>
+                    <label>Base URL:</label>
+                    <input
+                      v-model="llmPaidBaseUrl"
+                      type="url"
+                      placeholder="https://api.example.com"
+                      class="llm-input"
+                    >
+                  </div>
+                </template>
                 <button
                   class="btn-primary btn-sm llm-apply-btn"
                   :disabled="!llmPaidApiKey || !llmPaidModel"
                   @click="applyPaidProvider"
                 >
-                  Apply {{ llmPaidProvider === 'custom' ? 'Custom' : llmPaidProvider }} API
+                  Apply {{ selectedPaidProviderLabel }}
                 </button>
               </div>
 
@@ -381,7 +430,7 @@
                 v-for="p in brainStore.freeProviders"
                 :key="p.id"
                 :class="['llm-provider-card', { active: llmSelectedProvider === p.id }]"
-                @click="llmSelectedProvider = p.id"
+                @click="selectFreeProvider(p.id)"
               >
                 <div class="llm-provider-row">
                   <strong>{{ p.display_name }}</strong>
@@ -390,24 +439,59 @@
                     class="llm-current-badge"
                   >current</span>
                   <span
-                    v-if="p.id === 'pollinations'"
+                    v-if="p.id === 'openrouter'"
                     class="llm-rec-badge"
-                  >⭐ no key needed</span>
+                  >Recommended</span>
                 </div>
                 <small>{{ p.notes }}</small>
                 <small class="llm-provider-model">Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM{{ p.requires_api_key ? ' · API key required' : '' }}</small>
               </div>
+              <a
+                v-if="selectedFreeProviderAuthUrl"
+                class="btn-primary btn-sm llm-auth-link"
+                :href="selectedFreeProviderAuthUrl"
+                target="_blank"
+                rel="noopener"
+              >
+                Open provider page
+              </a>
+              <button
+                type="button"
+                class="btn-secondary btn-sm llm-manual-toggle"
+                :aria-expanded="llmManualFreeKeyOpen"
+                @click="llmManualFreeKeyOpen = !llmManualFreeKeyOpen"
+              >
+                {{ llmManualFreeKeyOpen ? 'Hide manual key/token' : 'Manual API key/token option' }}
+              </button>
               <div
-                v-if="selectedFreeProviderNeedsKey"
+                v-if="selectedFreeProviderNeedsKey && llmManualFreeKeyOpen"
                 class="llm-field"
               >
-                <label>API Key:</label>
+                <label>API key/token:</label>
                 <input
                   v-model="llmFreeApiKey"
                   type="password"
-                  placeholder="Enter API key…"
+                  placeholder="Enter API key or token..."
                   class="llm-input"
                 >
+              </div>
+              <div
+                v-if="selectedFreeProviderModelOptions.length"
+                class="llm-field"
+              >
+                <label>Free model:</label>
+                <select
+                  v-model="llmFreeModel"
+                  class="llm-select"
+                >
+                  <option
+                    v-for="option in selectedFreeProviderModelOptions"
+                    :key="option.model"
+                    :value="option.model"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
               </div>
               <button
                 class="btn-primary btn-sm llm-apply-btn"
@@ -423,59 +507,73 @@
               v-if="llmTier === 'paid'"
               class="llm-paid-form"
             >
-              <div class="llm-field">
-                <label>Provider:</label>
-                <select
-                  v-model="llmPaidProvider"
-                  class="llm-select"
+              <div class="llm-auth-provider-grid">
+                <button
+                  v-for="provider in paidProviderOptions"
+                  :key="provider.id"
+                  type="button"
+                  :class="['llm-auth-provider-btn', { active: llmPaidProvider === provider.id }]"
+                  @click="selectPaidProvider(provider.id)"
                 >
-                  <option value="openai">
-                    OpenAI
-                  </option>
-                  <option value="anthropic">
-                    Anthropic
-                  </option>
-                  <option value="custom">
-                    Custom endpoint
-                  </option>
-                </select>
+                  <strong>{{ provider.label }}</strong>
+                  <small>{{ provider.hint }}</small>
+                </button>
               </div>
-              <div class="llm-field">
-                <label>API Key:</label>
-                <input
-                  v-model="llmPaidApiKey"
-                  type="password"
-                  placeholder="sk-…"
-                  class="llm-input"
-                >
-              </div>
-              <div class="llm-field">
-                <label>Model:</label>
-                <input
-                  v-model="llmPaidModel"
-                  type="text"
-                  placeholder="gpt-4o"
-                  class="llm-input"
-                >
-              </div>
-              <div
-                v-if="llmPaidProvider === 'custom'"
-                class="llm-field"
+              <a
+                v-if="selectedPaidProviderAuthUrl"
+                class="btn-primary btn-sm llm-auth-link"
+                :href="selectedPaidProviderAuthUrl"
+                target="_blank"
+                rel="noopener"
               >
-                <label>Base URL:</label>
-                <input
-                  v-model="llmPaidBaseUrl"
-                  type="url"
-                  placeholder="https://api.example.com"
-                  class="llm-input"
+                Open provider page
+              </a>
+              <button
+                type="button"
+                class="btn-secondary btn-sm llm-manual-toggle"
+                :aria-expanded="llmManualPaidKeyOpen"
+                @click="llmManualPaidKeyOpen = !llmManualPaidKeyOpen"
+              >
+                {{ llmManualPaidKeyOpen ? 'Hide manual API key' : 'Manual API key option' }}
+              </button>
+              <template v-if="llmManualPaidKeyOpen">
+                <div class="llm-field">
+                  <label>API Key:</label>
+                  <input
+                    v-model="llmPaidApiKey"
+                    type="password"
+                    placeholder="sk-..."
+                    class="llm-input"
+                  >
+                </div>
+                <div class="llm-field">
+                  <label>Model:</label>
+                  <input
+                    v-model="llmPaidModel"
+                    type="text"
+                    placeholder="gpt-4o"
+                    class="llm-input"
+                  >
+                </div>
+                <div
+                  v-if="llmPaidProvider === 'custom'"
+                  class="llm-field"
                 >
-              </div>
+                  <label>Base URL:</label>
+                  <input
+                    v-model="llmPaidBaseUrl"
+                    type="url"
+                    placeholder="https://api.example.com"
+                    class="llm-input"
+                  >
+                </div>
+              </template>
               <button
                 class="btn-primary btn-sm llm-apply-btn"
                 :disabled="!llmPaidApiKey || !llmPaidModel"
                 @click="applyPaidProvider"
               >
-                Apply {{ llmPaidProvider === 'custom' ? 'Custom' : llmPaidProvider }} API
+                Apply {{ selectedPaidProviderLabel }}
               </button>
             </div>
 
@@ -948,10 +1046,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { usePackageStore } from '../stores/package';
 import { useSandboxStore } from '../stores/sandbox';
-import { useBrainStore } from '../stores/brain';
+import {
+  NVIDIA_FREE_MODELS,
+  OPENROUTER_FREE_MODELS,
+  POLLINATIONS_MODELS,
+  useBrainStore,
+  type BrowserAuthModelOption,
+} from '../stores/brain';
 import CapabilityConsentDialog from '../components/CapabilityConsentDialog.vue';
 import type { AgentSearchResult } from '../types';
 import { formatRam } from '../utils/format';
@@ -1011,9 +1115,11 @@ const llmLocalProvider = ref<'ollama' | 'lm_studio'>(
   brainStore.brainMode?.mode === 'local_lm_studio' ? 'lm_studio' : 'ollama',
 );
 const llmSelectedProvider = ref(
-  brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'pollinations',
+  brainStore.brainMode?.mode === 'free_api' ? brainStore.brainMode.provider_id : 'openrouter',
 );
 const llmFreeApiKey = ref('');
+const llmFreeModel = ref('');
+const llmManualFreeKeyOpen = ref(false);
 const llmConfirmation = ref<{ name: string; url: string } | null>(null);
 
 // Paid API fields
@@ -1021,6 +1127,42 @@ const llmPaidProvider = ref('openai');
 const llmPaidApiKey = ref('');
 const llmPaidModel = ref('gpt-4o');
 const llmPaidBaseUrl = ref('');
+const llmManualPaidKeyOpen = ref(false);
+
+const paidProviderOptions = [
+  {
+    id: 'openai',
+    label: 'Authorize with ChatGPT',
+    hint: 'OpenAI key, GPT models',
+    model: 'gpt-4o-mini',
+    baseUrl: 'https://api.openai.com',
+    authUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'gemini',
+    label: 'Authorize with Gemini',
+    hint: 'Google AI Studio key',
+    model: 'gemini-3-flash-preview',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    authUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  {
+    id: 'anthropic',
+    label: 'Authorize with Claude',
+    hint: 'Anthropic key',
+    model: 'claude-sonnet-4-20250514',
+    baseUrl: 'https://api.anthropic.com',
+    authUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'custom',
+    label: 'Custom endpoint',
+    hint: 'Any OpenAI-compatible API',
+    model: '',
+    baseUrl: '',
+    authUrl: '',
+  },
+] as const;
 
 // Local Ollama fields
 const llmLocalModel = ref(brainStore.topRecommendation?.model_tag ?? '');
@@ -1056,14 +1198,67 @@ const selectedFreeProviderNeedsKey = computed(() => {
   return p?.requires_api_key ?? false;
 });
 
+const selectedFreeProviderModelOptions = computed<BrowserAuthModelOption[]>(() => {
+  if (llmSelectedProvider.value === 'openrouter') return OPENROUTER_FREE_MODELS;
+  if (llmSelectedProvider.value === 'nvidia-nim') return NVIDIA_FREE_MODELS;
+  if (llmSelectedProvider.value === 'pollinations') return POLLINATIONS_MODELS;
+  return [];
+});
+
 const llmSelectedProviderName = computed(() => {
   const p = brainStore.freeProviders.find((fp) => fp.id === llmSelectedProvider.value);
   return p?.display_name ?? llmSelectedProvider.value;
 });
 
+const selectedPaidProviderLabel = computed(() =>
+  paidProviderOptions.find((provider) => provider.id === llmPaidProvider.value)?.label ?? 'Paid API',
+);
+
+const selectedFreeProviderAuthUrl = computed(() => freeProviderAuthUrl(llmSelectedProvider.value));
+
+const selectedPaidProviderAuthUrl = computed(() =>
+  paidProviderOptions.find((provider) => provider.id === llmPaidProvider.value)?.authUrl ?? '',
+);
+
+watch([llmSelectedProvider, selectedFreeProviderModelOptions], () => {
+  llmFreeModel.value = selectedFreeProviderModelOptions.value[0]?.model ?? '';
+}, { immediate: true });
+
+function selectPaidProvider(providerId: string) {
+  llmPaidProvider.value = providerId;
+  const provider = paidProviderOptions.find((item) => item.id === providerId);
+  if (!provider) return;
+  llmPaidModel.value = provider.model || llmPaidModel.value;
+  llmPaidBaseUrl.value = provider.baseUrl;
+  llmPaidApiKey.value = '';
+  llmManualPaidKeyOpen.value = provider.id === 'custom';
+}
+
+function selectFreeProvider(providerId: string) {
+  llmSelectedProvider.value = providerId;
+  llmFreeApiKey.value = '';
+  llmManualFreeKeyOpen.value = false;
+}
+
+function freeProviderAuthUrl(providerId: string): string {
+  switch (providerId) {
+    case 'openrouter': return 'https://openrouter.ai/keys';
+    case 'gemini': return 'https://aistudio.google.com/app/apikey';
+    case 'nvidia-nim': return 'https://build.nvidia.com/explore/discover';
+    case 'pollinations': return 'https://enter.pollinations.ai/';
+    case 'groq': return 'https://console.groq.com/keys';
+    case 'cerebras': return 'https://cloud.cerebras.ai/platform/';
+    case 'mistral': return 'https://console.mistral.ai/api-keys';
+    case 'github-models': return 'https://github.com/settings/tokens';
+    case 'siliconflow': return 'https://cloud.siliconflow.cn/account/ak';
+    default: return '';
+  }
+}
+
 function resolvedPaidBaseUrl(): string {
   switch (llmPaidProvider.value) {
     case 'openai': return 'https://api.openai.com';
+    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
     case 'anthropic': return 'https://api.anthropic.com';
     default: return llmPaidBaseUrl.value;
   }
@@ -1072,10 +1267,14 @@ function resolvedPaidBaseUrl(): string {
 function applyFreeProvider() {
   const providerId = llmSelectedProvider.value;
   const apiKey = llmFreeApiKey.value || null;
+  if (llmFreeModel.value) {
+    brainStore.setFallbackProviderModel(providerId, llmFreeModel.value);
+  }
   brainStore.brainMode = {
     mode: 'free_api',
     provider_id: providerId,
     api_key: apiKey,
+    model: llmFreeModel.value || null,
   };
   // Try to persist via Tauri (will fail in browser mode — that's fine)
   brainStore.setBrainMode(brainStore.brainMode).catch(() => { /* expected in browser */ });
@@ -1596,6 +1795,32 @@ onMounted(async () => {
 .llm-rec-badge { font-size: 0.65rem; color: var(--ts-warning); }
 .llm-provider-card small { color: var(--ts-text-muted); font-size: 0.72rem; }
 .llm-provider-model code { background: var(--ts-bg-surface); padding: 0 3px; border-radius: 2px; font-size: 0.70rem; color: var(--ts-text-primary); }
+.llm-auth-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.4rem;
+}
+.llm-auth-provider-btn {
+  display: grid;
+  gap: 0.2rem;
+  min-height: 4.2rem;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+  padding: 0.55rem 0.65rem;
+  color: var(--ts-text-primary);
+  text-align: left;
+  background: var(--ts-bg-base);
+  cursor: pointer;
+}
+.llm-auth-provider-btn:hover,
+.llm-auth-provider-btn.active {
+  border-color: var(--ts-accent-blue-hover);
+  background: color-mix(in srgb, var(--ts-accent) 10%, var(--ts-bg-base));
+}
+.llm-auth-provider-btn small {
+  color: var(--ts-text-muted);
+  line-height: 1.3;
+}
 .llm-input {
   padding: 0.35rem 0.6rem;
   background: var(--ts-bg-base);
@@ -1613,6 +1838,15 @@ onMounted(async () => {
   border-radius: 5px;
   color: var(--ts-text-primary);
   font-size: 0.8rem;
+}
+
+.llm-auth-link {
+  justify-content: center;
+  text-decoration: none;
+}
+
+.llm-manual-toggle {
+  align-self: flex-start;
 }
 
 .llm-apply-btn { align-self: flex-end; margin-top: 0.25rem; }

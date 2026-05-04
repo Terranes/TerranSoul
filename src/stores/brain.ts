@@ -17,32 +17,68 @@ import type {
   SystemInfo,
 } from '../types';
 
-export type BrowserAuthProviderId = 'google' | 'chatgpt' | 'pollinations';
+export type BrowserAuthProviderId = 'chatgpt' | 'gemini' | 'openrouter' | 'nvidia-nim' | 'pollinations' | 'google';
+
+export interface BrowserAuthModelOption {
+  label: string;
+  model: string;
+}
+
+type BrowserAuthProviderMode =
+  | { kind: 'free'; providerId: string }
+  | { kind: 'paid'; provider: string; baseUrl: string; defaultModel: string };
 
 export interface BrowserAuthProvider {
   id: BrowserAuthProviderId;
   label: string;
   brainLabel: string;
   privacyLabel: string;
+  authorizationUrl: string;
+  authorizationLabel: string;
+  recommendation?: string;
+  mode: BrowserAuthProviderMode;
+  requiresApiKey: boolean;
+  apiKeyPlaceholder?: string;
+  modelOptions?: BrowserAuthModelOption[];
 }
 
 export interface BrowserAuthSession {
   providerId: BrowserAuthProviderId;
   label: string;
+  model?: string;
   connectedAt: number;
 }
+
+export const OPENROUTER_FREE_MODELS: BrowserAuthModelOption[] = [
+  { label: 'OpenRouter Owl Alpha (free, long context)', model: 'openrouter/owl-alpha' },
+  { label: 'NVIDIA Nemotron 3 Nano Omni (free)', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free' },
+  { label: 'Poolside Laguna XS.2 (free coding)', model: 'poolside/laguna-xs.2:free' },
+  { label: 'Llama 3.3 70B Instruct (free)', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+];
+
+export const NVIDIA_FREE_MODELS: BrowserAuthModelOption[] = [
+  { label: 'Nemotron 3 Super 120B', model: 'nvidia/nemotron-3-super-120b-a12b' },
+  { label: 'Gemma 4 31B IT', model: 'google/gemma-4-31b-it' },
+  { label: 'Llama 3.3 70B Instruct', model: 'meta/llama-3.3-70b-instruct' },
+];
+
+export const POLLINATIONS_MODELS: BrowserAuthModelOption[] = [
+  { label: 'Llama 3.3 70B', model: 'llama' },
+  { label: 'OpenAI-compatible default', model: 'openai' },
+  { label: 'OpenAI fast', model: 'openai-fast' },
+];
 
 /** Built-in free provider catalogue for use when Tauri backend is unavailable. */
 const FALLBACK_FREE_PROVIDERS: FreeProvider[] = [
   {
     id: 'pollinations',
     display_name: 'Pollinations AI',
-    base_url: 'https://text.pollinations.ai/openai',
-    model: 'openai',
+    base_url: 'https://gen.pollinations.ai',
+    model: POLLINATIONS_MODELS[0].model,
     rpm_limit: 30,
     rpd_limit: 0,
-    requires_api_key: false,
-    notes: 'Free, no API key needed — works instantly',
+    requires_api_key: true,
+    notes: 'Register at enter.pollinations.ai for a token and higher limits',
   },
   {
     id: 'groq',
@@ -64,28 +100,109 @@ const FALLBACK_FREE_PROVIDERS: FreeProvider[] = [
     requires_api_key: true,
     notes: 'Generous free limits, fast inference',
   },
+  {
+    id: 'openrouter',
+    display_name: 'OpenRouter',
+    base_url: 'https://openrouter.ai/api',
+    model: OPENROUTER_FREE_MODELS[0].model,
+    rpm_limit: 20,
+    rpd_limit: 50,
+    requires_api_key: true,
+    notes: 'Multi-model gateway with selectable free models',
+  },
+  {
+    id: 'nvidia-nim',
+    display_name: 'NVIDIA NIM',
+    base_url: 'https://integrate.api.nvidia.com',
+    model: NVIDIA_FREE_MODELS[0].model,
+    rpm_limit: 40,
+    rpd_limit: 0,
+    requires_api_key: true,
+    notes: 'NVIDIA hosted free tier with an API key',
+  },
+  {
+    id: 'gemini',
+    display_name: 'Google Gemini',
+    base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-3-flash-preview',
+    rpm_limit: 15,
+    rpd_limit: 1000,
+    requires_api_key: true,
+    notes: 'Google AI Studio free-tier key, OpenAI-compatible endpoint',
+  },
 ];
 
 const BROWSER_AUTH_STORAGE_KEY = 'ts.browser.auth.session';
+const BROWSER_BRAIN_MODE_STORAGE_KEY = 'ts.browser.brain.mode';
 
 const BROWSER_AUTH_PROVIDERS: BrowserAuthProvider[] = [
   {
-    id: 'google',
-    label: 'Authorize with Google',
-    brainLabel: 'Google-ready browser session',
-    privacyLabel: 'Stores only this browser choice; no TerranSoul backend account is created.',
-  },
-  {
     id: 'chatgpt',
     label: 'Authorize with ChatGPT',
-    brainLabel: 'ChatGPT-ready browser session',
-    privacyLabel: 'Uses the same zero-install browser demo path until a direct account API is available.',
+    brainLabel: 'ChatGPT / OpenAI browser session',
+    privacyLabel: 'Open OpenAI, create a restricted key, then connect it only in this browser.',
+    authorizationUrl: 'https://platform.openai.com/api-keys',
+    authorizationLabel: 'Open OpenAI API keys',
+    mode: { kind: 'paid', provider: 'openai', baseUrl: 'https://api.openai.com', defaultModel: 'gpt-4o-mini' },
+    requiresApiKey: true,
+    apiKeyPlaceholder: 'OpenAI API key',
+    modelOptions: [
+      { label: 'GPT-4o mini', model: 'gpt-4o-mini' },
+      { label: 'GPT-4o', model: 'gpt-4o' },
+    ],
+  },
+  {
+    id: 'gemini',
+    label: 'Authorize with Gemini',
+    brainLabel: 'Google Gemini browser session',
+    privacyLabel: 'Good free-tier direct provider via Google AI Studio.',
+    authorizationUrl: 'https://aistudio.google.com/app/apikey',
+    authorizationLabel: 'Open Google AI Studio',
+    mode: { kind: 'free', providerId: 'gemini' },
+    requiresApiKey: true,
+    apiKeyPlaceholder: 'Google AI Studio API key',
+    modelOptions: [
+      { label: 'Gemini 3 Flash Preview', model: 'gemini-3-flash-preview' },
+      { label: 'Gemini 2.5 Flash', model: 'gemini-2.5-flash' },
+      { label: 'Gemini 2.0 Flash', model: 'gemini-2.0-flash' },
+    ],
+  },
+  {
+    id: 'openrouter',
+    label: 'Authorize with OpenRouter',
+    brainLabel: 'OpenRouter free-model browser session',
+    privacyLabel: 'Recommended: one key, many current free models, optional app credit limits.',
+    authorizationUrl: 'https://openrouter.ai/keys',
+    authorizationLabel: 'Open OpenRouter keys',
+    recommendation: 'Best free default for the backendless web app',
+    mode: { kind: 'free', providerId: 'openrouter' },
+    requiresApiKey: true,
+    apiKeyPlaceholder: 'OpenRouter API key',
+    modelOptions: OPENROUTER_FREE_MODELS,
+  },
+  {
+    id: 'nvidia-nim',
+    label: 'Authorize with NVIDIA',
+    brainLabel: 'NVIDIA NIM browser session',
+    privacyLabel: 'Free serverless development APIs for NVIDIA-hosted models.',
+    authorizationUrl: 'https://build.nvidia.com/explore/discover',
+    authorizationLabel: 'Open NVIDIA Build',
+    mode: { kind: 'free', providerId: 'nvidia-nim' },
+    requiresApiKey: true,
+    apiKeyPlaceholder: 'NVIDIA API key',
+    modelOptions: NVIDIA_FREE_MODELS,
   },
   {
     id: 'pollinations',
-    label: 'Try instantly',
-    brainLabel: 'Free Pollinations demo',
-    privacyLabel: 'No account, install, or manual key required.',
+    label: 'Authorize with Pollinations',
+    brainLabel: 'Pollinations browser session',
+    privacyLabel: 'Use a Pollinations token from enter.pollinations.ai for higher limits.',
+    authorizationUrl: 'https://enter.pollinations.ai/',
+    authorizationLabel: 'Open Pollinations',
+    mode: { kind: 'free', providerId: 'pollinations' },
+    requiresApiKey: true,
+    apiKeyPlaceholder: 'Pollinations token',
+    modelOptions: POLLINATIONS_MODELS,
   },
 ];
 
@@ -95,15 +212,44 @@ function readBrowserAuthSession(): BrowserAuthSession | null {
     const raw = localStorage.getItem(BROWSER_AUTH_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<BrowserAuthSession>;
-    const provider = BROWSER_AUTH_PROVIDERS.find((item) => item.id === parsed.providerId);
+    const parsedProviderId = parsed.providerId === 'google' ? 'gemini' : parsed.providerId;
+    const provider = BROWSER_AUTH_PROVIDERS.find((item) => item.id === parsedProviderId);
     if (!provider || typeof parsed.connectedAt !== 'number') return null;
-    return {
+    const session: BrowserAuthSession = {
       providerId: provider.id,
       label: provider.brainLabel,
       connectedAt: parsed.connectedAt,
     };
+    if (typeof parsed.model === 'string') session.model = parsed.model;
+    return session;
   } catch {
     return null;
+  }
+}
+
+function readBrowserBrainMode(): BrainMode | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(BROWSER_BRAIN_MODE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as BrainMode;
+    if (parsed?.mode === 'free_api' || parsed?.mode === 'paid_api') return parsed;
+  } catch {
+    // Ignore stale or malformed browser-only config.
+  }
+  return null;
+}
+
+function writeBrowserBrainMode(mode: BrainMode | null): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (mode) {
+      localStorage.setItem(BROWSER_BRAIN_MODE_STORAGE_KEY, JSON.stringify(mode));
+    } else {
+      localStorage.removeItem(BROWSER_BRAIN_MODE_STORAGE_KEY);
+    }
+  } catch {
+    // Browser storage can be disabled; keep Pinia state in-memory.
   }
 }
 
@@ -154,6 +300,19 @@ export const useBrainStore = defineStore('brain', () => {
       ? BROWSER_AUTH_PROVIDERS.find((provider) => provider.id === browserAuthSession.value?.providerId) ?? null
       : null,
   );
+
+  function ensureFallbackFreeProviders(): void {
+    if (freeProviders.value.length === 0) {
+      freeProviders.value = FALLBACK_FREE_PROVIDERS.map((provider) => ({ ...provider }));
+    }
+  }
+
+  function setFallbackProviderModel(providerId: string, model?: string): void {
+    if (!model) return;
+    ensureFallbackFreeProviders();
+    const provider = freeProviders.value.find((item) => item.id === providerId);
+    if (provider) provider.model = model;
+  }
 
   async function loadActiveBrain(): Promise<void> {
     activeBrain.value = await invoke<string | null>('get_active_brain');
@@ -369,38 +528,76 @@ export const useBrainStore = defineStore('brain', () => {
    * Use {@link autoConfigureForDesktop} when Tauri is available.
    */
   function autoConfigureFreeApi(): void {
-    freeProviders.value = FALLBACK_FREE_PROVIDERS;
+    ensureFallbackFreeProviders();
     brainMode.value = {
       mode: 'free_api',
       provider_id: 'pollinations',
       api_key: null,
+      model: POLLINATIONS_MODELS[0].model,
     };
   }
 
-  function authoriseBrowserProvider(providerId: BrowserAuthProviderId): BrowserAuthSession {
-    const provider = BROWSER_AUTH_PROVIDERS.find((item) => item.id === providerId) ?? BROWSER_AUTH_PROVIDERS[2];
-    if (freeProviders.value.length === 0) {
-      freeProviders.value = FALLBACK_FREE_PROVIDERS;
+  function prepareBrowserProviderChoices(): void {
+    ensureFallbackFreeProviders();
+    if (!browserAuthSession.value) {
+      brainMode.value = null;
+      writeBrowserBrainMode(null);
+      return;
     }
-    brainMode.value = {
-      mode: 'free_api',
-      provider_id: 'pollinations',
-      api_key: null,
-    };
+    if (!brainMode.value && browserAuthSession.value) {
+      const stored = readBrowserBrainMode();
+      if (stored) brainMode.value = stored;
+    }
+  }
+
+  function authoriseBrowserProvider(
+    providerId: BrowserAuthProviderId,
+    options: { apiKey?: string; model?: string } = {},
+  ): BrowserAuthSession {
+    const normalizedProviderId = providerId === 'google' ? 'gemini' : providerId;
+    const provider = BROWSER_AUTH_PROVIDERS.find((item) => item.id === normalizedProviderId) ??
+      BROWSER_AUTH_PROVIDERS[BROWSER_AUTH_PROVIDERS.length - 1];
+    ensureFallbackFreeProviders();
+
+    const selectedModel = options.model || provider.modelOptions?.[0]?.model;
+    let mode: BrainMode;
+    if (provider.mode.kind === 'free') {
+      setFallbackProviderModel(provider.mode.providerId, selectedModel);
+      mode = {
+        mode: 'free_api',
+        provider_id: provider.mode.providerId,
+        api_key: options.apiKey?.trim() || null,
+        model: selectedModel || null,
+      };
+    } else {
+      mode = {
+        mode: 'paid_api',
+        provider: provider.mode.provider,
+        api_key: options.apiKey?.trim() || '',
+        model: selectedModel || provider.mode.defaultModel,
+        base_url: provider.mode.baseUrl,
+      };
+    }
+    brainMode.value = mode;
     activeBrain.value = null;
     const session: BrowserAuthSession = {
       providerId: provider.id,
       label: provider.brainLabel,
+      model: mode.mode === 'free_api'
+        ? freeProviders.value.find((item) => item.id === mode.provider_id)?.model
+        : mode.model,
       connectedAt: Date.now(),
     };
     browserAuthSession.value = session;
     writeBrowserAuthSession(session);
+    writeBrowserBrainMode(mode);
     return session;
   }
 
   function clearBrowserAuthorisation(): void {
     browserAuthSession.value = null;
     writeBrowserAuthSession(null);
+    writeBrowserBrainMode(null);
   }
 
   /**
@@ -414,6 +611,7 @@ export const useBrainStore = defineStore('brain', () => {
       mode: 'free_api',
       provider_id: 'pollinations',
       api_key: null,
+      model: POLLINATIONS_MODELS[0].model,
     };
     try {
       await setBrainMode(mode);
@@ -422,7 +620,7 @@ export const useBrainStore = defineStore('brain', () => {
       brainMode.value = mode;
     }
     if (freeProviders.value.length === 0) {
-      freeProviders.value = FALLBACK_FREE_PROVIDERS;
+      ensureFallbackFreeProviders();
     }
   }
 
@@ -656,8 +854,12 @@ export const useBrainStore = defineStore('brain', () => {
         fetchLmStudioModels(),
       ]);
     } catch {
-      // Tauri backend unavailable — auto-default to free API
-      autoConfigureFreeApi();
+      // Tauri backend unavailable in the browser — let the user choose a provider.
+      if (typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window)) {
+        prepareBrowserProviderChoices();
+      } else {
+        autoConfigureFreeApi();
+      }
     } finally {
       isLoading.value = false;
     }
@@ -733,7 +935,7 @@ export const useBrainStore = defineStore('brain', () => {
           p => p.id === mode.provider_id,
         ) ?? freeProviders.value[0];
         baseUrl = provider.base_url;
-        model = provider.model;
+        model = mode.model ?? provider.model;
         apiKey = provider.requires_api_key ? (mode.api_key ?? null) : null;
       } else if (mode.mode === 'paid_api') {
         baseUrl = mode.base_url;
@@ -793,6 +995,8 @@ export const useBrainStore = defineStore('brain', () => {
     isFreeApiMode,
     browserAuthProviders,
     browserAuthProvider,
+    prepareBrowserProviderChoices,
+    setFallbackProviderModel,
     loadActiveBrain,
     fetchSystemInfo,
     fetchRecommendations,

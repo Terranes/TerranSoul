@@ -8,10 +8,12 @@ import { useProviderHealthStore } from './provider-health';
 import { useSkillTreeStore } from './skill-tree';
 import { useTaskStore } from './tasks';
 import { usePersonaStore } from './persona';
+import { useCharismaStore } from './charisma';
 import { useMemoryStore } from './memory';
 import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
+import { collectCharismaTurnAssets } from '../utils/charisma-turn-assets';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import { useAgentRosterStore } from './agent-roster';
 import { buildHandoffBlock } from '../utils/handoff-prompt';
@@ -1538,6 +1540,33 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
+  function annotateCharismaTurn(message: Message): void {
+    if (message.role !== 'assistant' || message.agentName === 'System') return;
+    const persona = usePersonaStore();
+    const assets = collectCharismaTurnAssets({
+      text: message.content,
+      motion: message.motion,
+      traits: persona.traits,
+      learnedExpressions: persona.learnedExpressions,
+      learnedMotions: persona.learnedMotions,
+    });
+    if (assets.length === 0) return;
+    message.charismaAssets = assets;
+    if (isTauriAvailable()) {
+      void useCharismaStore().recordTurnUsage(assets);
+    }
+  }
+
+  async function rateCharismaTurn(messageId: string, rating: number): Promise<boolean> {
+    const message = messages.value.find((m) => m.id === messageId);
+    if (!message?.charismaAssets?.length) return false;
+    const normalizedRating = Math.max(1, Math.min(5, Math.round(rating)));
+    const rated = await useCharismaStore().rateTurnAssets(message.charismaAssets, normalizedRating);
+    if (rated.length === 0) return false;
+    message.charismaTurnRating = normalizedRating;
+    return true;
+  }
+
   async function sendMessage(content: string) {
     // ── Concurrency gate: only one generation at a time ──
     // If a stream/generation is already active, queue this message and
@@ -1792,6 +1821,7 @@ export const useConversationStore = defineStore('conversation', () => {
               timestamp: Date.now(),
             };
             stampAgent(assistantMsg);
+            annotateCharismaTurn(assistantMsg);
             messages.value.push(assistantMsg);
           }
           // else: pure Stop — discard partial output
@@ -1841,6 +1871,7 @@ export const useConversationStore = defineStore('conversation', () => {
           };
           stampAgent(assistantMsg);
           if (warning) applyWarningAsQuest(assistantMsg, warning);
+          annotateCharismaTurn(assistantMsg);
           messages.value.push(assistantMsg);
           maybeShowQuestFromResponse(clean || cleanText, content);
           maybeShowDontKnowPrompt(clean || cleanText);
@@ -1864,11 +1895,14 @@ export const useConversationStore = defineStore('conversation', () => {
               setTimeout(() => reject(new Error('Fallback invoke timeout')), FALLBACK_TIMEOUT_MS),
             ),
           ]);
+          annotateCharismaTurn(response);
           messages.value.push(response);
           maybeShowQuestFromResponse(response.content, content);
           maybeShowDontKnowPrompt(response.content);
         } catch {
-          messages.value.push(createPersonaResponse(content));
+          const response = createPersonaResponse(content);
+          annotateCharismaTurn(response);
+          messages.value.push(response);
           pushNetworkOrProviderWarning();
         }
       } finally {
@@ -2016,6 +2050,7 @@ export const useConversationStore = defineStore('conversation', () => {
             };
             stampAgent(assistantMsg);
             if (warning) applyWarningAsQuest(assistantMsg, warning);
+            annotateCharismaTurn(assistantMsg);
             messages.value.push(assistantMsg);
             void rememberBrowserTurn(content, clean || parsed.text);
             maybeShowQuestFromResponse(clean || parsed.text, content);
@@ -2042,7 +2077,9 @@ export const useConversationStore = defineStore('conversation', () => {
         }
 
         if (!succeeded) {
-          messages.value.push(createPersonaResponse(content));
+          const response = createPersonaResponse(content);
+          annotateCharismaTurn(response);
+          messages.value.push(response);
           pushNetworkOrProviderWarning();
         }
         } finally {
@@ -2059,7 +2096,9 @@ export const useConversationStore = defineStore('conversation', () => {
 
     // Path 3: No brain configured — persona fallback
     await new Promise((r) => setTimeout(r, 500));
-    messages.value.push(createPersonaResponse(content));
+    const response = createPersonaResponse(content);
+    annotateCharismaTurn(response);
+    messages.value.push(response);
     isThinking.value = false;
     activeAbortController = null;
     generationActive.value = false;
@@ -2146,6 +2185,7 @@ export const useConversationStore = defineStore('conversation', () => {
     streamingText,
     isStreaming,
     sendMessage,
+    rateCharismaTurn,
     getConversation,
     addMessage,
     pushProviderWarning,

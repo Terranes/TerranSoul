@@ -9,6 +9,12 @@ test-results/
 playwright-report/
 /.claude/worktrees
 
+# Headless MCP "pet mode" data dir — created by `npm run mcp`.
+# Contains the bearer token, SQLite memory store, and any RAG/gitnexus
+# state used by external AI coding agents (Copilot/Codex/Claude Code/
+# Clawcode). Never commit; see rules/agent-mcp-bootstrap.md.
+mcp-data/
+
 # Agent / dev session scratch — never commit (see rules/prompting-rules.md
 # "Clean Up Temporary Files After Each Session").
 test-output.txt

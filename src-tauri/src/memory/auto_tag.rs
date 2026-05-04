@@ -107,12 +107,14 @@ pub async fn auto_tag_content(content: &str, brain_mode: &BrainMode) -> Vec<Stri
         BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         } => {
             let provider = match crate::brain::get_free_provider(provider_id) {
                 Some(p) => p,
                 None => return vec![],
             };
-            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let chat_model = model.as_deref().unwrap_or(&provider.model);
+            let client = OpenAiClient::new(&provider.base_url, chat_model, api_key.as_deref());
             let msgs = vec![
                 OpenAiMessage {
                     role: "system".to_string(),

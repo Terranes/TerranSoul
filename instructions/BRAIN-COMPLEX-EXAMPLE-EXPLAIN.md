@@ -173,7 +173,7 @@ cargo build --features "postgres,mssql"  # multiple
 ```
 
 All backends share V4 schema. Vector search is in-process cosine for all
-(PostgreSQL has future pgvector upgrade path).
+(PostgreSQL remains an optional relational backend; SQLite/usearch is the default vector path).
 
 ---
 

@@ -424,6 +424,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".to_string(),
             api_key: None,
+            model: None,
         };
         // Rotator picked pollinations because groq is rate-limited but
         // pollinations is healthy.
@@ -457,6 +458,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".to_string(),
             api_key: None,
+            model: None,
         };
         let sel = BrainSelection::from_parts(
             Some(&mode),

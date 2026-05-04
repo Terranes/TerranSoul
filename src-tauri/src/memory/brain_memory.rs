@@ -196,6 +196,7 @@ pub async fn complete_via_mode(
         BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         } => {
             let effective_id = rotator
                 .lock()
@@ -204,7 +205,11 @@ pub async fn complete_via_mode(
                 .unwrap_or_else(|| provider_id.clone());
             let provider = crate::brain::get_free_provider(&effective_id)
                 .ok_or_else(|| format!("Unknown free provider: {effective_id}"))?;
-            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let chat_model = model
+                .as_deref()
+                .filter(|_| effective_id == provider_id.as_str())
+                .unwrap_or(&provider.model);
+            let client = OpenAiClient::new(&provider.base_url, chat_model, api_key.as_deref());
             let msgs = vec![
                 OpenAiMessage {
                     role: "system".to_string(),

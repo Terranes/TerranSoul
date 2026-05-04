@@ -27,7 +27,7 @@ to disk, and surfaces the result to either:
   `run_coding_task` Tauri command.
 
 The workflow is intentionally **provider-agnostic** (Local Ollama,
-Anthropic, OpenAI, DeepSeek, any OpenAI-compatible endpoint),
+Anthropic, OpenAI, any OpenAI-compatible endpoint),
 **output-shape-typed** (`NumberedPlan`, `StrictJson`, `BareFileContents`,
 `Prose`), and **durable** (atomic JSON writes, append-only JSONL run log,
 crash-safe resume).
@@ -167,7 +167,7 @@ gated behind a future chunk so the autonomous path is provably safe.
 ### 2.6 Multi-provider abstraction
 
 All providers speak **OpenAI-compatible chat completions** (`/v1/chat/completions`).
-This is the single pivot that lets us add Claude, OpenAI, DeepSeek,
+This is the single pivot that lets us add Claude, OpenAI,
 Ollama, vLLM, LM Studio, Groq, Together, Fireworks, Mistral, etc. by
 adding a row to `coding_llm_recommendations()` — no new client code.
 
@@ -266,7 +266,7 @@ pub struct CodingPrompt {
 This buys us three things Claude Code can't:
 
 1. **Provider-agnostic.** The same prompt works against Claude, GPT-5,
-   Gemma, DeepSeek-Coder — the schema is in our code, not the model's
+   Gemma, Qwen Coder — the schema is in our code, not the model's
    training.
 2. **Unit-testable.** `prompting.rs` ships with tests asserting tag
    structure, schema version, and document indexing.
@@ -333,6 +333,102 @@ Chunk 28.11 turns those lessons into local, provider-agnostic Rust code:
 | Per-task subscription | Most cloud agents | $0 with Ollama is non-negotiable for the user base |
 | Custom workflow language | Temporal DSL, GitHub Agentic Workflows | Plain Rust async functions are enough at our scale |
 | "Auto-approve everything" | Roo Auto-Approve | Self-improve is gated behind a confirm dialog + explicit toggle |
+
+### 3.8 Sessions, chat history, and slash commands (Chunk 30.2)
+
+Chunk 30.2 absorbs the session-management UX from
+[ultraworkers/claw-code](https://github.com/ultraworkers/claw-code), Anthropic's
+Claude Code CLI (`--resume`, `--continue`, `--name`, `--fork-session`,
+`/clear`, `/help`), and OpenClaw. The pattern lands as three thin layers on
+top of the existing `coding::handoff_store`:
+
+- **`coding::session_chat`** — append-only JSONL transcript per session id,
+  stored at `<data_dir>/coding_workflow/sessions/<id>.chat.jsonl`. Pure I/O
+  helpers (`append_message`, `load_chat`, `clear_chat`, `chat_summary`,
+  `fork_chat`) with a 32 KiB per-message cap and silent skipping of corrupt
+  lines. Reuses the same id sanitiser as `handoff_store` so a single
+  session id maps deterministically to both files.
+- **`commands::coding_sessions`** — Tauri commands (`coding_session_list`,
+  `coding_session_append_message`, `coding_session_load_chat`,
+  `coding_session_clear_chat`, `coding_session_rename`, `coding_session_fork`,
+  `coding_session_purge`) wired through `lib.rs`. The list command joins the
+  existing `HandoffSummary` with a cheap `ChatSummary` so the sidebar renders
+  in one round trip.
+- **`SelfImproveSessionsPanel.vue` + `slash-commands.ts`** — sidebar with
+  per-session pick / rename / fork / delete, a transcript scrollback, and an
+  input bar that parses `/clear`, `/rename <name>`, `/fork [<name>]`,
+  `/resume <id>`, `/list`, `/help` exactly like the Claude Code interactive
+  shell. Plain prose falls through as a `user` message appended to the
+  active session's transcript.
+
+Chunk 30.6 wires the autonomous loop's `self-improve-progress` event stream
+into the active session transcript. Each progress payload is appended as a
+`system` message with `kind = "run"`; if no session is selected yet, the store
+creates a timestamped `self-improve-*` run session and begins recording there.
+The session picker also includes transcript-only sessions, so progress history
+from a live run remains resumable even before a handoff snapshot exists.
+
+### 3.9 Multi-agent workflow plans + calendar (Chunk 30.3)
+
+Building on §3.8's session/slash-command surface, **Chunk 30.3** adds
+first-class **multi-agent workflow plans** with Microsoft Teams-style
+recurrence. The system formalises the orchestrator-workers pattern from
+Anthropic's *Building Effective Agents* into editable YAML plans.
+
+**Six built-in agent roles** (`AgentRole` enum in
+`src-tauri/src/coding/multi_agent.rs`): `Planner`, `Coder`, `Reviewer`,
+`Tester`, `Researcher`, `Orchestrator`. Each role has a curated list of
+`AgentRecommendation`s spanning three tiers (`fast` / `balanced` /
+`premium`). Recommendations are surfaced through
+`workflow_agent_recommendations` so the UI's per-step LLM dropdown shows
+live, RAM-aware options grouped by tier.
+
+**Plan = DAG of steps**. `WorkflowPlan` carries an ordered `Vec<WorkflowStep>`,
+each with `id`, `agent`, `description`, `depends_on: Vec<String>`,
+`output_format` (prose/code/json/plan/test_results/verdict),
+`requires_approval`, and per-step `llm_provider`/`llm_model`. The runner
+uses **Kahn's topological sort** (`validate_plan`) to detect cycles and
+schedule independent leaves in parallel via Tokio. YAML is the
+persistence format (`<data_dir>/workflow_plans/<id>.yaml`,
+`serde_yaml` 0.9), so every plan is `git diff`-able and shareable via
+Persona Pack.
+
+**Recurrence engine.** `WorkflowSchedule` carries a
+`RecurrencePattern` (Once / Daily{interval} / Weekly{interval, weekdays} /
+Monthly{interval, day_of_month}) plus `start_at`, optional `end_at`,
+`duration_minutes`, IANA `timezone`, and `last_fired_at`.
+`next_occurrence_after(from_ms)` returns the next firing strictly after
+a timestamp; `occurrences_in_range(from_ms, to_ms)` projects up to 100
+events per plan into the calendar viewport (cap prevents pathological
+recurrences from blocking the UI). The Tauri command
+`workflow_calendar_events` aggregates projections across all plans.
+
+**UI tier.** `MultiAgentWorkflowsPanel.vue` exposes three tabs:
+*Workflows* (list + editor), *Calendar* (7-day × 24-hour MS Teams-style
+grid coloured by `kind`), and *Agents* (recommendation browser).
+`WorkflowCalendar.vue` renders events as absolutely-positioned blocks
+sized by duration; `ScheduleEditor.vue` is the recurrence picker with
+live preview text mirroring the `formatRecurrence()` helper. The Pinia
+store `workflow-plans.ts` mirrors all Rust types one-to-one and exposes
+helpers (`startOfWeek`, `isoDayKey`, `formatRecurrence`,
+`statusBadgeColor`, etc.) covered by 13 vitest cases.
+
+**Self-improve integration.** Chat suggestions can call
+`workflow_plan_create_blank` to stub a coding-kind plan; running the
+single Planner step through a chosen LLM expands the DAG via
+`parse_planner_response()` (strips markdown fences). The
+`requires_approval` flag combined with the Reviewer step at the end of
+typical plans implements the **evaluator-optimiser loop** — failed
+reviews send the plan back to Coder with feedback in the step's `error`
+field. Failures land in brain memory as `coding-failures` so future
+Planners avoid repeated mistakes via RAG.
+
+**MCP exposure.** All ten `workflow_plan_*` commands are reachable via
+the brain MCP server on `127.0.0.1:7421`, so external coding assistants
+(Claude Code, Aider) can build and observe workflows programmatically.
+
+See [multi-agent-workflows-tutorial.md](multi-agent-workflows-tutorial.md)
+for end-to-end usage including a self-improve worked example.
 
 ---
 
@@ -474,5 +570,5 @@ assert!(result.well_formed);
 println!("{}", result.payload);
 ```
 
-Same call works against Claude, GPT-5, DeepSeek, Groq — change three
+Same call works against Claude, GPT-5, Groq — change three
 fields in `CodingLlmConfig`. **That is the whole point of the design.**

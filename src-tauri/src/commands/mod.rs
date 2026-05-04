@@ -4,11 +4,13 @@ pub mod auto_setup;
 pub mod brain;
 pub mod character;
 pub mod chat;
+pub mod coding_sessions;
 pub mod consolidation;
 pub mod crag;
 pub mod docker;
 pub mod emotion;
 pub mod gitnexus;
+pub mod github_auth;
 pub mod grpc;
 pub mod identity;
 pub mod ingest;
@@ -32,6 +34,9 @@ pub mod vision;
 pub mod voice;
 pub mod vscode;
 pub mod window;
+pub mod workflow_plans;
+pub mod charisma;
+pub mod teachable_capabilities;
 
 #[cfg(test)]
 mod ipc_contract_tests;

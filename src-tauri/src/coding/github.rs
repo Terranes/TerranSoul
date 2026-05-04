@@ -30,6 +30,7 @@
 //! changed, how long it took, and test results.
 
 use crate::coding::metrics::{MetricsSummary, RunRecord};
+use crate::coding::repo as coding_repo;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -110,6 +111,32 @@ pub fn clear_github_config(data_dir: &Path) -> Result<(), String> {
         fs::remove_file(&path).map_err(|e| format!("remove github config: {e}"))?;
     }
     Ok(())
+}
+
+/// Fill GitHub config defaults shared by manual token entry and OAuth Device Flow.
+pub fn apply_github_config_defaults(mut cfg: GitHubConfig, repo_hint: &Path) -> GitHubConfig {
+    if cfg.default_base.is_empty() {
+        cfg.default_base = default_base();
+    }
+    if cfg.owner.is_empty() || cfg.repo.is_empty() {
+        let root = coding_repo::guess_repo_root(repo_hint);
+        if let Some(remote) = coding_repo::detect_repo(&root).remote_url {
+            fill_owner_repo_from_remote(&mut cfg, &remote);
+        }
+    }
+    cfg
+}
+
+/// Best-effort owner/repo derivation from an origin URL, preserving explicit fields.
+pub fn fill_owner_repo_from_remote(cfg: &mut GitHubConfig, remote_url: &str) {
+    if let Some((owner, repo)) = parse_owner_repo(remote_url) {
+        if cfg.owner.is_empty() {
+            cfg.owner = owner;
+        }
+        if cfg.repo.is_empty() {
+            cfg.repo = repo;
+        }
+    }
 }
 
 /// Parse `owner/repo` from a git remote URL.
@@ -591,6 +618,27 @@ mod tests {
         );
         assert_eq!(parse_owner_repo("git@gitlab.com:foo/bar.git"), None);
         assert_eq!(parse_owner_repo("not a url"), None);
+    }
+
+    #[test]
+    fn fill_owner_repo_from_remote_preserves_explicit_fields() {
+        let mut cfg = GitHubConfig {
+            token: "ghp_test".to_string(),
+            owner: "existing-owner".to_string(),
+            repo: String::new(),
+            default_base: String::new(),
+            reviewers: vec![],
+        };
+        fill_owner_repo_from_remote(&mut cfg, "https://github.com/new-owner/new-repo.git");
+        assert_eq!(cfg.owner, "existing-owner");
+        assert_eq!(cfg.repo, "new-repo");
+    }
+
+    #[test]
+    fn github_config_defaults_fill_base_without_repo() {
+        let dir = tempdir().unwrap();
+        let cfg = apply_github_config_defaults(GitHubConfig::default(), dir.path());
+        assert_eq!(cfg.default_base, "main");
     }
 
     #[test]

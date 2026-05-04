@@ -37,6 +37,12 @@ vi.mock('../utils/free-api-client', () => ({
   getSystemPrompt: () => 'You are TerranSoul.',
 }));
 
+function configureBrowserProvider() {
+  const brain = useBrainStore();
+  brain.authoriseBrowserProvider('pollinations', { apiKey: 'test-provider-key' });
+  return brain;
+}
+
 describe('conversation store — no brain (persona fallback)', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -104,8 +110,44 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.messages[1].agentName).toBe('Translator Mode');
     expect(store.messages[1].content).toContain('available free browser LLM');
   });
-});
 
+  it('rates all charisma assets attached to an assistant turn', async () => {
+    const store = useConversationStore();
+    const message: Message = {
+      id: 'turn-1',
+      role: 'assistant',
+      content: 'A warm bow.',
+      timestamp: Date.now(),
+      charismaAssets: [{ kind: 'motion', assetId: 'lmo_bow', displayName: 'Bow' }],
+    };
+    mockInvoke.mockResolvedValueOnce([
+      {
+        kind: 'motion',
+        asset_id: 'lmo_bow',
+        display_name: 'Bow',
+        taught_at: 1,
+        usage_count: 0,
+        last_used_at: 1,
+        rating_sum: 4,
+        rating_count: 1,
+        promoted_at: null,
+        last_promotion_plan_id: null,
+      },
+    ]);
+
+    store.addMessage(message);
+    const ok = await store.rateCharismaTurn('turn-1', 4);
+
+    expect(ok).toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith('charisma_rate_turn', {
+      args: {
+        assets: [{ kind: 'motion', asset_id: 'lmo_bow', display_name: 'Bow' }],
+        rating: 4,
+      },
+    });
+    expect(store.messages[0].charismaTurnRating).toBe(4);
+  });
+});
 describe('translator mode intent helpers', () => {
   it('detects become-translator requests with language aliases', () => {
     const result = detectTranslatorModeRequest('Please become a translator to help me translate between en and Vietnamese');
@@ -138,8 +180,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
   });
 
   it('calls free API when brain is configured', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
 
     // Mock streamChatCompletion to call onDone immediately
     mockStreamChat.mockImplementation(
@@ -160,8 +201,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
   });
 
   it('injects browser-native RAG memories into the browser chat system prompt', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockRejectedValue(new Error('no tauri'));
     await useMemoryStore().addMemory({
       content: 'The user is testing million-user Vercel browser RAG.',
@@ -194,8 +234,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
   });
 
   it('streams chunks to streamingText during generation', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
 
     let capturedCallbacks: { onChunk: (t: string) => void; onDone: (t: string) => void } | null = null;
     mockStreamChat.mockImplementation(
@@ -220,8 +259,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
   });
 
   it('falls back to persona on free API error', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
 
     mockStreamChat.mockImplementation(
       (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onError: (err: string) => void }) => {
@@ -243,8 +281,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
   });
 
   it('translates direct turns with a keyed free cloud provider', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    const brain = configureBrowserProvider();
     brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
 
     mockStreamChat.mockImplementation(
@@ -269,9 +306,8 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(store.translatorMode?.nextDirection).toBe('target_to_source');
   });
 
-  it('activates translator mode for browser-free providers without API keys', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+  it('activates translator mode for configured browser-free providers', async () => {
+    configureBrowserProvider();
 
     const store = useConversationStore();
     await store.sendMessage('Become a translator to help me translate between English and Vietnamese.');
@@ -286,8 +322,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
     ['English', 'Japanese', 'ja'],
     ['English', 'Spanish', 'es'],
   ])('emits target language metadata for %s to %s translator TTS', async (source, target, expectedLanguage) => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    const brain = configureBrowserProvider();
     brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
     const languageEvents: Array<{ sentence?: string; language?: string }> = [];
     const listener = (event: Event) => {
@@ -314,8 +349,7 @@ describe('conversation store — brain configured (browser-side free API)', () =
   });
 
   it('stops translator mode from normal chat', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    const brain = configureBrowserProvider();
     brain.brainMode = { mode: 'free_api', provider_id: 'groq', api_key: 'test-key' };
     const store = useConversationStore();
     await store.sendMessage('translate between English and Japanese');
@@ -716,8 +750,7 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('does NOT auto-trigger Scholar\'s Quest when user asks a law question', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockStreamChat.mockImplementation(
       (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
         cb.onDone('The statute of limitations is 3 years under Article 429.');
@@ -735,8 +768,7 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('does NOT auto-trigger a quest when the user asks what the companion can do', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockStreamChat.mockImplementation(
       (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
         cb.onDone('I can chat, remember context, help with voice, and guide you through quests in the skill tree.');
@@ -752,8 +784,7 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('triggers the matching quest after the user says they like a specific action', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     const skillTree = useSkillTreeStore();
     const voice = useVoiceStore();
     skillTree.markComplete('avatar');
@@ -774,8 +805,7 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('shows the don\'t-know prompt when the LLM answer signals uncertainty', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockStreamChat.mockImplementation(
       (_url: string, _m: string, _k: string | null, _h: unknown[], cb: { onDone: (t: string) => void }) => {
         cb.onDone("I don't know the specific statute of limitations — my training data is limited on Vietnamese law.");
@@ -801,8 +831,7 @@ describe('conversation store — new quest trigger behavior', () => {
   it('pushes Scholar\'s Quest when the user types "provide your own context"', async () => {
     // Configure a brain so the LLM intent classifier runs, then mock its
     // decision via the `classify_intent` Tauri command.
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') {
         return { kind: 'gated_setup', setup: 'provide_context' };
@@ -821,8 +850,7 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('offers the Gemini marketplace path when the user types "upgrade to Gemini model"', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') {
         return { kind: 'gated_setup', setup: 'upgrade_gemini' };
@@ -840,8 +868,7 @@ describe('conversation store — new quest trigger behavior', () => {
   });
 
   it('pushes Scholar\'s Quest when the user explicitly says "remember the following law:"', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') {
         return { kind: 'teach_ingest', topic: 'Article 429 — claims expire after 3 years' };
@@ -861,8 +888,7 @@ describe('conversation store — new quest trigger behavior', () => {
     // When the classifier can't decide (timeout, no brain, malformed JSON),
     // the safe default is to proceed with normal streaming chat — never
     // assume the user wants to learn from documents.
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') return { kind: 'unknown' };
       return undefined;
@@ -905,8 +931,7 @@ describe('conversation store — Learn-with-docs flow', () => {
   });
 
   it('pushes the missing-components prompt with three choices', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') {
         return { kind: 'learn_with_docs', topic: 'Vietnamese laws' };
@@ -1000,8 +1025,7 @@ describe('conversation store — chat-based LLM switching integration', () => {
   });
 
   it('switches to pollinations via chat command', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockResolvedValue(undefined);
 
     const store = useConversationStore();
@@ -1015,8 +1039,7 @@ describe('conversation store — chat-based LLM switching integration', () => {
   });
 
   it('warns about API key requirement for groq', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
 
     const store = useConversationStore();
     await store.sendMessage('switch to groq');
@@ -1027,8 +1050,7 @@ describe('conversation store — chat-based LLM switching integration', () => {
   });
 
   it('normal messages are NOT treated as LLM commands', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
 
     mockStreamChat.mockImplementation(
       (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
@@ -1108,8 +1130,7 @@ describe('conversation store — long-running task controls', () => {
   });
 
   it('stopGeneration during browser streaming aborts and discards', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockStreamChat.mockImplementation(
       (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onChunk: (text: string) => void; onDone: (text: string) => void; onError: (err: string) => void }) => {
         callbacks.onChunk('partial ');
@@ -1213,8 +1234,7 @@ describe('conversation store — stream queue concurrency', () => {
   });
 
   it('queue drains correctly after browser-side streaming completes', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
 
     mockStreamChat.mockImplementation(
       (_baseUrl: string, _model: string, _apiKey: string | null, _history: unknown[], callbacks: { onDone: (text: string) => void }) => {
@@ -1242,8 +1262,7 @@ describe('conversation store — stream queue concurrency', () => {
   });
 
   it('generationActive resets on early-return paths (LLM commands)', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     mockInvoke.mockResolvedValue(undefined);
 
     const store = useConversationStore();
@@ -1271,8 +1290,7 @@ describe('conversation store — AI decision-making policy gates', () => {
   });
 
   it('skips the classifier IPC entirely when intentClassifierEnabled=false', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     const policy = useAiDecisionPolicyStore();
     policy.policy.intentClassifierEnabled = false;
     // If the classifier ran, this mock would short-circuit into the install
@@ -1294,8 +1312,7 @@ describe('conversation store — AI decision-making policy gates', () => {
   });
 
   it('chat-based LLM switch is ignored when chatBasedLlmSwitchEnabled=false', async () => {
-    const brain = useBrainStore();
-    brain.autoConfigureFreeApi();
+    configureBrowserProvider();
     const policy = useAiDecisionPolicyStore();
     policy.policy.chatBasedLlmSwitchEnabled = false;
     policy.policy.intentClassifierEnabled = false;

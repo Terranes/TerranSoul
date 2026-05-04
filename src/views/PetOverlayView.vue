@@ -208,6 +208,9 @@
       @toggle-resize="resizeActive = !resizeActive"
       @request-self-improve="onRequestSelfImprove"
       @open-self-improve-panel="selfImprovePanelOpen = true"
+      @open-workflows-panel="workflowsPanelOpen = true"
+      @open-charisma-panel="charismaPanelOpen = true"
+      @open-teachable-capabilities-panel="teachableCapabilitiesPanelOpen = true"
     />
 
     <!-- Self-improve warning dialog (Phase 25) -->
@@ -245,6 +248,78 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Multi-agent workflows panel -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="workflowsPanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="workflowsPanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="workflowsPanelOpen = false"
+            >
+              ✕
+            </button>
+            <MultiAgentWorkflowsPanel />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Charisma teaching panel -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="charismaPanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="charismaPanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="charismaPanelOpen = false"
+            >
+              ✕
+            </button>
+            <CharismaPanel />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Teachable capabilities panel -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="teachableCapabilitiesPanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="teachableCapabilitiesPanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="teachableCapabilitiesPanelOpen = false"
+            >
+              ✕
+            </button>
+            <TeachableCapabilitiesPanel />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -273,6 +348,9 @@ import PetContextMenu from '../components/PetContextMenu.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import SelfImproveConfirmDialog from '../components/SelfImproveConfirmDialog.vue';
 import SelfImprovePanel from '../components/SelfImprovePanel.vue';
+import MultiAgentWorkflowsPanel from '../components/MultiAgentWorkflowsPanel.vue';
+import CharismaPanel from '../components/CharismaPanel.vue';
+import TeachableCapabilitiesPanel from '../components/TeachableCapabilitiesPanel.vue';
 import { useSelfImproveStore } from '../stores/self-improve';
 
 const conversationStore = useConversationStore();
@@ -289,6 +367,9 @@ const selfImprove = useSelfImproveStore();
 // can persist across context-menu open/close cycles.
 const selfImproveDialogOpen = ref(false);
 const selfImprovePanelOpen = ref(false);
+const workflowsPanelOpen = ref(false);
+const charismaPanelOpen = ref(false);
+const teachableCapabilitiesPanelOpen = ref(false);
 
 const selfImproveProviderLabel = computed(() => {
   const c = selfImprove.codingLlm;

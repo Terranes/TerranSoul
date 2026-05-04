@@ -6,12 +6,12 @@ const providers: FreeProvider[] = [
   {
     id: 'pollinations',
     display_name: 'Pollinations',
-    base_url: 'https://text.pollinations.ai/openai',
-    model: 'openai',
+    base_url: 'https://gen.pollinations.ai',
+    model: 'llama',
     rpm_limit: 30,
     rpd_limit: 0,
-    requires_api_key: false,
-    notes: 'No key',
+    requires_api_key: true,
+    notes: 'Requires token',
   },
   {
     id: 'groq',
@@ -26,16 +26,17 @@ const providers: FreeProvider[] = [
 ];
 
 describe('browser brain transport', () => {
-  it('resolves no-key free providers as direct browser transports', () => {
+  it('resolves keyed free providers as direct browser transports once configured', () => {
     const result = resolveBrowserBrainTransport(
-      { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+      { mode: 'free_api', provider_id: 'pollinations', api_key: 'pl-test', model: 'openai-fast' },
       providers,
     );
 
     expect(result.kind).toBe('direct');
     if (result.kind === 'direct') {
       expect(result.provider.providerId).toBe('pollinations');
-      expect(result.provider.apiKey).toBeNull();
+      expect(result.provider.apiKey).toBe('pl-test');
+      expect(result.provider.model).toBe('openai-fast');
     }
   });
 
@@ -83,7 +84,7 @@ describe('browser brain transport', () => {
       providerId: providers[0].id,
     };
 
-    expect(browserDirectFallbackProviders(primary, { mode: 'free_api', provider_id: 'pollinations', api_key: null }, providers))
+    expect(browserDirectFallbackProviders(primary, { mode: 'free_api', provider_id: 'pollinations', api_key: 'pl-test' }, providers))
       .toHaveLength(1);
   });
 });

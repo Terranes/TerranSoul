@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Describes a free LLM API provider sourced from awesome-free-llm-apis.
 ///
 /// All providers expose an OpenAI-compatible `/v1/chat/completions` endpoint
-/// (or equivalent) and require no API key or a free-tier key.
+/// (or equivalent) and are available through free-tier keys or tokens.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FreeProvider {
     /// Unique identifier (e.g. "groq", "cerebras").
@@ -26,21 +26,19 @@ pub struct FreeProvider {
 
 /// Return the curated catalogue of free LLM API providers.
 ///
-/// Sorted roughly by reliability and speed (best first).
-/// Providers that do NOT require an API key are listed first so that
-/// auto-configuration can work out-of-the-box with zero setup.
+/// Sorted roughly by reliability, model breadth, and speed (best first).
 /// Source: <https://github.com/mnfst/awesome-free-llm-apis>
 pub fn free_provider_catalogue() -> Vec<FreeProvider> {
     vec![
         FreeProvider {
             id: "pollinations".into(),
             display_name: "Pollinations AI".into(),
-            base_url: "https://text.pollinations.ai/openai".into(),
-            model: "openai".into(),
+            base_url: "https://gen.pollinations.ai".into(),
+            model: "llama".into(),
             rpm_limit: 30,
             rpd_limit: 0,
-            requires_api_key: false,
-            notes: "Free, no API key needed — works instantly".into(),
+            requires_api_key: true,
+            notes: "Free to start with a token from enter.pollinations.ai".into(),
         },
         FreeProvider {
             id: "groq".into(),
@@ -96,17 +94,17 @@ pub fn free_provider_catalogue() -> Vec<FreeProvider> {
             id: "openrouter".into(),
             display_name: "OpenRouter".into(),
             base_url: "https://openrouter.ai/api".into(),
-            model: "meta-llama/llama-3.3-70b-instruct:free".into(),
+            model: "openrouter/owl-alpha".into(),
             rpm_limit: 20,
             rpd_limit: 50,
             requires_api_key: true,
-            notes: "Multi-model gateway, free tier available".into(),
+            notes: "Recommended free-model gateway with selectable current models".into(),
         },
         FreeProvider {
             id: "nvidia-nim".into(),
             display_name: "NVIDIA NIM".into(),
             base_url: "https://integrate.api.nvidia.com".into(),
-            model: "meta/llama-3.3-70b-instruct".into(),
+            model: "nvidia/nemotron-3-super-120b-a12b".into(),
             rpm_limit: 40,
             rpd_limit: 0,
             requires_api_key: true,
@@ -116,7 +114,7 @@ pub fn free_provider_catalogue() -> Vec<FreeProvider> {
             id: "gemini".into(),
             display_name: "Google Gemini".into(),
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai".into(),
-            model: "gemini-2.0-flash".into(),
+            model: "gemini-3-flash-preview".into(),
             rpm_limit: 15,
             rpd_limit: 1000,
             requires_api_key: true,

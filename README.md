@@ -40,7 +40,7 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 
 | Human Brain                | AI System                          | RPG Stat             |
 | -------------------------- | ---------------------------------- | -------------------- |
-| Prefrontal Cortex          | Reasoning Engine (LLM + Agents)    | 🧠 Intelligence      |
+| Prefrontal Cortex          | Reasoning Engine (local/free/paid LLM + Agents) | 🧠 Intelligence      |
 | Hippocampus                | Long-term Memory + Memory Hooks    | 📖 Wisdom            |
 | Working Memory Network     | Short-term Memory                  | 🎯 Focus             |
 | Neocortex                  | Retrieval System (RAG / Knowledge) | 📚 Knowledge         |
@@ -51,7 +51,7 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 
 > 🖥️ **Offline / Local LLM models (current):** TerranSoul's hardware-adaptive model recommender selects from **Gemma 4** and **Qwen** families for fully offline, private operation via Ollama — chosen based on your available RAM. This list is kept up to date as better locally-runnable models emerge.
 
-As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
+As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 by connecting a free-tier or local brain provider. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
 
 ### The Skill Tree — Constellation Map
 
@@ -122,7 +122,7 @@ Unlock the right combination of skills and you trigger **combos** — bonus capa
 There are multiple paths to evolve your AI's brain — each with different tradeoffs:
 
 ```
-🧠 Free Brain (Pollinations/Groq)
+🧠 Free Brain (OpenRouter/Gemini/NVIDIA/Pollinations/Groq)
 ├── ⚡ Superior Intellect (Paid API — OpenAI/Anthropic)
 │   ├── 🤖 Agent Summoning (community AI agents)
 │   ├── 🌍 Babel Tongue (real-time translation)
@@ -131,7 +131,7 @@ There are multiple paths to evolve your AI's brain — each with different trade
     └── Full offline operation — no internet needed
 ```
 
-Each path is a quest chain. The free brain auto-configures on first launch (zero setup). From there, you choose: pay for power (Superior Intellect), or invest time in local setup for privacy and offline capability (Inner Sanctum).
+Each path is a quest chain. Browser/Vercel asks you to choose a provider from chat or pet mode first; the provider page opens before any key/token is pasted into TerranSoul. From there, you choose: use a free-tier provider, pay for power (Superior Intellect), or invest time in local setup for privacy and offline capability (Inner Sanctum).
 
 ---
 
@@ -191,17 +191,17 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 > Architectural reference: **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)** covers every component below in depth, including the April 2026 modern-RAG research survey.
 
 **Providers & modes** (`src-tauri/src/brain/`)
-- **4 brain modes:** Free API (Pollinations, Groq), Paid API (OpenAI / Anthropic / Groq / OpenAI-compatible), Local Ollama, Stub fallback
+- **4 brain modes:** Free API (OpenRouter, Gemini, NVIDIA NIM, Pollinations, Groq, Cerebras, and other free-tier providers), Paid API (OpenAI / Anthropic / Gemini / OpenAI-compatible), Local Ollama/LM Studio, Stub fallback
 - Implementations: `OllamaAgent`, `OpenAiClient`, `FreeProvider`, `ProviderRotator`, `StubAgent`
 - Cloud embedding API (`cloud_embeddings.rs`) — unified `embed_for_mode` dispatcher routes to OpenAI-compatible `/v1/embeddings` for paid/free cloud modes, so vector RAG works without local Ollama
 - External CLI agents (Chunk 1.5): multi-agent **roster** + Temporal-style **durable workflow engine** (`src-tauri/src/agents/`, `src-tauri/src/workflows/`)
 - Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM
-- Zero-setup first launch — free brain auto-configures with no API keys
+- Authorize-first provider setup — browser, static-web chat, Marketplace, and the Tauri setup wizard launch provider pages first, with manual key/token entry kept as a secondary direct-call option and selectable free-provider models persisted in `BrainMode::FreeApi.model`
 - Streaming responses (SSE → `llm-chunk` Tauri event, parsed by `StreamTagParser` state machine)
 - Animation channel: `llm-animation` events for `<anim>` JSON blocks emitted by the LLM
 - Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
-- Browser-only Vercel onboarding — one-click "Authorize with Google", "Authorize with ChatGPT", or instant free demo choices remembered in the `brain` Pinia store + localStorage, with no Tauri installer, backend account, manual API-key entry, or user-side installation required
+- Browser-only Vercel onboarding — the landing page shows only a provider button; chat and pet mode open the provider chooser when no backend brain is connected. Current recommendations put OpenRouter first for free model breadth, with Gemini, NVIDIA NIM, ChatGPT/OpenAI, and Pollinations available through provider-page authorization plus an optional manual key/token step. Choices are remembered in the `brain` Pinia store + localStorage, with a visible Reconfigure LLM button and no Tauri installer or backend account required.
 - Browser-native RAG for the static web demo — direct provider chat can inject local `[LONG-TERM MEMORY]` blocks without a TerranSoul backend by using the browser memory adapter documented in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface)
 - Persona-based fallback when no LLM is configured
 - **RemoteHost transport adapter** (`src/transport/`) — shared frontend contract for local in-process Tauri IPC and remote gRPC-Web hosts. Browser/WebView clients use `@bufbuild/connect` + `@bufbuild/connect-web` descriptors for `Brain.Health`, `Brain.Search`, `Brain.StreamSearch`, `PhoneControl.SendChatMessage`, and `PhoneControl.StreamChatMessage`, while desktop keeps using the same interface over local `invoke()` calls. The phone tool layer (`remote-tools.ts`) exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` on top of that same contract, and the iOS notification watcher polls the same adapter for long-running workflow/Copilot updates.
@@ -217,6 +217,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - **HyDE — Hypothetical Document Embeddings** (`memory/hyde.rs` + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command) — LLM writes a plausible 1-3 sentence answer, we embed *that* for retrieval; falls back gracefully to raw-query embedding then to keyword + freshness when the brain is unreachable. Improves recall on cold or abstract queries (Gao et al., 2022 — `docs/brain-advanced-design.md` §19.2 row 4)
 - **Cross-encoder reranker (LLM-as-judge style)** (`memory/reranker.rs` + `OllamaAgent::rerank_score` + `rerank_search_memories` Tauri command) — two-stage retrieval: RRF-fused recall (default `candidates_k=20`, clamped `limit..=50`) → active brain scores each `(query, document)` pair on a 0–10 scale → reorder. Unscored candidates are kept below scored ones (no silent recall loss). Reuses the active brain (no extra model download); interface matches a future BGE/mxbai backend so swapping is one line (`docs/brain-advanced-design.md` §19.2 row 10)
 - **Matryoshka two-stage vector search** (`memory/matryoshka.rs` + `matryoshka_search_memories` Tauri command) — truncate the query embedding to 256 dims for a fast first pass, then re-rank the top survivors at full 768-dim cosine similarity. Pure utility (`truncate_and_normalize` + `two_stage_search`) — no schema change, no migration, no index rebuild. Cuts the brute-force fallback path ~3× per candidate with negligible recall hit; helps cold-start before the ANN index is hot (Kusupati et al., NeurIPS 2022 — `docs/brain-advanced-design.md` §19.2 row 11)
+- **NotebookLM-style source guides** (`commands/ingest.rs`) — every imported document now gets one deterministic `MemoryType::Summary` source-guide row with source label, compact synopsis, headings, key topics, and starter questions. It is embedded beside the original chunks, so broad overview questions can retrieve a ~450-token guide instead of injecting several raw chunks; exact questions still retrieve the original source chunks. No LLM call is required at ingest time.
 - **Self-RAG reflection-token controller** (`orchestrator/self_rag.rs`) — pure decision logic for the Self-RAG iterative-refinement protocol (Asai et al., 2023). Parses `<Retrieve>` / `<Relevant>` / `<Supported>` / `<Useful>` reflection tokens out of LLM responses and runs a 3-iteration state machine that decides whether to retrieve again, accept the answer, or refuse on max-iter / unsupported. Ships with `SELF_RAG_SYSTEM_PROMPT` for prompt injection. Orchestrator-loop integration (re-prompting the LLM with augmented context) is the follow-up Chunk 16.4b — `docs/brain-advanced-design.md` §19.2 row 5
 - **Late chunking ingest integration** (`memory/late_chunking.rs` + `commands/ingest.rs` + `OllamaAgent::embed_tokens`) — opt-in via `AppSettings.late_chunking`. When a local Ollama embedder returns per-token vectors for the whole document, ingestion aligns stored chunks back to token spans, mean-pools each chunk with `pool_chunks(...)`, L2-renormalises the vectors, and writes them through the existing SQLite embedding column. If the model only returns standard pooled embeddings, ingestion falls back to the existing per-chunk embedding path. Implements the Jina AI 2024 late-chunking pattern without schema changes — `docs/brain-advanced-design.md` §19.2 row 9
 - **CRAG retrieval evaluator** (`memory/crag.rs`) — pure classifier for the Corrective RAG protocol (Yan et al., 2024). `build_evaluator_prompts(query, document)` mirrors the reranker shape; `parse_verdict()` extracts `CORRECT` / `AMBIGUOUS` / `INCORRECT` from LLM replies with whole-word token matching (so `"incorrectly"` doesn't false-match `INCORRECT`); `aggregate()` collapses per-document verdicts into a corpus-level `RetrievalQuality` for orchestrator branching. Query-rewrite + web-search fallback is the follow-up Chunk 16.5b — `docs/brain-advanced-design.md` §19.2 row 6
@@ -224,6 +225,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - **Knowledge graph (V6):** typed directional `memory_edges` table with FK cascade + 17-type relationship taxonomy + temporal validity intervals, `extract_edges_via_brain` LLM extractor, `multi_hop_search_memories` traversal, Cytoscape.js visualization
 - **Decay & GC:** exponential decay (`decay_score *= 0.95^(hours/168)`), access-count tracking, periodic garbage collection, a user-configurable in-memory brain memory/RAG cache cap (`AppSettings.max_memory_mb`, default 10 MB), and a persistent storage cap (`AppSettings.max_memory_gb`, default 10 GB) that prunes lowest-utility stored memories after writes and during background maintenance
 - **Multi-source knowledge management:** source-hash change detection, TTL expiry, access-count decay, **LLM-powered conflict resolution**
+- **Obsidian vault export/sync:** vault metadata (`obsidian_path`, `last_exported`) stays on each memory row; bidirectional sync records the actual exported file mtime after writes so a just-exported file is not immediately re-imported on Windows timestamp boundaries.
 - **Cross-device memory sync:** `memory::crdt_sync` computes LWW deltas keyed by `source_hash` or `(content_prefix, created_at)`; Soul Link dispatches `memory_sync` / `memory_sync_request` messages through `link::handlers`, applies inbound deltas, replies with pre-apply local deltas, and records Unix-ms `sync_log` watermarks so paired devices do not replay already-synced memories.
 - **Mobile/remote memory + chat/workflow surface:** `RemoteHost.searchMemories()` and `RemoteHost.streamSearchMemories()` expose the same RRF/HYBRID/HyDE search modes to browser-native gRPC-Web clients, and `RemoteHost.streamChatMessage()` lets iOS `ChatView` consume desktop-hosted chat streams. `[PERSONA]`, `[LONG-TERM MEMORY]`, and `[HANDOFF]` prompt injection stay server-side; the phone receives clean text chunks. Phone prompts such as “what's Copilot doing?” and “continue the next chunk” route through named RemoteHost tools for Copilot-session narration and workflow progress/continue actions. Paired iOS shells also use `mobile-notifications.ts` + `tauri-plugin-notification` for local long-running workflow, ingest-task, and Copilot threshold notifications over the LAN connection.
 - **Sandboxed plugin memory hooks:** `plugins::PluginHost` exposes `memory_hooks` contributions with `pre_store` / `post_store` stages. Plugins can lazily activate via `on_memory_tag`, run inside `WasmRunner`, and return JSON patches that transform content / tags / importance / type before `add_memory` writes to SQLite; post-store hooks are notification/indexing-only.
@@ -274,6 +276,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - `crdt_sync.rs` — cross-device LWW delta engine: `compute_sync_deltas(since_timestamp, local_device_id)`, `apply_sync_deltas(deltas, local_device_id)`, `log_sync(peer, direction, entry_count)`, and `last_sync_time(peer)` use Unix-ms watermarks compatible with memory `updated_at`.
 - `tag_vocabulary.rs` — curated `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`, `category_decay_multiplier()` per-prefix decay rates
 - `auto_tag.rs` — LLM auto-tagger: `auto_tag_content()` dispatches to Ollama/FreeApi/PaidApi; `parse_tag_response()` validates + caps at 4 curated-prefix tags; `merge_tags()` deduplicates with user tags. Opt-in via `AppSettings.auto_tag`
+- `commands/ingest.rs` — document ingestion command: URL/file/crawl fetch, semantic chunking, source-hash staleness detection, deterministic NotebookLM-style source-guide summaries, optional contextual retrieval prefixes, optional late-chunking embeddings, and best-effort embedding backfill.
 - `obsidian_export.rs` — one-way Obsidian vault export: `export_to_vault(vault_dir, entries)` writes `<id>-<slug>.md` per long-tier memory with YAML frontmatter; idempotent (mtime-based skip); `slugify`, `format_iso`, `render_markdown` pure helpers
 - `temporal.rs` — natural-language time-range parser: `parse_time_range(question, now_ms)` resolves "last N days", "since April", "between X and Y", "today", "yesterday" into `TimeRange { start_ms, end_ms }`; pure std calendar math (Howard Hinnant algorithm), no external crate
 - `contextualize.rs` — Contextual Retrieval (Anthropic 2024): `generate_doc_summary()` + `contextualise_chunk(doc_summary, chunk, brain_mode)` + `prepend_context()`; opt-in via `AppSettings.contextual_retrieval`; adds document-level context to each chunk before embedding, reducing failed retrievals by ~49 %
@@ -485,14 +488,16 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 When the same Vue bundle runs in a normal browser, it does not boot the
 full-screen desktop shell by default. `App.vue` detects that Tauri IPC is
-unavailable, auto-configures the free browser-safe brain path, and renders the
+unavailable, prepares the browser-safe provider prompt, and renders the
 landing page with the live TerranSoul model anchored as a small pet preview.
 Desktop and chat modes remain available for testing through a small responsive
 in-page app window; native-only actions gracefully no-op or show browser
-fallbacks. Browser chat only talks directly to browser-safe free/paid cloud
-providers; desktop-local Ollama, LM Studio, and Rust-backed memory require an
+fallbacks. Browser chat asks for OpenRouter, Gemini, NVIDIA, ChatGPT/OpenAI, or
+Pollinations with a user-owned key/token and selected model, then talks directly to browser-safe
+free/paid cloud providers;
+desktop-local Ollama, LM Studio, and Rust-backed memory require an
 explicit RemoteHost pairing path. The landing surface has focused regression
-coverage for content anchors, forced pet-preview wiring, and browser-window
+coverage for content anchors, live pet companion wiring, and browser-window
 launch events.
 
 ---

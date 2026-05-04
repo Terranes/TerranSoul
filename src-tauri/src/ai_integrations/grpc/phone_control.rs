@@ -360,10 +360,15 @@ async fn build_phone_chat_request(
         Some(BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         }) => {
             let provider = crate::brain::get_free_provider(provider_id)
                 .ok_or_else(|| format!("unknown free provider: {provider_id}"))?;
-            Some((provider.base_url, provider.model, api_key.clone()))
+            Some((
+                provider.base_url,
+                model.clone().unwrap_or(provider.model),
+                api_key.clone(),
+            ))
         }
         Some(BrainMode::PaidApi {
             base_url,
@@ -559,6 +564,7 @@ mod tests {
         let free = BrainMode::FreeApi {
             provider_id: "groq".into(),
             api_key: None,
+            model: None,
         };
         assert_eq!(brain_mode_label(&free), "free_api");
 

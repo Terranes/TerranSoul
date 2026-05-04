@@ -158,6 +158,10 @@ export const useRemoteConversationStore = defineStore('remote-conversation', () 
     messages.value.push(stampAgent({ ...message }));
   }
 
+  async function rateCharismaTurn(_messageId: string, _rating: number): Promise<boolean> {
+    return false;
+  }
+
   function pushProviderWarning(): void {
     addAssistantMessage(
       'Remote provider warning: the desktop host is rotating providers or waiting for a configured brain.',
@@ -247,6 +251,7 @@ export const useRemoteConversationStore = defineStore('remote-conversation', () 
     generationActive,
     setAgent,
     sendMessage,
+    rateCharismaTurn,
     getConversation,
     addMessage,
     pushProviderWarning,

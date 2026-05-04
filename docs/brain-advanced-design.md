@@ -124,8 +124,8 @@
 │  │  │  External LLM Providers          │                              │   │
 │  │  │                                   │                              │   │
 │  │  │  • Ollama (localhost:11434)       │                              │   │
-│  │  │  • Pollinations (free API)       │                              │   │
-│  │  │  • OpenAI / Anthropic / Groq     │                              │   │
+│  │  │  • OpenRouter / Gemini / NVIDIA  │                              │   │
+│  │  │  • Pollinations / OpenAI / Groq  │                              │   │
 │  │  └───────────────────────────────────┘                              │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -136,20 +136,25 @@
 The Vue bundle also supports a browser-only mode for the public TerranSoul
 landing page and live model testing on Vercel. This web surface is not a Tauri
 release package or installer flow: when `App.vue` cannot reach Tauri IPC, it
-routes to a static product landing page, auto-configures the free cloud brain
-path, and keeps the real Three.js/VRM character mounted as a forced pet-mode
-preview. Opening "3D" or "Chat" from the landing page creates a compact
+routes to a static product landing page, keeps provider setup behind a single
+button/modal, and keeps the real Three.js/VRM character mounted as a forced
+pet-mode preview. Opening "3D" or "Chat" from the landing page creates a compact
 responsive in-page app window with dialog semantics and mobile-safe sizing; it
 uses the same Pinia stores as desktop, but native-only commands fall back to
 browser-native storage and direct provider calls unless a remote host is paired.
 
 Browser mode therefore exercises the real frontend brain contract without
-claiming local desktop capabilities: Free API chat can run directly in the web
-client, the Vercel onboarding presents one-click "Authorize with Google",
-"Authorize with ChatGPT", and instant free demo buttons for non-technical users,
-and the selected web test session is remembered in the `brain` Pinia store plus
-localStorage without manual API-key input. Local/remote brain paths still require
-an explicit paired TerranSoul host. The browser transport resolver rejects local
+claiming local desktop capabilities: Free/Paid API chat can run directly in the
+web client after chat or pet mode opens the provider chooser. Current research
+puts OpenRouter first for static-web free model breadth, followed by Gemini AI
+Studio, NVIDIA NIM free serverless development APIs, and Pollinations tokens
+from `enter.pollinations.ai`; ChatGPT/OpenAI remains available as a paid API
+path. Every provider card launches the provider page first. Manual key/token
+entry is present only as the secondary direct-call option required by a
+backendless static deployment. The selected web test session is remembered in
+the `brain` Pinia store plus localStorage, and ChatView exposes a Reconfigure LLM
+button so Vercel users do not have to leave the conversation to switch providers.
+Local/remote brain paths still require an explicit paired TerranSoul host. The browser transport resolver rejects local
 Ollama/LM Studio as direct browser transports so the UI never implies Rust-backed
 memory or localhost LLM access is available without RemoteHost pairing.
 
@@ -662,6 +667,7 @@ final_score =
 > - **Cross-encoder rerank** (Chunk 1.10) — LLM-as-judge scores (query, doc) pairs 0–10
 > - **Relevance threshold** (Chunk 16.1) — only entries above a configurable score are injected
 > - **Semantic chunking** (Chunk 16.11) — `text-splitter` crate replaces naive word-count splitter
+> - **NotebookLM-style source guides** (Chunk 30.1) — one compact `summary` row per source lets broad document questions retrieve a source guide before raw chunks
 > - **Contextual Retrieval** (Chunk 16.2) — Anthropic 2024 approach prepends doc context to chunks
 > - **Contradiction resolution** (Chunk 17.2) — LLM-powered conflict detection + soft-closure
 > - **Temporal reasoning** (Chunk 17.3) — natural-language time-range queries
@@ -1301,6 +1307,11 @@ for LWW sync deltas. SQLite remains canonical, but `StorageBackend` implementors
 must keep those `MemoryEntry` fields populated or explicitly `NULL` so
 all-feature Rust validation covers the same shape.
 
+For bidirectional Obsidian sync, `last_exported` is recorded from the written
+file's actual mtime after export, not only the pre-write wall clock timestamp.
+That prevents Windows filesystems from treating a freshly exported note as an
+external edit during the immediately following sync cycle.
+
 CREATE INDEX idx_memories_importance ON memories(importance DESC);
 CREATE INDEX idx_memories_created    ON memories(created_at DESC);
 CREATE INDEX idx_memories_tier       ON memories(tier);
@@ -1444,10 +1455,10 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 │  │  ┌───────────┐  ┌───────────┐  ┌────────────────────────┐  │   │
 │  │  │ free_api  │  │ paid_api  │  │ local_ollama           │  │   │
 │  │  │           │  │           │  │                        │  │   │
-│  │  │ Pollina-  │  │ OpenAI    │  │ Ollama server          │  │   │
-│  │  │ tions AI  │  │ Anthropic │  │ localhost:11434         │  │   │
-│  │  │           │  │ Groq      │  │                        │  │   │
-│  │  │ No key    │  │ User key  │  │ Full privacy           │  │   │
+│  │  │ OpenRouter│  │ OpenAI    │  │ Ollama server          │  │   │
+│  │  │ Gemini    │  │ Anthropic │  │ localhost:11434         │  │   │
+│  │  │ NVIDIA/Pol│  │ Groq      │  │                        │  │   │
+│  │  │ User key  │  │ User key  │  │ Full privacy           │  │   │
 │  │  │ No embed  │  │ No embed  │  │ Local embed            │  │   │
 │  │  │           │  │           │  │ nomic-embed-text       │  │   │
 │  │  └─────┬─────┘  └─────┬─────┘  └───────────┬────────────┘  │   │
@@ -1479,13 +1490,15 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 │  └──────────────┴──────────┴──────────┴──────────────────────┘     │
 │                                                                     │
 │  * Free API vector: depends on provider (Mistral/GitHub Models     │
-│    yes via cloud_embeddings; Pollinations/Groq no). Chunk 16.9.    │
+│    yes via cloud_embeddings; Pollinations/Groq/OpenRouter no).     │
 │  ** Paid API: OpenAI-compatible /v1/embeddings via Chunk 16.9.     │
 │                                                                     │
 │  Model selection:                                                   │
 │  • model_recommender.rs — RAM-based catalogue                      │
 │  • Auto-selects best model for available hardware                   │
 │  • Catalogue includes: Gemma 4, Phi-4, Qwen 3, Kimi K2.6 (cloud) │
+│  • Free API setup stores user-selected chat model in                │
+│    BrainMode::FreeApi.model for OpenRouter/NVIDIA/Pollinations      │
 │  • ProviderRotator — cycles through free providers on failure      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -1659,10 +1672,16 @@ Wednesday (rule amended):
   → Detected: source_hash mismatch for source_url
   → Action:
     1. DELETE old memory (id=42)
-    2. INSERT new content with new hash
-    3. Auto-embed the new content
+    2. INSERT a compact source-guide summary plus new source chunks with new hash
+    3. Auto-embed the source guide and chunks
     4. Log: "Updated: Court Rule 14.3 — content changed"
 ```
+
+  ### 1a. Source Guides For Token Economy
+
+  Chunk 30.1 adds a deterministic, NotebookLM-style source guide during ingestion. After semantic chunking succeeds, `run_ingest_task` stores one extra `MemoryType::Summary` row tagged `source-guide,document-summary,source:<slug>` with the source label, approximate length, compact synopsis, heading list, key terms, and starter questions. The source guide uses the same `source_url` / `source_hash` as the original chunks and is embedded in the same best-effort backfill pass.
+
+  The goal is prompt cost control: broad questions like "summarize this source", "what are the main topics?", or "what should I ask about this document?" can retrieve the compact guide instead of several full chunks. Detail-seeking questions still retrieve original chunks, so grounding and quote-level answers remain possible. The guide is generated with deterministic text processing, not an LLM call, so ingestion does not spend paid/free provider tokens just to make the document readable.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -1786,7 +1805,7 @@ view rather than per-project deep-dives.
 |---|---|---|---|---|---|---|
 | Primary purpose | Personal AI companion w/ 3D avatar + RAG memory | General-purpose LLM/RAG framework (lib + LCEL) | Multi-agent task orchestration with persistent memory | Enterprise deep-document RAG | Local-first block-based note-taking + RAG plugin | Repo-aware code-RAG for GitHub exploration |
 | Distribution | Single Tauri binary (Win/macOS/Linux/iOS/Android) | Python / JS package | Python framework | Docker Compose stack (server) | Electron desktop + optional self-host server | Hosted service / CLI |
-| Storage backend | Embedded SQLite + BLOB embeddings | Bring-your-own (FAISS, Chroma, pgvector, …) | Bring-your-own vector DB | Elasticsearch + MinIO + MySQL + Redis | Local filesystem (Markdown/JSON blocks) + optional vector index | Repo-scoped index (cloud-hosted) |
+| Storage backend | Embedded SQLite + BLOB embeddings | Bring-your-own (FAISS, Chroma, Qdrant, …) | Bring-your-own vector DB | Elasticsearch + MinIO + MySQL + Redis | Local filesystem (Markdown/JSON blocks) + optional vector index | Repo-scoped index (cloud-hosted) |
 | Embedding model | Ollama `nomic-embed-text` (local, default) | Any provider (OpenAI/HF/Ollama/…) | Any provider | Built-in + pluggable | Pluggable (BGE / OpenAI / local) | Provider-managed |
 | Retrieval strategy | Hybrid: cosine ANN + keyword + tag/recency boost | Composable (vector / BM25 / hybrid / multi-query / reranker) | Memory hierarchy + agent-tool retrieval | Layout-aware chunking + reranking + citation | Tag/link graph + vector search inside notebooks | Code-symbol-aware retrieval over repo graph |
 | Knowledge graph | Typed entity-relationship graph (V5: directional `memory_edges`, multi-hop traversal) | LangGraph (separate package) | First-class graph memory | Document → chunk → citation graph | Bidirectional block links + tag graph (native) | AST + import/call graph over repo |
@@ -2112,12 +2131,17 @@ The current pure-cosine approach is intentionally simple and works for the vast 
 │  │     (`memory::chunking`, `text-splitter` crate, semantic         │
 │  │      Markdown/text splitting, dedup, heading metadata)           │
 │  │     — Chunk 16.11                                                │
+│  ├── ✓ Source-guide summaries for imported documents                │
+│  │     (`commands::ingest`, deterministic NotebookLM-style guide    │
+│  │      row tagged `source-guide` and embedded beside chunks)        │
+│  │     — Chunk 30.1                                                 │
 │  │  ├── ✓ Relevance threshold (skip injection if score < 0.3,         │
 │  │  │     user-tunable via `AppSettings.relevance_threshold`,         │
 │  │  │     `MemoryStore::hybrid_search_with_threshold`) — Chunk 16.1   │
 │  ├── ✓ One-way Obsidian vault export (`export_to_obsidian` command,  │
 │  │     `memory::obsidian_export`) — Chunk 18.5                      │
-│  ├── ○ Bidirectional Obsidian sync (extends 18.5)                  │
+│  ├── ✓ Bidirectional Obsidian sync (`memory::obsidian_sync`,         │
+│  │     actual file-mtime `last_exported` after writes)              │
 │  └── ✓ Memory versioning (`memory::versioning`, V8 schema,         │
 │        `memory_versions` table, `get_memory_history` command)       │
 │        — Chunk 16.12                                                │
@@ -2297,6 +2321,7 @@ Quick reference for all diagrams in this document:
 | 1 | **Hybrid dense + sparse retrieval** (BM25 + vector, established) | Combine lexical and semantic signals | ✅ | §4 — 6-signal hybrid scoring |
 | 2 | **Reciprocal Rank Fusion (RRF)** (Cormack 2009, ubiquitous in 2024+ stacks) | Rank-based fusion `Σ 1/(k + rank_i)` across multiple retrievers, robust to score-scale mismatch | ✅ | `src-tauri/src/memory/fusion.rs` (utility + tests). Wired into `hybrid_search_rrf` (`memory/store.rs`) — fuses vector + keyword + freshness rankings with `k = 60`; exposed as `hybrid_search_memories_rrf` Tauri command. |
 | 3 | **Contextual Retrieval** ([Anthropic, Sep 2024](https://www.anthropic.com/news/contextual-retrieval)) | LLM prepends a 50–100 token chunk-specific context to each chunk *before* embedding, reduces failed retrievals by ~49 % | ✅ | `src-tauri/src/memory/contextualize.rs` — `contextualise_chunk(doc_summary, chunk, brain_mode)` + `generate_doc_summary()`. Opt-in via `AppSettings.contextual_retrieval`. Integrated into `run_ingest_task`. Chunk 16.2. |
+| 3a | **NotebookLM-style source guides** (Google NotebookLM public product pattern, 2023+) | Source-grounded notebooks create a compact source summary / guide first, then answer from selected source evidence with citations; TerranSoul adapts the token-saving part locally | ✅ | `src-tauri/src/commands/ingest.rs` builds a deterministic `MemoryType::Summary` source-guide row after chunking, tags it `source-guide,document-summary,source:<slug>`, and embeds it beside chunks. Broad document questions retrieve the guide before raw chunks, saving provider prompt tokens without an ingest-time LLM call. Chunk 30.1. |
 | 4 | **HyDE — Hypothetical Document Embeddings** (Gao et al., 2022; mainstream 2024) | LLM generates a hypothetical answer; we embed *that* and search, much better recall on cold/abstract queries | ✅ | `src-tauri/src/memory/hyde.rs` (prompt + reply cleaner, 10 unit tests) + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command. Falls back to embedding the raw query if the brain is unreachable. |
 | 5 | **Self-RAG** (Asai et al., 2023) | LLM emits reflection tokens (`Retrieve` / `Relevant` / `Supported` / `Useful`), iteratively decides when to retrieve and self-grades output | � | `src-tauri/src/orchestrator/self_rag.rs` ships the **pure controller** — reflection-token parser + 3-iteration decision SM (Chunk 16.4a). Orchestrator-loop integration that re-prompts the LLM until `Decision::Accept` is the follow-up Chunk 16.4b. |
 | 6 | **Corrective RAG (CRAG)** (Yan et al., 2024) | Lightweight retrieval evaluator classifies hits as Correct / Ambiguous / Incorrect, triggers web search or rewrite on the latter two | � | `src-tauri/src/memory/crag.rs` ships the **pure evaluator** — `build_evaluator_prompts` + `parse_verdict` + `aggregate` over CORRECT/AMBIGUOUS/INCORRECT (Chunk 16.5a). Query-rewrite + web-search fallback is the follow-up Chunk 16.5b. |
@@ -2311,7 +2336,7 @@ Quick reference for all diagrams in this document:
 | 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
 | 16 | **Long-context vs RAG ("just stuff 1M tokens")** | Use 200K–2M token windows instead of retrieval | ⚪ | Rejected for personal companion: cost-prohibitive on local hardware, attention blind spots, privacy. RAG remains primary; long-context is a per-call tactical choice. |
 | 17 | **ColBERT / late-interaction retrieval** (Khattab & Zaharia, 2020; ColBERTv2, 2022) | Token-level multi-vector retrieval with MaxSim, very high recall but storage-heavy | ⚪ | Rejected for desktop: ~10× embedding storage. Cross-encoder reranker (item 10) gives most of the quality at far lower cost. |
-| 18 | **External vector DB (Qdrant, Weaviate, Milvus, pgvector)** | Dedicated vector database service | ⚪ | Rejected by design: TerranSoul ships as a single Tauri binary (§13 "Why TerranSoul Doesn't Use an External RAG Framework"). SQLite + optional ANN index (Phase 4) keeps the offline-first promise. |
+| 18 | **External vector DB (Qdrant, Weaviate, Milvus)** | Dedicated vector database service | ⚪ | Rejected by design: TerranSoul ships as a single Tauri binary (§13 "Why TerranSoul Doesn't Use an External RAG Framework"). SQLite + optional ANN index (Phase 4) keeps the offline-first promise. |
 
 ### 19.3 Implementation already shipped from this survey
 
@@ -2398,23 +2423,24 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 
 | # | Selection point | Decided by | Algorithm / signal | Source of truth | Fallback chain |
 |---|---|---|---|---|---|
-| 1 | **Brain mode** (Free / Paid / Local / Stub) | User (setup wizard, mode switcher, chat intent) | Persisted `BrainMode` enum | `brain/brain_config.rs::load_brain_mode` | `BrainMode::default()` → Free API (Groq) → Pollinations |
-| 2 | **Free provider** (Groq, Pollinations, …) | Pure code | `ProviderRotator::next_healthy_provider` — fastest healthy non-rate-limited | `brain/provider_rotator.rs:161` | Configured provider → next in `sorted_ids` → Stub |
-| 3 | **Paid model & endpoint** | User (paid setup) | Persisted in `BrainMode::PaidApi { model, base_url }` | `brain/brain_config.rs` | None — paid mode requires explicit config |
-| 4 | **Local Ollama chat model** | User (model picker, hardware-adaptive recommender) | `model_recommender::recommend_for_ram(ram_mb)` | `brain/model_recommender.rs` | Default `gemma3:4b` |
-| 5 | **Local Ollama embedding model** | Pure code with cache | `OllamaAgent::resolve_embed_model` — try `nomic-embed-text`, else fall back to active chat model; cache result for 60s; mark unsupported permanently | `brain/ollama_agent.rs` | `nomic-embed-text` → chat model → skip vector signal entirely |
-| 6 | **Memory tier to write into** | User explicit + auto-promotion | `MemoryStore::add_memory(tier=Working/Long)`, `promote()` triggered by importance ≥ 4 | `memory/store.rs` | New entries default to Working |
-| 7 | **Memory tier to search** | Pure code | `hybrid_search` scans **all tiers**, applies `tier_priority` weight (working 1.0 → long 0.5 → short 0.3) | `memory/store.rs:574` | All tiers always considered |
-| 8 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command / phone-control stream) | Frontend calls `hybrid_search_memories` for explicit search; chat streams call hybrid retrieval for RAG injection | `commands/memory.rs` + `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | `hybrid_search` → degrades to keyword if embedding fails |
-| 9 | **Top-k for RAG injection** | Pure code + user threshold | Top 5 after hybrid scoring, filtered by `AppSettings.relevance_threshold` | `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | Empty block when nothing clears threshold |
-| 10 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
-| 11 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
-| 12 | **Cognitive kind** (episodic / semantic / procedural) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` | Defaults to `Semantic` |
-| 13 | **Knowledge-graph edge relation type** | **LLM** + normaliser | `extract_edges_via_brain` prompts LLM with the 17-type taxonomy; `edges::normalise_rel_type` snaps free-form types to canonical | `memory/edges.rs` | Free-form edges allowed (preserved as-is) |
-| 14 | **Storage backend** | User (compile-time + config) | Cargo features `postgres` / `mssql` / `cassandra`; runtime `StorageConfig` selects which `StorageBackend` impl is bound | `memory/backend.rs` + `lib.rs` startup | SQLite (always available, default) |
-| 15 | **Agent dispatch** | Caller / orchestrator | `AgentOrchestrator::dispatch(agent_id, msg)`; `agent_id="auto"` → `default_agent_id` ("stub") | `orchestrator/agent_orchestrator.rs:34` | Stub agent when no others registered |
-| 16 | **Cross-device command permission** | Permission store + user prompt | `PermissionStore::check(origin_device)` → Allowed / Denied / Ask | `routing/router.rs:36` + `routing/permission.rs` | First-time → Ask |
-| 17 | **Streaming timeout** | Pure code (constant) | 60s overall stream timeout, 30s fallback timeout | `commands/streaming.rs` | Emit completion sentinel and surface error |
+| 1 | **Brain mode** (Free / Paid / Local / Stub) | User (setup wizard, mode switcher, chat intent, browser provider modal) | Persisted `BrainMode` enum | `brain/brain_config.rs::load_brain_mode` | Browser prompt → configured provider → Stub/persona fallback |
+| 2 | **Free provider** (OpenRouter, Gemini, NVIDIA, Pollinations, Groq, …) | User first, pure code for health/rotation | `ProviderRotator::next_healthy_provider` — fastest healthy non-rate-limited | `brain/provider_rotator.rs:161` + `src/stores/brain.ts` browser provider catalogue | Configured provider → next in `sorted_ids` with available key → Stub |
+| 3 | **Free provider chat model** | User (browser provider modal, Marketplace free panel, Tauri setup wizard) | Optional `BrainMode::FreeApi { model }`, applied only when the configured provider is used | `brain/brain_config.rs` + `src/stores/brain.ts` model catalogues | Provider catalogue default model |
+| 4 | **Paid model & endpoint** | User (paid setup) | Persisted in `BrainMode::PaidApi { model, base_url }` | `brain/brain_config.rs` | None — paid mode requires explicit config |
+| 5 | **Local Ollama chat model** | User (model picker, hardware-adaptive recommender) | `model_recommender::recommend_for_ram(ram_mb)` | `brain/model_recommender.rs` | Default `gemma3:4b` |
+| 6 | **Local Ollama embedding model** | Pure code with cache | `OllamaAgent::resolve_embed_model` — try `nomic-embed-text`, else fall back to active chat model; cache result for 60s; mark unsupported permanently | `brain/ollama_agent.rs` | `nomic-embed-text` → chat model → skip vector signal entirely |
+| 7 | **Memory tier to write into** | User explicit + auto-promotion | `MemoryStore::add_memory(tier=Working/Long)`, `promote()` triggered by importance ≥ 4 | `memory/store.rs` | New entries default to Working |
+| 8 | **Memory tier to search** | Pure code | `hybrid_search` scans **all tiers**, applies `tier_priority` weight (working 1.0 → long 0.5 → short 0.3) | `memory/store.rs:574` | All tiers always considered |
+| 9 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command / phone-control stream) | Frontend calls `hybrid_search_memories` for explicit search; chat streams call hybrid retrieval for RAG injection | `commands/memory.rs` + `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | `hybrid_search` → degrades to keyword if embedding fails |
+| 10 | **Top-k for RAG injection** | Pure code + user threshold | Top 5 after hybrid scoring, filtered by `AppSettings.relevance_threshold` | `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | Empty block when nothing clears threshold |
+| 11 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
+| 12 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
+| 13 | **Cognitive kind** (episodic / semantic / procedural) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` | Defaults to `Semantic` |
+| 14 | **Knowledge-graph edge relation type** | **LLM** + normaliser | `extract_edges_via_brain` prompts LLM with the 17-type taxonomy; `edges::normalise_rel_type` snaps free-form types to canonical | `memory/edges.rs` | Free-form edges allowed (preserved as-is) |
+| 15 | **Storage backend** | User (compile-time + config) | Cargo features `postgres` / `mssql` / `cassandra`; runtime `StorageConfig` selects which `StorageBackend` impl is bound | `memory/backend.rs` + `lib.rs` startup | SQLite (always available, default) |
+| 16 | **Agent dispatch** | Caller / orchestrator | `AgentOrchestrator::dispatch(agent_id, msg)`; `agent_id="auto"` → `default_agent_id` ("stub") | `orchestrator/agent_orchestrator.rs:34` | Stub agent when no others registered |
+| 17 | **Cross-device command permission** | Permission store + user prompt | `PermissionStore::check(origin_device)` → Allowed / Denied / Ask | `routing/router.rs:36` + `routing/permission.rs` | First-time → Ask |
+| 18 | **Streaming timeout** | Pure code (constant) | 60s overall stream timeout, 30s fallback timeout | `commands/streaming.rs` | Emit completion sentinel and surface error |
 
 ### 20.3 Worked example — what happens on one chat turn
 
@@ -2448,8 +2474,8 @@ The Brain hub view (`src/views/BrainView.vue`) renders an **Active Selection** p
 
 ```
 ┌─ Active brain selection ───────────────────────────────────────┐
-│  Provider     :  Free API → Groq (auto-rotated, healthy)       │
-│  Chat model   :  llama-3.3-70b-versatile                       │
+│  Provider     :  Free API → OpenRouter (user-authorized)       │
+│  Chat model   :  openrouter/owl-alpha                          │
 │  Embedding    :  ✗ unavailable (cloud mode — vector RAG off)   │
 │  Memory       :  3 tiers active · 1,247 long · 18 working      │
 │  Search       :  Hybrid 6-signal · top-5 injection · no threshold │
@@ -2943,7 +2969,7 @@ The classifier asks the LLM to reply with **exactly one** of:
 Any malformed reply, unknown `kind`, or unknown `setup` value is
 mapped to `IntentDecision::Unknown` and the frontend triggers the
 install-all fallback. The system prompt is ~150 tokens so the call is
-cheap on free providers (Pollinations / Groq).
+cheap on free-tier providers (OpenRouter / Gemini / Pollinations / Groq).
 
 ### 25.3 Provider rotation & timeouts
 

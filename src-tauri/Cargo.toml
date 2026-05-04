@@ -70,6 +70,7 @@ scylla = { version = "0.14", optional = true }
 # BLOCKED BY UPSTREAM.
 # ────────────────────────────────────────────────────────────────────────────────────────────
 usearch = "2"
+serde_yaml = "0.9"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }
 tonic-prost = "0.14.5"
 prost = "0.14.3"

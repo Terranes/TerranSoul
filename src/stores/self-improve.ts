@@ -46,6 +46,29 @@ export interface SelfImproveChunk {
   status: 'queued' | 'ready' | 'blocked';
 }
 
+export interface GitHubDeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
+export type GitHubDevicePollResult =
+  | { status: 'pending' }
+  | { status: 'success'; access_token: string; token_type: string; scope: string }
+  | { status: 'expired' }
+  | { status: 'denied' }
+  | { status: 'error'; message: string };
+
+interface SelfImproveProgressEvent {
+  phase: string;
+  message: string;
+  progress: number;
+  chunk_id: string | null;
+  level: SelfImproveActivity['level'];
+}
+
 /**
  * Phase 25 — Self-Improve foundation store.
  *
@@ -110,6 +133,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
   /** Most-recent persisted run records (newest first). */
   const runs = ref<SelfImproveRun[]>([]);
   let unlistenProgress: UnlistenFn | null = null;
+  let progressTranscriptQueue: Promise<void> = Promise.resolve();
 
   /**
    * Static roadmap, mirrored from `rules/milestones.md` Phase 25.
@@ -127,7 +151,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     {
       id: 'coding-llm',
       title: 'Configure dedicated coding LLM',
-      description: 'Pick Claude / OpenAI / DeepSeek and validate API key reachability.',
+      description: 'Pick Local Ollama, Claude, OpenAI, or a custom endpoint and validate reachability.',
       status: 'not-started',
     },
     {
@@ -400,19 +424,14 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
       unlistenProgress = null;
     }
     try {
-      unlistenProgress = await listen<{
-        phase: string;
-        message: string;
-        progress: number;
-        chunk_id: string | null;
-        level: 'info' | 'success' | 'warn' | 'error';
-      }>('self-improve-progress', (evt) => {
+      unlistenProgress = await listen<SelfImproveProgressEvent>('self-improve-progress', (evt) => {
         const p = evt.payload;
         activePhase.value = p.phase;
         if (typeof p.progress === 'number') livePercent.value = p.progress;
         liveMessage.value = p.message;
         const decorated = p.chunk_id ? `[${p.chunk_id}] ${p.message}` : p.message;
         logActivity(p.level ?? 'info', decorated);
+        queueProgressTranscriptAppend(p);
         // Mirror the engine's terminal phases into running flag.
         if (p.phase === 'stopped' || p.phase === 'exit') running.value = false;
         if (p.phase === 'startup') running.value = true;
@@ -589,6 +608,8 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     unresolved_conflicts: string[];
     message: string;
   } | null>(null);
+  const githubDeviceCode = ref<GitHubDeviceCodeResponse | null>(null);
+  const githubDevicePollResult = ref<GitHubDevicePollResult | null>(null);
 
   async function loadGithubConfig(): Promise<void> {
     try {
@@ -647,6 +668,236 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     }
   }
 
+  async function requestGitHubDeviceCode(scopes = 'repo'): Promise<GitHubDeviceCodeResponse> {
+    lastError.value = null;
+    githubDevicePollResult.value = null;
+    try {
+      const response = await invoke<GitHubDeviceCodeResponse>('github_request_device_code', {
+        scopes,
+      });
+      githubDeviceCode.value = response;
+      logActivity('info', 'GitHub device authorization started');
+      return response;
+    } catch (e) {
+      lastError.value = String(e);
+      logActivity('error', `GitHub authorization failed to start: ${String(e)}`);
+      throw e;
+    }
+  }
+
+  async function pollGitHubDeviceToken(deviceCode?: string): Promise<GitHubDevicePollResult> {
+    const code = deviceCode ?? githubDeviceCode.value?.device_code ?? '';
+    if (!code) {
+      const message = 'No GitHub device code is active.';
+      lastError.value = message;
+      githubDevicePollResult.value = { status: 'error', message };
+      return githubDevicePollResult.value;
+    }
+
+    try {
+      const result = await invoke<GitHubDevicePollResult>('github_poll_device_token', {
+        deviceCode: code,
+      });
+      githubDevicePollResult.value = result;
+      if (result.status === 'success') {
+        githubConfig.value = {
+          token: result.access_token,
+          owner: githubConfig.value?.owner ?? '',
+          repo: githubConfig.value?.repo ?? '',
+          default_base: githubConfig.value?.default_base ?? 'main',
+          reviewers: githubConfig.value?.reviewers ?? [],
+        };
+        githubDeviceCode.value = null;
+        logActivity('success', 'GitHub authorization saved');
+      } else if (result.status === 'expired' || result.status === 'denied') {
+        logActivity('warn', `GitHub authorization ${result.status}`);
+      } else if (result.status === 'error') {
+        logActivity('error', `GitHub authorization error: ${result.message}`);
+      }
+      return result;
+    } catch (e) {
+      lastError.value = String(e);
+      githubDevicePollResult.value = { status: 'error', message: String(e) };
+      logActivity('error', `GitHub token polling failed: ${String(e)}`);
+      throw e;
+    }
+  }
+
+  // ── Session management (Chunk 30.2) ──────────────────────────────────────
+  // Self-improve coding sessions, modelled on Claude Code's --resume /
+  // --fork-session and claw-code's per-project sessions sidebar.
+
+  /** Backend serialisation of one transcript message. */
+  interface CodingChatMessage {
+    role: string;
+    content: string;
+    ts_ms: number;
+    kind?: string;
+  }
+
+  /** Session sidebar entry returned by the backend. */
+  interface CodingSessionEntry {
+    session_id: string;
+    chunk_id: string;
+    last_action: string;
+    created_at: number;
+    modified_at: number;
+    bytes: number;
+    chat: {
+      message_count: number;
+      last_user_preview: string;
+      modified_at: number;
+    };
+  }
+
+  const sessions = ref<CodingSessionEntry[]>([]);
+  const activeSessionId = ref<string | null>(null);
+  const activeChat = ref<CodingChatMessage[]>([]);
+  const sessionsLoading = ref(false);
+
+  function ensureProgressTranscriptSession(): { sessionId: string; created: boolean } {
+    if (activeSessionId.value) {
+      return { sessionId: activeSessionId.value, created: false };
+    }
+
+    const stamp = new Date()
+      .toISOString()
+      .replace(/\.\d{3}Z$/, '')
+      .replace(/[-:]/g, '')
+      .replace('T', '-');
+    const sessionId = `self-improve-${stamp}`;
+    activeSessionId.value = sessionId;
+    activeChat.value = [];
+    return { sessionId, created: true };
+  }
+
+  function formatProgressTranscriptMessage(event: SelfImproveProgressEvent): string {
+    const chunk = event.chunk_id ? `[${event.chunk_id}] ` : '';
+    const phase = event.phase || 'progress';
+    const progress = Number.isFinite(event.progress)
+      ? ` ${Math.round(Math.max(0, Math.min(100, event.progress)))}%`
+      : '';
+    const level = event.level && event.level !== 'info' ? ` ${event.level}` : '';
+    return `${chunk}${phase}${progress}${level}: ${event.message}`.trim();
+  }
+
+  function shouldRefreshSessionsAfterProgress(
+    event: SelfImproveProgressEvent,
+    createdSession: boolean,
+  ): boolean {
+    return (
+      createdSession ||
+      event.level === 'error' ||
+      event.phase === 'complete' ||
+      event.phase === 'stopped' ||
+      event.phase === 'exit'
+    );
+  }
+
+  function queueProgressTranscriptAppend(event: SelfImproveProgressEvent): void {
+    const { sessionId, created } = ensureProgressTranscriptSession();
+    const content = formatProgressTranscriptMessage(event);
+    progressTranscriptQueue = progressTranscriptQueue
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          await appendSessionMessage(sessionId, 'system', content, 'run');
+          if (shouldRefreshSessionsAfterProgress(event, created)) {
+            await loadSessions();
+          }
+        } catch (e) {
+          lastError.value = String(e);
+          console.warn('[self-improve] transcript append failed:', e);
+        }
+      });
+  }
+
+  async function loadSessions(): Promise<void> {
+    sessionsLoading.value = true;
+    try {
+      const result = await invoke<CodingSessionEntry[] | null>('coding_session_list');
+      sessions.value = Array.isArray(result) ? result : [];
+    } catch (e) {
+      lastError.value = String(e);
+      logActivity('error', `Load sessions failed: ${String(e)}`);
+    } finally {
+      sessionsLoading.value = false;
+    }
+  }
+
+  async function loadSessionChat(sessionId: string, limit?: number): Promise<void> {
+    try {
+      const result = await invoke<CodingChatMessage[] | null>('coding_session_load_chat', {
+        sessionId,
+        limit: limit ?? null,
+      });
+      activeChat.value = Array.isArray(result) ? result : [];
+      activeSessionId.value = sessionId;
+    } catch (e) {
+      lastError.value = String(e);
+      logActivity('error', `Load chat failed: ${String(e)}`);
+      throw e;
+    }
+  }
+
+  async function appendSessionMessage(
+    sessionId: string,
+    role: 'user' | 'assistant' | 'system',
+    content: string,
+    kind = '',
+  ): Promise<void> {
+    const message: CodingChatMessage = {
+      role,
+      content,
+      ts_ms: Date.now(),
+      kind,
+    };
+    await invoke('coding_session_append_message', { sessionId, message });
+    if (sessionId === activeSessionId.value) {
+      activeChat.value.push(message);
+    }
+  }
+
+  async function clearSessionChat(sessionId: string): Promise<boolean> {
+    const cleared = await invoke<boolean>('coding_session_clear_chat', { sessionId });
+    if (sessionId === activeSessionId.value) {
+      activeChat.value = [];
+    }
+    await loadSessions();
+    return cleared;
+  }
+
+  async function renameSession(sessionId: string, newSessionId: string): Promise<number> {
+    const moved = await invoke<number>('coding_session_rename', {
+      sessionId,
+      newSessionId,
+    });
+    if (activeSessionId.value === sessionId) {
+      activeSessionId.value = newSessionId;
+    }
+    await loadSessions();
+    return moved;
+  }
+
+  async function forkSession(sessionId: string, newSessionId: string): Promise<number> {
+    const copied = await invoke<number>('coding_session_fork', {
+      sessionId,
+      newSessionId,
+    });
+    await loadSessions();
+    return copied;
+  }
+
+  async function purgeSession(sessionId: string): Promise<boolean> {
+    const removed = await invoke<boolean>('coding_session_purge', { sessionId });
+    if (activeSessionId.value === sessionId) {
+      activeSessionId.value = null;
+      activeChat.value = [];
+    }
+    await loadSessions();
+    return removed;
+  }
+
   return {
     settings,
     codingLlm,
@@ -674,6 +925,8 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     githubConfig,
     lastPullRequest,
     lastPullResult,
+    githubDeviceCode,
+    githubDevicePollResult,
     loadSettings,
     loadCodingLlm,
     loadRecommendations,
@@ -696,5 +949,19 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     setGithubConfig,
     openPullRequest,
     pullFromMain,
+    requestGitHubDeviceCode,
+    pollGitHubDeviceToken,
+    // Session management (Chunk 30.2)
+    sessions,
+    activeSessionId,
+    activeChat,
+    sessionsLoading,
+    loadSessions,
+    loadSessionChat,
+    appendSessionMessage,
+    clearSessionChat,
+    renameSession,
+    forkSession,
+    purgeSession,
   };
 });

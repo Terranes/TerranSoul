@@ -381,6 +381,41 @@
         <code>{{ store.githubConfig?.default_base ?? 'main' }}</code> and
         requests review from your admin reviewers.
       </p>
+      <div class="si-github-device">
+        <div class="si-github-device-copy">
+          <strong>Browser authorization</strong>
+          <span>Use GitHub Device Flow to authorize this machine without pasting a token manually.</span>
+        </div>
+        <button
+          type="button"
+          class="si-btn si-btn-tiny"
+          :disabled="githubAuthBusy"
+          @click="onStartGithubBrowserAuth"
+        >
+          {{ githubAuthBusy ? 'Waiting for authorization...' : 'Authorize with GitHub in browser' }}
+        </button>
+        <div
+          v-if="store.githubDeviceCode"
+          class="si-github-device-code"
+        >
+          <span>Enter this code:</span>
+          <code>{{ store.githubDeviceCode.user_code }}</code>
+          <button
+            type="button"
+            class="si-btn si-btn-tiny"
+            @click="openExternalUrl(store.githubDeviceCode.verification_uri)"
+          >
+            Open authorization page
+          </button>
+        </div>
+        <p
+          v-if="githubAuthStatus"
+          class="si-github-result"
+          :class="githubAuthStatusKind === 'success' ? 'si-github-result--ok' : 'si-github-result--warn'"
+        >
+          {{ githubAuthStatus }}
+        </p>
+      </div>
       <div class="si-github-grid">
         <label class="si-field">
           <span class="si-field-label">Token</span>
@@ -467,13 +502,16 @@
         Last pull: {{ store.lastPullResult.message }}
       </p>
     </div>
+
+    <SelfImproveSessionsPanel />
   </section>
 </template>
 
 <script setup lang="ts">
 /* eslint-disable max-lines */
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useSelfImproveStore, type SelfImprovePhase } from '../stores/self-improve';
+import SelfImproveSessionsPanel from './SelfImproveSessionsPanel.vue';
 
 const store = useSelfImproveStore();
 
@@ -482,6 +520,14 @@ const ghToken = ref('');
 const ghOwnerRepo = ref('');
 const ghBase = ref('main');
 const ghReviewers = ref('');
+const githubAuthBusy = ref(false);
+const githubAuthStatus = ref('');
+const githubAuthStatusKind = ref<'info' | 'success' | 'warn'>('info');
+let githubAuthPollTimer: number | null = null;
+
+onBeforeUnmount(() => {
+  clearGithubAuthPoll();
+});
 
 watch(
   () => store.githubConfig,
@@ -521,6 +567,75 @@ async function onSaveGithub() {
     ghToken.value = ''; // never linger
   } catch (e) {
     console.warn('[SelfImprove] save github config failed:', e);
+  }
+}
+
+async function onStartGithubBrowserAuth() {
+  clearGithubAuthPoll();
+  githubAuthBusy.value = true;
+  githubAuthStatusKind.value = 'info';
+  githubAuthStatus.value = 'Requesting a device code...';
+  try {
+    const response = await store.requestGitHubDeviceCode('repo');
+    githubAuthStatus.value = 'Waiting for authorization in your browser.';
+    await openExternalUrl(response.verification_uri);
+    scheduleGithubAuthPoll(Math.max(1, response.interval));
+  } catch (e) {
+    githubAuthBusy.value = false;
+    githubAuthStatusKind.value = 'warn';
+    githubAuthStatus.value = `Authorization could not start: ${String(e)}`;
+  }
+}
+
+function scheduleGithubAuthPoll(intervalSeconds: number): void {
+  clearGithubAuthPoll();
+  githubAuthPollTimer = window.setInterval(() => {
+    void pollGithubAuthOnce();
+  }, intervalSeconds * 1000);
+  void pollGithubAuthOnce();
+}
+
+async function pollGithubAuthOnce(): Promise<void> {
+  try {
+    const result = await store.pollGitHubDeviceToken();
+    if (result.status === 'pending') {
+      githubAuthStatusKind.value = 'info';
+      githubAuthStatus.value = 'Still waiting for browser authorization.';
+      return;
+    }
+    clearGithubAuthPoll();
+    githubAuthBusy.value = false;
+    if (result.status === 'success') {
+      githubAuthStatusKind.value = 'success';
+      githubAuthStatus.value = 'GitHub authorization saved for self-improve.';
+      ghToken.value = '';
+      return;
+    }
+    githubAuthStatusKind.value = 'warn';
+    githubAuthStatus.value = result.status === 'error'
+      ? `GitHub authorization failed: ${result.message}`
+      : `GitHub authorization ${result.status}.`;
+  } catch (e) {
+    clearGithubAuthPoll();
+    githubAuthBusy.value = false;
+    githubAuthStatusKind.value = 'warn';
+    githubAuthStatus.value = `GitHub authorization failed: ${String(e)}`;
+  }
+}
+
+function clearGithubAuthPoll(): void {
+  if (githubAuthPollTimer !== null) {
+    window.clearInterval(githubAuthPollTimer);
+    githubAuthPollTimer = null;
+  }
+}
+
+async function openExternalUrl(url: string): Promise<void> {
+  try {
+    const shell = await import('@tauri-apps/plugin-shell');
+    await shell.open(url);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -1204,6 +1319,43 @@ async function onClearLog() {
   margin: 0;
   font-size: 0.8rem;
   color: var(--ts-text-muted, #94a3b8);
+}
+.si-github-device {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--ts-border-soft);
+  border-radius: 8px;
+  background: var(--ts-surface-1);
+}
+.si-github-device-copy {
+  display: grid;
+  gap: 2px;
+}
+.si-github-device-copy strong {
+  color: var(--ts-text-primary);
+  font-size: 0.84rem;
+}
+.si-github-device-copy span {
+  color: var(--ts-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.si-github-device-code {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ts-text-muted);
+  font-size: 0.78rem;
+}
+.si-github-device-code code {
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--ts-text-primary);
+  background: var(--ts-bg-input);
+  font-size: 0.86rem;
+  letter-spacing: 0.08em;
 }
 .si-github-grid {
   display: grid;

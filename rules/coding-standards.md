@@ -32,6 +32,55 @@
 - **No empty trait implementations.** Every trait `impl` has working method bodies.
 - **Every committed file must compile and function.** No non-functional scaffolding.
 
+## Third-Party Naming & Licensing Hygiene
+
+- Do not name modules, files, commands, Tauri IPC identifiers, types, seed IDs,
+  persisted directories, UI labels, docs, milestones, or comments after third-party
+  creators, channels, projects, products, mascots, or branded demos unless the name
+  is required by an imported dependency or public API contract.
+- Use neutral, descriptive names for researched feature patterns (for example,
+  `teachable_capabilities`, `wake_word`, or `reference_voice_tts`) and keep any
+  attribution or license notes in dedicated research/licensing documentation, not
+  runtime identifiers or user-facing feature names.
+- Never copy protected assets, transcripts, prompts, branding, or distinctive
+  character identity from external projects. Implement only original, configurable
+  TerranSoul behavior.
+
+### Always Credit Authors, Open Source, and Reverse-Engineered References
+
+- Maintain a single top-level [CREDITS.md](../CREDITS.md) as the source of
+  truth for every external author, project, dataset, paper, blog post,
+  video/channel, social post, docs page, tutorial, or artefact whose
+  ideas, code, schemas, prompts, file formats, behavior, product lessons,
+  or design insights we reference, port, adapt, learn from, compare
+  against, or reverse-engineer.
+- Any change that pulls in a new dependency, copies a non-trivial
+  algorithm, ports a data shape, follows a published technique, cites a
+  creator/video/channel for insight, uses an external project to generate
+  roadmap/product/architecture decisions, or reverse-engineers an external
+  project's behavior **must update `CREDITS.md` in the same PR**. New
+  entries include: project / author / creator name, upstream URL, license
+  or terms when known, the TerranSoul files or features it influences, and
+  one respectful sentence describing what we learned or used.
+- No-code influence still counts. If a source informed a persona design,
+  UI flow, prompt shape, feature catalogue, comparison matrix, rejected
+  decision, or backlog/milestone insight, credit it even when no code,
+  text, media, transcript, asset, or schema was copied.
+- Removing or replacing a referenced source must also update
+  `CREDITS.md` so the file stays accurate (do not leave dangling
+  attributions for code that is no longer in the tree).
+- Keep attribution out of runtime identifiers and user-facing labels —
+  the third-party-naming rule above still applies. `CREDITS.md`,
+  `docs/licensing-audit.md`, and dedicated research docs are the right
+  homes for names, links, and license details.
+- Permissive-licensed dependencies that already appear in
+  `docs/licensing-audit.md` should still be reflected in `CREDITS.md`
+  so the credits file stands on its own as a complete attribution
+  manifest.
+- `CREDITS.md` is a public thanks page, not an enforcement page. Keep the
+  hard rule text here in `rules/coding-standards.md`; keep the credits file
+  appreciative, concrete, and human.
+
 ### No Mocks in Production
 
 > **It is either a chunk in `rules/milestones.md` OR a real working version with the highest QA — never a half-done mock shipped to users.**

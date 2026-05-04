@@ -15,7 +15,8 @@
     "lint:fix": "eslint . --fix",
     "tauri": "tauri",
     "tauri:ios:check": "node scripts/tauri-ios-check.mjs",
-    "tauri:ios:init": "node scripts/tauri-ios-check.mjs --init"
+    "tauri:ios:init": "node scripts/tauri-ios-check.mjs --init",
+    "mcp": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-http"
   },
   "dependencies": {
     "@bufbuild/connect": "^0.13.0",

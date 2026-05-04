@@ -54,8 +54,8 @@ function makeInvokeMock(opts: {
     switch (cmd) {
       case 'get_brain_mode': return Promise.resolve(opts.brainMode ?? null);
       case 'list_free_providers': return Promise.resolve([
-        { id: 'pollinations', display_name: 'Pollinations AI', base_url: 'https://text.pollinations.ai/openai',
-          model: 'openai', rpm_limit: 30, rpd_limit: 0, requires_api_key: false, notes: '' },
+        { id: 'pollinations', display_name: 'Pollinations AI', base_url: 'https://gen.pollinations.ai',
+          model: 'llama', rpm_limit: 30, rpd_limit: 0, requires_api_key: true, notes: '' },
       ]);
       case 'get_system_info': return Promise.resolve({
         os_name: 'Linux', arch: 'x86_64', cpu_name: 'Test CPU', cpu_cores: 8,

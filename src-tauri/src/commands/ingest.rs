@@ -6,7 +6,7 @@ use crate::tasks::manager::{
 };
 use crate::AppState;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -530,14 +530,34 @@ async fn run_ingest_task(
         );
     }
 
+    if created > 0 {
+        if let Some(source_guide) = build_source_guide(&source_url, &text, &chunks) {
+            let result = {
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                store.add(NewMemory {
+                    content: source_guide,
+                    tags: build_source_guide_tags(tags, &source_url),
+                    importance: (importance + 1).min(5),
+                    memory_type: MemoryType::Summary,
+                    source_url: Some(source_url.clone()),
+                    source_hash: Some(source_hash.clone()),
+                    ..Default::default()
+                })
+            };
+            if let Ok(entry) = result {
+                created_entries.push((entry.id, entry.content.clone(), false));
+            }
+        }
+    }
+
     // Embed (best effort)
     emit_progress(
         app,
         task_id,
         85,
         "Generating embeddings…",
-        created,
-        chunk_count,
+        created_entries.len(),
+        created_entries.len(),
     );
 
     if brain_mode.is_some() || active_brain.is_some() {
@@ -587,6 +607,182 @@ fn build_ingest_chunks(
             char_span,
         })
         .collect()
+}
+
+fn build_source_guide(source_url: &str, text: &str, chunks: &[IngestChunk]) -> Option<String> {
+    let preview = compact_preview(text, 560);
+    if preview.is_empty() {
+        return None;
+    }
+
+    let title = source_label(source_url);
+    let headings = source_headings(chunks, 8);
+    let topics = top_source_terms(text, 8);
+    let estimated_tokens = text.chars().count().div_ceil(4);
+
+    let mut lines = vec![
+        "[DOCUMENT SOURCE GUIDE]".to_string(),
+        format!("Source: {title}"),
+        format!(
+            "Length: {} chunk(s), approximately {estimated_tokens} tokens.",
+            chunks.len()
+        ),
+        format!("Synopsis: {preview}"),
+    ];
+
+    if !headings.is_empty() {
+        lines.push(format!("Key sections: {}", headings.join("; ")));
+    }
+    if !topics.is_empty() {
+        lines.push(format!("Key topics: {}", topics.join(", ")));
+    }
+
+    lines.push(
+        "Best use: broad overview, outline, and source-selection questions. Exact quotes or details should be grounded in original chunks from this source when those chunks are available."
+            .to_string(),
+    );
+
+    let questions = source_guide_questions(&title, &headings);
+    if !questions.is_empty() {
+        lines.push(format!("Starter questions: {}", questions.join(" | ")));
+    }
+
+    lines.push("[/DOCUMENT SOURCE GUIDE]".to_string());
+    Some(truncate_chars(&lines.join("\n"), 1_800))
+}
+
+fn build_source_guide_tags(tags: &str, source_url: &str) -> String {
+    let mut parts: Vec<String> = tags
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(ToOwned::to_owned)
+        .collect();
+    parts.push("source-guide".to_string());
+    parts.push("document-summary".to_string());
+    parts.push(format!("source:{}", source_slug(source_url)));
+    parts.join(",")
+}
+
+fn source_label(source_url: &str) -> String {
+    if let Ok(parsed) = url::Url::parse(source_url) {
+        if matches!(parsed.scheme(), "http" | "https") {
+            let host = parsed.host_str().unwrap_or("document");
+            let name = parsed
+                .path_segments()
+                .and_then(|mut segments| segments.next_back())
+                .filter(|segment| !segment.is_empty())
+                .unwrap_or(host);
+            return if name == host {
+                host.to_string()
+            } else {
+                format!("{name} ({host})")
+            };
+        }
+    }
+
+    std::path::Path::new(source_url)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("document")
+        .to_string()
+}
+
+fn source_slug(source_url: &str) -> String {
+    let label = source_label(source_url);
+    let mut slug = String::with_capacity(label.len().min(64));
+    let mut previous_dash = false;
+    for ch in label.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            previous_dash = false;
+        } else if !previous_dash && !slug.is_empty() {
+            slug.push('-');
+            previous_dash = true;
+        }
+        if slug.len() >= 64 {
+            break;
+        }
+    }
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "document".to_string()
+    } else {
+        slug
+    }
+}
+
+fn source_headings(chunks: &[IngestChunk], limit: usize) -> Vec<String> {
+    let mut seen = HashSet::new();
+    chunks
+        .iter()
+        .filter_map(|chunk| chunk.heading.as_deref())
+        .map(str::trim)
+        .filter(|heading| !heading.is_empty())
+        .filter(|heading| seen.insert(heading.to_ascii_lowercase()))
+        .take(limit)
+        .map(|heading| truncate_chars(heading, 80))
+        .collect()
+}
+
+fn top_source_terms(text: &str, limit: usize) -> Vec<String> {
+    const STOP_WORDS: &[&str] = &[
+        "about", "after", "again", "also", "because", "before", "being", "between", "could",
+        "during", "every", "first", "from", "have", "into", "more", "most", "only", "other",
+        "over", "same", "should", "such", "than", "that", "their", "there", "these", "they",
+        "this", "through", "under", "using", "when", "where", "which", "while", "with", "would",
+        "your",
+    ];
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for raw in text.split(|ch: char| !ch.is_ascii_alphanumeric()) {
+        let word = raw.to_ascii_lowercase();
+        if word.len() < 4 || STOP_WORDS.contains(&word.as_str()) {
+            continue;
+        }
+        *counts.entry(word).or_insert(0) += 1;
+    }
+
+    let mut terms: Vec<(String, usize)> = counts.into_iter().collect();
+    terms.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    terms
+        .into_iter()
+        .take(limit)
+        .map(|(term, _)| term)
+        .collect()
+}
+
+fn source_guide_questions(title: &str, headings: &[String]) -> Vec<String> {
+    let mut questions = vec![
+        format!("What are the main takeaways from {title}?"),
+        format!("What details in {title} should I verify against the original source?"),
+    ];
+    if let Some(first_heading) = headings.first() {
+        questions.push(format!("What does {title} say about {first_heading}?"));
+    }
+    if headings.len() > 1 {
+        questions.push(format!(
+            "How do the sections on {} and {} relate?",
+            headings[0], headings[1]
+        ));
+    }
+    questions.truncate(4);
+    questions
+}
+
+fn compact_preview(text: &str, max_chars: usize) -> String {
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_chars(collapsed.trim(), max_chars)
+}
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let mut result: String = text.chars().take(max_chars.saturating_sub(3)).collect();
+    result.push_str("...");
+    result
 }
 
 fn locate_chunk_char_spans(
@@ -1137,6 +1333,57 @@ mod tests {
         let hash_v1 = hex::encode(Sha256::digest(b"30-day deadline"));
         let hash_v2 = hex::encode(Sha256::digest(b"21-day deadline"));
         assert_ne!(hash_v1, hash_v2);
+    }
+
+    #[test]
+    fn source_guide_is_compact_and_grounded() {
+        let text = "# Overview\n\nPrivacy rules require notice before collection. \
+                    # Retention\n\nRetention rules describe deletion windows. "
+            .repeat(30);
+        let chunks = vec![
+            IngestChunk {
+                text: "Privacy rules require notice before collection.".to_string(),
+                heading: Some("Overview".to_string()),
+                char_span: None,
+            },
+            IngestChunk {
+                text: "Retention rules describe deletion windows.".to_string(),
+                heading: Some("Retention".to_string()),
+                char_span: None,
+            },
+        ];
+
+        let guide = build_source_guide("C:\\docs\\privacy-policy.md", &text, &chunks).unwrap();
+
+        assert!(guide.contains("[DOCUMENT SOURCE GUIDE]"));
+        assert!(guide.contains("Source: privacy-policy.md"));
+        assert!(guide.contains("Key sections: Overview; Retention"));
+        assert!(guide.contains("Key topics:"));
+        assert!(guide.contains("Starter questions:"));
+        assert!(guide.len() <= 1_800);
+    }
+
+    #[test]
+    fn source_guide_tags_include_safe_source_slug() {
+        let tags = build_source_guide_tags("imported,law", "https://example.com/My Doc.pdf");
+
+        assert!(tags.contains("imported"));
+        assert!(tags.contains("law"));
+        assert!(tags.contains("source-guide"));
+        assert!(tags.contains("document-summary"));
+        assert!(!tags.contains(' '));
+    }
+
+    #[test]
+    fn top_source_terms_filters_common_words() {
+        let terms = top_source_terms(
+            "privacy privacy privacy and the the collection retention retention",
+            3,
+        );
+
+        assert_eq!(terms[0], "privacy");
+        assert!(terms.contains(&"retention".to_string()));
+        assert!(!terms.contains(&"the".to_string()));
     }
 
     #[test]

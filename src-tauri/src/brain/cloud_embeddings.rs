@@ -178,6 +178,7 @@ pub async fn embed_for_mode(
         Some(BrainMode::FreeApi {
             provider_id,
             api_key,
+            ..
         }) => {
             // Only try if this provider has an embed endpoint.
             let embed_model = free_provider_embed_model(provider_id)?;
@@ -249,6 +250,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "pollinations".to_string(),
             api_key: None,
+            model: None,
         };
         let result = embed_for_mode("hello world", Some(&mode), None).await;
         assert!(result.is_none());

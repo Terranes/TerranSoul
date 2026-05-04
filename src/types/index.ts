@@ -1,3 +1,9 @@
+export interface CharismaTurnAsset {
+  kind: 'trait' | 'expression' | 'motion';
+  assetId: string;
+  displayName: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -18,6 +24,10 @@ export interface Message {
   emoji?: string;
   /** Body animation motion key from LLM <anim> tags (e.g. 'greeting', 'clapping'). */
   motion?: string;
+  /** Charisma traits/expressions/motions that fired while producing this turn. */
+  charismaAssets?: CharismaTurnAsset[];
+  /** User's 1-5 turn-level rating distributed to all fired Charisma assets. */
+  charismaTurnRating?: number;
 }
 
 export interface QuestChoice {
@@ -378,7 +388,7 @@ export interface FreeProvider {
 
 /** The three-tier brain mode configuration. */
 export type BrainMode =
-  | { mode: 'free_api'; provider_id: string; api_key: string | null }
+  | { mode: 'free_api'; provider_id: string; api_key: string | null; model?: string | null }
   | { mode: 'paid_api'; provider: string; api_key: string; model: string; base_url: string }
   | { mode: 'local_ollama'; model: string }
   | {
@@ -401,7 +411,7 @@ export interface CodingLlmConfig {
   api_key: string;
 }
 
-/** Curated recommendation entry (Claude / OpenAI / DeepSeek / custom). */
+/** Curated recommendation entry (Local Ollama / Claude / OpenAI / custom). */
 export interface CodingLlmRecommendation {
   provider: CodingLlmProvider;
   display_name: string;

@@ -12,7 +12,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -94,15 +94,12 @@ pub(crate) async fn dispatch_method(
 ) -> JsonRpcResponse {
     match method {
         "initialize" => {
-            let build_mode = if super::is_dev_build() {
-                "dev"
+            let (build_mode, server_name) = if super::is_mcp_pet_mode() {
+                ("mcp", "terransoul-brain-mcp")
+            } else if super::is_dev_build() {
+                ("dev", "terransoul-brain-dev")
             } else {
-                "release"
-            };
-            let server_name = if super::is_dev_build() {
-                "terransoul-brain-dev"
-            } else {
-                "terransoul-brain"
+                ("release", "terransoul-brain")
             };
             let result = json!({
                 "protocolVersion": "2024-11-05",
@@ -158,6 +155,7 @@ pub(crate) async fn dispatch_method(
 pub fn build(state: McpRouterState) -> Router {
     Router::new()
         .route("/mcp", post(handle_request))
+        .route("/status", get(handle_status))
         .with_state(state)
 }
 
@@ -197,9 +195,62 @@ async fn handle_request(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
+/// `GET /status` — bearer-authenticated live snapshot of the running
+/// MCP server. Lets the user (or any agent) monitor RAG/memory health
+/// without speaking JSON-RPC.
+///
+/// Response shape:
+/// ```json
+/// {
+///   "name": "terransoul-brain-mcp",
+///   "version": "...",
+///   "buildMode": "mcp" | "dev" | "release",
+///   "petMode": true,
+///   "health": { "version": "...", "brain_provider": "...",
+///               "brain_model": "...", "rag_quality_pct": 80,
+///               "memory_total": 123 }
+/// }
+/// ```
+async fn handle_status(
+    State(state): State<McpRouterState>,
+    headers: HeaderMap,
+) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let (build_mode, server_name) = if super::is_mcp_pet_mode() {
+        ("mcp", "terransoul-brain-mcp")
+    } else if super::is_dev_build() {
+        ("dev", "terransoul-brain-dev")
+    } else {
+        ("release", "terransoul-brain")
+    };
+
+    let health = match state.gw.health(&state.caps).await {
+        Ok(h) => json!({
+            "version": h.version,
+            "brain_provider": h.brain_provider,
+            "brain_model": h.brain_model,
+            "rag_quality_pct": h.rag_quality_pct,
+            "memory_total": h.memory_total,
+        }),
+        Err(e) => json!({ "error": e.to_string() }),
+    };
+
+    let body = json!({
+        "name": server_name,
+        "version": env!("CARGO_PKG_VERSION"),
+        "buildMode": build_mode,
+        "petMode": super::is_mcp_pet_mode(),
+        "health": health,
+    });
+
+    (StatusCode::OK, Json(body)).into_response()
+}
+
 /// Validate the `Authorization: Bearer <token>` header.
-fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {
-    headers
+fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {    headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))

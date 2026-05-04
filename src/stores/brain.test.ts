@@ -60,6 +60,7 @@ describe('brain store', () => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
     localStorage.removeItem('ts.browser.auth.session');
+    localStorage.removeItem('ts.browser.brain.mode');
   });
 
   it('hasBrain is false when activeBrain is null and brainMode is null', () => {
@@ -253,6 +254,7 @@ describe('brain store', () => {
       mode: 'free_api',
       provider_id: 'pollinations',
       api_key: null,
+      model: 'llama',
     });
   });
 
@@ -271,27 +273,36 @@ describe('brain store', () => {
     expect(store.isFreeApiMode).toBe(true);
   });
 
-  it('authoriseBrowserProvider persists a one-click browser session and free brain mode', () => {
+  it('authoriseBrowserProvider persists a browser provider session and free brain mode', () => {
     const store = useBrainStore();
-    const session = store.authoriseBrowserProvider('google');
+    const session = store.authoriseBrowserProvider('gemini', {
+      apiKey: 'gemini-key',
+      model: 'gemini-2.0-flash',
+    });
 
-    expect(session.providerId).toBe('google');
-    expect(store.browserAuthSession?.label).toContain('Google');
+    expect(session.providerId).toBe('gemini');
+    expect(store.browserAuthSession?.label).toContain('Gemini');
     expect(store.brainMode).toEqual({
       mode: 'free_api',
-      provider_id: 'pollinations',
-      api_key: null,
+      provider_id: 'gemini',
+      api_key: 'gemini-key',
+      model: 'gemini-2.0-flash',
     });
     expect(JSON.parse(localStorage.getItem('ts.browser.auth.session') ?? '{}')).toMatchObject({
-      providerId: 'google',
-      label: 'Google-ready browser session',
+      providerId: 'gemini',
+      label: 'Google Gemini browser session',
+      model: 'gemini-2.0-flash',
+    });
+    expect(JSON.parse(localStorage.getItem('ts.browser.brain.mode') ?? '{}')).toMatchObject({
+      mode: 'free_api',
+      provider_id: 'gemini',
     });
   });
 
   it('loads remembered browser authorisation from localStorage', () => {
     localStorage.setItem('ts.browser.auth.session', JSON.stringify({
       providerId: 'chatgpt',
-      label: 'ChatGPT-ready browser session',
+      label: 'ChatGPT / OpenAI browser session',
       connectedAt: 123,
     }));
     setActivePinia(createPinia());
@@ -299,7 +310,7 @@ describe('brain store', () => {
     const store = useBrainStore();
     expect(store.browserAuthSession).toEqual({
       providerId: 'chatgpt',
-      label: 'ChatGPT-ready browser session',
+      label: 'ChatGPT / OpenAI browser session',
       connectedAt: 123,
     });
     expect(store.browserAuthProvider?.id).toBe('chatgpt');
@@ -325,12 +336,12 @@ describe('brain store', () => {
     expect(store.isFreeApiMode).toBe(false);
   });
 
-  it('initialise auto-defaults to free API when Tauri unavailable', async () => {
+  it('initialise prepares browser provider choices when Tauri unavailable', async () => {
     mockInvoke.mockRejectedValue(new Error('window.__TAURI_INTERNALS__ not found'));
     const store = useBrainStore();
     await store.initialise();
-    expect(store.hasBrain).toBe(true);
-    expect(store.brainMode?.mode).toBe('free_api');
+    expect(store.hasBrain).toBe(false);
+    expect(store.brainMode).toBeNull();
     expect(store.freeProviders.length).toBeGreaterThan(0);
     expect(store.isLoading).toBe(false);
   });
@@ -342,7 +353,7 @@ describe('brain store', () => {
     const store = useBrainStore();
     await store.autoConfigureForDesktop();
     expect(mockInvoke).toHaveBeenCalledWith('set_brain_mode', {
-      mode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+      mode: { mode: 'free_api', provider_id: 'pollinations', api_key: null, model: 'llama' },
     });
     expect(store.hasBrain).toBe(true);
     expect(store.brainMode?.mode).toBe('free_api');

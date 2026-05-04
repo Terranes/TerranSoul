@@ -468,7 +468,7 @@ onMounted(async () => {
     try {
       await brain.loadActiveBrain();
     } catch {
-      brain.autoConfigureFreeApi();
+      brain.prepareBrowserProviderChoices();
     }
     try {
       await settingsStore.loadSettings();
@@ -490,7 +490,7 @@ onMounted(async () => {
     // Load dev/release build flag for DEV badge
     await windowStore.loadDevBuildFlag();
   } catch {
-    // No Tauri backend available (dev server / E2E tests) — auto-configure free API.
+    // No Tauri backend available (dev server / E2E tests) — prepare browser-safe provider choices.
     // Only activate the browser landing page when NOT running under Playwright E2E,
     // so the test suite continues to see the normal app shell and chat view.
     if (!import.meta.env.VITE_E2E) {
@@ -498,7 +498,7 @@ onMounted(async () => {
       // Opt the landing page out of the global overflow:hidden lock.
       document.documentElement.dataset.tsMode = document.body.dataset.tsMode = 'browser';
     }
-    brain.autoConfigureFreeApi();
+    brain.prepareBrowserProviderChoices();
     skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
     await voice.autoConfigureVoice();

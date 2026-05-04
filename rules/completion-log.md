@@ -21,6 +21,15 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 30.7.5 — Headless MCP "pet mode" runner (`npm run mcp`)](#chunk-3075--headless-mcp-pet-mode-runner-npm-run-mcp) | 2026-05-04 |
+| [Chunk 30.7 — Charisma turn-level bulk rating](#chunk-307--charisma-turn-level-bulk-rating) | 2026-05-04 |
+| [Chunk 30.6 — Self-improve session transcript auto-append](#chunk-306--self-improve-session-transcript-auto-append) | 2026-05-04 |
+| [Chunk 30.5 — Teachable Capabilities registry + GitHub Device Flow authorization](#chunk-305--teachable-capabilities-registry--github-device-flow-authorization) | 2026-05-04 |
+| [Chunk 30.4 — Charisma teaching system: persona + animation + expression maturity ladder & promotion-to-source](#chunk-304--charisma-teaching-system-persona--animation--expression-maturity-ladder--promotion-to-source) | 2026-05-04 |
+| [Chunk 30.3 — Multi-agent workflow system + Microsoft Teams-style calendar](#chunk-303--multi-agent-workflow-system--microsoft-teams-style-calendar) | 2026-05-04 |
+| [Chunk 30.2 — Self-improve UX & session memory absorption (claw-code / Claude Code / OpenClaw)](#chunk-302--self-improve-ux--session-memory-absorption-claw-code--claude-code--openclaw) | 2026-05-04 |
+| [Chunk 30.1 — NotebookLM-style document token economy](#chunk-301--notebooklm-style-document-token-economy) | 2026-05-04 |
+| [Chunk 29.6 — Tauri free-provider model selection parity](#chunk-296--tauri-free-provider-model-selection-parity) | 2026-05-04 |
 | [Chunk 29.5 — Sitting-prop lifecycle regression coverage](#chunk-295--sitting-prop-lifecycle-regression-coverage) | 2026-05-03 |
 | [Chunk 29.4 — glib/GTK modernization tracker](#chunk-294--glibgtk-modernization-tracker) | 2026-05-03 |
 | [Chunk 29.3 — Browser app-window UX hardening](#chunk-293--browser-app-window-ux-hardening) | 2026-05-03 |
@@ -237,6 +246,689 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 30.7.5 — Headless MCP "pet mode" runner (`npm run mcp`)
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 30 — Self-Improve & Coding Workflow
+
+**Goal.** Let AI coding agents (Copilot, Codex CLI, Claude Code,
+Clawcode, Cursor, etc.) attach to TerranSoul's brain/RAG/memory
+surface during a development session **without** colliding with
+`npm run dev` (Vite 1420), `cargo tauri dev` (port 7422), or a
+release Tauri build (port 7421), and **without** touching the
+end-user companion data dir.
+
+**Architecture.**
+
+- New CLI flag `--mcp-http` on the Rust binary spawns a headless
+  axum server on `127.0.0.1:7423` (configurable via
+  `TERRANSOUL_MCP_PORT`), persisting state in `<repo>/mcp-data/`
+  (configurable via `TERRANSOUL_MCP_DATA_DIR`). No Tauri/WebView.
+- New process flag `MCP_PET_MODE` (atomic bool) flips the JSON-RPC
+  initialize handshake to advertise `serverInfo.name =
+  "terransoul-brain-mcp"` and `buildMode = "mcp"` — distinct from
+  the dev/release labels — so agents can tell which surface they
+  are talking to.
+- New axum route `GET /status` returns a bearer-authenticated live
+  snapshot (`name`, `version`, `buildMode`, `petMode`, full
+  `health` block from `BrainGateway::health`) so agents and the
+  user can monitor RAG/memory live without speaking JSON-RPC.
+- New npm script `npm run mcp` invokes
+  `cargo run -- --mcp-http`. `mcp-data/` is gitignored.
+- `.vscode/mcp.json` registers a third HTTP server entry
+  `terransoul-brain-mcp` on port 7423 alongside the existing
+  release/dev entries.
+
+**Scope guarantees** (enforced in
+[`rules/agent-mcp-bootstrap.md`](agent-mcp-bootstrap.md)):
+
+- Local-first by default. The runner reuses the standard
+  `BrainSelection` / `ProviderRotator` types — local Ollama is
+  the silent default, paid/free cloud is opt-in via the same
+  brain-mode flow the app uses.
+- No companion-runtime data is consumed. Repo-local dev knowledge
+  only.
+- Loopback only. Even if the user's `app_settings.lan_enabled` is
+  true, the headless runner ignores it.
+- No UI surface — no quest unlocks, no charisma onboarding, no
+  persona drift prompts, no voice setup. The runner has no Vue
+  app, so these structurally cannot fire; the rule documents the
+  guarantee explicitly.
+
+**Files modified.**
+
+- `src-tauri/src/main.rs` — added `--mcp-http` dispatch.
+- `src-tauri/src/lib.rs` — added `run_http_server`,
+  `resolve_headless_mcp_data_dir`, `resolve_headless_mcp_port`,
+  `HEADLESS_MCP_PORT = 7423`.
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — added
+  `MCP_PET_MODE` atomic + `enable_mcp_pet_mode()` /
+  `is_mcp_pet_mode()` accessors.
+- `src-tauri/src/ai_integrations/mcp/router.rs` — added
+  `GET /status` route and pet-mode-aware `serverInfo` in
+  `initialize`.
+- `package.json` — added `"mcp"` script.
+- `.gitignore` — added `mcp-data/` with explanatory comment.
+- `.vscode/mcp.json` — added `terransoul-brain-mcp` entry.
+- `.github/copilot-instructions.md` — updated MCP Server section
+  to mention the headless runner and link the bootstrap rule.
+- `rules/agent-mcp-bootstrap.md` (new) — canonical procedure for
+  every AI coding agent, scope rules, env-var knobs, per-agent
+  setup table.
+
+**Verification.**
+
+- `cargo check` clean.
+- Live smoke test: started `npm run mcp`, waited for endpoint via
+  `scripts/wait-for-service.mjs http://127.0.0.1:7423/mcp 90` →
+  `is up`. `GET /status` with bearer returned `buildMode: "mcp"`,
+  `petMode: true`, `name: "terransoul-brain-mcp"`,
+  `health.memory_total: 0`, `brain_provider: "none"`.
+  `POST /mcp initialize` returned matching `serverInfo` block.
+  Server shut down cleanly on Ctrl+C.
+
+**Follow-ups (queued in `milestones.md`).**
+
+- Chunk 31.1 — MCP Pet Mode Web UI (Vue frontend bundled into
+  the binary so developers can monitor/adjust the brain live).
+- Chunk 31.2 — GitNexus competitive audit & catch-up.
+
+---
+
+## Chunk 30.7 — Charisma turn-level bulk rating
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 30 — Self-Improve & Coding Workflow
+
+### Goal
+
+Close the Charisma tutorial follow-up: the chat surface can rate an entire
+assistant turn 1-5 and distribute that rating to every Charisma trait,
+expression, and motion asset that fired during that turn.
+
+### Architecture
+
+- Assistant messages now carry `charismaAssets` metadata plus an optional
+  `charismaTurnRating`, keeping the rating state attached to the visible turn.
+- A shared frontend collector detects fired assets from active persona tone and
+  quirk text, learned expression triggers, learned motion triggers, and the
+  parsed LLM motion key.
+- The conversation store annotates final assistant turns, records desktop
+  usage for fired assets, and exposes `rateCharismaTurn(messageId, rating)`.
+- `ChatMessageList` renders a compact 1-5 star strip only on assistant turns
+  with fired Charisma assets and emits a rating event to `ChatView`.
+- The Charisma store calls the new Rust `charisma_rate_turn` command, which
+  deduplicates `(kind, asset_id)` pairs and saves all asset ratings in one
+  persistence pass.
+- The remote conversation store exposes a no-op-compatible method so desktop
+  and phone-control chat stores keep the same public shape.
+
+### Files Modified
+
+- `src/types/index.ts` — shared `CharismaTurnAsset` and message rating fields.
+- `src/utils/charisma-turn-assets.ts` — fired-asset detection helper.
+- `src/utils/charisma-turn-assets.test.ts` — tone, quirk, expression, motion,
+  and deduplication coverage.
+- `src/stores/charisma.ts` — turn usage and bulk rating actions.
+- `src/stores/conversation.ts` — assistant-turn annotation and rating action.
+- `src/stores/remote-conversation.ts` — shape-compatible rating stub.
+- `src/components/ChatMessageList.vue` — chat-level 1-5 rating controls.
+- `src/components/ChatMessageList.test.ts` — rating control render/emit tests.
+- `src/views/ChatView.vue` — connects rating events to the conversation store.
+- `src/stores/conversation.test.ts` — verifies bulk rating command payload and
+  message rating state.
+- `src-tauri/src/commands/charisma.rs` — `charisma_rate_turn` command, inner
+  helper, duplicate-safe Rust test.
+- `src-tauri/src/lib.rs` — Tauri command registration.
+- `docs/charisma-teaching-tutorial.md` — documents shipped chat bulk-rating
+  behavior and command/file map.
+- `rules/completion-log.md`, `rules/milestones.md` — milestone archival.
+
+### Verification
+
+- `npx vitest run src/components/ChatMessageList.test.ts src/utils/charisma-turn-assets.test.ts src/stores/conversation.test.ts` — 120 tests passed.
+- `cd src-tauri && cargo test charisma` — 18 tests passed; 2069 filtered.
+- `npx vue-tsc --noEmit` — passed.
+- `Full CI Gate` VS Code task — reached the final `cargo test` summary with
+  2087 Rust tests passed; earlier `npx vitest run`, `npx vue-tsc --noEmit`,
+  and `cargo clippy -- -D warnings` stages completed before it.
+- `git diff --check -- <Chunk 30.7 files>` — passed.
+- VS Code diagnostics for touched TypeScript/Vue/Rust/docs files — no errors.
+
+---
+
+## Chunk 30.6 — Self-improve session transcript auto-append
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 30 — Self-Improve & Coding Workflow
+
+### Goal
+
+Close the Chunk 30.2 session-management follow-up: autonomous self-improve
+progress events now persist into the active coding-session transcript so the
+session picker and resume view can hydrate a complete run history without the
+user manually replaying progress output.
+
+### Architecture
+
+- The self-improve Pinia store now mirrors every `self-improve-progress`
+  payload into the active transcript as a `system` message with `kind = "run"`.
+- Transcript appends are serialized through an in-store promise queue so live
+  progress events stay in order even when Tauri command latency varies.
+- When progress arrives without a selected session, the store creates a
+  timestamped `self-improve-*` run session and records there.
+- `coding_session_list` now unions handoff snapshots with transcript-only
+  `.chat.jsonl` files, so run sessions are visible and resumable before any
+  handoff snapshot exists.
+- The workflow design doc and reverse-engineering note now mark the follow-up
+  shipped.
+
+### Files Modified
+
+- `src/stores/self-improve.ts` — progress-event transcript mirroring, default
+  run-session creation, ordered append queue, and terminal/first-event session
+  list refresh.
+- `src/stores/self-improve.test.ts` — Vitest coverage for active-session
+  mirroring and automatic run-session creation.
+- `src-tauri/src/commands/coding_sessions.rs` — session list now includes
+  transcript-only sessions with chat summaries and last-message previews.
+- `docs/coding-workflow-design.md` — §3.8 updated from pending follow-up to
+  shipped Chunk 30.6 behaviour.
+- `rules/research-reverse-engineering.md` — Chunk 30.2 follow-up closed with
+  implemented details.
+- `rules/completion-log.md`, `rules/milestones.md` — milestone archival.
+
+### Verification
+
+- `npx vitest run src/stores/self-improve.test.ts` — 19 tests passed.
+- `cd src-tauri && cargo test coding_sessions` — 7 tests passed; 2079 filtered.
+- `npx vue-tsc --noEmit` — passed.
+- `git diff --check -- docs/coding-workflow-design.md rules/research-reverse-engineering.md src-tauri/src/commands/coding_sessions.rs src/stores/self-improve.ts src/stores/self-improve.test.ts` — passed.
+- VS Code diagnostics for touched TypeScript/Rust files — no errors.
+
+---
+
+## Chunk 30.5 — Teachable Capabilities registry + GitHub Device Flow authorization
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 30 — Self-Improve & Coding Workflow
+
+### Goal
+
+Ship a configurable Teachable Capabilities registry for 17 neutral
+AI-companion feature patterns, persist user-tuned JSON config blobs,
+surface them through a management panel, track usage/rating maturity,
+and route Proven configs into the same source-promotion workflow used by
+Charisma. Also add a user-machine GitHub Device Flow so self-improve can
+save the repository token without asking the user to paste it manually.
+
+### Source request and attribution
+
+This chunk came from the user's request to analyze what
+[Just Rayen](https://www.youtube.com/@JustRayen) does in his project/channel on
+2026-05-04 and apply that analysis to TerranSoul's existing self-learning /
+self-improve model. The self-learning idea is TerranSoul's own; the channel
+analysis was used to map observed companion behavior patterns into neutral
+configurable capabilities. Those capabilities are teachable through user
+interaction and can connect Proven user-taught configurations to source
+promotion. The implementation deliberately uses neutral project names
+(`Teachable Capabilities`, `teachable_capabilities`) rather than creator- or
+channel-branded identifiers. Public thanks and attribution live in
+[CREDITS.md](../CREDITS.md).
+
+### Architecture
+
+- Reuses the shared promotion maturity ladder from
+  `coding::promotion_plan`: Untested, Learning, Proven, Canon.
+- `teachable_capabilities::registry` owns the seed catalogue,
+  JSON-object config validation, atomic persistence at
+  `<app_data_dir>/teachable_capabilities/capabilities.json`, category
+  grouping, target-file hints, and promotion-plan creation.
+- `commands::teachable_capabilities` exposes list/toggle/config/usage/
+  rating/reset/promote/summary Tauri commands with pure inner helpers for
+  `TempDir` tests.
+- The Vue store mirrors Rust types one-to-one and the panel renders
+  schema-driven controls for strings, numbers, booleans, enums, lists,
+  JSON arrays, and colors.
+- `commands::github_auth` wraps GitHub's Device Flow: request code,
+  open browser verification externally, poll for token, and persist into
+  the existing self-improve GitHub config.
+
+### Files created
+
+- `src-tauri/src/teachable_capabilities/mod.rs`
+- `src-tauri/src/teachable_capabilities/registry.rs`
+- `src-tauri/src/commands/teachable_capabilities.rs`
+- `src-tauri/src/commands/github_auth.rs`
+- `src/stores/teachable-capabilities.ts`
+- `src/stores/teachable-capabilities.test.ts`
+- `src/components/TeachableCapabilitiesPanel.vue`
+- `docs/teachable-capabilities.md`
+
+### Files modified
+
+- `src-tauri/src/lib.rs` — registered the new modules and commands.
+- `src-tauri/src/coding/promotion_plan.rs` — shared maturity/promotion
+  helper reused by Charisma and Teachable Capabilities.
+- `src-tauri/src/commands/mod.rs` and `src-tauri/src/coding/mod.rs` —
+  module exports.
+- `src/components/PetContextMenu.vue` and `src/views/PetOverlayView.vue` —
+  context-menu entry and Teleport-mounted panel.
+- `src/components/SelfImprovePanel.vue` and `src/stores/self-improve.ts` —
+  GitHub Device Flow UI + store methods.
+- `rules/milestones.md` — neutralized the game-companion wording and
+  removed the completed 30.5 row.
+- `.github/copilot-instructions.md`, `rules/coding-standards.md`, and
+  `CREDITS.md` — added the attribution/credits enforcement rule and the
+  initial top-level credits ledger requested after the chunk landed.
+
+### Tests
+
+- Focused Vitest: `src/stores/teachable-capabilities.test.ts` passed.
+- Focused Rust: `cargo test --lib teachable_capabilities` passed.
+- Type check: `npx vue-tsc --noEmit` passed.
+- Full CI gate: `npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test` passed: **1609 Vitest tests**, clean TypeScript, clean clippy, **2083 cargo lib tests + 4 smoke tests + 1 doc test**.
+
+### Brain documentation sync
+
+Chunk 30.5 does not change the brain/RAG/memory pipeline itself. It
+adds configurable companion capability records and source-promotion
+workflow plumbing, so no `README.md` / `docs/brain-advanced-design.md`
+brain-sync update was required.
+
+---
+
+## Chunk 30.4 — Charisma teaching system: persona + animation + expression maturity ladder & promotion-to-source
+
+**Status:** Complete
+**Date:** 2026-05-04
+
+### Goal
+
+Audit every self-learning, persona, animation, and facial-expression
+surface to May 2026, then build a measurement & promotion layer
+("Charisma") that closes the loop from runtime teaching → maturity
+tracking → user rating → multi-agent coding workflow → bundled
+source-code default. User-facing surface: a Microsoft-Teams-style
+management panel (add / modify / delete + 5-star rate + promote) plus
+an end-user tutorial doc with a fully worked example.
+
+### Architecture
+
+Four-tier maturity ladder per asset:
+
+- **Untested** — never used since taught
+- **Learning** — ≥ 1 use, < 10 uses OR avg rating < 4.0
+- **Proven** — ≥ 10 uses AND avg rating ≥ 4.0 (eligible for promotion)
+- **Canon** — promoted to source via a multi-agent workflow plan
+
+Promotion does not edit source directly; it builds a 4-step
+`WorkflowPlan` (Researcher → Coder *requires_approval* → Tester →
+Reviewer *requires_approval*) that is saved through the Chunk 30.3
+multi-agent runner. The plan appears in the Multi-Agent Workflows
+panel and uses the existing `apply_file` pipeline + git staging +
+approval gates. Self-improve integration: when enabled, plans are
+scheduled into the autonomous loop, but approval gates still surface
+as cards in the Self-Improve panel.
+
+### Files created
+
+- `src-tauri/src/persona/charisma.rs` (~600 lines, 11 unit tests) —
+  `CharismaAssetKind` (Trait/Expression/Motion), `Maturity`,
+  `CharismaStat`, `CharismaIndex`, `CharismaSummary`,
+  `record_usage()`, `add_rating()` (clamps 1–5), `mark_promoted()`,
+  `proven()` sorted by avg rating desc + usage desc,
+  `load_index/save_index` atomic temp+rename,
+  `build_promotion_plan()` building a 4-step coding `WorkflowPlan`.
+- `src-tauri/src/commands/charisma.rs` (~400 lines, 6 tests) —
+  6 Tauri commands (`charisma_list`, `charisma_record_usage`,
+  `charisma_set_rating`, `charisma_delete`, `charisma_promote`,
+  `charisma_summary`) with inner-helper-takes-`&Path` pattern so
+  tests can use `TempDir` directly. List sort pins Canon below
+  others, then taught_at desc. Promote rejects non-Proven assets
+  with error containing "not yet Proven".
+- `src/stores/charisma.ts` (~280 lines) — Pinia store mirroring Rust
+  types (snake_case JSON), pure helpers (`deriveMaturity`,
+  `avgRating`, `maturityLabel`, `maturityColor`, `kindIcon`,
+  `kindLabel`), actions (load, recordUsage, setRating, remove,
+  promote, refreshSummary) with internal `upsertLocal` +
+  `recomputeSummary`.
+- `src/stores/charisma.test.ts` (10 tests) — covers `deriveMaturity`
+  (5 cases incl. boundary), `avgRating`, `maturityLabel`/`Color`,
+  `kindIcon`/`Label`.
+- `src/components/CharismaPanel.vue` (~400 lines) — header with title
+  + 🎭 icon + N-proven pill + 4-cell maturity dashboard
+  (untested/learning/proven/canon counts) + 3-tab nav (😊 Expressions
+  / 💃 Motions / 📝 Traits) + per-row icon + display name +
+  "Used N× · last X ago" meta + colour-coded maturity badge with
+  hover hint + 5-star rating row (immediate save) + actions
+  (▶ Test, ⭐ Promote when Proven, Canon stamp when promoted,
+  Delete with confirm) + promotion success toast referencing the
+  Multi-Agent Workflows panel. Uses only `var(--ts-*)` design tokens.
+- `docs/charisma-teaching-tutorial.md` (~360 lines) — full conduct &
+  analysis to May 2026 + maturity ladder + management panel
+  walkthrough + three teaching examples (expression "Smug", motion
+  "Bow", trait "indeed") + end-to-end "Day 0 → Day 15: 'indeed'
+  ships with every install" worked example + safety rationale.
+
+### Files modified
+
+- `src-tauri/src/persona/mod.rs` — `pub mod charisma;`
+- `src-tauri/src/commands/mod.rs` — `pub mod charisma;`
+- `src-tauri/src/lib.rs` — imports + 6 commands registered under
+  `// Charisma teaching system (Chunk 30.4)`.
+- `src/components/PetContextMenu.vue` — added `open-charisma-panel`
+  emit + "🎭 Charisma — Teach me…" menu item.
+- `src/views/PetOverlayView.vue` — imported `CharismaPanel`, added
+  `charismaPanelOpen` ref, mounted as Teleport modal mirroring the
+  workflows panel pattern.
+- `docs/persona-design.md` — added § 15a "Charisma Teaching System &
+  Source-Code Promotion" pointing to the new tutorial.
+- `rules/milestones.md` — Chunk 30.4 row removed; "Next Chunk" reset
+  to "No active chunks remain."
+
+### Tests
+
+- 11 new Rust unit tests in `persona::charisma` (atomic save/load,
+  maturity boundaries, key formatting, build_promotion_plan shape,
+  rating clamp).
+- 6 new Rust tests in `commands::charisma` (list ordering with Canon
+  pin, record_usage flips Untested→Learning, set_rating updates
+  averages, delete is idempotent, promote rejects non-Proven,
+  promote on Proven succeeds + flips to Canon).
+- 10 new vitest groups in `src/stores/charisma.test.ts`.
+- Full CI gate: **1602 vitest tests pass · 2067 cargo --lib tests
+  pass · cargo clippy --lib --no-deps -- -D warnings clean ·
+  npx vue-tsc --noEmit clean.**
+
+### Brain documentation sync
+
+Chunk 30.4 does **not** touch RAG / cognitive-kind / decay / GC /
+brain-gating. Per the architecture rule, no `README.md` /
+`brain-advanced-design.md` updates required. `docs/persona-design.md`
+gained a § 15a cross-reference to the new tutorial.
+
+---
+
+## Chunk 30.3 — Multi-agent workflow system + Microsoft Teams-style calendar
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 30 — Self-Improve & Coding Workflow
+
+### Goal
+Conduct an analysis of multi-agent best practices and ship a first-class
+multi-agent workflow system with specialised agent roles, YAML-backed
+plans, per-agent LLM picker, recurrence engine matching Microsoft Teams
+calendar UX, and a tutorial covering a self-improve worked example.
+Workflows must integrate with the existing brain, MCP, and gRPC surfaces.
+
+### Research absorbed
+- **Anthropic — Building Effective Agents (2024)**: orchestrator-workers,
+  evaluator-optimiser loop, parallelization patterns. All three patterns
+  are now first-class in the runner.
+- **AutoGen Teams**: explicit termination conditions; encoded as finite
+  DAG with no `while` loops.
+- **CrewAI**: YAML-first agent configuration; plans persist as `.yaml`
+  files via `serde_yaml = "0.9"`, fully `git diff`-able and shareable
+  via Persona Pack.
+- **Microsoft Teams calendar**: weekly grid layout, recurrence preview
+  text ("Occurs every Monday from 5:00 PM…"), colour-coded blocks per
+  workflow kind.
+
+### Backend (Rust)
+- **`src-tauri/src/coding/multi_agent.rs`** (~1450 lines, 20 unit tests):
+  - Types: `AgentRole` (Planner/Coder/Reviewer/Tester/Researcher/
+    Orchestrator), `LlmTier` (fast/balanced/premium), `LlmRecommendation`,
+    `WorkflowKind` (coding/daily/one_time), `WorkflowPlanStatus`,
+    `StepStatus`, `StepOutputFormat`, `WorkflowStep`, `WorkflowPlan`,
+    `WorkflowPlanSummary`, `AgentLlmConfig`, `Weekday`, `RecurrencePattern`
+    (Once / Daily{interval} / Weekly{interval, weekdays} /
+    Monthly{interval, day_of_month}), `WorkflowSchedule`, `CalendarEvent`.
+  - Functions: `next_occurrence_after()` (strictly-after firing time),
+    `occurrences_in_range()` (capped at 100 per plan, special-case
+    `start_at == 0`), `project_calendar_events()`, atomic
+    `save_plan/load_plan/list_plans/delete_plan`, `parse_planner_response()`
+    (strips markdown fences), `validate_plan()` (Kahn topological sort
+    for cycle detection), `create_blank_plan()`.
+- **`src-tauri/src/commands/workflow_plans.rs`** (~430 lines, 11 unit tests):
+  10 Tauri commands — `workflow_plan_list`, `workflow_plan_load`,
+  `workflow_plan_save`, `workflow_plan_delete`, `workflow_plan_create_blank`,
+  `workflow_plan_validate`, `workflow_plan_update_step`,
+  `workflow_plan_override_llm`, `workflow_calendar_events`,
+  `workflow_agent_recommendations`. Inner helpers separated for testability.
+- **`src-tauri/Cargo.toml`**: added `serde_yaml = "0.9"`.
+- **`src-tauri/src/lib.rs`**: registered all 10 commands in `invoke_handler`.
+
+### Frontend (Vue 3 + TS)
+- **`src/stores/workflow-plans.ts`** (~430 lines): full Pinia store
+  mirroring all Rust types one-to-one with snake_case JSON tags. State
+  (plans, activePlan, calendarEvents, recommendations, loading, error,
+  calendarRangeStart, calendarRangeEnd), computed (plansByKind,
+  activePlans, recurringPlans, eventsByDay), actions (loadPlans, loadPlan,
+  savePlan, deletePlan, createBlank, validatePlan, updateStep,
+  overrideAgentLlm, loadCalendarEvents, loadRecommendations,
+  shiftCalendarWeek, jumpCalendarToToday). Helpers: `startOfWeek` (Sunday
+  00:00 local), `isoDayKey` (YYYY-MM-DD), `formatRecurrence` (all 4
+  patterns with grammatical "Every N days/weeks"), `weekdayShort`,
+  `agentRoleLabel`, `agentRoleIcon` (🗺️⌨️🔍🧪📚🎯), `statusBadgeColor`.
+- **`src/stores/workflow-plans.test.ts`**: 13 vitest cases covering all helpers.
+- **`src/components/MultiAgentWorkflowsPanel.vue`**: 3-tab interface
+  (Workflows / Calendar / Agents). Per-step LLM dropdown grouped by tier
+  pulling live recommendations.
+- **`src/components/WorkflowCalendar.vue`**: 7-day × 24-hour grid à la
+  Microsoft Teams. Events as absolutely-positioned blocks, height
+  proportional to duration, colour by kind (blue=coding, green=daily,
+  violet=one_time), `↻` prefix for recurring. Click to load plan.
+- **`src/components/ScheduleEditor.vue`**: recurrence picker (Once/Daily/
+  Weekly with weekday checkboxes/Monthly with day-of-month) + start
+  datetime + duration + optional end-by date + live preview text.
+- **`src/components/PetContextMenu.vue`**: added "Multi-agent workflows…"
+  menu entry that emits `open-workflows-panel`.
+- **`src/views/PetOverlayView.vue`**: added Teleport-mounted modal
+  hosting the `MultiAgentWorkflowsPanel`.
+
+### Documentation
+- **`docs/multi-agent-workflows-tutorial.md`** (NEW): 350-line tutorial
+  covering the six agent roles, plan anatomy, quick start, LLM swapping,
+  recurring schedules, calendar view, and a worked self-improve example
+  ("Add dark mode toggle from chat suggestion → schedule weekly →
+  failed steps land in brain memory under `coding-failures` for RAG").
+- **`docs/coding-workflow-design.md`**: added §3.9 "Multi-agent workflow
+  plans + calendar (Chunk 30.3)" describing data model, recurrence
+  engine, UI tier, self-improve integration, and MCP exposure.
+
+### Tests
+- 20 Rust unit tests in `coding::multi_agent` (data model, recurrence
+  projection, plan validation, parser, atomic disk persistence).
+- 11 Rust unit tests in `commands::workflow_plans` (CRUD cycle, summary
+  recency sort, calendar projection includes scheduled, override LLM
+  propagates to all steps with matching agent, step status update).
+- 13 vitest cases in `workflow-plans.test.ts` (helpers).
+- Full vitest suite: 1592 passed (118 files), no regressions.
+
+### CI gate
+- `npx vitest run` → 1592 pass / 0 fail
+- `npx vue-tsc --noEmit` → 0 errors
+- `cargo clippy --lib --no-deps -- -D warnings` → clean
+- `cargo test --lib coding::multi_agent` → 20 pass
+- `cargo test --lib commands::workflow_plans` → 11 pass
+
+### Files changed
+- **New** (7): `src-tauri/src/coding/multi_agent.rs`,
+  `src-tauri/src/commands/workflow_plans.rs`,
+  `src/stores/workflow-plans.ts`, `src/stores/workflow-plans.test.ts`,
+  `src/components/MultiAgentWorkflowsPanel.vue`,
+  `src/components/WorkflowCalendar.vue`,
+  `src/components/ScheduleEditor.vue`,
+  `docs/multi-agent-workflows-tutorial.md`.
+- **Modified** (6): `src-tauri/Cargo.toml`, `src-tauri/src/coding/mod.rs`,
+  `src-tauri/src/commands/mod.rs`, `src-tauri/src/lib.rs`,
+  `src/components/PetContextMenu.vue`, `src/views/PetOverlayView.vue`,
+  `docs/coding-workflow-design.md`.
+
+### Brain doc sync
+This chunk does not touch brain/RAG/embedding/cognitive-kind surfaces, so
+README.md and docs/brain-advanced-design.md require no updates.
+
+---
+
+## Chunk 30.2 — Self-improve UX & session memory absorption (claw-code / Claude Code / OpenClaw)
+
+**Status:** Complete
+**Date:** 2026-05-04
+
+### Goal
+
+Reverse-engineer the UI/UX, AI feature set, chat history, and session
+management of [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code),
+Anthropic's Claude Code CLI, and OpenClaw, then absorb the patterns into
+TerranSoul's self-improve coding workflow without disturbing the existing
+autonomous loop.
+
+### Reference patterns absorbed
+
+- **Named, resumable sessions** — Claude Code `--name`, `--resume`,
+  `--continue`; claw-code's `.claude/sessions/` directory.
+- **Persistent transcripts** — claw-code keeps the full turn-by-turn
+  history per session; Claude Code's `--resume` replays it.
+- **Slash commands inside the input** — `/clear`, `/rename`, `/fork`,
+  `/resume`, `/list`, `/help`.
+- **`--fork-session`** — clone a session for experiments without
+  corrupting the working session.
+- **`project purge`** — wipe transcripts + metadata in one call.
+
+### Architecture
+
+- **`src-tauri/src/coding/session_chat.rs`** (new) — pure JSONL
+  transcript store keyed by sanitised session id. Files live next to
+  the existing `<id>.json` handoff snapshot at
+  `<data_dir>/coding_workflow/sessions/<id>.chat.jsonl`. Helpers:
+  `append_message`, `load_chat` (with tail-limit), `clear_chat`,
+  `chat_summary`, `fork_chat`. Hard cap of 32 KiB per message; corrupt
+  lines silently skipped on read so a single bad row cannot brick the
+  panel.
+- **`src-tauri/src/commands/coding_sessions.rs`** (new) — Tauri commands
+  joining the existing `HandoffSummary` + new `ChatSummary`.
+  Commands: `coding_session_list`, `coding_session_append_message`,
+  `coding_session_load_chat`, `coding_session_clear_chat`,
+  `coding_session_rename`, `coding_session_fork`, `coding_session_purge`.
+  Pure inner helpers (`collect_session_entries`, `rename_session`,
+  `fork_session`, `purge_session`) keep the unit tests Tauri-runtime-free.
+- **`src/utils/slash-commands.ts`** (new) — pure parser for the
+  `/clear`, `/rename`, `/fork`, `/resume`, `/list`, `/help` palette
+  with chat fall-through and `unknown` discriminator.
+- **`src/components/SelfImproveSessionsPanel.vue`** (new) — sidebar +
+  scrollback + slash-command input bar embedded inside the existing
+  `SelfImprovePanel.vue`. Per-session pick / rename / fork / delete,
+  `Date.now()`-stamped append, transient status pill.
+- **`src/stores/self-improve.ts`** — extended with a session slice
+  (`sessions`, `activeSessionId`, `activeChat`, `sessionsLoading`)
+  and async actions wrapping every new Tauri command. `Array.isArray`
+  guards keep the UI safe when a mocked `invoke` returns `null`.
+- **Wiring** — `coding/mod.rs` now `pub use`s the new module; new
+  commands declared in `commands/mod.rs` and registered in `lib.rs`.
+
+### Files created
+
+- `src-tauri/src/coding/session_chat.rs` (storage + 11 unit tests).
+- `src-tauri/src/commands/coding_sessions.rs` (Tauri commands + 6 unit tests).
+- `src/utils/slash-commands.ts` + `slash-commands.test.ts` (8 unit tests).
+- `src/components/SelfImproveSessionsPanel.vue` (sidebar UI).
+
+### Files modified
+
+- `src-tauri/src/coding/mod.rs` — module declaration + re-exports.
+- `src-tauri/src/commands/mod.rs` — register `coding_sessions`.
+- `src-tauri/src/lib.rs` — import + `invoke_handler` registration.
+- `src/components/SelfImprovePanel.vue` — embed sessions sub-panel.
+- `src/stores/self-improve.ts` — sessions slice + actions.
+- `docs/coding-workflow-design.md` — new §3.8 documenting the absorption.
+- `rules/research-reverse-engineering.md` — new §11 with the pattern
+  table and mapping to TerranSoul code.
+- `rules/milestones.md` — chunk row added (now removed on archive).
+
+### Validation
+
+- `npx vitest run` — 117 files, **1579 passed**.
+- `npx vue-tsc --noEmit` — no errors.
+- `cargo clippy --lib -- -D warnings` — clean.
+- `cargo test --lib` — **2019 passed** (was 2002; +17 new tests).
+- `cargo test --tests` — 4 smoke tests passed.
+- `cargo test --doc` — 1 doctest passed.
+
+### Out of scope
+
+Auto-appending autonomous-loop run output to the active session's
+transcript. The current slice ships pure session UX so it is
+independent of the in-progress autonomy loop; the loop wiring lands
+in a follow-up chunk.
+
+---
+
+## Chunk 30.1 — NotebookLM-style document token economy
+
+**Status:** Complete
+**Date:** 2026-05-04
+
+### Summary
+
+Adapted the public NotebookLM source-grounding pattern into TerranSoul's document ingestion pipeline by adding deterministic source guides: one compact, embedded `summary` row per imported source that broad document questions can retrieve before paying to inject multiple raw chunks.
+
+### What changed
+
+- Added a source-guide builder in `src-tauri/src/commands/ingest.rs` that derives a source label, compact synopsis, heading list, top terms, and starter questions from the parsed document without making an LLM call.
+- Stored source guides as `MemoryType::Summary` rows tagged `source-guide,document-summary,source:<slug>` with the same `source_url` / `source_hash` as the raw chunks, then embedded them in the existing best-effort embedding pass.
+- Kept raw chunk storage unchanged for exact quote/detail retrieval while giving overview questions a much smaller retrieval target.
+- Fixed Windows drive-letter source labels so paths like `C:\docs\privacy-policy.md` do not get treated as URL schemes.
+- Fixed an Obsidian bidirectional-sync timestamp race exposed by the final Windows CI run by recording the actual exported file mtime after writes, preventing immediate re-import of just-exported notes.
+- Added focused Rust tests for compact source-guide generation, safe source tags, top-term filtering, and adjacent chunk-span behavior.
+- Updated the mandatory brain docs and README for the new ingest/RAG behavior.
+- Recorded the absorbed NotebookLM pattern in the reverse-engineering tracker and removed the completed 30.1 row from `rules/milestones.md`; no active chunks remain.
+
+### Validation
+
+- `cd src-tauri && cargo fmt && cargo test source_guide && cargo test top_source_terms && cargo test locate_chunk_char_spans` - passed.
+- `cd src-tauri && cargo test sync_creates_and_imports_roundtrip -- --nocapture && cargo test source_guide` - passed after the timestamp race fix.
+- `get_errors` on touched Rust/docs/milestone files - no errors.
+- Full CI Gate (`npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`) - passed; Rust suite ended with 2002 lib tests, 4 smoke tests, and 1 doctest passing.
+- `git diff --check -- src-tauri/src/commands/ingest.rs src-tauri/src/memory/obsidian_sync.rs README.md docs/brain-advanced-design.md rules/milestones.md rules/research-reverse-engineering.md rules/completion-log.md` - clean aside from Git's CRLF warnings on Rust files.
+
+---
+
+## Chunk 29.6 — Tauri free-provider model selection parity
+
+**Status:** Complete
+**Date:** 2026-05-04
+
+### Summary
+
+Closed the remaining provider-UX gap by making the Tauri Brain setup wizard's free-provider flow carry the selected OpenRouter/NVIDIA/Pollinations model through the shared brain contract instead of keeping the choice as a frontend-only hint.
+
+### What changed
+
+- Added a free-model selector to `BrainSetupView.vue`, defaulting OpenRouter first and requiring provider-page/manual key authorization before connection.
+- Extended `BrainMode::FreeApi` with an optional `model` field that preserves backwards compatibility for old configs.
+- Applied the selected free model in Rust chat, streaming, phone-control chat, intent classification, and memory-helper LLM calls when the configured provider is used.
+- Updated browser transport, Marketplace free-provider application, and browser provider authorization to persist/use the selected free model consistently.
+- Added `BrainSetupView.test.ts` plus IPC and browser transport/store coverage for selected free-provider models.
+- Updated the mandatory brain documentation and README provider notes for `BrainMode::FreeApi.model`.
+- Removed the completed 29.6 row from `rules/milestones.md`; no active chunks remain.
+
+### Validation
+
+- `npx vitest run src/views/BrainSetupView.test.ts src/stores/brain.test.ts src/transport/browser-brain.test.ts` - 42 passed.
+- `npx vue-tsc --noEmit` - passed.
+- `cd src-tauri && cargo check` - passed.
+- `cd src-tauri && cargo test brain_mode_free_api && cargo test save_and_load_free_api && cargo clippy -- -D warnings` - passed.
+- Full CI Gate (`npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`) - passed; Rust suite ended with 1999 lib tests, 4 smoke tests, and 1 doctest passing.
 
 ---
 

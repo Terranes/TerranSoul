@@ -28,10 +28,10 @@
         >
           <div class="bs-tier-header">
             <strong>☁️ Free Cloud API</strong>
-            <span class="bs-badge-free">Instant — no setup</span>
+            <span class="bs-badge-free">Free-tier key</span>
           </div>
-          <p>Use free LLM providers (Groq, Cerebras, etc.) with zero configuration.</p>
-          <small>No API key needed for some providers · Rate-limited</small>
+          <p>Use free-tier LLM providers such as OpenRouter, Gemini, NVIDIA NIM, or Pollinations with your own key/token.</p>
+          <small>Provider authorization required · Rate limits vary</small>
         </div>
         <div
           :class="['bs-tier', { selected: selectedTier === 'paid' }]"
@@ -77,28 +77,64 @@
           v-for="p in brain.freeProviders"
           :key="p.id"
           :class="['bs-provider', { selected: selectedProvider === p.id }]"
-          @click="selectedProvider = p.id"
+          @click="selectFreeProvider(p.id)"
         >
           <div class="bs-provider-header">
             <strong>{{ p.display_name }}</strong>
             <span
-              v-if="p.id === 'pollinations'"
+              v-if="p.id === 'openrouter'"
               class="bs-badge"
             >⭐ Recommended</span>
           </div>
           <p>{{ p.notes }}</p>
-          <small>Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM</small>
+          <small>Model: <code>{{ p.id === selectedProvider ? selectedFreeModelResolved : p.model }}</code> · {{ p.rpm_limit }} RPM</small>
         </div>
       </div>
       <div
-        v-if="freeApiKey !== null"
+        v-if="selectedFreeProviderModelOptions.length"
         class="bs-api-key"
       >
-        <label>API Key (optional for some providers):</label>
+        <label for="free-model-select">Free model:</label>
+        <select
+          id="free-model-select"
+          v-model="selectedFreeModel"
+          class="bs-input"
+        >
+          <option
+            v-for="option in selectedFreeProviderModelOptions"
+            :key="option.model"
+            :value="option.model"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
+      <a
+        v-if="selectedFreeProviderAuthUrl"
+        class="btn-primary bs-auth-link"
+        :href="selectedFreeProviderAuthUrl"
+        target="_blank"
+        rel="noopener"
+      >
+        Open provider page
+      </a>
+      <button
+        type="button"
+        class="btn-secondary bs-manual-toggle"
+        :aria-expanded="manualFreeKeyOpen"
+        @click="manualFreeKeyOpen = !manualFreeKeyOpen"
+      >
+        {{ manualFreeKeyOpen ? 'Hide manual key/token' : 'Manual API key/token option' }}
+      </button>
+      <div
+        v-if="manualFreeKeyOpen"
+        class="bs-api-key"
+      >
+        <label>API key/token from the provider page:</label>
         <input
           v-model="freeApiKeyInput"
           type="password"
-          placeholder="Enter API key…"
+          placeholder="Enter API key or token..."
           class="bs-input"
         >
       </div>
@@ -111,10 +147,10 @@
         </button>
         <button
           class="btn-primary"
-          :disabled="!selectedProvider"
+          :disabled="!selectedProvider || (selectedFreeProviderRequiresKey && !freeApiKeyInput.trim())"
           @click="activateFreeApi"
         >
-          Activate →
+          Connect provider →
         </button>
       </div>
     </div>
@@ -126,31 +162,47 @@
     >
       <h2>💳 Paid Cloud API</h2>
       <p class="bs-desc">
-        Enter your API credentials. We support any OpenAI-compatible endpoint.
+        Pick a familiar provider, then authorize it with your API key.
       </p>
-      <div class="bs-form">
-        <label for="paid-provider-select">Provider:</label>
-        <select
-          id="paid-provider-select"
-          v-model="paidProvider"
-          class="bs-select"
+      <div class="bs-auth-grid">
+        <button
+          v-for="provider in paidProviderOptions"
+          :key="provider.id"
+          type="button"
+          :class="['bs-auth-card', { selected: paidProvider === provider.id }]"
+          @click="selectPaidProvider(provider.id)"
         >
-          <option value="openai">
-            OpenAI
-          </option>
-          <option value="anthropic">
-            Anthropic
-          </option>
-          <option value="custom">
-            Custom endpoint
-          </option>
-        </select>
+          <strong>{{ provider.label }}</strong>
+          <small>{{ provider.hint }}</small>
+        </button>
+      </div>
+      <a
+        v-if="selectedPaidProvider.authUrl"
+        class="btn-primary bs-auth-link"
+        :href="selectedPaidProvider.authUrl"
+        target="_blank"
+        rel="noopener"
+      >
+        Open {{ selectedPaidProvider.shortLabel }} page
+      </a>
+      <button
+        type="button"
+        class="btn-secondary bs-manual-toggle"
+        :aria-expanded="manualPaidKeyOpen"
+        @click="manualPaidKeyOpen = !manualPaidKeyOpen"
+      >
+        {{ manualPaidKeyOpen ? 'Hide manual API key' : 'Manual API key option' }}
+      </button>
+      <div
+        v-if="manualPaidKeyOpen"
+        class="bs-form"
+      >
         <label for="paid-api-key-input">API Key:</label>
         <input
           id="paid-api-key-input"
           v-model="paidApiKey"
           type="password"
-          placeholder="sk-…"
+          :placeholder="selectedPaidProvider?.placeholder ?? 'Provider API key'"
           class="bs-input"
         >
         <label for="paid-model-input">Model:</label>
@@ -186,7 +238,7 @@
           :disabled="!paidApiKey || !paidModel"
           @click="activatePaidApi"
         >
-          Activate →
+          Connect {{ selectedPaidProvider?.shortLabel ?? 'Provider' }} →
         </button>
       </div>
     </div>
@@ -559,27 +611,76 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useBrainStore } from '../stores/brain';
+import {
+  NVIDIA_FREE_MODELS,
+  OPENROUTER_FREE_MODELS,
+  POLLINATIONS_MODELS,
+  useBrainStore,
+  type BrowserAuthModelOption,
+} from '../stores/brain';
 
 const emit = defineEmits<{ (e: 'done'): void }>();
 
 const brain = useBrainStore();
-// Auto-activate free cloud (Pollinations) — skip provider selection entirely.
-// Users can navigate to step 0 to pick a different tier if they want.
-const step = ref(99);
+const step = ref(0);
 const selectedTier = ref<'free' | 'paid' | 'local'>('free');
 const localRuntime = ref<'ollama' | 'lm_studio'>('ollama');
 const selectedModel = ref('');
-const selectedProvider = ref('pollinations');
-const freeApiKey = ref<string | null>(null);
+const selectedProvider = ref('openrouter');
+const selectedFreeModel = ref(OPENROUTER_FREE_MODELS[0]?.model ?? '');
 const freeApiKeyInput = ref('');
+const manualFreeKeyOpen = ref(false);
 const pullDone = ref(false);
 
 // Paid API fields
 const paidProvider = ref('openai');
 const paidApiKey = ref('');
-const paidModel = ref('gpt-4o');
+const paidModel = ref('gpt-4o-mini');
 const paidBaseUrl = ref('https://api.openai.com');
+const manualPaidKeyOpen = ref(false);
+
+const paidProviderOptions = [
+  {
+    id: 'openai',
+    label: 'Authorize with ChatGPT',
+    shortLabel: 'ChatGPT',
+    hint: 'OpenAI key, GPT models',
+    model: 'gpt-4o-mini',
+    baseUrl: 'https://api.openai.com',
+    placeholder: 'OpenAI API key',
+    authUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'gemini',
+    label: 'Authorize with Gemini',
+    shortLabel: 'Gemini',
+    hint: 'Google AI Studio key',
+    model: 'gemini-3-flash-preview',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    placeholder: 'Google AI Studio API key',
+    authUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  {
+    id: 'anthropic',
+    label: 'Authorize with Claude',
+    shortLabel: 'Claude',
+    hint: 'Anthropic key',
+    model: 'claude-sonnet-4-20250514',
+    baseUrl: 'https://api.anthropic.com',
+    placeholder: 'Anthropic API key',
+    authUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'custom',
+    label: 'Custom endpoint',
+    shortLabel: 'Custom',
+    hint: 'Any OpenAI-compatible API',
+    model: '',
+    baseUrl: '',
+    placeholder: 'Provider API key',
+    authUrl: '',
+  },
+] as const;
 
 // LM Studio fields
 const lmStudioBaseUrl = ref('http://127.0.0.1:1234');
@@ -589,7 +690,7 @@ const lmStudioEmbeddingModel = ref('');
 
 const stepLabels = computed(() => {
   if (selectedTier.value === 'free') return ['Choose', 'Provider', 'Done'];
-  if (selectedTier.value === 'paid') return ['Choose', 'API Key', 'Done'];
+  if (selectedTier.value === 'paid') return ['Choose', 'Authorize', 'Done'];
   if (localRuntime.value === 'lm_studio') return ['Choose', 'Provider', 'Configure', 'Done'];
   return ['Choose', 'Provider', 'Hardware', 'Model', 'Ollama', 'Download', 'Done'];
 });
@@ -602,13 +703,71 @@ const selectedProviderName = computed(() =>
   brain.freeProviders.find((p) => p.id === selectedProvider.value)?.display_name ?? selectedProvider.value,
 );
 
+const selectedFreeProvider = computed(() =>
+  brain.freeProviders.find((p) => p.id === selectedProvider.value) ?? null,
+);
+
+const selectedFreeProviderRequiresKey = computed(() => selectedFreeProvider.value?.requires_api_key ?? true);
+
+const selectedFreeProviderAuthUrl = computed(() => freeProviderAuthUrl(selectedProvider.value));
+
+const selectedFreeProviderModelOptions = computed<BrowserAuthModelOption[]>(() => modelOptionsForFreeProvider(selectedProvider.value));
+
+const selectedFreeModelResolved = computed(() => selectedFreeModel.value || selectedFreeProvider.value?.model || '');
+
 const paidBaseUrlResolved = computed(() => {
   switch (paidProvider.value) {
     case 'openai': return 'https://api.openai.com';
+    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
     case 'anthropic': return 'https://api.anthropic.com';
     default: return paidBaseUrl.value;
   }
 });
+
+const selectedPaidProvider = computed(() =>
+  paidProviderOptions.find((provider) => provider.id === paidProvider.value) ?? paidProviderOptions[0],
+);
+
+function selectPaidProvider(providerId: string) {
+  paidProvider.value = providerId;
+  const provider = paidProviderOptions.find((item) => item.id === providerId);
+  if (!provider) return;
+  paidModel.value = provider.model || paidModel.value;
+  paidBaseUrl.value = provider.baseUrl;
+  paidApiKey.value = '';
+  manualPaidKeyOpen.value = provider.id === 'custom';
+}
+
+function selectFreeProvider(providerId: string) {
+  selectedProvider.value = providerId;
+  freeApiKeyInput.value = '';
+  manualFreeKeyOpen.value = false;
+  selectedFreeModel.value = modelOptionsForFreeProvider(providerId)[0]?.model
+    ?? brain.freeProviders.find((provider) => provider.id === providerId)?.model
+    ?? '';
+}
+
+function modelOptionsForFreeProvider(providerId: string): BrowserAuthModelOption[] {
+  if (providerId === 'openrouter') return OPENROUTER_FREE_MODELS;
+  if (providerId === 'nvidia-nim') return NVIDIA_FREE_MODELS;
+  if (providerId === 'pollinations') return POLLINATIONS_MODELS;
+  return [];
+}
+
+function freeProviderAuthUrl(providerId: string): string | null {
+  switch (providerId) {
+    case 'openrouter': return 'https://openrouter.ai/keys';
+    case 'gemini': return 'https://aistudio.google.com/app/apikey';
+    case 'nvidia-nim': return 'https://build.nvidia.com/explore/discover';
+    case 'pollinations': return 'https://enter.pollinations.ai/';
+    case 'groq': return 'https://console.groq.com/keys';
+    case 'cerebras': return 'https://cloud.cerebras.ai/platform/';
+    case 'mistral': return 'https://console.mistral.ai/api-keys';
+    case 'github-models': return 'https://github.com/settings/tokens';
+    case 'siliconflow': return 'https://cloud.siliconflow.cn/account/ak';
+    default: return null;
+  }
+}
 
 function formatRam(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`;
@@ -619,11 +778,14 @@ function goToTierStep() {
 }
 
 async function activateFreeApi() {
+  const model = selectedFreeModelResolved.value || null;
+  if (model) brain.setFallbackProviderModel(selectedProvider.value, model);
   try {
     await brain.setBrainMode({
       mode: 'free_api',
       provider_id: selectedProvider.value,
       api_key: freeApiKeyInput.value || null,
+      model,
     });
   } catch {
     // Tauri unavailable — set locally
@@ -631,6 +793,7 @@ async function activateFreeApi() {
       mode: 'free_api',
       provider_id: selectedProvider.value,
       api_key: freeApiKeyInput.value || null,
+      model,
     };
   }
   step.value = 99;
@@ -710,23 +873,14 @@ onMounted(async () => {
     selectedModel.value = brain.topRecommendation.model_tag;
   }
   if (brain.freeProviders.length > 0) {
-    selectedProvider.value = brain.freeProviders[0].id;
+    selectedProvider.value = brain.freeProviders.some((provider) => provider.id === 'openrouter')
+      ? 'openrouter'
+      : brain.freeProviders[0].id;
+    selectedFreeModel.value = modelOptionsForFreeProvider(selectedProvider.value)[0]?.model
+      ?? brain.freeProviders.find((provider) => provider.id === selectedProvider.value)?.model
+      ?? '';
   }
-  // Auto-activate free cloud if brain isn't already configured.
-  if (!brain.hasBrain) {
-    try {
-      await brain.setBrainMode({
-        mode: 'free_api',
-        provider_id: selectedProvider.value,
-        api_key: null,
-      });
-    } catch {
-      brain.brainMode = {
-        mode: 'free_api',
-        provider_id: selectedProvider.value,
-        api_key: null,
-      };
-    }
+  if (brain.hasBrain) {
     step.value = 99;
   }
 });
@@ -769,10 +923,17 @@ onMounted(async () => {
 .bs-provider code { background: var(--ts-bg-surface); padding: 0.1rem 0.3rem; border-radius: 3px; color: var(--ts-text-primary); }
 
 /* Form elements */
+.bs-auth-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; }
+.bs-auth-card { display: grid; gap: 0.25rem; min-height: 4.4rem; padding: 0.75rem 0.85rem; border: 2px solid var(--ts-border); border-radius: var(--ts-radius-md); color: var(--ts-text-primary); text-align: left; background: var(--ts-bg-base); cursor: pointer; transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast); }
+.bs-auth-card:hover { border-color: var(--ts-border-medium); }
+.bs-auth-card.selected { border-color: var(--ts-success-dim); background: var(--ts-bg-selected); }
+.bs-auth-card small { color: var(--ts-text-muted); line-height: 1.35; }
 .bs-form { display: flex; flex-direction: column; gap: 0.5rem; }
 .bs-form label { font-size: 0.85rem; color: var(--ts-text-secondary); }
 .bs-api-key { display: flex; flex-direction: column; gap: 0.3rem; }
 .bs-api-key label { font-size: 0.8rem; color: var(--ts-text-secondary); }
+.bs-auth-link { display: inline-flex; justify-content: center; text-decoration: none; }
+.bs-manual-toggle { align-self: flex-start; }
 .bs-input { padding: 0.5rem 0.75rem; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; color: var(--ts-text-primary); font-size: 0.85rem; outline: none; transition: border-color var(--ts-transition-fast); }
 .bs-input:focus { border-color: var(--ts-accent-blue-hover); box-shadow: 0 0 0 3px var(--ts-accent-glow); }
 .bs-input::placeholder { color: var(--ts-text-dim); }

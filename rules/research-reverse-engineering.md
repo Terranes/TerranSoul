@@ -942,6 +942,7 @@ These features from the reference repos are already implemented in TerranSoul:
 - ✅ VRM expression system (6 emotions) — aituber-kit pattern
 - ✅ Pose blending (additive Euler offsets) — AI4Animation-inspired
 - ✅ Gesture system (nod, wave, shrug, etc.) — original implementation
+- ✅ NotebookLM-style source guides for imported documents — public NotebookLM source-grounding pattern, implemented in Chunk 30.1 as deterministic source-summary rows that reduce broad document Q&A prompt tokens before raw chunks are needed
 
 ---
 
@@ -994,3 +995,61 @@ These features from the reference repos are already implemented in TerranSoul:
 ### Follow-up for Chunk 28.12+
 
 All follow-ups from the Cursor/Claude Code comparison are implemented as of Chunk 28.14.
+
+---
+
+## 11. claw-code / Claude Code / OpenClaw — Self-improve UX & sessions {#11-claw-clawcode-openclaw}
+
+> **Date:** 2026-05-04
+> **Sources:** [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code)
+> README + USAGE, [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)
+> + overview, OpenClaw (the OG public Claude Code reverse-engineering project that
+> claw-code derives from). All three centre on a single CLI agent harness with
+> rich session management, slash commands, and resumable conversations.
+
+### Patterns worth absorbing
+
+| Pattern | claw-code / Claude Code / OpenClaw | TerranSoul adaptation |
+|---|---|---|
+| Named, resumable sessions | `claude --name "auth-refactor"` plus `claude -r "auth-refactor"` resume by name or interactive picker; `--continue` resumes the most recent session in the working directory. claw-code stores per-project session state under `.claude/sessions/`. | Reuse the existing `coding::handoff_store` (per-`session_id` JSON snapshots) for metadata. Add per-session chat-history JSONL alongside it so each session has both a structured handoff seed *and* the verbatim turn-by-turn transcript. Surface a sidebar with "resume" / "rename" / "delete" actions in the self-improve panel. |
+| Persistent chat history | Claude Code retains the full transcript per session and lets you scroll back, search, and resume mid-conversation. | New `coding::session_chat` module storing append-only JSONL of `{role, content, ts_ms, kind}` turns. Bounded reads (last N turns) for cheap UI loading. |
+| Slash commands inside the input | `/clear`, `/rename`, `/resume`, `/help`, `/status`, `/list` — all dispatched from the input bar, not buttons. | The self-improve chat input parses leading `/` commands locally before sending; unknown slash commands surface a lightweight error toast. Mirrors the Claude Code interactive shell. |
+| New session without losing the old | `--fork-session` clones the current session under a new id so experiments do not corrupt the working session. | A "fork" action in the sessions sidebar copies the chat JSONL + handoff JSON under a new id. |
+| Compact session summaries | claw-code's `claw doctor` and Claude Code's `/status` show a short health line per session: chunk id, last action, byte size. | `coding_session_list_handoffs` already returns `HandoffSummary{chunk_id, last_action, modified_at, bytes}`; extend the list to include chat message count and last-user-message preview. |
+| Project-purge / cleanup | `claude project purge` wipes transcripts, debug logs, prompt history. | `coding_session_clear_handoff` already exists for metadata; mirror it with `coding_session_clear_chat` and a `coding_session_purge` that does both. |
+
+### Mapping to TerranSoul code
+
+- Backend: extend `src-tauri/src/coding/` with a new `session_chat.rs` module
+  (pure storage + sanitiser, mirrored on the existing `handoff_store.rs`
+  shape). Add new Tauri commands in a new `src-tauri/src/commands/coding_sessions.rs`
+  registered through `commands/mod.rs` and `lib.rs`.
+- Frontend: extend `src/stores/self-improve.ts` with a `sessions` slice
+  (list + active session + chat scrollback) and add a
+  `SelfImproveSessionsPanel.vue` component embedded in the existing
+  `SelfImprovePanel.vue`. Slash-command parsing lives in a small pure helper
+  under `src/utils/` so it is unit-testable without mounting the component.
+- Tests: pure-function unit tests for the storage module + the slash-command
+  parser, plus a Vitest component test for the session sidebar.
+
+### Implementation slice for Chunk 30.2
+
+The minimum vertical slice covers session list, chat history, resume, fork,
+rename, clear, and a small slash-command palette (`/clear`, `/rename`,
+`/fork`, `/resume`, `/help`). Autonomous loop integration (auto-appending
+runs to the active session's chat) is intentionally out of scope for this
+chunk — it depends on the in-progress autonomy loop and lands in a follow-up.
+
+### Implemented in Chunk 30.2
+
+- ✅ `coding::session_chat` JSONL transcript store (append/load/clear/summary/fork) sitting next to existing handoff snapshots.
+- ✅ Tauri commands `coding_session_{list,append_message,load_chat,clear_chat,rename,fork,purge}` registered in `lib.rs`.
+- ✅ `SelfImproveSessionsPanel.vue` sidebar + transcript scrollback embedded in the existing `SelfImprovePanel.vue`.
+- ✅ Pure `parseSlashCommand` parser (`/clear`, `/rename`, `/fork`, `/resume`, `/list`, `/help`, plus chat fall-through and unknown-command discriminator) with full unit coverage.
+- ✅ Self-improve store gains a session slice with null-safe `Array.isArray` guards so mocked `invoke` returns no longer crash the panel.
+
+### Implemented follow-up in Chunk 30.6
+
+- ✅ Auto-append autonomous-loop `self-improve-progress` events to the active session's transcript as `system` / `run` messages.
+- ✅ Create a timestamped `self-improve-*` transcript session when progress arrives without a selected session.
+- ✅ Include transcript-only sessions in the session picker so run history remains resumable before a handoff snapshot exists.

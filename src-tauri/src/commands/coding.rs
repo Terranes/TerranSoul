@@ -82,11 +82,9 @@ pub async fn set_self_improve_enabled(
     if enabled {
         let cfg = state.coding_llm_config.lock().map_err(|e| e.to_string())?;
         if cfg.is_none() {
-            return Err(
-                "Configure a Coding LLM before enabling self-improve. \
-                 Open Brain → Coding LLM and pick Claude / OpenAI / DeepSeek."
-                    .to_string(),
-            );
+            return Err("Configure a Coding LLM before enabling self-improve. \
+                 Open Brain → Coding LLM and pick Local Ollama, Claude, OpenAI, or Custom."
+                .to_string());
         }
     }
 
@@ -140,9 +138,7 @@ pub async fn test_coding_llm_connection(
 /// Inspect the on-disk repository the autonomous loop will operate on.
 /// Returns informational state — `is_git_repo = false` is *not* an error.
 #[tauri::command]
-pub async fn detect_self_improve_repo(
-    state: State<'_, AppState>,
-) -> Result<RepoState, String> {
+pub async fn detect_self_improve_repo(state: State<'_, AppState>) -> Result<RepoState, String> {
     let root = coding_repo::guess_repo_root(&state.data_dir);
     Ok(coding_repo::detect_repo(&root))
 }
@@ -195,10 +191,7 @@ pub async fn get_self_improve_status(
 /// The caller (UI) is expected to have toggled `self_improve.enabled = true`
 /// via [`set_self_improve_enabled`] *before* calling this command.
 #[tauri::command]
-pub async fn start_self_improve(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn start_self_improve(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let cfg = {
         let guard = state.coding_llm_config.lock().map_err(|e| e.to_string())?;
         guard
@@ -278,9 +271,7 @@ pub async fn get_self_improve_runs(
 /// Wipe the persisted run log. Returns the (now-empty) summary so the UI
 /// can refresh in a single round-trip.
 #[tauri::command]
-pub async fn clear_self_improve_log(
-    state: State<'_, AppState>,
-) -> Result<MetricsSummary, String> {
+pub async fn clear_self_improve_log(state: State<'_, AppState>) -> Result<MetricsSummary, String> {
     let log = MetricsLog::new(&state.data_dir);
     log.clear().map_err(|e| format!("clear log: {e}"))?;
     Ok(log.summary())
@@ -293,9 +284,7 @@ pub async fn clear_self_improve_log(
 /// Persisted GitHub binding (token, owner/repo, base branch, reviewers).
 /// Returns `None` when not yet configured.
 #[tauri::command]
-pub async fn get_github_config(
-    state: State<'_, AppState>,
-) -> Result<Option<GitHubConfig>, String> {
+pub async fn get_github_config(state: State<'_, AppState>) -> Result<Option<GitHubConfig>, String> {
     Ok(coding::load_github_config(&state.data_dir))
 }
 
@@ -315,23 +304,8 @@ pub async fn set_github_config(
             coding::clear_github_config(&state.data_dir)?;
             Ok(None)
         }
-        Some(mut cfg) => {
-            if cfg.owner.is_empty() || cfg.repo.is_empty() {
-                let root = coding_repo::guess_repo_root(&state.data_dir);
-                if let Some(remote) = coding_repo::detect_repo(&root).remote_url {
-                    if let Some((o, r)) = coding::parse_owner_repo(&remote) {
-                        if cfg.owner.is_empty() {
-                            cfg.owner = o;
-                        }
-                        if cfg.repo.is_empty() {
-                            cfg.repo = r;
-                        }
-                    }
-                }
-            }
-            if cfg.default_base.is_empty() {
-                cfg.default_base = "main".to_string();
-            }
+        Some(cfg) => {
+            let cfg = coding::apply_github_config_defaults(cfg, &state.data_dir);
             coding::save_github_config(&state.data_dir, &cfg)?;
             Ok(Some(cfg))
         }
@@ -342,9 +316,7 @@ pub async fn set_github_config(
 /// flow. Useful for users who want to ship before the autonomous loop
 /// completes every chunk. Returns the PR summary on success.
 #[tauri::command]
-pub async fn open_self_improve_pr(
-    state: State<'_, AppState>,
-) -> Result<PrSummary, String> {
+pub async fn open_self_improve_pr(state: State<'_, AppState>) -> Result<PrSummary, String> {
     let cfg = coding::load_github_config(&state.data_dir)
         .ok_or_else(|| "GitHub not configured. Set token + owner/repo first.".to_string())?;
     if !cfg.is_complete() {
@@ -372,14 +344,16 @@ pub async fn open_self_improve_pr(
 /// optional LLM-assisted conflict resolution. Returns a structured
 /// outcome the UI can render verbatim.
 #[tauri::command]
-pub async fn pull_main_for_self_improve(
-    state: State<'_, AppState>,
-) -> Result<PullResult, String> {
+pub async fn pull_main_for_self_improve(state: State<'_, AppState>) -> Result<PullResult, String> {
     let repo_root = coding_repo::guess_repo_root(&state.data_dir);
     let base = coding::load_github_config(&state.data_dir)
         .map(|c| c.default_base)
         .unwrap_or_else(|| "main".to_string());
-    let coding_cfg = state.coding_llm_config.lock().map_err(|e| e.to_string())?.clone();
+    let coding_cfg = state
+        .coding_llm_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
     Ok(coding::pull_main(&repo_root, &base, coding_cfg.as_ref()).await)
 }
 
@@ -405,13 +379,17 @@ pub async fn learn_from_user_message(
     if !enabled {
         return Ok(None);
     }
-    let cfg = match state.coding_llm_config.lock().map_err(|e| e.to_string())?.clone() {
+    let cfg = match state
+        .coding_llm_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+    {
         Some(c) => c,
         None => return Ok(None),
     };
     let repo_root = coding_repo::guess_repo_root(&state.data_dir);
-    let learned =
-        coding::learn_from_message(&message, &cfg, &state.data_dir, &repo_root).await;
+    let learned = coding::learn_from_message(&message, &cfg, &state.data_dir, &repo_root).await;
     Ok(learned)
 }
 
@@ -615,9 +593,7 @@ pub async fn set_coding_workflow_config(
         return Err("max_total_chars must be greater than zero.".to_string());
     }
     if config.max_total_chars < config.max_file_chars {
-        return Err(
-            "max_total_chars must be greater than or equal to max_file_chars.".to_string(),
-        );
+        return Err("max_total_chars must be greater than or equal to max_file_chars.".to_string());
     }
     let trim_check = |list: &[String], field: &str| -> Result<(), String> {
         for entry in list {
