@@ -3,12 +3,19 @@ use tauri::State;
 use crate::memory::{MemoryEntry, MemoryUpdate, NewMemory};
 use crate::AppState;
 
+const BYTES_PER_MB: f64 = 1024.0 * 1024.0;
+const BYTES_PER_GB: f64 = 1024.0 * BYTES_PER_MB;
+const DEFAULT_MAX_MEMORY_BYTES_FALLBACK: u64 =
+    (crate::settings::DEFAULT_MAX_MEMORY_GB * BYTES_PER_GB) as u64;
+const DEFAULT_MAX_MEMORY_CACHE_BYTES_FALLBACK: u64 =
+    (crate::settings::DEFAULT_MAX_MEMORY_MB * BYTES_PER_MB) as u64;
+
 fn configured_memory_limit_bytes(state: &AppState) -> u64 {
     state
         .app_settings
         .lock()
         .map(|s| s.max_memory_bytes())
-        .unwrap_or((crate::settings::DEFAULT_MAX_MEMORY_GB * 1024.0 * 1024.0 * 1024.0) as u64)
+        .unwrap_or(DEFAULT_MAX_MEMORY_BYTES_FALLBACK)
 }
 
 fn configured_memory_cache_limit_bytes(state: &AppState) -> u64 {
@@ -16,7 +23,7 @@ fn configured_memory_cache_limit_bytes(state: &AppState) -> u64 {
         .app_settings
         .lock()
         .map(|s| s.max_memory_cache_bytes())
-        .unwrap_or((crate::settings::DEFAULT_MAX_MEMORY_MB * 1024.0 * 1024.0) as u64)
+        .unwrap_or(DEFAULT_MAX_MEMORY_CACHE_BYTES_FALLBACK)
 }
 
 fn enforce_configured_memory_limit(

@@ -449,7 +449,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref } from 'vue';
+import { computed } from 'vue';
+import { watch } from 'vue';
+import { onMounted } from 'vue';
+import { onUnmounted } from 'vue';
+import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
@@ -524,8 +529,15 @@ function getAsm(): AvatarStateMachine | null {
 // LipSync ↔ TTS bridge: feeds TTS audio into LipSync → AvatarState.viseme
 const lipSyncBridge = useLipSyncBridge(tts, getAsm);
 
+type BrowserSentenceDetail = { sentence?: string; language?: string };
+
+function isBrowserSentenceEvent(event: Event): event is CustomEvent<BrowserSentenceDetail> {
+  return event instanceof CustomEvent;
+}
+
 function handleBrowserSentenceEvent(event: Event) {
-  const detail = (event as CustomEvent<{ sentence?: string; language?: string }>).detail;
+  if (!isBrowserSentenceEvent(event)) return;
+  const detail = event.detail;
   const sentence = detail?.sentence?.trim();
   if (!sentence || !voice.config.tts_provider) return;
   if (!isStreamTtsActive) {
@@ -878,6 +890,10 @@ function handleAddMusicRequest() {
   handleSend('Can you suggest some good background music for me?');
 }
 
+function generateMessageId(): string {
+  return crypto.randomUUID();
+}
+
 function precomputePendingEmotionForStreaming(message: string): void {
   // Pre-compute user emotion before the async send starts so streaming UI
   // can use this value instead of a generic 'talking' state.
@@ -896,13 +912,13 @@ async function handleSend(message: string) {
   const dispatch = await tryDispatchSlashCommand(message);
   if (dispatch.handled) {
     conversationStore.addMessage({
-      id: crypto.randomUUID(),
+      id: generateMessageId(),
       role: 'user',
       content: message,
       timestamp: Date.now(),
     });
     conversationStore.addMessage({
-      id: crypto.randomUUID(),
+      id: generateMessageId(),
       role: 'assistant',
       content: dispatch.error
         ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
@@ -1035,7 +1051,7 @@ async function handleUpgradeAccept(optionId: string) {
       }
       // Notify user in chat
       conversationStore.messages.push({
-        id: crypto.randomUUID(),
+        id: generateMessageId(),
         role: 'assistant',
         content: 'Brain upgraded! I switched to Groq for better responses. You can get a free API key at groq.com for even better performance!',
         agentName: 'TerranSoul',
@@ -1050,7 +1066,7 @@ async function handleUpgradeAccept(optionId: string) {
     const displayName = recommendation?.display_name ?? model;
     if (model) {
       conversationStore.messages.push({
-        id: crypto.randomUUID(),
+        id: generateMessageId(),
         role: 'assistant',
         content: `Great choice! I'm downloading ${displayName} now. This may take a few minutes...`,
         agentName: 'TerranSoul',
@@ -1066,7 +1082,7 @@ async function handleUpgradeAccept(optionId: string) {
           // Tauri unavailable
         }
         conversationStore.messages.push({
-          id: crypto.randomUUID(),
+          id: generateMessageId(),
           role: 'assistant',
           content: `${displayName} is installed and active! I'm much smarter now. Try asking me something complex!`,
           agentName: 'TerranSoul',
@@ -1075,7 +1091,7 @@ async function handleUpgradeAccept(optionId: string) {
         });
       } else {
         conversationStore.messages.push({
-          id: crypto.randomUUID(),
+          id: generateMessageId(),
           role: 'assistant',
           content: `Download failed: ${brain.pullError ?? 'unknown error'}. Make sure Ollama is running (ollama serve).`,
           agentName: 'TerranSoul',
@@ -1087,7 +1103,7 @@ async function handleUpgradeAccept(optionId: string) {
   } else if (optionId === 'paid') {
     // Navigate to brain setup for paid API configuration
     conversationStore.messages.push({
-      id: crypto.randomUUID(),
+      id: generateMessageId(),
       role: 'assistant',
       content: 'To set up a paid API, open the Marketplace (🏪) and configure your API key in the LLM settings section.',
       agentName: 'TerranSoul',
@@ -1180,7 +1196,7 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
           
           // Add confirmation message
           await conversationStore.addMessage({
-            id: crypto.randomUUID(),
+            id: generateMessageId(),
             role: 'assistant',
             content: `Perfect! I've enabled Web Speech (your browser's built-in voice synthesis - free, offline-capable, no third-party API). You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
             agentName: 'TerranSoul',
@@ -1192,7 +1208,7 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
           console.warn('Auto-config failed:', error);
           // Show error message
           await conversationStore.addMessage({
-            id: crypto.randomUUID(),
+            id: generateMessageId(),
             role: 'assistant',
             content: `I had trouble setting up voice automatically. You can configure it manually in the Voice tab.`,
             agentName: 'TerranSoul',
@@ -1265,7 +1281,7 @@ function handleKnowledgeQuestFinish() {
   showKnowledgeQuest.value = false;
   setChatDrawerExpanded(true);
   conversationStore.addMessage({
-    id: crypto.randomUUID(),
+    id: generateMessageId(),
     role: 'assistant',
     content:
       `📚 **Scholar's Quest Complete!** I've finished learning about **${knowledgeQuestTopic.value}**.\n\n` +
