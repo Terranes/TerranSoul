@@ -531,6 +531,9 @@ onMounted(async () => {
       document.documentElement.dataset.tsMode = document.body.dataset.tsMode = 'browser';
     }
     brain.prepareBrowserProviderChoices();
+    if (import.meta.env.VITE_E2E) {
+      brain.autoConfigureFreeApi();
+    }
     skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
     await voice.autoConfigureVoice();

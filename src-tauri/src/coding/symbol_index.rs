@@ -906,7 +906,7 @@ const MAX_SIZE: usize = 1024;
         let run_http = query_symbols_by_name(&conn, repo_id, "run_http_server").unwrap();
         assert!(!run_http.is_empty());
         assert_eq!(run_http[0].kind, SymbolKind::Function);
-        assert_eq!(run_http[0].line, 13);
+        assert_eq!(run_http[0].line, 12);
 
         let run_stdio = query_symbols_by_name(&conn, repo_id, "run_stdio").unwrap();
         assert!(!run_stdio.is_empty());

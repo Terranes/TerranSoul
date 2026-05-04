@@ -556,7 +556,7 @@ const selectedBrain = ref('');
 const browserRuntime = computed(() => typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window));
 const showBrowserLlmConfig = ref(false);
 const showBrowserLlmPrompt = computed(() =>
-  browserRuntime.value && !usesRemoteConversation && (!brain.browserAuthSession || showBrowserLlmConfig.value),
+  browserRuntime.value && !usesRemoteConversation && (!brain.hasBrain || showBrowserLlmConfig.value),
 );
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
@@ -1500,6 +1500,9 @@ onMounted(async () => {
 
   if (browserRuntime.value) {
     brain.prepareBrowserProviderChoices();
+    if (import.meta.env.VITE_E2E && !brain.hasBrain) {
+      brain.autoConfigureFreeApi();
+    }
   } else {
     try {
       await brain.initialise();

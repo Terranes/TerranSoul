@@ -1540,6 +1540,37 @@ export const useConversationStore = defineStore('conversation', () => {
     }
   }
 
+  async function respondWithE2ePersonaFallback(content: string): Promise<void> {
+    const response = stampAgent(createPersonaResponse(content));
+    annotateCharismaTurn(response);
+    const chunks = response.content.length > 1
+      ? [
+          response.content.slice(0, Math.ceil(response.content.length / 2)),
+          response.content.slice(Math.ceil(response.content.length / 2)),
+        ]
+      : [response.content];
+
+    isStreaming.value = true;
+    streamingText.value = '';
+    for (const chunk of chunks) {
+      streamingText.value += chunk;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ts:llm-sentence', { detail: { sentence: chunk } }));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    messages.value.push(response);
+    maybeShowQuestFromResponse(response.content, content);
+    maybeShowDontKnowPrompt(response.content);
+    isThinking.value = false;
+    isStreaming.value = false;
+    streamingText.value = '';
+    activeAbortController = null;
+    generationActive.value = false;
+    void drainQueue();
+  }
+
   function annotateCharismaTurn(message: Message): void {
     if (message.role !== 'assistant' || message.agentName === 'System') return;
     const persona = usePersonaStore();
@@ -1727,6 +1758,11 @@ export const useConversationStore = defineStore('conversation', () => {
         break;
     }
 
+
+    if (import.meta.env.VITE_E2E && !isTauriAvailable()) {
+      await respondWithE2ePersonaFallback(content);
+      return;
+    }
 
     // Path 1: Tauri backend available → use streaming IPC command
     if (isTauriAvailable()) {

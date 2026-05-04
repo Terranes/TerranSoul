@@ -681,9 +681,9 @@ fn source_label(source_url: &str) -> String {
         }
     }
 
-    std::path::Path::new(source_url)
-        .file_name()
-        .and_then(|name| name.to_str())
+    source_url
+        .rsplit(['/', '\\'])
+        .next()
         .filter(|name| !name.trim().is_empty())
         .unwrap_or("document")
         .to_string()

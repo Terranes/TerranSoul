@@ -540,6 +540,10 @@ export const useBrainStore = defineStore('brain', () => {
   function prepareBrowserProviderChoices(): void {
     ensureFallbackFreeProviders();
     if (!browserAuthSession.value) {
+      if (import.meta.env.VITE_E2E) {
+        autoConfigureFreeApi();
+        return;
+      }
       brainMode.value = null;
       writeBrowserBrainMode(null);
       return;

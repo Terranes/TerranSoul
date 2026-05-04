@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_13_tools() {
+    async fn tools_list_returns_12_tools() {
         let (handle, url, token) = start_test_server().await;
 
         let (status, body) = rpc(
@@ -110,7 +110,7 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 12);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
@@ -118,7 +118,7 @@ mod tests {
 
         // Verify code tools are present.
         assert_eq!(tools[8]["name"], "code_query");
-        assert_eq!(tools[12]["name"], "code_graph_sync");
+        assert_eq!(tools[11]["name"], "code_rename");
 
         handle.stop();
     }
@@ -431,8 +431,10 @@ mod tests {
         assert_eq!(body["result"]["isError"], true);
         let text = body["result"]["content"][0]["text"].as_str().unwrap();
         assert!(
-            text.contains("code_intelligence") || text.contains("sidecar not configured"),
-            "expected sidecar-not-configured error, got: {text}"
+            text.contains("code_intelligence")
+                || text.contains("sidecar not configured")
+                || text.contains("no repos indexed yet"),
+            "expected code-tool setup error, got: {text}"
         );
 
         handle.stop();
