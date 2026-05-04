@@ -19,6 +19,7 @@
 8. [Free LLM APIs — Three-Tier Brain Provider Strategy](#8-free-llm-apis)
 9. [Integration Analysis — What We Can Learn & Implement](#9-integration-analysis)
 10. [Cursor + Claude Code — Coding Workflow Lessons](#10-cursor--claude-code)
+11. [CocoIndex — Incremental Code Indexing Architecture](#11-cocoindex)
 
 ---
 
@@ -1053,3 +1054,146 @@ chunk — it depends on the in-progress autonomy loop and lands in a follow-up.
 - ✅ Auto-append autonomous-loop `self-improve-progress` events to the active session's transcript as `system` / `run` messages.
 - ✅ Create a timestamped `self-improve-*` transcript session when progress arrives without a selected session.
 - ✅ Include transcript-only sessions in the session picker so run history remains resumable before a handoff snapshot exists.
+
+---
+
+## 11. CocoIndex — Incremental Code Indexing Architecture {#11-cocoindex}
+
+> **Date:** 2026-05-04
+> **Source:** [cocoindex-io/cocoindex](https://github.com/cocoindex-io/cocoindex)
+> v1.0.2, Apache 2.0 license. Python + Rust framework. 7.8k stars.
+> **Product:** CocoIndex-code — MCP server for AI coding agents.
+
+### What CocoIndex is
+
+A **declarative incremental data pipeline framework** ("React for data
+engineering"). You declare `Target = F(Source)` and the engine keeps the
+target in sync with the source forever — recomputing only the Δ.
+
+The *CocoIndex-code* product applies this framework to code: AST-aware
+incremental semantic code index that keeps live call graphs, symbols,
+vectors, and chunks fresh on every commit.
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Core engine | Rust (parallel chunking, zero-copy transforms) |
+| User-facing API | Python (`pip install cocoindex`) |
+| State store | PostgreSQL (persistent pipeline state) |
+| Vector targets | pgvector, LanceDB, Qdrant, Pinecone, Turbopuffer |
+| Graph targets | Neo4j, Kuzu, SurrealDB |
+| Embeddings | sentence-transformers, OpenAI, any provider |
+| MCP | CocoIndex-code server (Claude Code, Cursor) |
+
+### Key Architecture Patterns
+
+#### 1. Δ-only incremental processing
+
+The core insight: **don't re-index what hasn't changed.**
+
+```
+hash(input_content) + hash(transformation_code) → cache key
+```
+
+- Each source file gets a content hash on ingest
+- When re-indexed, only files with changed hashes re-parse/re-embed
+- Reports 80–90% cache hits on typical re-index runs
+- Sub-second freshness for the target (agent always sees latest)
+
+#### 2. Hash-based memoization (`@coco.fn(memo=True)`)
+
+Functions are memoized by hashing both their input AND their code:
+
+- If you change `file.rs` → only that file's chunks re-embed
+- If you change the *embedding function itself* → all outputs invalidate
+- No stale data from code changes (a trap for naive caching)
+
+#### 3. Per-row provenance / data lineage
+
+Every target row (vector, graph node, chunk) traces back to its exact
+source byte range. Enables:
+
+- Debuggable RAG — "which source produced this retrieval?"
+- Auditable pipelines — regulators can verify data flow
+- Precise invalidation — when source changes, only provenance-linked
+  targets need update
+
+#### 4. AST-aware chunking for code
+
+Instead of naive `RecursiveTextSplitter` (which cuts functions in half):
+
+- Parse source with language-aware AST (tree-sitter equivalent)
+- Chunk at semantic boundaries (function/class/module level)
+- Preserve structural context in each chunk
+- Better retrieval precision for code search
+
+#### 5. Declarative pipeline specification
+
+```python
+@coco.fn(memo=True)
+async def index_file(file, table):
+    for chunk in RecursiveSplitter().split(await file.read_text()):
+        table.declare_row(text=chunk.text, embedding=embed(chunk.text))
+```
+
+The user declares *what* the target should look like, not *how* to
+keep it in sync. The engine handles invalidation, ordering, retries.
+
+### What TerranSoul can adopt (post-31.5)
+
+| CocoIndex pattern | TerranSoul adaptation | Priority |
+|---|---|---|
+| Content-hash per file | Store SHA-256 of each file in `code_repos` table. On re-index, skip files whose hash hasn't changed. | High — easy win, massive speedup on large repos |
+| Skip unchanged embeddings | If a symbol's source text hasn't changed, keep its existing vector. Only re-embed modified functions. | Medium — requires symbol-level content hashing |
+| Code-change invalidation | When `symbol_index.rs` logic changes (schema version bump), force full re-index. | Low — manual version field is sufficient for now |
+| Per-row provenance | Track which source file+line produced each `code_symbols` row (already have `file`+`line`). Extend to embeddings when added. | Already partially done |
+| AST-aware chunking | Already using tree-sitter for symbol extraction. When adding embeddings (Chunk 31.6), chunk at symbol boundaries not arbitrary byte offsets. | High — use tree-sitter node spans |
+
+### What we do NOT adopt
+
+- **PostgreSQL dependency** — CocoIndex requires Postgres for pipeline state.
+  TerranSoul is single-binary + SQLite. We implement the *principle*
+  (content-hash skip) in our own SQLite schema.
+- **Python runtime** — CocoIndex's API is Python. We stay pure Rust.
+- **External vector DB** — CocoIndex targets pgvector/Qdrant/etc. We keep
+  HNSW ANN in-process via `usearch` crate.
+- **Declarative DSL** — The `Target = F(Source)` model is elegant but
+  over-engineered for a single indexing pipeline. We use imperative Rust
+  with explicit hash-check guards.
+- **Full lineage graph** — Production-grade lineage (for regulators/auditors)
+  is out of scope for a desktop companion. We keep simple file→symbol provenance.
+
+### Comparison: GitNexus vs CocoIndex vs TerranSoul approach
+
+| Dimension | GitNexus | CocoIndex-code | TerranSoul (current + planned) |
+|---|---|---|---|
+| **Re-indexing** | Full re-index (implied) | Δ-only, hash-memoized | Full today → content-hash skip post-31.5 |
+| **Language** | TypeScript (tree-sitter bindings) | Python + Rust core | Rust (tree-sitter native) |
+| **Storage** | LadybugDB (embedded graph) | PostgreSQL + pluggable targets | SQLite (embedded, zero-config) |
+| **MCP surface** | 16 tools + resources + prompts | Semantic search + call graph + blast radius | 13 tools today → native code tools in 31.6 |
+| **Privacy** | All local, `.gitnexus/` | Configurable (local or cloud targets) | All local, `mcp-data/` |
+| **Install** | `gitnexus setup` | `pip install cocoindex` | Built into the Tauri app binary |
+| **Dependencies** | Node.js runtime | Python + Postgres | Zero (single binary) |
+| **Embedding model** | transformers.js (in-process) | Any (sentence-transformers, OpenAI) | Ollama nomic-embed-text + cloud fallback |
+| **Clustering** | Leiden community detection | Not documented | Planned (Chunk 31.5, petgraph) |
+| **Best for** | Pure code intelligence MCP | General incremental ETL + code | Companion memory + code intelligence |
+
+### Actionable takeaway
+
+The biggest gap between TerranSoul's current `symbol_index.rs` and both
+reference projects is **incremental re-indexing**. Currently we `DELETE FROM
+code_symbols WHERE repo_id = ?` + re-insert everything. For a 500-file repo
+this takes seconds; for a 10,000-file monorepo it's minutes.
+
+**Minimal implementation (post-31.5):**
+
+1. Add `content_hash TEXT` column to `code_symbols` (or a companion `code_file_hashes` table)
+2. On `index_repo`, compute SHA-256 of each source file before parsing
+3. Compare against stored hash — skip if unchanged
+4. Only parse + extract + insert symbols/edges for changed files
+5. Delete orphan symbols from files that no longer exist
+
+This alone gives 80–90% of CocoIndex's performance benefit with zero new
+dependencies. The rest (embedding memoization, code-change invalidation)
+can layer on later.

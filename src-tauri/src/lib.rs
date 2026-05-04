@@ -61,7 +61,9 @@ use commands::{
     coding::{
         clear_self_improve_log, coding_session_clear_handoff, coding_session_list_handoffs,
         coding_session_load_handoff, coding_session_save_handoff, code_call_graph,
-        code_index_repo, code_resolve_edges,
+        code_compute_processes, code_generate_wiki, code_index_repo, code_list_clusters,
+        code_list_processes,
+        code_resolve_edges,
         detect_self_improve_repo,
         get_coding_llm_config, get_coding_workflow_config, get_github_config,
         get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
@@ -549,6 +551,60 @@ fn resolve_headless_mcp_port() -> u16 {
         .unwrap_or(HEADLESS_MCP_PORT)
 }
 
+/// Apply seed data to a fresh `mcp-data/` directory.
+///
+/// On **first run** (no existing `memory.db`), this function:
+/// 1. Copies `brain_config.json` and `app_settings.json` from compile-time
+///    embedded seed files into `data_dir`.
+/// 2. Creates `memory.db` with the canonical schema and executes the
+///    seed SQL to pre-populate TerranSoul knowledge.
+///
+/// If `memory.db` already exists, this function is a no-op.
+fn seed_mcp_data(data_dir: &std::path::Path) {
+    let db_path = data_dir.join("memory.db");
+    if db_path.exists() {
+        return; // Not first run — never overwrite existing data
+    }
+
+    eprintln!("[mcp-http] first run detected — applying seed data");
+
+    // Write config files (only if missing)
+    let brain_cfg_path = data_dir.join("brain_config.json");
+    if !brain_cfg_path.exists() {
+        let seed_brain_cfg = include_str!("../../mcp-data-seed/brain_config.json");
+        if let Err(e) = std::fs::write(&brain_cfg_path, seed_brain_cfg) {
+            eprintln!("[mcp-http] warning: failed to write seed brain_config.json: {e}");
+        }
+    }
+
+    let app_cfg_path = data_dir.join("app_settings.json");
+    if !app_cfg_path.exists() {
+        let seed_app_cfg = include_str!("../../mcp-data-seed/app_settings.json");
+        if let Err(e) = std::fs::write(&app_cfg_path, seed_app_cfg) {
+            eprintln!("[mcp-http] warning: failed to write seed app_settings.json: {e}");
+        }
+    }
+
+    // Create memory.db with schema + seed data
+    match rusqlite::Connection::open(&db_path) {
+        Ok(conn) => {
+            if let Err(e) = memory::schema::create_canonical_schema(&conn) {
+                eprintln!("[mcp-http] warning: failed to initialize schema: {e}");
+                return;
+            }
+            let seed_sql = include_str!("../../mcp-data-seed/memory-seed.sql");
+            if let Err(e) = conn.execute_batch(seed_sql) {
+                eprintln!("[mcp-http] warning: failed to apply memory-seed.sql: {e}");
+            } else {
+                eprintln!("[mcp-http] seed data applied successfully");
+            }
+        }
+        Err(e) => {
+            eprintln!("[mcp-http] warning: failed to open memory.db for seeding: {e}");
+        }
+    }
+}
+
 /// Probe the canonical TerranSoul MCP HTTP ports (release 7421, dev
 /// 7422) to see if the user already has a brain server running.
 ///
@@ -641,6 +697,61 @@ fn probe_terransoul_on(port: u16) -> bool {
             || text.contains("\"terransoul-brain-mcp\""))
 }
 
+/// Run the `--mcp-setup` CLI subcommand.
+///
+/// Detects AI coding editor config directories (`.vscode/`, `~/.cursor/`,
+/// `~/.codex/`, `~/.claude/`, `~/.config/opencode/`) and writes the
+/// MCP server entry pointing at the headless MCP HTTP server.
+///
+/// Generates a token if one doesn't exist yet, then writes configs.
+pub fn run_mcp_setup() -> std::io::Result<()> {
+    let data_dir = resolve_headless_mcp_data_dir();
+    let port = resolve_headless_mcp_port();
+
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        eprintln!("[mcp-setup] failed to create data dir: {e}");
+        return Err(e);
+    }
+
+    // Load or create the bearer token
+    let token = match ai_integrations::mcp::auth::load_or_create(&data_dir) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[mcp-setup] failed to load/create token: {e}");
+            return Err(std::io::Error::other(e));
+        }
+    };
+
+    let url = format!("http://127.0.0.1:{port}/mcp");
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    eprintln!("[mcp-setup] MCP URL: {url}");
+    eprintln!("[mcp-setup] token: {token}");
+    eprintln!("[mcp-setup] scanning for editor configs...\n");
+
+    let results = ai_integrations::mcp::auto_setup::setup_all_clients(&cwd, &url, &token);
+
+    if results.is_empty() {
+        eprintln!("[mcp-setup] no supported editor config directories found.");
+        eprintln!("[mcp-setup] checked: .vscode/, ~/.cursor/, ~/.codex/, ~/.claude/, ~/.config/opencode/");
+        eprintln!("\n[mcp-setup] hint: run this from your project root, or create the config directories first.");
+    } else {
+        for result in &results {
+            let status = if result.success { "✓" } else { "✗" };
+            eprintln!("  {status} {}", result.message);
+            eprintln!("    → {}", result.config_path);
+        }
+        let success_count = results.iter().filter(|r| r.success).count();
+        eprintln!(
+            "\n[mcp-setup] done — {success_count}/{} configs written.",
+            results.len()
+        );
+    }
+
+    eprintln!("\n[mcp-setup] next step: run `npm run mcp` to start the server.");
+    Ok(())
+}
+
 /// Run TerranSoul as a headless MCP **HTTP** server.
 ///
 /// This mode does **not** launch Tauri or the WebView; it only spins up
@@ -684,6 +795,9 @@ pub fn run_http_server() -> std::io::Result<()> {
         );
         return Err(e);
     }
+
+    // Apply seed data on first run (no existing memory.db)
+    seed_mcp_data(&data_dir);
 
     // Mark this process as MCP pet mode so the JSON-RPC initialize
     // handshake and `/status` endpoint advertise `buildMode: "mcp"`.
@@ -1042,6 +1156,10 @@ pub fn run() {
             code_index_repo,
             code_resolve_edges,
             code_call_graph,
+            code_compute_processes,
+            code_list_clusters,
+            code_list_processes,
+            code_generate_wiki,
             get_github_config,
             set_github_config,
             open_self_improve_pr,

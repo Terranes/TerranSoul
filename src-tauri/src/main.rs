@@ -24,6 +24,16 @@ fn main() {
         return;
     }
 
+    // CLI flag: `terransoul --mcp-setup` detects AI editor config
+    // directories and writes MCP server entries for the headless runner.
+    if std::env::args().any(|a| a == "--mcp-setup") {
+        if let Err(e) = terransoul_lib::run_mcp_setup() {
+            eprintln!("[mcp-setup] fatal: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     // CLI flag: `terransoul --mcp-app` runs the **full Tauri app** in
     // MCP mode so developers can visually observe the brain/RAG/memory
     // surface live. Same UI as the normal app, but the bottom-left badge

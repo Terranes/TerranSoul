@@ -70,6 +70,16 @@ pub fn codex_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|d| d.join(".codex").join("config.json"))
 }
 
+/// Cursor IDE MCP config path.
+pub fn cursor_config_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|d| d.join(".cursor").join("mcp.json"))
+}
+
+/// OpenCode config path.
+pub fn opencode_config_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("opencode").join("config.json"))
+}
+
 // ─── Config builders (pure functions) ───────────────────────────────
 
 /// Build the MCP server entry for VS Code / Copilot.
@@ -248,7 +258,120 @@ pub fn write_codex_stdio_config(exe_path: &str) -> Result<SetupResult, String> {
     })
 }
 
+/// Write the Cursor IDE MCP config (HTTP transport).
+///
+/// Cursor uses the same format as VS Code (`servers` → entry).
+pub fn write_cursor_config(url: &str, token: &str) -> Result<SetupResult, String> {
+    let path = cursor_config_path().ok_or("could not determine Cursor config path")?;
+    upsert_entry(&path, "servers", build_vscode_entry(url, token))?;
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message: "Cursor MCP config written.".to_string(),
+    })
+}
+
+/// Write the OpenCode config (HTTP transport).
+///
+/// OpenCode uses `mcpServers` format like Claude/Codex.
+pub fn write_opencode_config(url: &str, token: &str) -> Result<SetupResult, String> {
+    let path = opencode_config_path().ok_or("could not determine OpenCode config path")?;
+    upsert_entry(&path, "mcpServers", build_claude_entry(url, token))?;
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message: "OpenCode config written.".to_string(),
+    })
+}
+
 // ─── Removers ───────────────────────────────────────────────────────
+
+/// Run the auto-setup flow: detect all known AI editor config locations
+/// and write TerranSoul MCP entries into each one found.
+///
+/// `workspace_root` is used for VS Code's `.vscode/mcp.json`.
+/// Returns a list of results for each client attempted.
+pub fn setup_all_clients(
+    workspace_root: &Path,
+    url: &str,
+    token: &str,
+) -> Vec<SetupResult> {
+    let mut results = Vec::new();
+
+    // VS Code (workspace-local)
+    let vscode_dir = workspace_root.join(".vscode");
+    if vscode_dir.is_dir() {
+        match write_vscode_config(workspace_root, url, token) {
+            Ok(r) => results.push(r),
+            Err(e) => results.push(SetupResult {
+                success: false,
+                config_path: vscode_mcp_path(workspace_root).display().to_string(),
+                message: format!("VS Code: {e}"),
+            }),
+        }
+    }
+
+    // Claude Desktop
+    if claude_desktop_config_path().is_some() {
+        match write_claude_config(url, token) {
+            Ok(r) => results.push(r),
+            Err(e) => results.push(SetupResult {
+                success: false,
+                config_path: claude_desktop_config_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+                message: format!("Claude Desktop: {e}"),
+            }),
+        }
+    }
+
+    // Codex CLI
+    if let Some(codex_path) = codex_config_path() {
+        let parent_exists = codex_path.parent().is_some_and(|p| p.is_dir());
+        if parent_exists {
+            match write_codex_config(url, token) {
+                Ok(r) => results.push(r),
+                Err(e) => results.push(SetupResult {
+                    success: false,
+                    config_path: codex_path.display().to_string(),
+                    message: format!("Codex CLI: {e}"),
+                }),
+            }
+        }
+    }
+
+    // Cursor IDE
+    if let Some(cursor_path) = cursor_config_path() {
+        let parent_exists = cursor_path.parent().is_some_and(|p| p.is_dir());
+        if parent_exists {
+            match write_cursor_config(url, token) {
+                Ok(r) => results.push(r),
+                Err(e) => results.push(SetupResult {
+                    success: false,
+                    config_path: cursor_path.display().to_string(),
+                    message: format!("Cursor: {e}"),
+                }),
+            }
+        }
+    }
+
+    // OpenCode
+    if let Some(opencode_path) = opencode_config_path() {
+        let parent_exists = opencode_path.parent().is_some_and(|p| p.is_dir());
+        if parent_exists {
+            match write_opencode_config(url, token) {
+                Ok(r) => results.push(r),
+                Err(e) => results.push(SetupResult {
+                    success: false,
+                    config_path: opencode_path.display().to_string(),
+                    message: format!("OpenCode: {e}"),
+                }),
+            }
+        }
+    }
+
+    results
+}
 
 /// Remove the terransoul-brain entry from VS Code config.
 pub fn remove_vscode_config(workspace_root: &Path) -> Result<SetupResult, String> {
@@ -457,6 +580,26 @@ pub fn list_client_status(workspace_root: &Path) -> Vec<ClientStatus> {
             client: "Codex CLI".to_string(),
             configured,
             config_path: Some(codex_path.display().to_string()),
+        });
+    }
+
+    // Cursor IDE
+    if let Some(cursor_path) = cursor_config_path() {
+        let configured = check_entry_exists(&cursor_path, &["servers", entry_name()]);
+        results.push(ClientStatus {
+            client: "Cursor".to_string(),
+            configured,
+            config_path: Some(cursor_path.display().to_string()),
+        });
+    }
+
+    // OpenCode
+    if let Some(opencode_path) = opencode_config_path() {
+        let configured = check_entry_exists(&opencode_path, &["mcpServers", entry_name()]);
+        results.push(ClientStatus {
+            client: "OpenCode".to_string(),
+            configured,
+            config_path: Some(opencode_path.display().to_string()),
         });
     }
 

@@ -16,11 +16,13 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 
 use crate::ai_integrations::gateway::*;
 use crate::AppState;
 
 use super::activity::McpActivityReporter;
+use super::hooks::IndexStalenessTracker;
 use super::tools;
 
 // ─── Shared state for the axum router ───────────────────────────────────────
@@ -33,6 +35,8 @@ pub struct McpRouterState {
     pub activity: Option<McpActivityReporter>,
     /// Full app state for code-intelligence tools that need the GitNexus sidecar.
     pub app_state: Option<AppState>,
+    /// Tracks git HEAD for staleness detection on post-tool-use hooks.
+    pub staleness_tracker: Arc<Mutex<IndexStalenessTracker>>,
 }
 
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
@@ -120,7 +124,11 @@ pub(crate) async fn dispatch_method_with_state(
             };
             let result = json!({
                 "protocolVersion": "2024-11-05",
-                "capabilities": { "tools": {} },
+                "capabilities": {
+                    "tools": {},
+                    "resources": {},
+                    "prompts": {}
+                },
                 "serverInfo": {
                     "name": server_name,
                     "version": env!("CARGO_PKG_VERSION"),
@@ -160,6 +168,42 @@ pub(crate) async fn dispatch_method_with_state(
             }
         }
 
+        "resources/list" => {
+            let result = json!({ "resources": tools::resource_definitions(app_state) });
+            JsonRpcResponse::ok(id, result)
+        }
+
+        "resources/read" => {
+            let uri = params["uri"].as_str().unwrap_or("");
+            match tools::read_resource(uri, app_state) {
+                Ok(contents) => {
+                    let text = serde_json::to_string(&contents).unwrap_or_default();
+                    let result = json!({
+                        "contents": [{ "uri": uri, "mimeType": "application/json", "text": text }]
+                    });
+                    JsonRpcResponse::ok(id, result)
+                }
+                Err(e) => JsonRpcResponse::err(id, -32602, e),
+            }
+        }
+
+        "prompts/list" => {
+            let result = json!({ "prompts": tools::prompt_definitions() });
+            JsonRpcResponse::ok(id, result)
+        }
+
+        "prompts/get" => {
+            let name = params["name"].as_str().unwrap_or("");
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default()));
+            match tools::get_prompt(name, &args, app_state) {
+                Ok(messages) => JsonRpcResponse::ok(id, messages),
+                Err(e) => JsonRpcResponse::err(id, -32602, e),
+            }
+        }
+
         "ping" => JsonRpcResponse::ok(id, json!({})),
 
         _ => JsonRpcResponse::err(id, -32601, format!("method not found: {method}")),
@@ -172,6 +216,8 @@ pub(crate) async fn dispatch_method_with_state(
 pub fn build(state: McpRouterState) -> Router {
     Router::new()
         .route("/mcp", post(handle_request))
+        .route("/hooks/pre_tool", post(handle_pre_tool_hook))
+        .route("/hooks/post_tool", post(handle_post_tool_hook))
         .route("/status", get(handle_status))
         .with_state(state)
 }
@@ -192,8 +238,16 @@ async fn handle_request(
         }
     };
 
-    // Notifications (no id) — acknowledge without a body.
+    // Notifications (no id) — dispatch to hook handlers, then acknowledge.
     if req.id.is_none() {
+        let params = req.params.unwrap_or(Value::Null);
+        // Fire-and-forget notification handling
+        super::hooks::handle_notification(
+            &req.method,
+            &params,
+            state.app_state.as_ref(),
+            &state.staleness_tracker,
+        );
         return StatusCode::ACCEPTED.into_response();
     }
 
@@ -313,6 +367,33 @@ async fn handle_status(
     });
 
     (StatusCode::OK, Json(body)).into_response()
+}
+
+// ─── Hook endpoints ─────────────────────────────────────────────────────────
+
+async fn handle_pre_tool_hook(
+    State(state): State<McpRouterState>,
+    headers: HeaderMap,
+    Json(req): Json<super::hooks::PreToolUseRequest>,
+) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let resp = super::hooks::handle_pre_tool_use(&req, state.app_state.as_ref());
+    (StatusCode::OK, Json(json!(resp))).into_response()
+}
+
+async fn handle_post_tool_hook(
+    State(state): State<McpRouterState>,
+    headers: HeaderMap,
+    Json(req): Json<super::hooks::PostToolUseRequest>,
+) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let mut tracker = state.staleness_tracker.lock().await;
+    let resp = super::hooks::handle_post_tool_use(&req, &mut tracker, state.app_state.as_ref());
+    (StatusCode::OK, Json(json!(resp))).into_response()
 }
 
 /// Validate the `Authorization: Bearer <token>` header.

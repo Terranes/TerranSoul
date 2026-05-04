@@ -36,8 +36,10 @@ pub mod handoff_store;
 pub mod metrics;
 pub mod milestones;
 pub mod multi_agent;
+pub mod processes;
 pub mod promotion_plan;
 pub mod prompting;
+pub mod rename;
 pub mod repo;
 pub mod resolver;
 pub mod reviewer;
@@ -45,6 +47,7 @@ pub mod session_chat;
 pub mod symbol_index;
 pub mod task_queue;
 pub mod test_runner;
+pub mod wiki;
 pub mod workflow;
 pub mod worktree;
 

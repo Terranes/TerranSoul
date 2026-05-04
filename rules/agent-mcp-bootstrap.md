@@ -151,7 +151,34 @@ Every AI coding agent in this repo follows the same procedure:
 5. **Never commit `mcp-data/`.** It is gitignored; agents must not
    force-add it.
 
-## 6. Live monitor / adjust loop
+## 6. Seed data — pre-populated brain on first run
+
+The committed directory `mcp-data-seed/` contains architecture
+knowledge that is automatically applied on the **first** `npm run mcp`
+invocation (when `mcp-data/memory.db` does not yet exist):
+
+| File | Role |
+|---|---|
+| `brain_config.json` | Default brain config (Pollinations free API, no key) |
+| `app_settings.json` | Headless-safe app settings |
+| `memory-seed.sql` | INSERT statements with TerranSoul facts |
+
+**How it works:**
+
+1. `run_http_server()` calls `seed_mcp_data(&data_dir)`.
+2. If `memory.db` is missing, the function creates it with the
+   canonical schema and runs `memory-seed.sql`.
+3. Config files are written only when missing.
+4. If `mcp-data/` already exists (from a previous session), nothing
+   is overwritten — incremental knowledge stays intact.
+
+**Updating seed knowledge:**
+
+Edit `mcp-data-seed/memory-seed.sql` with new INSERT statements
+following the same column pattern. The seed is compiled into the
+binary via `include_str!`, so a `cargo build` picks up changes.
+
+## 7. Live monitor / adjust loop
 
 Two endpoints exist for live monitoring without speaking JSON-RPC:
 
@@ -188,7 +215,7 @@ re-index), call the standard `brain_*` MCP tools — they are the
 same tools the in-app server exposes, so any agent that already
 speaks MCP works unchanged.
 
-## 7. Per-agent quick-reference
+## 8. Per-agent quick-reference
 
 | Agent | How it reaches `npm run mcp` |
 |---|---|
@@ -198,7 +225,7 @@ speaks MCP works unchanged.
 | Clawcode | Same — register an HTTP MCP server at port 7423 with the bearer token. |
 | Cursor / Continue.dev / Aider | Same — point the agent's MCP config at `http://127.0.0.1:7423/mcp`. |
 
-## 8. Configuration knobs
+## 9. Configuration knobs
 
 | Env var | Effect | Default |
 |---|---|---|
@@ -208,13 +235,13 @@ speaks MCP works unchanged.
 Both are optional. The defaults are correct for `npm run mcp`
 launched from the repo root.
 
-## 9. Stopping the server
+## 10. Stopping the server
 
 `Ctrl+C` in the terminal running `npm run mcp`. The runner installs
 a `tokio::signal::ctrl_c` handler and shuts the server down
 gracefully (max 2 s drain).
 
-## 10. Authoring rule (for agents touching this surface)
+## 11. Authoring rule (for agents touching this surface)
 
 If a code change touches `--mcp-http`, the headless runner, the
 `mcp-data/` layout, or the `is_mcp_pet_mode()` flag, the change

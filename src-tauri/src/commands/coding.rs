@@ -829,6 +829,162 @@ pub async fn code_call_graph(
     .map_err(|e| format!("join error: {e}"))?
 }
 
+/// Run functional clustering + entry-point scoring + process tracing.
+/// Requires the repo to have been indexed and resolved first.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_compute_processes(
+    repo_path: String,
+    max_depth: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<coding::processes::ProcessStats, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    let depth = max_depth.unwrap_or(10);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || {
+            coding::processes::compute_processes(&data_dir, &repo, depth)
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// List clusters for a repo.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_clusters(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::processes::Cluster>, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || {
+            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+            let repo_str = repo.to_string_lossy().to_string();
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_str],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_str}"))?;
+            coding::processes::list_clusters(&conn, repo_id).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// List execution-flow processes for a repo.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_processes(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::processes::Process>, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || {
+            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+            let repo_str = repo.to_string_lossy().to_string();
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_str],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_str}"))?;
+            coding::processes::list_processes(&conn, repo_id).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Generate wiki pages from the symbol graph for a repo.
+///
+/// Produces per-cluster Markdown pages with mermaid call graphs under
+/// `<data_dir>/wiki/`. Optionally summarises each cluster via the active
+/// brain.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_generate_wiki(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<coding::wiki::WikiResult, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    let wiki_dir = data_dir.join("wiki");
+
+    // Phase 1: load cluster data from the code index (blocking).
+    let (clusters, all_syms_raw, all_edges_raw) = tokio::task::spawn_blocking({
+        let data_dir = data_dir.clone();
+        let repo = repo.to_path_buf();
+        let wiki_dir = wiki_dir.clone();
+        move || {
+            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir)
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))??;
+
+    // Phase 2: summarise each cluster via the brain (async, optional).
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let mut summaries: Vec<Option<String>> = Vec::with_capacity(clusters.len());
+
+    if let Some(mode) = &brain_mode {
+        for (i, cluster) in clusters.iter().enumerate() {
+            let desc = coding::wiki::build_cluster_description(cluster, &all_syms_raw[i]);
+            let result = crate::memory::brain_memory::complete_via_mode(
+                mode,
+                "You are a concise technical writer. Summarize the following code cluster in 1-2 sentences, focusing on its purpose and key responsibilities.",
+                &desc,
+                &state.provider_rotator,
+            )
+            .await;
+            match result {
+                Ok(s) if !s.trim().is_empty() => summaries.push(Some(s.trim().to_string())),
+                _ => summaries.push(None),
+            }
+        }
+    } else {
+        summaries.resize(clusters.len(), None);
+    }
+
+    // Phase 3: write the wiki pages (blocking).
+    tokio::task::spawn_blocking({
+        let wiki_dir = wiki_dir.clone();
+        move || {
+            coding::wiki::write_wiki_pages(&wiki_dir, &clusters, &all_syms_raw, &all_edges_raw, &summaries)
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

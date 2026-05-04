@@ -21,6 +21,14 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 30.8 — Obsidian Credits Audit](#chunk-308--obsidian-credits-audit) | 2026-05-05 |
+| [Chunk 31.10 — terransoul mcp setup auto-config writer](#chunk-3110--terransoul-mcp-setup-auto-config-writer) | 2026-05-05 |
+| [Chunk 31.9 — Wiki generation from the symbol graph](#chunk-319--wiki-generation-from-the-symbol-graph) | 2026-05-05 |
+| [Chunk 31.8 — Editor pre/post-tool-use hooks](#chunk-318--editor-prepost-tool-use-hooks) | 2026-05-04 |
+| [Chunk 31.7 — code_rename multi-file tool](#chunk-317--code_rename-multi-file-tool) | 2026-05-04 |
+| [Chunk 31.6 — Code-aware MCP tools + resources + prompts](#chunk-316--code-aware-mcp-tools--resources--prompts) | 2026-05-04 |
+| [Chunk 31.5 — Functional clustering + entry-point scoring + processes](#chunk-315--functional-clustering--entry-point-scoring--processes) | 2026-05-04 |
+| [Chunk 31.4 — Cross-file resolution + call graph](#chunk-314--cross-file-resolution--call-graph) | 2026-05-04 |
 | [Chunk 31.3 — tree-sitter symbol-table ingest (Rust + TS)](#chunk-313--tree-sitter-symbol-table-ingest-rust--ts) | 2026-05-04 |
 | [Chunk 31.2 — Surface GitNexus tools through MCP](#chunk-312--surface-gitnexus-tools-through-mcp) | 2026-05-04 |
 | [Chunk 31.1b — MCP Mode live model activity + speech](#chunk-311b--mcp-mode-live-model-activity--speech) | 2026-05-04 |
@@ -250,6 +258,223 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 30.8 — Obsidian Credits Audit
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 30 — Charisma & Teaching
+
+**Goal:** Investigate whether TerranSoul has learned from or applied any Obsidian ideas. Produce audit trail and attribution if applicable.
+
+**Findings:** Real influence confirmed. TerranSoul implements:
+1. **One-way Obsidian vault export** (`memory/obsidian_export.rs`, Chunk 18.5) — exports memories as YAML-frontmatter Markdown files.
+2. **Bidirectional Obsidian sync** (`memory/obsidian_sync.rs`, Chunk 17.7) — LWW conflict resolution, background file-watcher via `notify` crate.
+3. **Schema columns** — `obsidian_path` and `last_exported` on all storage backends.
+4. **Wikilink generation** — `[[...]]` edge links from memory relationships, documented in `docs/brain-advanced-design.md` § Layer 2.
+5. **Design philosophy** — local-first, portable Markdown files, explicit graph-view compatibility.
+
+**Outcome:** (a) — real influence found. Added respectful CREDITS.md entry for Obsidian by Erica Xu & Shida Li / Dynalist Inc.
+
+**Files modified:**
+- `CREDITS.md` — added Obsidian entry in community reference table
+
+**Tests:** No code changes. No test changes needed.
+
+---
+
+## Chunk 31.10 — terransoul mcp setup auto-config writer
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 31 — MCP Mode
+
+**Goal:** Add a `--mcp-setup` CLI subcommand that detects AI editor config directories (`.vscode/`, `~/.cursor/`, `~/.codex/`, `~/.claude/`, `~/.config/opencode/`) and writes the correct MCP entry into each one (creating files atomically, preserving unrelated entries).
+
+**Architecture:**
+- Reuses the existing `auto_setup.rs` writers (atomic upsert + JSONC stripping).
+- Added new path resolvers: `cursor_config_path()`, `opencode_config_path()`.
+- Added new writers: `write_cursor_config()`, `write_opencode_config()`.
+- Added `setup_all_clients()` orchestrator that iterates all detected editors.
+- `run_mcp_setup()` in `lib.rs` — resolves data dir, loads/creates token, calls `setup_all_clients`, prints results.
+- `main.rs` — added `--mcp-setup` flag before `--mcp-app`.
+- `package.json` — added `"mcp:setup"` npm script alias.
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/auto_setup.rs` — added Cursor/OpenCode path resolvers, writers, `setup_all_clients()`, updated `list_client_status()`
+- `src-tauri/src/lib.rs` — added `pub fn run_mcp_setup()`
+- `src-tauri/src/main.rs` — added `--mcp-setup` CLI flag
+- `package.json` — added `"mcp:setup"` script
+
+**Tests:** Existing 14 auto_setup tests cover the writer/upsert/remove logic. Clippy clean. 1623 vitest pass.
+
+---
+
+## Chunk 31.9 — Wiki generation from the symbol graph
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 31 — MCP Mode
+
+**Goal:** Reuse `brain_summarize` on each cluster from Chunk 31.5 to produce per-module Markdown pages with mermaid call graphs, written to `mcp-data/wiki/`. Tauri command `code_generate_wiki()`.
+
+**Architecture:**
+- `src-tauri/src/coding/wiki.rs` — new module with `generate_wiki_sync()` (loads cluster data from code_index.sqlite), `write_wiki_pages()` (renders Markdown), `build_cluster_description()` (formats text for LLM summarisation), helper functions for mermaid rendering and path shortening.
+- Three-phase Tauri command flow: (1) blocking DB reads → (2) async LLM summarisation per cluster via `complete_via_mode()` → (3) blocking file writes.
+- Output: `mcp-data/wiki/index.md` (table linking all clusters) + per-cluster pages (`NNN-label.md`) with mermaid call graph + symbol table.
+
+**Files created:**
+- `src-tauri/src/coding/wiki.rs` — wiki generation module (~300 lines)
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod wiki`
+- `src-tauri/src/commands/coding.rs` — added `code_generate_wiki` command
+- `src-tauri/src/lib.rs` — registered command in import + invoke_handler
+
+**Tests:** 5 unit tests (cluster_filename, mermaid_safe, render_cluster_page_with_summary, render_cluster_page_without_summary, build_cluster_description). Clippy clean. 1623 vitest pass.
+
+---
+
+## Chunk 31.8 — Editor pre/post-tool-use hooks
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Add MCP notification handlers and HTTP endpoints for AI coding editors to signal before/after tool calls. Pre-hook enriches queries with cluster context; post-hook detects stale index and triggers re-indexing.
+
+**Architecture:**
+- New module `src-tauri/src/ai_integrations/mcp/hooks.rs` (~290 lines)
+- `IndexStalenessTracker`: tracks last known git HEAD per repo, detects commits
+- Pre-hook (`handle_pre_tool_use`): looks up clusters/processes for the current file, appends context to queries
+- Post-hook (`handle_post_tool_use`): checks if git HEAD changed, spawns background `index_repo` re-run
+- MCP notification methods: `notifications/tools/pre_use`, `notifications/tools/post_use`, `editor/preToolUse`, `editor/postToolUse`
+- HTTP endpoints: `POST /hooks/pre_tool`, `POST /hooks/post_tool` (bearer auth required)
+- `McpRouterState` extended with `staleness_tracker: Arc<Mutex<IndexStalenessTracker>>`
+- 4 unit tests: staleness tracker, pre-hook without state, post-hook without state, git HEAD reading
+
+**Files changed:**
+- `src-tauri/src/ai_integrations/mcp/hooks.rs` — new module
+- `src-tauri/src/ai_integrations/mcp/mod.rs` — added `pub mod hooks`, tracker in state construction
+- `src-tauri/src/ai_integrations/mcp/router.rs` — notification dispatch, hook endpoints, tracker in state struct
+
+---
+
+## Chunk 31.7 — code_rename multi-file tool
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Add a `code_rename` MCP tool that produces graph-resolved + text-search edit plans for renaming symbols across a codebase.
+
+**Architecture:**
+- New module `src-tauri/src/coding/rename.rs` (~280 lines)
+- Two-phase rename strategy:
+  - Phase 1: Graph-resolved edits from `code_symbols` (definitions) + `code_edges` (call/import sites) — high confidence
+  - Phase 2: Text-search edits via word-boundary grep over source files — lower confidence
+- Deduplication by (file, line) before returning
+- `dry_run` mode returns the edit plan without applying; `apply` mode writes changes to disk
+- Word-boundary matching avoids false positives (e.g. `old_func` won't match `old_func_ext`)
+- MCP tool: `code_rename` with `{symbol, new_name, dry_run, repo}` params
+- 4 unit tests: word matching, replacement, dry-run fixture, apply fixture
+
+**Files changed:**
+- `src-tauri/src/coding/rename.rs` — new module
+- `src-tauri/src/coding/mod.rs` — added `pub mod rename`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added tool definition + dispatch
+- `docs/gitnexus-capability-matrix.md` — already had the row, no update needed
+
+---
+
+## Chunk 31.6 — Code-aware MCP tools + resources + prompts
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Replace GitNexus-delegating code tools with first-class TerranSoul-native MCP tools backed by the symbol index. Add MCP resources and prompts support to the router.
+
+**Architecture:**
+- Replaced 5 GitNexus-sidecar-delegating tools with 3 native tools:
+  - `code_query` — symbol-name or file-path search against `code_symbols` table
+  - `code_context` — 360° view: call graph + cluster membership + process participation
+  - `code_impact` — BFS blast-radius traversal over incoming call edges, depth-grouped
+- Added MCP `resources/list` + `resources/read` support:
+  - `terransoul://repos` — list indexed repos
+  - `terransoul://clusters` — functional clusters for default repo
+  - `terransoul://processes` — execution flows for default repo
+- Added MCP `prompts/list` + `prompts/get` support:
+  - `detect_impact` — generates a structured impact analysis prompt
+  - `generate_map` — generates an architecture map prompt from clusters/processes
+- Updated `initialize` response to advertise `resources` + `prompts` capabilities
+- Removed `ensure_sidecar()` helper (no longer needed for code tools)
+- Updated all unit tests (tool count 8→11 with code_read, tool names, permission tests)
+
+**Files changed:**
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — replaced code tools, added resources + prompts
+- `src-tauri/src/ai_integrations/mcp/router.rs` — added resources/prompts method handlers
+- `docs/gitnexus-capability-matrix.md` — marked 5 rows shipped
+
+---
+
+## Chunk 31.5 — Functional clustering + entry-point scoring + processes
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Build a petgraph call graph from indexed symbols/edges, run label-propagation community detection for functional clustering, score entry points via in-degree + name heuristics, and trace execution flows via BFS from entry points.
+
+**Architecture:**
+- New module `src-tauri/src/coding/processes.rs` (~490 lines)
+- Dependency added: `petgraph = "0.7"` in Cargo.toml
+- Label-propagation clustering: iterative community assignment based on neighbor majority (max 50 iterations)
+- Entry-point scoring: 0-in-degree bonus + name heuristics (`main`, `run_*`, `start_*`, `handle_*`, `init*`, `setup*`)
+- BFS execution-flow tracing from top-scored entry points up to configurable `max_depth`
+- Schema: `code_clusters`, `code_cluster_members`, `code_processes`, `code_process_steps` tables
+- Type alias `CallGraphData` for petgraph complex return type (clippy compliance)
+- Public types: `ProcessStats`, `Cluster`, `Process` (all Serialize/Deserialize)
+- Tauri commands: `code_compute_processes`, `code_list_clusters`, `code_list_processes`
+- 3 test functions: clustering, entry-point scoring, BFS trace
+
+**Files changed:**
+- `src-tauri/src/coding/processes.rs` — new module
+- `src-tauri/src/coding/mod.rs` — added `pub mod processes`
+- `src-tauri/Cargo.toml` — added `petgraph = "0.7"`
+- `src-tauri/src/commands/coding.rs` — added 3 new commands
+- `src-tauri/src/lib.rs` — registered commands
+- `docs/gitnexus-capability-matrix.md` — marked clustering + process tracing rows shipped
+
+---
+
+## Chunk 31.4 — Cross-file resolution + call graph
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 31 — MCP Mode
+
+**Goal:** Add a second pass that resolves imports → file paths and call sites → callee symbol IDs with confidence scores, and expose a `code_call_graph(symbol)` Tauri command.
+
+**Architecture:**
+- New module `src-tauri/src/coding/resolver.rs`
+- Schema migration: added `target_file`, `target_symbol_id`, `from_symbol_id`, `confidence` columns to `code_edges`
+- Resolution logic: name-based matching with file-proximity heuristic for disambiguation
+- Confidence: `exact` (single candidate) or `inferred` (multiple candidates, best pick)
+- `resolve_edges(data_dir, repo_path)` — second pass over unresolved edges
+- `call_graph(conn, repo_id, symbol_name)` — returns incoming callers + outgoing callees
+- Tauri commands: `code_resolve_edges`, `code_call_graph`
+- 3 test functions: basic resolution, call graph assertions, TypeScript import resolution
+
+**Files changed:**
+- `src-tauri/src/coding/resolver.rs` — new module
+- `src-tauri/src/coding/mod.rs` — added `pub mod resolver`
+- `src-tauri/src/coding/symbol_index.rs` — schema migration (new columns + indexes)
+- `src-tauri/src/commands/coding.rs` — added `code_resolve_edges` + `code_call_graph` commands
+- `src-tauri/src/lib.rs` — registered new commands
+- `docs/gitnexus-capability-matrix.md` — marked call graph + import graph rows shipped
 
 ---
 
