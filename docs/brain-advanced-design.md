@@ -472,15 +472,11 @@ RAG-quality reasons:
    mode") must be reconciled — the newer wins. Two episodic memories of the
    same event can both be true and should be merged, not deduplicated.
 
-We do **not** need a `cognitive_kind` SQL column today because:
-
-- All three kinds can be derived from `(memory_type, tags, content)` with a
-  pure-function classifier (no LLM needed for the common case).
-- Tag prefixes (`episodic:*`, `semantic:*`, `procedural:*`) layer cleanly on
-  the V4 schema without any migration. Power users can override the heuristic
-  by tagging.
-- If profiling later shows the classifier is too slow at retrieval time, a V6
-  migration to add the column + an index is straightforward.
+The canonical SQLite schema now includes a nullable `cognitive_kind` column for
+seeded and externally-ingested rows that already know their kind. The
+pure-function classifier remains the fallback/source of truth when the column is
+`NULL`, so existing rows and alternate backends can still derive the kind from
+`(memory_type, tags, content)` without an LLM call.
 
 ### 3.5.3 Classifier algorithm
 
@@ -574,17 +570,18 @@ we never trade off vector similarity for kind matching, we just break ties.
 > When the classifier returns `Unknown`, the method is identical to
 > plain `hybrid_search_rrf` (no perturbation). +5 tests.
 
-### 3.5.7 Migration story (when we do want a column)
+### 3.5.7 Persistence story
 
-If we later add a `cognitive_kind` column in V6, the migration is:
+The column is intentionally nullable:
 
-1. `ALTER TABLE memories ADD COLUMN cognitive_kind TEXT NOT NULL DEFAULT 'semantic';`
-2. `CREATE INDEX idx_memories_cognitive_kind ON memories(cognitive_kind);`
-3. Backfill: `UPDATE memories SET cognitive_kind = classify(memory_type, tags, content)`
-   via a one-shot Rust pass (the classifier is already a pure function).
-4. Update `add_memory` / `update_memory` to compute and persist the kind.
-
-Until then, the derived classifier is the source of truth.
+1. Fresh SQLite stores create `memories.cognitive_kind TEXT`; older stores get
+   the column from the canonical initializer's compatibility pass.
+2. `mcp-data/shared/memory-seed.sql` may insert explicit values for high-signal
+   project knowledge (`principle`, `procedural`, etc.).
+3. Runtime ranking still falls back to `cognitive_kind::classify` whenever the
+   column is absent from a backend row or `NULL`.
+4. A future follow-up can add an index and persist the classifier output on
+   every add/update path if profiling shows per-query classification is costly.
 
 ### 3.5.8 What does **not** change
 
@@ -1338,6 +1335,7 @@ CREATE TABLE memories (
     obsidian_path TEXT,                          -- Vault-relative .md path
     last_exported INTEGER,                       -- Unix-ms export timestamp
     category      TEXT,                          -- Optional taxonomy category
+    cognitive_kind TEXT,                         -- Optional ep/sem/proc or seed kind
     updated_at    INTEGER,                       -- CRDT LWW timestamp
     origin_device TEXT                           -- CRDT tiebreaker device id
 );
@@ -2892,6 +2890,19 @@ TerranSoul exposes its brain to **external AI coding assistants**
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 The server runs as an in-process axum HTTP service on
 `127.0.0.1:7421` — no sidecar, no external binary.
+
+**Headless coding-agent profile (`npm run mcp`, port 7423).** Every coding
+agent session must use TerranSoul MCP as its project-memory layer when
+available: start or reuse the headless runner, call `brain_health`, then
+query `brain_search` / `brain_suggest_context` for the active chunk before
+broad manual repo exploration. First-run seeding now immediately triggers a
+best-effort embedding backfill after `BrainConfig` is applied; if the selected
+provider exposes embeddings, seed rows receive vectors before the first MCP
+tool call so SQLite + HNSW + RRF operate on the canonical `mcp-data/shared/`
+dataset out of the box. Providers without embeddings leave rows queued for the
+offline deterministic embedder follow-up tracked as Chunk 33.2. Durable
+self-improve lessons belong in `mcp-data/shared/` or the rules/docs, not only
+in chat transcripts.
 
 ### 24.1 Architecture
 

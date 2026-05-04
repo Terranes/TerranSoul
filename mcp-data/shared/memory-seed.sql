@@ -380,3 +380,20 @@ WHERE s.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
     OR d.content LIKE '%project-index.md is the single source of truth%'
     OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
   );
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MCP EVERY-SESSION RULE: every coding agent run must use TerranSoul MCP as the project-memory layer when available — check/reuse/start the release, dev, or headless MCP server; call brain_health plus a relevant brain_search or brain_suggest_context before broad repo exploration; and preserve durable self-improve lessons in mcp-data/shared or rules/docs. If MCP is blocked, report the blocker instead of silently skipping it.',
+  'mcp,agent-rule,self-improve,project-memory,non-negotiable',
+  10, 'fact', 1746316800000, 'long', 1.0, 'general', 'principle'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MCP EVERY-SESSION RULE:%'
+  AND (
+       d.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
+    OR d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
+    OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
+  );

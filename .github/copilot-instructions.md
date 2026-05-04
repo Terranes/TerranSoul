@@ -231,6 +231,12 @@ collision with `npm run dev` or a running app, no end-user data
 touched). It writes the current bearer token to `.vscode/.mcp-token`;
 set `TERRANSOUL_MCP_TOKEN_MCP` from that file for VS Code's
 `terransoul-brain-mcp` profile, verify `GET http://127.0.0.1:7423/health`,
-then call `brain_health`. Full procedure, scope limits, and per-agent setup live in
-[rules/agent-mcp-bootstrap.md](rules/agent-mcp-bootstrap.md) — read it
-before invoking `npm run mcp`.
+then call `brain_health`. **Mandatory every-session rule:** every coding
+agent must check/reuse/start TerranSoul MCP at session start, call
+`brain_health` plus a relevant `brain_search` / `brain_suggest_context`
+before broad repo exploration when MCP is available, and feed durable
+self-improve lessons back into `mcp-data/shared/` or the rules/docs rather
+than leaving them only in chat. If MCP is blocked, record the blocker in
+the progress/final report. Full procedure, scope limits, and per-agent setup
+live in [rules/agent-mcp-bootstrap.md](rules/agent-mcp-bootstrap.md) — read
+it before invoking `npm run mcp`.

@@ -568,11 +568,14 @@ fn load_mcp_seed_text(data_dir: &std::path::Path, file_name: &str, fallback: &st
 /// 2. Creates `memory.db` with the canonical schema and executes the
 ///    seed SQL to pre-populate TerranSoul knowledge.
 ///
-/// If `memory.db` already exists, this function is a no-op.
-fn seed_mcp_data(data_dir: &std::path::Path) {
+/// Returns `true` when the seed SQL was applied successfully, so callers can
+/// trigger first-run maintenance (embedding backfill, edge scans) exactly once.
+///
+/// If `memory.db` already exists, this function is a no-op and returns `false`.
+fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     let db_path = data_dir.join("memory.db");
     if db_path.exists() {
-        return; // Not first run — never overwrite existing data
+        return false; // Not first run — never overwrite existing data
     }
 
     eprintln!("[mcp-http] first run detected — applying seed data");
@@ -607,7 +610,7 @@ fn seed_mcp_data(data_dir: &std::path::Path) {
         Ok(conn) => {
             if let Err(e) = memory::schema::create_canonical_schema(&conn) {
                 eprintln!("[mcp-http] warning: failed to initialize schema: {e}");
-                return;
+                return false;
             }
             let seed_sql = load_mcp_seed_text(
                 data_dir,
@@ -616,14 +619,80 @@ fn seed_mcp_data(data_dir: &std::path::Path) {
             );
             if let Err(e) = conn.execute_batch(&seed_sql) {
                 eprintln!("[mcp-http] warning: failed to apply memory-seed.sql: {e}");
+                false
             } else {
                 eprintln!("[mcp-http] seed data applied successfully");
+                true
             }
         }
         Err(e) => {
             eprintln!("[mcp-http] warning: failed to open memory.db for seeding: {e}");
+            false
         }
     }
+}
+
+/// Backfill vectors for first-run MCP seed rows after the brain config has been
+/// loaded into [`AppState`]. This makes the SQLite + HNSW vector path active
+/// before the first MCP agent query whenever the configured brain exposes an
+/// embedding endpoint. Providers without embeddings simply leave rows queued
+/// for the deterministic fallback planned in Chunk 33.2.
+async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
+    let unembedded = {
+        let store = match state.memory_store.lock() {
+            Ok(store) => store,
+            Err(e) => {
+                eprintln!("[mcp-http] mcp-seed-embedded failed to lock store: {e}");
+                return 0;
+            }
+        };
+        match store.unembedded_ids() {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("[mcp-http] mcp-seed-embedded failed to list rows: {e}");
+                return 0;
+            }
+        }
+    };
+
+    if unembedded.is_empty() {
+        eprintln!("[mcp-http] mcp-seed-embedded count=0 remaining=0");
+        return 0;
+    }
+
+    let (brain_mode, active_brain) = (
+        state.brain_mode.lock().ok().and_then(|g| g.clone()),
+        state.active_brain.lock().ok().and_then(|g| g.clone()),
+    );
+
+    if brain_mode.is_none() && active_brain.is_none() {
+        eprintln!(
+            "[mcp-http] mcp-seed-embedded skipped: no embedding-capable brain configured"
+        );
+        return 0;
+    }
+
+    let mut count = 0usize;
+    for (id, content) in &unembedded {
+        let embedding =
+            brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref()).await;
+        if let Some(embedding) = embedding {
+            let store = match state.memory_store.lock() {
+                Ok(store) => store,
+                Err(e) => {
+                    eprintln!("[mcp-http] mcp-seed-embedded stopped: store lock failed: {e}");
+                    break;
+                }
+            };
+            if store.set_embedding(*id, &embedding).is_ok() {
+                count += 1;
+            }
+        }
+    }
+
+    let remaining = unembedded.len().saturating_sub(count);
+    eprintln!("[mcp-http] mcp-seed-embedded count={count} remaining={remaining}");
+    count
 }
 
 /// Probe the canonical TerranSoul MCP HTTP ports (release 7421, dev
@@ -818,7 +887,7 @@ pub fn run_http_server() -> std::io::Result<()> {
     }
 
     // Apply seed data on first run (no existing memory.db)
-    seed_mcp_data(&data_dir);
+    let seeded_mcp_data = seed_mcp_data(&data_dir);
 
     // Mark this process as MCP pet mode so the JSON-RPC initialize
     // handshake and `/status` endpoint advertise `buildMode: "mcp"`.
@@ -843,6 +912,9 @@ pub fn run_http_server() -> std::io::Result<()> {
         // Auto-configure brain if not yet set up (Ollama → free API fallback)
         brain::mcp_auto_config::auto_configure_mcp_brain(&data_dir).await;
         brain::mcp_auto_config::apply_config_to_state(&state, &data_dir);
+        if seeded_mcp_data {
+            backfill_mcp_seed_embeddings(&state).await;
+        }
 
         match ai_integrations::mcp::start_server(state, port, token.clone(), false).await {
             Ok(handle) => {
@@ -1483,7 +1555,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod mcp_seed_tests {
-    use super::load_mcp_seed_text;
+    use super::{load_mcp_seed_text, seed_mcp_data};
 
     #[test]
     fn load_mcp_seed_text_prefers_tracked_shared_file() {
@@ -1504,5 +1576,14 @@ mod mcp_seed_tests {
         let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
 
         assert_eq!(loaded, "-- fallback seed");
+    }
+
+    #[test]
+    fn seed_mcp_data_reports_first_run_only() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+
+        assert!(seed_mcp_data(tmp.path()));
+        assert!(!seed_mcp_data(tmp.path()));
+        assert!(tmp.path().join("memory.db").exists());
     }
 }

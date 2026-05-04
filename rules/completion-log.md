@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33.1 — Post-seed embedding backfill hook + MCP every-session rule](#chunk-331--post-seed-embedding-backfill-hook--mcp-every-session-rule) | 2026-05-04 |
 | [Chunk 32.8 — Animation emotion intensity pipeline](#chunk-328--animation-emotion-intensity-pipeline) | 2026-05-04 |
 | [Chunk 32.7 — vue-tsc + clippy hardening pass](#chunk-327--vue-tsc--clippy-hardening-pass) | 2026-05-04 |
 | [Chunk 32.6 — MCP seed verification + status enrichment](#chunk-326--mcp-seed-verification--status-enrichment) | 2026-05-04 |
@@ -266,6 +267,39 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33.1 — Post-seed embedding backfill hook + MCP every-session rule
+
+**Status:** Complete
+**Date:** 2026-05-04
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Continue the MCP memory-stack optimisation phase by making the headless `npm run mcp` runner warm seed embeddings immediately after first-run seeding, and add a mandatory every-session rule requiring coding agents to use TerranSoul MCP as the project-memory/self-improve layer.
+
+**Architecture:**
+- `seed_mcp_data(data_dir)` now returns `true` only when the first-run seed SQL applied successfully; existing `memory.db` remains a no-op and never gets overwritten.
+- `run_http_server()` captures that first-run result, creates `AppState`, applies MCP brain configuration, then calls `backfill_mcp_seed_embeddings(&state).await` before serving JSON-RPC.
+- `backfill_mcp_seed_embeddings` lists unembedded rows, calls the unified `brain::embed_for_mode` dispatcher, writes vectors through `MemoryStore::set_embedding`, and emits `mcp-seed-embedded count=<n> remaining=<n>` logs. Providers without embedding endpoints keep rows queued for Chunk 33.2.
+- `rules/agent-mcp-bootstrap.md` now defines the mandatory every-session MCP rule: check/reuse/start MCP, call `brain_health` plus relevant `brain_search` / `brain_suggest_context`, and preserve durable self-improve lessons in `mcp-data/shared/` or rules/docs.
+- Canonical and mirrored agent instruction files now point agents at that rule.
+
+**Files modified:**
+- `src-tauri/src/lib.rs` — first-run seed return value, seed embedding backfill hook, test for first-run-only seeding.
+- `rules/agent-mcp-bootstrap.md` — mandatory every-session MCP/self-improve rule + first-run embedding backfill note.
+- `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules` — synced quick-reference/session protocol for MCP usage.
+- `docs/brain-advanced-design.md`, `README.md` — brain/MCP docs updated for post-seed backfill and mandatory MCP use.
+- `mcp-data/shared/README.md`, `mcp-data/shared/memory-seed.sql` — shared seed docs + durable MCP every-session rule memory.
+- `rules/milestones.md` — removed completed 33.1 row and advanced Next Chunk to 33.2.
+
+**Validation:**
+- Pre-change `cargo test --manifest-path src-tauri/Cargo.toml mcp_auto_config --lib` was attempted and blocked before repo compilation by missing Linux `glib-2.0`, `gobject-2.0`, and `gio-2.0` pkg-config packages; Linux Tauri dev packages were then installed for validation.
+- `cargo test --manifest-path src-tauri/Cargo.toml schema::tests --lib` → 7 passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml mcp_seed_tests --lib` → 3 passed.
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` → passed.
+- Seed SQL mirror validation → 67 memories, 63 typed edges, 1 MCP every-session rule row.
+- Fresh headless MCP smoke test in `/tmp` with `TERRANSOUL_MCP_PORT=7523` reached `seed data applied successfully`, `mcp-seed-embedded count=0 remaining=67`, and `listening on http://127.0.0.1:7523`.
 
 ---
 

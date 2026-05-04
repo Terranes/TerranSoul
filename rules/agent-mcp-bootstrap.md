@@ -131,7 +131,33 @@ upload prompts anywhere.
 
 ## 5. How agents start it
 
-Every AI coding agent in this repo follows the same procedure:
+### Mandatory every-session rule
+
+Every AI coding agent session in this repo MUST use TerranSoul MCP as its
+project memory layer:
+
+1. **At session start**, read this file and check/reuse a running
+   TerranSoul MCP server before broad repo searches. Prefer release
+   (`7421`) or dev (`7422`) if the app is already serving MCP; otherwise
+   use the headless `npm run mcp` profile on `7423`.
+2. **Before planning or implementing**, call at least one brain tool when
+   available (`brain_health`, then `brain_search` /
+   `brain_suggest_context` for the current chunk). If MCP is blocked by
+   missing tools, missing system packages, or user policy, record the
+   blocker in the progress/final report instead of silently skipping it.
+3. **During self-improve work**, ingest durable lessons back into the MCP
+   seed surface: update `mcp-data/shared/memory-seed.sql`,
+   `project-index.md`, `lessons-learned.md`, or this rules file when the
+   session discovers knowledge that future agents must retain. Do not
+   commit ignored runtime files (`memory.db*`, token, vector indexes,
+   logs, locks, sessions, worktrees).
+4. **After completing a chunk**, archive it in
+   `rules/completion-log.md`, remove it from `rules/milestones.md`, and
+   if the chunk changed MCP/brain behaviour, update the shared seed/docs
+   so the next `npm run mcp` session can recover the decision without
+   rescanning the repo.
+
+Every AI coding agent in this repo follows the same startup procedure:
 
 1. **Check first.** `GET http://127.0.0.1:7423/mcp` — if anything
    answers, the server is already up. Reuse it.
@@ -177,7 +203,11 @@ only Git-tracked part of `mcp-data/`:
 2. If `memory.db` is missing, the function creates it with the
    canonical schema and runs `memory-seed.sql`.
 3. Config files are written only when missing.
-4. If `mcp-data/memory.db` already exists (from a previous session),
+4. After brain config is applied, a first-run-only best-effort
+   `mcp-seed-embedded` pass backfills vectors for seed rows when the
+   selected provider exposes embeddings. Providers without embedding
+   endpoints leave rows queued for a later `backfill_embeddings` run.
+5. If `mcp-data/memory.db` already exists (from a previous session),
    nothing is overwritten — incremental knowledge stays intact.
 
 **Updating seed knowledge:**

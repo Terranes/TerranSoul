@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS memories (
     obsidian_path TEXT,
     last_exported INTEGER,
     category      TEXT,
+    cognitive_kind TEXT,
     updated_at    INTEGER,
     origin_device TEXT
 );
@@ -116,8 +117,21 @@ CREATE INDEX IF NOT EXISTS idx_sync_log_peer ON sync_log(peer_device);
 /// Create the final memory schema directly and record its canonical version.
 pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch(CANONICAL_SCHEMA_SQL)?;
+    ensure_memories_cognitive_kind(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
+}
+
+fn ensure_memories_cognitive_kind(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "cognitive_kind" {
+            return Ok(());
+        }
+    }
+    conn.execute_batch("ALTER TABLE memories ADD COLUMN cognitive_kind TEXT")
 }
 
 /// Return the recorded canonical schema version, or 0 before initialization.
@@ -149,9 +163,9 @@ fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
         "SELECT id, content, tags, importance, memory_type, created_at,
                 last_accessed, access_count, embedding, source_url, source_hash,
                 expires_at, tier, decay_score, session_id, parent_id, token_count,
-                valid_to, obsidian_path, last_exported, category, updated_at,
-                origin_device
-         FROM memories LIMIT 0",
+                valid_to, obsidian_path, last_exported, category, cognitive_kind,
+                updated_at, origin_device
+          FROM memories LIMIT 0",
     )?;
     conn.prepare(
         "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at,
@@ -247,6 +261,7 @@ mod tests {
             "obsidian_path",
             "last_exported",
             "category",
+            "cognitive_kind",
             "updated_at",
             "origin_device",
         ] {
@@ -295,22 +310,65 @@ mod tests {
         conn.execute(
             "INSERT INTO memories
                 (content, created_at, source_url, valid_to, obsidian_path,
-                 category, updated_at, origin_device)
+                 category, cognitive_kind, updated_at, origin_device)
              VALUES ('canonical', 1000, 'https://example.com', NULL,
-                     'notes/canonical.md', 'project', 1001, 'device-a')",
+                     'notes/canonical.md', 'project', 'semantic', 1001, 'device-a')",
             [],
         )
         .unwrap();
 
-        let (category, origin_device): (Option<String>, Option<String>) = conn
+        let (category, cognitive_kind, origin_device): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = conn
             .query_row(
-                "SELECT category, origin_device FROM memories WHERE content = 'canonical'",
+                "SELECT category, cognitive_kind, origin_device FROM memories WHERE content = 'canonical'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
         assert_eq!(category.as_deref(), Some("project"));
+        assert_eq!(cognitive_kind.as_deref(), Some("semantic"));
         assert_eq!(origin_device.as_deref(), Some("device-a"));
+    }
+
+    #[test]
+    fn canonical_schema_adds_cognitive_kind_to_legacy_memories_table() {
+        let conn = fresh_conn();
+        conn.execute_batch(
+            "CREATE TABLE memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '',
+                importance INTEGER NOT NULL DEFAULT 3,
+                memory_type TEXT NOT NULL DEFAULT 'fact',
+                created_at INTEGER NOT NULL,
+                last_accessed INTEGER,
+                access_count INTEGER NOT NULL DEFAULT 0,
+                embedding BLOB,
+                source_url TEXT,
+                source_hash TEXT,
+                expires_at INTEGER,
+                tier TEXT NOT NULL DEFAULT 'long',
+                decay_score REAL NOT NULL DEFAULT 1.0,
+                session_id TEXT,
+                parent_id INTEGER,
+                token_count INTEGER NOT NULL DEFAULT 0,
+                valid_to INTEGER,
+                obsidian_path TEXT,
+                last_exported INTEGER,
+                category TEXT,
+                updated_at INTEGER,
+                origin_device TEXT
+            );",
+        )
+        .unwrap();
+
+        create_canonical_schema(&conn).unwrap();
+
+        let columns = table_columns(&conn, "memories");
+        assert!(columns.iter().any(|name| name == "cognitive_kind"));
     }
 
     #[test]

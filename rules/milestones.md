@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 33.1 — Post-seed embedding backfill hook** (Phase 33). See the Phase 33 table below.
+**Chunk 33.2 — Headless deterministic embedder fallback** (Phase 33). See the Phase 33 table below.
 
 ---
 
@@ -69,7 +69,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 33.1 | not-started | Post-seed embedding backfill hook | After `seed_mcp_data` applies SQL on a fresh `npm run mcp` runner, if `BrainConfig` resolves to any provider with an embedding endpoint (Ollama `nomic-embed-text` or cloud `embed_for_mode`), enqueue `commands::memory::backfill_embeddings` automatically so HNSW vectors are populated for the seeded knowledge before the first agent query. Emit a `mcp-seed-embedded` log line. |
 | 33.2 | not-started | Headless deterministic embedder fallback | When the headless MCP runner has no brain provider configured, populate `memories.embedding` with a small in-process embedder (e.g. hashing TF-IDF or `candle`-backed MiniLM gated behind a `mcp_offline_embed` Cargo feature) so the HNSW + RRF vector signal is exercised on the canonical seed even with zero network. Add a one-line README entry. |
 | 33.3 | not-started | `brain_kg_neighbors` MCP tool seed-graph integration test | Add a Rust integration test that spins up an in-memory `MemoryStore`, applies `mcp-data/shared/memory-seed.sql`, and asserts `brain_kg_neighbors("LESSON: …")` returns the lessons-learned hub via `part_of`, plus a 2-hop traversal works. Locks in the seed-edge contract from Phase 32.6. |
 | 33.4 | not-started | Auto-edge extraction on memory ingest | After every `memory_ingest` (and the post-seed pass from 33.1), schedule `parse_llm_edges` → `add_edges_batch` so new memories join the KG without manual seeding. Reuse the rate-limit + cost-cap from `auto_promote_memories`. Verify with a Vitest store mock + Rust test. |
