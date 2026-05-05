@@ -9,7 +9,7 @@
 //! - [`SelfImproveSettings`] — single-bit toggle (plus metadata) controlling
 //!   whether the autonomous loop is permitted to run. Persisted as JSON.
 //! - [`coding_llm_recommendations`] — curated provider catalogue
-//!   (Claude, OpenAI, DeepSeek, custom OpenAI-compatible).
+//!   (Local Ollama, Claude, OpenAI, custom OpenAI-compatible).
 //!
 //! The autonomous loop is implemented in [`engine`]. It plans one milestone
 //! chunk, runs the planner/coder/reviewer/apply/test/stage DAG, and stages
@@ -35,11 +35,19 @@ pub mod handoff;
 pub mod handoff_store;
 pub mod metrics;
 pub mod milestones;
+pub mod multi_agent;
+pub mod processes;
+pub mod promotion_plan;
 pub mod prompting;
+pub mod rename;
 pub mod repo;
+pub mod resolver;
 pub mod reviewer;
+pub mod session_chat;
+pub mod symbol_index;
 pub mod task_queue;
 pub mod test_runner;
+pub mod wiki;
 pub mod workflow;
 pub mod worktree;
 
@@ -47,14 +55,25 @@ pub use conversation_learning::{learn_from_message, LearnedChunk};
 pub use engine::{ProgressEvent, SelfImproveEngine};
 pub use git_ops::{pull_main, PullResult};
 pub use github::{
-    clear_github_config, load_github_config, open_or_update_pr, parse_owner_repo,
-    save_github_config, GitHubConfig, PrSummary,
+    apply_github_config_defaults, clear_github_config, load_github_config, open_or_update_pr,
+    parse_owner_repo, poll_for_token, request_device_code, save_github_config, DeviceCodeResponse,
+    DevicePollResult, GitHubConfig, OAuthDeviceConfig, PrSummary,
 };
 pub use handoff::HandoffState;
 pub use handoff_store::{clear_handoff, list_handoffs, load_handoff, save_handoff, HandoffSummary};
 pub use metrics::{MetricsLog, MetricsSummary, RunRecord};
+pub use multi_agent::{
+    AgentLlmConfig, AgentRole, CalendarEvent, LlmRecommendation, LlmTier, RecurrencePattern,
+    StepOutputFormat, StepStatus, Weekday, WorkflowKind, WorkflowPlan, WorkflowPlanStatus,
+    WorkflowPlanSummary, WorkflowSchedule, WorkflowStep,
+};
 pub use prompting::{CodingPrompt, DocSnippet, OutputShape, PROMPT_SCHEMA_VERSION};
 pub use repo::RepoState;
+pub use session_chat::{
+    append_message as session_chat_append, chat_summary as session_chat_summary,
+    clear_chat as session_chat_clear, fork_chat as session_chat_fork,
+    load_chat as session_chat_load, ChatMessage, ChatSummary,
+};
 pub use workflow::{run_coding_task, CodingTask, CodingTaskResult, TaskDocument, TaskOutputKind};
 
 const CODING_LLM_FILE: &str = "coding_llm_config.json";
@@ -62,8 +81,9 @@ const SELF_IMPROVE_FILE: &str = "self_improve.json";
 const CODING_WORKFLOW_FILE: &str = "coding_workflow_config.json";
 
 /// Provider identifier for the coding LLM. Kept as a string-typed enum so
-/// the UI can pass `"anthropic"`, `"openai"`, `"deepseek"`, or `"custom"`
-/// without an extra mapping layer.
+/// the UI can pass provider ids without an extra mapping layer. The `Deepseek`
+/// variant is kept for backwards compatibility with older saved configs, but
+/// it is no longer shown in the self-improve recommendation catalogue.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CodingLlmProvider {
@@ -77,7 +97,7 @@ pub enum CodingLlmProvider {
 ///
 /// Always uses an OpenAI-compatible chat-completions endpoint. Anthropic
 /// users supply their key via Anthropic's OpenAI-compatible bridge or a
-/// proxy; DeepSeek and OpenAI both speak `/v1/chat/completions` natively.
+/// proxy; OpenAI and custom providers speak `/v1/chat/completions` natively.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodingLlmConfig {
     pub provider: CodingLlmProvider,
@@ -163,15 +183,6 @@ pub fn coding_llm_recommendations(total_ram_mb: u64) -> Vec<CodingLlmRecommendat
             base_url: "https://api.openai.com".to_string(),
             requires_api_key: true,
             notes: "Strong general-purpose coding; reliable tool-calling.".to_string(),
-            is_top_pick: false,
-        },
-        CodingLlmRecommendation {
-            provider: CodingLlmProvider::Deepseek,
-            display_name: "DeepSeek".to_string(),
-            default_model: "deepseek-coder".to_string(),
-            base_url: "https://api.deepseek.com".to_string(),
-            requires_api_key: true,
-            notes: "Cost-efficient coding-tuned model. Excellent value per token.".to_string(),
             is_top_pick: false,
         },
         CodingLlmRecommendation {
@@ -271,6 +282,12 @@ pub struct SelfImproveSettings {
     /// audit trails. Empty string when never enabled.
     #[serde(default)]
     pub last_provider: String,
+    /// Custom directory for self-improve worktrees. When set, worktrees are
+    /// created here instead of the OS temp directory. This lets users inspect
+    /// the worktree with `git worktree list`, open it in GitHub Desktop, or
+    /// browse it in a file manager. Empty or missing = OS temp dir (default).
+    #[serde(default)]
+    pub worktree_dir: String,
 }
 
 /// Load the self-improve settings (defaults to disabled).
@@ -296,7 +313,7 @@ pub fn save_self_improve(data_dir: &Path, settings: &SelfImproveSettings) -> Res
 /// Controls which files the shared `run_coding_task` runner injects into
 /// the prompt's `<documents>` block. Persisted as JSON so users can edit
 /// it from the UI without recompiling. Provider-agnostic — the same
-/// config applies regardless of which LLM (Claude / OpenAI / DeepSeek /
+/// config applies regardless of which LLM (Claude / OpenAI / local / custom
 /// local Ollama via OpenAI-compatible proxy) is selected as the
 /// Coding LLM.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -376,7 +393,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn recommendations_include_local_ollama_first_with_claude_openai_deepseek() {
+    fn recommendations_include_local_ollama_first_with_claude_openai_custom() {
         // 16 GB RAM → should recommend Gemma 4 E2B per §26 top-picks.
         let recs = coding_llm_recommendations(16_384);
         let names: Vec<_> = recs.iter().map(|r| r.display_name.as_str()).collect();
@@ -386,7 +403,8 @@ mod tests {
         );
         assert!(names.iter().any(|n| n.contains("Claude")));
         assert!(names.iter().any(|n| n.contains("OpenAI")));
-        assert!(names.iter().any(|n| n.contains("DeepSeek")));
+        assert!(names.iter().any(|n| n.contains("Custom")));
+        assert!(!names.iter().any(|n| n.contains("DeepSeek")));
         // Local Ollama should be the single top pick — it is free,
         // private, and works fully offline.
         let top: Vec<_> = recs.iter().filter(|r| r.is_top_pick).collect();
@@ -465,6 +483,7 @@ mod tests {
             updated_at: 1714000000,
             last_acknowledged_at: 1714000000,
             last_provider: "anthropic".to_string(),
+            worktree_dir: String::new(),
         };
         save_self_improve(dir.path(), &s).unwrap();
 

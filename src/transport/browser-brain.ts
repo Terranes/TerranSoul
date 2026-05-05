@@ -36,7 +36,7 @@ export function resolveBrowserBrainTransport(
       kind: 'direct',
       provider: {
         baseUrl: provider.base_url,
-        model: provider.model,
+        model: mode.model ?? provider.model,
         apiKey: mode.api_key ?? null,
         providerId: provider.id,
       },
@@ -73,7 +73,7 @@ export function browserDirectFallbackProviders(
     if (provider.requires_api_key && !apiKey) continue;
     providers.push({
       baseUrl: provider.base_url,
-      model: provider.model,
+      model: mode?.mode === 'free_api' && mode.provider_id === provider.id && mode.model ? mode.model : provider.model,
       apiKey: apiKey ?? null,
       providerId: provider.id,
     });

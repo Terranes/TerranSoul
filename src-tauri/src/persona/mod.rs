@@ -20,6 +20,7 @@ pub mod motion_smooth;
 pub mod pack;
 pub mod pose_frame;
 pub mod prosody;
+pub mod charisma;
 
 #[cfg(feature = "motion-research")]
 pub mod motion_tokens;

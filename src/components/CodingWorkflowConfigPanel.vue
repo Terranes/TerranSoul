@@ -111,7 +111,7 @@ watch(
           Choose which project files every coding task can read. Applies to
           the reusable <code>run_coding_task</code> runner and the autonomous
           self-improve planner — provider-agnostic, regardless of whether
-          your Coding LLM is Claude, OpenAI, DeepSeek, or a local endpoint.
+          your Coding LLM is Claude, OpenAI, custom, or a local endpoint.
         </p>
       </div>
       <div

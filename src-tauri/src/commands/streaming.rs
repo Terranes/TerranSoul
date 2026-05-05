@@ -24,6 +24,9 @@ pub struct AnimationCommand {
     pub emotion: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motion: Option<String>,
+    /// Emotion intensity in `[0, 1]`. Defaults to 1.0 when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intensity: Option<f32>,
 }
 
 /// Ollama streaming response shape — each line of the NDJSON stream.
@@ -321,6 +324,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         Some(BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         }) => {
             // Check rotator for a healthy provider, falling back to configured one
             let effective_provider_id = {
@@ -337,6 +341,9 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 &history,
                 &effective_provider_id,
                 api_key.as_deref(),
+                model
+                    .as_deref()
+                    .filter(|_| effective_provider_id == provider_id.as_str()),
                 None,
             )
             .await
@@ -354,6 +361,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 &history,
                 "paid",
                 Some(&api_key),
+                None,
                 Some((&base_url, &model)),
             )
             .await
@@ -374,6 +382,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 &history,
                 "lm_studio",
                 api_key.as_deref(),
+                None,
                 Some((&base_url, &model)),
             )
             .await
@@ -398,6 +407,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
     history: &[(String, String)],
     provider_id: &str,
     api_key: Option<&str>,
+    free_model_override: Option<&str>,
     paid_override: Option<(&str, &str)>, // (base_url, model) for paid API
 ) -> Result<(), String> {
     // Resolve base_url and model
@@ -407,7 +417,10 @@ async fn stream_openai_api<R: tauri::Runtime>(
         // Look up free provider
         let provider = crate::brain::get_free_provider(provider_id)
             .ok_or_else(|| format!("Unknown free provider: {provider_id}"))?;
-        (provider.base_url, provider.model)
+        (
+            provider.base_url,
+            free_model_override.unwrap_or(&provider.model).to_string(),
+        )
     };
 
     let client = OpenAiClient::new(&base_url, &model, api_key);
@@ -453,9 +466,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
             .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
             .collect::<Vec<_>>()
             .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
     }
 
     // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
@@ -625,9 +636,7 @@ async fn stream_ollama<R: tauri::Runtime>(
             .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
             .collect::<Vec<_>>()
             .join("\n");
-        system_prompt.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
     }
 
     // ── Persona block (see docs/persona-design.md § 9.1) ──────────────
@@ -863,9 +872,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                 .map(|e| format!("- [{}] {}", e.tier.as_str(), e.content))
                 .collect::<Vec<_>>()
                 .join("\n");
-            system_prompt.push_str(&format!(
-                "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{memory_block}\n[/LONG-TERM MEMORY]"
-            ));
+            system_prompt.push_str(&crate::memory::format_retrieved_context_pack(&memory_block));
         }
 
         // Append Self-RAG reflection instructions
@@ -1136,6 +1143,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".to_string(),
             api_key: None,
+            model: None,
         };
         match &mode {
             BrainMode::FreeApi { provider_id, .. } => assert_eq!(provider_id, "groq"),
@@ -1194,6 +1202,7 @@ mod tests {
         let cmd = AnimationCommand {
             emotion: Some("happy".to_string()),
             motion: None,
+            intensity: None,
         };
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(json.contains("happy"));

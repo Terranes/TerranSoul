@@ -70,7 +70,7 @@ fn sentiment_str(s: &Sentiment) -> &'static str {
 /// chat prompt: persona is kept verbatim, retrieved memories are
 /// trimmed by score, and old history turns are dropped to stay within
 /// the per-mode token budget. Returns the assembled system prompt
-/// (persona + `[LONG-TERM MEMORY]` block) and the trimmed history.
+/// (persona + retrieved context pack) and the trimmed history.
 ///
 /// `relevant` is assumed to be sorted best-first (as
 /// [`crate::memory::MemoryStore::hybrid_search`] returns) — we
@@ -117,9 +117,7 @@ pub(super) fn build_budgeted_prompt(
             .map(|c| c.content.clone())
             .collect::<Vec<_>>()
             .join("\n");
-        system.push_str(&format!(
-            "\n\n[LONG-TERM MEMORY]\nThe following facts from your memory are relevant to this conversation:\n{mem_block}\n[/LONG-TERM MEMORY]"
-        ));
+        system.push_str(&crate::memory::format_retrieved_context_pack(&mem_block));
     }
 
     let trimmed_history: Vec<(String, String)> = result
@@ -188,6 +186,7 @@ pub async fn process_message(
         Some(BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         }) => {
             // Use the free provider's OpenAI-compatible API (non-streaming).
             let effective_provider_id = {
@@ -198,11 +197,15 @@ pub async fn process_message(
                 rotator
                     .next_healthy_provider()
                     .map(|p| p.id.clone())
-                    .unwrap_or(provider_id)
+                    .unwrap_or_else(|| provider_id.clone())
             };
             let provider = crate::brain::get_free_provider(&effective_provider_id)
                 .ok_or_else(|| format!("Unknown free provider: {effective_provider_id}"))?;
-            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let chat_model = model
+                .as_deref()
+                .filter(|_| effective_provider_id == provider_id.as_str())
+                .unwrap_or(&provider.model);
+            let client = OpenAiClient::new(&provider.base_url, chat_model, api_key.as_deref());
 
             // RAG: hybrid search (keyword + recency + importance + decay)
             let relevant: Vec<crate::memory::MemoryEntry> = {

@@ -40,7 +40,7 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 
 | Human Brain                | AI System                          | RPG Stat             |
 | -------------------------- | ---------------------------------- | -------------------- |
-| Prefrontal Cortex          | Reasoning Engine (LLM + Agents)    | 🧠 Intelligence      |
+| Prefrontal Cortex          | Reasoning Engine (local/free/paid LLM + Agents) | 🧠 Intelligence      |
 | Hippocampus                | Long-term Memory + Memory Hooks    | 📖 Wisdom            |
 | Working Memory Network     | Short-term Memory                  | 🎯 Focus             |
 | Neocortex                  | Retrieval System (RAG / Knowledge) | 📚 Knowledge         |
@@ -51,7 +51,7 @@ TerranSoul's architecture mirrors the human brain. Each region maps to a real AI
 
 > 🖥️ **Offline / Local LLM models (current):** TerranSoul's hardware-adaptive model recommender selects from **Gemma 4** and **Qwen** families for fully offline, private operation via Ollama — chosen based on your available RAM. This list is kept up to date as better locally-runnable models emerge.
 
-As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 with just a free cloud brain. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
+As you unlock skills, your AI's stats grow. A freshly installed TerranSoul starts at level 1 by connecting a free-tier or local brain provider. By the time you've completed the Ultimate tier, you have a fully autonomous assistant with voice, vision, memory, multi-device sync, and community agents — all configured through gameplay, not menus.
 
 ### The Skill Tree — Constellation Map
 
@@ -122,7 +122,7 @@ Unlock the right combination of skills and you trigger **combos** — bonus capa
 There are multiple paths to evolve your AI's brain — each with different tradeoffs:
 
 ```
-🧠 Free Brain (Pollinations/Groq)
+🧠 Free Brain (OpenRouter/Gemini/NVIDIA/Pollinations/Groq)
 ├── ⚡ Superior Intellect (Paid API — OpenAI/Anthropic)
 │   ├── 🤖 Agent Summoning (community AI agents)
 │   ├── 🌍 Babel Tongue (real-time translation)
@@ -131,7 +131,7 @@ There are multiple paths to evolve your AI's brain — each with different trade
     └── Full offline operation — no internet needed
 ```
 
-Each path is a quest chain. The free brain auto-configures on first launch (zero setup). From there, you choose: pay for power (Superior Intellect), or invest time in local setup for privacy and offline capability (Inner Sanctum).
+Each path is a quest chain. Browser/Vercel asks you to choose a provider from chat or pet mode first; the provider page opens before any key/token is pasted into TerranSoul. From there, you choose: use a free-tier provider, pay for power (Superior Intellect), or invest time in local setup for privacy and offline capability (Inner Sanctum).
 
 ---
 
@@ -143,7 +143,7 @@ TerranSoul is an open-source **3D virtual assistant + AI package manager** that 
 |----------|--------|
 | Desktop | Windows · macOS · Linux |
 | Mobile | iOS · Android |
-| Browser | Vercel-only static web test environment + live pet-mode demo |
+| Browser | Vercel-only static web test environment + live pet-mode demo + known-host LAN bridge |
 
 The iOS target now has a Tauri 2 platform overlay (`src-tauri/tauri.ios.conf.json`), shared Vue safe-area layout, and Stronghold-backed secure storage for pairing credentials. Generate the Xcode project on macOS with `npm run tauri:ios:init`; non-macOS hosts can still run `npm run tauri:ios:check` to validate the scaffold.
 
@@ -191,32 +191,36 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 > Architectural reference: **[docs/brain-advanced-design.md](docs/brain-advanced-design.md)** covers every component below in depth, including the April 2026 modern-RAG research survey.
 
 **Providers & modes** (`src-tauri/src/brain/`)
-- **4 brain modes:** Free API (Pollinations, Groq), Paid API (OpenAI / Anthropic / Groq / OpenAI-compatible), Local Ollama, Stub fallback
+- **4 brain modes:** Free API (OpenRouter, Gemini, NVIDIA NIM, Pollinations, Groq, Cerebras, and other free-tier providers), Paid API (OpenAI / Anthropic / Gemini / OpenAI-compatible), Local Ollama/LM Studio, Stub fallback
 - Implementations: `OllamaAgent`, `OpenAiClient`, `FreeProvider`, `ProviderRotator`, `StubAgent`
 - Cloud embedding API (`cloud_embeddings.rs`) — unified `embed_for_mode` dispatcher routes to OpenAI-compatible `/v1/embeddings` for paid/free cloud modes, so vector RAG works without local Ollama
 - External CLI agents (Chunk 1.5): multi-agent **roster** + Temporal-style **durable workflow engine** (`src-tauri/src/agents/`, `src-tauri/src/workflows/`)
 - Hardware-adaptive **model recommender** (Gemma 4, Phi-4, Kimi K2.6 cloud) based on detected RAM
-- Zero-setup first launch — free brain auto-configures with no API keys
+- Authorize-first provider setup — browser, static-web chat, Marketplace, and the Tauri setup wizard launch provider pages first, with manual key/token entry kept as a secondary direct-call option and selectable free-provider models persisted in `BrainMode::FreeApi.model`
 - Streaming responses (SSE → `llm-chunk` Tauri event, parsed by `StreamTagParser` state machine)
 - Animation channel: `llm-animation` events for `<anim>` JSON blocks emitted by the LLM
+- MCP app activity channel: backend MCP tool calls emit `mcp-activity` snapshots with active provider/model, phase, tool title, and speakable status text so MCP mode visibly and audibly narrates what the configured brain is doing.
 - Provider health monitoring + automatic failover, migration detection when APIs deprecate
 - Chat-based LLM switching ("switch to groq", "use pollinations")
-- Browser-only Vercel onboarding — one-click "Authorize with Google", "Authorize with ChatGPT", or instant free demo choices remembered in the `brain` Pinia store + localStorage, with no Tauri installer, backend account, manual API-key entry, or user-side installation required
-- Browser-native RAG for the static web demo — direct provider chat can inject local `[LONG-TERM MEMORY]` blocks without a TerranSoul backend by using the browser memory adapter documented in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface)
+- Browser-only Vercel onboarding — the landing page shows provider and LAN buttons; chat and pet mode open the provider chooser when no backend brain is connected. Current recommendations put OpenRouter first for free model breadth, with Gemini, NVIDIA NIM, ChatGPT/OpenAI, and Pollinations available through provider-page authorization plus an optional manual key/token step. Choices are remembered in the `brain` Pinia store + localStorage, with a visible Reconfigure LLM button and no Tauri installer or backend account required.
+- Browser LAN bridge — the static page can save and probe a user-entered TerranSoul host (`ts.browser.lan.host`) and then open the existing `remote-conversation` chat surface through `RemoteHost`. It does **not** auto-detect every LAN TerranSoul: backendless HTTPS browsers cannot listen for mDNS/UDP advertisements, inspect router/ARP tables, or safely scan private subnets. A Vercel HTTPS page also cannot call plaintext `http://192.168.x.x` hosts; direct browser LAN calls require same-machine loopback, local development over HTTP, or a browser-trusted HTTPS host that allows the origin. Native mobile/desktop pairing remains the reliable LAN path.
+- Browser-native RAG for the static web demo — direct provider chat can inject local query-scoped `[RETRIEVED CONTEXT]` packs (containing backward-compatible `[LONG-TERM MEMORY]` records plus an explicit "not the whole database" contract) without a TerranSoul backend by using the browser memory adapter documented in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface)
 - Persona-based fallback when no LLM is configured
-- **RemoteHost transport adapter** (`src/transport/`) — shared frontend contract for local in-process Tauri IPC and remote gRPC-Web hosts. Browser/WebView clients use `@bufbuild/connect` + `@bufbuild/connect-web` descriptors for `Brain.Health`, `Brain.Search`, `Brain.StreamSearch`, `PhoneControl.SendChatMessage`, and `PhoneControl.StreamChatMessage`, while desktop keeps using the same interface over local `invoke()` calls. The phone tool layer (`remote-tools.ts`) exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` on top of that same contract, and the iOS notification watcher polls the same adapter for long-running workflow/Copilot updates.
+- **RemoteHost transport adapter** (`src/transport/`) — shared frontend contract for local in-process Tauri IPC and remote gRPC-Web hosts. Browser/WebView clients use `@bufbuild/connect` + `@bufbuild/connect-web` descriptors for `Brain.Health`, `Brain.Search`, `Brain.StreamSearch`, `PhoneControl.SendChatMessage`, and `PhoneControl.StreamChatMessage`, while desktop keeps using the same interface over local `invoke()` calls. The phone tool layer (`remote-tools.ts`) exposes `describe_copilot_session`, `describe_workflow_progress`, and `continue_workflow` on top of that same contract, and the iOS notification watcher polls the same adapter for long-running workflow/Copilot updates. Browser mode can opt into this same store from a saved known LAN host, but discovery still requires native pairing or a rendezvous/signaling service.
 - **LLM-powered intent classifier** (`src-tauri/src/brain/intent_classifier.rs` + `classify_intent` Tauri command) — every chat turn is classified by the configured brain (Free → Paid → Local) into a typed `IntentDecision` (`chat`, `learn_with_docs{topic}`, `teach_ingest{topic}`, `gated_setup{upgrade_gemini|provide_context}`, `unknown`). Replaces three brittle English-only regex detectors so paraphrases, typos and multilingual phrasings (`học luật Việt Nam từ tài liệu của tôi`) all route correctly. 3 s hard timeout + 30 s in-memory LRU cache; on `unknown` the frontend automatically triggers the install-all overlay so a local Ollama brain is set up — guaranteeing every future turn has a working classifier offline. **Every "LLM decides" surface (intent classifier, unknown→install fallback, don't-know gate, post-reply quest suggestions, chat-based LLM-switching commands, yes/no quick-reply buttons, model-capacity auto-upgrade prompt) is user-toggleable** from the Brain panel's "🧭 AI decision-making" section. New code touching AI routing must follow **[`rules/llm-decision-rules.md`](rules/llm-decision-rules.md)** — no regex / `.includes` / keyword arrays driving AI behaviour. See **[docs/brain-advanced-design.md § Intent Classification](docs/brain-advanced-design.md#intent-classification)**.
 - 60s streaming timeout + 30s fallback timeout to prevent stuck states
 
 **Three-tier memory + RAG** (`src-tauri/src/memory/`)
 - **Three tiers** mirroring human cognition: **Short-term** (in-memory `Vec<Message>`, last ~20 turns) → **Working** (SQLite, session-scoped) → **Long-term** (SQLite, vector-indexed, decay/GC managed)
-- **Cognitive memory axes** — every memory is also classified `episodic` / `semantic` / `procedural` via the pure-function classifier `memory::cognitive_kind::classify` (mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`)
+- **Cognitive memory axes** — every memory is also classified `episodic` / `semantic` / `procedural` via the pure-function classifier `memory::cognitive_kind::classify` (mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`); SQLite stores an optional `cognitive_kind` column for seeded/known rows and falls back to the classifier when it is `NULL`.
 - **Hybrid 6-signal RAG search** — `vector_similarity` (40%) + `keyword_match` (20%) + `recency_bias` (15%) + `importance` (10%) + `decay_score` (10%) + `tier_priority` (5%)
+- **Retrieved context-pack contract** (`memory/context_pack.rs` + browser mirror in `conversation.ts`) — all live chat surfaces wrap retrieved records in `[RETRIEVED CONTEXT]` before the legacy `[LONG-TERM MEMORY]` block, telling the LLM these are query results from a database-backed RAG store, not an exhaustive transcript or complete "memory."
 - **Embeddings:** Ollama `nomic-embed-text` (768-dim) by default, stored as SQLite BLOB; chat-model fallback with process-lifetime "unsupported" cache + 60s `/api/tags` probe cache
 - **Reciprocal Rank Fusion (RRF)** — `memory/fusion.rs` ships the Cormack RRF utility (`k=60`) and `MemoryStore::hybrid_search_rrf` wires it into a real retrieval path that fuses independent vector / keyword / freshness rankings; exposed as the `hybrid_search_memories_rrf` Tauri command (April 2026 research absorption — `docs/brain-advanced-design.md` §19.2 row 2)
 - **HyDE — Hypothetical Document Embeddings** (`memory/hyde.rs` + `OllamaAgent::hyde_complete` + `hyde_search_memories` Tauri command) — LLM writes a plausible 1-3 sentence answer, we embed *that* for retrieval; falls back gracefully to raw-query embedding then to keyword + freshness when the brain is unreachable. Improves recall on cold or abstract queries (Gao et al., 2022 — `docs/brain-advanced-design.md` §19.2 row 4)
 - **Cross-encoder reranker (LLM-as-judge style)** (`memory/reranker.rs` + `OllamaAgent::rerank_score` + `rerank_search_memories` Tauri command) — two-stage retrieval: RRF-fused recall (default `candidates_k=20`, clamped `limit..=50`) → active brain scores each `(query, document)` pair on a 0–10 scale → reorder. Unscored candidates are kept below scored ones (no silent recall loss). Reuses the active brain (no extra model download); interface matches a future BGE/mxbai backend so swapping is one line (`docs/brain-advanced-design.md` §19.2 row 10)
 - **Matryoshka two-stage vector search** (`memory/matryoshka.rs` + `matryoshka_search_memories` Tauri command) — truncate the query embedding to 256 dims for a fast first pass, then re-rank the top survivors at full 768-dim cosine similarity. Pure utility (`truncate_and_normalize` + `two_stage_search`) — no schema change, no migration, no index rebuild. Cuts the brute-force fallback path ~3× per candidate with negligible recall hit; helps cold-start before the ANN index is hot (Kusupati et al., NeurIPS 2022 — `docs/brain-advanced-design.md` §19.2 row 11)
+- **NotebookLM-style source guides** (`commands/ingest.rs`) — every imported document now gets one deterministic `MemoryType::Summary` source-guide row with source label, compact synopsis, headings, key topics, and starter questions. It is embedded beside the original chunks, so broad overview questions can retrieve a ~450-token guide instead of injecting several raw chunks; exact questions still retrieve the original source chunks. No LLM call is required at ingest time.
 - **Self-RAG reflection-token controller** (`orchestrator/self_rag.rs`) — pure decision logic for the Self-RAG iterative-refinement protocol (Asai et al., 2023). Parses `<Retrieve>` / `<Relevant>` / `<Supported>` / `<Useful>` reflection tokens out of LLM responses and runs a 3-iteration state machine that decides whether to retrieve again, accept the answer, or refuse on max-iter / unsupported. Ships with `SELF_RAG_SYSTEM_PROMPT` for prompt injection. Orchestrator-loop integration (re-prompting the LLM with augmented context) is the follow-up Chunk 16.4b — `docs/brain-advanced-design.md` §19.2 row 5
 - **Late chunking ingest integration** (`memory/late_chunking.rs` + `commands/ingest.rs` + `OllamaAgent::embed_tokens`) — opt-in via `AppSettings.late_chunking`. When a local Ollama embedder returns per-token vectors for the whole document, ingestion aligns stored chunks back to token spans, mean-pools each chunk with `pool_chunks(...)`, L2-renormalises the vectors, and writes them through the existing SQLite embedding column. If the model only returns standard pooled embeddings, ingestion falls back to the existing per-chunk embedding path. Implements the Jina AI 2024 late-chunking pattern without schema changes — `docs/brain-advanced-design.md` §19.2 row 9
 - **CRAG retrieval evaluator** (`memory/crag.rs`) — pure classifier for the Corrective RAG protocol (Yan et al., 2024). `build_evaluator_prompts(query, document)` mirrors the reranker shape; `parse_verdict()` extracts `CORRECT` / `AMBIGUOUS` / `INCORRECT` from LLM replies with whole-word token matching (so `"incorrectly"` doesn't false-match `INCORRECT`); `aggregate()` collapses per-document verdicts into a corpus-level `RetrievalQuality` for orchestrator branching. Query-rewrite + web-search fallback is the follow-up Chunk 16.5b — `docs/brain-advanced-design.md` §19.2 row 6
@@ -224,6 +228,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - **Knowledge graph (V6):** typed directional `memory_edges` table with FK cascade + 17-type relationship taxonomy + temporal validity intervals, `extract_edges_via_brain` LLM extractor, `multi_hop_search_memories` traversal, Cytoscape.js visualization
 - **Decay & GC:** exponential decay (`decay_score *= 0.95^(hours/168)`), access-count tracking, periodic garbage collection, a user-configurable in-memory brain memory/RAG cache cap (`AppSettings.max_memory_mb`, default 10 MB), and a persistent storage cap (`AppSettings.max_memory_gb`, default 10 GB) that prunes lowest-utility stored memories after writes and during background maintenance
 - **Multi-source knowledge management:** source-hash change detection, TTL expiry, access-count decay, **LLM-powered conflict resolution**
+- **Obsidian vault export/sync:** vault metadata (`obsidian_path`, `last_exported`) stays on each memory row; bidirectional sync records the actual exported file mtime after writes so a just-exported file is not immediately re-imported on Windows timestamp boundaries.
 - **Cross-device memory sync:** `memory::crdt_sync` computes LWW deltas keyed by `source_hash` or `(content_prefix, created_at)`; Soul Link dispatches `memory_sync` / `memory_sync_request` messages through `link::handlers`, applies inbound deltas, replies with pre-apply local deltas, and records Unix-ms `sync_log` watermarks so paired devices do not replay already-synced memories.
 - **Mobile/remote memory + chat/workflow surface:** `RemoteHost.searchMemories()` and `RemoteHost.streamSearchMemories()` expose the same RRF/HYBRID/HyDE search modes to browser-native gRPC-Web clients, and `RemoteHost.streamChatMessage()` lets iOS `ChatView` consume desktop-hosted chat streams. `[PERSONA]`, `[LONG-TERM MEMORY]`, and `[HANDOFF]` prompt injection stay server-side; the phone receives clean text chunks. Phone prompts such as “what's Copilot doing?” and “continue the next chunk” route through named RemoteHost tools for Copilot-session narration and workflow progress/continue actions. Paired iOS shells also use `mobile-notifications.ts` + `tauri-plugin-notification` for local long-running workflow, ingest-task, and Copilot threshold notifications over the LAN connection.
 - **Sandboxed plugin memory hooks:** `plugins::PluginHost` exposes `memory_hooks` contributions with `pre_store` / `post_store` stages. Plugins can lazily activate via `on_memory_tag`, run inside `WasmRunner`, and return JSON patches that transform content / tags / importance / type before `add_memory` writes to SQLite; post-store hooks are notification/indexing-only.
@@ -268,12 +273,14 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - `cognitive_kind.rs` — pure-function `classify(memory_type, tags, content) → CognitiveKind` (`Episodic` / `Semantic` / `Procedural`); mirrored 1:1 in TS at `src/utils/cognitive-kind.ts`
 - `brain_memory.rs` — LLM-powered ops: `extract_facts`, `summarize`, `semantic_search_entries`, `extract_edges_via_brain`
 - `fusion.rs` — `reciprocal_rank_fuse(rankings, k)` (Cormack RRF, `k=60`); consumed by `MemoryStore::hybrid_search_rrf`
+- `context_pack.rs` — shared prompt formatter for database-first retrieved context packs. Keeps `[LONG-TERM MEMORY]` for compatibility, but wraps it in `[RETRIEVED CONTEXT]` with a clear contract that the snippets are scoped retrieval results, not the full memory store.
 - `hyde.rs` — pure HyDE prompt builder + reply cleaner (Gao et al., 2022); consumed by `OllamaAgent::hyde_complete` and the `hyde_search_memories` Tauri command
 - `reranker.rs` — pure cross-encoder rerank prompt builder + score parser + reorder logic; consumed by `OllamaAgent::rerank_score` and the two-stage `rerank_search_memories` Tauri command (recall via `hybrid_search_rrf`, precision via LLM-as-judge)
 - `auto_learn.rs` — `AutoLearnPolicy` + pure `evaluate(policy, total_turns, last_autolearn_turn) → AutoLearnDecision`; the cadence policy that turns daily conversation into long-term memory (default: every 10 turns, 3-turn cooldown). See **[docs/brain-advanced-design.md § 21](docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop)**.
 - `crdt_sync.rs` — cross-device LWW delta engine: `compute_sync_deltas(since_timestamp, local_device_id)`, `apply_sync_deltas(deltas, local_device_id)`, `log_sync(peer, direction, entry_count)`, and `last_sync_time(peer)` use Unix-ms watermarks compatible with memory `updated_at`.
 - `tag_vocabulary.rs` — curated `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`, `category_decay_multiplier()` per-prefix decay rates
 - `auto_tag.rs` — LLM auto-tagger: `auto_tag_content()` dispatches to Ollama/FreeApi/PaidApi; `parse_tag_response()` validates + caps at 4 curated-prefix tags; `merge_tags()` deduplicates with user tags. Opt-in via `AppSettings.auto_tag`
+- `commands/ingest.rs` — document ingestion command: URL/file/crawl fetch, semantic chunking, source-hash staleness detection, deterministic NotebookLM-style source-guide summaries, optional contextual retrieval prefixes, optional late-chunking embeddings, and best-effort embedding backfill.
 - `obsidian_export.rs` — one-way Obsidian vault export: `export_to_vault(vault_dir, entries)` writes `<id>-<slug>.md` per long-tier memory with YAML frontmatter; idempotent (mtime-based skip); `slugify`, `format_iso`, `render_markdown` pure helpers
 - `temporal.rs` — natural-language time-range parser: `parse_time_range(question, now_ms)` resolves "last N days", "since April", "between X and Y", "today", "yesterday" into `TimeRange { start_ms, end_ms }`; pure std calendar math (Howard Hinnant algorithm), no external crate
 - `contextualize.rs` — Contextual Retrieval (Anthropic 2024): `generate_doc_summary()` + `contextualise_chunk(doc_summary, chunk, brain_mode)` + `prepend_context()`; opt-in via `AppSettings.contextual_retrieval`; adds document-level context to each chunk before embedding, reducing failed retrievals by ~49 %
@@ -300,7 +307,7 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 - `src/views/MemoryView.vue` — list / grid / graph view, tier chips, tag-prefix category filter chips with counts, search + semantic + hybrid search
 - `src/components/MemoryGraph.vue` — Cytoscape.js semantic graph visualization with typed edges
 - `src/stores/memory.ts` — Pinia store (CRUD + search + streaming results)
-- Browser/Vercel mode keeps the million-user demo backend-free: memory records persist to browser storage, use browser-side embeddings + vector/keyword/RRF retrieval, inject RAG context into direct provider chat, and export/import a Drive-friendly sync payload; Rust-backed SQLite/usearch/CRDT remains available through desktop/mobile or a paired RemoteHost, as detailed in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface).
+- Browser/Vercel mode keeps the million-user demo backend-free: memory records persist to browser storage, use browser-side embeddings + vector/keyword/RRF retrieval, inject the same retrieved-context contract into direct provider chat, and export/import a Drive-friendly sync payload; Rust-backed SQLite/usearch/CRDT remains available through desktop/mobile or a paired RemoteHost, as detailed in [docs/brain-advanced-design.md](docs/brain-advanced-design.md#browser-mode-surface).
 
 ### 🎭 Persona System (The "Sense of Self & Mirror Neurons")
 
@@ -357,12 +364,31 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 
 > Architectural reference: **[docs/AI-coding-integrations.md](docs/AI-coding-integrations.md)** — full protocol details, security model, auto-setup writers, and the VS Code Copilot incremental-indexing pact.
 
-- **MCP server** (Chunk 15.1) — HTTP/JSON-RPC 2.0 on `127.0.0.1:7421` via axum Streamable HTTP transport. Bearer-token auth (`mcp-token.txt`). 8 brain tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`).
+- **MCP server** (Chunk 15.1) — HTTP/JSON-RPC 2.0 on `127.0.0.1:7421` via axum Streamable HTTP transport, plus dev/app ports `7422` / `7423`. Bearer-token auth (`mcp-token.txt`). 8 brain tools (`brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_health`) + native code-intelligence tools (`code_query`, `code_context`, `code_impact`, `code_rename`) gated behind `code_read` capability. MCP app mode auto-configures a usable brain and emits live `mcp-activity` events for the on-screen/audible model status panel. Headless `npm run mcp` seeds from the committed `mcp-data/shared/` dataset and, on first run, immediately backfills seed embeddings; provider embeddings are preferred, and the deterministic offline embedder hashes tokens into 256-dimensional vectors when no provider embedding is available so SQLite + HNSW + RRF are warm before the first agent query. Tokens, SQLite DBs, indexes, logs, locks, sessions, and worktrees stay ignored.
 - **BrainGateway trait** (Chunk 15.3) — single typed op surface shared by MCP and future gRPC transports. `AppStateGateway` adapter, capability gating (`GatewayCaps`), typed errors, delta-stable fingerprint for VS Code Copilot cache.
 - **gRPC/gRPC-Web server** — tonic server on the LAN gRPC port accepts native HTTP/2 and browser-native gRPC-Web (`tonic_web::GrpcWebLayer`) for `terransoul.brain.v1.Brain` plus the paired phone-control surface, including streamed chat and workflow/Copilot remote tools. The Vue `RemoteHost` adapter uses `@bufbuild/connect-web`, so the same components can run locally or from an iOS WebView.
 - **AppState Arc newtype** — `AppState(Arc<AppStateInner>)` with `Deref + Clone`. Enables cheap sharing with background servers without changing any of the 150+ existing Tauri commands.
-- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`
+- Tauri commands: `mcp_server_start`, `mcp_server_stop`, `mcp_server_status`, `mcp_regenerate_token`, `get_mcp_activity`
 - Control Panel (15.4) and auto-setup writers (15.6) — shipped; see the completion log for details.
+
+### 🧠 MCP Quick Setup
+
+For coding agents, use the headless brain runner so it cannot collide with the desktop app or dev server:
+
+1. Copilot cloud sessions auto-start the headless MCP brain via `.github/workflows/copilot-setup-steps.yml` and `scripts/copilot-start-mcp.mjs`; local agents can start it manually with `npm run mcp`.
+2. If MCP/app startup fails because `pkg-config` cannot find Linux Tauri libraries, install the missing system packages and retry before reporting a blocker. On Ubuntu the expected set is `libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev pkg-config`.
+3. Copy the generated bearer token from `.vscode/.mcp-token`. The runner also keeps its data-root copy at `mcp-data/mcp-token.txt`.
+4. Set VS Code's MCP env var for the headless profile, then restart VS Code or launch it from that shell:
+
+  ```powershell
+  $env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content .vscode/.mcp-token
+  ```
+
+5. Verify the server is reachable with `GET http://127.0.0.1:7423/health`, then call the `brain_health` MCP tool on `terransoul-brain-mcp`.
+6. Mandatory for every coding-agent session: use `brain_search` / `brain_suggest_context` for the current chunk before broad manual repo exploration, and write durable self-improve lessons into `mcp-data/shared/` or the rules/docs so the next `npm run mcp` run inherits them.
+
+The checked-in `.vscode/mcp.json` already points `terransoul-brain-mcp` at `http://127.0.0.1:7423/mcp` and reads `TERRANSOUL_MCP_TOKEN_MCP` for bearer auth. Release and dev app profiles use ports `7421` and `7422` with their own token env vars.
+The default `mcp-data/shared/` seed includes high-priority rule memories for milestone hygiene, backlog promotion, instruction sync, docs sync, CREDITS, no-mock production code, LLM decision routing, and validation so agents retrieve these before editing.
 
 ### 🖥️ Window Modes
 - Standard desktop window
@@ -399,7 +425,7 @@ Built on **Tauri 2.0** as a unified shell across desktop + mobile:
 **Platform notes:**
 
 - **Desktop:** transparent always-on-top overlay window + system tray
-- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a small forced pet-mode preview in the bottom-right, and switching to app modes opens a compact responsive in-page window instead of a native window. Pinia stores use browser-safe fallbacks: direct free/paid cloud chat, in-memory/localStorage settings, disabled native-only commands, and RemoteHost pairing for desktop-local LLM or memory capabilities.
+- **Browser:** Vite serves a product landing page first. Because there is no native Tauri shell, the real VRM renderer is mounted as a small forced pet-mode preview in the bottom-right, and switching to app modes opens a compact responsive in-page window instead of a native window. Pinia stores use browser-safe fallbacks: direct free/paid cloud chat, in-memory/localStorage settings, disabled native-only commands, and an explicit known-host `RemoteHost` bridge for desktop-local LLM or memory capabilities. Automatic LAN discovery is intentionally not claimed in browser mode; it needs native help or a backend rendezvous service.
 - **iOS:** full-screen Tauri WebView with `tauri.ios.conf.json`, shared Vue frontend, safe-area navigation, Stronghold-secured pairing credential storage, and gRPC-Web `RemoteHost` transport for paired desktop control. `ChatView` selects `remote-conversation.ts` on iOS so chat streams from the paired desktop brain instead of the phone-local store. Local notifications use `tauri-plugin-notification` while paired to report long-running workflow, ingest, and Copilot activity.
 - **Android:** planned follow-up target using the same shared frontend and Rust core
 - **Mobile backlog:** background sync later
@@ -485,14 +511,19 @@ TerranSoul App (on each device) is a **Tauri 2.0** application:
 
 When the same Vue bundle runs in a normal browser, it does not boot the
 full-screen desktop shell by default. `App.vue` detects that Tauri IPC is
-unavailable, auto-configures the free browser-safe brain path, and renders the
+unavailable, prepares the browser-safe provider prompt, and renders the
 landing page with the live TerranSoul model anchored as a small pet preview.
 Desktop and chat modes remain available for testing through a small responsive
 in-page app window; native-only actions gracefully no-op or show browser
-fallbacks. Browser chat only talks directly to browser-safe free/paid cloud
-providers; desktop-local Ollama, LM Studio, and Rust-backed memory require an
-explicit RemoteHost pairing path. The landing surface has focused regression
-coverage for content anchors, forced pet-preview wiring, and browser-window
+fallbacks. Browser chat asks for OpenRouter, Gemini, NVIDIA, ChatGPT/OpenAI, or
+Pollinations with a user-owned key/token and selected model, then talks directly to browser-safe
+free/paid cloud providers;
+desktop-local Ollama, LM Studio, and Rust-backed memory require an
+explicit RemoteHost pairing or known-host LAN path. The Vercel page cannot
+auto-discover all LAN hosts without a backend, browser extension, or native
+helper; it can only try a host the user supplies and only when browser TLS,
+mixed-content, CORS, and private-network rules allow the request. The landing surface has focused regression
+coverage for content anchors, live pet companion wiring, and browser-window
 launch events.
 
 ---

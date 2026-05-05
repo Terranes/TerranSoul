@@ -303,3 +303,31 @@ describe('character store — user-imported models', () => {
     expect(store.currentGender()).toBe('male');
   });
 });
+
+describe('character store — emotionIntensity', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('setState with intensity stores clamped value', () => {
+    const store = useCharacterStore();
+    store.setState('happy', 0.4);
+    expect(store.state).toBe('happy');
+    expect(store.emotionIntensity).toBe(0.4);
+  });
+
+  it('setState defaults intensity to 1', () => {
+    const store = useCharacterStore();
+    store.setState('sad');
+    expect(store.emotionIntensity).toBe(1);
+  });
+
+  it('setState clamps intensity to [0, 1]', () => {
+    const store = useCharacterStore();
+    store.setState('angry', 5);
+    expect(store.emotionIntensity).toBe(1);
+    store.setState('angry', -2);
+    expect(store.emotionIntensity).toBe(0);
+  });
+});

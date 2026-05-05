@@ -12,13 +12,17 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::Mutex;
 
 use crate::ai_integrations::gateway::*;
+use crate::AppState;
 
+use super::activity::McpActivityReporter;
+use super::hooks::IndexStalenessTracker;
 use super::tools;
 
 // ─── Shared state for the axum router ───────────────────────────────────────
@@ -28,6 +32,13 @@ pub struct McpRouterState {
     pub gw: Arc<dyn BrainGateway>,
     pub caps: GatewayCaps,
     pub token: String,
+    pub port: u16,
+    pub seed_loaded: bool,
+    pub activity: Option<McpActivityReporter>,
+    /// Full app state for code-intelligence tools that need the GitNexus sidecar.
+    pub app_state: Option<AppState>,
+    /// Tracks git HEAD for staleness detection on post-tool-use hooks.
+    pub staleness_tracker: Arc<Mutex<IndexStalenessTracker>>,
 }
 
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
@@ -92,21 +103,34 @@ pub(crate) async fn dispatch_method(
     params: Value,
     id: Value,
 ) -> JsonRpcResponse {
+    dispatch_method_with_state(gw, caps, method, params, id, None).await
+}
+
+/// Extended dispatch that accepts an optional `AppState` for code tools.
+pub(crate) async fn dispatch_method_with_state(
+    gw: &dyn BrainGateway,
+    caps: &GatewayCaps,
+    method: &str,
+    params: Value,
+    id: Value,
+    app_state: Option<&AppState>,
+) -> JsonRpcResponse {
     match method {
         "initialize" => {
-            let build_mode = if super::is_dev_build() {
-                "dev"
+            let (build_mode, server_name) = if super::is_mcp_pet_mode() {
+                ("mcp", "terransoul-brain-mcp")
+            } else if super::is_dev_build() {
+                ("dev", "terransoul-brain-dev")
             } else {
-                "release"
-            };
-            let server_name = if super::is_dev_build() {
-                "terransoul-brain-dev"
-            } else {
-                "terransoul-brain"
+                ("release", "terransoul-brain")
             };
             let result = json!({
                 "protocolVersion": "2024-11-05",
-                "capabilities": { "tools": {} },
+                "capabilities": {
+                    "tools": {},
+                    "resources": {},
+                    "prompts": {}
+                },
                 "serverInfo": {
                     "name": server_name,
                     "version": env!("CARGO_PKG_VERSION"),
@@ -117,7 +141,7 @@ pub(crate) async fn dispatch_method(
         }
 
         "tools/list" => {
-            let result = json!({ "tools": tools::definitions() });
+            let result = json!({ "tools": tools::definitions(caps) });
             JsonRpcResponse::ok(id, result)
         }
 
@@ -128,7 +152,7 @@ pub(crate) async fn dispatch_method(
                 .cloned()
                 .unwrap_or(Value::Object(Default::default()));
 
-            match tools::dispatch(gw, caps, name, &args).await {
+            match tools::dispatch(gw, caps, name, &args, app_state).await {
                 Ok(text) => {
                     let result = json!({
                         "content": [{ "type": "text", "text": text }],
@@ -146,6 +170,42 @@ pub(crate) async fn dispatch_method(
             }
         }
 
+        "resources/list" => {
+            let result = json!({ "resources": tools::resource_definitions(app_state) });
+            JsonRpcResponse::ok(id, result)
+        }
+
+        "resources/read" => {
+            let uri = params["uri"].as_str().unwrap_or("");
+            match tools::read_resource(uri, app_state) {
+                Ok(contents) => {
+                    let text = serde_json::to_string(&contents).unwrap_or_default();
+                    let result = json!({
+                        "contents": [{ "uri": uri, "mimeType": "application/json", "text": text }]
+                    });
+                    JsonRpcResponse::ok(id, result)
+                }
+                Err(e) => JsonRpcResponse::err(id, -32602, e),
+            }
+        }
+
+        "prompts/list" => {
+            let result = json!({ "prompts": tools::prompt_definitions() });
+            JsonRpcResponse::ok(id, result)
+        }
+
+        "prompts/get" => {
+            let name = params["name"].as_str().unwrap_or("");
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default()));
+            match tools::get_prompt(name, &args, app_state) {
+                Ok(messages) => JsonRpcResponse::ok(id, messages),
+                Err(e) => JsonRpcResponse::err(id, -32602, e),
+            }
+        }
+
         "ping" => JsonRpcResponse::ok(id, json!({})),
 
         _ => JsonRpcResponse::err(id, -32601, format!("method not found: {method}")),
@@ -158,6 +218,10 @@ pub(crate) async fn dispatch_method(
 pub fn build(state: McpRouterState) -> Router {
     Router::new()
         .route("/mcp", post(handle_request))
+        .route("/health", get(handle_health))
+        .route("/hooks/pre_tool", post(handle_pre_tool_hook))
+        .route("/hooks/post_tool", post(handle_post_tool_hook))
+        .route("/status", get(handle_status))
         .with_state(state)
 }
 
@@ -177,24 +241,168 @@ async fn handle_request(
         }
     };
 
-    // Notifications (no id) — acknowledge without a body.
+    let response_id = req.id.clone().unwrap_or(Value::Null);
+
+    // Bearer-token authentication. Enforce before notification dispatch too.
+    if !validate_auth(&headers, &state.token) {
+        let resp = JsonRpcResponse::err(response_id, -32000, "unauthorized".into());
+        return (StatusCode::UNAUTHORIZED, Json(resp)).into_response();
+    }
+
+    // Notifications (no id) — dispatch to hook handlers, then acknowledge.
     if req.id.is_none() {
+        let params = req.params.unwrap_or(Value::Null);
+        // Fire-and-forget notification handling
+        super::hooks::handle_notification(
+            &req.method,
+            &params,
+            state.app_state.as_ref(),
+            &state.staleness_tracker,
+        );
         return StatusCode::ACCEPTED.into_response();
     }
 
     let id = req.id.unwrap_or(Value::Null);
 
-    // Bearer-token authentication.
-    if !validate_auth(&headers, &state.token) {
-        let resp = JsonRpcResponse::err(id, -32000, "unauthorized".into());
-        return (StatusCode::UNAUTHORIZED, Json(resp)).into_response();
+    let params = req.params.unwrap_or(Value::Null);
+    let tool_activity = if req.method == "tools/call" {
+        let tool_name = params["name"].as_str().unwrap_or("").to_string();
+        let args = params
+            .get("arguments")
+            .cloned()
+            .unwrap_or(Value::Object(Default::default()));
+        if !tool_name.is_empty() {
+            if let Some(activity) = &state.activity {
+                activity.tool_started(&tool_name, &args);
+            }
+            Some((tool_name, state.activity.clone()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let resp = dispatch_method_with_state(
+        state.gw.as_ref(),
+        &state.caps,
+        &req.method,
+        params,
+        id,
+        state.app_state.as_ref(),
+    )
+    .await;
+
+    if let Some((tool_name, Some(activity))) = tool_activity {
+        let is_error = resp
+            .result
+            .as_ref()
+            .and_then(|result| result.get("isError"))
+            .and_then(Value::as_bool)
+            .unwrap_or(resp.error.is_some());
+        if is_error {
+            let message = resp
+                .result
+                .as_ref()
+                .and_then(|result| result.get("content"))
+                .and_then(Value::as_array)
+                .and_then(|content| content.first())
+                .and_then(|item| item.get("text"))
+                .and_then(Value::as_str)
+                .or_else(|| resp.error.as_ref().map(|error| error.message.as_str()))
+                .unwrap_or("unknown MCP tool error");
+            activity.tool_failed(&tool_name, message);
+        } else {
+            activity.tool_finished(&tool_name);
+        }
     }
 
-    let params = req.params.unwrap_or(Value::Null);
-
-    let resp = dispatch_method(state.gw.as_ref(), &state.caps, &req.method, params, id).await;
-
     (StatusCode::OK, Json(resp)).into_response()
+}
+
+// ─── Health endpoint (no auth required) ─────────────────────────────────────
+
+/// Unauthenticated health check for agent auto-discovery.
+///
+/// Returns `200 OK` with `{"status":"ok","port":N}` so agents
+/// can verify the server is running without needing the bearer token first.
+/// No sensitive data is exposed.
+async fn handle_health(State(state): State<McpRouterState>) -> Response {
+    let body = json!({
+        "status": "ok",
+        "port": state.port,
+    });
+
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+// ─── Status endpoint (auth required) ────────────────────────────────────────
+
+/// `GET /status` — bearer-authenticated live snapshot of the running
+/// MCP server. Lets the user (or any agent) monitor RAG/memory health
+/// without speaking JSON-RPC.
+async fn handle_status(State(state): State<McpRouterState>, headers: HeaderMap) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    let (build_mode, server_name) = if super::is_mcp_pet_mode() {
+        ("mcp", "terransoul-brain-mcp")
+    } else if super::is_dev_build() {
+        ("dev", "terransoul-brain-dev")
+    } else {
+        ("release", "terransoul-brain")
+    };
+
+    let health = match state.gw.health(&state.caps).await {
+        Ok(h) => json!({
+            "version": h.version,
+            "brain_provider": h.brain_provider,
+            "brain_model": h.brain_model,
+            "rag_quality_pct": h.rag_quality_pct,
+            "memory_total": h.memory_total,
+        }),
+        Err(e) => json!({ "error": e.to_string() }),
+    };
+
+    let body = json!({
+        "name": server_name,
+        "version": env!("CARGO_PKG_VERSION"),
+        "buildMode": build_mode,
+        "petMode": super::is_mcp_pet_mode(),
+        "actual_port": state.port,
+        "seed_loaded": state.seed_loaded,
+        "health": health,
+    });
+
+    (StatusCode::OK, Json(body)).into_response()
+}
+
+// ─── Hook endpoints ─────────────────────────────────────────────────────────
+
+async fn handle_pre_tool_hook(
+    State(state): State<McpRouterState>,
+    headers: HeaderMap,
+    Json(req): Json<super::hooks::PreToolUseRequest>,
+) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let resp = super::hooks::handle_pre_tool_use(&req, state.app_state.as_ref());
+    (StatusCode::OK, Json(json!(resp))).into_response()
+}
+
+async fn handle_post_tool_hook(
+    State(state): State<McpRouterState>,
+    headers: HeaderMap,
+    Json(req): Json<super::hooks::PostToolUseRequest>,
+) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let mut tracker = state.staleness_tracker.lock().await;
+    let resp = super::hooks::handle_post_tool_use(&req, &mut tracker, state.app_state.as_ref());
+    (StatusCode::OK, Json(json!(resp))).into_response()
 }
 
 /// Validate the `Authorization: Bearer <token>` header.

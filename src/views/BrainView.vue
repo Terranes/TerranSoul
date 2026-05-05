@@ -1141,8 +1141,8 @@ const modeOptions = computed<ModeOption[]>(() => [
     key: 'free',
     label: 'Free cloud',
     emoji: '☁️',
-    detail: 'Pollinations · instant',
-    description: 'Switch to the no-key Pollinations free brain',
+    detail: 'OpenRouter / Gemini / Pollinations',
+    description: 'Open the wizard to connect a free-tier provider key or token',
     disabled: false,
     disabledReason: '',
     action: () => switchToFree(),
@@ -1172,8 +1172,8 @@ const modeOptions = computed<ModeOption[]>(() => [
 // Re-export emit so module functions can call it. (kept simple — emitNavigate above wraps it.)
 defineExpose({});
 
-async function switchToFree() {
-  await brain.autoConfigureForDesktop();
+function switchToFree() {
+  emitNavigate('brain-setup');
 }
 
 // ── Coding LLM picker (Phase 25 — Self-Improve foundation) ────────────────

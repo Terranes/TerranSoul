@@ -76,6 +76,25 @@
           :text="item.msg!.content"
         />
         <span class="timestamp">{{ formatTime(item.msg!.timestamp) }}</span>
+        <div
+          v-if="canRateCharismaTurn(item.msg!)"
+          class="turn-rating"
+          role="group"
+          :aria-label="`Rate Charisma turn for message ${item.msg!.id}`"
+        >
+          <button
+            v-for="rating in 5"
+            :key="rating"
+            type="button"
+            class="turn-rating-btn"
+            :class="{ active: (item.msg!.charismaTurnRating ?? 0) >= rating }"
+            :aria-label="`Rate ${rating} of 5`"
+            :title="`Rate ${rating} of 5`"
+            @click="rateCharismaTurn(item.msg!, rating)"
+          >
+            ★
+          </button>
+        </div>
       </div>
     </div>
     <!-- Live streaming response bubble -->
@@ -154,6 +173,7 @@ const emit = defineEmits<{
   suggest: [message: string];
   startQuest: [];
   navigate: [target: string];
+  rateCharismaTurn: [messageId: string, rating: number];
 }>();
 
 const listRef = ref<HTMLElement | null>(null);
@@ -177,6 +197,14 @@ const showQuickReplies = computed(() => {
 
 function sendQuickReply(text: string) {
   emit('suggest', text);
+}
+
+function canRateCharismaTurn(message: Message): boolean {
+  return message.role === 'assistant' && Boolean(message.charismaAssets?.length);
+}
+
+function rateCharismaTurn(message: Message, rating: number): void {
+  emit('rateCharismaTurn', message.id, rating);
 }
 
 /** Format a date label like Microsoft Teams: "Today", "Yesterday", or "Wednesday, January 5". */
@@ -316,6 +344,37 @@ watch(() => props.streamingText, scrollToBottom);
   font-size: var(--ts-text-xs);
   color: var(--ts-text-dim);
   padding: 0 4px;
+}
+
+.turn-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  min-height: 24px;
+}
+
+.turn-rating-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--ts-radius-sm);
+  background: transparent;
+  color: var(--ts-text-dim);
+  cursor: pointer;
+  font-size: 0.86rem;
+  line-height: 1;
+  transition: color var(--ts-transition-fast), background var(--ts-transition-fast), border-color var(--ts-transition-fast);
+}
+
+.turn-rating-btn:hover,
+.turn-rating-btn.active {
+  color: var(--ts-warning);
+  background: var(--ts-warning-bg);
+  border-color: var(--ts-warning);
 }
 
 .msg-enter-active,

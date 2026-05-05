@@ -27,6 +27,26 @@ mod tests {
     }
 
     #[test]
+    fn brain_mode_free_api_deserializes_selected_model() {
+        let payload = json!({
+            "mode": "free_api",
+            "provider_id": "openrouter",
+            "api_key": "or-test",
+            "model": "poolside/laguna-xs.2:free"
+        });
+        let mode: crate::brain::BrainMode = serde_json::from_value(payload).unwrap();
+        match mode {
+            crate::brain::BrainMode::FreeApi {
+                provider_id, model, ..
+            } => {
+                assert_eq!(provider_id, "openrouter");
+                assert_eq!(model.as_deref(), Some("poolside/laguna-xs.2:free"));
+            }
+            _ => panic!("Expected FreeApi variant"),
+        }
+    }
+
+    #[test]
     fn brain_mode_local_ollama_deserializes() {
         let payload = json!({
             "mode": "local_ollama",

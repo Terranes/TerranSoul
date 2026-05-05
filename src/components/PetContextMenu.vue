@@ -176,6 +176,36 @@
             <span class="ctx-label">Self-Improve progress…</span>
           </div>
 
+          <div
+            class="ctx-item ctx-item--sub"
+            role="menuitem"
+            data-testid="ctx-workflows-panel"
+            @click="onOpenWorkflowsPanel"
+          >
+            <span class="ctx-icon">🤖</span>
+            <span class="ctx-label">Multi-agent workflows…</span>
+          </div>
+
+          <div
+            class="ctx-item ctx-item--sub"
+            role="menuitem"
+            data-testid="ctx-charisma-panel"
+            @click="onOpenCharismaPanel"
+          >
+            <span class="ctx-icon">🎭</span>
+            <span class="ctx-label">Charisma — Teach me…</span>
+          </div>
+
+          <div
+            class="ctx-item ctx-item--sub"
+            role="menuitem"
+            data-testid="ctx-teachable-capabilities-panel"
+            @click="onOpenTeachableCapabilitiesPanel"
+          >
+            <span class="ctx-icon">⚙</span>
+            <span class="ctx-label">Teachable capabilities…</span>
+          </div>
+
           <div class="ctx-separator" />
 
           <div
@@ -240,6 +270,9 @@ const emit = defineEmits<{
   'toggle-resize': [];
   'request-self-improve': [];
   'open-self-improve-panel': [];
+  'open-workflows-panel': [];
+  'open-charisma-panel': [];
+  'open-teachable-capabilities-panel': [];
 }>();
 
 const characterStore = useCharacterStore();
@@ -384,6 +417,21 @@ async function onClickSelfImprove() {
 
 function onOpenSelfImprovePanel() {
   emit('open-self-improve-panel');
+  close();
+}
+
+function onOpenWorkflowsPanel() {
+  emit('open-workflows-panel');
+  close();
+}
+
+function onOpenCharismaPanel() {
+  emit('open-charisma-panel');
+  close();
+}
+
+function onOpenTeachableCapabilitiesPanel() {
+  emit('open-teachable-capabilities-panel');
   close();
 }
 

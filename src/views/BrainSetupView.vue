@@ -28,10 +28,10 @@
         >
           <div class="bs-tier-header">
             <strong>☁️ Free Cloud API</strong>
-            <span class="bs-badge-free">Instant — no setup</span>
+            <span class="bs-badge-free">Free-tier key</span>
           </div>
-          <p>Use free LLM providers (Groq, Cerebras, etc.) with zero configuration.</p>
-          <small>No API key needed for some providers · Rate-limited</small>
+          <p>Use free-tier LLM providers such as OpenRouter, Gemini, NVIDIA NIM, or Pollinations with your own key/token.</p>
+          <small>Provider authorization required · Rate limits vary</small>
         </div>
         <div
           :class="['bs-tier', { selected: selectedTier === 'paid' }]"
@@ -77,28 +77,64 @@
           v-for="p in brain.freeProviders"
           :key="p.id"
           :class="['bs-provider', { selected: selectedProvider === p.id }]"
-          @click="selectedProvider = p.id"
+          @click="selectFreeProvider(p.id)"
         >
           <div class="bs-provider-header">
             <strong>{{ p.display_name }}</strong>
             <span
-              v-if="p.id === 'pollinations'"
+              v-if="p.id === 'openrouter'"
               class="bs-badge"
             >⭐ Recommended</span>
           </div>
           <p>{{ p.notes }}</p>
-          <small>Model: <code>{{ p.model }}</code> · {{ p.rpm_limit }} RPM</small>
+          <small>Model: <code>{{ p.id === selectedProvider ? selectedFreeModelResolved : p.model }}</code> · {{ p.rpm_limit }} RPM</small>
         </div>
       </div>
       <div
-        v-if="freeApiKey !== null"
+        v-if="selectedFreeProviderModelOptions.length"
         class="bs-api-key"
       >
-        <label>API Key (optional for some providers):</label>
+        <label for="free-model-select">Free model:</label>
+        <select
+          id="free-model-select"
+          v-model="selectedFreeModel"
+          class="bs-input"
+        >
+          <option
+            v-for="option in selectedFreeProviderModelOptions"
+            :key="option.model"
+            :value="option.model"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
+      <a
+        v-if="selectedFreeProviderAuthUrl"
+        class="btn-primary bs-auth-link"
+        :href="selectedFreeProviderAuthUrl"
+        target="_blank"
+        rel="noopener"
+      >
+        Open provider page
+      </a>
+      <button
+        type="button"
+        class="btn-secondary bs-manual-toggle"
+        :aria-expanded="manualFreeKeyOpen"
+        @click="manualFreeKeyOpen = !manualFreeKeyOpen"
+      >
+        {{ manualFreeKeyOpen ? 'Hide manual key/token' : 'Manual API key/token option' }}
+      </button>
+      <div
+        v-if="manualFreeKeyOpen"
+        class="bs-api-key"
+      >
+        <label>API key/token from the provider page:</label>
         <input
           v-model="freeApiKeyInput"
           type="password"
-          placeholder="Enter API key…"
+          placeholder="Enter API key or token..."
           class="bs-input"
         >
       </div>
@@ -111,10 +147,10 @@
         </button>
         <button
           class="btn-primary"
-          :disabled="!selectedProvider"
+          :disabled="!selectedProvider || (selectedFreeProviderRequiresKey && !freeApiKeyInput.trim())"
           @click="activateFreeApi"
         >
-          Activate →
+          Connect provider →
         </button>
       </div>
     </div>
@@ -126,31 +162,47 @@
     >
       <h2>💳 Paid Cloud API</h2>
       <p class="bs-desc">
-        Enter your API credentials. We support any OpenAI-compatible endpoint.
+        Pick a familiar provider, then authorize it with your API key.
       </p>
-      <div class="bs-form">
-        <label for="paid-provider-select">Provider:</label>
-        <select
-          id="paid-provider-select"
-          v-model="paidProvider"
-          class="bs-select"
+      <div class="bs-auth-grid">
+        <button
+          v-for="provider in paidProviderOptions"
+          :key="provider.id"
+          type="button"
+          :class="['bs-auth-card', { selected: paidProvider === provider.id }]"
+          @click="selectPaidProvider(provider.id)"
         >
-          <option value="openai">
-            OpenAI
-          </option>
-          <option value="anthropic">
-            Anthropic
-          </option>
-          <option value="custom">
-            Custom endpoint
-          </option>
-        </select>
+          <strong>{{ provider.label }}</strong>
+          <small>{{ provider.hint }}</small>
+        </button>
+      </div>
+      <a
+        v-if="selectedPaidProvider.authUrl"
+        class="btn-primary bs-auth-link"
+        :href="selectedPaidProvider.authUrl"
+        target="_blank"
+        rel="noopener"
+      >
+        Open {{ selectedPaidProvider.shortLabel }} page
+      </a>
+      <button
+        type="button"
+        class="btn-secondary bs-manual-toggle"
+        :aria-expanded="manualPaidKeyOpen"
+        @click="manualPaidKeyOpen = !manualPaidKeyOpen"
+      >
+        {{ manualPaidKeyOpen ? 'Hide manual API key' : 'Manual API key option' }}
+      </button>
+      <div
+        v-if="manualPaidKeyOpen"
+        class="bs-form"
+      >
         <label for="paid-api-key-input">API Key:</label>
         <input
           id="paid-api-key-input"
           v-model="paidApiKey"
           type="password"
-          placeholder="sk-…"
+          :placeholder="selectedPaidProvider?.placeholder ?? 'Provider API key'"
           class="bs-input"
         >
         <label for="paid-model-input">Model:</label>
@@ -186,7 +238,7 @@
           :disabled="!paidApiKey || !paidModel"
           @click="activatePaidApi"
         >
-          Activate →
+          Connect {{ selectedPaidProvider?.shortLabel ?? 'Provider' }} →
         </button>
       </div>
     </div>
@@ -346,59 +398,11 @@
     </div>
 
     <!-- ── Step 4: Check / install Ollama ── -->
-    <div
+    <BrainSetupOllamaStep
       v-else-if="step === 4"
-      class="bs-card"
-    >
-      <h2>Check Ollama</h2>
-      <p class="bs-desc">
-        TerranSoul uses <a
-          href="https://ollama.ai"
-          target="_blank"
-        >Ollama</a> to run models
-        locally. It must be running before we can download your brain.
-      </p>
-      <div :class="['bs-status-indicator', brain.ollamaStatus.running ? 'ok' : 'error']">
-        {{ brain.ollamaStatus.running ? '✅ Ollama is running' : '❌ Ollama is not running' }}
-      </div>
-      <div
-        v-if="!brain.ollamaStatus.running"
-        class="bs-install-hint"
-      >
-        <p>Install and start Ollama:</p>
-        <ol>
-          <li>
-            Download from <a
-              href="https://ollama.ai"
-              target="_blank"
-            >ollama.ai</a>
-          </li>
-          <li>Run <code>ollama serve</code> in a terminal</li>
-          <li>Click Retry below</li>
-        </ol>
-      </div>
-      <div class="bs-nav">
-        <button
-          class="btn-secondary"
-          @click="step = 3"
-        >
-          ← Back
-        </button>
-        <button
-          class="btn-secondary"
-          @click="brain.checkOllamaStatus()"
-        >
-          🔄 Retry
-        </button>
-        <button
-          class="btn-primary"
-          :disabled="!brain.ollamaStatus.running"
-          @click="step = 5"
-        >
-          Next →
-        </button>
-      </div>
-    </div>
+      @prev="step = 3"
+      @next="step = 5"
+    />
 
     <!-- ── Step 5: Download model ── -->
     <div
@@ -456,75 +460,11 @@
     </div>
 
     <!-- ── Step 10: LM Studio configuration ── -->
-    <div
+    <BrainSetupLmStudioStep
       v-else-if="step === 10"
-      class="bs-card"
-    >
-      <h2>🖥 Local LLM Setup — LM Studio</h2>
-      <p class="bs-desc">
-        Configure your LM Studio local server connection.
-      </p>
-      <div class="bs-form">
-        <label for="lms-base-url">Base URL:</label>
-        <input
-          id="lms-base-url"
-          v-model="lmStudioBaseUrl"
-          type="url"
-          placeholder="http://127.0.0.1:1234"
-          class="bs-input"
-        >
-        <label for="lms-api-key">API token (optional):</label>
-        <input
-          id="lms-api-key"
-          v-model="lmStudioApiKey"
-          type="password"
-          placeholder="Optional"
-          class="bs-input"
-        >
-      </div>
-      <div :class="['bs-status-indicator', brain.lmStudioStatus?.running ? 'ok' : 'error']">
-        {{ brain.lmStudioStatus?.running ? `✅ LM Studio is running (${brain.lmStudioStatus.model_count} models)` : '❌ LM Studio is not running — start its local server' }}
-      </div>
-      <button
-        class="btn-secondary btn-sm"
-        @click="refreshLmStudioCheck"
-      >
-        🔄 Check connection
-      </button>
-      <div class="bs-form">
-        <label for="lms-model">Chat model:</label>
-        <input
-          id="lms-model"
-          v-model="lmStudioModel"
-          type="text"
-          placeholder="gemma-4-12b-it"
-          class="bs-input"
-        >
-        <label for="lms-embed-model">Embedding model (optional):</label>
-        <input
-          id="lms-embed-model"
-          v-model="lmStudioEmbeddingModel"
-          type="text"
-          placeholder="qwen3-embedding-0.6b"
-          class="bs-input"
-        >
-      </div>
-      <div class="bs-nav">
-        <button
-          class="btn-secondary"
-          @click="step = 1"
-        >
-          ← Back
-        </button>
-        <button
-          class="btn-primary"
-          :disabled="!brain.lmStudioStatus?.running || !lmStudioModel"
-          @click="finishLmStudio"
-        >
-          Activate →
-        </button>
-      </div>
-    </div>
+      @back="step = 1"
+      @done="step = 99"
+    />
 
     <!-- ── Step 6 (or done): Brain connected ── -->
     <div
@@ -559,37 +499,84 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useBrainStore } from '../stores/brain';
+import {
+  NVIDIA_FREE_MODELS,
+  OPENROUTER_FREE_MODELS,
+  POLLINATIONS_MODELS,
+  useBrainStore,
+  type BrowserAuthModelOption,
+} from '../stores/brain';
+import BrainSetupOllamaStep from './BrainSetupOllamaStep.vue';
+import BrainSetupLmStudioStep from './BrainSetupLmStudioStep.vue';
 
 const emit = defineEmits<{ (e: 'done'): void }>();
 
 const brain = useBrainStore();
-// Auto-activate free cloud (Pollinations) — skip provider selection entirely.
-// Users can navigate to step 0 to pick a different tier if they want.
-const step = ref(99);
+const step = ref(0);
 const selectedTier = ref<'free' | 'paid' | 'local'>('free');
 const localRuntime = ref<'ollama' | 'lm_studio'>('ollama');
 const selectedModel = ref('');
-const selectedProvider = ref('pollinations');
-const freeApiKey = ref<string | null>(null);
+const selectedProvider = ref('openrouter');
+const selectedFreeModel = ref(OPENROUTER_FREE_MODELS[0]?.model ?? '');
 const freeApiKeyInput = ref('');
+const manualFreeKeyOpen = ref(false);
 const pullDone = ref(false);
 
 // Paid API fields
 const paidProvider = ref('openai');
 const paidApiKey = ref('');
-const paidModel = ref('gpt-4o');
+const paidModel = ref('gpt-4o-mini');
 const paidBaseUrl = ref('https://api.openai.com');
+const manualPaidKeyOpen = ref(false);
 
-// LM Studio fields
-const lmStudioBaseUrl = ref('http://127.0.0.1:1234');
-const lmStudioApiKey = ref('');
-const lmStudioModel = ref('');
-const lmStudioEmbeddingModel = ref('');
+const paidProviderOptions = [
+  {
+    id: 'openai',
+    label: 'Authorize with ChatGPT',
+    shortLabel: 'ChatGPT',
+    hint: 'OpenAI key, GPT models',
+    model: 'gpt-4o-mini',
+    baseUrl: 'https://api.openai.com',
+    placeholder: 'OpenAI API key',
+    authUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'gemini',
+    label: 'Authorize with Gemini',
+    shortLabel: 'Gemini',
+    hint: 'Google AI Studio key',
+    model: 'gemini-3-flash-preview',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    placeholder: 'Google AI Studio API key',
+    authUrl: 'https://aistudio.google.com/app/apikey',
+  },
+  {
+    id: 'anthropic',
+    label: 'Authorize with Claude',
+    shortLabel: 'Claude',
+    hint: 'Anthropic key',
+    model: 'claude-sonnet-4-20250514',
+    baseUrl: 'https://api.anthropic.com',
+    placeholder: 'Anthropic API key',
+    authUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  {
+    id: 'custom',
+    label: 'Custom endpoint',
+    shortLabel: 'Custom',
+    hint: 'Any OpenAI-compatible API',
+    model: '',
+    baseUrl: '',
+    placeholder: 'Provider API key',
+    authUrl: '',
+  },
+] as const;
+
+// LM Studio configuration is handled by BrainSetupLmStudioStep.vue
 
 const stepLabels = computed(() => {
   if (selectedTier.value === 'free') return ['Choose', 'Provider', 'Done'];
-  if (selectedTier.value === 'paid') return ['Choose', 'API Key', 'Done'];
+  if (selectedTier.value === 'paid') return ['Choose', 'Authorize', 'Done'];
   if (localRuntime.value === 'lm_studio') return ['Choose', 'Provider', 'Configure', 'Done'];
   return ['Choose', 'Provider', 'Hardware', 'Model', 'Ollama', 'Download', 'Done'];
 });
@@ -602,13 +589,71 @@ const selectedProviderName = computed(() =>
   brain.freeProviders.find((p) => p.id === selectedProvider.value)?.display_name ?? selectedProvider.value,
 );
 
+const selectedFreeProvider = computed(() =>
+  brain.freeProviders.find((p) => p.id === selectedProvider.value) ?? null,
+);
+
+const selectedFreeProviderRequiresKey = computed(() => selectedFreeProvider.value?.requires_api_key ?? true);
+
+const selectedFreeProviderAuthUrl = computed(() => freeProviderAuthUrl(selectedProvider.value));
+
+const selectedFreeProviderModelOptions = computed<BrowserAuthModelOption[]>(() => modelOptionsForFreeProvider(selectedProvider.value));
+
+const selectedFreeModelResolved = computed(() => selectedFreeModel.value || selectedFreeProvider.value?.model || '');
+
 const paidBaseUrlResolved = computed(() => {
   switch (paidProvider.value) {
     case 'openai': return 'https://api.openai.com';
+    case 'gemini': return 'https://generativelanguage.googleapis.com/v1beta/openai';
     case 'anthropic': return 'https://api.anthropic.com';
     default: return paidBaseUrl.value;
   }
 });
+
+const selectedPaidProvider = computed(() =>
+  paidProviderOptions.find((provider) => provider.id === paidProvider.value) ?? paidProviderOptions[0],
+);
+
+function selectPaidProvider(providerId: string) {
+  paidProvider.value = providerId;
+  const provider = paidProviderOptions.find((item) => item.id === providerId);
+  if (!provider) return;
+  paidModel.value = provider.model || paidModel.value;
+  paidBaseUrl.value = provider.baseUrl;
+  paidApiKey.value = '';
+  manualPaidKeyOpen.value = provider.id === 'custom';
+}
+
+function selectFreeProvider(providerId: string) {
+  selectedProvider.value = providerId;
+  freeApiKeyInput.value = '';
+  manualFreeKeyOpen.value = false;
+  selectedFreeModel.value = modelOptionsForFreeProvider(providerId)[0]?.model
+    ?? brain.freeProviders.find((provider) => provider.id === providerId)?.model
+    ?? '';
+}
+
+function modelOptionsForFreeProvider(providerId: string): BrowserAuthModelOption[] {
+  if (providerId === 'openrouter') return OPENROUTER_FREE_MODELS;
+  if (providerId === 'nvidia-nim') return NVIDIA_FREE_MODELS;
+  if (providerId === 'pollinations') return POLLINATIONS_MODELS;
+  return [];
+}
+
+function freeProviderAuthUrl(providerId: string): string | null {
+  switch (providerId) {
+    case 'openrouter': return 'https://openrouter.ai/keys';
+    case 'gemini': return 'https://aistudio.google.com/app/apikey';
+    case 'nvidia-nim': return 'https://build.nvidia.com/explore/discover';
+    case 'pollinations': return 'https://enter.pollinations.ai/';
+    case 'groq': return 'https://console.groq.com/keys';
+    case 'cerebras': return 'https://cloud.cerebras.ai/platform/';
+    case 'mistral': return 'https://console.mistral.ai/api-keys';
+    case 'github-models': return 'https://github.com/settings/tokens';
+    case 'siliconflow': return 'https://cloud.siliconflow.cn/account/ak';
+    default: return null;
+  }
+}
 
 function formatRam(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`;
@@ -619,11 +664,14 @@ function goToTierStep() {
 }
 
 async function activateFreeApi() {
+  const model = selectedFreeModelResolved.value || null;
+  if (model) brain.setFallbackProviderModel(selectedProvider.value, model);
   try {
     await brain.setBrainMode({
       mode: 'free_api',
       provider_id: selectedProvider.value,
       api_key: freeApiKeyInput.value || null,
+      model,
     });
   } catch {
     // Tauri unavailable — set locally
@@ -631,6 +679,7 @@ async function activateFreeApi() {
       mode: 'free_api',
       provider_id: selectedProvider.value,
       api_key: freeApiKeyInput.value || null,
+      model,
     };
   }
   step.value = 99;
@@ -681,142 +730,23 @@ async function finishLocal() {
   step.value = 6;
 }
 
-async function refreshLmStudioCheck() {
-  await brain.checkLmStudioStatus(
-    lmStudioBaseUrl.value,
-    lmStudioApiKey.value || null,
-  );
-}
-
-async function finishLmStudio() {
-  const mode = {
-    mode: 'local_lm_studio' as const,
-    model: lmStudioModel.value,
-    base_url: lmStudioBaseUrl.value,
-    api_key: lmStudioApiKey.value || null,
-    embedding_model: lmStudioEmbeddingModel.value || null,
-  };
-  try {
-    await brain.setBrainMode(mode);
-  } catch {
-    brain.brainMode = mode;
-  }
-  step.value = 99;
-}
-
 onMounted(async () => {
   await brain.initialise();
   if (brain.topRecommendation) {
     selectedModel.value = brain.topRecommendation.model_tag;
   }
   if (brain.freeProviders.length > 0) {
-    selectedProvider.value = brain.freeProviders[0].id;
+    selectedProvider.value = brain.freeProviders.some((provider) => provider.id === 'openrouter')
+      ? 'openrouter'
+      : brain.freeProviders[0].id;
+    selectedFreeModel.value = modelOptionsForFreeProvider(selectedProvider.value)[0]?.model
+      ?? brain.freeProviders.find((provider) => provider.id === selectedProvider.value)?.model
+      ?? '';
   }
-  // Auto-activate free cloud if brain isn't already configured.
-  if (!brain.hasBrain) {
-    try {
-      await brain.setBrainMode({
-        mode: 'free_api',
-        provider_id: selectedProvider.value,
-        api_key: null,
-      });
-    } catch {
-      brain.brainMode = {
-        mode: 'free_api',
-        provider_id: selectedProvider.value,
-        api_key: null,
-      };
-    }
+  if (brain.hasBrain) {
     step.value = 99;
   }
 });
 </script>
 
-<style scoped>
-.brain-setup { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: 2rem; min-height: 100%; background: var(--ts-bg-base); }
-.bs-steps { display: flex; gap: 0.5rem; align-items: center; }
-.bs-step { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--ts-text-muted); }
-.bs-step.active .bs-step-dot { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); }
-.bs-step.done .bs-step-dot { background: var(--ts-success-dim); color: var(--ts-text-on-accent); }
-.bs-step-dot { width: 24px; height: 24px; border-radius: 50%; background: var(--ts-bg-surface); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; color: var(--ts-text-muted); }
-.bs-step-label { display: none; }
-@media (min-width: 480px) { .bs-step-label { display: inline; } }
-.bs-card { background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 12px; padding: 2rem; width: min(600px, 100%); display: flex; flex-direction: column; gap: 1rem; }
-.bs-card h2 { margin: 0; font-size: 1.3rem; color: var(--ts-text-primary); }
-.bs-desc { color: var(--ts-text-secondary); margin: 0; line-height: 1.5; }
-.bs-loading { color: var(--ts-text-muted); }
-
-/* Tier selection */
-.bs-tiers { display: flex; flex-direction: column; gap: 0.5rem; }
-.bs-tier { padding: 1rem; background: var(--ts-bg-base); border-radius: 8px; border: 2px solid var(--ts-border); cursor: pointer; transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast); }
-.bs-tier:hover { border-color: var(--ts-border-medium); background: var(--ts-bg-hover); }
-.bs-tier.selected { border-color: var(--ts-success-dim); background: var(--ts-bg-selected); }
-.bs-tier:first-child { border-color: var(--ts-accent-blue-hover); }
-.bs-tier:first-child.selected { border-color: var(--ts-success-dim); }
-.bs-tier-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
-.bs-badge-free { font-size: 0.7rem; background: var(--ts-success-dim); color: var(--ts-text-on-accent); padding: 0.15rem 0.5rem; border-radius: 999px; }
-.bs-tier p { margin: 0.25rem 0; font-size: 0.85rem; color: var(--ts-text-secondary); }
-.bs-tier small { color: var(--ts-text-muted); font-size: 0.75rem; }
-
-/* Providers */
-.bs-providers { display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto; }
-.bs-provider { padding: 0.75rem 1rem; background: var(--ts-bg-base); border-radius: 8px; border: 2px solid var(--ts-border); cursor: pointer; transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast); }
-.bs-provider:hover { border-color: var(--ts-border-medium); }
-.bs-provider.selected { border-color: var(--ts-success-dim); background: var(--ts-bg-selected); }
-.bs-provider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
-.bs-provider p { margin: 0; font-size: 0.8rem; color: var(--ts-text-secondary); }
-.bs-provider small { color: var(--ts-text-muted); font-size: 0.75rem; }
-.bs-provider code { background: var(--ts-bg-surface); padding: 0.1rem 0.3rem; border-radius: 3px; color: var(--ts-text-primary); }
-
-/* Form elements */
-.bs-form { display: flex; flex-direction: column; gap: 0.5rem; }
-.bs-form label { font-size: 0.85rem; color: var(--ts-text-secondary); }
-.bs-api-key { display: flex; flex-direction: column; gap: 0.3rem; }
-.bs-api-key label { font-size: 0.8rem; color: var(--ts-text-secondary); }
-.bs-input { padding: 0.5rem 0.75rem; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; color: var(--ts-text-primary); font-size: 0.85rem; outline: none; transition: border-color var(--ts-transition-fast); }
-.bs-input:focus { border-color: var(--ts-accent-blue-hover); box-shadow: 0 0 0 3px var(--ts-accent-glow); }
-.bs-input::placeholder { color: var(--ts-text-dim); }
-.bs-select { padding: 0.5rem 0.75rem; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; color: var(--ts-text-primary); font-size: 0.85rem; }
-
-/* Hardware */
-.bs-hw { display: flex; flex-direction: column; gap: 0.4rem; background: var(--ts-bg-base); border-radius: 8px; padding: 0.75rem 1rem; }
-.bs-hw-row { display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--ts-text-primary); }
-
-/* Models */
-.bs-models { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.bs-model { padding: 0.75rem 1rem; background: var(--ts-bg-base); border-radius: 8px; border: 2px solid var(--ts-border); cursor: pointer; transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast); }
-.bs-model:hover { border-color: var(--ts-border-medium); background: var(--ts-bg-hover); }
-.bs-model.top { border-color: var(--ts-accent-blue-hover); }
-.bs-model.selected { border-color: var(--ts-success-dim); background: var(--ts-bg-selected); }
-.bs-model-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem; }
-.bs-badge { font-size: 0.75rem; background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); padding: 0.1rem 0.5rem; border-radius: 999px; }
-.bs-cloud { background: var(--ts-accent-violet-hover); }
-.bs-model p { margin: 0 0 0.25rem; font-size: 0.85rem; color: var(--ts-text-secondary); }
-.bs-model small { color: var(--ts-text-muted); font-size: 0.75rem; }
-.bs-model code { background: var(--ts-bg-surface); padding: 0.1rem 0.3rem; border-radius: 3px; color: var(--ts-text-primary); }
-
-/* Status */
-.bs-status-indicator { padding: 0.75rem 1rem; border-radius: 8px; font-weight: 500; }
-.bs-status-indicator.ok { background: var(--ts-success-bg); color: var(--ts-success); }
-.bs-status-indicator.error { background: var(--ts-error-bg); color: var(--ts-error); }
-.bs-install-hint { background: var(--ts-bg-base); border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--ts-text-secondary); }
-.bs-install-hint ol { margin: 0.5rem 0 0 1.25rem; line-height: 1.8; }
-.bs-pulling { display: flex; align-items: center; gap: 0.75rem; color: var(--ts-text-secondary); }
-.bs-spinner { width: 20px; height: 20px; border: 3px solid var(--ts-border-medium); border-top-color: var(--ts-accent-blue-hover); border-radius: 50%; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* Navigation */
-.bs-nav { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.5rem; }
-
-/* Done */
-.bs-done { align-items: center; text-align: center; }
-.bs-done-icon { font-size: 3rem; }
-
-/* Buttons */
-.btn-primary { padding: 0.5rem 1.25rem; background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; transition: background var(--ts-transition-fast); }
-.btn-primary:hover { background: var(--ts-accent-blue); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-secondary { padding: 0.5rem 1.25rem; background: var(--ts-bg-elevated); color: var(--ts-text-primary); border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; transition: background var(--ts-transition-fast); }
-.btn-secondary:hover { background: var(--ts-bg-hover); }
-a { color: var(--ts-accent-blue); }
-</style>
+<style src="./BrainSetupView.css" scoped />

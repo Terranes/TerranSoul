@@ -9,6 +9,7 @@ pub mod intent_classifier;
 pub mod lm_studio;
 pub mod maintenance_runtime;
 pub mod maintenance_scheduler;
+pub mod mcp_auto_config;
 pub mod model_recommender;
 pub mod ollama_agent;
 pub mod ollama_lifecycle;

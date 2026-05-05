@@ -1,3 +1,5 @@
+import { hasStoredBrowserLanHost } from './browser-lan';
+
 export interface RuntimeTargetSnapshot {
   userAgent?: string;
   platform?: string;
@@ -28,6 +30,7 @@ export function shouldUseRemoteConversation(
   if (remoteConversationOverride !== null) return remoteConversationOverride;
   const param = readRemoteConversationParam(snapshot.search ?? '');
   if (param !== null) return param;
+  if (isBrowserRuntime() && hasStoredBrowserLanHost()) return true;
   return isIosRuntime(snapshot);
 }
 
@@ -49,4 +52,8 @@ function readRemoteConversationParam(search: string): boolean | null {
   if (['1', 'true', 'yes', 'ios'].includes(value.toLowerCase())) return true;
   if (['0', 'false', 'no', 'local'].includes(value.toLowerCase())) return false;
   return null;
+}
+
+function isBrowserRuntime(): boolean {
+  return typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window);
 }

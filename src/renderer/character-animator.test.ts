@@ -351,6 +351,45 @@ describe('CharacterAnimator', () => {
     expect(asm.state.emotion).toBe('neutral');
   });
 
+  it('setState propagates intensity to avatarStateMachine emotion', () => {
+    const animator = new CharacterAnimator();
+    const asm = animator.avatarStateMachine;
+
+    animator.setState('happy', 0.6);
+    expect(asm.state.emotion).toBe('happy');
+    expect(asm.state.emotionIntensity).toBeCloseTo(0.6);
+
+    animator.setState('sad', 0.3);
+    expect(asm.state.emotion).toBe('sad');
+    expect(asm.state.emotionIntensity).toBeCloseTo(0.3);
+
+    // Body states default to neutral intensity
+    animator.setState('idle');
+    expect(asm.state.emotion).toBe('neutral');
+    expect(asm.state.emotionIntensity).toBe(1);
+  });
+
+  it('emotion intensity scales expression targets proportionally', () => {
+    const animator = new CharacterAnimator();
+    const group = makePlaceholder();
+    animator.setPlaceholder(group);
+
+    // Full intensity — run several frames to converge
+    animator.setState('happy', 1);
+    for (let i = 0; i < 50; i++) animator.update(0.1);
+    const fullHappy = animator.getExpressionTarget('happy');
+
+    // Half intensity
+    const animator2 = new CharacterAnimator();
+    animator2.setPlaceholder(makePlaceholder());
+    animator2.setState('happy', 0.5);
+    for (let i = 0; i < 50; i++) animator2.update(0.1);
+    const halfHappy = animator2.getExpressionTarget('happy');
+
+    // Half-intensity should produce ≈ half the expression weight
+    expect(halfHappy).toBeCloseTo(fullHappy * 0.5, 2);
+  });
+
   it('avatarStateMachine blink auto-cycles when updating', () => {
     const animator = new CharacterAnimator();
     const group = makePlaceholder();

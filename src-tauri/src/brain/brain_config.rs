@@ -9,13 +9,16 @@ const BRAIN_CONFIG_FILE: &str = "brain_config.json";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode")]
 pub enum BrainMode {
-    /// Use a free cloud LLM API provider (zero-setup default).
+    /// Use a free cloud LLM API provider (usually with a free-tier key).
     #[serde(rename = "free_api")]
     FreeApi {
         /// ID of the free provider from the catalogue (e.g. "groq").
         provider_id: String,
         /// Optional API key (some free providers require a free-tier key).
         api_key: Option<String>,
+        /// Optional selected chat model for multi-model free providers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
     /// Use a paid cloud API (user provides their own API key).
     #[serde(rename = "paid_api")]
@@ -55,6 +58,7 @@ impl Default for BrainMode {
         BrainMode::FreeApi {
             provider_id: "groq".to_string(),
             api_key: None,
+            model: None,
         }
     }
 }
@@ -137,6 +141,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "cerebras".into(),
             api_key: Some("csk-test".into()),
+            model: Some("llama-4-scout-17b-16e-instruct".into()),
         };
         save(dir.path(), &mode).unwrap();
         let loaded = load(dir.path()).unwrap();
@@ -188,6 +193,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".into(),
             api_key: None,
+            model: None,
         };
         save(dir.path(), &mode).unwrap();
         clear(dir.path()).unwrap();
@@ -223,6 +229,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".into(),
             api_key: None,
+            model: None,
         };
         save(dir.path(), &mode).unwrap();
         // New config should win
@@ -235,6 +242,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".into(),
             api_key: None,
+            model: None,
         };
         let json = serde_json::to_string(&mode).unwrap();
         assert!(json.contains(r#""mode":"free_api""#));
@@ -247,6 +255,7 @@ mod tests {
             BrainMode::FreeApi {
                 provider_id: "cerebras".into(),
                 api_key: Some("key".into()),
+                model: None,
             },
             BrainMode::PaidApi {
                 provider: "anthropic".into(),
@@ -279,6 +288,7 @@ mod tests {
         let mode = BrainMode::FreeApi {
             provider_id: "groq".into(),
             api_key: None,
+            model: None,
         };
         save(dir.path(), &mode).unwrap();
         clear(dir.path()).unwrap();

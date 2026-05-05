@@ -20,6 +20,7 @@ pub struct ChunkRow {
 /// Parse all chunk rows from a milestones.md document.
 pub fn parse_chunks(markdown: &str) -> Vec<ChunkRow> {
     let mut out = Vec::new();
+    let mut columns = MilestoneColumns::default();
     for line in markdown.lines() {
         let trimmed = line.trim();
         if !trimmed.starts_with('|') {
@@ -31,9 +32,14 @@ pub fn parse_chunks(markdown: &str) -> Vec<ChunkRow> {
         if cols.len() < 3 {
             continue;
         }
-        // Skip header / separator rows: `# | Chunk | Status | Notes`
-        // and `---|---|---|---`.
-        let id = cols[0];
+        if let Some(next_columns) = MilestoneColumns::from_header(&cols) {
+            columns = next_columns;
+            continue;
+        }
+        // Skip separator rows: `---|---|---|---`.
+        let Some(id) = cols.get(columns.id).copied() else {
+            continue;
+        };
         if id.is_empty() || id == "#" || id.chars().all(|c| c == '-' || c == ':') {
             continue;
         }
@@ -44,11 +50,46 @@ pub fn parse_chunks(markdown: &str) -> Vec<ChunkRow> {
         }
         out.push(ChunkRow {
             id: id.to_string(),
-            title: cols[1].to_string(),
-            status: cols[2].to_string(),
+            title: cols.get(columns.title).unwrap_or(&"").to_string(),
+            status: cols.get(columns.status).unwrap_or(&"").to_string(),
         });
     }
     out
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MilestoneColumns {
+    id: usize,
+    title: usize,
+    status: usize,
+}
+
+impl Default for MilestoneColumns {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            title: 1,
+            status: 2,
+        }
+    }
+}
+
+impl MilestoneColumns {
+    fn from_header(cols: &[&str]) -> Option<Self> {
+        let normalized: Vec<String> = cols.iter().map(|col| normalize_header(col)).collect();
+        let id = normalized
+            .iter()
+            .position(|col| matches!(col.as_str(), "id" | "#"))?;
+        let title = normalized
+            .iter()
+            .position(|col| matches!(col.as_str(), "title" | "chunk"))?;
+        let status = normalized.iter().position(|col| col == "status")?;
+        Some(Self { id, title, status })
+    }
+}
+
+fn normalize_header(value: &str) -> String {
+    value.trim_matches('*').trim().to_ascii_lowercase()
 }
 
 /// First chunk whose status is `not-started`.
@@ -71,13 +112,31 @@ mod tests {
 | 25.4 | **Autonomous loop MVP** | not-started | Subagent-style |
 "#;
 
+    const CURRENT_ORDER_SAMPLE: &str = r#"
+| ID | Status | Title | Goal |
+|---|---|---|---|
+| 32.3 | not-started | Self-improve chunk completion + retry | Archive successful chunks. |
+| 32.4 | in-progress | Self-improve isolated patch auto-merge | Apply isolated patches. |
+"#;
+
     #[test]
     fn parses_three_chunk_rows() {
         let rows = parse_chunks(SAMPLE);
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].id, "25.2");
+        assert_eq!(rows[0].title, "**GitHub repo binding**");
         assert_eq!(rows[0].status, "not-started");
         assert_eq!(rows[1].status, "in-progress");
+    }
+
+    #[test]
+    fn parses_current_id_status_title_order() {
+        let rows = parse_chunks(CURRENT_ORDER_SAMPLE);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "32.3");
+        assert_eq!(rows[0].title, "Self-improve chunk completion + retry");
+        assert_eq!(rows[0].status, "not-started");
+        assert_eq!(next_not_started(&rows).unwrap().id, "32.3");
     }
 
     #[test]

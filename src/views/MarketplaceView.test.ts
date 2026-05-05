@@ -235,6 +235,15 @@ describe('MarketplaceView', () => {
     expect(wrapper.text()).toContain('Free Cloud');
     expect(wrapper.text()).toContain('Paid API');
     expect(wrapper.text()).toContain('Pollinations AI');
+    expect(wrapper.text()).toContain('OpenRouter');
+    expect(wrapper.text()).toContain('NVIDIA NIM');
+
+    const paidTab = wrapper.findAll('.llm-tier-tab').find((button) => button.text().includes('Paid API'));
+    expect(paidTab).toBeTruthy();
+    await paidTab!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Authorize with ChatGPT');
     expect(wrapper.text()).toContain('ask TerranSoul in chat');
   });
 

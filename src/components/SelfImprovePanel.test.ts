@@ -27,6 +27,18 @@ describe('SelfImprovePanel', () => {
     expect(wrapper.text()).toMatch(/model\/tool\/API|model, tool, and API/i);
   });
 
+  it('renders finished, working, backlog, and coding workflow trackers', () => {
+    wrapper = mount(SelfImprovePanel);
+    expect(wrapper.find('.si-queue').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Finished');
+    expect(wrapper.text()).toContain('Working on');
+    expect(wrapper.text()).toContain('Backlog');
+    expect(wrapper.find('.si-workflow').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Coding workflow');
+    expect(wrapper.text()).toContain('Select chunk');
+    expect(wrapper.text()).toContain('Validate, archive, and PR');
+  });
+
   it('disables Enable button when no coding LLM is configured', () => {
     wrapper = mount(SelfImprovePanel);
     const enableBtn = wrapper

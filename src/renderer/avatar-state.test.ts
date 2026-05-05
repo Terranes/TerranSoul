@@ -173,6 +173,42 @@ describe('AvatarStateMachine — emotion layer', () => {
     sm.setEmotion('happy');
     expect(sm.state.needsRender).toBe(false);
   });
+
+  it('defaults emotionIntensity to 1', () => {
+    const sm = new AvatarStateMachine();
+    expect(sm.state.emotionIntensity).toBe(1);
+  });
+
+  it('stores emotionIntensity when setEmotion is called with intensity', () => {
+    const sm = new AvatarStateMachine();
+    sm.setEmotion('happy', 0.7);
+    expect(sm.state.emotion).toBe('happy');
+    expect(sm.state.emotionIntensity).toBeCloseTo(0.7);
+  });
+
+  it('clamps emotionIntensity to [0, 1]', () => {
+    const sm = new AvatarStateMachine();
+    sm.setEmotion('sad', 2.5);
+    expect(sm.state.emotionIntensity).toBe(1);
+    sm.setEmotion('sad', -0.5);
+    expect(sm.state.emotionIntensity).toBe(0);
+  });
+
+  it('sets needsRender when intensity changes even if emotion unchanged', () => {
+    const sm = new AvatarStateMachine();
+    sm.setEmotion('happy', 1);
+    sm.state.needsRender = false;
+    sm.setEmotion('happy', 0.5);
+    expect(sm.state.needsRender).toBe(true);
+    expect(sm.state.emotionIntensity).toBeCloseTo(0.5);
+  });
+
+  it('reset() restores emotionIntensity to 1', () => {
+    const sm = new AvatarStateMachine();
+    sm.setEmotion('happy', 0.4);
+    sm.reset();
+    expect(sm.state.emotionIntensity).toBe(1);
+  });
 });
 
 // ── Viseme layer ─────────────────────────────────────────────────────────────

@@ -82,11 +82,9 @@ pub async fn set_self_improve_enabled(
     if enabled {
         let cfg = state.coding_llm_config.lock().map_err(|e| e.to_string())?;
         if cfg.is_none() {
-            return Err(
-                "Configure a Coding LLM before enabling self-improve. \
-                 Open Brain → Coding LLM and pick Claude / OpenAI / DeepSeek."
-                    .to_string(),
-            );
+            return Err("Configure a Coding LLM before enabling self-improve. \
+                 Open Brain → Coding LLM and pick Local Ollama, Claude, OpenAI, or Custom."
+                .to_string());
         }
     }
 
@@ -104,11 +102,16 @@ pub async fn set_self_improve_enabled(
     };
 
     let now = now_secs();
+    let existing_worktree_dir = {
+        let s = state.self_improve.lock().map_err(|e| e.to_string())?;
+        s.worktree_dir.clone()
+    };
     let next = SelfImproveSettings {
         enabled,
         updated_at: now,
         last_acknowledged_at: if enabled { now } else { 0 },
         last_provider: if enabled { provider } else { String::new() },
+        worktree_dir: existing_worktree_dir,
     };
     coding::save_self_improve(&state.data_dir, &next)?;
     let mut slot = state.self_improve.lock().map_err(|e| e.to_string())?;
@@ -140,9 +143,7 @@ pub async fn test_coding_llm_connection(
 /// Inspect the on-disk repository the autonomous loop will operate on.
 /// Returns informational state — `is_git_repo = false` is *not* an error.
 #[tauri::command]
-pub async fn detect_self_improve_repo(
-    state: State<'_, AppState>,
-) -> Result<RepoState, String> {
+pub async fn detect_self_improve_repo(state: State<'_, AppState>) -> Result<RepoState, String> {
     let root = coding_repo::guess_repo_root(&state.data_dir);
     Ok(coding_repo::detect_repo(&root))
 }
@@ -195,10 +196,7 @@ pub async fn get_self_improve_status(
 /// The caller (UI) is expected to have toggled `self_improve.enabled = true`
 /// via [`set_self_improve_enabled`] *before* calling this command.
 #[tauri::command]
-pub async fn start_self_improve(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn start_self_improve(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let cfg = {
         let guard = state.coding_llm_config.lock().map_err(|e| e.to_string())?;
         guard
@@ -220,7 +218,12 @@ pub async fn start_self_improve(
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
-    coding::engine::start(app, engine, cfg, workflow_cfg, repo_hint).await;
+    let worktree_dir = {
+        let s = state.self_improve.lock().map_err(|e| e.to_string())?;
+        let d = s.worktree_dir.clone();
+        if d.is_empty() { None } else { Some(d) }
+    };
+    coding::engine::start(app, engine, cfg, workflow_cfg, worktree_dir, repo_hint).await;
     Ok(())
 }
 
@@ -278,9 +281,7 @@ pub async fn get_self_improve_runs(
 /// Wipe the persisted run log. Returns the (now-empty) summary so the UI
 /// can refresh in a single round-trip.
 #[tauri::command]
-pub async fn clear_self_improve_log(
-    state: State<'_, AppState>,
-) -> Result<MetricsSummary, String> {
+pub async fn clear_self_improve_log(state: State<'_, AppState>) -> Result<MetricsSummary, String> {
     let log = MetricsLog::new(&state.data_dir);
     log.clear().map_err(|e| format!("clear log: {e}"))?;
     Ok(log.summary())
@@ -293,9 +294,7 @@ pub async fn clear_self_improve_log(
 /// Persisted GitHub binding (token, owner/repo, base branch, reviewers).
 /// Returns `None` when not yet configured.
 #[tauri::command]
-pub async fn get_github_config(
-    state: State<'_, AppState>,
-) -> Result<Option<GitHubConfig>, String> {
+pub async fn get_github_config(state: State<'_, AppState>) -> Result<Option<GitHubConfig>, String> {
     Ok(coding::load_github_config(&state.data_dir))
 }
 
@@ -315,23 +314,8 @@ pub async fn set_github_config(
             coding::clear_github_config(&state.data_dir)?;
             Ok(None)
         }
-        Some(mut cfg) => {
-            if cfg.owner.is_empty() || cfg.repo.is_empty() {
-                let root = coding_repo::guess_repo_root(&state.data_dir);
-                if let Some(remote) = coding_repo::detect_repo(&root).remote_url {
-                    if let Some((o, r)) = coding::parse_owner_repo(&remote) {
-                        if cfg.owner.is_empty() {
-                            cfg.owner = o;
-                        }
-                        if cfg.repo.is_empty() {
-                            cfg.repo = r;
-                        }
-                    }
-                }
-            }
-            if cfg.default_base.is_empty() {
-                cfg.default_base = "main".to_string();
-            }
+        Some(cfg) => {
+            let cfg = coding::apply_github_config_defaults(cfg, &state.data_dir);
             coding::save_github_config(&state.data_dir, &cfg)?;
             Ok(Some(cfg))
         }
@@ -342,9 +326,7 @@ pub async fn set_github_config(
 /// flow. Useful for users who want to ship before the autonomous loop
 /// completes every chunk. Returns the PR summary on success.
 #[tauri::command]
-pub async fn open_self_improve_pr(
-    state: State<'_, AppState>,
-) -> Result<PrSummary, String> {
+pub async fn open_self_improve_pr(state: State<'_, AppState>) -> Result<PrSummary, String> {
     let cfg = coding::load_github_config(&state.data_dir)
         .ok_or_else(|| "GitHub not configured. Set token + owner/repo first.".to_string())?;
     if !cfg.is_complete() {
@@ -372,14 +354,16 @@ pub async fn open_self_improve_pr(
 /// optional LLM-assisted conflict resolution. Returns a structured
 /// outcome the UI can render verbatim.
 #[tauri::command]
-pub async fn pull_main_for_self_improve(
-    state: State<'_, AppState>,
-) -> Result<PullResult, String> {
+pub async fn pull_main_for_self_improve(state: State<'_, AppState>) -> Result<PullResult, String> {
     let repo_root = coding_repo::guess_repo_root(&state.data_dir);
     let base = coding::load_github_config(&state.data_dir)
         .map(|c| c.default_base)
         .unwrap_or_else(|| "main".to_string());
-    let coding_cfg = state.coding_llm_config.lock().map_err(|e| e.to_string())?.clone();
+    let coding_cfg = state
+        .coding_llm_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
     Ok(coding::pull_main(&repo_root, &base, coding_cfg.as_ref()).await)
 }
 
@@ -405,13 +389,17 @@ pub async fn learn_from_user_message(
     if !enabled {
         return Ok(None);
     }
-    let cfg = match state.coding_llm_config.lock().map_err(|e| e.to_string())?.clone() {
+    let cfg = match state
+        .coding_llm_config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+    {
         Some(c) => c,
         None => return Ok(None),
     };
     let repo_root = coding_repo::guess_repo_root(&state.data_dir);
-    let learned =
-        coding::learn_from_message(&message, &cfg, &state.data_dir, &repo_root).await;
+    let learned = coding::learn_from_message(&message, &cfg, &state.data_dir, &repo_root).await;
     Ok(learned)
 }
 
@@ -615,9 +603,7 @@ pub async fn set_coding_workflow_config(
         return Err("max_total_chars must be greater than zero.".to_string());
     }
     if config.max_total_chars < config.max_file_chars {
-        return Err(
-            "max_total_chars must be greater than or equal to max_file_chars.".to_string(),
-        );
+        return Err("max_total_chars must be greater than or equal to max_file_chars.".to_string());
     }
     let trim_check = |list: &[String], field: &str| -> Result<(), String> {
         for entry in list {
@@ -723,6 +709,280 @@ pub async fn list_local_coding_models(
 
 fn strip_trailing_slash(s: &str) -> &str {
     s.trim_end_matches('/')
+}
+
+// ---------------------------------------------------------------------------
+// Self-improve worktree management
+// ---------------------------------------------------------------------------
+
+/// Set (or clear) the custom worktree directory used for self-improve
+/// execution. Pass an empty string to revert to the default (OS temp dir).
+///
+/// The path is persisted alongside the other self-improve settings.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn set_self_improve_worktree_dir(
+    dir: String,
+    state: State<'_, AppState>,
+) -> Result<SelfImproveSettings, String> {
+    let mut slot = state.self_improve.lock().map_err(|e| e.to_string())?;
+    slot.worktree_dir = dir;
+    coding::save_self_improve(&state.data_dir, &slot)?;
+    Ok(slot.clone())
+}
+
+/// List all git worktrees attached to the TerranSoul repo.
+///
+/// Returns an array of `{ path, head, branch }` objects. Self-improve
+/// worktrees appear with branch "(detached)".
+///
+/// Users can open a worktree in their editor/terminal:
+/// - VS Code: `code <path>`
+/// - GitHub Desktop: File → Add Local Repository → paste the path
+/// - Terminal: `cd <path>`
+/// - Or run `git worktree list` from the main repo
+#[tauri::command]
+pub async fn list_self_improve_worktrees(
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::worktree::WorktreeInfo>, String> {
+    let repo = coding_repo::detect_repo(&state.data_dir);
+    let repo_root = repo.root.as_deref()
+        .ok_or_else(|| "No git repository detected".to_string())?;
+    let repo_root = std::path::Path::new(repo_root);
+    coding::worktree::list_worktrees(repo_root)
+}
+
+/// Index a repository's Rust and TypeScript source files into the local
+/// symbol table. Returns stats (files parsed, symbols/edges extracted).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_index_repo(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<coding::symbol_index::IndexStats, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || coding::symbol_index::index_repo(&data_dir, &repo).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Resolve cross-file import/call edges for an already-indexed repo.
+/// Returns stats on how many edges were resolved.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_resolve_edges(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<coding::resolver::ResolveStats, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || coding::resolver::resolve_edges(&data_dir, &repo).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Get the call graph for a symbol: incoming callers + outgoing callees.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_call_graph(
+    repo_path: String,
+    symbol_name: String,
+    state: State<'_, AppState>,
+) -> Result<coding::resolver::CallGraph, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        let symbol = symbol_name.clone();
+        move || {
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
+            let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+            let repo_str = repo.to_string_lossy().to_string();
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_str],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_str}"))?;
+            coding::resolver::call_graph(&conn, repo_id, &symbol).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Run functional clustering + entry-point scoring + process tracing.
+/// Requires the repo to have been indexed and resolved first.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_compute_processes(
+    repo_path: String,
+    max_depth: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<coding::processes::ProcessStats, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    let depth = max_depth.unwrap_or(10);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || {
+            coding::processes::compute_processes(&data_dir, &repo, depth)
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// List clusters for a repo.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_clusters(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::processes::Cluster>, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || {
+            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+            let repo_str = repo.to_string_lossy().to_string();
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_str],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_str}"))?;
+            coding::processes::list_clusters(&conn, repo_id).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// List execution-flow processes for a repo.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_processes(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::processes::Process>, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = std::path::Path::new(&state.data_dir);
+    tokio::task::spawn_blocking({
+        let data_dir = data_dir.to_path_buf();
+        let repo = repo.to_path_buf();
+        move || {
+            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+            let repo_str = repo.to_string_lossy().to_string();
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_str],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_str}"))?;
+            coding::processes::list_processes(&conn, repo_id).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Generate wiki pages from the symbol graph for a repo.
+///
+/// Produces per-cluster Markdown pages with mermaid call graphs under
+/// `<data_dir>/wiki/`. Optionally summarises each cluster via the active
+/// brain.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_generate_wiki(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<coding::wiki::WikiResult, String> {
+    let repo = std::path::Path::new(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    let wiki_dir = data_dir.join("wiki");
+
+    // Phase 1: load cluster data from the code index (blocking).
+    let (clusters, all_syms_raw, all_edges_raw) = tokio::task::spawn_blocking({
+        let data_dir = data_dir.clone();
+        let repo = repo.to_path_buf();
+        let wiki_dir = wiki_dir.clone();
+        move || {
+            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir)
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))??;
+
+    // Phase 2: summarise each cluster via the brain (async, optional).
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let mut summaries: Vec<Option<String>> = Vec::with_capacity(clusters.len());
+
+    if let Some(mode) = &brain_mode {
+        for (i, cluster) in clusters.iter().enumerate() {
+            let desc = coding::wiki::build_cluster_description(cluster, &all_syms_raw[i]);
+            let result = crate::memory::brain_memory::complete_via_mode(
+                mode,
+                "You are a concise technical writer. Summarize the following code cluster in 1-2 sentences, focusing on its purpose and key responsibilities.",
+                &desc,
+                &state.provider_rotator,
+            )
+            .await;
+            match result {
+                Ok(s) if !s.trim().is_empty() => summaries.push(Some(s.trim().to_string())),
+                _ => summaries.push(None),
+            }
+        }
+    } else {
+        summaries.resize(clusters.len(), None);
+    }
+
+    // Phase 3: write the wiki pages (blocking).
+    tokio::task::spawn_blocking({
+        let wiki_dir = wiki_dir.clone();
+        move || {
+            coding::wiki::write_wiki_pages(&wiki_dir, &clusters, &all_syms_raw, &all_edges_raw, &summaries)
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
 }
 
 #[cfg(test)]

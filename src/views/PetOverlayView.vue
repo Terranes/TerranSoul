@@ -208,6 +208,9 @@
       @toggle-resize="resizeActive = !resizeActive"
       @request-self-improve="onRequestSelfImprove"
       @open-self-improve-panel="selfImprovePanelOpen = true"
+      @open-workflows-panel="workflowsPanelOpen = true"
+      @open-charisma-panel="charismaPanelOpen = true"
+      @open-teachable-capabilities-panel="teachableCapabilitiesPanelOpen = true"
     />
 
     <!-- Self-improve warning dialog (Phase 25) -->
@@ -245,6 +248,78 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Multi-agent workflows panel -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="workflowsPanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="workflowsPanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="workflowsPanelOpen = false"
+            >
+              ✕
+            </button>
+            <MultiAgentWorkflowsPanel />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Charisma teaching panel -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="charismaPanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="charismaPanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="charismaPanelOpen = false"
+            >
+              ✕
+            </button>
+            <CharismaPanel />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Teachable capabilities panel -->
+    <Teleport to="body">
+      <Transition name="bubble">
+        <div
+          v-if="teachableCapabilitiesPanelOpen"
+          class="pet-si-panel-backdrop"
+          role="dialog"
+          aria-modal="true"
+          @click.self="teachableCapabilitiesPanelOpen = false"
+        >
+          <div class="pet-si-panel-wrap">
+            <button
+              class="pet-si-panel-close"
+              title="Close"
+              @click="teachableCapabilitiesPanelOpen = false"
+            >
+              ✕
+            </button>
+            <TeachableCapabilitiesPanel />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -273,6 +348,9 @@ import PetContextMenu from '../components/PetContextMenu.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import SelfImproveConfirmDialog from '../components/SelfImproveConfirmDialog.vue';
 import SelfImprovePanel from '../components/SelfImprovePanel.vue';
+import MultiAgentWorkflowsPanel from '../components/MultiAgentWorkflowsPanel.vue';
+import CharismaPanel from '../components/CharismaPanel.vue';
+import TeachableCapabilitiesPanel from '../components/TeachableCapabilitiesPanel.vue';
 import { useSelfImproveStore } from '../stores/self-improve';
 
 const conversationStore = useConversationStore();
@@ -289,6 +367,9 @@ const selfImprove = useSelfImproveStore();
 // can persist across context-menu open/close cycles.
 const selfImproveDialogOpen = ref(false);
 const selfImprovePanelOpen = ref(false);
+const workflowsPanelOpen = ref(false);
+const charismaPanelOpen = ref(false);
+const teachableCapabilitiesPanelOpen = ref(false);
 
 const selfImproveProviderLabel = computed(() => {
   const c = selfImprove.codingLlm;
@@ -429,14 +510,14 @@ function setAvatarState(charState: CharacterState): void {
   const asm = getAsm();
   if (!asm) return;
   switch (charState) {
-    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
-    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
-    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
-    case 'happy':     asm.setEmotion('happy');     break;
-    case 'sad':       asm.setEmotion('sad');       break;
-    case 'angry':     asm.setEmotion('angry');     break;
-    case 'relaxed':   asm.setEmotion('relaxed');   break;
-    case 'surprised': asm.setEmotion('surprised'); break;
+    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');                                    break;
+    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');                                    break;
+    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');                                    break;
+    case 'happy':     asm.setEmotion('happy',     characterStore.emotionIntensity); break;
+    case 'sad':       asm.setEmotion('sad',       characterStore.emotionIntensity); break;
+    case 'angry':     asm.setEmotion('angry',     characterStore.emotionIntensity); break;
+    case 'relaxed':   asm.setEmotion('relaxed',   characterStore.emotionIntensity); break;
+    case 'surprised': asm.setEmotion('surprised', characterStore.emotionIntensity); break;
   }
 }
 
@@ -1101,7 +1182,9 @@ watch(
   () => streaming.currentEmotion,
   (emotion) => {
     if (emotion) {
-      setAvatarState(sentimentToState(emotion));
+      characterStore.setState(sentimentToState(emotion), streaming.currentEmotionIntensity);
+      const asm = getAsm();
+      if (asm) asm.setEmotion(emotion === 'neutral' ? 'neutral' : emotion, streaming.currentEmotionIntensity);
       setTimeout(() => setAvatarState('idle'), 6000);
     }
   },
@@ -1122,7 +1205,9 @@ watch(
     if (active) {
       setAvatarState('talking');
     } else if (streaming.currentEmotion) {
-      setAvatarState(sentimentToState(streaming.currentEmotion));
+      characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
+      const asm = getAsm();
+      if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
     }
   },
 );
@@ -1145,7 +1230,6 @@ watch(tts.isSpeaking, (speaking) => {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
-let unlistenLlmPose: (() => void) | null = null;
 let streamTtsActive = false;
 
 onMounted(async () => {
@@ -1217,11 +1301,6 @@ onMounted(async () => {
       }
     });
 
-    // Pose stream — LLM-as-Animator (Chunk 14.16b3).
-    unlistenLlmPose = await listen<import('../renderer/pose-animator').LlmPoseFrame>('llm-pose', (event) => {
-      viewportRef.value?.playPose?.(event.payload);
-    });
-
     // Start cursor-position polling from Rust.  On each event we decide
     // whether the cursor is over an interactive component and toggle
     // set_ignore_cursor_events accordingly.
@@ -1269,10 +1348,6 @@ onUnmounted(() => {
   if (unlistenLlmAnimation) {
     unlistenLlmAnimation();
     unlistenLlmAnimation = null;
-  }
-  if (unlistenLlmPose) {
-    unlistenLlmPose();
-    unlistenLlmPose = null;
   }
   tts.stop();
   lipSyncBridge.dispose();

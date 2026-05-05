@@ -27,7 +27,16 @@
     <!-- Brain setup card (shown when no brain is configured) -->
     <Transition name="fade-up">
       <div
-        v-if="!usesRemoteConversation && !brain.hasBrain && !props.chatboxMode"
+        v-if="showBrowserLlmPrompt && !props.chatboxMode"
+        class="brain-overlay browser-llm-overlay"
+      >
+        <BrowserAuthPanel
+          compact
+          @configured="showBrowserLlmConfig = false"
+        />
+      </div>
+      <div
+        v-else-if="!usesRemoteConversation && !brain.hasBrain && !props.chatboxMode"
         class="brain-overlay"
       >
         <div class="brain-card">
@@ -36,12 +45,12 @@
             <strong>Set up your Brain</strong>
           </div>
           <div class="brain-free-start">
-            <p>Start chatting instantly with a free cloud LLM:</p>
+            <p>Start with a free-tier cloud LLM provider:</p>
             <button
               class="brain-activate-btn"
               @click="activateFreeApi"
             >
-              ☁️ Use Free Cloud API (no setup)
+              ☁️ Use Free Cloud API
             </button>
           </div>
           <div class="brain-local-section">
@@ -153,11 +162,19 @@
     <!-- Brain status (shows active provider/model — 3D mode only) -->
     <Transition name="fade">
       <div
-        v-if="(usesRemoteConversation || brain.hasBrain) && !props.chatboxMode"
+        v-if="(usesRemoteConversation || (!browserRuntime && brain.hasBrain) || (browserRuntime && brain.browserAuthSession)) && !props.chatboxMode"
         class="brain-status-pill"
       >
         <span class="brain-pill-dot" />
         <span>{{ activeProviderName }}</span>
+        <button
+          v-if="browserRuntime && !usesRemoteConversation"
+          type="button"
+          class="brain-reconfigure-btn"
+          @click="showBrowserLlmConfig = !showBrowserLlmConfig"
+        >
+          Reconfigure LLM
+        </button>
       </div>
     </Transition>
 
@@ -171,7 +188,7 @@
       <div class="chatbox-header">
         <div class="chatbox-header-left">
           <div
-            v-if="!usesRemoteConversation && !brain.hasBrain"
+            v-if="!usesRemoteConversation && !brain.hasBrain && !browserRuntime"
             class="chatbox-brain-setup"
           >
             <span>🧠</span>
@@ -187,10 +204,18 @@
             class="chatbox-provider"
           >
             <span class="brain-pill-dot" />
-            <span>{{ activeProviderName }}</span>
+            <span>{{ activeProviderName || 'Choose LLM provider' }}</span>
           </div>
         </div>
         <div class="chatbox-header-right">
+          <button
+            v-if="browserRuntime && !usesRemoteConversation"
+            type="button"
+            class="chatbox-reconfigure-btn"
+            @click="showBrowserLlmConfig = !showBrowserLlmConfig"
+          >
+            {{ showBrowserLlmConfig || !brain.browserAuthSession ? 'Choose LLM' : 'Reconfigure LLM' }}
+          </button>
           <div
             class="chatbox-state-pill"
             :class="characterStore.state"
@@ -203,6 +228,12 @@
 
       <!-- Full-height message list -->
       <div class="chatbox-messages">
+        <BrowserAuthPanel
+          v-if="showBrowserLlmPrompt"
+          compact
+          class="chat-llm-auth"
+          @configured="showBrowserLlmConfig = false"
+        />
         <AgentThreadPicker
           :messages="conversationStore.messages"
           :current-agent="conversationStore.currentAgent"
@@ -217,6 +248,7 @@
           @suggest="handleSend"
           @start-quest="handleStartQuest"
           @navigate="(target: string) => emit('navigate', target)"
+          @rate-charisma-turn="handleCharismaTurnRating"
         />
       </div>
 
@@ -349,9 +381,16 @@
           </div>
           <TaskProgressBar />
           <AgentThreadPicker
+            v-if="!showBrowserLlmPrompt"
             :messages="conversationStore.messages"
             :current-agent="conversationStore.currentAgent"
             @pick="(id: string) => conversationStore.setAgent(id)"
+          />
+          <BrowserAuthPanel
+            v-if="showBrowserLlmPrompt"
+            compact
+            class="chat-llm-auth"
+            @configured="showBrowserLlmConfig = false"
           />
           <ChatMessageList
             :messages="conversationStore.agentMessages"
@@ -361,6 +400,7 @@
             @suggest="handleSend"
             @start-quest="handleStartQuest"
             @navigate="(target: string) => emit('navigate', target)"
+            @rate-charisma-turn="handleCharismaTurnRating"
           />
         </div>
       </Transition>
@@ -458,6 +498,7 @@ import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
+import { loadBrowserLanHost } from '../utils/browser-lan';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
 import { useAiDecisionPolicyStore } from '../stores/ai-decision-policy';
@@ -488,6 +529,7 @@ import AgentThreadPicker from '../components/AgentThreadPicker.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
+import BrowserAuthPanel from '../components/BrowserAuthPanel.vue';
 
 const usesRemoteConversation = shouldUseRemoteChatStore();
 const conversationStore = useChatConversationStore();
@@ -511,11 +553,15 @@ const asr = useAsrManager({
   onTranscript: (text: string) => handleSend(text),
 });
 const selectedBrain = ref('');
+const browserRuntime = computed(() => typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window));
+const showBrowserLlmConfig = ref(false);
+const showBrowserLlmPrompt = computed(() =>
+  browserRuntime.value && !usesRemoteConversation && (!brain.hasBrain || showBrowserLlmConfig.value),
+);
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
 let unlistenLlmAnimation: (() => void) | null = null;
-let unlistenLlmPose: (() => void) | null = null;
 let unlistenProvidersExhausted: (() => void) | null = null;
 let isStreamTtsActive = false;
 
@@ -565,14 +611,14 @@ function setAvatarState(charState: CharacterState): void {
   const asm = getAsm();
   if (!asm) return;
   switch (charState) {
-    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
-    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
-    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
-    case 'happy':     asm.setEmotion('happy');     break;
-    case 'sad':       asm.setEmotion('sad');       break;
-    case 'angry':     asm.setEmotion('angry');     break;
-    case 'relaxed':   asm.setEmotion('relaxed');   break;
-    case 'surprised': asm.setEmotion('surprised'); break;
+    case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');                                    break;
+    case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');                                    break;
+    case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');                                    break;
+    case 'happy':     asm.setEmotion('happy',     characterStore.emotionIntensity); break;
+    case 'sad':       asm.setEmotion('sad',       characterStore.emotionIntensity); break;
+    case 'angry':     asm.setEmotion('angry',     characterStore.emotionIntensity); break;
+    case 'relaxed':   asm.setEmotion('relaxed',   characterStore.emotionIntensity); break;
+    case 'surprised': asm.setEmotion('surprised', characterStore.emotionIntensity); break;
   }
 }
 
@@ -817,7 +863,11 @@ const STATE_LABELS: Record<CharacterState, string> = {
 const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
 
 const activeProviderName = computed(() => {
-  if (usesRemoteConversation) return 'Remote Desktop';
+  if (usesRemoteConversation) {
+    const browserLanHost = loadBrowserLanHost();
+    return browserLanHost ? `LAN Desktop · ${browserLanHost.host}:${browserLanHost.port}` : 'Remote Desktop';
+  }
+  if (browserRuntime.value && !brain.browserAuthSession) return '';
   const mode = brain.brainMode;
   if (!mode) return '';
   if (mode.mode === 'free_api') {
@@ -902,6 +952,11 @@ function precomputePendingEmotionForStreaming(message: string): void {
 }
 
 async function handleSend(message: string) {
+  if (browserRuntime.value && !brain.browserAuthSession) {
+    showBrowserLlmConfig.value = true;
+    return;
+  }
+
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
 
@@ -938,7 +993,6 @@ async function handleSend(message: string) {
 
   setAvatarState('thinking');
   await conversationStore.sendMessage(message);
-
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
   const reactionState = lastMsg?.role === 'assistant'
     ? sentimentToState(lastMsg.sentiment)
@@ -988,6 +1042,10 @@ async function handleSend(message: string) {
       viewportRef.value?.stopMotion?.();
     }
   }, 6000);
+}
+
+async function handleCharismaTurnRating(messageId: string, rating: number): Promise<void> {
+  await conversationStore.rateCharismaTurn(messageId, rating);
 }
 
 const canSkipDialog = computed(
@@ -1338,12 +1396,6 @@ async function setupTauriEventListener() {
     });
     unlistenLlmAnimation = unlistenAnim;
 
-    // Pose stream — LLM-as-Animator <pose> tags (Chunk 14.16b3).
-    const unlistenPose = await listen<import('../renderer/pose-animator').LlmPoseFrame>('llm-pose', (event) => {
-      viewportRef.value?.playPose?.(event.payload);
-    });
-    unlistenLlmPose = unlistenPose;
-
     // Provider exhaustion — show upgrade quest
     const unlistenExhausted = await listen('providers-exhausted', () => {
       conversationStore.pushProviderWarning();
@@ -1371,7 +1423,9 @@ watch(
       setAvatarState('talking');
     } else if (streaming.currentEmotion) {
       // Stream done — set final emotion from parsed tags (once, not per-chunk)
-      setAvatarState(sentimentToState(streaming.currentEmotion));
+      characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
+      const asm = getAsm();
+      if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
     }
     if (!active && isStreamTtsActive) {
       tts.flush();
@@ -1444,15 +1498,22 @@ onMounted(async () => {
   const taskStore = useTaskStore();
   await taskStore.init();
 
-  try {
-    await brain.initialise();
-    if (brain.topRecommendation) {
-      selectedBrain.value = brain.topRecommendation.model_tag;
+  if (browserRuntime.value) {
+    brain.prepareBrowserProviderChoices();
+    if (import.meta.env.VITE_E2E && !brain.hasBrain) {
+      brain.autoConfigureFreeApi();
     }
-    // Background model update check — once per day, non-blocking.
-    brain.checkForModelUpdates();
-  } catch {
-    // No Tauri backend
+  } else {
+    try {
+      await brain.initialise();
+      if (brain.topRecommendation) {
+        selectedBrain.value = brain.topRecommendation.model_tag;
+      }
+      // Background model update check — once per day, non-blocking.
+      brain.checkForModelUpdates();
+    } catch {
+      // No Tauri backend
+    }
   }
 
   try {
@@ -1489,10 +1550,6 @@ onUnmounted(() => {
   if (unlistenLlmAnimation) {
     unlistenLlmAnimation();
     unlistenLlmAnimation = null;
-  }
-  if (unlistenLlmPose) {
-    unlistenLlmPose();
-    unlistenLlmPose = null;
   }
   if (unlistenProvidersExhausted) {
     unlistenProvidersExhausted();
@@ -1574,7 +1631,7 @@ onUnmounted(() => {
   border: 1px solid rgba(34, 197, 94, 0.2);
   font-size: 0.7rem;
   color: var(--ts-success);
-  pointer-events: none;
+  pointer-events: auto;
 }
 .brain-pill-dot {
   width: 6px;
@@ -1582,6 +1639,23 @@ onUnmounted(() => {
   border-radius: 50%;
   background: var(--ts-success-dim);
   animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.brain-reconfigure-btn,
+.chatbox-reconfigure-btn {
+  border: 1px solid color-mix(in srgb, var(--ts-accent) 36%, var(--ts-border));
+  border-radius: var(--ts-radius-pill);
+  padding: 0.25rem 0.55rem;
+  color: var(--ts-text-primary);
+  background: color-mix(in srgb, var(--ts-bg-input) 86%, transparent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.brain-reconfigure-btn:hover,
+.chatbox-reconfigure-btn:hover {
+  background: color-mix(in srgb, var(--ts-accent) 16%, var(--ts-bg-input));
 }
 
 /* ── Floating subtitle overlay — karaoke-style word sync ── */
@@ -1857,6 +1931,9 @@ onUnmounted(() => {
   width: 340px;
   max-width: 90vw;
 }
+.browser-llm-overlay {
+  width: min(620px, 92vw);
+}
 .brain-card { background: var(--ts-bg-overlay); backdrop-filter: blur(20px); border-radius: var(--ts-radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--ts-accent-glow); box-shadow: var(--ts-shadow-lg); }
 .brain-card-header { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-base); }
 .brain-hw { font-size: var(--ts-text-sm); color: var(--ts-text-secondary); margin: 0; }
@@ -1984,6 +2061,10 @@ onUnmounted(() => {
   padding: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--ts-text-dim) transparent;
+}
+
+.chat-llm-auth {
+  margin: 12px;
 }
 
 /* ── Chatbox input footer ── */

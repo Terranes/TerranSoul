@@ -1,7 +1,7 @@
 # TerranSoul — Copilot Instructions
 
 > This file is auto-loaded by GitHub Copilot on every request.
-> Last updated: 2026-05-02
+> Last updated: 2026-05-05
 
 ## What is TerranSoul?
 
@@ -64,7 +64,7 @@ Rust Core Engine (src-tauri/src/)
 
 ## Brain Modes
 
-1. **Free API** — Pollinations AI, auto-configured, no key needed
+1. **Free API** — OpenRouter/Gemini/NVIDIA/Pollinations free-tier providers with user-owned keys or tokens
 2. **Paid API** — OpenAI/Anthropic/Groq with user-supplied API key
 3. **Local Ollama** — Private, offline-capable, hardware-adaptive model selection
 
@@ -107,6 +107,8 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 ## Coding Standards
 
 - No pretend/placeholder/TODO code — everything must compile and function
+- Do not name code, commands, files, UI labels, docs, milestones, or persisted paths after third-party creators, channels, projects, products, mascots, or branded demos unless required by an imported dependency/public API. Use neutral descriptive names and keep attribution/license notes only in dedicated research/licensing docs.
+- Always credit external authors, creators, channels/videos, open-source projects, papers, docs, datasets, tutorials, and reverse-engineered references in the top-level `CREDITS.md` whenever their work informs code, docs, roadmap, design/product insights, comparison matrices, prompt shapes, feature catalogues, or rejected decisions. No-code influence still counts: if TerranSoul learns from it, compares against it, or uses it to generate implementation insight, add or update a respectful `CREDITS.md` entry in the same PR (name, URL, license/terms when known, affected files/features, and what we learned/used). Keep rule text in `rules/coding-standards.md`; make `CREDITS.md` an appreciative public thanks page. Removing a referenced source removes its entry.
 - `snake_case` for Rust, `camelCase` for TypeScript
 - `#[derive(Debug, Serialize, Deserialize, Clone)]` on all public Rust types
 - Vue components use `<script setup lang="ts">` with scoped styles
@@ -215,7 +217,27 @@ When the "Continue" prompt is received with no other context, follow steps 1–3
 
 ### MCP Server
 
-TerranSoul exposes its brain via MCP on `127.0.0.1:7421`. The `.vscode/mcp.json`
-configures it as `terransoul-brain`. Use the brain tools (`brain_search`,
-`brain_ingest`, `brain_health`, etc.) to access the companion's memory during
-coding sessions.
+TerranSoul exposes its brain via MCP on three ports — `7421` (release
+app), `7422` (dev app), and `7423` (headless `npm run mcp` "pet mode"
+runner used by AI coding agents). All three are wired into
+`.vscode/mcp.json` as `terransoul-brain`, `terransoul-brain-dev`, and
+`terransoul-brain-mcp`. Use the brain tools (`brain_search`,
+`brain_ingest`, `brain_health`, etc.) to access the companion's memory
+during coding sessions.
+
+For dev/coding work, prefer the headless runner: Copilot setup steps run
+`node scripts/copilot-start-mcp.mjs` automatically; manual sessions can run
+`npm run mcp`. The headless brain starts on `127.0.0.1:7423` with state in
+`<repo>/mcp-data/` (no collision with `npm run dev` or a running app, no
+end-user data touched). It writes the current bearer token to `.vscode/.mcp-token`;
+set `TERRANSOUL_MCP_TOKEN_MCP` from that file for VS Code's
+`terransoul-brain-mcp` profile, verify `GET http://127.0.0.1:7423/health`,
+then call `brain_health`. **Mandatory every-session rule:** every coding
+agent must check/reuse/start TerranSoul MCP at session start, call
+`brain_health` plus a relevant `brain_search` / `brain_suggest_context`
+before broad repo exploration when MCP is available, and feed durable
+self-improve lessons back into `mcp-data/shared/` or the rules/docs rather
+than leaving them only in chat. If MCP is blocked, record the blocker in
+the progress/final report. Full procedure, scope limits, and per-agent setup
+live in [rules/agent-mcp-bootstrap.md](rules/agent-mcp-bootstrap.md) — read
+it before invoking `npm run mcp`.

@@ -1271,6 +1271,39 @@ consent-first order.
 
 ---
 
+## 15a. Charisma Teaching System & Source-Code Promotion (Chunk 30.4)
+
+Added May 2026. Sits between the runtime persona/animation surfaces
+described in §§ 2–10 and the bundled defaults that ship with the app.
+
+- **Maturity ladder**: Untested → Learning (≥1 use) → Proven (≥10 uses
+  AND avg rating ≥ 4.0) → Canon (promoted to source).
+- **Per-asset stat row** stored in `<data_dir>/persona/charisma_stats.json`
+  (atomic, schema-versioned). Stats are independent of the underlying
+  expression / motion / trait so deleting an asset does not lose its
+  promotion record.
+- **Management panel**: right-click the pet → *Charisma — Teach me…*.
+  Three tabs (😊 Expressions, 💃 Motions, 📝 Traits), 4-cell summary
+  dashboard, 5-star rating per row, ▶ Test / ⭐ Promote / Delete actions.
+- **Promotion path**: clicking *Promote* on a Proven asset creates a
+  4-step coding `WorkflowPlan` (Researcher → Coder *requires_approval*
+  → Tester → Reviewer *requires_approval*). The plan appears in the
+  Multi-Agent Workflows panel; running it edits source via the
+  existing `apply_file` pipeline, so every promotion goes through the
+  same approval + test + review gates as any other coding workflow.
+- **Self-Improve coupling**: when self-improve is enabled, promotion
+  plans are scheduled into the autonomous loop, but the two
+  `requires_approval` steps still surface as cards in the Self-Improve
+  panel — the user is never silently committed to.
+
+Code: [`src-tauri/src/persona/charisma.rs`](../src-tauri/src/persona/charisma.rs),
+[`src-tauri/src/commands/charisma.rs`](../src-tauri/src/commands/charisma.rs),
+[`src/stores/charisma.ts`](../src/stores/charisma.ts),
+[`src/components/CharismaPanel.vue`](../src/components/CharismaPanel.vue).
+End-user tutorial: [`docs/charisma-teaching-tutorial.md`](charisma-teaching-tutorial.md).
+
+---
+
 ## 16. Sources
 
 See §14.4 for the academic / industry citations behind this design. The

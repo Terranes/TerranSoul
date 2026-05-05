@@ -14,8 +14,10 @@
 //! The stdio transport ([`stdio`]) reuses the same dispatch surface
 //! over newline-delimited JSON-RPC on stdin/stdout. See Chunk 15.9.
 
+pub mod activity;
 pub mod auth;
 pub mod auto_setup;
+pub mod hooks;
 pub mod router;
 pub mod self_host;
 pub mod stdio;
@@ -59,6 +61,38 @@ pub fn is_dev_build() -> bool {
     cfg!(debug_assertions)
 }
 
+/// Runtime flag set when the process is running as the headless
+/// `--mcp-http` server (a.k.a. "MCP pet mode"). When true, the
+/// initialize handshake reports `serverInfo.name = "terransoul-brain-mcp"`
+/// and `buildMode = "mcp"` instead of the dev/release labels — so
+/// external agents (Copilot, Codex, Claude Code, Clawcode, etc.) can
+/// tell at a glance that they are talking to the repo-local headless
+/// server, not a running app.
+static MCP_PET_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Mark the current process as running in MCP pet mode. Called by
+/// `terransoul_lib::run_http_server` before the server starts.
+pub fn enable_mcp_pet_mode() {
+    MCP_PET_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the current process is running as the headless MCP server.
+pub fn is_mcp_pet_mode() -> bool {
+    MCP_PET_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn seed_loaded_from_state(state: &AppState) -> bool {
+    if !is_mcp_pet_mode() {
+        return false;
+    }
+    state
+        .memory_store
+        .lock()
+        .ok()
+        .and_then(|store| store.stats().ok())
+        .is_some_and(|stats| stats.total > 0)
+}
+
 /// Handle to a running MCP server. Stored in
 /// `AppStateInner.mcp_server`.
 pub struct McpServerHandle {
@@ -93,15 +127,27 @@ pub async fn start_server(
     token: String,
     lan_enabled: bool,
 ) -> Result<McpServerHandle, String> {
-    let gw = Arc::new(AppStateGateway::new(state))
-        as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
-    let router_state = McpRouterState {
-        gw,
-        caps: GatewayCaps::default(),
-        token: token.clone(),
-    };
+    start_server_with_activity(state, port, token, lan_enabled, None).await
+}
 
-    let app = router::build(router_state);
+/// Start the MCP HTTP server and optionally emit live activity events to
+/// the Tauri frontend.
+pub async fn start_server_with_activity(
+    state: AppState,
+    port: u16,
+    token: String,
+    lan_enabled: bool,
+    app: Option<tauri::AppHandle>,
+) -> Result<McpServerHandle, String> {
+    let activity = activity::McpActivityReporter::new(state.clone(), app);
+    activity.startup(format!("Starting MCP brain server on port {port}."));
+    let gw = Arc::new(AppStateGateway::new(state.clone()))
+        as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
+    let caps = GatewayCaps {
+        brain_read: true,
+        brain_write: false,
+        code_read: true,
+    };
 
     // Try the requested port first, then fallbacks.
     let mut last_err = String::new();
@@ -126,17 +172,21 @@ pub async fn start_server(
                 last_err = format!("port {try_port}: {e}");
                 // If this is AddrInUse, try next; otherwise it's a real error
                 if e.kind() != std::io::ErrorKind::AddrInUse {
-                    return Err(format!("failed to bind MCP server on {addr}: {e}"));
+                    let message = format!("failed to bind MCP server on {addr}: {e}");
+                    activity.failed(message.clone());
+                    return Err(message);
                 }
             }
         }
     }
 
     let listener = listener_opt.ok_or_else(|| {
-        format!(
+        let message = format!(
             "failed to bind MCP server: ports {port}–{} all in use ({last_err})",
             port.saturating_add(PORT_FALLBACK_RANGE)
-        )
+        );
+        activity.failed(message.clone());
+        message
     })?;
 
     if bound_port != port {
@@ -144,12 +194,27 @@ pub async fn start_server(
     }
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    activity.ready(bound_port);
+    let server_activity = activity.clone();
+    let seed_loaded = seed_loaded_from_state(&state);
+    let router_state = McpRouterState {
+        gw,
+        caps,
+        token: token.clone(),
+        port: bound_port,
+        seed_loaded,
+        activity: Some(activity.clone()),
+        app_state: Some(state),
+        staleness_tracker: Arc::new(tokio::sync::Mutex::new(hooks::IndexStalenessTracker::new())),
+    };
+    let app = router::build(router_state);
 
     let task = tokio::spawn(async move {
         let server = axum::serve(listener, app);
         tokio::select! {
             result = server => {
                 if let Err(e) = result {
+                    server_activity.failed(format!("MCP server error: {e}"));
                     eprintln!("[mcp] server error: {e}");
                 }
             }

@@ -199,8 +199,8 @@ pub trait StorageBackend: Send {
     // ── Backend info ─────────────────────────────────────────────────────
     /// Human-readable backend name (e.g. "SQLite", "PostgreSQL").
     fn backend_name(&self) -> &'static str;
-    /// Whether this backend supports server-side vector operations
-    /// (pgvector, Cassandra ANN). If false, vector search is done in-process.
+    /// Whether this backend supports server-side vector operations.
+    /// If false, vector search is done in-process.
     fn supports_native_vector_search(&self) -> bool {
         false
     }

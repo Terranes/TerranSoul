@@ -108,6 +108,36 @@ describe('ChatMessageList', () => {
     expect(wrapper.find('.agent-badge').text()).toBe('TerranSoul');
   });
 
+  it('renders turn rating controls for assistant messages with charisma assets', () => {
+    const messages = [
+      makeMessage({
+        role: 'assistant',
+        content: 'A warm bow.',
+        charismaAssets: [{ kind: 'motion', assetId: 'lmo_bow', displayName: 'Bow' }],
+      }),
+    ];
+    const wrapper = mount(ChatMessageList, {
+      props: { messages, isThinking: false },
+    });
+
+    expect(wrapper.findAll('.turn-rating-btn')).toHaveLength(5);
+  });
+
+  it('emits a turn rating when a charisma star is clicked', async () => {
+    const message = makeMessage({
+      role: 'assistant',
+      content: 'A warm bow.',
+      charismaAssets: [{ kind: 'motion', assetId: 'lmo_bow', displayName: 'Bow' }],
+    });
+    const wrapper = mount(ChatMessageList, {
+      props: { messages: [message], isThinking: false },
+    });
+
+    await wrapper.findAll('.turn-rating-btn')[3].trigger('click');
+
+    expect(wrapper.emitted('rateCharismaTurn')).toEqual([[message.id, 4]]);
+  });
+
   it('formats timestamps', () => {
     const messages = [makeMessage({ timestamp: new Date('2026-04-10T12:30:00').getTime() })];
     const wrapper = mount(ChatMessageList, {

@@ -1,20 +1,37 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 
-const { mockInvoke } = vi.hoisted(() => ({ mockInvoke: vi.fn() }));
+const { mockInvoke, mockListen } = vi.hoisted(() => ({
+  mockInvoke: vi.fn(),
+  mockListen: vi.fn(),
+}));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mockInvoke }));
 // Stub the events plugin so `listen` resolves to a no-op unsubscriber
 // during tests instead of trying to talk to the Tauri runtime.
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
+  listen: mockListen,
 }));
 
 import { useSelfImproveStore } from './self-improve';
+
+const flushQueuedPromises = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+type ProgressHandler = (evt: {
+  payload: {
+    phase: string;
+    message: string;
+    progress: number;
+    chunk_id: string | null;
+    level: 'info' | 'warn' | 'error' | 'success';
+  };
+}) => void;
 
 describe('self-improve store', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    mockListen.mockReset();
+    mockListen.mockResolvedValue(() => {});
   });
 
   it('starts disabled with no config and zero progress beyond static foundation', () => {
@@ -177,6 +194,81 @@ describe('self-improve store', () => {
     expect(store.running).toBe(false);
   });
 
+  it('mirrors self-improve progress events into the active session transcript', async () => {
+    let progressHandler: ProgressHandler = () => {
+      throw new Error('progress handler not registered');
+    };
+    mockListen.mockImplementation(async (_event: string, cb: ProgressHandler) => {
+      progressHandler = cb;
+      return () => {};
+    });
+    mockInvoke.mockResolvedValue(null);
+
+    const store = useSelfImproveStore();
+    store.activeSessionId = 'session-30-6';
+    await store.subscribeToProgress();
+    progressHandler({
+      payload: {
+        phase: 'plan',
+        message: 'Plan ready',
+        progress: 90,
+        chunk_id: '30.6',
+        level: 'success',
+      },
+    });
+    await flushQueuedPromises();
+
+    expect(mockInvoke).toHaveBeenCalledWith('coding_session_append_message', {
+      sessionId: 'session-30-6',
+      message: expect.objectContaining({
+        role: 'system',
+        content: '[30.6] plan 90% success: Plan ready',
+        kind: 'run',
+      }),
+    });
+    expect(store.activeChat).toEqual([
+      expect.objectContaining({
+        role: 'system',
+        content: '[30.6] plan 90% success: Plan ready',
+        kind: 'run',
+      }),
+    ]);
+  });
+
+  it('creates a run transcript session when progress arrives without one', async () => {
+    let progressHandler: ProgressHandler = () => {
+      throw new Error('progress handler not registered');
+    };
+    mockListen.mockImplementation(async (_event: string, cb: ProgressHandler) => {
+      progressHandler = cb;
+      return () => {};
+    });
+    mockInvoke.mockResolvedValue(null);
+
+    const store = useSelfImproveStore();
+    await store.subscribeToProgress();
+    progressHandler({
+      payload: {
+        phase: 'startup',
+        message: 'Self-improve loop starting',
+        progress: 0,
+        chunk_id: null,
+        level: 'info',
+      },
+    });
+    await flushQueuedPromises();
+
+    expect(store.activeSessionId).toMatch(/^self-improve-\d{8}-\d{6}$/);
+    expect(mockInvoke).toHaveBeenCalledWith('coding_session_append_message', {
+      sessionId: store.activeSessionId,
+      message: expect.objectContaining({
+        role: 'system',
+        content: 'startup 0%: Self-improve loop starting',
+        kind: 'run',
+      }),
+    });
+  });
+
   it('setAutostart records the new state', async () => {
     mockInvoke.mockImplementation((cmd: string, args: unknown) => {
       if (cmd === 'set_self_improve_autostart') {
@@ -268,5 +360,49 @@ describe('self-improve store', () => {
     await store.clearRunLog();
     expect(store.runs.length).toBe(0);
     expect(store.metrics.total_runs).toBe(0);
+  });
+
+  it('starts GitHub device authorization through the focused command', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'github_request_device_code') {
+        return Promise.resolve({
+          device_code: 'device-1',
+          user_code: 'ABCD-1234',
+          verification_uri: 'https://github.com/login/device',
+          expires_in: 900,
+          interval: 5,
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const store = useSelfImproveStore();
+    const response = await store.requestGitHubDeviceCode();
+
+    expect(mockInvoke).toHaveBeenCalledWith('github_request_device_code', { scopes: 'repo' });
+    expect(response.user_code).toBe('ABCD-1234');
+    expect(store.githubDeviceCode?.device_code).toBe('device-1');
+  });
+
+  it('polls GitHub device authorization and stores a successful token locally', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'github_poll_device_token') {
+        return Promise.resolve({
+          status: 'success',
+          access_token: 'gho-test',
+          token_type: 'bearer',
+          scope: 'repo',
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    const store = useSelfImproveStore();
+    const response = await store.pollGitHubDeviceToken('device-1');
+
+    expect(mockInvoke).toHaveBeenCalledWith('github_poll_device_token', { deviceCode: 'device-1' });
+    expect(response.status).toBe('success');
+    expect(store.githubConfig?.token).toBe('gho-test');
+    expect(store.githubDevicePollResult?.status).toBe('success');
   });
 });

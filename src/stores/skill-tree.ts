@@ -222,7 +222,7 @@ const SKILL_NODES: SkillNode[] = [
     id: 'free-brain',
     name: 'Awaken the Mind',
     tagline: 'Connect to a free cloud AI',
-    description: 'Uses Pollinations AI — no API key, no setup. Your companion can think and respond in real time. This is the starting point for all intelligence.',
+    description: 'Connects a free-tier LLM provider such as OpenRouter, Gemini, NVIDIA NIM, or Pollinations with your own key/token. This is the starting point for all intelligence.',
     icon: '🧠',
     tier: 'foundation',
     requires: [],

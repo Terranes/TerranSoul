@@ -17,6 +17,8 @@ export interface UserModel {
 
 export const useCharacterStore = defineStore('character', () => {
   const state = ref<CharacterState>('idle');
+  /** Intensity of the current emotion in [0, 1]. Defaults to 1. */
+  const emotionIntensity = ref(1);
   const vrmPath = ref<string | undefined>(undefined);
   const vrmMetadata = ref<VrmMetadata | undefined>(undefined);
   const loadError = ref<string | undefined>(undefined);
@@ -45,8 +47,9 @@ export const useCharacterStore = defineStore('character', () => {
       ?? userModels.value.find(m => m.id === id);
   }
 
-  function setState(newState: CharacterState) {
+  function setState(newState: CharacterState, intensity: number = 1) {
     state.value = newState;
+    emotionIntensity.value = Math.max(0, Math.min(1, intensity));
   }
 
   function setMetadata(metadata: VrmMetadata) {
@@ -179,7 +182,7 @@ export const useCharacterStore = defineStore('character', () => {
   }
 
   return {
-    state, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId,
+    state, emotionIntensity, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId,
     defaultModels, userModels, allModels,
     setState, setMetadata, setLoadError, setLoaded,
     loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender,

@@ -9,6 +9,27 @@ test-results/
 playwright-report/
 /.claude/worktrees
 
+# Headless MCP "pet mode" data dir — created by `npm run mcp`.
+# Keep the curated shared seed dataset in Git, but never commit runtime
+# secrets, SQLite DBs, indexes, locks, logs, or agent-local scratch state.
+mcp-data/*
+!mcp-data/
+!mcp-data/README.md
+!mcp-data/shared/
+!mcp-data/shared/**
+mcp-data/mcp-token.txt
+mcp-data/*.db
+mcp-data/*.db-*
+mcp-data/*.sqlite
+mcp-data/*.sqlite-*
+mcp-data/*.usearch
+mcp-data/*.log
+mcp-data/*.lock
+mcp-data/tmp/
+mcp-data/sessions/
+mcp-data/worktrees/
+.vscode/.mcp-token
+
 # Agent / dev session scratch — never commit (see rules/prompting-rules.md
 # "Clean Up Temporary Files After Each Session").
 test-output.txt

@@ -446,32 +446,41 @@ export class CharacterAnimator {
     this.vrmScene = null;
   }
 
-  setState(state: CharacterState) {
+  setState(state: CharacterState, intensity: number = 1) {
     if (this.state === state) return;
     this.blender.transitionTo(state, this.elapsed);
     this.state = state;
     this.elapsed = 0;
     this.mouthElapsed = 0;
     // Bridge to AvatarStateMachine
-    this.bridgeStateToAvatar(state);
+    this.bridgeStateToAvatar(state, intensity);
   }
 
   getState(): CharacterState {
     return this.state;
   }
 
+  /**
+   * Return the current damped expression value for a named VRM expression.
+   * Used for testing the emotion intensity pipeline.
+   */
+  getExpressionTarget(name: string): number {
+    const idx = EXPR_NAMES.indexOf(name);
+    return idx >= 0 ? this.exprTargets[idx] : 0;
+  }
+
   /** Map legacy CharacterState to body + emotion on the AvatarStateMachine. */
-  private bridgeStateToAvatar(state: CharacterState): void {
+  private bridgeStateToAvatar(state: CharacterState, intensity: number = 1): void {
     const asm = this._asm;
     switch (state) {
-      case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');   break;
-      case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');   break;
-      case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');   break;
-      case 'happy':     asm.forceBody('idle');  asm.setEmotion('happy');     break;
-      case 'sad':       asm.forceBody('idle');  asm.setEmotion('sad');       break;
-      case 'angry':     asm.forceBody('idle');  asm.setEmotion('angry');     break;
-      case 'relaxed':   asm.forceBody('idle');  asm.setEmotion('relaxed');   break;
-      case 'surprised': asm.forceBody('idle');  asm.setEmotion('surprised'); break;
+      case 'idle':      asm.forceBody('idle');  asm.setEmotion('neutral');              break;
+      case 'thinking':  asm.forceBody('think'); asm.setEmotion('neutral');              break;
+      case 'talking':   asm.forceBody('talk');  asm.setEmotion('neutral');              break;
+      case 'happy':     asm.forceBody('idle');  asm.setEmotion('happy',     intensity); break;
+      case 'sad':       asm.forceBody('idle');  asm.setEmotion('sad',       intensity); break;
+      case 'angry':     asm.forceBody('idle');  asm.setEmotion('angry',     intensity); break;
+      case 'relaxed':   asm.forceBody('idle');  asm.setEmotion('relaxed',   intensity); break;
+      case 'surprised': asm.forceBody('idle');  asm.setEmotion('surprised', intensity); break;
     }
   }
 
@@ -722,9 +731,10 @@ export class CharacterAnimator {
 
     // ── Emotion layer: base expression weights from STATE_EXPRESSIONS ──
     const stateExprs = STATE_EXPRESSIONS[this.state];
+    const intensity = this._asm.state.emotionIntensity;
     for (const [name, value] of Object.entries(stateExprs)) {
       const idx = EXPR_NAMES.indexOf(name);
-      if (idx >= 0) this.exprTargets[idx] = value;
+      if (idx >= 0) this.exprTargets[idx] = value * intensity;
     }
 
     // ── Viseme layer: read from AvatarState mutable ref ───────────────

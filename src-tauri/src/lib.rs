@@ -1,3 +1,5 @@
+#![deny(unused_must_use)]
+
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -30,6 +32,7 @@ pub mod sandbox;
 pub mod settings;
 pub mod sync;
 pub mod tasks;
+pub mod teachable_capabilities;
 pub mod voice;
 pub mod vscode_workspace;
 pub mod workflows;
@@ -57,8 +60,29 @@ use commands::{
     },
     character::load_vrm,
     chat::{export_chat_log, get_conversation, send_message},
-    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
-    crag::crag_retrieve,
+    coding::{
+        clear_self_improve_log, coding_session_clear_handoff, coding_session_list_handoffs,
+        coding_session_load_handoff, coding_session_save_handoff, code_call_graph,
+        code_compute_processes, code_generate_wiki, code_index_repo, code_list_clusters,
+        code_list_processes,
+        code_resolve_edges,
+        detect_self_improve_repo,
+        get_coding_llm_config, get_coding_workflow_config, get_github_config,
+        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
+        get_self_improve_status, learn_from_user_message, list_coding_llm_recommendations,
+        list_local_coding_models, list_self_improve_worktrees, open_self_improve_pr,
+        preview_coding_workflow_context, pull_main_for_self_improve,
+        reset_coding_workflow_config, run_coding_task, set_coding_llm_config,
+        set_coding_workflow_config, set_github_config, set_self_improve_autostart,
+        set_self_improve_enabled, set_self_improve_worktree_dir, start_self_improve,
+        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
+    },
+    coding_sessions::{
+        coding_session_append_message, coding_session_clear_chat, coding_session_fork,
+        coding_session_list, coding_session_load_chat, coding_session_purge,
+        coding_session_rename,
+    },
+    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},    crag::crag_retrieve,
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
@@ -70,6 +94,7 @@ use commands::{
         gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
         gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
+    github_auth::{github_poll_device_token, github_request_device_code},
     grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -84,7 +109,10 @@ use commands::{
         apply_memory_deltas, connect_to_peer, disconnect_link, get_link_status, get_memory_deltas,
         start_link_server, sync_memories_with_peer,
     },
-    mcp::{mcp_regenerate_token, mcp_server_start, mcp_server_status, mcp_server_stop},
+    mcp::{
+        get_mcp_activity, mcp_regenerate_token, mcp_server_start, mcp_server_status,
+        mcp_server_stop,
+    },
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
@@ -153,9 +181,25 @@ use commands::{
     vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
     window::{
         close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build,
-        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
-        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
-        toggle_window_mode,
+        is_mcp_mode, open_panel_window, set_cursor_passthrough, set_pet_mode_bounds,
+        set_pet_window_size, set_window_mode, start_pet_cursor_poll, start_window_drag,
+        stop_pet_cursor_poll, toggle_window_mode,
+    },
+    workflow_plans::{
+        workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
+        workflow_plan_delete, workflow_plan_list, workflow_plan_load,
+        workflow_plan_override_llm, workflow_plan_save, workflow_plan_update_step,
+        workflow_plan_validate,
+    },
+    charisma::{
+        charisma_delete, charisma_list, charisma_promote, charisma_rate_turn,
+        charisma_record_usage, charisma_set_rating, charisma_summary,
+    },
+    teachable_capabilities::{
+        teachable_capabilities_list, teachable_capabilities_promote,
+        teachable_capabilities_record_usage, teachable_capabilities_reset,
+        teachable_capabilities_set_config, teachable_capabilities_set_enabled,
+        teachable_capabilities_set_rating, teachable_capabilities_summary,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -244,6 +288,16 @@ pub struct AppStateInner {
     pub activity_tracker: memory::consolidation::ActivityTracker,
     /// Obsidian bidirectional sync watcher (Chunk 17.7). `None` when not watching.
     pub obsidian_watcher: TokioMutex<Option<memory::obsidian_sync::ObsidianWatcher>>,
+    /// Last MCP activity snapshot shown/spoken in MCP app mode.
+    pub mcp_activity: Mutex<ai_integrations::mcp::activity::McpActivitySnapshot>,
+    /// Configured coding LLM for self-improve mode (Chunk 25).
+    pub coding_llm_config: Mutex<Option<coding::CodingLlmConfig>>,
+    /// Self-improve settings (enabled flag, worktree dir, etc.).
+    pub self_improve: Mutex<coding::SelfImproveSettings>,
+    /// Autonomous self-improve engine handle.
+    pub self_improve_engine: Arc<coding::engine::SelfImproveEngine>,
+    /// Coding workflow configuration (context injection, target paths, etc.).
+    pub coding_workflow_config: Mutex<coding::CodingWorkflowConfig>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -316,6 +370,13 @@ impl AppState {
             plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
             obsidian_watcher: TokioMutex::new(None),
+            mcp_activity: Mutex::new(
+                ai_integrations::mcp::activity::McpActivitySnapshot::default(),
+            ),
+            coding_llm_config: Mutex::new(coding::load_coding_llm(data_dir)),
+            self_improve: Mutex::new(coding::load_self_improve(data_dir)),
+            self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
+            coding_workflow_config: Mutex::new(coding::load_coding_workflow_config(data_dir)),
         }))
     }
 
@@ -367,6 +428,13 @@ impl AppState {
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
             obsidian_watcher: TokioMutex::new(None),
+            mcp_activity: Mutex::new(
+                ai_integrations::mcp::activity::McpActivitySnapshot::default(),
+            ),
+            coding_llm_config: Mutex::new(None),
+            self_improve: Mutex::new(coding::SelfImproveSettings::default()),
+            self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
+            coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
         }))
     }
 }
@@ -402,8 +470,42 @@ fn resolve_data_dir_for_cli() -> PathBuf {
 /// stdin reaches EOF.
 ///
 /// Triggered by `terransoul --mcp-stdio` from `main.rs`. See Chunk 15.9.
+///
+/// Honors `TERRANSOUL_MCP_DATA_DIR` so VS Code (and other agents) can
+/// launch a repo-local stdio brain via `.vscode/mcp.json` without
+/// touching the user's companion data dir. When the override is set,
+/// pet mode is enabled so `serverInfo.name` advertises
+/// `terransoul-brain-mcp`.
 pub fn run_stdio() -> std::io::Result<()> {
-    let data_dir = resolve_data_dir_for_cli();
+    let (data_dir, repo_local) = if let Ok(p) = std::env::var("TERRANSOUL_MCP_DATA_DIR") {
+        let trimmed = p.trim();
+        if trimmed.is_empty() {
+            (resolve_data_dir_for_cli(), false)
+        } else {
+            (PathBuf::from(trimmed), true)
+        }
+    } else {
+        (resolve_data_dir_for_cli(), false)
+    };
+
+    if repo_local {
+        // Pet-mode stdio launches honor the same release > dev > mcp
+        // priority as `--mcp-http`. If the app is already running, we
+        // emit a clear stderr message and exit cleanly so VS Code (or
+        // any stdio MCP host) surfaces the reason instead of opening a
+        // duplicate brain on a stale repo-local data dir.
+        if let Some(label) = detect_running_terransoul_mcp() {
+            eprintln!(
+                "[mcp-stdio] TerranSoul {label} build is already serving MCP — \
+                 refusing to start pet-mode stdio. Use the running app's MCP \
+                 entry instead."
+            );
+            return Ok(());
+        }
+        let _ = std::fs::create_dir_all(&data_dir);
+        ai_integrations::mcp::enable_mcp_pet_mode();
+    }
+
     eprintln!("[mcp-stdio] data dir: {}", data_dir.display());
 
     let state = AppState::new(&data_dir);
@@ -413,6 +515,469 @@ pub fn run_stdio() -> std::io::Result<()> {
         .build()?;
 
     runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
+}
+
+/// Default port used by the headless `--mcp-http` runtime.
+///
+/// Chosen so it does not collide with the in-app servers (release =
+/// `7421`, dev `cargo tauri dev` = `7422`). External agents (Copilot,
+/// Codex, Claude Code, Clawcode, etc.) launch this via `npm run mcp`
+/// without conflicting with a running app.
+pub const HEADLESS_MCP_PORT: u16 = 7423;
+
+/// Resolve the data directory for the headless `--mcp-http` runtime.
+///
+/// The headless server is meant for repo-local agent sessions, so it
+/// keeps state in `<cwd>/mcp-data/` by default — distinct from the
+/// per-OS app-data dir that the GUI/stdio modes use, so a
+/// `npm run mcp` session never touches the user's persistent companion
+/// state.
+///
+/// Override with the `TERRANSOUL_MCP_DATA_DIR` env var when needed.
+fn resolve_headless_mcp_data_dir() -> PathBuf {
+    if let Ok(p) = std::env::var("TERRANSOUL_MCP_DATA_DIR") {
+        let trimmed = p.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    cwd.join("mcp-data")
+}
+
+/// Read `TERRANSOUL_MCP_PORT`, falling back to [`HEADLESS_MCP_PORT`].
+fn resolve_headless_mcp_port() -> u16 {
+    std::env::var("TERRANSOUL_MCP_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(HEADLESS_MCP_PORT)
+}
+
+/// Load a shared MCP seed file from `<data_dir>/shared/`, falling back to the
+/// compiled-in repository default when the runtime shared dataset is absent.
+fn load_mcp_seed_text(data_dir: &std::path::Path, file_name: &str, fallback: &str) -> String {
+    let shared_path = data_dir.join("shared").join(file_name);
+    std::fs::read_to_string(shared_path).unwrap_or_else(|_| fallback.to_string())
+}
+
+/// Apply seed data to a fresh `mcp-data/` directory.
+///
+/// On **first run** (no existing `memory.db`), this function:
+/// 1. Copies `brain_config.json` and `app_settings.json` from the committed
+///    `mcp-data/shared/` dataset (or compiled fallback) into `data_dir`.
+/// 2. Creates `memory.db` with the canonical schema and executes the
+///    seed SQL to pre-populate TerranSoul knowledge.
+///
+/// Returns `true` when the seed SQL was applied successfully, so callers can
+/// trigger first-run maintenance (embedding backfill, edge scans) exactly once.
+///
+/// If `memory.db` already exists, this function is a no-op and returns `false`.
+fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
+    let db_path = data_dir.join("memory.db");
+    if db_path.exists() {
+        return false; // Not first run — never overwrite existing data
+    }
+
+    eprintln!("[mcp-http] first run detected — applying seed data");
+
+    // Write config files (only if missing)
+    let brain_cfg_path = data_dir.join("brain_config.json");
+    if !brain_cfg_path.exists() {
+        let seed_brain_cfg = load_mcp_seed_text(
+            data_dir,
+            "brain_config.json",
+            include_str!("../../mcp-data/shared/brain_config.json"),
+        );
+        if let Err(e) = std::fs::write(&brain_cfg_path, seed_brain_cfg) {
+            eprintln!("[mcp-http] warning: failed to write seed brain_config.json: {e}");
+        }
+    }
+
+    let app_cfg_path = data_dir.join("app_settings.json");
+    if !app_cfg_path.exists() {
+        let seed_app_cfg = load_mcp_seed_text(
+            data_dir,
+            "app_settings.json",
+            include_str!("../../mcp-data/shared/app_settings.json"),
+        );
+        if let Err(e) = std::fs::write(&app_cfg_path, seed_app_cfg) {
+            eprintln!("[mcp-http] warning: failed to write seed app_settings.json: {e}");
+        }
+    }
+
+    // Create memory.db with schema + seed data
+    match rusqlite::Connection::open(&db_path) {
+        Ok(conn) => {
+            if let Err(e) = memory::schema::create_canonical_schema(&conn) {
+                eprintln!("[mcp-http] warning: failed to initialize schema: {e}");
+                return false;
+            }
+            let seed_sql = load_mcp_seed_text(
+                data_dir,
+                "memory-seed.sql",
+                include_str!("../../mcp-data/shared/memory-seed.sql"),
+            );
+            if let Err(e) = conn.execute_batch(&seed_sql) {
+                eprintln!("[mcp-http] warning: failed to apply memory-seed.sql: {e}");
+                false
+            } else {
+                eprintln!("[mcp-http] seed data applied successfully");
+                true
+            }
+        }
+        Err(e) => {
+            eprintln!("[mcp-http] warning: failed to open memory.db for seeding: {e}");
+            false
+        }
+    }
+}
+
+/// Backfill vectors for first-run MCP seed rows after the brain config has been
+/// loaded into [`AppState`]. This makes the SQLite + HNSW vector path active
+/// before the first MCP agent query whenever the configured brain exposes an
+/// embedding endpoint. Providers without embeddings simply leave rows queued
+/// for the deterministic fallback planned in Chunk 33.2.
+async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
+    let unembedded = {
+        let store = match state.memory_store.lock() {
+            Ok(store) => store,
+            Err(e) => {
+                eprintln!("[mcp-http] mcp-seed-embedded failed to lock store: {e}");
+                return 0;
+            }
+        };
+        match store.unembedded_ids() {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("[mcp-http] mcp-seed-embedded failed to list rows: {e}");
+                return 0;
+            }
+        }
+    };
+
+    if unembedded.is_empty() {
+        eprintln!("[mcp-http] mcp-seed-embedded count=0 remaining=0");
+        return 0;
+    }
+
+    let (brain_mode, active_brain) = (
+        state.brain_mode.lock().ok().and_then(|g| g.clone()),
+        state.active_brain.lock().ok().and_then(|g| g.clone()),
+    );
+
+    if brain_mode.is_none() && active_brain.is_none() {
+        eprintln!(
+            "[mcp-http] mcp-seed-embedded skipped: no embedding-capable brain configured"
+        );
+        return 0;
+    }
+
+    let mut count = 0usize;
+    let mut offline_count = 0usize;
+    for (id, content) in &unembedded {
+        let (embedding, used_offline) =
+            match brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref()).await
+            {
+                Some(embedding) => (Some(embedding), false),
+                None if ai_integrations::mcp::is_mcp_pet_mode() => {
+                    (memory::offline_embed::embed_text(content), true)
+                }
+                None => (None, false),
+            };
+        if let Some(embedding) = embedding {
+            let store = match state.memory_store.lock() {
+                Ok(store) => store,
+                Err(e) => {
+                    eprintln!("[mcp-http] mcp-seed-embedded stopped: store lock failed: {e}");
+                    break;
+                }
+            };
+            if store.set_embedding(*id, &embedding).is_ok() {
+                count += 1;
+                if used_offline {
+                    offline_count += 1;
+                }
+            }
+        }
+    }
+
+    let remaining = unembedded.len().saturating_sub(count);
+    eprintln!(
+        "[mcp-http] mcp-seed-embedded count={count} offline={offline_count} remaining={remaining}"
+    );
+    count
+}
+
+/// Probe the canonical TerranSoul MCP HTTP ports (release 7421, dev
+/// 7422) to see if the user already has a brain server running.
+///
+/// Priority order is **release > dev > mcp**: if either of the
+/// app-owned ports answers, the headless runner refuses to start so a
+/// `npm run mcp` invocation never shadows a running app. Returns the
+/// label of the first port that answers, or `None` when neither is up.
+///
+/// **Service-name verification** — relying on an open port alone is
+/// unreliable (any process can squat on 7421/7422). We therefore
+/// follow up the TCP probe with an unauthenticated MCP `initialize`
+/// JSON-RPC call. The response is **always** delivered (the MCP
+/// dispatch layer answers `initialize` before checking the bearer
+/// token, by spec — see `router::dispatch_method`), so we can read
+/// `serverInfo.name` and confirm we are talking to TerranSoul before
+/// refusing to start. If the probe answers but the handshake doesn't
+/// look like TerranSoul, we treat the port as a foreign tenant and
+/// continue startup on `7423` instead of refusing.
+fn detect_running_terransoul_mcp() -> Option<&'static str> {
+    let release = ai_integrations::mcp::DEFAULT_PORT;
+    let dev = ai_integrations::mcp::DEFAULT_DEV_PORT;
+    if probe_terransoul_on(release) {
+        Some("release")
+    } else if probe_terransoul_on(dev) {
+        Some("dev")
+    } else {
+        None
+    }
+}
+
+/// Confirm a TerranSoul MCP server is bound to `127.0.0.1:<port>` by
+/// (1) opening a TCP connection and (2) issuing the unauthenticated
+/// MCP `initialize` handshake, then checking that
+/// `serverInfo.name` starts with `terransoul-brain`.
+fn probe_terransoul_on(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(250)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+
+    // Minimal JSON-RPC initialize. Auth is not required for
+    // initialize per the MCP spec, and our router answers it before
+    // running the bearer check (see router::dispatch_method).
+    let body = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+    let req = format!(
+        "POST /mcp HTTP/1.1\r\n\
+         Host: 127.0.0.1:{port}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {len}\r\n\
+         Connection: close\r\n\
+         \r\n",
+        len = body.len()
+    );
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    if stream.write_all(body).is_err() {
+        return false;
+    }
+
+    let mut buf = Vec::with_capacity(2048);
+    let mut chunk = [0u8; 1024];
+    let deadline = std::time::Instant::now() + Duration::from_millis(750);
+    loop {
+        if buf.len() > 16 * 1024 {
+            break; // hard cap; server name lives near the top
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&buf);
+    // We don't need to parse the full HTTP response; the JSON
+    // payload is in the body and contains the marker we care about.
+    text.contains("\"name\"")
+        && (text.contains("\"terransoul-brain\"")
+            || text.contains("\"terransoul-brain-dev\"")
+            || text.contains("\"terransoul-brain-mcp\""))
+}
+
+/// Run the `--mcp-setup` CLI subcommand.
+///
+/// Detects AI coding editor config directories (`.vscode/`, `~/.cursor/`,
+/// `~/.codex/`, `~/.claude/`, `~/.config/opencode/`) and writes the
+/// MCP server entry pointing at the headless MCP HTTP server.
+///
+/// Generates a token if one doesn't exist yet, then writes configs.
+pub fn run_mcp_setup() -> std::io::Result<()> {
+    let data_dir = resolve_headless_mcp_data_dir();
+    let port = resolve_headless_mcp_port();
+
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        eprintln!("[mcp-setup] failed to create data dir: {e}");
+        return Err(e);
+    }
+
+    // Load or create the bearer token
+    let token = match ai_integrations::mcp::auth::load_or_create(&data_dir) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[mcp-setup] failed to load/create token: {e}");
+            return Err(std::io::Error::other(e));
+        }
+    };
+
+    let url = format!("http://127.0.0.1:{port}/mcp");
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    eprintln!("[mcp-setup] MCP URL: {url}");
+    eprintln!("[mcp-setup] token: {token}");
+    eprintln!("[mcp-setup] scanning for editor configs...\n");
+
+    let results = ai_integrations::mcp::auto_setup::setup_all_clients(&cwd, &url, &token);
+
+    if results.is_empty() {
+        eprintln!("[mcp-setup] no supported editor config directories found.");
+        eprintln!("[mcp-setup] checked: .vscode/, ~/.cursor/, ~/.codex/, ~/.claude/, ~/.config/opencode/");
+        eprintln!("\n[mcp-setup] hint: run this from your project root, or create the config directories first.");
+    } else {
+        for result in &results {
+            let status = if result.success { "✓" } else { "✗" };
+            eprintln!("  {status} {}", result.message);
+            eprintln!("    → {}", result.config_path);
+        }
+        let success_count = results.iter().filter(|r| r.success).count();
+        eprintln!(
+            "\n[mcp-setup] done — {success_count}/{} configs written.",
+            results.len()
+        );
+    }
+
+    eprintln!("\n[mcp-setup] next step: run `npm run mcp` to start the server.");
+    Ok(())
+}
+
+/// Run TerranSoul as a headless MCP **HTTP** server.
+///
+/// This mode does **not** launch Tauri or the WebView; it only spins up
+/// the brain/memory/RAG/gitnexus surface needed to serve MCP tool calls
+/// to external AI coding agents over JSON-RPC on
+/// `http://127.0.0.1:<port>/mcp`.
+///
+/// On startup it prints the bound URL, the bearer token (also persisted
+/// to `<data_dir>/mcp-token.txt`), and blocks until Ctrl+C.
+///
+/// Triggered by `terransoul --mcp-http` from `main.rs`, which is the
+/// binary `npm run mcp` invokes.
+pub fn run_http_server() -> std::io::Result<()> {
+    // Priority: release > dev > mcp. If the user already has the app
+    // running with its MCP HTTP server bound, refuse to start so we
+    // never shadow live companion state with a stale headless brain.
+    if let Some(label) = detect_running_terransoul_mcp() {
+        let port = if label == "release" {
+            ai_integrations::mcp::DEFAULT_PORT
+        } else {
+            ai_integrations::mcp::DEFAULT_DEV_PORT
+        };
+        eprintln!(
+            "[mcp-http] TerranSoul {label} build is already serving MCP on \
+             127.0.0.1:{port} — refusing to start headless pet mode."
+        );
+        eprintln!(
+            "[mcp-http] Use the running app's MCP server instead, or stop \
+             the app and re-run `npm run mcp`."
+        );
+        return Ok(());
+    }
+
+    let data_dir = resolve_headless_mcp_data_dir();
+    let port = resolve_headless_mcp_port();
+
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        eprintln!(
+            "[mcp-http] failed to create data dir {}: {e}",
+            data_dir.display()
+        );
+        return Err(e);
+    }
+
+    // Apply seed data on first run (no existing memory.db)
+    let seeded_mcp_data = seed_mcp_data(&data_dir);
+
+    // Mark this process as MCP pet mode so the JSON-RPC initialize
+    // handshake and `/status` endpoint advertise `buildMode: "mcp"`.
+    ai_integrations::mcp::enable_mcp_pet_mode();
+
+    eprintln!("[mcp-http] data dir: {}", data_dir.display());
+
+    let state = AppState::new(&data_dir);
+    let token = match ai_integrations::mcp::auth::load_or_create(&data_dir) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[mcp-http] failed to load/create token: {e}");
+            return Err(std::io::Error::other(e));
+        }
+    };
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(async move {
+        // Auto-configure brain if not yet set up (Ollama → free API fallback)
+        brain::mcp_auto_config::auto_configure_mcp_brain(&data_dir).await;
+        brain::mcp_auto_config::apply_config_to_state(&state, &data_dir);
+        if seeded_mcp_data {
+            backfill_mcp_seed_embeddings(&state).await;
+        }
+
+        match ai_integrations::mcp::start_server(state, port, token.clone(), false).await {
+            Ok(handle) => {
+                eprintln!(
+                    "[mcp-http] listening on http://127.0.0.1:{} (POST /mcp)",
+                    handle.port
+                );
+                eprintln!("[mcp-http] bearer token: {token}");
+                eprintln!(
+                    "[mcp-http] health check: GET http://127.0.0.1:{}/health (no auth)",
+                    handle.port
+                );
+
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                match write_mcp_token_file(&cwd, &token) {
+                    Ok(token_file) => {
+                        eprintln!("[mcp-http] token written to {}", token_file.display())
+                    }
+                    Err(e) => {
+                        eprintln!("[mcp-http] warning: failed to write .vscode/.mcp-token: {e}")
+                    }
+                }
+
+                eprintln!("[mcp-http] press Ctrl+C to stop");
+                if let Err(e) = tokio::signal::ctrl_c().await {
+                    eprintln!("[mcp-http] ctrl_c listener error: {e}");
+                }
+                eprintln!("[mcp-http] shutting down");
+                handle.stop();
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("[mcp-http] failed to start: {e}");
+                Err(std::io::Error::other(e))
+            }
+        }
+    })
+}
+
+fn write_mcp_token_file(
+    workspace_root: &std::path::Path,
+    token: &str,
+) -> std::io::Result<PathBuf> {
+    let vscode_dir = workspace_root.join(".vscode");
+    std::fs::create_dir_all(&vscode_dir)?;
+    let token_file = vscode_dir.join(".mcp-token");
+    std::fs::write(&token_file, token)?;
+    Ok(token_file)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -556,6 +1121,7 @@ pub fn run() {
             stop_pet_cursor_poll,
             exit_app,
             is_dev_build,
+            is_mcp_mode,
             open_panel_window,
             close_panel_window,
             send_message_stream,
@@ -675,6 +1241,7 @@ pub fn run() {
             mcp_server_stop,
             mcp_server_status,
             mcp_regenerate_token,
+            get_mcp_activity,
             // gRPC Brain server — Chunk 24.3 (Phase 24)
             grpc_server_start,
             grpc_server_stop,
@@ -695,6 +1262,85 @@ pub fn run() {
             run_sleep_consolidation,
             touch_activity,
             get_idle_status,
+            // Self-improve engine commands (Chunk 25)
+            list_coding_llm_recommendations,
+            get_coding_llm_config,
+            set_coding_llm_config,
+            get_self_improve_settings,
+            set_self_improve_enabled,
+            set_self_improve_worktree_dir,
+            detect_self_improve_repo,
+            suggest_self_improve_branch,
+            get_self_improve_status,
+            start_self_improve,
+            stop_self_improve,
+            set_self_improve_autostart,
+            get_self_improve_metrics,
+            get_self_improve_runs,
+            clear_self_improve_log,
+            test_coding_llm_connection,
+            list_local_coding_models,
+            get_coding_workflow_config,
+            set_coding_workflow_config,
+            reset_coding_workflow_config,
+            preview_coding_workflow_context,
+            list_self_improve_worktrees,
+            code_index_repo,
+            code_resolve_edges,
+            code_call_graph,
+            code_compute_processes,
+            code_list_clusters,
+            code_list_processes,
+            code_generate_wiki,
+            get_github_config,
+            set_github_config,
+            open_self_improve_pr,
+            pull_main_for_self_improve,
+            learn_from_user_message,
+            run_coding_task,
+            coding_session_save_handoff,
+            coding_session_load_handoff,
+            coding_session_list_handoffs,
+            coding_session_clear_handoff,
+            // Self-improve coding sessions (Chunk 30.2)
+            coding_session_list,
+            coding_session_append_message,
+            coding_session_load_chat,
+            coding_session_clear_chat,
+            coding_session_rename,
+            coding_session_fork,
+            coding_session_purge,
+            // Multi-agent workflow plans + calendar (Chunk 30.3)
+            workflow_plan_list,
+            workflow_plan_load,
+            workflow_plan_save,
+            workflow_plan_delete,
+            workflow_plan_create_blank,
+            workflow_plan_validate,
+            workflow_plan_update_step,
+            workflow_plan_override_llm,
+            workflow_calendar_events,
+            workflow_agent_recommendations,
+            // Charisma teaching system (Chunk 30.4)
+            charisma_list,
+            charisma_rate_turn,
+            charisma_record_usage,
+            charisma_set_rating,
+            charisma_delete,
+            charisma_promote,
+            charisma_summary,
+            // Teachable configurable capabilities (Chunk 30.5)
+            teachable_capabilities_list,
+            teachable_capabilities_set_enabled,
+            teachable_capabilities_set_config,
+            teachable_capabilities_record_usage,
+            teachable_capabilities_set_rating,
+            teachable_capabilities_reset,
+            teachable_capabilities_promote,
+            teachable_capabilities_summary,
+            // GitHub browser authorization for self-improve mode
+            github_request_device_code,
+            github_poll_device_token,
             // CRAG retrieval (Chunk 16.5b)
             crag_retrieve,
             // VS Code workspace surfacing — Chunk 15.10 (Phase 15)
@@ -732,10 +1378,30 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
-            // In dev builds, use a separate data directory so dev never
-            // touches release data.  Wipe it on every launch to guarantee
-            // a fresh-install experience.
-            let data_dir = if cfg!(debug_assertions) {
+            // MCP mode (`npm run mcp` / `--mcp-app`) takes priority over
+            // dev/release: persist in `<repo>/mcp-data/` so the runtime
+            // never touches the user's companion data dir, and flip the
+            // pet-mode flag so the MCP server / frontend report "mcp"
+            // instead of "dev" / "release".
+            let mcp_app_mode = std::env::var("TERRANSOUL_MCP_APP_MODE")
+                .map(|v| v == "1")
+                .unwrap_or(false);
+            let data_dir = if mcp_app_mode {
+                ai_integrations::mcp::enable_mcp_pet_mode();
+                let mcp_dir = std::env::var("TERRANSOUL_MCP_DATA_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| {
+                        std::env::current_dir()
+                            .unwrap_or_else(|_| PathBuf::from("."))
+                            .join("mcp-data")
+                    });
+                std::fs::create_dir_all(&mcp_dir)
+                    .expect("failed to create MCP data directory");
+                mcp_dir
+            } else if cfg!(debug_assertions) {
+                // In dev builds, use a separate data directory so dev never
+                // touches release data.  Wipe it on every launch to guarantee
+                // a fresh-install experience.
                 let dev_dir = base_data_dir.join("dev");
                 if dev_dir.exists() {
                     let _ = std::fs::remove_dir_all(&dev_dir);
@@ -748,6 +1414,55 @@ pub fn run() {
 
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
+
+            // Auto-start the MCP HTTP server on the headless port (7423)
+            // when running in MCP mode so external coding agents can talk
+            // to the live app without the user clicking through the
+            // Control Panel.
+            if mcp_app_mode {
+                let app_state_inner = state.inner().clone();
+                let mcp_data_dir = data_dir.clone();
+                let app_handle = app.handle().clone();
+                ai_integrations::mcp::activity::McpActivityReporter::new(
+                    app_state_inner.clone(),
+                    Some(app_handle.clone()),
+                )
+                .startup("Auto-configuring the MCP brain.".to_string());
+                tauri::async_runtime::spawn(async move {
+                    // Auto-configure brain if not yet set up
+                    brain::mcp_auto_config::auto_configure_mcp_brain(&mcp_data_dir).await;
+                    brain::mcp_auto_config::apply_config_to_state(&app_state_inner, &mcp_data_dir);
+
+                    let token = match ai_integrations::mcp::auth::load_or_create(&mcp_data_dir) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("[mcp-app] failed to load/create token: {e}");
+                            return;
+                        }
+                    };
+                    match ai_integrations::mcp::start_server_with_activity(
+                        app_state_inner.clone(),
+                        HEADLESS_MCP_PORT,
+                        token.clone(),
+                        false,
+                        Some(app_handle),
+                    )
+                    .await
+                    {
+                        Ok(handle) => {
+                            eprintln!(
+                                "[mcp-app] MCP server listening on http://127.0.0.1:{} (POST /mcp)",
+                                handle.port
+                            );
+                            eprintln!("[mcp-app] bearer token: {token}");
+                            // Park the handle on AppState so the UI's
+                            // existing controls (status/stop) work.
+                            *app_state_inner.mcp_server.lock().await = Some(handle);
+                        }
+                        Err(e) => eprintln!("[mcp-app] failed to start MCP server: {e}"),
+                    }
+                });
+            }
 
             let identity = load_or_generate_identity(&data_dir)
                 .unwrap_or_else(|_| identity::DeviceIdentity::generate());
@@ -849,4 +1564,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod mcp_seed_tests {
+    use super::{load_mcp_seed_text, seed_mcp_data};
+
+    #[test]
+    fn load_mcp_seed_text_prefers_tracked_shared_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let shared = tmp.path().join("shared");
+        std::fs::create_dir_all(&shared).expect("shared dir");
+        std::fs::write(shared.join("memory-seed.sql"), "-- shared seed").expect("write seed");
+
+        let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
+
+        assert_eq!(loaded, "-- shared seed");
+    }
+
+    #[test]
+    fn load_mcp_seed_text_falls_back_when_shared_file_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+
+        let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
+
+        assert_eq!(loaded, "-- fallback seed");
+    }
+
+    #[test]
+    fn seed_mcp_data_reports_first_run_only() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+
+        assert!(seed_mcp_data(tmp.path()));
+        assert!(!seed_mcp_data(tmp.path()));
+        assert!(tmp.path().join("memory.db").exists());
+    }
 }

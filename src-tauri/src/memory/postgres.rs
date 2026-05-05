@@ -1,7 +1,7 @@
 //! PostgreSQL storage backend — for distributed/multi-device deployments.
 //!
 //! Uses `sqlx` with the `postgres` feature. Requires a PostgreSQL 14+ server
-//! with the `pgvector` extension for native vector similarity search.
+//! and relies on the shared in-process vector path for similarity search.
 //!
 //! Connection string format:
 //! ```text
@@ -16,7 +16,7 @@
 //! - `SERIAL` instead of `AUTOINCREMENT`
 //! - `BYTEA` for embedding blobs
 //! - `BIGINT` for timestamps
-//! - Optional `vector(768)` column via pgvector for native ANN search
+//! - Embedding payloads stored alongside metadata for portable retrieval
 
 #![cfg(feature = "postgres")]
 
@@ -508,8 +508,8 @@ impl StorageBackend for PostgresBackend {
         query_embedding: &[f32],
         limit: usize,
     ) -> StorageResult<Vec<MemoryEntry>> {
-        // Load all embeddings and do in-process cosine similarity
-        // (pgvector native search can be added as an optimization)
+        // Load all embeddings and do in-process cosine similarity.
+        // Native vector indexes can be added later as an optimization.
         let all = self.get_with_embeddings()?;
         let mut scored: Vec<(f64, MemoryEntry)> = all
             .into_iter()
@@ -737,5 +737,5 @@ impl StorageBackend for PostgresBackend {
     }
     fn supports_native_vector_search(&self) -> bool {
         false
-    } // pgvector upgrade path exists
+    }
 }

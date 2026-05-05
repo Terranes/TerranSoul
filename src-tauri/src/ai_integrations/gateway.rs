@@ -457,6 +457,50 @@ impl AppStateGateway {
             .clone())
     }
 
+    fn brain_mode(&self) -> Result<Option<crate::brain::BrainMode>, GatewayError> {
+        Ok(self
+            .state
+            .brain_mode
+            .lock()
+            .map_err(GatewayError::from_lock)?
+            .clone())
+    }
+
+    async fn query_embedding(
+        &self,
+        mode: SearchMode,
+        query: &str,
+        model_opt: Option<&str>,
+        brain_mode: Option<&crate::brain::BrainMode>,
+    ) -> Option<Vec<f32>> {
+        let online = match mode {
+            SearchMode::Hybrid => None,
+            SearchMode::Rrf => crate::brain::embed_for_mode(query, brain_mode, model_opt).await,
+            SearchMode::Hyde => {
+                let text = if let Some(model) = model_opt {
+                    let agent = OllamaAgent::new(model);
+                    agent
+                        .hyde_complete(query)
+                        .await
+                        .unwrap_or_else(|| query.to_string())
+                } else {
+                    query.to_string()
+                };
+                crate::brain::embed_for_mode(&text, brain_mode, model_opt).await
+            }
+        };
+
+        if online.is_some() || mode == SearchMode::Hybrid {
+            return online;
+        }
+
+        if crate::ai_integrations::mcp::is_mcp_pet_mode() {
+            crate::memory::offline_embed::embed_text(query)
+        } else {
+            None
+        }
+    }
+
     /// Hex-encoded SHA-256 fingerprint over the resolved hit ids + the
     /// active brain identifier. The contract for VS Code Copilot's
     /// warm-cache pact (Chunk 15.7).
@@ -492,16 +536,15 @@ impl BrainGateway for AppStateGateway {
 
         // Step 1: optionally compute the query embedding (HyDE expands first).
         let model_opt = self.active_brain()?;
-        let query_emb = match (req.mode, model_opt.as_ref()) {
-            (SearchMode::Hybrid, _) | (_, None) => None,
-            (SearchMode::Rrf, Some(model)) => OllamaAgent::embed_text(&req.query, model).await,
-            (SearchMode::Hyde, Some(model)) => {
-                let agent = OllamaAgent::new(model);
-                let hypothetical = agent.hyde_complete(&req.query).await;
-                let text = hypothetical.as_deref().unwrap_or(req.query.as_str());
-                OllamaAgent::embed_text(text, model).await
-            }
-        };
+        let brain_mode = self.brain_mode()?;
+        let query_emb = self
+            .query_embedding(
+                req.mode,
+                &req.query,
+                model_opt.as_deref(),
+                brain_mode.as_ref(),
+            )
+            .await;
 
         // Step 2: dispatch to the right store method.
         let store = self
@@ -950,6 +993,29 @@ mod tests {
         state
     }
 
+    fn seed_state_from_shared_mcp_seed() -> AppState {
+        let state = AppState::for_test();
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .conn()
+                .execute_batch(include_str!("../../../mcp-data/shared/memory-seed.sql"))
+                .expect("shared MCP seed SQL should apply to canonical in-memory schema");
+        }
+        state
+    }
+
+    fn memory_id_containing(state: &AppState, needle: &str) -> i64 {
+        let store = state.memory_store.lock().unwrap();
+        store
+            .get_all()
+            .expect("memory list should load")
+            .into_iter()
+            .find(|entry| entry.content.contains(needle))
+            .unwrap_or_else(|| panic!("missing seeded memory containing {needle:?}"))
+            .id
+    }
+
     #[tokio::test]
     async fn read_op_requires_brain_read_capability() {
         let gw = AppStateGateway::new(seed_state());
@@ -1144,6 +1210,57 @@ mod tests {
             .unwrap();
         assert_eq!(nb.center.id, id);
         assert!(nb.truncated, "depth > 1 must report truncation");
+    }
+
+    #[tokio::test]
+    async fn kg_neighbors_reads_shared_seed_lesson_hub_edges() {
+        let state = seed_state_from_shared_mcp_seed();
+        let lesson_id = memory_id_containing(&state, "LESSON: The MCP seed");
+        let lessons_hub_id = memory_id_containing(
+            &state,
+            "mcp-data/shared/lessons-learned.md captures durable",
+        );
+        let stack_anchor_id =
+            memory_id_containing(&state, "STACK COVERAGE: the mcp-data seed exercises");
+
+        let gw = AppStateGateway::new(state.clone());
+        let nb = gw
+            .kg_neighbors(
+                &GatewayCaps::default(),
+                KgRequest {
+                    id: lesson_id,
+                    depth: 1,
+                    direction: "both".into(),
+                },
+            )
+            .await
+            .expect("seeded lesson should have KG neighbours");
+
+        assert_eq!(nb.center.id, lesson_id);
+        assert!(
+            nb.neighbors.iter().any(|neighbor| {
+                neighbor.edge.rel_type == "part_of"
+                    && neighbor.edge.dst_id == lessons_hub_id
+                    && neighbor
+                        .entry
+                        .as_ref()
+                        .is_some_and(|entry| entry.id == lessons_hub_id)
+            }),
+            "LESSON rows should be wired part_of the lessons-learned hub"
+        );
+
+        let two_hop = {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .traverse_from(lesson_id, 2, None)
+                .expect("seed graph should support two-hop traversal")
+        };
+        assert!(
+            two_hop
+                .iter()
+                .any(|(id, hop)| *id == stack_anchor_id && *hop == 2),
+            "lesson -> lessons hub -> stack coverage anchor should be reachable in two hops"
+        );
     }
 
     #[tokio::test]

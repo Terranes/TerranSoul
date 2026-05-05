@@ -115,9 +115,11 @@ async fn call_llm(system: &str, user: &str, brain_mode: &BrainMode) -> Option<St
         BrainMode::FreeApi {
             provider_id,
             api_key,
+            model,
         } => {
             let provider = crate::brain::get_free_provider(provider_id)?;
-            let client = OpenAiClient::new(&provider.base_url, &provider.model, api_key.as_deref());
+            let chat_model = model.as_deref().unwrap_or(&provider.model);
+            let client = OpenAiClient::new(&provider.base_url, chat_model, api_key.as_deref());
             let msgs = vec![
                 OpenAiMessage {
                     role: "system".to_string(),

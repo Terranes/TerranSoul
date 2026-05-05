@@ -41,6 +41,8 @@ export interface LookAtTarget {
 export interface AvatarState {
   body: BodyState;
   emotion: EmotionState;
+  /** Intensity of the active emotion in [0, 1]. Defaults to 1. */
+  emotionIntensity: number;
   viseme: VisemeWeights;
   blink: number;
   lookAt: LookAtTarget;
@@ -74,6 +76,7 @@ export function createAvatarState(): AvatarState {
   return {
     body: 'idle',
     emotion: 'neutral',
+    emotionIntensity: 1,
     viseme: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 },
     blink: 0,
     lookAt: { x: 0, y: 0 },
@@ -150,10 +153,12 @@ export class AvatarStateMachine {
 
   // ── Emotion layer ────────────────────────────────────────────────────
 
-  /** Set the facial emotion. Always accepted — emotions overlay any body state. */
-  setEmotion(emotion: EmotionState): void {
-    if (this.state.emotion !== emotion) {
+  /** Set the facial emotion and its intensity. Always accepted — emotions overlay any body state. */
+  setEmotion(emotion: EmotionState, intensity: number = 1): void {
+    const clamped = Math.max(0, Math.min(1, intensity));
+    if (this.state.emotion !== emotion || this.state.emotionIntensity !== clamped) {
       this.state.emotion = emotion;
+      this.state.emotionIntensity = clamped;
       this.state.needsRender = true;
     }
   }
@@ -251,6 +256,7 @@ export class AvatarStateMachine {
   reset(): void {
     this.state.body = 'idle';
     this.state.emotion = 'neutral';
+    this.state.emotionIntensity = 1;
     this.zeroVisemes();
     this.state.blink = 0;
     this.state.lookAt.x = 0;

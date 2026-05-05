@@ -1080,6 +1080,11 @@ html[data-ts-mode="browser"] body {
   background: var(--ts-warning, #fbbf24);
 }
 
+.ts-floating-badge--info {
+  color: var(--ts-bg-base);
+  background: var(--ts-info, #38bdf8);
+}
+
 .ts-floating-badge--readonly {
   pointer-events: none;
   user-select: none;

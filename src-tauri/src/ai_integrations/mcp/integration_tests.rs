@@ -27,8 +27,16 @@ mod tests {
         // Give the server a tick to start accepting connections.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let url = format!("http://127.0.0.1:{port}/mcp");
+        let url = format!("http://127.0.0.1:{}/mcp", handle.port);
         (handle, url, token)
+    }
+
+    fn health_url(mcp_url: &str) -> String {
+        format!("{}/health", mcp_url.trim_end_matches("/mcp"))
+    }
+
+    fn status_url(mcp_url: &str) -> String {
+        format!("{}/status", mcp_url.trim_end_matches("/mcp"))
     }
 
     /// Pick a random high port that's likely free.
@@ -85,7 +93,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_8_tools() {
+    async fn tools_list_returns_12_tools() {
         let (handle, url, token) = start_test_server().await;
 
         let (status, body) = rpc(
@@ -102,11 +110,15 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 12);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
         assert!(tools[0]["inputSchema"].is_object());
+
+        // Verify code tools are present.
+        assert_eq!(tools[8]["name"], "code_query");
+        assert_eq!(tools[11]["name"], "code_rename");
 
         handle.stop();
     }
@@ -216,6 +228,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn health_returns_ok_without_auth() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .get(health_url(&url))
+            .send()
+            .await
+            .expect("health request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("health body should be JSON");
+
+        assert_eq!(status, 200);
+        assert_eq!(body, json!({ "status": "ok", "port": handle.port }));
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn status_includes_actual_port_and_seed_loaded() {
+        let (handle, url, token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .get(status_url(&url))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .expect("status request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("status body should be JSON");
+
+        assert_eq!(status, 200);
+        assert_eq!(body["actual_port"], handle.port);
+        assert!(body["seed_loaded"].is_boolean());
+        assert!(body["health"].is_object());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn mcp_rejects_missing_auth_header() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&json!({ "jsonrpc": "2.0", "id": 16, "method": "ping" }))
+            .send()
+            .await
+            .expect("request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("error body should be JSON");
+
+        assert_eq!(status, 401);
+        assert_eq!(body["error"]["message"], "unauthorized");
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn mcp_notification_rejects_missing_auth_header() {
+        let (handle, url, _token) = start_test_server().await;
+
+        let resp = reqwest::Client::new()
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }))
+            .send()
+            .await
+            .expect("request should succeed");
+        let status = resp.status().as_u16();
+        let body: Value = resp.json().await.expect("error body should be JSON");
+
+        assert_eq!(status, 401);
+        assert_eq!(body["error"]["message"], "unauthorized");
+
+        handle.stop();
+    }
+
+    #[tokio::test]
     async fn notification_returns_202() {
         let (handle, url, token) = start_test_server().await;
 
@@ -310,5 +404,139 @@ mod tests {
             .send()
             .await;
         assert!(result.is_err(), "server should be stopped");
+    }
+
+    // ─── Code tool integration tests ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn code_query_returns_structured_error_when_no_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_query",
+                    "arguments": { "prompt": "find main function" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+        let text = body["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("code_intelligence")
+                || text.contains("sidecar not configured")
+                || text.contains("no repos indexed yet"),
+            "expected code-tool setup error, got: {text}"
+        );
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_context_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_context",
+                    "arguments": { "target": "AppState" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_impact_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_impact",
+                    "arguments": { "symbol": "run" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_detect_changes_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_detect_changes",
+                    "arguments": { "from_ref": "main", "to_ref": "HEAD" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn code_graph_sync_returns_error_without_sidecar() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "tools/call",
+                "params": {
+                    "name": "code_graph_sync",
+                    "arguments": { "repo_label": "test-repo" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        assert_eq!(body["result"]["isError"], true);
+
+        handle.stop();
     }
 }

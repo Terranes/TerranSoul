@@ -4,6 +4,7 @@
     class="ts-floating-badge"
     :class="{
       'ts-floating-badge--warning': tone === 'warning',
+      'ts-floating-badge--info': tone === 'info',
       'ts-floating-badge--readonly': readonly,
     }"
     v-bind="$attrs"
@@ -15,7 +16,7 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
   as?: string;
-  tone?: 'warning';
+  tone?: 'warning' | 'info';
   readonly?: boolean;
 }>(), {
   as: 'div',

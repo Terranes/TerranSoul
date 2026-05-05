@@ -19,6 +19,8 @@
 8. [Free LLM APIs — Three-Tier Brain Provider Strategy](#8-free-llm-apis)
 9. [Integration Analysis — What We Can Learn & Implement](#9-integration-analysis)
 10. [Cursor + Claude Code — Coding Workflow Lessons](#10-cursor--claude-code)
+11. [CocoIndex — Incremental Code Indexing Architecture](#11-cocoindex)
+12. [Claudia — Persistent Brain + Judgment Rules + Slash-Skill Workflows](#12-claudia)
 
 ---
 
@@ -942,6 +944,7 @@ These features from the reference repos are already implemented in TerranSoul:
 - ✅ VRM expression system (6 emotions) — aituber-kit pattern
 - ✅ Pose blending (additive Euler offsets) — AI4Animation-inspired
 - ✅ Gesture system (nod, wave, shrug, etc.) — original implementation
+- ✅ NotebookLM-style source guides for imported documents — public NotebookLM source-grounding pattern, implemented in Chunk 30.1 as deterministic source-summary rows that reduce broad document Q&A prompt tokens before raw chunks are needed
 
 ---
 
@@ -994,3 +997,238 @@ These features from the reference repos are already implemented in TerranSoul:
 ### Follow-up for Chunk 28.12+
 
 All follow-ups from the Cursor/Claude Code comparison are implemented as of Chunk 28.14.
+
+---
+
+## 11. claw-code / Claude Code / OpenClaw — Self-improve UX & sessions {#11-claw-clawcode-openclaw}
+
+> **Date:** 2026-05-04
+> **Sources:** [ultraworkers/claw-code](https://github.com/ultraworkers/claw-code)
+> README + USAGE, [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)
+> + overview, OpenClaw (the OG public Claude Code reverse-engineering project that
+> claw-code derives from). All three centre on a single CLI agent harness with
+> rich session management, slash commands, and resumable conversations.
+
+### Patterns worth absorbing
+
+| Pattern | claw-code / Claude Code / OpenClaw | TerranSoul adaptation |
+|---|---|---|
+| Named, resumable sessions | `claude --name "auth-refactor"` plus `claude -r "auth-refactor"` resume by name or interactive picker; `--continue` resumes the most recent session in the working directory. claw-code stores per-project session state under `.claude/sessions/`. | Reuse the existing `coding::handoff_store` (per-`session_id` JSON snapshots) for metadata. Add per-session chat-history JSONL alongside it so each session has both a structured handoff seed *and* the verbatim turn-by-turn transcript. Surface a sidebar with "resume" / "rename" / "delete" actions in the self-improve panel. |
+| Persistent chat history | Claude Code retains the full transcript per session and lets you scroll back, search, and resume mid-conversation. | New `coding::session_chat` module storing append-only JSONL of `{role, content, ts_ms, kind}` turns. Bounded reads (last N turns) for cheap UI loading. |
+| Slash commands inside the input | `/clear`, `/rename`, `/resume`, `/help`, `/status`, `/list` — all dispatched from the input bar, not buttons. | The self-improve chat input parses leading `/` commands locally before sending; unknown slash commands surface a lightweight error toast. Mirrors the Claude Code interactive shell. |
+| New session without losing the old | `--fork-session` clones the current session under a new id so experiments do not corrupt the working session. | A "fork" action in the sessions sidebar copies the chat JSONL + handoff JSON under a new id. |
+| Compact session summaries | claw-code's `claw doctor` and Claude Code's `/status` show a short health line per session: chunk id, last action, byte size. | `coding_session_list_handoffs` already returns `HandoffSummary{chunk_id, last_action, modified_at, bytes}`; extend the list to include chat message count and last-user-message preview. |
+| Project-purge / cleanup | `claude project purge` wipes transcripts, debug logs, prompt history. | `coding_session_clear_handoff` already exists for metadata; mirror it with `coding_session_clear_chat` and a `coding_session_purge` that does both. |
+
+### Mapping to TerranSoul code
+
+- Backend: extend `src-tauri/src/coding/` with a new `session_chat.rs` module
+  (pure storage + sanitiser, mirrored on the existing `handoff_store.rs`
+  shape). Add new Tauri commands in a new `src-tauri/src/commands/coding_sessions.rs`
+  registered through `commands/mod.rs` and `lib.rs`.
+- Frontend: extend `src/stores/self-improve.ts` with a `sessions` slice
+  (list + active session + chat scrollback) and add a
+  `SelfImproveSessionsPanel.vue` component embedded in the existing
+  `SelfImprovePanel.vue`. Slash-command parsing lives in a small pure helper
+  under `src/utils/` so it is unit-testable without mounting the component.
+- Tests: pure-function unit tests for the storage module + the slash-command
+  parser, plus a Vitest component test for the session sidebar.
+
+### Implementation slice for Chunk 30.2
+
+The minimum vertical slice covers session list, chat history, resume, fork,
+rename, clear, and a small slash-command palette (`/clear`, `/rename`,
+`/fork`, `/resume`, `/help`). Autonomous loop integration (auto-appending
+runs to the active session's chat) is intentionally out of scope for this
+chunk — it depends on the in-progress autonomy loop and lands in a follow-up.
+
+### Implemented in Chunk 30.2
+
+- ✅ `coding::session_chat` JSONL transcript store (append/load/clear/summary/fork) sitting next to existing handoff snapshots.
+- ✅ Tauri commands `coding_session_{list,append_message,load_chat,clear_chat,rename,fork,purge}` registered in `lib.rs`.
+- ✅ `SelfImproveSessionsPanel.vue` sidebar + transcript scrollback embedded in the existing `SelfImprovePanel.vue`.
+- ✅ Pure `parseSlashCommand` parser (`/clear`, `/rename`, `/fork`, `/resume`, `/list`, `/help`, plus chat fall-through and unknown-command discriminator) with full unit coverage.
+- ✅ Self-improve store gains a session slice with null-safe `Array.isArray` guards so mocked `invoke` returns no longer crash the panel.
+
+### Implemented follow-up in Chunk 30.6
+
+- ✅ Auto-append autonomous-loop `self-improve-progress` events to the active session's transcript as `system` / `run` messages.
+- ✅ Create a timestamped `self-improve-*` transcript session when progress arrives without a selected session.
+- ✅ Include transcript-only sessions in the session picker so run history remains resumable before a handoff snapshot exists.
+
+---
+
+## 11. CocoIndex — Incremental Code Indexing Architecture {#11-cocoindex}
+
+> **Date:** 2026-05-04
+> **Source:** [cocoindex-io/cocoindex](https://github.com/cocoindex-io/cocoindex)
+> v1.0.2, Apache 2.0 license. Python + Rust framework. 7.8k stars.
+> **Product:** CocoIndex-code — MCP server for AI coding agents.
+
+### What CocoIndex is
+
+A **declarative incremental data pipeline framework** ("React for data
+engineering"). You declare `Target = F(Source)` and the engine keeps the
+target in sync with the source forever — recomputing only the Δ.
+
+The *CocoIndex-code* product applies this framework to code: AST-aware
+incremental semantic code index that keeps live call graphs, symbols,
+vectors, and chunks fresh on every commit.
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Core engine | Rust (parallel chunking, zero-copy transforms) |
+| User-facing API | Python (`pip install cocoindex`) |
+| State store | PostgreSQL (persistent pipeline state) |
+| Vector targets | pgvector, LanceDB, Qdrant, Pinecone, Turbopuffer |
+| Graph targets | Neo4j, Kuzu, SurrealDB |
+| Embeddings | sentence-transformers, OpenAI, any provider |
+| MCP | CocoIndex-code server (Claude Code, Cursor) |
+
+### Key Architecture Patterns
+
+#### 1. Δ-only incremental processing
+
+The core insight: **don't re-index what hasn't changed.**
+
+```
+hash(input_content) + hash(transformation_code) → cache key
+```
+
+- Each source file gets a content hash on ingest
+- When re-indexed, only files with changed hashes re-parse/re-embed
+- Reports 80–90% cache hits on typical re-index runs
+- Sub-second freshness for the target (agent always sees latest)
+
+#### 2. Hash-based memoization (`@coco.fn(memo=True)`)
+
+Functions are memoized by hashing both their input AND their code:
+
+- If you change `file.rs` → only that file's chunks re-embed
+- If you change the *embedding function itself* → all outputs invalidate
+- No stale data from code changes (a trap for naive caching)
+
+#### 3. Per-row provenance / data lineage
+
+Every target row (vector, graph node, chunk) traces back to its exact
+source byte range. Enables:
+
+- Debuggable RAG — "which source produced this retrieval?"
+- Auditable pipelines — regulators can verify data flow
+- Precise invalidation — when source changes, only provenance-linked
+  targets need update
+
+#### 4. AST-aware chunking for code
+
+Instead of naive `RecursiveTextSplitter` (which cuts functions in half):
+
+- Parse source with language-aware AST (tree-sitter equivalent)
+- Chunk at semantic boundaries (function/class/module level)
+- Preserve structural context in each chunk
+- Better retrieval precision for code search
+
+#### 5. Declarative pipeline specification
+
+```python
+@coco.fn(memo=True)
+async def index_file(file, table):
+    for chunk in RecursiveSplitter().split(await file.read_text()):
+        table.declare_row(text=chunk.text, embedding=embed(chunk.text))
+```
+
+The user declares *what* the target should look like, not *how* to
+keep it in sync. The engine handles invalidation, ordering, retries.
+
+### What TerranSoul can adopt (post-31.5)
+
+| CocoIndex pattern | TerranSoul adaptation | Priority |
+|---|---|---|
+| Content-hash per file | Store SHA-256 of each file in `code_repos` table. On re-index, skip files whose hash hasn't changed. | High — easy win, massive speedup on large repos |
+| Skip unchanged embeddings | If a symbol's source text hasn't changed, keep its existing vector. Only re-embed modified functions. | Medium — requires symbol-level content hashing |
+| Code-change invalidation | When `symbol_index.rs` logic changes (schema version bump), force full re-index. | Low — manual version field is sufficient for now |
+| Per-row provenance | Track which source file+line produced each `code_symbols` row (already have `file`+`line`). Extend to embeddings when added. | Already partially done |
+| AST-aware chunking | Already using tree-sitter for symbol extraction. When adding embeddings (Chunk 31.6), chunk at symbol boundaries not arbitrary byte offsets. | High — use tree-sitter node spans |
+
+### What we do NOT adopt
+
+- **PostgreSQL dependency** — CocoIndex requires Postgres for pipeline state.
+  TerranSoul is single-binary + SQLite. We implement the *principle*
+  (content-hash skip) in our own SQLite schema.
+- **Python runtime** — CocoIndex's API is Python. We stay pure Rust.
+- **External vector DB** — CocoIndex targets pgvector/Qdrant/etc. We keep
+  HNSW ANN in-process via `usearch` crate.
+- **Declarative DSL** — The `Target = F(Source)` model is elegant but
+  over-engineered for a single indexing pipeline. We use imperative Rust
+  with explicit hash-check guards.
+- **Full lineage graph** — Production-grade lineage (for regulators/auditors)
+  is out of scope for a desktop companion. We keep simple file→symbol provenance.
+
+### Comparison: GitNexus vs CocoIndex vs TerranSoul approach
+
+| Dimension | GitNexus | CocoIndex-code | TerranSoul (current + planned) |
+|---|---|---|---|
+| **Re-indexing** | Full re-index (implied) | Δ-only, hash-memoized | Full today → content-hash skip post-31.5 |
+| **Language** | TypeScript (tree-sitter bindings) | Python + Rust core | Rust (tree-sitter native) |
+| **Storage** | LadybugDB (embedded graph) | PostgreSQL + pluggable targets | SQLite (embedded, zero-config) |
+| **MCP surface** | 16 tools + resources + prompts | Semantic search + call graph + blast radius | 13 tools today → native code tools in 31.6 |
+| **Privacy** | All local, `.gitnexus/` | Configurable (local or cloud targets) | All local, `mcp-data/` |
+| **Install** | `gitnexus setup` | `pip install cocoindex` | Built into the Tauri app binary |
+| **Dependencies** | Node.js runtime | Python + Postgres | Zero (single binary) |
+| **Embedding model** | transformers.js (in-process) | Any (sentence-transformers, OpenAI) | Ollama nomic-embed-text + cloud fallback |
+| **Clustering** | Leiden community detection | Not documented | Planned (Chunk 31.5, petgraph) |
+| **Best for** | Pure code intelligence MCP | General incremental ETL + code | Companion memory + code intelligence |
+
+### Actionable takeaway
+
+The biggest gap between TerranSoul's current `symbol_index.rs` and both
+reference projects is **incremental re-indexing**. Currently we `DELETE FROM
+code_symbols WHERE repo_id = ?` + re-insert everything. For a 500-file repo
+this takes seconds; for a 10,000-file monorepo it's minutes.
+
+**Minimal implementation (post-31.5):**
+
+1. Add `content_hash TEXT` column to `code_symbols` (or a companion `code_file_hashes` table)
+2. On `index_repo`, compute SHA-256 of each source file before parsing
+3. Compare against stored hash — skip if unchanged
+4. Only parse + extract + insert symbols/edges for changed files
+5. Delete orphan symbols from files that no longer exist
+
+This alone gives 80–90% of CocoIndex's performance benefit with zero new
+dependencies. The rest (embedding memoization, code-change invalidation)
+can layer on later.
+
+---
+
+## 12. Claudia
+
+**Repo:** https://github.com/kbanc85/claudia
+**License:** PolyForm Noncommercial 1.0.0 — **patterns and ideas only, no
+code copy.** All adoption work must be a clean-room reimplementation.
+
+### Why this section exists
+
+The full reverse-engineering analysis already lives in
+[`mcp-data/shared/claudia-research.md`](../mcp-data/shared/claudia-research.md)
+(212 lines): architecture, scheduled jobs, slash-skill catalogue, hybrid-search
+weight comparison, two-tier agent team layout, judgment-rules pattern, and
+ten concrete adoption proposals mapped onto existing TerranSoul modules. That
+document is the durable single source of truth — it is also seeded into the
+brain via `mcp-data/shared/memory-seed.sql` so any agent session can retrieve
+it through `brain_search` without re-reading the upstream repo.
+
+### Promotable chunks
+
+The ten adoption proposals are tracked as `Phase 33B` in
+[`rules/backlog.md`](backlog.md#phase-33b--claudia-adoption-catalogue-reverse-engineered-from-kbanc85claudia).
+Promote individual rows to `rules/milestones.md` when they're ready to schedule;
+do not inline-duplicate the analysis here.
+
+### License-boundary reminder
+
+Claudia ships under PolyForm-NC 1.0.0, which forbids commercial use. TerranSoul
+must therefore (a) never copy Claudia source files into the repo, (b) credit
+the project in `CREDITS.md` (already done), and (c) implement adopted patterns
+from scratch using TerranSoul's own modules. This is the same rule the brain
+seed enforces via the `LICENSE BOUNDARY (claudia adoption)` memory entry.

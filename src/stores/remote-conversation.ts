@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import type { Message } from '../types';
 import { parseTags } from '../utils/emotion-parser';
 import { shouldUseRemoteConversation } from '../utils/runtime-target';
+import { loadBrowserLanHost } from '../utils/browser-lan';
 import { useMobilePairingStore } from './mobile-pairing';
 import {
   createGrpcWebRemoteHost,
@@ -158,6 +159,10 @@ export const useRemoteConversationStore = defineStore('remote-conversation', () 
     messages.value.push(stampAgent({ ...message }));
   }
 
+  async function rateCharismaTurn(_messageId: string, _rating: number): Promise<boolean> {
+    return false;
+  }
+
   function pushProviderWarning(): void {
     addAssistantMessage(
       'Remote provider warning: the desktop host is rotating providers or waiting for a configured brain.',
@@ -247,6 +252,7 @@ export const useRemoteConversationStore = defineStore('remote-conversation', () 
     generationActive,
     setAgent,
     sendMessage,
+    rateCharismaTurn,
     getConversation,
     addMessage,
     pushProviderWarning,
@@ -274,12 +280,16 @@ function defaultRemoteHost(): RemoteHost | null {
       baseUrl: remoteBaseUrl(credentials.desktopHost, credentials.desktopPort),
     });
   }
+  const browserLanHost = loadBrowserLanHost();
+  if (browserLanHost) {
+    return createGrpcWebRemoteHost({ baseUrl: browserLanHost.baseUrl });
+  }
   return shouldUseRemoteConversation() ? null : createLocalRemoteHost();
 }
 
 function defaultCapabilities(): string[] | undefined {
   const pairing = useMobilePairingStore();
-  return pairing.storedRecord?.credentials.capabilities;
+  return pairing.storedRecord?.credentials.capabilities ?? loadBrowserLanHost()?.capabilities;
 }
 
 function createId(): string {
