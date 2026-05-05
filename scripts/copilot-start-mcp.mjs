@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -47,6 +47,26 @@ if (await isHealthy(port)) {
 
 fs.mkdirSync(path.dirname(logPath), { recursive: true })
 const log = fs.openSync(logPath, 'a')
+
+if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
+  console.log(`[copilot-mcp] warming MCP Rust build before startup; log=${logPath}`)
+  const build = spawnSync('cargo', ['build', '--manifest-path', 'src-tauri/Cargo.toml'], {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: ['ignore', log, log],
+  })
+  if (build.status !== 0) {
+    const tail = fs.existsSync(logPath)
+      ? fs.readFileSync(logPath, 'utf8').split('\n').slice(-80).join('\n')
+      : ''
+    console.error(`[copilot-mcp] cargo build failed with exit code ${build.status ?? 'unknown'}`)
+    if (tail.trim()) {
+      console.error(`[copilot-mcp] log tail:\n${tail}`)
+    }
+    process.exit(build.status ?? 1)
+  }
+}
+
 const child = spawn('npm', ['run', 'mcp'], {
   cwd: repoRoot,
   detached: true,

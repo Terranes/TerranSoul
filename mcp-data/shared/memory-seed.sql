@@ -47,6 +47,10 @@ VALUES
 
 ('Self-improve with MCP mode: agents should start npm run mcp, call brain_health/brain_search/brain_suggest_context for project context, and update mcp-data/shared when a durable repo convention or architecture fact should help future sessions. Runtime self-improve artifacts stay ignored.', 'self-improve,mcp,workflow,shared-seed', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'self-improve'),
 
+('DEEPWIKI REVERSE-ENGINEERING RULE: when studying any GitHub project, first check https://deepwiki.org/<owner>/<repo> when reachable, then cross-check upstream README/docs/code/license. If DeepWiki is unavailable, record the blocker and proceed with direct upstream research. Credit any learned source in CREDITS.md.', 'rules,deepwiki,reverse-engineering,credits,non-negotiable', 10, 'procedure', 1746416915000, 'long', 1.0, 75, 'self-improve'),
+
+('MCP SELF-LEARNING RULE: durable rules, conventions, architecture facts, and reverse-engineering lessons learned in an agent session must be synced into tracked mcp-data/shared files (memory-seed.sql, lessons-learned.md, project-index.md, or related shared docs) in the same PR. Runtime memory.db is not the durable source of truth.', 'rules,mcp,self-improve,self-learning,shared-data,non-negotiable', 10, 'procedure', 1746416915000, 'long', 1.0, 80, 'self-improve'),
+
 -- Memory System
 ('Memory store uses SQLite with FTS5 for keyword search and HNSW (usearch) for vector ANN. Memories have: content, tags, importance (1-5), memory_type (fact/preference/episode/procedure), tier (short/long/archival), decay_score, category, optional embedding. Knowledge graph via memory_edges table (typed, directional).', 'memory,schema,storage', 5, 'fact', 1746316800000, 'long', 1.0, 55, 'memory'),
 

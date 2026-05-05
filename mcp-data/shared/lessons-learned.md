@@ -111,6 +111,17 @@
   `rules/`, add a concise high-importance row to
   `mcp-data/shared/memory-seed.sql` plus a short note in `project-index.md` or
   this file so future `brain_search` retrieves it.
+- **DeepWiki-first reverse engineering**: when studying any GitHub project,
+  check `https://deepwiki.org/<owner>/<repo>` first when reachable, then
+  cross-check against the upstream repository and license. If DeepWiki is
+  blocked, record the blocker. Credit any learned source in `CREDITS.md` and
+  sync durable lessons into `mcp-data/shared/**` so MCP self-improve can recall
+  them.
+- **MCP self-learning is reviewable source, not chat memory**: when a user adds
+  a durable rule or an agent learns a reusable convention, update
+  `mcp-data/shared/memory-seed.sql`, `lessons-learned.md`, or
+  `project-index.md` in the same PR. Runtime `memory.db` may be refreshed by
+  MCP tools, but tracked shared files are the durable default dataset.
 
 ## CI / GitHub
 

@@ -47,3 +47,4 @@ When starting or resuming:
 - Tests required for all new functionality
 - Use existing libraries — don't reinvent the wheel
 - Credit external influences in `CREDITS.md`
+- Reverse-engineer GitHub projects through `https://deepwiki.org/<owner>/<repo>` first when reachable, then verify against upstream and sync durable lessons into `mcp-data/shared/**`

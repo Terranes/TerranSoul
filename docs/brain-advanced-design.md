@@ -676,6 +676,7 @@ final_score =
 > - **Relevance threshold** (Chunk 16.1) — only entries above a configurable score are injected
 > - **Semantic chunking** (Chunk 16.11) — `text-splitter` crate replaces naive word-count splitter
 > - **NotebookLM-style source guides** (Chunk 30.1) — one compact `summary` row per source lets broad document questions retrieve a source guide before raw chunks
+> - **Auto-edge extraction on ingest** (Chunk 33.4) — document ingest best-effort proposes typed KG edges after storing/embedding new chunks
 > - **Contextual Retrieval** (Chunk 16.2) — Anthropic 2024 approach prepends doc context to chunks
 > - **Contradiction resolution** (Chunk 17.2) — LLM-powered conflict detection + soft-closure
 > - **Temporal reasoning** (Chunk 17.3) — natural-language time-range queries
@@ -1026,6 +1027,16 @@ The in-app MemoryGraph (Cytoscape.js) connects memories that share tags:
 
 A proper knowledge graph with typed, directional edges — shipped in the V5
 schema (April 2026).
+
+**Chunk 33.4 update (2026-05-05):** document ingestion now joins this graph
+automatically. After URL/file/crawl chunks and deterministic source-guide rows
+are written and embedded, `commands/ingest.rs` checks `AppSettings.auto_extract_edges`
+and the active local brain model. When both are available it runs the existing
+edge pipeline (`format_memories_for_extraction` → `OllamaAgent::propose_edges`
+→ `parse_llm_edges` → `add_edges_batch`) as a best-effort follow-up. The primary
+ingest remains authoritative: edge extraction failures are swallowed so content
+is never lost, and the maintenance scheduler/manual `extract_edges_via_brain`
+command can retry later.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐

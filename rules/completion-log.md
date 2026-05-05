@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33.4 — Auto-edge extraction on memory ingest](#chunk-334--auto-edge-extraction-on-memory-ingest) | 2026-05-05 |
 | [Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test](#chunk-333--brain_kg_neighbors-mcp-tool-seed-graph-integration-test) | 2026-05-05 |
 | [MCP dependency bootstrap + self-improve dashboard prep](#mcp-dependency-bootstrap--self-improve-dashboard-prep) | 2026-05-05 |
 | [MCP Data Governance — Rules enforcement coverage](#mcp-data-governance--rules-enforcement-coverage) | 2026-05-05 |
@@ -271,6 +272,34 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33.4 — Auto-edge extraction on memory ingest
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Make newly ingested document memories join the typed knowledge graph without manual seed edits or a separate user-triggered extraction pass.
+
+**Architecture:**
+- Extended `commands/ingest.rs` so URL/file/crawl ingest runs a best-effort follow-up after storing source chunks, deterministic source-guide rows, and embeddings.
+- The follow-up checks `AppSettings.auto_extract_edges`, requires an active local brain model, snapshots memories under a short lock, runs `OllamaAgent::propose_edges`, parses output with `parse_llm_edges`, and writes edges through `add_edges_batch`.
+- Failures are intentionally swallowed because the primary ingest is the source of truth; manual `extract_edges_via_brain` and the maintenance scheduler can retry later.
+- Added a small Rust unit test for the auto-edge gating helper.
+- Updated README and `docs/brain-advanced-design.md` per the brain documentation sync rule.
+
+**Files modified:**
+- `src-tauri/src/commands/ingest.rs`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test commands::ingest::tests::auto_edge_extraction_model_requires_setting_model_and_created_entries` → 1 passed.
+- Prior local validation after the implementation: `npm run lint`, `npm run build`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`, and the previously failing Playwright specs passed.
 
 ---
 

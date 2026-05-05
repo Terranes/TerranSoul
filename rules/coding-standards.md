@@ -130,6 +130,22 @@ pointers that:
   hard rule text here in `rules/coding-standards.md`; keep the credits file
   appreciative, concrete, and human.
 
+### DeepWiki First for GitHub Reverse Engineering
+
+- When reverse-engineering any GitHub repository, first check
+  `https://deepwiki.org/<owner>/<repo>` when network access allows. Use it as
+  the high-level map for architecture, module boundaries, and feature
+  inventory before reading upstream files directly.
+- Always cross-check DeepWiki observations against the upstream repository,
+  license, README, docs, and code before turning them into TerranSoul design
+  decisions. DeepWiki is an aid, not the source of truth.
+- If DeepWiki is unreachable or blocked, record the blocker in the session
+  report and continue with direct upstream research instead of silently
+  skipping the rule.
+- Any durable lesson from reverse-engineering must be credited in
+  `CREDITS.md` and synced into MCP self-improve knowledge in
+  `mcp-data/shared/**` so future agents can retrieve it with `brain_search`.
+
 ### No Mocks in Production
 
 > **It is either a chunk in `rules/milestones.md` OR a real working version with the highest QA — never a half-done mock shipped to users.**

@@ -24,6 +24,17 @@
 | `.github/workflows/` | CI: `terransoul-ci.yml`, `codeql.yml`, `copilot-setup-steps.yml` |
 | `.vscode/` | Workspace settings + `mcp.json` for the three MCP profiles (release/dev/headless) |
 
+## Durable agent rules to retrieve via MCP
+
+- Reverse-engineering GitHub projects is DeepWiki-first: check
+  `https://deepwiki.org/<owner>/<repo>` when reachable, cross-check upstream,
+  credit the source in `CREDITS.md`, and sync durable lessons into
+  `mcp-data/shared/**`.
+- MCP self-improve knowledge lives in tracked shared files. When a session
+  learns a durable project rule, update `memory-seed.sql`,
+  `lessons-learned.md`, or this index in the same PR so future agents retrieve
+  it without rescanning chat history.
+
 ## Rust modules (`src-tauri/src/`)
 
 ### `brain/` — LLM provider management & RAG glue

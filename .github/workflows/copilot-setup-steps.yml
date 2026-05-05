@@ -57,8 +57,5 @@ jobs:
           key: copilot-mcp-cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: copilot-mcp-cargo-${{ runner.os }}-
 
-      - name: Warm TerranSoul MCP brain build
-        run: cargo build --manifest-path src-tauri/Cargo.toml
-
       - name: Verify TerranSoul MCP brain can start
         run: node scripts/copilot-start-mcp.mjs 120 --smoke
