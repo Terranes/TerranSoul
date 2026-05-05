@@ -139,7 +139,11 @@ async fn retrieve_prompt_memories(
     let rerank_threshold = app_state
         .app_settings
         .lock()
-        .map(|settings| settings.relevance_threshold.max(crate::settings::DEFAULT_RERANK_THRESHOLD))
+        .map(|settings| {
+            settings
+                .relevance_threshold
+                .max(crate::settings::DEFAULT_RERANK_THRESHOLD)
+        })
         .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
     let should_rerank = active_brain.is_some();
     let recall_limit = if should_rerank {

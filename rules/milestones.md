@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning** (Phase 33). See the Phase 33 table below.
+**Chunk 33.6 — Maintenance scheduler in headless MCP runner** (Phase 33). See the Phase 33 table below.
 
 ---
 
@@ -69,7 +69,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 33.5 | not-started | Reranker default-on for RRF + relevance threshold pruning | Flip `BrainConfig.rerank` default to `true` for `SearchMode::Rrf`; add a configurable `rerank_threshold` (default 0.55) that drops candidates before they land in `[LONG-TERM MEMORY]`. Wire the threshold to `commands/chat.rs` system-prompt assembly. Tests: mock reranker, assert pruning. |
 | 33.6 | not-started | Maintenance scheduler in headless MCP runner | Today `auto_promote_memories`, `edge_conflict_scan`, `consolidate_duplicates`, and `backfill_embeddings` only run inside the GUI Tauri app's tick loop. Hoist the scheduler into a shared `memory::maintenance::spawn` task started by both `lib.rs::run` and the headless `mcp-http` binary, with intervals from `app_settings.json`. |
 
 ---

@@ -8,8 +8,7 @@ use serde_json::Value;
 use tauri::State;
 
 use crate::teachable_capabilities::registry::{
-    build_promotion_plan, load_index, save_index, CapabilitySummary, Maturity,
-    TeachableCapability,
+    build_promotion_plan, load_index, save_index, CapabilitySummary, Maturity, TeachableCapability,
 };
 use crate::AppState;
 
@@ -327,7 +326,11 @@ mod tests {
         assert!(cap.enabled);
 
         let resp = list_inner(t.path()).unwrap();
-        let wake = resp.capabilities.iter().find(|c| c.id == "wake_word").unwrap();
+        let wake = resp
+            .capabilities
+            .iter()
+            .find(|c| c.id == "wake_word")
+            .unwrap();
         assert!(wake.enabled);
     }
 
@@ -372,7 +375,13 @@ mod tests {
         .unwrap();
 
         for _ in 0..12 {
-            record_usage_inner(t.path(), &CapabilityUsageArgs { id: "wake_word".into() }).unwrap();
+            record_usage_inner(
+                t.path(),
+                &CapabilityUsageArgs {
+                    id: "wake_word".into(),
+                },
+            )
+            .unwrap();
         }
         for _ in 0..3 {
             set_rating_inner(
@@ -386,15 +395,24 @@ mod tests {
         }
 
         let resp = list_inner(t.path()).unwrap();
-        let wake = resp.capabilities.iter().find(|c| c.id == "wake_word").unwrap();
+        let wake = resp
+            .capabilities
+            .iter()
+            .find(|c| c.id == "wake_word")
+            .unwrap();
         assert_eq!(wake.maturity(), Maturity::Proven);
     }
 
     #[test]
     fn promote_rejects_non_proven() {
         let t = tmp();
-        let err = promote_inner(t.path(), &CapabilityPromoteArgs { id: "wake_word".into() })
-            .unwrap_err();
+        let err = promote_inner(
+            t.path(),
+            &CapabilityPromoteArgs {
+                id: "wake_word".into(),
+            },
+        )
+        .unwrap_err();
         assert!(err.contains("not yet Proven"));
     }
 
@@ -410,7 +428,13 @@ mod tests {
         )
         .unwrap();
         for _ in 0..10 {
-            record_usage_inner(t.path(), &CapabilityUsageArgs { id: "wake_word".into() }).unwrap();
+            record_usage_inner(
+                t.path(),
+                &CapabilityUsageArgs {
+                    id: "wake_word".into(),
+                },
+            )
+            .unwrap();
         }
         for _ in 0..2 {
             set_rating_inner(
@@ -423,8 +447,13 @@ mod tests {
             .unwrap();
         }
 
-        let resp = promote_inner(t.path(), &CapabilityPromoteArgs { id: "wake_word".into() })
-            .unwrap();
+        let resp = promote_inner(
+            t.path(),
+            &CapabilityPromoteArgs {
+                id: "wake_word".into(),
+            },
+        )
+        .unwrap();
         assert!(uuid::Uuid::parse_str(&resp.plan_id).is_ok());
         assert_eq!(resp.capability.maturity(), Maturity::Canon);
     }
@@ -440,10 +469,28 @@ mod tests {
             },
         )
         .unwrap();
-        record_usage_inner(t.path(), &CapabilityUsageArgs { id: "wake_word".into() }).unwrap();
-        record_usage_inner(t.path(), &CapabilityUsageArgs { id: "wake_word".into() }).unwrap();
+        record_usage_inner(
+            t.path(),
+            &CapabilityUsageArgs {
+                id: "wake_word".into(),
+            },
+        )
+        .unwrap();
+        record_usage_inner(
+            t.path(),
+            &CapabilityUsageArgs {
+                id: "wake_word".into(),
+            },
+        )
+        .unwrap();
 
-        let cap = reset_inner(t.path(), &CapabilityResetArgs { id: "wake_word".into() }).unwrap();
+        let cap = reset_inner(
+            t.path(),
+            &CapabilityResetArgs {
+                id: "wake_word".into(),
+            },
+        )
+        .unwrap();
         assert_eq!(cap.config["phrase"], "hey terra");
         assert_eq!(cap.usage_count, 2);
     }

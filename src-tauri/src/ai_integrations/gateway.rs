@@ -1172,6 +1172,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn search_request_defaults_rerank_for_rrf() {
+        let req: SearchRequest = serde_json::from_value(serde_json::json!({
+            "query": "memory"
+        }))
+        .expect("minimal search request should deserialize");
+
+        assert_eq!(req.mode, SearchMode::Rrf);
+        assert!(req.rerank);
+        assert_eq!(
+            req.rerank_threshold,
+            crate::settings::DEFAULT_RERANK_THRESHOLD
+        );
+    }
+
     #[tokio::test]
     async fn search_returns_descending_positional_scores() {
         let gw = AppStateGateway::new(seed_state());

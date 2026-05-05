@@ -221,7 +221,11 @@ pub async fn start_self_improve(app: AppHandle, state: State<'_, AppState>) -> R
     let worktree_dir = {
         let s = state.self_improve.lock().map_err(|e| e.to_string())?;
         let d = s.worktree_dir.clone();
-        if d.is_empty() { None } else { Some(d) }
+        if d.is_empty() {
+            None
+        } else {
+            Some(d)
+        }
     };
     coding::engine::start(app, engine, cfg, workflow_cfg, worktree_dir, repo_hint).await;
     Ok(())
@@ -745,7 +749,9 @@ pub async fn list_self_improve_worktrees(
     state: State<'_, AppState>,
 ) -> Result<Vec<coding::worktree::WorktreeInfo>, String> {
     let repo = coding_repo::detect_repo(&state.data_dir);
-    let repo_root = repo.root.as_deref()
+    let repo_root = repo
+        .root
+        .as_deref()
         .ok_or_else(|| "No git repository detected".to_string())?;
     let repo_root = std::path::Path::new(repo_root);
     coding::worktree::list_worktrees(repo_root)
@@ -847,8 +853,7 @@ pub async fn code_compute_processes(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            coding::processes::compute_processes(&data_dir, &repo, depth)
-                .map_err(|e| e.to_string())
+            coding::processes::compute_processes(&data_dir, &repo, depth).map_err(|e| e.to_string())
         }
     })
     .await
@@ -870,7 +875,9 @@ pub async fn code_list_clusters(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
             let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
             let repo_str = repo.to_string_lossy().to_string();
             let repo_id: i64 = conn
@@ -902,7 +909,9 @@ pub async fn code_list_processes(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
             let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
             let repo_str = repo.to_string_lossy().to_string();
             let repo_id: i64 = conn
@@ -942,9 +951,10 @@ pub async fn code_generate_wiki(
         let repo = repo.to_path_buf();
         let wiki_dir = wiki_dir.clone();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
-            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir)
-                .map_err(|e| e.to_string())
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
+            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir).map_err(|e| e.to_string())
         }
     })
     .await
@@ -977,8 +987,14 @@ pub async fn code_generate_wiki(
     tokio::task::spawn_blocking({
         let wiki_dir = wiki_dir.clone();
         move || {
-            coding::wiki::write_wiki_pages(&wiki_dir, &clusters, &all_syms_raw, &all_edges_raw, &summaries)
-                .map_err(|e| e.to_string())
+            coding::wiki::write_wiki_pages(
+                &wiki_dir,
+                &clusters,
+                &all_syms_raw,
+                &all_edges_raw,
+                &summaries,
+            )
+            .map_err(|e| e.to_string())
         }
     })
     .await

@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning](#chunk-335--reranker-default-on-for-rrf--relevance-threshold-pruning) | 2026-05-05 |
 | [Chunk 33.4 — Auto-edge extraction on memory ingest](#chunk-334--auto-edge-extraction-on-memory-ingest) | 2026-05-05 |
 | [Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test](#chunk-333--brain_kg_neighbors-mcp-tool-seed-graph-integration-test) | 2026-05-05 |
 | [MCP dependency bootstrap + self-improve dashboard prep](#mcp-dependency-bootstrap--self-improve-dashboard-prep) | 2026-05-05 |
@@ -272,6 +273,43 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Make RRF/HyDE retrieval prefer precision by default and prevent weak reranked candidates from reaching `[LONG-TERM MEMORY]` prompt context.
+
+**Architecture:**
+- Added default-on `rerank` and `rerank_threshold` fields to MCP/gateway search requests. RRF/HyDE searches now pull a bounded 20–50 candidate recall set when a local active brain is available, score with `OllamaAgent::rerank_score`, and prune below the normalised default threshold `0.55`.
+- Added `memory::reranker::rerank_candidates_with_threshold`, preserving the existing recall-first `rerank_candidates` helper while providing a thresholded path for prompt injection.
+- Wired non-streaming chat prompt memory assembly through `hybrid_search_rrf` plus the same thresholded reranker before `build_budgeted_prompt` formats retrieved records into the `[RETRIEVED CONTEXT]` / `[LONG-TERM MEMORY]` block.
+- Surfaced `rerank` and `rerank_threshold` in the MCP `brain_search` schema; gRPC search uses the default-on policy for its existing proto shape.
+- Updated README, `docs/brain-advanced-design.md`, and MCP shared data for the brain-surface change.
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/gateway.rs`
+- `src-tauri/src/ai_integrations/grpc/mod.rs`
+- `src-tauri/src/ai_integrations/mcp/tools.rs`
+- `src-tauri/src/commands/chat.rs`
+- `src-tauri/src/memory/reranker.rs`
+- `src-tauri/src/settings/mod.rs`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- Pre-edit `npm run lint` → 0 errors, existing warnings only.
+- `cargo test memory::reranker` → 16 passed.
+- `cargo test ai_integrations::gateway::tests::search_returns_descending_positional_scores` → 1 passed.
+- `cargo test commands::chat::tests` → 15 passed.
 
 ---
 
