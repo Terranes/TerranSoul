@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 33.6 — Maintenance scheduler in headless MCP runner** (Phase 33). See the Phase 33 table below.
+**Chunk 34.1 — Persisted self-improve workboard** (Phase 34). See the Phase 34 table below.
 
 ---
 
@@ -46,30 +46,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-
----
-
-## Phase 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
-
-> **Why this phase exists:** the seed in `mcp-data/shared/memory-seed.sql` now
-> populates rows + typed edges, but the **vector / HNSW / reranker** layers of
-> the brain are not exercised on a fresh `npm run mcp` run because no embedding
-> backfill is triggered post-seed and the headless runner has no LLM provider
-> by default. Result: RRF degrades to 5 of 6 signals on the canonical dataset
-> until an end-user starts the GUI app. This phase closes that gap so every
-> retrieval layer (SQLite schema · FTS5 · HNSW vectors · KG edges · RRF fusion ·
-> HyDE expansion · LLM-as-judge reranker) is **fully active on the seeded
-> dataset out of the box**.
->
-> **Source docs (durable analysis already absorbed into the brain):**
-> [`mcp-data/shared/memory-philosophy.md`](../mcp-data/shared/memory-philosophy.md)
-> · [`mcp-data/shared/claudia-research.md`](../mcp-data/shared/claudia-research.md)
-> · [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md).
-> Stay-out-of-scope items captured in `rules/backlog.md` Phase 33B.
-
-| ID | Status | Title | Goal |
-|---|---|---|---|
-| 33.6 | not-started | Maintenance scheduler in headless MCP runner | Today `auto_promote_memories`, `edge_conflict_scan`, `consolidate_duplicates`, and `backfill_embeddings` only run inside the GUI Tauri app's tick loop. Hoist the scheduler into a shared `memory::maintenance::spawn` task started by both `lib.rs::run` and the headless `mcp-http` binary, with intervals from `app_settings.json`. |
 
 ---
 

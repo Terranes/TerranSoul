@@ -928,6 +928,7 @@ pub fn run_http_server() -> std::io::Result<()> {
         if seeded_mcp_data {
             backfill_mcp_seed_embeddings(&state).await;
         }
+        spawn_shared_maintenance(&state, "mcp-http");
 
         match ai_integrations::mcp::start_server(state, port, token.clone(), false).await {
             Ok(handle) => {
@@ -978,6 +979,35 @@ fn write_mcp_token_file(
     let token_file = vscode_dir.join(".mcp-token");
     std::fs::write(&token_file, token)?;
     Ok(token_file)
+}
+
+fn maintenance_config_from_settings(
+    settings: &settings::AppSettings,
+) -> brain::maintenance_scheduler::MaintenanceConfig {
+    let cooldown_ms = settings.maintenance_cooldown_ms();
+    brain::maintenance_scheduler::MaintenanceConfig {
+        decay_cooldown_ms: cooldown_ms,
+        garbage_collect_cooldown_ms: cooldown_ms,
+        promote_tier_cooldown_ms: cooldown_ms,
+        edge_extract_cooldown_ms: cooldown_ms,
+    }
+}
+
+fn spawn_shared_maintenance(state: &AppState, label: &str) {
+    let config = state
+        .app_settings
+        .lock()
+        .map(|settings| maintenance_config_from_settings(&settings))
+        .unwrap_or_default();
+    let runtime = brain::maintenance_runtime::spawn(
+        state.clone(),
+        config,
+        brain::maintenance_runtime::DEFAULT_TICK_INTERVAL,
+    );
+    eprintln!(
+        "[{label}] maintenance scheduler started; state={}",
+        runtime.state_path().display()
+    );
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1414,6 +1444,7 @@ pub fn run() {
 
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
+            spawn_shared_maintenance(&state, if mcp_app_mode { "mcp-app" } else { "app" });
 
             // Auto-start the MCP HTTP server on the headless port (7423)
             // when running in MCP mode so external coding agents can talk

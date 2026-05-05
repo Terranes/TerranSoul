@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33.6 — Maintenance scheduler in headless MCP runner](#chunk-336--maintenance-scheduler-in-headless-mcp-runner) | 2026-05-05 |
 | [Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning](#chunk-335--reranker-default-on-for-rrf--relevance-threshold-pruning) | 2026-05-05 |
 | [Chunk 33.4 — Auto-edge extraction on memory ingest](#chunk-334--auto-edge-extraction-on-memory-ingest) | 2026-05-05 |
 | [Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test](#chunk-333--brain_kg_neighbors-mcp-tool-seed-graph-integration-test) | 2026-05-05 |
@@ -273,6 +274,37 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33.6 — Maintenance scheduler in headless MCP runner
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Ensure the brain maintenance scheduler runs in both the GUI Tauri app and the headless `npm run mcp` / `--mcp-http` runner, using the same persisted settings and state file.
+
+**Architecture:**
+- Added a shared startup helper in `lib.rs` that derives `MaintenanceConfig` from `AppSettings.maintenance_interval_hours`, starts `brain::maintenance_runtime::spawn`, and logs the persisted `maintenance_state.json` path.
+- Called the helper from normal Tauri app setup, MCP app mode setup, and headless `run_http_server` after MCP brain auto-configuration and post-seed embedding backfill.
+- The existing runtime keeps reading live app settings each tick, so GUI and headless modes share the same enable flag, interval, idle guard, storage cap, and dispatch code for decay, garbage collection, tier promotion, and LLM edge extraction.
+- Updated README, `docs/brain-advanced-design.md`, and MCP shared seed/index entries so future agents know headless MCP now owns maintenance too.
+
+**Files modified:**
+- `src-tauri/src/lib.rs`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test brain::maintenance_runtime` → 6 passed.
+- `cargo test brain::maintenance_scheduler` → 17 passed.
+- `cargo test mcp_seed_tests::seed_mcp_data_reports_first_run_only` → 1 passed.
+- `TERRANSOUL_MCP_PORT=7427 node scripts/copilot-start-mcp.mjs 120 --smoke` → headless MCP reached `/health` and stopped cleanly.
 
 ---
 

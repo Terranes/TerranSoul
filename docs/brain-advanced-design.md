@@ -2674,7 +2674,7 @@ After every auto-learn extraction, the frontend accumulates a running count of s
 
 ### 21.7 Roadmap gaps (already tracked in §16)
 
-- **Background scheduler** — Step 5 maintenance jobs are currently user-triggered. A daily background scheduler (`tasks::manager::TaskManager`) is on the Phase 4 roadmap.
+- **Background scheduler** — Step 5 maintenance runs through the shared `brain::maintenance_runtime` tick loop. Both the normal Tauri app and the headless `npm run mcp` / `--mcp-http` runner start the same scheduler, derive intervals from `AppSettings.maintenance_interval_hours`, persist `maintenance_state.json`, and dispatch decay, garbage collection, tier promotion, and LLM edge extraction without requiring the GUI tick loop.
 - **Conversation-aware extraction** — today extraction sees the whole session as one blob. The Phase 5 roadmap adds *segmented* extraction (e.g. one extraction per topic shift detected by embedding-distance peak).
 - **Edge auto-extraction** — `extract_edges_via_brain` is manual; auto-firing it after each successful `extract_facts` is the next iteration of this loop.
 - **Replay-from-history rebuild** — re-run extraction over old chat logs to backfill memories created before auto-learn existed (planned for Phase 5 alongside the export/import work).

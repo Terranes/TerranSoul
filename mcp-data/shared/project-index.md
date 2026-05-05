@@ -53,7 +53,7 @@
 | `free_api.rs` | Pollinations / OpenRouter free-tier provider |
 | `intent_classifier.rs` | Lightweight intent classifier for query routing |
 | `lm_studio.rs` | LM Studio provider adapter |
-| `maintenance_runtime.rs`, `maintenance_scheduler.rs` | Brain background maintenance (decay, GC, summarization) |
+| `maintenance_runtime.rs`, `maintenance_scheduler.rs` | Shared GUI/headless MCP background maintenance (decay, GC, tier promotion, edge extraction) |
 | `mcp_auto_config.rs` | Auto-configures the brain when running headless MCP |
 | `model_recommender.rs` | RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6, etc.) |
 | `ollama_agent.rs` | Local Ollama provider; `embed_text`, `hyde_complete`, `rerank_score` |
