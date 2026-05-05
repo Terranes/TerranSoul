@@ -44,5 +44,21 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Start TerranSoul MCP brain for the agent session
-        run: node scripts/copilot-start-mcp.mjs 300
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + MCP build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: copilot-mcp-cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: copilot-mcp-cargo-${{ runner.os }}-
+
+      - name: Warm TerranSoul MCP brain build
+        run: cargo build --manifest-path src-tauri/Cargo.toml
+
+      - name: Verify TerranSoul MCP brain can start
+        run: node scripts/copilot-start-mcp.mjs 120 --smoke

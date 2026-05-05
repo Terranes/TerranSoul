@@ -88,3 +88,19 @@
 | 34.3 | not-started | Backlog promotion controls | Add safe UI controls for converting failed runs, research ideas, and deferred self-improve items into scoped milestone chunks without editing markdown by hand. |
 
 ---
+
+## Phase 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+> Make provider choice consistent across the companion app, MCP pet mode, and
+> coding workflows. The target is one policy surface that can route by task,
+> token budget, rate-limit state, free-tier exhaustion, and privacy mode without
+> duplicating provider settings in each feature.
+
+| ID | Status | Title | Goal |
+|---|---|---|---|
+| 35.1 | not-started | Unified provider policy registry | Add a single app-wide model/provider configuration registry used by chat, memory/RAG, MCP tools, and coding workflows. Include per-task defaults for chat, embeddings, rerank, summarise, code review, and long-context analysis. |
+| 35.2 | not-started | Automatic provider failover | Extend `ProviderRotator` with structured retry/failover reasons for rate limits, free-tier exhaustion, context-window overflow, and configured token caps. Preserve local-first/privacy constraints and expose the selected fallback in UI/MCP status. |
+| 35.3 | not-started | Multi-agent task routing policy | Let coding workflows declare agent roles, preferred model classes, max token budgets, and fallback chains. Reuse the unified provider policy so all agents share rate-limit and quota state instead of retrying independently. |
+| 35.4 | not-started | Provider observability dashboard | Add a settings/workflow panel showing active provider, fallback history, rate-limit cooldowns, token-budget decisions, and per-task model usage for the whole app and MCP mode. |
+
+---

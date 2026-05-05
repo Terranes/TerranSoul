@@ -62,6 +62,22 @@
 
 ---
 
+## Phase 36B — Understand-Anything Adoption Catalogue (Reverse-Engineered from `Lum1104/Understand-Anything`)
+
+> **Source:** [`Lum1104/Understand-Anything`](https://github.com/Lum1104/Understand-Anything)
+> (MIT). Studied public README, plugin layout, agent catalogue, and license only;
+> no source, prompts, assets, or branding copied. Promote rows only when the user
+> explicitly asks for these ideas to move into `rules/milestones.md`.
+
+| Chunk | Title | Goal |
+|---|---|---|
+| 36B.1 | Committed code-graph snapshot | Add an optional, reviewable `code-graph.json` export generated from TerranSoul's existing `coding/symbol_index.rs` so teammates and agents can load code intelligence without re-indexing. Ignore local intermediates and keep runtime SQLite out of Git. |
+| 36B.2 | Persona-adaptive graph explanations | Reuse existing persona/settings state to vary graph explanations for newcomer, maintainer, PM, and power-user views without changing the underlying symbol graph. |
+| 36B.3 | Guided architecture tours | Generate ordered tours from `coding/processes.rs` and dependency edges so new contributors can learn TerranSoul in dependency order from the dashboard and MCP tools. |
+| 36B.4 | Diff impact overlay | Add a changed-file overlay that marks impacted symbols, processes, docs, and tests before commit, backed by the existing code index and workflow planner. |
+
+---
+
 ## Phase 10 — Developer Experience & Copilot Integration
 
 > **Goal:** Streamline the AI-assisted development loop so Copilot (and other

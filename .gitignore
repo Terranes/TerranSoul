@@ -5,6 +5,7 @@ qa-screenshots/
 *.local
 src-tauri/target/
 src-tauri/gen/
+src-tauri/code_index.sqlite
 test-results/
 playwright-report/
 /.claude/worktrees

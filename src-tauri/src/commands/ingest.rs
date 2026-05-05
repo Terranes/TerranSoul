@@ -590,7 +590,75 @@ async fn run_ingest_task(
         }
     }
 
+    if let Some(model) = auto_edge_extraction_model(
+        state
+            .app_settings
+            .lock()
+            .map(|settings| settings.auto_extract_edges)
+            .unwrap_or(true),
+        active_brain.as_deref(),
+        created_entries.len(),
+    ) {
+        emit_progress(
+            app,
+            task_id,
+            99,
+            "Extracting memory graph edges…",
+            created_entries.len(),
+            created_entries.len(),
+        );
+        let _ = run_ingest_edge_extraction(state, &model, 25).await;
+    }
+
     Ok((created, total_chars))
+}
+
+fn auto_edge_extraction_model(
+    auto_extract_edges: bool,
+    active_brain: Option<&str>,
+    created_entries: usize,
+) -> Option<String> {
+    if !auto_extract_edges || created_entries == 0 {
+        return None;
+    }
+    active_brain.map(str::to_string)
+}
+
+async fn run_ingest_edge_extraction(
+    state: &State<'_, AppState>,
+    model: &str,
+    chunk_size: usize,
+) -> Result<usize, String> {
+    let entries: Vec<crate::memory::MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    if entries.len() < 2 {
+        return Ok(0);
+    }
+
+    let known_ids: HashSet<i64> = entries.iter().map(|entry| entry.id).collect();
+    let agent = crate::brain::OllamaAgent::new(model);
+    let chunk_size = chunk_size.clamp(2, 50);
+    let mut total_inserted = 0usize;
+
+    for window in entries.chunks(chunk_size) {
+        let block = crate::memory::format_memories_for_extraction(window);
+        let reply = agent.propose_edges(&block).await;
+        if reply.trim().eq_ignore_ascii_case("NONE") {
+            continue;
+        }
+        let new_edges = crate::memory::parse_llm_edges(&reply, &known_ids);
+        if new_edges.is_empty() {
+            continue;
+        }
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        if let Ok(inserted) = store.add_edges_batch(&new_edges) {
+            total_inserted += inserted;
+        }
+    }
+
+    Ok(total_inserted)
 }
 
 fn build_ingest_chunks(
@@ -1457,5 +1525,19 @@ mod tests {
             local_ollama_model_hint(None, Some("legacy-model")),
             Some("legacy-model".to_string())
         );
+    }
+
+    #[test]
+    fn auto_edge_extraction_model_requires_setting_model_and_created_entries() {
+        assert_eq!(
+            auto_edge_extraction_model(true, Some("gemma3:4b"), 2),
+            Some("gemma3:4b".to_string())
+        );
+        assert_eq!(
+            auto_edge_extraction_model(false, Some("gemma3:4b"), 2),
+            None
+        );
+        assert_eq!(auto_edge_extraction_model(true, None, 2), None);
+        assert_eq!(auto_edge_extraction_model(true, Some("gemma3:4b"), 0), None);
     }
 }

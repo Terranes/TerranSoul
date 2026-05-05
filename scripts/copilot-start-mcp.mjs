@@ -5,7 +5,8 @@ import path from 'node:path'
 
 const repoRoot = process.cwd()
 const port = Number.parseInt(process.env.TERRANSOUL_MCP_PORT ?? '7423', 10)
-const waitSeconds = Number.parseInt(process.argv[2] ?? '240', 10)
+const waitSeconds = Number.parseInt(process.argv.find((arg) => /^\d+$/.test(arg)) ?? '240', 10)
+const smoke = process.argv.includes('--smoke')
 const logPath = process.env.TERRANSOUL_MCP_LOG ?? '/tmp/terransoul-mcp-copilot.log'
 const pidPath = process.env.TERRANSOUL_MCP_PID ?? '/tmp/terransoul-mcp-copilot.pid'
 
@@ -71,5 +72,14 @@ console.log(`[copilot-mcp] headless MCP is healthy on ${port}`)
 for (const tokenPath of ['.vscode/.mcp-token', 'mcp-data/mcp-token.txt']) {
   if (fs.existsSync(tokenPath)) {
     console.log(`[copilot-mcp] token available at ${tokenPath}`)
+  }
+}
+
+if (smoke) {
+  try {
+    process.kill(-child.pid, 'SIGTERM')
+    console.log(`[copilot-mcp] smoke mode stopped MCP process group ${child.pid}`)
+  } catch (error) {
+    console.log(`[copilot-mcp] smoke mode could not stop MCP process group ${child.pid}: ${error.message}`)
   }
 }

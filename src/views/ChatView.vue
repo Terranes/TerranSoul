@@ -952,7 +952,7 @@ function precomputePendingEmotionForStreaming(message: string): void {
 }
 
 async function handleSend(message: string) {
-  if (browserRuntime.value && !brain.browserAuthSession) {
+  if (browserRuntime.value && !brain.browserAuthSession && !brain.hasBrain) {
     showBrowserLlmConfig.value = true;
     return;
   }
