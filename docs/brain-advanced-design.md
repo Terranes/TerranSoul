@@ -672,7 +672,7 @@ final_score =
 > - **Cloud embedding API** (Chunk 16.9) — vector RAG works in free/paid modes too
 > - **RRF fusion** (Chunk 1.8) — multiple retrieval signals fused via Reciprocal Rank Fusion (k=60)
 > - **HyDE** (Chunk 1.9) — LLM-hypothetical-document embedding for cold/abstract queries
-> - **Cross-encoder rerank** (Chunk 1.10) — LLM-as-judge scores (query, doc) pairs 0–10
+> - **Cross-encoder rerank** (Chunk 1.10 / 33.5) — LLM-as-judge scores (query, doc) pairs 0–10; RRF/HyDE search defaults rerank on and prunes below threshold 0.55 before prompt injection
 > - **Relevance threshold** (Chunk 16.1) — only entries above a configurable score are injected
 > - **Semantic chunking** (Chunk 16.11) — `text-splitter` crate replaces naive word-count splitter
 > - **NotebookLM-style source guides** (Chunk 30.1) — one compact `summary` row per source lets broad document questions retrieve a source guide before raw chunks

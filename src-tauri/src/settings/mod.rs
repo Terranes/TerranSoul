@@ -352,6 +352,10 @@ fn default_mobile_notification_poll_ms() -> u64 {
 /// § 16 Phase 4 (Chunk 16.1).
 pub const DEFAULT_RELEVANCE_THRESHOLD: f64 = 0.30;
 
+/// Default LLM-as-judge rerank threshold for RRF results. Scores are
+/// normalised from the reranker's 0–10 rubric into 0.0–1.0 before pruning.
+pub const DEFAULT_RERANK_THRESHOLD: f64 = 0.55;
+
 fn default_relevance_threshold() -> f64 {
     DEFAULT_RELEVANCE_THRESHOLD
 }

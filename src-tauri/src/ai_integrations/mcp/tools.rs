@@ -23,7 +23,9 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
                 "properties": {
                     "query": { "type": "string", "description": "Search query text" },
                     "limit": { "type": "integer", "description": "Max results (1-100, default 10)" },
-                    "mode": { "type": "string", "enum": ["hybrid", "rrf", "hyde"], "description": "Search mode (default: rrf)" }
+                    "mode": { "type": "string", "enum": ["hybrid", "rrf", "hyde"], "description": "Search mode (default: rrf)" },
+                    "rerank": { "type": "boolean", "description": "Run LLM-as-judge rerank for RRF/HyDE when a local brain is available (default: true)" },
+                    "rerank_threshold": { "type": "number", "description": "Normalised 0.0-1.0 rerank pruning threshold (default: 0.55)" }
                 },
                 "required": ["query"]
             }
@@ -140,7 +142,17 @@ pub async fn dispatch(
                 Some("hyde") => SearchMode::Hyde,
                 _ => SearchMode::Rrf,
             };
-            let req = SearchRequest { query, limit, mode };
+            let rerank = args["rerank"].as_bool().unwrap_or(true);
+            let rerank_threshold = args["rerank_threshold"]
+                .as_f64()
+                .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
+            let req = SearchRequest {
+                query,
+                limit,
+                mode,
+                rerank,
+                rerank_threshold,
+            };
             gw.search(caps, req)
                 .await
                 .map(|hits| serde_json::to_string(&hits).unwrap_or_default())

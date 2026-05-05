@@ -283,6 +283,8 @@ fn gateway_search_request(req: proto::SearchRequest) -> GatewaySearchRequest {
             proto::SearchMode::Hyde => GatewaySearchMode::Hyde,
             proto::SearchMode::Rrf => GatewaySearchMode::Rrf,
         },
+        rerank: true,
+        rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
     }
 }
 

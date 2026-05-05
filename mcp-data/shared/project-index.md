@@ -90,7 +90,7 @@
 | `obsidian_export.rs`, `obsidian_sync.rs` | One-way + bidirectional Obsidian vault integration |
 | `query_intent.rs` | Query-intent classifier wiring into hybrid search |
 | `replay.rs` | Replayable session memory |
-| `reranker.rs` | LLM-as-judge cross-encoder reranker |
+| `reranker.rs` | LLM-as-judge cross-encoder reranker with default 0.55 threshold pruning for RRF/HyDE |
 | `tag_vocabulary.rs` | Controlled tag vocabulary |
 | `temporal.rs` | Natural-language time-range queries |
 | `versioning.rs` | Non-destructive memory edit history (V8) |

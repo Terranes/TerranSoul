@@ -155,6 +155,20 @@ pub struct SearchRequest {
     pub limit: Option<usize>,
     #[serde(default)]
     pub mode: SearchMode,
+    /// Run LLM-as-judge rerank after RRF/HyDE recall. Defaults on for RRF.
+    #[serde(default = "default_search_rerank")]
+    pub rerank: bool,
+    /// Normalised 0.0–1.0 rerank score threshold. Defaults to 0.55.
+    #[serde(default = "default_search_rerank_threshold")]
+    pub rerank_threshold: f64,
+}
+
+fn default_search_rerank() -> bool {
+    true
+}
+
+fn default_search_rerank_threshold() -> f64 {
+    crate::settings::DEFAULT_RERANK_THRESHOLD
 }
 
 /// A single search result. Keep this **strictly** flatter than
@@ -547,18 +561,48 @@ impl BrainGateway for AppStateGateway {
             .await;
 
         // Step 2: dispatch to the right store method.
-        let store = self
-            .state
-            .memory_store
-            .lock()
-            .map_err(GatewayError::from_lock)?;
-        let entries = match req.mode {
-            SearchMode::Hybrid => store
-                .hybrid_search(&req.query, query_emb.as_deref(), limit)
-                .map_err(|e| GatewayError::Storage(e.to_string()))?,
-            SearchMode::Rrf | SearchMode::Hyde => store
-                .hybrid_search_rrf(&req.query, query_emb.as_deref(), limit)
-                .map_err(|e| GatewayError::Storage(e.to_string()))?,
+        let recall_limit = if matches!(req.mode, SearchMode::Rrf | SearchMode::Hyde)
+            && req.rerank
+            && model_opt.is_some()
+        {
+            limit.max(20).min(50)
+        } else {
+            limit
+        };
+        let entries = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            match req.mode {
+                SearchMode::Hybrid => store
+                    .hybrid_search(&req.query, query_emb.as_deref(), recall_limit)
+                    .map_err(|e| GatewayError::Storage(e.to_string()))?,
+                SearchMode::Rrf | SearchMode::Hyde => store
+                    .hybrid_search_rrf(&req.query, query_emb.as_deref(), recall_limit)
+                    .map_err(|e| GatewayError::Storage(e.to_string()))?,
+            }
+        };
+
+        let entries = if matches!(req.mode, SearchMode::Rrf | SearchMode::Hyde) && req.rerank {
+            if let Some(model) = model_opt {
+                let agent = OllamaAgent::new(&model);
+                let mut scores = Vec::with_capacity(entries.len());
+                for entry in &entries {
+                    scores.push(agent.rerank_score(&req.query, &entry.content).await);
+                }
+                crate::memory::reranker::rerank_candidates_with_threshold(
+                    entries,
+                    &scores,
+                    limit,
+                    req.rerank_threshold,
+                )
+            } else {
+                entries.into_iter().take(limit).collect()
+            }
+        } else {
+            entries.into_iter().take(limit).collect()
         };
 
         // Step 3: stamp positional scores so clients can sort / threshold.
@@ -781,6 +825,8 @@ impl BrainGateway for AppStateGateway {
                     query: req.query.clone(),
                     limit: Some(limit),
                     mode,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await?;
@@ -1026,6 +1072,8 @@ mod tests {
                     query: "rust".into(),
                     limit: None,
                     mode: SearchMode::Rrf,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await
@@ -1112,6 +1160,8 @@ mod tests {
                     query: "   ".into(),
                     limit: None,
                     mode: SearchMode::Rrf,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await
@@ -1132,6 +1182,8 @@ mod tests {
                     query: "rust".into(),
                     limit: Some(5),
                     mode: SearchMode::Rrf,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await

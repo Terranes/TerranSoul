@@ -181,6 +181,43 @@ pub fn rerank_candidates(
         .collect()
 }
 
+/// Re-order candidates with the same semantics as [`rerank_candidates`],
+/// then drop entries whose reranker score is below `threshold`.
+///
+/// `threshold` is a normalised 0.0–1.0 value while LLM scores are 0–10.
+/// Unscored candidates are kept only when the threshold is zero, preserving
+/// the legacy recall-first behaviour for callers that explicitly disable
+/// pruning.
+pub fn rerank_candidates_with_threshold(
+    candidates: Vec<MemoryEntry>,
+    scores: &[Option<u8>],
+    limit: usize,
+    threshold: f64,
+) -> Vec<MemoryEntry> {
+    use std::collections::HashMap;
+
+    let threshold = threshold.clamp(0.0, 1.0);
+    let score_by_id: HashMap<i64, Option<u8>> = candidates
+        .iter()
+        .enumerate()
+        .map(|(idx, entry)| (entry.id, scores.get(idx).copied().flatten()))
+        .collect();
+    let reranked = rerank_candidates(candidates, scores, usize::MAX);
+
+    reranked
+        .into_iter()
+        .filter(|candidate| {
+            score_by_id
+                .get(&candidate.id)
+                .copied()
+                .flatten()
+                .map(|s| (s as f64 / 10.0) >= threshold)
+                .unwrap_or(threshold <= 0.0)
+        })
+        .take(limit)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +377,28 @@ mod tests {
         let out = rerank_candidates(cands, &scores, 3);
         // Top 3 by score (descending) are 9, 8, 7.
         assert_eq!(out.iter().map(|e| e.id).collect::<Vec<_>>(), vec![9, 8, 7]);
+    }
+
+    #[test]
+    fn rerank_threshold_prunes_low_scores_before_limit() {
+        let cands = vec![
+            entry(1, "weak"),
+            entry(2, "strong"),
+            entry(3, "borderline"),
+            entry(4, "unscored"),
+        ];
+        let scores = vec![Some(4), Some(9), Some(6), None];
+        let out = rerank_candidates_with_threshold(cands, &scores, 5, 0.55);
+
+        assert_eq!(out.iter().map(|e| e.id).collect::<Vec<_>>(), vec![2, 3]);
+    }
+
+    #[test]
+    fn rerank_threshold_zero_keeps_unscored_candidates() {
+        let cands = vec![entry(1, "scored"), entry(2, "unscored")];
+        let scores = vec![Some(1), None];
+        let out = rerank_candidates_with_threshold(cands, &scores, 5, 0.0);
+
+        assert_eq!(out.iter().map(|e| e.id).collect::<Vec<_>>(), vec![1, 2]);
     }
 }
