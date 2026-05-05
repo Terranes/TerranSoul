@@ -397,3 +397,20 @@ WHERE s.content LIKE 'MCP EVERY-SESSION RULE:%'
     OR d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
     OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
   );
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MCP AUTOSTART + OFFLINE EMBEDDER: Copilot setup runs scripts/copilot-start-mcp.mjs after dependency install to reuse or start headless MCP on port 7423. Fresh headless MCP seed/query embedding falls back to a deterministic in-process token-hash embedder when provider embeddings are unavailable, keeping HNSW + RRF vector retrieval active with zero network.',
+  'mcp,autostart,offline-embedder,hnsw,rrf,copilot-setup,self-improve',
+  10, 'fact', 1746316800000, 'long', 1.0, 'general', 'principle'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MCP AUTOSTART + OFFLINE EMBEDDER:%'
+  AND (
+       d.content LIKE 'MCP EVERY-SESSION RULE:%'
+    OR d.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
+    OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
+  );

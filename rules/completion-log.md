@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33.2 — Headless deterministic embedder fallback + Copilot MCP autostart](#chunk-332--headless-deterministic-embedder-fallback--copilot-mcp-autostart) | 2026-05-05 |
 | [Chunk 33.1 — Post-seed embedding backfill hook + MCP every-session rule](#chunk-331--post-seed-embedding-backfill-hook--mcp-every-session-rule) | 2026-05-04 |
 | [Chunk 32.8 — Animation emotion intensity pipeline](#chunk-328--animation-emotion-intensity-pipeline) | 2026-05-04 |
 | [Chunk 32.7 — vue-tsc + clippy hardening pass](#chunk-327--vue-tsc--clippy-hardening-pass) | 2026-05-04 |
@@ -267,6 +268,44 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33.2 — Headless deterministic embedder fallback + Copilot MCP autostart
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Ensure every Copilot cloud-agent session auto-starts/reuses TerranSoul MCP, and make the headless MCP runner exercise vector/HNSW/RRF retrieval on the canonical seed even when no provider embedding endpoint is available.
+
+**Architecture:**
+- Added `scripts/copilot-start-mcp.mjs`, a Node-only setup/session bootstrapper that checks release/dev/headless MCP health, starts `npm run mcp` detached when needed, waits for `/health`, and keeps logs/PIDs in `/tmp`.
+- `.github/workflows/copilot-setup-steps.yml` now runs the MCP bootstrap after `npm ci`, so Copilot cloud sessions enter with a warm `terransoul-brain-mcp` server whenever setup succeeds.
+- Added `memory::offline_embed`, a deterministic zero-network embedder that hashes normalized token unigrams + adjacent bigrams into 256-dimensional L2-normalized vectors.
+- Headless first-run seed backfill now prefers provider embeddings but falls back to `offline_embed::embed_text`, logging `mcp-seed-embedded count=<n> offline=<n> remaining=<n>`.
+- `AppStateGateway::search` now uses the unified `embed_for_mode` path for provider embeddings and, in MCP pet mode, falls back to the same deterministic query embedding for RRF/HyDE when provider embeddings are unavailable.
+- Shared docs/rules/README now document Copilot MCP autostart and offline deterministic embeddings; `mcp-data/shared/memory-seed.sql` includes a durable autostart/offline-embedder fact and supporting edges.
+
+**Files modified:**
+- `.github/workflows/copilot-setup-steps.yml` — starts MCP during Copilot setup and raises setup timeout to 59 minutes.
+- `scripts/copilot-start-mcp.mjs` — reusable MCP autostart/reuse/wait helper.
+- `src-tauri/src/memory/offline_embed.rs`, `src-tauri/src/memory/mod.rs` — deterministic offline embedder module + tests.
+- `src-tauri/src/lib.rs` — seed backfill provider-first/offline-fallback wiring and richer log line.
+- `src-tauri/src/ai_integrations/gateway.rs` — query-side provider/offline embedding fallback for MCP pet-mode RRF/HyDE.
+- `README.md`, `docs/brain-advanced-design.md`, `rules/agent-mcp-bootstrap.md`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules` — autostart/offline embedder docs.
+- `mcp-data/shared/README.md`, `mcp-data/shared/memory-seed.sql` — durable MCP shared-data update.
+- `rules/milestones.md` — removed completed 33.2 row and advanced Next Chunk to 33.3.
+
+**Validation:**
+- Current session MCP was initially not running on 7421/7422/7423; first manual start failed on missing GTK/GLib system deps. Installed the same dependencies as setup, restarted, and verified `/health`, `/status`, `brain_health`, and `brain_search` on port 7423.
+- `node --check scripts/copilot-start-mcp.mjs` and `node scripts/copilot-start-mcp.mjs 5` → reused the running 7423 server.
+- `cargo test --manifest-path src-tauri/Cargo.toml offline_embed --lib` → 3 passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml mcp_seed_tests --lib` → 3 passed.
+- `cargo test --manifest-path src-tauri/Cargo.toml ai_integrations::gateway::tests::search_returns_descending_positional_scores --lib` → 1 passed.
+- Fresh `/tmp` MCP smoke test on port 7524 showed `mcp-seed-embedded count=68 offline=68 remaining=0`; SQLite check confirmed `total=68 embedded=68`.
+- Seed SQL mirror validation → 68 memories, 66 typed edges, 1 autostart/offline-embedder row.
+- `cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings` → passed.
 
 ---
 

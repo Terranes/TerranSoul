@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 33.2 — Headless deterministic embedder fallback** (Phase 33). See the Phase 33 table below.
+**Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test** (Phase 33). See the Phase 33 table below.
 
 ---
 
@@ -69,7 +69,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 33.2 | not-started | Headless deterministic embedder fallback | When the headless MCP runner has no brain provider configured, populate `memories.embedding` with a small in-process embedder (e.g. hashing TF-IDF or `candle`-backed MiniLM gated behind a `mcp_offline_embed` Cargo feature) so the HNSW + RRF vector signal is exercised on the canonical seed even with zero network. Add a one-line README entry. |
 | 33.3 | not-started | `brain_kg_neighbors` MCP tool seed-graph integration test | Add a Rust integration test that spins up an in-memory `MemoryStore`, applies `mcp-data/shared/memory-seed.sql`, and asserts `brain_kg_neighbors("LESSON: …")` returns the lessons-learned hub via `part_of`, plus a 2-hop traversal works. Locks in the seed-edge contract from Phase 32.6. |
 | 33.4 | not-started | Auto-edge extraction on memory ingest | After every `memory_ingest` (and the post-seed pass from 33.1), schedule `parse_llm_edges` → `add_edges_batch` so new memories join the KG without manual seeding. Reuse the rate-limit + cost-cap from `auto_promote_memories`. Verify with a Vitest store mock + Rust test. |
 | 33.5 | not-started | Reranker default-on for RRF + relevance threshold pruning | Flip `BrainConfig.rerank` default to `true` for `SearchMode::Rrf`; add a configurable `rerank_threshold` (default 0.55) that drops candidates before they land in `[LONG-TERM MEMORY]`. Wire the threshold to `commands/chat.rs` system-prompt assembly. Tests: mock reranker, assert pruning. |

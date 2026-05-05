@@ -124,10 +124,12 @@ LLM call. There is **no separate "MCP brain settings" UI**; the
 runner reuses the same `BrainSelection` types and `ProviderRotator`
 that the app uses.
 
-If Ollama is not installed or not reachable, the runner falls back
-to keyword-only search and reports `brain_provider: "none"` in
-`/status` — it does NOT silently switch providers and does NOT
-upload prompts anywhere.
+If Ollama is not installed or not reachable, provider-specific LLM calls
+degrade gracefully and the headless runner uses the deterministic
+in-process embedder for seed/query vectors. This keeps the SQLite + HNSW +
+RRF vector signal live with zero network while still reporting the selected
+provider honestly in `/status` — it does NOT silently switch providers and
+does NOT upload prompts anywhere.
 
 ## 5. How agents start it
 
@@ -161,24 +163,29 @@ Every AI coding agent in this repo follows the same startup procedure:
 
 1. **Check first.** `GET http://127.0.0.1:7423/mcp` — if anything
    answers, the server is already up. Reuse it.
-2. **If not running, ask the user once** before launching it (it
-   spawns a Rust build the first time). After confirmation, run:
+2. **Copilot cloud agent autostart.** `.github/workflows/copilot-setup-steps.yml`
+   runs `node scripts/copilot-start-mcp.mjs 300` after installing
+   dependencies. That script reuses ports `7421`/`7422`/`7423` if healthy,
+   otherwise starts `npm run mcp` detached, waits for `/health`, and leaves
+   logs/PIDs in `/tmp`.
+3. **If not running in any other agent**, ask the user once before launching it
+   (it spawns a Rust build the first time). After confirmation, run:
    ```pwsh
    npm run mcp
    ```
    in a background terminal and wait for the
    `[mcp-http] listening on http://127.0.0.1:7423` line, e.g. via
    `node scripts/wait-for-service.mjs http://127.0.0.1:7423/mcp 60`.
-3. **Read the token** from `mcp-data/mcp-token.txt` and pass it as
+4. **Read the token** from `mcp-data/mcp-token.txt` and pass it as
    `Authorization: Bearer <token>` on every request.
-4. **Prefer brain tools over file searches** when the question is
+5. **Prefer brain tools over file searches** when the question is
    project-knowledge (e.g. "how does the RAG fallback work?",
    "what does Chunk 30.7 do?"): use `brain_search`, `brain_ingest`,
    `brain_health`, `brain_get`, `brain_list_recent`,
    `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`
    from the MCP tool list before falling back to manual
    `grep_search`/`file_search`/`read_file`.
-5. **Commit only shared MCP data.** It is valid to update
+6. **Commit only shared MCP data.** It is valid to update
    `mcp-data/shared/**` when durable project knowledge should help
    future MCP sessions. Never force-add ignored runtime files such as
    `mcp-token.txt`, `memory.db*`, indexes, logs, locks, sessions, or
@@ -204,9 +211,10 @@ only Git-tracked part of `mcp-data/`:
    canonical schema and runs `memory-seed.sql`.
 3. Config files are written only when missing.
 4. After brain config is applied, a first-run-only best-effort
-   `mcp-seed-embedded` pass backfills vectors for seed rows when the
-   selected provider exposes embeddings. Providers without embedding
-   endpoints leave rows queued for a later `backfill_embeddings` run.
+   `mcp-seed-embedded` pass backfills vectors for seed rows. Provider
+   embeddings are preferred; when unavailable, the deterministic offline
+   embedder hashes token features into 256-dimensional vectors so HNSW + RRF
+   still exercise a vector signal before the first agent query.
 5. If `mcp-data/memory.db` already exists (from a previous session),
    nothing is overwritten — incremental knowledge stays intact.
 

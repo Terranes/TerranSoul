@@ -23,8 +23,8 @@ Read the following files for full project context (in order of priority):
 - **Backend:** `src-tauri/src/` — Rust async (Tokio), 150+ Tauri commands
 - **Tests:** `npx vitest run` (frontend), `cargo test` (backend), `cargo clippy -- -D warnings`
 - **CI Gate:** `npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`
-- **MCP Brain:** mandatory every session; check/reuse/start `npm run mcp` (headless on :7423) or use the running app MCP on :7421/:7422
-- **MCP Quick Setup:** `npm run mcp`, set `TERRANSOUL_MCP_TOKEN_MCP` from `.vscode/.mcp-token`, verify with `brain_health`, then use `brain_search` / `brain_suggest_context` before broad repo searches
+- **MCP Brain:** mandatory every session; Copilot setup auto-starts headless MCP on :7423, otherwise check/reuse/start `npm run mcp` or use app MCP on :7421/:7422
+- **MCP Quick Setup:** auto-start script is `node scripts/copilot-start-mcp.mjs`; for manual runs use `npm run mcp`, set `TERRANSOUL_MCP_TOKEN_MCP` from `.vscode/.mcp-token`, verify with `brain_health`, then use `brain_search` / `brain_suggest_context` before broad repo searches
 - **Dev Server:** `npm run dev` (Vite on :1420)
 
 ## Session Protocol

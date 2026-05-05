@@ -225,10 +225,11 @@ runner used by AI coding agents). All three are wired into
 `brain_ingest`, `brain_health`, etc.) to access the companion's memory
 during coding sessions.
 
-For dev/coding work, prefer the headless runner: `npm run mcp` starts
-the brain on `127.0.0.1:7423` with state in `<repo>/mcp-data/` (no
-collision with `npm run dev` or a running app, no end-user data
-touched). It writes the current bearer token to `.vscode/.mcp-token`;
+For dev/coding work, prefer the headless runner: Copilot setup steps run
+`node scripts/copilot-start-mcp.mjs` automatically; manual sessions can run
+`npm run mcp`. The headless brain starts on `127.0.0.1:7423` with state in
+`<repo>/mcp-data/` (no collision with `npm run dev` or a running app, no
+end-user data touched). It writes the current bearer token to `.vscode/.mcp-token`;
 set `TERRANSOUL_MCP_TOKEN_MCP` from that file for VS Code's
 `terransoul-brain-mcp` profile, verify `GET http://127.0.0.1:7423/health`,
 then call `brain_health`. **Mandatory every-session rule:** every coding

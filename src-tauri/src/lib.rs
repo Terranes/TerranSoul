@@ -673,9 +673,17 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
     }
 
     let mut count = 0usize;
+    let mut offline_count = 0usize;
     for (id, content) in &unembedded {
-        let embedding =
-            brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref()).await;
+        let (embedding, used_offline) =
+            match brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref()).await
+            {
+                Some(embedding) => (Some(embedding), false),
+                None if ai_integrations::mcp::is_mcp_pet_mode() => {
+                    (memory::offline_embed::embed_text(content), true)
+                }
+                None => (None, false),
+            };
         if let Some(embedding) = embedding {
             let store = match state.memory_store.lock() {
                 Ok(store) => store,
@@ -686,12 +694,17 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
             };
             if store.set_embedding(*id, &embedding).is_ok() {
                 count += 1;
+                if used_offline {
+                    offline_count += 1;
+                }
             }
         }
     }
 
     let remaining = unembedded.len().saturating_sub(count);
-    eprintln!("[mcp-http] mcp-seed-embedded count={count} remaining={remaining}");
+    eprintln!(
+        "[mcp-http] mcp-seed-embedded count={count} offline={offline_count} remaining={remaining}"
+    );
     count
 }
 

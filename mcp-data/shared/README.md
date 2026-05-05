@@ -15,8 +15,9 @@ These files seed the headless MCP brain used by coding agents:
 `npm run mcp` reads this directory on first run before falling back to compiled
 defaults. If `mcp-data/memory.db` already exists, startup never overwrites it.
 On first run, the headless server now runs a best-effort embedding backfill
-after loading `brain_config.json`; providers with embedding endpoints warm the
-SQLite + HNSW + RRF path before the first agent query.
+after loading `brain_config.json`; provider embeddings are preferred, and the
+deterministic offline embedder warms the SQLite + HNSW + RRF path when no
+provider embedding endpoint is available.
 
 Update `memory-seed.sql`, `project-index.md`, or `lessons-learned.md` whenever
 the repo gains durable MCP/self-improve knowledge that future agents should

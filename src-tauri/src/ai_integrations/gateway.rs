@@ -457,6 +457,50 @@ impl AppStateGateway {
             .clone())
     }
 
+    fn brain_mode(&self) -> Result<Option<crate::brain::BrainMode>, GatewayError> {
+        Ok(self
+            .state
+            .brain_mode
+            .lock()
+            .map_err(GatewayError::from_lock)?
+            .clone())
+    }
+
+    async fn query_embedding(
+        &self,
+        mode: SearchMode,
+        query: &str,
+        model_opt: Option<&str>,
+        brain_mode: Option<&crate::brain::BrainMode>,
+    ) -> Option<Vec<f32>> {
+        let online = match mode {
+            SearchMode::Hybrid => None,
+            SearchMode::Rrf => crate::brain::embed_for_mode(query, brain_mode, model_opt).await,
+            SearchMode::Hyde => {
+                let text = if let Some(model) = model_opt {
+                    let agent = OllamaAgent::new(model);
+                    agent
+                        .hyde_complete(query)
+                        .await
+                        .unwrap_or_else(|| query.to_string())
+                } else {
+                    query.to_string()
+                };
+                crate::brain::embed_for_mode(&text, brain_mode, model_opt).await
+            }
+        };
+
+        if online.is_some() || mode == SearchMode::Hybrid {
+            return online;
+        }
+
+        if crate::ai_integrations::mcp::is_mcp_pet_mode() {
+            crate::memory::offline_embed::embed_text(query)
+        } else {
+            None
+        }
+    }
+
     /// Hex-encoded SHA-256 fingerprint over the resolved hit ids + the
     /// active brain identifier. The contract for VS Code Copilot's
     /// warm-cache pact (Chunk 15.7).
@@ -492,16 +536,15 @@ impl BrainGateway for AppStateGateway {
 
         // Step 1: optionally compute the query embedding (HyDE expands first).
         let model_opt = self.active_brain()?;
-        let query_emb = match (req.mode, model_opt.as_ref()) {
-            (SearchMode::Hybrid, _) | (_, None) => None,
-            (SearchMode::Rrf, Some(model)) => OllamaAgent::embed_text(&req.query, model).await,
-            (SearchMode::Hyde, Some(model)) => {
-                let agent = OllamaAgent::new(model);
-                let hypothetical = agent.hyde_complete(&req.query).await;
-                let text = hypothetical.as_deref().unwrap_or(req.query.as_str());
-                OllamaAgent::embed_text(text, model).await
-            }
-        };
+        let brain_mode = self.brain_mode()?;
+        let query_emb = self
+            .query_embedding(
+                req.mode,
+                &req.query,
+                model_opt.as_deref(),
+                brain_mode.as_ref(),
+            )
+            .await;
 
         // Step 2: dispatch to the right store method.
         let store = self
