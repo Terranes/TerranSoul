@@ -993,6 +993,29 @@ mod tests {
         state
     }
 
+    fn seed_state_from_shared_mcp_seed() -> AppState {
+        let state = AppState::for_test();
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .conn()
+                .execute_batch(include_str!("../../../mcp-data/shared/memory-seed.sql"))
+                .expect("shared MCP seed SQL should apply to canonical in-memory schema");
+        }
+        state
+    }
+
+    fn memory_id_containing(state: &AppState, needle: &str) -> i64 {
+        let store = state.memory_store.lock().unwrap();
+        store
+            .get_all()
+            .expect("memory list should load")
+            .into_iter()
+            .find(|entry| entry.content.contains(needle))
+            .unwrap_or_else(|| panic!("missing seeded memory containing {needle:?}"))
+            .id
+    }
+
     #[tokio::test]
     async fn read_op_requires_brain_read_capability() {
         let gw = AppStateGateway::new(seed_state());
@@ -1187,6 +1210,57 @@ mod tests {
             .unwrap();
         assert_eq!(nb.center.id, id);
         assert!(nb.truncated, "depth > 1 must report truncation");
+    }
+
+    #[tokio::test]
+    async fn kg_neighbors_reads_shared_seed_lesson_hub_edges() {
+        let state = seed_state_from_shared_mcp_seed();
+        let lesson_id = memory_id_containing(&state, "LESSON: The MCP seed");
+        let lessons_hub_id = memory_id_containing(
+            &state,
+            "mcp-data/shared/lessons-learned.md captures durable",
+        );
+        let stack_anchor_id =
+            memory_id_containing(&state, "STACK COVERAGE: the mcp-data seed exercises");
+
+        let gw = AppStateGateway::new(state.clone());
+        let nb = gw
+            .kg_neighbors(
+                &GatewayCaps::default(),
+                KgRequest {
+                    id: lesson_id,
+                    depth: 1,
+                    direction: "both".into(),
+                },
+            )
+            .await
+            .expect("seeded lesson should have KG neighbours");
+
+        assert_eq!(nb.center.id, lesson_id);
+        assert!(
+            nb.neighbors.iter().any(|neighbor| {
+                neighbor.edge.rel_type == "part_of"
+                    && neighbor.edge.dst_id == lessons_hub_id
+                    && neighbor
+                        .entry
+                        .as_ref()
+                        .is_some_and(|entry| entry.id == lessons_hub_id)
+            }),
+            "LESSON rows should be wired part_of the lessons-learned hub"
+        );
+
+        let two_hop = {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .traverse_from(lesson_id, 2, None)
+                .expect("seed graph should support two-hop traversal")
+        };
+        assert!(
+            two_hop
+                .iter()
+                .any(|(id, hop)| *id == stack_anchor_id && *hop == 2),
+            "lesson -> lessons hub -> stack coverage anchor should be reachable in two hops"
+        );
     }
 
     #[tokio::test]

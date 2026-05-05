@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test](#chunk-333--brain_kg_neighbors-mcp-tool-seed-graph-integration-test) | 2026-05-05 |
+| [MCP dependency bootstrap + self-improve dashboard prep](#mcp-dependency-bootstrap--self-improve-dashboard-prep) | 2026-05-05 |
 | [MCP Data Governance — Rules enforcement coverage](#mcp-data-governance--rules-enforcement-coverage) | 2026-05-05 |
 | [Chunk 33.2 — Headless deterministic embedder fallback + Copilot MCP autostart](#chunk-332--headless-deterministic-embedder-fallback--copilot-mcp-autostart) | 2026-05-05 |
 | [Chunk 33.1 — Post-seed embedding backfill hook + MCP every-session rule](#chunk-331--post-seed-embedding-backfill-hook--mcp-every-session-rule) | 2026-05-04 |
@@ -269,6 +271,67 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Lock in the `mcp-data/shared/memory-seed.sql` typed-edge contract so the MCP `brain_kg_neighbors` path can retrieve seeded lesson hub edges, and prove the same seed graph supports two-hop traversal for future RAG expansion.
+
+**Architecture:**
+- Added a gateway-level Rust test that creates an in-memory canonical memory store through `AppState::for_test`, applies the committed `mcp-data/shared/memory-seed.sql`, and exercises `AppStateGateway::kg_neighbors`.
+- The test asserts a seeded `LESSON:` row is wired to the `lessons-learned.md` hub with a `part_of` edge and the returned neighbour entry is the expected hub memory.
+- The test also verifies `MemoryStore::traverse_from(..., 2, None)` can walk from that lesson through the hub to the stack coverage anchor, proving the seed graph supports a two-hop route even while the public MCP response still reports depth > 1 as truncated.
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/gateway.rs`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test ai_integrations::gateway::tests::kg_neighbors_reads_shared_seed_lesson_hub_edges` → 1 passed.
+- `cargo test ai_integrations::mcp::integration_tests` → 19 passed.
+
+---
+
+## MCP dependency bootstrap + self-improve dashboard prep
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Scope:** Agent environment hardening + self-improve operations UX
+
+**Goal:** Respond to the dependency blocker discovered while starting MCP in this session, verify MCP after installing the missing packages, and make the existing self-improve panel more explicit about finished work, active work, backlog, and coding workflow gates.
+
+**Architecture:**
+- Added an explicit rule that agents must install missing platform dependencies when they need to run `npm run mcp`, `npm run dev`, `cargo tauri dev`, or app validation, then retry before reporting MCP/app startup as blocked.
+- Updated Copilot setup to install `libglib2.0-dev` explicitly so `glib-2.0.pc` and `gio-2.0.pc` are present for Tauri/MCP Rust builds.
+- Added a self-improve queue dashboard with `Finished`, `Working on`, and `Backlog` lanes derived from the existing roadmap/run state.
+- Added a coding workflow lane that makes the expected loop visible: select chunk, plan with brain context, code in isolated workflow, validate/archive/PR.
+- Added Phase 34 milestone chunks for a persisted self-improve workboard, structured workflow gate telemetry, and backlog promotion controls.
+- Updated README, brain design docs, MCP bootstrap rules, and shared MCP seed/lessons so future sessions retain the dependency-bootstrap rule.
+
+**Files modified:**
+- `.github/workflows/copilot-setup-steps.yml`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `rules/agent-mcp-bootstrap.md`
+- `rules/milestones.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/lessons-learned.md`
+- `src/components/SelfImprovePanel.vue`
+- `src/components/SelfImprovePanel.test.ts`
+
+**Validation:**
+- Installed the missing Linux Tauri/MCP packages in this sandbox and verified `GET http://127.0.0.1:7423/health`.
+- Called MCP `brain_health` → `memory_total=78`, `rag_quality_pct=100`.
+- Called MCP `brain_search` for MCP setup/self-improve dependency context.
+- `npx vitest run src/components/SelfImprovePanel.test.ts src/stores/self-improve.test.ts` → 26 passed.
+- `npm run lint -- src/components/SelfImprovePanel.vue src/components/SelfImprovePanel.test.ts src/stores/self-improve.ts` → 0 errors, existing repo warnings only.
+- `git diff --check` → passed.
 
 ---
 
