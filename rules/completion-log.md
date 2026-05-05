@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [MCP Data Governance — Rules enforcement coverage](#mcp-data-governance--rules-enforcement-coverage) | 2026-05-05 |
 | [Chunk 33.2 — Headless deterministic embedder fallback + Copilot MCP autostart](#chunk-332--headless-deterministic-embedder-fallback--copilot-mcp-autostart) | 2026-05-05 |
 | [Chunk 33.1 — Post-seed embedding backfill hook + MCP every-session rule](#chunk-331--post-seed-embedding-backfill-hook--mcp-every-session-rule) | 2026-05-04 |
 | [Chunk 32.8 — Animation emotion intensity pipeline](#chunk-328--animation-emotion-intensity-pipeline) | 2026-05-04 |
@@ -268,6 +269,35 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## MCP Data Governance — Rules enforcement coverage
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Scope:** MCP shared dataset / rule retrieval hardening
+
+**Goal:** Address the user requirement that agents were skipping rules in `rules/` (for example, leaving completed chunks in `rules/milestones.md`). Ensure TerranSoul's default MCP data retrieves those rules by default so future agents do not forget them.
+
+**Architecture:**
+- Added a high-importance `RULES ENFORCEMENT BUNDLE` seed memory plus individual rule memories for milestone hygiene, backlog promotion, prompt document loading, multi-agent instruction sync, brain/persona docs sync, credits/licensing, no pretend/mock production code, LLM decision routing, and validation/reality reporting.
+- Added typed `memory_edges` so the enforcement bundle supports the MCP every-session rule and each individual rule is `part_of` the bundle.
+- Updated `project-index.md` with a non-negotiable rules summary so agents can retrieve key `rules/` behavior without rescanning every rule file.
+- Updated `lessons-learned.md` with MCP autostart, milestone hygiene, backlog promotion, schema reality (`cognitive_kind`), and the rule that skipped rules must be promoted into MCP shared data.
+- Updated README and brain design docs to document that MCP shared seed now includes rule-enforcement memories.
+
+**Files modified:**
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `mcp-data/shared/lessons-learned.md`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- MCP was running on port 7423; `brain_health` and a rule-focused `brain_search` were called before edits.
+- Seed SQL mirror validation recorded in the final report.
 
 ---
 

@@ -2905,7 +2905,11 @@ the deterministic fallback embedder hashes token unigrams/bigrams into
 MCP RRF/HyDE search uses the same fallback in headless mode, so SQLite + HNSW +
 RRF operate on the canonical `mcp-data/shared/` dataset out of the box even
 with zero network. Durable self-improve lessons belong in `mcp-data/shared/`
-or the rules/docs, not only in chat transcripts.
+or the rules/docs, not only in chat transcripts. The shared seed also carries
+high-priority rule-enforcement memories (milestone archival, backlog promotion,
+instruction sync, docs sync, credits/licensing, no-mock production code, LLM
+decision routing, and validation) so agents can retrieve operational rules from
+MCP before editing instead of relying on a full manual scan of `rules/`.
 
 ### 24.1 Architecture
 

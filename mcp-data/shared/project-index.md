@@ -271,6 +271,34 @@
 | `research-reverse-engineering.md` | Reverse-engineering research log |
 | `ui-ux-standards.md` | UI/UX standards (design tokens, accessibility) |
 
+### Non-negotiable rules agents must retrieve from MCP before editing
+
+- `milestones.md` is the active queue only: keep only `not-started` /
+  `in-progress` rows, archive completed chunks to `completion-log.md`,
+  remove done rows, drop empty phase headings, and update `Next Chunk`.
+- `prompting-rules.md` forbids starting from `backlog.md`: if no milestone
+  chunks remain, stop and ask the user which backlog items to promote.
+- `prompting-rules.md` requires coding/self-improve prompts to load
+  `rules/*.md`, `instructions/*.md`, and `docs/*.md` through the shared
+  `CodingPrompt` / `run_coding_task` path.
+- `coding-standards.md` makes `.github/copilot-instructions.md` canonical and
+  requires `AGENTS.md`, `CLAUDE.md`, and `.cursorrules` quick references to
+  stay aligned when instructions change.
+- `architecture-rules.md` requires brain changes to update both
+  `docs/brain-advanced-design.md` and `README.md`; persona changes update both
+  `docs/persona-design.md` and `README.md`.
+- `coding-standards.md` requires `CREDITS.md` updates for external influences
+  (code, docs, roadmap, prompt shapes, feature catalogues, or rejected
+  decisions), and neutral TerranSoul names for runtime identifiers.
+- `reality-filter.md` / `coding-standards.md` prohibit pretend/TODO/mock
+  production code. Implement fully with tests or track it as a chunk and hide
+  it from user-reachable paths.
+- `llm-decision-rules.md` requires AI-behaviour decisions to route through the
+  configured brain classifier/command with a user toggle; no regex/includes
+  keyword routing except documented parsing/fallback exceptions.
+- Always validate changed areas with existing lint/build/tests and record
+  blockers honestly; do not claim unrun checks passed.
+
 ## Validation commands (CI gate)
 
 ```

@@ -3,7 +3,7 @@
 -- Contains architectural knowledge so agents can be productive immediately.
 --
 -- Schema: see src-tauri/src/memory/schema.rs (version 13)
--- Fields: content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category
+-- Fields: content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category, cognitive_kind
 
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
 VALUES
@@ -413,4 +413,111 @@ WHERE s.content LIKE 'MCP AUTOSTART + OFFLINE EMBEDDER:%'
        d.content LIKE 'MCP EVERY-SESSION RULE:%'
     OR d.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
     OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
+  );
+
+-- ============================================================================
+-- Rules enforcement coverage — high-priority operational rules from rules/*.md
+-- ============================================================================
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'RULES ENFORCEMENT BUNDLE: every agent must query MCP for project rules before broad exploration, then obey rules/milestones.md, rules/prompting-rules.md, rules/coding-standards.md, rules/architecture-rules.md, rules/reality-filter.md, and rules/quality-pillars.md. If a rule is missing from retrieval, update mcp-data/shared in the same PR so future agents cannot skip it.',
+  'rules,enforcement,mcp,self-improve,non-negotiable',
+  10, 'fact', 1746316800000, 'long', 1.0, 'rules', 'principle'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MILESTONE HYGIENE RULE: rules/milestones.md is the active queue only. It may contain only not-started or in-progress chunks. When a chunk is complete, log full details in rules/completion-log.md, remove the done row from milestones.md, drop empty phase headings, and update Next Chunk to the next not-started item. Never leave done rows in milestones.md.',
+  'rules,milestones,completion-log,chunk-hygiene,non-negotiable',
+  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'BACKLOG PROMOTION RULE: rules/backlog.md is a holding area only. Agents must never start backlog chunks directly. If milestones.md has no not-started chunks, stop and ask the user which backlog items to promote; only after user confirmation move selected items into milestones.md and continue.',
+  'rules,backlog,milestones,user-confirmation,non-negotiable',
+  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PROMPT CONTEXT RULE: every coding workflow/self-improve prompt must auto-load rules/*.md, instructions/*.md, and docs/*.md into indexed XML document blocks through the shared CodingPrompt/run_coding_task path. Do not create one-off prompt builders that bypass these rule documents.',
+  'rules,prompting,self-improve,codingprompt,documents',
+  9, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MULTI-AGENT INSTRUCTION SYNC RULE: .github/copilot-instructions.md is canonical. When changing project-wide instructions, keep AGENTS.md, CLAUDE.md, and .cursorrules quick references aligned in the same commit. rules/agent-mcp-bootstrap.md must stay agent-agnostic even when Copilot setup owns cloud autostart.',
+  'rules,instruction-sync,copilot,agents,claude,cursor',
+  9, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'DOCUMENTATION SYNC RULES: any brain-surface change must update both docs/brain-advanced-design.md and README.md; any persona-surface change must update both docs/persona-design.md and README.md. Brain/persona PRs missing those docs are incomplete.',
+  'rules,docs-sync,brain,persona,readme,non-negotiable',
+  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'CREDITS AND LICENSING RULE: any external author, open-source project, paper, docs page, dataset, tutorial, or reverse-engineered reference that informs code, docs, roadmap, prompts, feature catalogues, or rejected decisions must be credited in top-level CREDITS.md in the same PR. Use neutral TerranSoul names for runtime identifiers.',
+  'rules,credits,licensing,third-party,naming,non-negotiable',
+  9, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'NO PRETEND CODE RULE: production code must be real, compilable, and functional. No TODO/placeholder/future/subsequent-chunk comments, no empty trait impls, no mock/canned production responses, no symbolic scaffolding. Either implement fully with tests or track it as a milestone/backlog item and remove it from user-reachable paths.',
+  'rules,reality-filter,no-mocks,production-ready,non-negotiable',
+  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'LLM DECISION ROUTING RULE: decisions about what the AI should do — agent/tool choice, UX overlay, RAG injection, model switching, setup gates — must route through the configured brain classifier/command with a user toggle in src/stores/ai-decision-policy.ts. Hand-rolled regex/includes/keyword arrays for AI behaviour are banned except documented parsing/fallback exceptions.',
+  'rules,llm-decision,ai-routing,brain,classifier,non-negotiable',
+  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'VALIDATION AND REALITY RULE: after each chunk, run relevant existing lint/build/tests and report blockers honestly. Do not claim verification that did not run; label unverified/inferred claims. Code changes must also run security review via CodeQL checker when available, and dependency additions must check GH advisory data first for supported ecosystems.',
+  'rules,validation,reality-filter,codeql,security,non-negotiable',
+  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
+  AND (
+       d.content LIKE 'MCP EVERY-SESSION RULE:%'
+    OR d.content LIKE 'MILESTONE HYGIENE RULE:%'
+    OR d.content LIKE 'BACKLOG PROMOTION RULE:%'
+    OR d.content LIKE 'PROMPT CONTEXT RULE:%'
+    OR d.content LIKE 'MULTI-AGENT INSTRUCTION SYNC RULE:%'
+    OR d.content LIKE 'DOCUMENTATION SYNC RULES:%'
+    OR d.content LIKE 'CREDITS AND LICENSING RULE:%'
+    OR d.content LIKE 'NO PRETEND CODE RULE:%'
+    OR d.content LIKE 'LLM DECISION ROUTING RULE:%'
+    OR d.content LIKE 'VALIDATION AND REALITY RULE:%'
+    OR d.content LIKE 'Rules files (rules/):%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
+FROM memories s, memories d
+WHERE d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
+  AND (
+       s.content LIKE 'MILESTONE HYGIENE RULE:%'
+    OR s.content LIKE 'BACKLOG PROMOTION RULE:%'
+    OR s.content LIKE 'PROMPT CONTEXT RULE:%'
+    OR s.content LIKE 'MULTI-AGENT INSTRUCTION SYNC RULE:%'
+    OR s.content LIKE 'DOCUMENTATION SYNC RULES:%'
+    OR s.content LIKE 'CREDITS AND LICENSING RULE:%'
+    OR s.content LIKE 'NO PRETEND CODE RULE:%'
+    OR s.content LIKE 'LLM DECISION ROUTING RULE:%'
+    OR s.content LIKE 'VALIDATION AND REALITY RULE:%'
   );

@@ -387,6 +387,7 @@ For coding agents, use the headless brain runner so it cannot collide with the d
 5. Mandatory for every coding-agent session: use `brain_search` / `brain_suggest_context` for the current chunk before broad manual repo exploration, and write durable self-improve lessons into `mcp-data/shared/` or the rules/docs so the next `npm run mcp` run inherits them.
 
 The checked-in `.vscode/mcp.json` already points `terransoul-brain-mcp` at `http://127.0.0.1:7423/mcp` and reads `TERRANSOUL_MCP_TOKEN_MCP` for bearer auth. Release and dev app profiles use ports `7421` and `7422` with their own token env vars.
+The default `mcp-data/shared/` seed includes high-priority rule memories for milestone hygiene, backlog promotion, instruction sync, docs sync, CREDITS, no-mock production code, LLM decision routing, and validation so agents retrieve these before editing.
 
 ### 🖥️ Window Modes
 - Standard desktop window

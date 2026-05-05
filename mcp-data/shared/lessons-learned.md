@@ -20,6 +20,10 @@
 - **Detached background processes**: in this sandbox, prefer `setsid bash -c
   '...'` with stdin/stdout redirected to keep `npm run mcp` alive across
   short tool calls; plain `&` without redirection gets reaped.
+- **Copilot MCP autostart**: `.github/workflows/copilot-setup-steps.yml` runs
+  `node scripts/copilot-start-mcp.mjs` after `npm ci`. If a session starts
+  without MCP on 7421/7422/7423, fix setup/autostart rather than silently
+  proceeding without `brain_health` + relevant `brain_search`.
 
 ## Frontend conventions
 
@@ -51,7 +55,7 @@
   table columns: `content, tags, importance, memory_type, created_at,
   last_accessed, access_count, embedding, source_url, source_hash,
   expires_at, tier, decay_score, session_id, parent_id, token_count,
-  valid_to, obsidian_path, last_exported, category, updated_at,
+  valid_to, obsidian_path, last_exported, category, cognitive_kind, updated_at,
   origin_device`.
 - The MCP seed (`mcp-data/shared/memory-seed.sql`) is applied **only on
   first run** when `memory.db` does not yet exist. Existing runtime DBs
@@ -80,6 +84,13 @@
   never disturbed. Always read `rules/milestones.md` for the next chunk
   and `rules/completion-log.md` for the most recent context before
   starting work.
+- **Milestone hygiene is mandatory**: `rules/milestones.md` contains only
+  `not-started` and `in-progress` chunks. When a chunk is complete, add full
+  details to `rules/completion-log.md`, remove the done row from
+  `milestones.md`, drop empty phase headings, and update `Next Chunk`.
+- **Do not start from backlog**: `rules/backlog.md` is a holding area only.
+  If no milestone chunks remain, stop and ask the user which backlog item to
+  promote before editing either file.
 - Self-improve sessions append durable knowledge to
   `mcp-data/shared/memory-seed.sql`, `project-index.md`, and this file
   whenever a learning generalizes beyond the current chunk.
@@ -88,6 +99,10 @@
   cognitive-kind classification, knowledge graph, decay/GC, brain-gating
   quests, brain Tauri commands or Pinia stores) must update both
   `docs/brain-advanced-design.md` and `README.md` in the same PR.
+- Rule coverage belongs in MCP too: when an agent misses or skips a rule from
+  `rules/`, add a concise high-importance row to
+  `mcp-data/shared/memory-seed.sql` plus a short note in `project-index.md` or
+  this file so future `brain_search` retrieves it.
 
 ## CI / GitHub
 
