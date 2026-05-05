@@ -59,44 +59,42 @@ use commands::{
         unload_lm_studio_model,
     },
     character::load_vrm,
-    charisma::{
-        charisma_delete, charisma_list, charisma_promote, charisma_rate_turn,
-        charisma_record_usage, charisma_set_rating, charisma_summary,
-    },
     chat::{export_chat_log, get_conversation, send_message},
     coding::{
-        clear_self_improve_log, code_call_graph, code_compute_processes, code_generate_wiki,
-        code_index_repo, code_list_clusters, code_list_processes, code_resolve_edges,
-        coding_session_clear_handoff, coding_session_list_handoffs, coding_session_load_handoff,
-        coding_session_save_handoff, detect_self_improve_repo, get_coding_llm_config,
-        get_coding_workflow_config, get_github_config, get_self_improve_metrics,
-        get_self_improve_runs, get_self_improve_settings, get_self_improve_status,
-        learn_from_user_message, list_coding_llm_recommendations, list_local_coding_models,
-        list_self_improve_worktrees, open_self_improve_pr, preview_coding_workflow_context,
-        pull_main_for_self_improve, reset_coding_workflow_config, run_coding_task,
-        set_coding_llm_config, set_coding_workflow_config, set_github_config,
-        set_self_improve_autostart, set_self_improve_enabled, set_self_improve_worktree_dir,
-        start_self_improve, stop_self_improve, suggest_self_improve_branch,
-        test_coding_llm_connection,
+        clear_self_improve_log, coding_session_clear_handoff, coding_session_list_handoffs,
+        coding_session_load_handoff, coding_session_save_handoff, code_call_graph,
+        code_compute_processes, code_generate_wiki, code_index_repo, code_list_clusters,
+        code_list_processes,
+        code_resolve_edges,
+        detect_self_improve_repo,
+        get_coding_llm_config, get_coding_workflow_config, get_github_config,
+        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
+        get_self_improve_status, learn_from_user_message, list_coding_llm_recommendations,
+        list_local_coding_models, list_self_improve_worktrees, open_self_improve_pr,
+        preview_coding_workflow_context, pull_main_for_self_improve,
+        reset_coding_workflow_config, run_coding_task, set_coding_llm_config,
+        set_coding_workflow_config, set_github_config, set_self_improve_autostart,
+        set_self_improve_enabled, set_self_improve_worktree_dir, start_self_improve,
+        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
     },
     coding_sessions::{
         coding_session_append_message, coding_session_clear_chat, coding_session_fork,
-        coding_session_list, coding_session_load_chat, coding_session_purge, coding_session_rename,
+        coding_session_list, coding_session_load_chat, coding_session_purge,
+        coding_session_rename,
     },
-    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
-    crag::crag_retrieve,
+    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},    crag::crag_retrieve,
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
         ensure_ollama_container, get_runtime_preference, set_runtime_preference,
         start_docker_desktop, stop_docker_desktop, wait_for_docker,
     },
-    github_auth::{github_poll_device_token, github_request_device_code},
     gitnexus::{
         configure_gitnexus_sidecar, get_gitnexus_sidecar_config, gitnexus_context,
         gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
         gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
+    github_auth::{github_poll_device_token, github_request_device_code},
     grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
     identity::{
         add_trusted_device_cmd, get_device_identity, get_pairing_qr, list_trusted_devices,
@@ -168,12 +166,6 @@ use commands::{
         get_app_settings, get_model_camera_positions, save_app_settings, save_model_camera_position,
     },
     streaming::{send_message_stream, send_message_stream_self_rag},
-    teachable_capabilities::{
-        teachable_capabilities_list, teachable_capabilities_promote,
-        teachable_capabilities_record_usage, teachable_capabilities_reset,
-        teachable_capabilities_set_config, teachable_capabilities_set_enabled,
-        teachable_capabilities_set_rating, teachable_capabilities_summary,
-    },
     translation::{detect_language, list_languages, translate_text},
     user_models::{
         delete_user_model, import_user_model, list_user_models, read_user_model_bytes,
@@ -188,15 +180,26 @@ use commands::{
     },
     vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
     window::{
-        close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build, is_mcp_mode,
-        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
-        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
-        toggle_window_mode,
+        close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build,
+        is_mcp_mode, open_panel_window, set_cursor_passthrough, set_pet_mode_bounds,
+        set_pet_window_size, set_window_mode, start_pet_cursor_poll, start_window_drag,
+        stop_pet_cursor_poll, toggle_window_mode,
     },
     workflow_plans::{
         workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
-        workflow_plan_delete, workflow_plan_list, workflow_plan_load, workflow_plan_override_llm,
-        workflow_plan_save, workflow_plan_update_step, workflow_plan_validate,
+        workflow_plan_delete, workflow_plan_list, workflow_plan_load,
+        workflow_plan_override_llm, workflow_plan_save, workflow_plan_update_step,
+        workflow_plan_validate,
+    },
+    charisma::{
+        charisma_delete, charisma_list, charisma_promote, charisma_rate_turn,
+        charisma_record_usage, charisma_set_rating, charisma_summary,
+    },
+    teachable_capabilities::{
+        teachable_capabilities_list, teachable_capabilities_promote,
+        teachable_capabilities_record_usage, teachable_capabilities_reset,
+        teachable_capabilities_set_config, teachable_capabilities_set_enabled,
+        teachable_capabilities_set_rating, teachable_capabilities_summary,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -663,26 +666,24 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
     );
 
     if brain_mode.is_none() && active_brain.is_none() {
-        eprintln!("[mcp-http] mcp-seed-embedded skipped: no embedding-capable brain configured");
+        eprintln!(
+            "[mcp-http] mcp-seed-embedded skipped: no embedding-capable brain configured"
+        );
         return 0;
     }
 
     let mut count = 0usize;
     let mut offline_count = 0usize;
     for (id, content) in &unembedded {
-        let (embedding, used_offline) = match brain::embed_for_mode(
-            content,
-            brain_mode.as_ref(),
-            active_brain.as_deref(),
-        )
-        .await
-        {
-            Some(embedding) => (Some(embedding), false),
-            None if ai_integrations::mcp::is_mcp_pet_mode() => {
-                (memory::offline_embed::embed_text(content), true)
-            }
-            None => (None, false),
-        };
+        let (embedding, used_offline) =
+            match brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref()).await
+            {
+                Some(embedding) => (Some(embedding), false),
+                None if ai_integrations::mcp::is_mcp_pet_mode() => {
+                    (memory::offline_embed::embed_text(content), true)
+                }
+                None => (None, false),
+            };
         if let Some(embedding) = embedding {
             let store = match state.memory_store.lock() {
                 Ok(store) => store,
@@ -835,9 +836,7 @@ pub fn run_mcp_setup() -> std::io::Result<()> {
 
     if results.is_empty() {
         eprintln!("[mcp-setup] no supported editor config directories found.");
-        eprintln!(
-            "[mcp-setup] checked: .vscode/, ~/.cursor/, ~/.codex/, ~/.claude/, ~/.config/opencode/"
-        );
+        eprintln!("[mcp-setup] checked: .vscode/, ~/.cursor/, ~/.codex/, ~/.claude/, ~/.config/opencode/");
         eprintln!("\n[mcp-setup] hint: run this from your project root, or create the config directories first.");
     } else {
         for result in &results {
@@ -958,7 +957,8 @@ pub fn run_http_server() -> std::io::Result<()> {
                 }
                 eprintln!("[mcp-http] shutting down");
                 handle.stop();
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
                 Ok(())
             }
             Err(e) => {
@@ -969,7 +969,10 @@ pub fn run_http_server() -> std::io::Result<()> {
     })
 }
 
-fn write_mcp_token_file(workspace_root: &std::path::Path, token: &str) -> std::io::Result<PathBuf> {
+fn write_mcp_token_file(
+    workspace_root: &std::path::Path,
+    token: &str,
+) -> std::io::Result<PathBuf> {
     let vscode_dir = workspace_root.join(".vscode");
     std::fs::create_dir_all(&vscode_dir)?;
     let token_file = vscode_dir.join(".mcp-token");
@@ -1392,7 +1395,8 @@ pub fn run() {
                             .unwrap_or_else(|_| PathBuf::from("."))
                             .join("mcp-data")
                     });
-                std::fs::create_dir_all(&mcp_dir).expect("failed to create MCP data directory");
+                std::fs::create_dir_all(&mcp_dir)
+                    .expect("failed to create MCP data directory");
                 mcp_dir
             } else if cfg!(debug_assertions) {
                 // In dev builds, use a separate data directory so dev never

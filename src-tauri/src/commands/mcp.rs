@@ -53,9 +53,14 @@ pub async fn mcp_server_start(
         .lock()
         .map_err(|e| e.to_string())?
         .lan_enabled;
-    let handle =
-        mcp::start_server_with_activity(state.inner().clone(), port, token, lan_enabled, Some(app))
-            .await?;
+    let handle = mcp::start_server_with_activity(
+        state.inner().clone(),
+        port,
+        token,
+        lan_enabled,
+        Some(app),
+    )
+    .await?;
 
     let status = McpServerStatus {
         running: true,

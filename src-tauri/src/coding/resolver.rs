@@ -130,12 +130,9 @@ pub fn resolve_edges(data_dir: &Path, repo_path: &Path) -> Result<ResolveStats, 
         let from_sym_id = find_enclosing_symbol(&symbols_by_id, &edge.from_file, edge.from_line);
 
         let resolution = match EdgeKind::from_str(&edge.kind) {
-            Some(EdgeKind::Imports) => resolve_import(
-                &edge.from_file,
-                &edge.target_name,
-                &symbols_by_name,
-                &file_set,
-            ),
+            Some(EdgeKind::Imports) => {
+                resolve_import(&edge.from_file, &edge.target_name, &symbols_by_name, &file_set)
+            }
             Some(EdgeKind::Calls) => {
                 resolve_call(&edge.from_file, &edge.target_name, &symbols_by_name)
             }
@@ -180,8 +177,9 @@ pub fn call_graph(
     symbol_name: &str,
 ) -> Result<CallGraph, IndexError> {
     // Find the symbol(s) with this name.
-    let mut sym_stmt =
-        conn.prepare("SELECT id, file, line FROM code_symbols WHERE repo_id = ?1 AND name = ?2")?;
+    let mut sym_stmt = conn.prepare(
+        "SELECT id, file, line FROM code_symbols WHERE repo_id = ?1 AND name = ?2",
+    )?;
     let sym_rows: Vec<(i64, String, u32)> = sym_stmt
         .query_map(params![repo_id, symbol_name], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -298,7 +296,9 @@ fn build_symbol_id_map(
 }
 
 fn build_file_set(conn: &Connection, repo_id: i64) -> Result<Vec<String>, IndexError> {
-    let mut stmt = conn.prepare("SELECT DISTINCT file FROM code_symbols WHERE repo_id = ?1")?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT file FROM code_symbols WHERE repo_id = ?1",
+    )?;
     let rows = stmt.query_map(params![repo_id], |r| r.get::<_, String>(0))?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
@@ -639,10 +639,7 @@ impl AppConfig {
 
         // Second pass: resolve.
         let resolve_stats = resolve_edges(data_dir.path(), repo_dir.path()).unwrap();
-        assert!(
-            resolve_stats.edges_resolved > 0,
-            "should resolve some edges"
-        );
+        assert!(resolve_stats.edges_resolved > 0, "should resolve some edges");
         assert!(
             resolve_stats.exact_matches > 0 || resolve_stats.inferred_matches > 0,
             "should have exact or inferred matches"
@@ -666,22 +663,14 @@ impl AppConfig {
         assert_eq!(graph.symbol_name, "run_http_server");
 
         // run_http_server should be called from main (incoming).
-        let caller_names: Vec<&str> = graph
-            .incoming
-            .iter()
-            .map(|e| e.symbol_name.as_str())
-            .collect();
+        let caller_names: Vec<&str> = graph.incoming.iter().map(|e| e.symbol_name.as_str()).collect();
         assert!(
             caller_names.contains(&"main") || !graph.incoming.is_empty(),
             "run_http_server should have incoming calls (callers): {caller_names:?}"
         );
 
         // run_http_server calls start_server (outgoing).
-        let callee_names: Vec<&str> = graph
-            .outgoing
-            .iter()
-            .map(|e| e.symbol_name.as_str())
-            .collect();
+        let callee_names: Vec<&str> = graph.outgoing.iter().map(|e| e.symbol_name.as_str()).collect();
         assert!(
             callee_names.contains(&"start_server"),
             "run_http_server should call start_server: {callee_names:?}"

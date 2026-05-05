@@ -68,12 +68,7 @@ pub struct CharismaStat {
 }
 
 impl CharismaStat {
-    pub fn new(
-        kind: CharismaAssetKind,
-        asset_id: String,
-        display_name: String,
-        now_ms: u64,
-    ) -> Self {
+    pub fn new(kind: CharismaAssetKind, asset_id: String, display_name: String, now_ms: u64) -> Self {
         Self {
             kind,
             asset_id,
@@ -157,9 +152,10 @@ impl CharismaIndex {
         now_ms: u64,
     ) {
         let key = Self::key(kind, asset_id);
-        let stat = self.stats.entry(key).or_insert_with(|| {
-            CharismaStat::new(kind, asset_id.to_string(), display_name.to_string(), now_ms)
-        });
+        let stat = self
+            .stats
+            .entry(key)
+            .or_insert_with(|| CharismaStat::new(kind, asset_id.to_string(), display_name.to_string(), now_ms));
         stat.usage_count = stat.usage_count.saturating_add(1);
         stat.last_used_at = now_ms;
     }
@@ -175,9 +171,10 @@ impl CharismaIndex {
     ) {
         let clamped = rating.clamp(1, 5);
         let key = Self::key(kind, asset_id);
-        let stat = self.stats.entry(key).or_insert_with(|| {
-            CharismaStat::new(kind, asset_id.to_string(), display_name.to_string(), now_ms)
-        });
+        let stat = self
+            .stats
+            .entry(key)
+            .or_insert_with(|| CharismaStat::new(kind, asset_id.to_string(), display_name.to_string(), now_ms));
         stat.rating_sum = stat.rating_sum.saturating_add(clamped);
         stat.rating_count = stat.rating_count.saturating_add(1);
     }
@@ -187,13 +184,7 @@ impl CharismaIndex {
     }
 
     /// Mark an asset as promoted (Canon).
-    pub fn mark_promoted(
-        &mut self,
-        kind: CharismaAssetKind,
-        asset_id: &str,
-        plan_id: String,
-        now_ms: u64,
-    ) {
+    pub fn mark_promoted(&mut self, kind: CharismaAssetKind, asset_id: &str, plan_id: String, now_ms: u64) {
         let key = Self::key(kind, asset_id);
         if let Some(stat) = self.stats.get_mut(&key) {
             stat.promoted_at = Some(now_ms);
@@ -276,12 +267,10 @@ pub fn save_index(persona_dir: &Path, index: &CharismaIndex) -> Result<(), Strin
     fs::create_dir_all(persona_dir).map_err(|e| format!("mkdir persona dir: {e}"))?;
     let path = stats_path(persona_dir);
     let tmp = path.with_extension("json.tmp");
-    let bytes =
-        serde_json::to_vec_pretty(index).map_err(|e| format!("serialise charisma_stats: {e}"))?;
+    let bytes = serde_json::to_vec_pretty(index).map_err(|e| format!("serialise charisma_stats: {e}"))?;
     {
         let mut f = fs::File::create(&tmp).map_err(|e| format!("create temp: {e}"))?;
-        f.write_all(&bytes)
-            .map_err(|e| format!("write temp: {e}"))?;
+        f.write_all(&bytes).map_err(|e| format!("write temp: {e}"))?;
         f.sync_all().map_err(|e| format!("sync temp: {e}"))?;
     }
     fs::rename(&tmp, &path).map_err(|e| format!("rename temp: {e}"))?;
@@ -308,7 +297,11 @@ use crate::coding::promotion_plan::{build_promotion_plan as build_shared_plan, P
 /// | Trait | `src-tauri/src/commands/persona.rs` (default_persona_json) |
 /// | Expression | `src/renderer/face-mirror.ts` (DEFAULT_LEARNED_EXPRESSIONS) |
 /// | Motion | `src/renderer/vrma-manager.ts` (VRMA_ANIMATIONS registry) |
-pub fn build_promotion_plan(stat: &CharismaStat, plan_id: String, now_ms: u64) -> WorkflowPlan {
+pub fn build_promotion_plan(
+    stat: &CharismaStat,
+    plan_id: String,
+    now_ms: u64,
+) -> WorkflowPlan {
     let asset_label = match stat.kind {
         CharismaAssetKind::Trait => "persona trait",
         CharismaAssetKind::Expression => "facial expression",
@@ -321,10 +314,7 @@ pub fn build_promotion_plan(stat: &CharismaStat, plan_id: String, now_ms: u64) -
         CharismaAssetKind::Motion => vec!["src/renderer/vrma-manager.ts".into()],
     };
 
-    let title = format!(
-        "Promote {asset_label} '{}' to source defaults",
-        stat.display_name
-    );
+    let title = format!("Promote {asset_label} '{}' to source defaults", stat.display_name);
     let user_request = format!(
         "User-taught {} '{}' has been used {} times with average rating {:.1}/5. \
          Promote it to a bundled default so future installs ship with it.\n\n\
@@ -380,12 +370,7 @@ mod tests {
 
     #[test]
     fn maturity_progresses_with_usage_and_rating() {
-        let mut s = CharismaStat::new(
-            CharismaAssetKind::Expression,
-            "lex_a".into(),
-            "Smug".into(),
-            1_000,
-        );
+        let mut s = CharismaStat::new(CharismaAssetKind::Expression, "lex_a".into(), "Smug".into(), 1_000);
         assert_eq!(s.maturity(), Maturity::Untested);
 
         s.usage_count = 1;
@@ -541,12 +526,7 @@ mod tests {
 
     #[test]
     fn build_promotion_plan_has_research_code_test_review_dag() {
-        let mut s = CharismaStat::new(
-            CharismaAssetKind::Expression,
-            "lex_smug".into(),
-            "Smug".into(),
-            1_000,
-        );
+        let mut s = CharismaStat::new(CharismaAssetKind::Expression, "lex_smug".into(), "Smug".into(), 1_000);
         s.usage_count = 12;
         s.rating_sum = 50;
         s.rating_count = 10;
@@ -560,16 +540,10 @@ mod tests {
         assert_eq!(plan.steps[0].agent, AgentRole::Researcher);
         assert_eq!(plan.steps[1].id, "code");
         assert_eq!(plan.steps[1].agent, AgentRole::Coder);
-        assert!(
-            plan.steps[1].requires_approval,
-            "code step must require approval"
-        );
+        assert!(plan.steps[1].requires_approval, "code step must require approval");
         assert_eq!(plan.steps[2].id, "test");
         assert_eq!(plan.steps[3].id, "review");
-        assert!(
-            plan.steps[3].requires_approval,
-            "review step must require approval"
-        );
+        assert!(plan.steps[3].requires_approval, "review step must require approval");
         assert!(plan.tags.contains(&"charisma".to_string()));
         assert!(plan.tags.contains(&"promotion".to_string()));
         assert!(plan.user_request.contains("12 times"));

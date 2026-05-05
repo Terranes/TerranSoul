@@ -47,3 +47,4 @@ When starting or resuming:
 - Use existing libraries — don't reinvent the wheel
 - Credit external influences in `CREDITS.md`
 - Reverse-engineer GitHub projects through `https://deepwiki.org/<owner>/<repo>` first when reachable, then verify against upstream and sync durable lessons into `mcp-data/shared/**`
+- Do not treat Markdown as MCP memory; sync any durable Markdown knowledge into `mcp-data/shared/memory-seed.sql` and KG edges so SQLite + `memory_edges` stays authoritative

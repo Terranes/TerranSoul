@@ -494,6 +494,13 @@ VALUES (
   10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
 );
 
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MCP MARKDOWN BOUNDARY RULE: Markdown files are not TerranSoul MCP memory. If rules/docs/lessons Markdown contains durable project knowledge for future agents, sync the same knowledge into mcp-data/shared/memory-seed.sql and connect it with memory_edges so SQLite plus the knowledge graph remains the authoritative MCP memory source.',
+  'rules,mcp,markdown,memory,knowledge-graph,non-negotiable',
+  10, 'procedure', 1746416974000, 'long', 1.0, 'rules', 'procedural'
+);
+
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
 SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
 FROM memories s, memories d
@@ -509,6 +516,7 @@ WHERE s.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
     OR d.content LIKE 'NO PRETEND CODE RULE:%'
     OR d.content LIKE 'LLM DECISION ROUTING RULE:%'
     OR d.content LIKE 'VALIDATION AND REALITY RULE:%'
+    OR d.content LIKE 'MCP MARKDOWN BOUNDARY RULE:%'
     OR d.content LIKE 'Rules files (rules/):%'
   );
 
@@ -526,4 +534,5 @@ WHERE d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
     OR s.content LIKE 'NO PRETEND CODE RULE:%'
     OR s.content LIKE 'LLM DECISION ROUTING RULE:%'
     OR s.content LIKE 'VALIDATION AND REALITY RULE:%'
+    OR s.content LIKE 'MCP MARKDOWN BOUNDARY RULE:%'
   );

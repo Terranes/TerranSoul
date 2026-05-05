@@ -146,6 +146,22 @@ pointers that:
   `CREDITS.md` and synced into MCP self-improve knowledge in
   `mcp-data/shared/**` so future agents can retrieve it with `brain_search`.
 
+### MCP Markdown Memory Boundary
+
+- Do not treat Markdown as TerranSoul MCP memory. Markdown files may describe
+  instructions, design, lessons, and projections for humans, but the MCP
+  memory source of truth is the SQLite schema seeded from
+  `mcp-data/shared/memory-seed.sql` plus `memory_edges`.
+- If a PR adds or updates Markdown that contains durable project knowledge
+  meant for future agents, sync the same knowledge into
+  `mcp-data/shared/memory-seed.sql` in the same PR and connect it with
+  `memory_edges` where it has a relationship to existing rules, docs, or
+  architecture facts.
+- Markdown-only knowledge is incomplete for MCP self-improve. Future agents
+  must be able to retrieve the rule/fact through `brain_search` and traverse
+  its relationships through the knowledge graph, not by bulk-loading `.md`
+  files into context.
+
 ### No Mocks in Production
 
 > **It is either a chunk in `rules/milestones.md` OR a real working version with the highest QA — never a half-done mock shipped to users.**

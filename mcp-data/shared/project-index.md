@@ -34,6 +34,9 @@
   learns a durable project rule, update `memory-seed.sql`,
   `lessons-learned.md`, or this index in the same PR so future agents retrieve
   it without rescanning chat history.
+- Markdown is not MCP memory: if durable knowledge is written in any `.md`,
+  mirror it into `memory-seed.sql` and wire relationships with `memory_edges`
+  so SQLite + the knowledge graph stays authoritative for MCP retrieval.
 
 ## Rust modules (`src-tauri/src/`)
 

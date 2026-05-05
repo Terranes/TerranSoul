@@ -307,22 +307,22 @@ struct SymInfo {
 }
 
 /// Graph data needed for clustering and process tracing.
-type CallGraphData = (
-    DiGraph<i64, ()>,
-    HashMap<i64, NodeIndex>,
-    HashMap<i64, SymInfo>,
-);
+type CallGraphData = (DiGraph<i64, ()>, HashMap<i64, NodeIndex>, HashMap<i64, SymInfo>);
 
 /// Build a directed call graph from the DB.
 /// Returns: (graph, node_index→sym_id map, sym_id→SymInfo map)
-fn build_call_graph(conn: &Connection, repo_id: i64) -> Result<CallGraphData, IndexError> {
+fn build_call_graph(
+    conn: &Connection,
+    repo_id: i64,
+) -> Result<CallGraphData, IndexError> {
     let mut graph = DiGraph::new();
     let mut node_map: HashMap<i64, NodeIndex> = HashMap::new();
     let mut sym_info: HashMap<i64, SymInfo> = HashMap::new();
 
     // Load all symbols.
-    let mut stmt =
-        conn.prepare("SELECT id, name, kind, file, line FROM code_symbols WHERE repo_id = ?1")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, kind, file, line FROM code_symbols WHERE repo_id = ?1",
+    )?;
     let symbols: Vec<(i64, String, String, String, u32)> = stmt
         .query_map(params![repo_id], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -333,16 +333,7 @@ fn build_call_graph(conn: &Connection, repo_id: i64) -> Result<CallGraphData, In
     for (id, name, kind, file, line) in symbols {
         let idx = graph.add_node(id);
         node_map.insert(id, idx);
-        sym_info.insert(
-            id,
-            SymInfo {
-                id,
-                name,
-                file,
-                line,
-                kind,
-            },
-        );
+        sym_info.insert(id, SymInfo { id, name, file, line, kind });
     }
 
     // Load resolved CALLS edges.
@@ -560,11 +551,7 @@ fn score_entry_points(
     }
 
     // Sort by score descending.
-    scored.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
     // Cap at 50 entry points.
     scored.truncate(50);
@@ -748,18 +735,9 @@ pub fn parse_port(s: &str) -> u16 {
 
         // Compute processes.
         let proc_stats = compute_processes(data_dir.path(), repo_dir.path(), 10).unwrap();
-        assert!(
-            proc_stats.clusters_found > 0,
-            "should find at least one cluster"
-        );
-        assert!(
-            proc_stats.entry_points_found > 0,
-            "should find entry points"
-        );
-        assert!(
-            proc_stats.processes_traced > 0,
-            "should trace at least one process"
-        );
+        assert!(proc_stats.clusters_found > 0, "should find at least one cluster");
+        assert!(proc_stats.entry_points_found > 0, "should find entry points");
+        assert!(proc_stats.processes_traced > 0, "should trace at least one process");
     }
 
     #[test]
@@ -779,10 +757,7 @@ pub fn parse_port(s: &str) -> u16 {
 
         // Find a process that starts from main.
         let main_proc = processes.iter().find(|p| p.entry_point == "main");
-        assert!(
-            main_proc.is_some(),
-            "should have a process from main: {processes:?}"
-        );
+        assert!(main_proc.is_some(), "should have a process from main: {processes:?}");
 
         let main_proc = main_proc.unwrap();
         let step_names: Vec<&str> = main_proc.steps.iter().map(|s| s.name.as_str()).collect();

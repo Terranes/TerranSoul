@@ -167,10 +167,13 @@ fn pick_best_local_model(
         // We match if local tag starts with the recommendation tag
         let found = local_tags.iter().any(|t| {
             *t == rec.model_tag
-                || t.starts_with(&format!(
-                    "{}:",
-                    rec.model_tag.split(':').next().unwrap_or("")
-                )) && t.contains(rec.model_tag.split(':').nth(1).unwrap_or(""))
+                || t.starts_with(&format!("{}:", rec.model_tag.split(':').next().unwrap_or("")))
+                    && t.contains(
+                        rec.model_tag
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or(""),
+                    )
         });
         if found {
             return Some(rec.model_tag.clone());

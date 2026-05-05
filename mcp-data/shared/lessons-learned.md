@@ -122,6 +122,12 @@
   `mcp-data/shared/memory-seed.sql`, `lessons-learned.md`, or
   `project-index.md` in the same PR. Runtime `memory.db` may be refreshed by
   MCP tools, but tracked shared files are the durable default dataset.
+- **Markdown is not MCP memory**: rules/docs/lessons Markdown can describe
+  knowledge for humans, but durable MCP knowledge must also be synced into
+  `mcp-data/shared/memory-seed.sql` and connected with `memory_edges`.
+  Markdown-only rule or architecture knowledge is incomplete because future
+  agents must retrieve it through SQLite/FTS/RRF/KG, not by loading `.md`
+  files as memory.
 
 ## CI / GitHub
 

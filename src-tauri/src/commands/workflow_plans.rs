@@ -152,7 +152,9 @@ pub struct CreateBlankPlanArgs {
 }
 
 #[tauri::command]
-pub async fn workflow_plan_create_blank(args: CreateBlankPlanArgs) -> Result<WorkflowPlan, String> {
+pub async fn workflow_plan_create_blank(
+    args: CreateBlankPlanArgs,
+) -> Result<WorkflowPlan, String> {
     Ok(create_blank_inner(&args.user_request, args.kind))
 }
 
@@ -234,16 +236,7 @@ pub async fn workflow_agent_recommendations() -> Result<Vec<RoleRecommendations>
 
 // Allow the unused import warning when compiled without all the types in scope.
 #[allow(dead_code)]
-fn _silence(
-    _: WorkflowSchedule,
-    _: RecurrencePattern,
-    _: Weekday,
-    _: WorkflowPlanStatus,
-    _: StepOutputFormat,
-    _: WorkflowStep,
-    _: coding::CodingTask,
-) {
-}
+fn _silence(_: WorkflowSchedule, _: RecurrencePattern, _: Weekday, _: WorkflowPlanStatus, _: StepOutputFormat, _: WorkflowStep, _: coding::CodingTask) {}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -385,11 +378,7 @@ mod tests {
             override_llm_inner(tmp.path(), &plan_id, AgentRole::Coder, cfg.clone()).unwrap();
 
         assert_eq!(
-            updated
-                .agent_llm_overrides
-                .get(&AgentRole::Coder)
-                .unwrap()
-                .model,
+            updated.agent_llm_overrides.get(&AgentRole::Coder).unwrap().model,
             "claude-sonnet-4-20250514"
         );
         let coder_step = updated.steps.iter().find(|s| s.id == "code").unwrap();
@@ -459,10 +448,7 @@ mod tests {
             .map(|&role| {
                 (
                     role,
-                    role.recommended_llms()
-                        .iter()
-                        .map(|r| r.model)
-                        .collect::<Vec<_>>(),
+                    role.recommended_llms().iter().map(|r| r.model).collect::<Vec<_>>(),
                 )
             })
             .collect();

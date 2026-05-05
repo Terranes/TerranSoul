@@ -70,8 +70,9 @@ pub fn rename_symbol(
     // ─── Phase 1: Graph-resolved edits (high confidence) ────────────────
 
     // Find symbol definitions
-    let mut def_stmt =
-        conn.prepare("SELECT file, line, name FROM code_symbols WHERE repo_id = ?1 AND name = ?2")?;
+    let mut def_stmt = conn.prepare(
+        "SELECT file, line, name FROM code_symbols WHERE repo_id = ?1 AND name = ?2",
+    )?;
     let definitions: Vec<(String, u32)> = def_stmt
         .query_map(params![repo_id, symbol_name], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
@@ -121,8 +122,10 @@ pub fn rename_symbol(
     // ─── Phase 2: Text-search edits (lower confidence) ──────────────────
 
     // Scan source files for word-boundary occurrences not already covered by graph
-    let graph_locations: HashSet<(String, u32)> =
-        edits.iter().map(|e| (e.file.clone(), e.line)).collect();
+    let graph_locations: HashSet<(String, u32)> = edits
+        .iter()
+        .map(|e| (e.file.clone(), e.line))
+        .collect();
 
     let text_edits = find_text_occurrences(&repo_path, symbol_name, &graph_locations);
     edits.extend(text_edits.into_iter().map(|(file, line)| RenameEdit {
@@ -261,12 +264,10 @@ fn apply_edits(
     new_name: &str,
 ) -> Result<(), IndexError> {
     // Group edits by file
-    let mut by_file: std::collections::HashMap<&str, Vec<u32>> = std::collections::HashMap::new();
+    let mut by_file: std::collections::HashMap<&str, Vec<u32>> =
+        std::collections::HashMap::new();
     for edit in edits {
-        by_file
-            .entry(edit.file.as_str())
-            .or_default()
-            .push(edit.line);
+        by_file.entry(edit.file.as_str()).or_default().push(edit.line);
     }
 
     for (rel_path, lines) in &by_file {
@@ -383,8 +384,7 @@ mod tests {
         crate::coding::symbol_index::index_repo(&data_dir, &tmp).unwrap();
 
         // Run rename in dry_run mode
-        let result =
-            rename_symbol(&data_dir, &tmp, "compute_total", "calculate_sum", true).unwrap();
+        let result = rename_symbol(&data_dir, &tmp, "compute_total", "calculate_sum", true).unwrap();
 
         assert!(!result.applied);
         assert_eq!(result.symbol_name, "compute_total");

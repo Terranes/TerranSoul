@@ -82,6 +82,12 @@ the MCP brain can recall them.
    `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `mcp-data/shared/*.md` is
    *instruction* — descriptive prose pointing at where the data lives.
 
+   If any Markdown file does introduce durable MCP knowledge, the PR is
+   incomplete until the same knowledge is synced into
+   `mcp-data/shared/memory-seed.sql` and connected through `memory_edges`.
+   The database/knowledge graph, not the `.md` file, is what future MCP
+   agents must retrieve.
+
 2. **Never propose "let's store memories in `.md` / Obsidian as the
    source of truth"**. Obsidian is a one-way **projection** via
    `obsidian_export.rs`. Bidirectional sync (`obsidian_sync.rs`) treats
