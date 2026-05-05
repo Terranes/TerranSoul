@@ -1,6 +1,4 @@
 {
-  "mode": "free_api",
-  "provider_id": "pollinations",
-  "api_key": null,
-  "model": null
+  "mode": "local_ollama",
+  "model": "gemma3:4b"
 }

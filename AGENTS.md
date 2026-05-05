@@ -9,10 +9,22 @@
 > `.cursorrules`) are kept in sync per the Multi-Agent Instruction Sync rule
 > in `rules/coding-standards.md`.
 
+## MANDATORY — MCP Preflight (every session, no exceptions)
+
+**Execute this before any other work. Skipping is a violation.**
+
+1. Call `brain_health` (MCP tool) or `GET http://127.0.0.1:7423/health`.
+2. If healthy → `brain_search` / `brain_suggest_context` with the current task before broad repo searches.
+3. If not healthy → run `node scripts/copilot-start-mcp.mjs`, wait, retry.
+4. If MCP cannot start → record the blocker. Do NOT silently skip.
+5. After work → sync lessons into `mcp-data/shared/memory-seed.sql`.
+
+---
+
 Read the following files for full project context (in order of priority):
 
 1. `.github/copilot-instructions.md` — full architecture, tech stack, coding standards, patterns, session resumption protocol
-2. `rules/agent-mcp-bootstrap.md` — MCP brain server usage (Docker container on port 7423)
+2. `rules/agent-mcp-bootstrap.md` — MCP brain server usage (headless runner on port 7423)
 3. `rules/milestones.md` — current work queue (find the next `not-started` chunk)
 4. `rules/coding-standards.md` — detailed coding rules
 5. `rules/architecture-rules.md` — architectural constraints

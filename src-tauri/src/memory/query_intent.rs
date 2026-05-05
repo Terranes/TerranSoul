@@ -89,6 +89,7 @@ impl KindBoosts {
             CognitiveKind::Procedural => self.procedural,
             CognitiveKind::Episodic => self.episodic,
             CognitiveKind::Semantic => self.semantic,
+            CognitiveKind::Judgment => self.semantic, // judgments treated as semantic for boosting
         }
     }
 }

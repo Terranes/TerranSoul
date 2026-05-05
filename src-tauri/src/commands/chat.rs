@@ -80,6 +80,7 @@ pub(super) fn build_budgeted_prompt(
     base_system: &str,
     history: &[(String, String)],
     relevant: &[crate::memory::MemoryEntry],
+    judgment_block: &str,
     config: &crate::brain::context_budget::BudgetConfig,
 ) -> (String, Vec<(String, String)>) {
     use crate::brain::context_budget::{fit, BudgetInputs, HistoryTurn, RetrievedChunk};
@@ -120,6 +121,10 @@ pub(super) fn build_budgeted_prompt(
         system.push_str(&crate::memory::format_retrieved_context_pack(&mem_block));
     }
 
+    if !judgment_block.is_empty() {
+        system.push_str(judgment_block);
+    }
+
     let trimmed_history: Vec<(String, String)> = result
         .history
         .into_iter()
@@ -147,7 +152,7 @@ async fn retrieve_prompt_memories(
         .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
     let should_rerank = active_brain.is_some();
     let recall_limit = if should_rerank {
-        limit.max(20).min(50)
+        limit.clamp(20, 50)
     } else {
         limit
     };
@@ -181,6 +186,16 @@ async fn retrieve_prompt_memories(
         limit,
         rerank_threshold,
     )
+}
+
+/// Retrieve relevant judgment rules for the current message and format
+/// them as a prompt injection block.
+fn retrieve_judgment_block(app_state: &AppState, query: &str) -> String {
+    let judgments = match app_state.memory_store.lock() {
+        Ok(store) => crate::memory::judgment::apply_judgments(&store, query, 5),
+        Err(_) => Vec::new(),
+    };
+    crate::memory::judgment::format_judgment_block(&judgments)
 }
 
 pub async fn process_message(
@@ -271,10 +286,12 @@ pub async fn process_message(
                 5,
             )
             .await;
+            let jblock = retrieve_judgment_block(app_state, message);
             let (system, history) = build_budgeted_prompt(
                 SYSTEM_PROMPT_FOR_STREAMING,
                 &history,
                 &relevant,
+                &jblock,
                 &crate::brain::context_budget::BudgetConfig::for_free_mode(),
             );
 
@@ -310,10 +327,12 @@ pub async fn process_message(
                 5,
             )
             .await;
+            let jblock = retrieve_judgment_block(app_state, message);
             let (system, history) = build_budgeted_prompt(
                 SYSTEM_PROMPT_FOR_STREAMING,
                 &history,
                 &relevant,
+                &jblock,
                 &crate::brain::context_budget::BudgetConfig::for_paid_mode(),
             );
 
@@ -349,10 +368,12 @@ pub async fn process_message(
                 5,
             )
             .await;
+            let jblock = retrieve_judgment_block(app_state, message);
             let (system, history) = build_budgeted_prompt(
                 SYSTEM_PROMPT_FOR_STREAMING,
                 &history,
                 &relevant,
+                &jblock,
                 &crate::brain::context_budget::BudgetConfig::for_local_mode(),
             );
 

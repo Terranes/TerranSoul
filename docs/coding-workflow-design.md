@@ -5,7 +5,7 @@
 > today, and *why* it is shaped the way it is when compared to other
 > agentic-coding systems on the market.
 >
-> **Status.** Living document. Last reviewed **2026-05-02**.
+> **Status.** Living document. Last reviewed **2026-05-05**.
 >
 > **Related rules.** [`rules/coding-workflow-reliability.md`](../rules/coding-workflow-reliability.md),
 > [`rules/prompting-rules.md`](../rules/prompting-rules.md),
@@ -161,8 +161,10 @@ Every persisted artefact in the workflow obeys
 6. On disable or app quit: cancel flag set, task joins gracefully.
 ```
 
-The planner currently produces **plans only** — diff application is
-gated behind a future chunk so the autonomous path is provably safe.
+Early versions produced **plans only**. The current guarded path runs a
+Planner -> Coder -> Reviewer -> Apply -> Tester -> Stage chain through the
+DAG runner, using file snapshots, temporary worktree isolation when needed,
+test gates, and explicit staging only after validation succeeds.
 
 ### 2.6 Multi-provider abstraction
 
@@ -429,6 +431,33 @@ the brain MCP server on `127.0.0.1:7421`, so external coding assistants
 
 See [multi-agent-workflows-tutorial.md](multi-agent-workflows-tutorial.md)
 for end-to-end usage including a self-improve worked example.
+
+### 3.10 2026 multi-agent orchestration research
+
+The 2026-05 reverse-engineering pass compared a public self-hosted
+multi-agent dashboard with the broader agent workflow ecosystem: stateful graph
+runtimes, role-based crews, event-driven agent runtimes, enterprise plugin
+kernels, typed agent SDKs, and workflow studios. The conclusion is
+**partial-adopt**: TerranSoul should absorb the reliability and observability
+patterns while keeping the runtime local-first in Rust/Tauri.
+
+The most important lessons are:
+
+- Treat sub-agents as durable children of a workflow/session, with lineage,
+   cancellation, depth limits, model identity, tool-bundle identity, and final
+   verdicts.
+- Assemble tools per session from capability policy, provider policy, MCP
+   transport caps, plan role, and approval requirements.
+- Add bounded swarm execution with explicit join policies (`all`, `any`,
+   `quorum`, `best`) on top of the existing DAG runner rather than introducing a
+   second orchestration engine.
+- Extend the SQLite task queue with dead-letter state, stalled-task recovery,
+   quality-gate rows, and budget deferral before adding another scheduler.
+- Make the UI an operations workbench: active runs, agent lanes, task cards,
+   delegation/tool bubbles, run graphs, and repair controls.
+
+See [multi-agent-orchestration-analysis-2026.md](multi-agent-orchestration-analysis-2026.md)
+for the full backend, system-design, UI/UX, and QA plan.
 
 ---
 

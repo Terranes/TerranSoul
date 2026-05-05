@@ -118,11 +118,9 @@ pub struct MemoryEdge {
     pub valid_to: Option<i64>,
     /// Optional external knowledge-graph provenance (V7).
     ///
-    /// `None` for native TerranSoul edges (the default). Mirrors of
-    /// external KGs use `<system>:<scope>` strings — for example
-    /// `gitnexus:repo:owner/name@sha`. See
-    /// [`crate::memory::gitnexus_mirror`] for the canonical format used
-    /// by the GitNexus integration (Phase 13 Tier 3).
+    /// `None` for native TerranSoul edges (the default). Imports or sync jobs
+    /// may use `<system>:<scope>` strings to record provenance without making
+    /// the graph depend on that external system.
     #[serde(default)]
     pub edge_source: Option<String>,
 }
@@ -325,12 +323,10 @@ impl MemoryStore {
 
     /// Delete every edge whose `edge_source` matches the given value.
     ///
-    /// Used by external KG mirrors (e.g. the GitNexus Tier-3 sync) to
-    /// undo a previous mirror without touching native or LLM-extracted
-    /// edges. The match is exact: pass the same `edge_source` string
-    /// that was used when inserting the edges (typically
-    /// `gitnexus:repo:owner/name@sha`). Returns the number of rows
-    /// deleted.
+    /// Used by external KG imports to undo a previous import without touching
+    /// native or LLM-extracted edges. The match is exact: pass the same
+    /// `edge_source` string that was used when inserting the edges. Returns
+    /// the number of rows deleted.
     pub fn delete_edges_by_edge_source(&self, edge_source: &str) -> SqlResult<usize> {
         let n = self.conn().execute(
             "DELETE FROM memory_edges WHERE edge_source = ?1",
@@ -343,12 +339,11 @@ impl MemoryStore {
     /// `like_pattern` (SQL LIKE syntax) into one row per distinct
     /// `edge_source` value, ordered by most-recent-sync first.
     ///
-    /// Used by the Phase 13 Tier 4 BrainView "Code knowledge" panel
-    /// (Chunk 2.4) — pass `"gitnexus:%"` to list every mirrored repo
-    /// with its edge count and last-sync wall-clock timestamp
-    /// (`MAX(created_at)`). The pattern is forwarded verbatim so the
-    /// caller controls the match — empty / `%` selects every external
-    /// mirror across systems.
+    /// Pass a scoped pattern such as `"external:%"` to list matching imports
+    /// with their edge count and last-sync wall-clock timestamp
+    /// (`MAX(created_at)`). The pattern is forwarded verbatim so the caller
+    /// controls the match; empty / `%` selects every external mirror across
+    /// systems.
     pub fn list_external_mirrors(&self, like_pattern: &str) -> SqlResult<Vec<(String, i64, i64)>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
@@ -985,7 +980,7 @@ mod tests {
                 source: EdgeSource::Auto,
                 valid_from: None,
                 valid_to: None,
-                edge_source: Some("gitnexus:repo:foo/bar@sha1".into()),
+                edge_source: Some("external:repo:foo/bar@sha1".into()),
             })
             .unwrap();
         store
@@ -997,7 +992,7 @@ mod tests {
                 source: EdgeSource::Auto,
                 valid_from: None,
                 valid_to: None,
-                edge_source: Some("gitnexus:repo:foo/bar@sha1".into()),
+                edge_source: Some("external:repo:foo/bar@sha1".into()),
             })
             .unwrap();
         store
@@ -1009,7 +1004,7 @@ mod tests {
                 source: EdgeSource::Auto,
                 valid_from: None,
                 valid_to: None,
-                edge_source: Some("gitnexus:repo:other/repo@sha2".into()),
+                edge_source: Some("external:repo:other/repo@sha2".into()),
             })
             .unwrap();
         store
@@ -1025,7 +1020,7 @@ mod tests {
             })
             .unwrap();
 
-        let rows = store.list_external_mirrors("gitnexus:%").unwrap();
+        let rows = store.list_external_mirrors("external:%").unwrap();
         assert_eq!(
             rows.len(),
             2,
@@ -1033,8 +1028,8 @@ mod tests {
         );
         let by_source: std::collections::HashMap<&str, i64> =
             rows.iter().map(|(s, n, _)| (s.as_str(), *n)).collect();
-        assert_eq!(by_source["gitnexus:repo:foo/bar@sha1"], 2);
-        assert_eq!(by_source["gitnexus:repo:other/repo@sha2"], 1);
+        assert_eq!(by_source["external:repo:foo/bar@sha1"], 2);
+        assert_eq!(by_source["external:repo:other/repo@sha2"], 1);
         // Each row carries a non-zero last-sync timestamp.
         for (_, _, last_at) in &rows {
             assert!(
@@ -1061,7 +1056,7 @@ mod tests {
                 edge_source: None,
             })
             .unwrap();
-        let rows = store.list_external_mirrors("gitnexus:%").unwrap();
+        let rows = store.list_external_mirrors("external:%").unwrap();
         assert!(
             rows.is_empty(),
             "native-only graph must report zero mirrors"
@@ -1082,7 +1077,7 @@ mod tests {
                 source: EdgeSource::Auto,
                 valid_from: None,
                 valid_to: None,
-                edge_source: Some("gitnexus:scope-x".into()),
+                edge_source: Some("external:scope-x".into()),
             })
             .unwrap();
         store
@@ -1094,18 +1089,18 @@ mod tests {
                 source: EdgeSource::Auto,
                 valid_from: None,
                 valid_to: None,
-                edge_source: Some("gitnexus:scope-y".into()),
+                edge_source: Some("external:scope-y".into()),
             })
             .unwrap();
         let removed = store
-            .delete_edges_by_edge_source("gitnexus:scope-x")
+            .delete_edges_by_edge_source("external:scope-x")
             .unwrap();
         assert_eq!(removed, 1);
         let remaining = store.list_edges().unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(
             remaining[0].edge_source.as_deref(),
-            Some("gitnexus:scope-y")
+            Some("external:scope-y")
         );
     }
 

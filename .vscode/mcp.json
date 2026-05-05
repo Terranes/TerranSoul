@@ -58,6 +58,7 @@
       "command": "cargo",
       "args": [
         "run",
+        "--release",
         "--manifest-path",
         "${workspaceFolder}/src-tauri/Cargo.toml",
         "--quiet",

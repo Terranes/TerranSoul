@@ -87,8 +87,7 @@ pub fn create_worktree_in(
     let sanitized_chunk = sanitize_branch_segment(chunk_id);
     let base = match base_dir {
         Some(dir) => {
-            std::fs::create_dir_all(dir)
-                .map_err(|e| format!("create worktree base dir: {e}"))?;
+            std::fs::create_dir_all(dir).map_err(|e| format!("create worktree base dir: {e}"))?;
             dir.to_path_buf()
         }
         None => std::env::temp_dir(),

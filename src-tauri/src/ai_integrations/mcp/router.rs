@@ -35,7 +35,7 @@ pub struct McpRouterState {
     pub port: u16,
     pub seed_loaded: bool,
     pub activity: Option<McpActivityReporter>,
-    /// Full app state for code-intelligence tools that need the GitNexus sidecar.
+    /// Full app state for native code-intelligence tools that need the code index.
     pub app_state: Option<AppState>,
     /// Tracks git HEAD for staleness detection on post-tool-use hooks.
     pub staleness_tracker: Arc<Mutex<IndexStalenessTracker>>,
@@ -324,16 +324,34 @@ async fn handle_request(
 
 /// Unauthenticated health check for agent auto-discovery.
 ///
-/// Returns `200 OK` with `{"status":"ok","port":N}` so agents
-/// can verify the server is running without needing the bearer token first.
-/// No sensitive data is exposed.
+/// Returns `200 OK` with basic brain status so agents (and the tray
+/// status page) can verify the server is running without needing the
+/// bearer token first. No API keys or sensitive data are exposed.
+///
+/// Includes `Access-Control-Allow-Origin: *` so the built-in tray status
+/// page (served from `about:blank`, origin `null`) can fetch it.
 async fn handle_health(State(state): State<McpRouterState>) -> Response {
-    let body = json!({
-        "status": "ok",
-        "port": state.port,
-    });
+    let body = match state.gw.health(&state.caps).await {
+        Ok(h) => json!({
+            "status": "ok",
+            "port": state.port,
+            "brain_provider": h.brain_provider,
+            "brain_model": h.brain_model,
+            "rag_quality_pct": h.rag_quality_pct,
+            "memory_total": h.memory_total,
+        }),
+        Err(_) => json!({
+            "status": "ok",
+            "port": state.port,
+        }),
+    };
 
-    (StatusCode::OK, Json(body)).into_response()
+    (
+        StatusCode::OK,
+        [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+        Json(body),
+    )
+        .into_response()
 }
 
 // ─── Status endpoint (auth required) ────────────────────────────────────────

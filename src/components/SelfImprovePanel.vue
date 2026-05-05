@@ -116,8 +116,18 @@
           <li
             v-for="phase in backlogPreview"
             :key="phase.id"
+            class="si-queue-row"
           >
-            ○ {{ phase.title }}
+            <span class="si-queue-row-title">○ {{ phase.title }}</span>
+            <button
+              v-if="isPromotable(phase)"
+              type="button"
+              class="si-promote-btn"
+              :title="`Promote to milestone chunk: ${phase.title}`"
+              @click="onPromoteItem(phase.title, backlogItemGoal(phase))"
+            >
+              ↑ Promote
+            </button>
           </li>
           <li
             v-if="backlogPreview.length === 0"
@@ -216,6 +226,16 @@
           </div>
           <div class="si-improvement-trigger">
             Trigger: {{ chunk.trigger }}
+          </div>
+          <div class="si-improvement-actions">
+            <button
+              type="button"
+              class="si-promote-btn"
+              :title="`Promote to milestone chunk: ${chunk.title}`"
+              @click="onPromoteItem(chunk.title, chunk.description)"
+            >
+              ↑ Promote to milestone
+            </button>
           </div>
         </li>
       </ul>
@@ -743,6 +763,55 @@ async function onPullMain() {
   }
 }
 
+/**
+ * Eligible-to-promote check: backlog items sourced from the run log
+ * (failed runs) or improvement-chunk seeds. Items already from
+ * `rules/milestones.md` are skipped — they're already chunks.
+ */
+function isPromotable(item: unknown): boolean {
+  if (typeof item !== 'object' || item === null) return false;
+  const source = (item as { source?: unknown }).source;
+  return typeof source === 'string' && source !== 'rules/milestones.md';
+}
+
+/**
+ * Pull a goal/description string from a backlog item (workboard
+ * `detail` field or fallback to the title). Used to seed the promote
+ * confirm dialog.
+ */
+function backlogItemGoal(item: unknown): string {
+  if (typeof item === 'object' && item !== null) {
+    const detail = (item as { detail?: unknown }).detail;
+    if (typeof detail === 'string' && detail.trim().length > 0) return detail;
+    const title = (item as { title?: unknown }).title;
+    if (typeof title === 'string') return title;
+  }
+  return '';
+}
+
+/**
+ * Confirm-then-promote a backlog or improvement item to a milestone
+ * chunk. Uses the browser's native confirm dialog so the user always
+ * gets a final yes/no before the markdown file is written. The store
+ * action refreshes the workboard on success.
+ */
+async function onPromoteItem(title: string, goal: string): Promise<void> {
+  const trimmedTitle = title.trim();
+  const trimmedGoal = goal.trim();
+  if (!trimmedTitle || !trimmedGoal) return;
+  const ok = window.confirm(
+    `Promote to milestone chunk?\n\nTitle: ${trimmedTitle}\n\nGoal: ${trimmedGoal}\n\nThis appends a new "not-started" row to rules/milestones.md.`,
+  );
+  if (!ok) return;
+  try {
+    const result = await store.promoteToChunk(trimmedTitle, trimmedGoal);
+    window.alert(`Created chunk ${result.chunk_id} — ${result.title}`);
+  } catch (e) {
+    console.warn('[SelfImprove] promote failed:', e);
+    window.alert(`Promotion failed: ${String(e)}`);
+  }
+}
+
 defineEmits<{
   'request-enable': [];
   'configure-llm': [];
@@ -1057,6 +1126,37 @@ async function onClearLog() {
 .si-queue-empty {
   color: var(--ts-text-muted, #94a3b8);
   font-style: italic;
+}
+.si-queue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.si-queue-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.si-promote-btn {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ts-accent, #7c6fff);
+  background: rgba(124, 111, 255, 0.12);
+  color: var(--ts-text-primary, #e2e8f0);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.si-promote-btn:hover {
+  background: rgba(124, 111, 255, 0.24);
+  border-color: var(--ts-accent-bright, #a594ff);
+}
+.si-improvement-actions {
+  margin-top: 6px;
 }
 
 /* Coding workflow */

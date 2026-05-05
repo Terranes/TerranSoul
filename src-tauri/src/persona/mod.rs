@@ -10,6 +10,7 @@
 //! See `docs/persona-design.md` § 3 (Master-Mirror loop) and § 9.3
 //! (LLM-assisted persona authoring).
 
+pub mod charisma;
 pub mod drift;
 pub mod extract;
 pub mod motion_clip;
@@ -20,7 +21,6 @@ pub mod motion_smooth;
 pub mod pack;
 pub mod pose_frame;
 pub mod prosody;
-pub mod charisma;
 
 #[cfg(feature = "motion-research")]
 pub mod motion_tokens;

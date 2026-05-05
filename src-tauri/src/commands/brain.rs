@@ -312,9 +312,21 @@ pub async fn get_brain_mode(state: State<'_, AppState>) -> Result<Option<BrainMo
 
 /// Set the brain mode (free API, paid API, or local Ollama).
 /// Persists to disk and updates in-memory state.
+/// Also syncs to mcp-data/shared/brain_config.json so MCP mode inherits
+/// the same provider without needing separate configuration.
 #[tauri::command]
 pub async fn set_brain_mode(mode: BrainMode, state: State<'_, AppState>) -> Result<(), String> {
     brain::brain_config::save(&state.data_dir, &mode)?;
+
+    // Sync to mcp-data/shared/ so MCP mode picks up the same provider.
+    // Only sync non-free modes (MCP rejects free_api).
+    if !matches!(mode, BrainMode::FreeApi { .. }) {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let mcp_shared = cwd.join("mcp-data").join("shared");
+        if mcp_shared.exists() {
+            let _ = brain::brain_config::save(&mcp_shared, &mode);
+        }
+    }
 
     // Also update the legacy active_brain field for backwards compatibility
     // with existing streaming/chat code
@@ -402,6 +414,68 @@ pub async fn health_check_providers(
 pub async fn get_next_provider(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
     Ok(rotator.next_healthy_provider().map(|p| p.id.clone()))
+}
+
+/// Return the failover summary: healthy/rate-limited/unhealthy counts,
+/// the currently selected provider, and recent failover events.
+#[tauri::command]
+pub async fn get_failover_summary(
+    state: State<'_, AppState>,
+) -> Result<brain::FailoverSummary, String> {
+    let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+    Ok(rotator.failover_summary())
+}
+
+/// Get the current failover policy (max attempts, privacy, cooldown).
+#[tauri::command]
+pub async fn get_failover_policy(
+    state: State<'_, AppState>,
+) -> Result<brain::FailoverPolicy, String> {
+    let policy = state.failover_policy.lock().map_err(|e| e.to_string())?;
+    Ok(policy.clone())
+}
+
+/// Update the failover policy. Only provided fields are updated.
+#[tauri::command]
+pub async fn set_failover_policy(
+    state: State<'_, AppState>,
+    max_attempts: Option<u8>,
+    respect_privacy: Option<bool>,
+    min_cooldown_secs: Option<u64>,
+) -> Result<brain::FailoverPolicy, String> {
+    let mut policy = state.failover_policy.lock().map_err(|e| e.to_string())?;
+    if let Some(v) = max_attempts {
+        policy.max_attempts = v.clamp(1, 10);
+    }
+    if let Some(v) = respect_privacy {
+        policy.respect_privacy = v;
+    }
+    if let Some(v) = min_cooldown_secs {
+        policy.min_cooldown_secs = v;
+    }
+    Ok(policy.clone())
+}
+
+/// Select a provider with explicit constraints (token budget, context
+/// window, privacy). Returns the provider id or an error describing why
+/// no provider qualified.
+#[tauri::command]
+pub async fn select_provider_with_constraints(
+    state: State<'_, AppState>,
+    estimated_tokens: Option<u32>,
+    token_cap: Option<u32>,
+    local_only: Option<bool>,
+) -> Result<String, String> {
+    let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+    let constraints = brain::SelectionConstraints {
+        estimated_tokens,
+        token_cap,
+        local_only: local_only.unwrap_or(false),
+    };
+    match rotator.select_provider(&constraints) {
+        Ok(p) => Ok(p.id.clone()),
+        Err(reason) => Err(format!("no provider available: {}", reason.label())),
+    }
 }
 
 // ── Brain Selection Snapshot ────────────────────────────────────────────────
@@ -758,6 +832,133 @@ pub async fn get_update_check_state(
         settings.last_update_check_date.clone(),
         settings.dismissed_model_updates.clone(),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Provider policy registry (Chunk 35.1)
+// ---------------------------------------------------------------------------
+
+/// Get the current unified provider policy (per-task overrides).
+/// Returns `Default` (empty overrides) when no policy file exists.
+#[tauri::command]
+pub async fn get_provider_policy(
+    state: State<'_, AppState>,
+) -> Result<brain::ProviderPolicy, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    Ok(policy.clone())
+}
+
+/// Set (replace) the entire provider policy. Persists to disk.
+#[tauri::command]
+pub async fn set_provider_policy(
+    policy: brain::ProviderPolicy,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    policy.save(&state.data_dir)?;
+    let mut current = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    *current = policy;
+    Ok(())
+}
+
+/// Set or update a single task override without replacing the full policy.
+/// Persists to disk. Returns the updated override.
+#[tauri::command]
+pub async fn set_provider_task_override(
+    task_override: brain::TaskOverride,
+    state: State<'_, AppState>,
+) -> Result<brain::TaskOverride, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    policy.set(task_override.clone());
+    policy.save(&state.data_dir)?;
+    Ok(task_override)
+}
+
+/// Remove the override for a task (revert to brain-mode default).
+/// Returns the removed override if one existed.
+#[tauri::command]
+pub async fn remove_provider_task_override(
+    kind: brain::TaskKind,
+    state: State<'_, AppState>,
+) -> Result<Option<brain::TaskOverride>, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let removed = policy.remove(kind);
+    policy.save(&state.data_dir)?;
+    Ok(removed)
+}
+
+/// Resolve the effective provider+model for a specific task, taking
+/// the current policy and brain mode into account. Pure read — no
+/// side effects. Useful for UI preview of what would actually be used.
+#[tauri::command]
+pub async fn resolve_provider_for_task(
+    kind: brain::TaskKind,
+    state: State<'_, AppState>,
+) -> Result<brain::ResolvedProvider, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+    Ok(brain::resolve_for_task(&policy, kind, brain_mode.as_ref()))
+}
+
+// ── Agent-Role Routing (Chunk 35.3) ─────────────────────────────────────────
+
+/// Get all agent routing configurations.
+#[tauri::command]
+pub async fn get_agent_routing(
+    state: State<'_, AppState>,
+) -> Result<Vec<brain::AgentRouteConfig>, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    Ok(policy.all_agent_routes().into_iter().cloned().collect())
+}
+
+/// Set (or replace) the agent route config for a specific role.
+#[tauri::command]
+pub async fn set_agent_route(
+    config: brain::AgentRouteConfig,
+    state: State<'_, AppState>,
+) -> Result<brain::AgentRouteConfig, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    policy.set_agent_route(config.clone());
+    policy.save(&state.data_dir)?;
+    Ok(config)
+}
+
+/// Remove the agent route for a role (reverts to task-kind/brain-mode defaults).
+#[tauri::command]
+pub async fn remove_agent_route(
+    role: crate::coding::multi_agent::AgentRole,
+    state: State<'_, AppState>,
+) -> Result<Option<brain::AgentRouteConfig>, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let removed = policy.remove_agent_route(role);
+    policy.save(&state.data_dir)?;
+    Ok(removed)
+}
+
+/// Resolve the effective provider for an agent role, considering agent
+/// routing, task-kind policy, brain mode, and provider health.
+/// Pure read — useful for UI preview or workflow planning.
+#[tauri::command]
+pub async fn resolve_provider_for_role(
+    role: crate::coding::multi_agent::AgentRole,
+    state: State<'_, AppState>,
+) -> Result<brain::ResolvedAgentProvider, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+    let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+
+    let resolved =
+        brain::resolve_for_agent_role(&policy, role, brain_mode.as_ref(), |provider_id| {
+            // Check rotator health — local providers always considered healthy
+            match provider_id {
+                "ollama" | "lm-studio" => true,
+                id => rotator
+                    .providers
+                    .get(id)
+                    .map(|s| s.is_healthy && !s.is_rate_limited)
+                    .unwrap_or(true),
+            }
+        });
+    Ok(resolved)
 }
 
 #[cfg(test)]

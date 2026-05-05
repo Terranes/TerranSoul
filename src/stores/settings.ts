@@ -30,6 +30,8 @@ export interface AppSettings {
   late_chunking?: boolean;
   /** When true, paired mobile shells can show local notifications for long-running desktop work. */
   mobile_notifications_enabled?: boolean;
+  /** When true, MCP/gRPC brain servers may bind to LAN interfaces for local sharing. */
+  lan_enabled?: boolean;
   /** Minimum observed duration before mobile local notifications fire. */
   mobile_notification_threshold_ms?: number;
   /** Poll interval for the paired-mobile notification watcher. */
@@ -83,6 +85,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_tag: false,
   contextual_retrieval: false,
   late_chunking: false,
+  lan_enabled: false,
   mobile_notifications_enabled: true,
   mobile_notification_threshold_ms: 30_000,
   mobile_notification_poll_ms: 10_000,

@@ -26,6 +26,20 @@ struct IngestChunk {
     char_span: Option<CharSpan>,
 }
 
+#[derive(Clone)]
+enum IngestProgressEmitter {
+    Tauri(AppHandle),
+    Silent,
+}
+
+impl IngestProgressEmitter {
+    fn emit(&self, event: TaskProgressEvent) {
+        if let Self::Tauri(app) = self {
+            let _ = app.emit("task-progress", event);
+        }
+    }
+}
+
 /// Ingest a document from a local file path, URL, or web crawl.
 /// Runs as a background task with progress events.
 #[tauri::command]
@@ -35,6 +49,35 @@ pub async fn ingest_document(
     importance: Option<i64>,
     app_handle: AppHandle,
     state: State<'_, AppState>,
+) -> Result<IngestStartResult, String> {
+    start_ingest(
+        source,
+        tags,
+        importance,
+        Some(app_handle),
+        state.inner().clone(),
+    )
+    .await
+}
+
+/// Start ingestion without a Tauri [`AppHandle`]. Used by MCP stdio, where
+/// there is no WebView event channel but the same persistent AppState is
+/// available.
+pub async fn ingest_document_silent(
+    source: String,
+    tags: Option<String>,
+    importance: Option<i64>,
+    state: AppState,
+) -> Result<IngestStartResult, String> {
+    start_ingest(source, tags, importance, None, state).await
+}
+
+async fn start_ingest(
+    source: String,
+    tags: Option<String>,
+    importance: Option<i64>,
+    app_handle: Option<AppHandle>,
+    state: AppState,
 ) -> Result<IngestStartResult, String> {
     let tags = tags.unwrap_or_else(|| "imported".to_string());
     let importance = importance.unwrap_or(4).clamp(1, 5);
@@ -76,19 +119,19 @@ pub async fn ingest_document(
         mgr.create_task(kind.clone(), &description, &source_trimmed)
     };
 
-    let _ = app_handle.emit(
-        "task-progress",
-        TaskProgressEvent {
-            id: task_id.clone(),
-            kind: kind.clone(),
-            status: TaskStatus::Running,
-            progress: 0,
-            description: description.clone(),
-            processed_items: 0,
-            total_items: 0,
-            error: None,
-        },
-    );
+    let emitter = app_handle
+        .map(IngestProgressEmitter::Tauri)
+        .unwrap_or(IngestProgressEmitter::Silent);
+    emitter.emit(TaskProgressEvent {
+        id: task_id.clone(),
+        kind: kind.clone(),
+        status: TaskStatus::Running,
+        progress: 0,
+        description: description.clone(),
+        processed_items: 0,
+        total_items: 0,
+        error: None,
+    });
 
     let cancel_flag = {
         let mgr = state.task_manager.lock().await;
@@ -99,38 +142,35 @@ pub async fn ingest_document(
     let task_id_clone = task_id.clone();
     let source_clone = source_trimmed.clone();
     let kind_clone = kind.clone();
-    let app = app_handle.clone();
+    let emitter_clone = emitter.clone();
+    let state_clone = state.clone();
 
     tokio::spawn(async move {
-        let app_state = app.state::<AppState>();
         let result = run_ingest_task(
             &task_id_clone,
             &source_clone,
             &tags,
             importance,
             &cancel_flag,
-            &app,
-            &app_state,
+            &emitter_clone,
+            &state_clone,
         )
         .await;
 
-        let mut mgr = app_state.task_manager.lock().await;
+        let mut mgr = state_clone.task_manager.lock().await;
         match result {
             Ok((chunks, total_chars)) => {
                 mgr.complete_task(&task_id_clone);
-                let _ = app.emit(
-                    "task-progress",
-                    TaskProgressEvent {
-                        id: task_id_clone,
-                        kind: kind_clone,
-                        status: TaskStatus::Completed,
-                        progress: 100,
-                        description: format!("Done! {} chunks from {} chars", chunks, total_chars),
-                        processed_items: chunks,
-                        total_items: chunks,
-                        error: None,
-                    },
-                );
+                emitter_clone.emit(TaskProgressEvent {
+                    id: task_id_clone,
+                    kind: kind_clone,
+                    status: TaskStatus::Completed,
+                    progress: 100,
+                    description: format!("Done! {} chunks from {} chars", chunks, total_chars),
+                    processed_items: chunks,
+                    total_items: chunks,
+                    error: None,
+                });
             }
             Err(e) => {
                 if e.contains("cancelled") {
@@ -141,35 +181,28 @@ pub async fn ingest_document(
                         .get_task(&task_id_clone)
                         .map(|t| t.progress)
                         .unwrap_or(0);
-                    let _ = app.emit(
-                        "task-progress",
-                        TaskProgressEvent {
-                            id: task_id_clone,
-                            kind: kind_clone,
-                            status: TaskStatus::Paused,
-                            progress: prog,
-                            description: "Paused — exceeded 30 min. Resume to continue."
-                                .to_string(),
-                            processed_items: 0,
-                            total_items: 0,
-                            error: Some(e),
-                        },
-                    );
+                    emitter_clone.emit(TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Paused,
+                        progress: prog,
+                        description: "Paused — exceeded 30 min. Resume to continue.".to_string(),
+                        processed_items: 0,
+                        total_items: 0,
+                        error: Some(e),
+                    });
                 } else {
                     mgr.fail_task(&task_id_clone, &e);
-                    let _ = app.emit(
-                        "task-progress",
-                        TaskProgressEvent {
-                            id: task_id_clone,
-                            kind: kind_clone,
-                            status: TaskStatus::Failed,
-                            progress: 0,
-                            description: "Failed".to_string(),
-                            processed_items: 0,
-                            total_items: 0,
-                            error: Some(e),
-                        },
-                    );
+                    emitter_clone.emit(TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Failed,
+                        progress: 0,
+                        description: "Failed".to_string(),
+                        processed_items: 0,
+                        total_items: 0,
+                        error: Some(e),
+                    });
                 }
             }
         }
@@ -224,14 +257,15 @@ pub async fn resume_ingest_task(
     let app = app_handle.clone();
 
     tokio::spawn(async move {
-        let app_state = app.state::<AppState>();
+        let app_state = app.state::<AppState>().inner().clone();
+        let emitter = IngestProgressEmitter::Tauri(app.clone());
         let result = run_ingest_task(
             &task_id_clone,
             &source,
             "imported",
             4,
             &cancel_flag,
-            &app,
+            &emitter,
             &app_state,
         )
         .await;
@@ -240,36 +274,30 @@ pub async fn resume_ingest_task(
         match result {
             Ok((chunks, total_chars)) => {
                 mgr.complete_task(&task_id_clone);
-                let _ = app.emit(
-                    "task-progress",
-                    TaskProgressEvent {
-                        id: task_id_clone,
-                        kind: kind_clone,
-                        status: TaskStatus::Completed,
-                        progress: 100,
-                        description: format!("Done! {} chunks from {} chars", chunks, total_chars),
-                        processed_items: chunks,
-                        total_items: chunks,
-                        error: None,
-                    },
-                );
+                emitter.emit(TaskProgressEvent {
+                    id: task_id_clone,
+                    kind: kind_clone,
+                    status: TaskStatus::Completed,
+                    progress: 100,
+                    description: format!("Done! {} chunks from {} chars", chunks, total_chars),
+                    processed_items: chunks,
+                    total_items: chunks,
+                    error: None,
+                });
             }
             Err(e) => {
                 if !e.contains("cancelled") {
                     mgr.fail_task(&task_id_clone, &e);
-                    let _ = app.emit(
-                        "task-progress",
-                        TaskProgressEvent {
-                            id: task_id_clone,
-                            kind: kind_clone,
-                            status: TaskStatus::Failed,
-                            progress: 0,
-                            description: "Failed".to_string(),
-                            processed_items: 0,
-                            total_items: 0,
-                            error: Some(e),
-                        },
-                    );
+                    emitter.emit(TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Failed,
+                        progress: 0,
+                        description: "Failed".to_string(),
+                        processed_items: 0,
+                        total_items: 0,
+                        error: Some(e),
+                    });
                 }
             }
         }
@@ -295,10 +323,10 @@ async fn run_ingest_task(
     tags: &str,
     importance: i64,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
-    app: &AppHandle,
-    state: &State<'_, AppState>,
+    emitter: &IngestProgressEmitter,
+    state: &AppState,
 ) -> Result<(usize, usize), String> {
-    emit_progress(app, task_id, 5, "Fetching content…", 0, 0);
+    emit_progress(emitter, task_id, 5, "Fetching content…", 0, 0);
 
     if cancel_flag.load(Ordering::Relaxed) {
         return Err("Task cancelled".to_string());
@@ -307,7 +335,7 @@ async fn run_ingest_task(
     let (text, source_url) = if source.starts_with("crawl:") {
         let url = source.strip_prefix("crawl:").unwrap().trim();
         let crawled =
-            crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, app, state).await?;
+            crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, emitter, state).await?;
         (crawled, url.to_string())
     } else if source.starts_with("http://") || source.starts_with("https://") {
         let text = fetch_url(source, state).await?;
@@ -333,7 +361,7 @@ async fn run_ingest_task(
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         if let Ok(Some(existing)) = store.find_by_source_hash(&source_hash) {
             // Content unchanged — skip re-ingest.
-            emit_progress(app, task_id, 100, "Content unchanged — skipped", 0, 0);
+            emit_progress(emitter, task_id, 100, "Content unchanged — skipped", 0, 0);
             return Ok((0, existing.token_count as usize));
         }
         // Content changed or new — delete any stale entries from the same source URL.
@@ -364,7 +392,7 @@ async fn run_ingest_task(
     let chunks = build_ingest_chunks(&text, semantic_chunks);
 
     emit_progress(
-        app,
+        emitter,
         task_id,
         30,
         &format!("Chunked into {} pieces", chunk_count),
@@ -392,7 +420,7 @@ async fn run_ingest_task(
     let doc_summary = if contextual_retrieval_enabled {
         if let Some(mode) = brain_mode.clone() {
             emit_progress(
-                app,
+                emitter,
                 task_id,
                 32,
                 "Generating document summary for contextual retrieval…",
@@ -412,7 +440,7 @@ async fn run_ingest_task(
             local_ollama_model_hint(brain_mode.as_ref(), active_brain.as_deref())
         {
             emit_progress(
-                app,
+                emitter,
                 task_id,
                 34,
                 "Generating whole-document token embeddings for late chunking…",
@@ -521,7 +549,7 @@ async fn run_ingest_task(
 
         let progress = (30 + ((i + 1) * 50 / chunk_count.max(1))) as u8;
         emit_progress(
-            app,
+            emitter,
             task_id,
             progress,
             &format!("Stored {}/{} chunks", i + 1, chunk_count),
@@ -552,7 +580,7 @@ async fn run_ingest_task(
 
     // Embed (best effort)
     emit_progress(
-        app,
+        emitter,
         task_id,
         85,
         "Generating embeddings…",
@@ -580,7 +608,7 @@ async fn run_ingest_task(
             }
             let progress = (85 + ((i + 1) * 15 / pending_embeddings.len().max(1))) as u8;
             emit_progress(
-                app,
+                emitter,
                 task_id,
                 progress,
                 &format!("Embedded {}/{}", i + 1, pending_embeddings.len()),
@@ -600,7 +628,7 @@ async fn run_ingest_task(
         created_entries.len(),
     ) {
         emit_progress(
-            app,
+            emitter,
             task_id,
             99,
             "Extracting memory graph edges…",
@@ -625,7 +653,7 @@ fn auto_edge_extraction_model(
 }
 
 async fn run_ingest_edge_extraction(
-    state: &State<'_, AppState>,
+    state: &AppState,
     model: &str,
     chunk_size: usize,
 ) -> Result<usize, String> {
@@ -922,7 +950,7 @@ fn local_ollama_model_hint(
 }
 
 async fn save_ingest_checkpoint(
-    state: &State<'_, AppState>,
+    state: &AppState,
     task_id: &str,
     source: &str,
     tags: &str,
@@ -943,26 +971,23 @@ async fn save_ingest_checkpoint(
 }
 
 fn emit_progress(
-    app: &AppHandle,
+    emitter: &IngestProgressEmitter,
     task_id: &str,
     progress: u8,
     desc: &str,
     processed: usize,
     total: usize,
 ) {
-    let _ = app.emit(
-        "task-progress",
-        TaskProgressEvent {
-            id: task_id.to_string(),
-            kind: TaskKind::Ingest,
-            status: TaskStatus::Running,
-            progress,
-            description: desc.to_string(),
-            processed_items: processed,
-            total_items: total,
-            error: None,
-        },
-    );
+    emitter.emit(TaskProgressEvent {
+        id: task_id.to_string(),
+        kind: TaskKind::Ingest,
+        status: TaskStatus::Running,
+        progress,
+        description: desc.to_string(),
+        processed_items: processed,
+        total_items: total,
+        error: None,
+    });
 }
 
 // ── File reading ───────────────────────────────────────────────────────────────
@@ -1018,7 +1043,7 @@ fn extract_pdf_text(path: &std::path::Path) -> Result<String, String> {
 
 // ── URL fetching ───────────────────────────────────────────────────────────────
 
-async fn fetch_url(url: &str, state: &State<'_, AppState>) -> Result<String, String> {
+async fn fetch_url(url: &str, state: &AppState) -> Result<String, String> {
     validate_url(url)?;
     let response = state
         .ollama_client
@@ -1117,8 +1142,8 @@ async fn crawl_website_with_progress(
     max_pages: usize,
     task_id: &str,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
-    app: &AppHandle,
-    state: &State<'_, AppState>,
+    emitter: &IngestProgressEmitter,
+    state: &AppState,
 ) -> Result<String, String> {
     use scraper::{Html, Selector};
     use std::collections::VecDeque;
@@ -1183,7 +1208,7 @@ async fn crawl_website_with_progress(
         visited.insert(url.clone());
 
         emit_progress(
-            app,
+            emitter,
             task_id,
             ((visited.len() * 25) / max_pages.max(1)) as u8,
             &format!(
@@ -1240,7 +1265,7 @@ async fn crawl_website_with_progress(
 
 #[allow(clippy::too_many_arguments)]
 async fn save_crawl_checkpoint(
-    state: &State<'_, AppState>,
+    state: &AppState,
     task_id: &str,
     visited: &HashSet<String>,
     queue: &std::collections::VecDeque<(String, usize)>,

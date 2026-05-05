@@ -146,6 +146,21 @@ pointers that:
   `CREDITS.md` and synced into MCP self-improve knowledge in
   `mcp-data/shared/**` so future agents can retrieve it with `brain_search`.
 
+### Deep Analysis Before Action
+
+- Every non-trivial decision (adopting an idea from another project, adding a
+  dependency, refactoring a subsystem, accepting or rejecting a research
+  finding) must complete the deep-analysis protocol in
+  [`rules/deep-analysis-rule.md`](deep-analysis-rule.md): MCP-prior-art
+  check, source-of-truth read, gap analysis, verdict, and a numbered SQL
+  migration written back under `mcp-data/shared/migrations/`.
+- No partial scans. Reading only a top-level README, searching only one MCP
+  keyword, or reading only one source file is a violation. If a required
+  step cannot complete, stop and report the blocker.
+- The cost of a deep analysis is paid once: the verdict goes into a
+  migration so future agents retrieve it via `brain_search` instead of
+  re-scanning the same upstream repo or the same TerranSoul subsystem.
+
 ### MCP Markdown Memory Boundary
 
 - Do not treat Markdown as TerranSoul MCP memory. Markdown files may describe

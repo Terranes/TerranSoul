@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AgentRole,
+  AgentRouteConfig,
   BrainMode,
   DiskInfo,
   FreeProvider,
@@ -14,7 +16,12 @@ import type {
   OllamaInstallStatus,
   OllamaModelEntry,
   OllamaStatus,
+  ProviderPolicy,
+  ResolvedAgentProvider,
+  ResolvedProvider,
   SystemInfo,
+  TaskKind,
+  TaskOverride,
 } from '../types';
 
 export type BrowserAuthProviderId = 'chatgpt' | 'gemini' | 'openrouter' | 'nvidia-nim' | 'pollinations' | 'google';
@@ -856,6 +863,7 @@ export const useBrainStore = defineStore('brain', () => {
         fetchInstalledModels(),
         checkLmStudioStatus(),
         fetchLmStudioModels(),
+        loadProviderPolicy(),
       ]);
     } catch {
       // Tauri backend unavailable in the browser — let the user choose a provider.
@@ -978,6 +986,62 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Provider policy registry (Chunk 35.1)
+  // -------------------------------------------------------------------------
+
+  const providerPolicy = ref<ProviderPolicy>({ version: 1, overrides: {} });
+
+  async function loadProviderPolicy(): Promise<void> {
+    try {
+      const policy = await invoke<ProviderPolicy>('get_provider_policy');
+      providerPolicy.value = policy;
+    } catch (e) {
+      console.warn('[brain] provider policy load failed:', e);
+    }
+  }
+
+  async function setProviderPolicy(policy: ProviderPolicy): Promise<void> {
+    await invoke<void>('set_provider_policy', { policy });
+    providerPolicy.value = policy;
+  }
+
+  async function setTaskOverride(taskOverride: TaskOverride): Promise<TaskOverride> {
+    const result = await invoke<TaskOverride>('set_provider_task_override', { taskOverride });
+    await loadProviderPolicy();
+    return result;
+  }
+
+  async function removeTaskOverride(kind: TaskKind): Promise<void> {
+    await invoke<TaskOverride | null>('remove_provider_task_override', { kind });
+    await loadProviderPolicy();
+  }
+
+  async function resolveForTask(kind: TaskKind): Promise<ResolvedProvider> {
+    return invoke<ResolvedProvider>('resolve_provider_for_task', { kind });
+  }
+
+  // ── Agent-Role Routing (Chunk 35.3) ────────────────────────────────────────
+
+  async function getAgentRouting(): Promise<AgentRouteConfig[]> {
+    return invoke<AgentRouteConfig[]>('get_agent_routing');
+  }
+
+  async function setAgentRoute(config: AgentRouteConfig): Promise<AgentRouteConfig> {
+    const result = await invoke<AgentRouteConfig>('set_agent_route', { config });
+    await loadProviderPolicy();
+    return result;
+  }
+
+  async function removeAgentRoute(role: AgentRole): Promise<void> {
+    await invoke<AgentRouteConfig | null>('remove_agent_route', { role });
+    await loadProviderPolicy();
+  }
+
+  async function resolveForRole(role: AgentRole): Promise<ResolvedAgentProvider> {
+    return invoke<ResolvedAgentProvider>('resolve_provider_for_role', { role });
+  }
+
   return {
     activeBrain,
     systemInfo,
@@ -1034,5 +1098,17 @@ export const useBrainStore = defineStore('brain', () => {
     initialise,
     checkForModelUpdates,
     processPromptSilently,
+    // Provider policy (Chunk 35.1)
+    providerPolicy,
+    loadProviderPolicy,
+    setProviderPolicy,
+    setTaskOverride,
+    removeTaskOverride,
+    resolveForTask,
+    // Agent routing (Chunk 35.3)
+    getAgentRouting,
+    setAgentRoute,
+    removeAgentRoute,
+    resolveForRole,
   };
 });

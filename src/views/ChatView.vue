@@ -496,6 +496,7 @@ import { onMounted } from 'vue';
 import { onUnmounted } from 'vue';
 import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
+import { invoke } from '@tauri-apps/api/core';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
 import { loadBrowserLanHost } from '../utils/browser-lan';
@@ -558,6 +559,14 @@ const showBrowserLlmConfig = ref(false);
 const showBrowserLlmPrompt = computed(() =>
   browserRuntime.value && !usesRemoteConversation && (!brain.hasBrain || showBrowserLlmConfig.value),
 );
+
+interface SessionReflectionReport {
+  facts_saved: number;
+  summary: string;
+  reflection_id: number;
+  source_turn_count: number;
+  derived_edge_count: number;
+}
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
@@ -959,6 +968,36 @@ async function handleSend(message: string) {
 
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
+
+  if (message.trim().toLowerCase() === '/reflect') {
+    conversationStore.addMessage({
+      id: generateMessageId(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    });
+    try {
+      const report = await invoke<SessionReflectionReport>('reflect_on_session');
+      conversationStore.addMessage({
+        id: generateMessageId(),
+        role: 'assistant',
+        content: `Reflection saved.\n\nSummary: ${report.summary}\n\nSaved ${report.facts_saved} fact${report.facts_saved === 1 ? '' : 's'} and linked ${report.source_turn_count} source turn${report.source_turn_count === 1 ? '' : 's'} with ${report.derived_edge_count} provenance edge${report.derived_edge_count === 1 ? '' : 's'}.`,
+        agentName: 'TerranSoul',
+        sentiment: 'neutral',
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      conversationStore.addMessage({
+        id: generateMessageId(),
+        role: 'assistant',
+        content: `Reflection failed: ${String(error)}`,
+        agentName: 'TerranSoul',
+        sentiment: 'sad',
+        timestamp: Date.now(),
+      });
+    }
+    return;
+  }
 
   // Plugin slash-command interception (Chunk 22.4): if the message
   // matches `/<name> ...` and an active plugin contributes that name,

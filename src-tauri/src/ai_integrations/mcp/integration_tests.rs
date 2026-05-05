@@ -110,15 +110,15 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 13);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
         assert!(tools[0]["inputSchema"].is_object());
 
         // Verify code tools are present.
-        assert_eq!(tools[8]["name"], "code_query");
-        assert_eq!(tools[11]["name"], "code_rename");
+        assert_eq!(tools[9]["name"], "code_query");
+        assert_eq!(tools[12]["name"], "code_rename");
 
         handle.stop();
     }
@@ -240,7 +240,8 @@ mod tests {
         let body: Value = resp.json().await.expect("health body should be JSON");
 
         assert_eq!(status, 200);
-        assert_eq!(body, json!({ "status": "ok", "port": handle.port }));
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["port"], handle.port);
 
         handle.stop();
     }

@@ -721,11 +721,6 @@
       <BrainStatSheet />
     </section>
 
-    <!-- ── Code knowledge (GitNexus mirror) — Phase 13 Tier 4 ────────────── -->
-    <section class="bv-code-knowledge-section">
-      <CodeKnowledgePanel />
-    </section>
-
     <!-- ── Plugins — Phase 22 ─────────────────────────────────────────────── -->
     <section
       class="bv-plugins-section"
@@ -740,6 +735,41 @@
       data-testid="bv-aiv-section"
     >
       <AICodingIntegrationsView />
+    </section>
+
+    <!-- ── LAN Brain Sharing — remote MCP retrieval over local network ─────── -->
+    <section
+      class="bv-aiv-section"
+      data-testid="bv-lan-share-section"
+    >
+      <header class="bv-autolearn-header">
+        <span class="bv-section-title">🖧 LAN Brain Sharing</span>
+      </header>
+      <label
+        class="bv-config-list"
+        style="display:flex;align-items:center;gap:8px;"
+      >
+        <input
+          type="checkbox"
+          :checked="appSettings.settings?.lan_enabled ?? false"
+          data-testid="bv-lan-enabled-toggle"
+          @change="onToggleLanEnabled(($event.target as HTMLInputElement).checked)"
+        >
+        <span>Enable LAN brain sharing and discovery on this device</span>
+      </label>
+      <p class="bv-cog-desc">
+        LAN sharing exposes only to your local network after you opt in. Discovery
+        broadcasts metadata on UDP <code>7424</code>; actual memory retrieval still
+        requires the MCP bearer token shown below.
+      </p>
+      <LanSharePanel v-if="appSettings.settings?.lan_enabled ?? false" />
+      <p
+        v-else
+        class="bv-cog-desc"
+      >
+        Enable LAN sharing, start the MCP server in the integrations panel, then
+        use this panel to share or connect to another TerranSoul brain.
+      </p>
     </section>
 
     <!-- ── Persona panel (data storage & management) ──────────────────────── -->
@@ -839,8 +869,8 @@ import { useSettingsStore } from '../stores/settings';
 import { useSelfImproveStore } from '../stores/self-improve';
 import BrainAvatar from '../components/BrainAvatar.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
-import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
 import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.vue';
+import LanSharePanel from '../components/LanSharePanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import PluginsView from './PluginsView.vue';
@@ -1536,6 +1566,15 @@ async function onTogglePreferLocal(enabled: boolean) {
     await appSettings.saveSettings({ prefer_local_brain: enabled });
   } catch (err) {
     console.warn('[BrainView] save prefer_local_brain failed; reverting UI:', err);
+    await appSettings.loadSettings();
+  }
+}
+
+async function onToggleLanEnabled(enabled: boolean) {
+  try {
+    await appSettings.saveSettings({ lan_enabled: enabled });
+  } catch (err) {
+    console.warn('[BrainView] save lan_enabled failed; reverting UI:', err);
     await appSettings.loadSettings();
   }
 }

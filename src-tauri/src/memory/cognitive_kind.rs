@@ -46,6 +46,8 @@ pub enum CognitiveKind {
     Semantic,
     /// How-to knowledge, learned skills, repeatable routines.
     Procedural,
+    /// Persisted rules, heuristics, and value judgments the LLM should follow.
+    Judgment,
 }
 
 impl CognitiveKind {
@@ -55,6 +57,7 @@ impl CognitiveKind {
             CognitiveKind::Episodic => "episodic",
             CognitiveKind::Semantic => "semantic",
             CognitiveKind::Procedural => "procedural",
+            CognitiveKind::Judgment => "judgment",
         }
     }
 }
@@ -136,6 +139,7 @@ fn classify_from_tags(tags: &str) -> Option<CognitiveKind> {
             "episodic" => return Some(CognitiveKind::Episodic),
             "semantic" => return Some(CognitiveKind::Semantic),
             "procedural" => return Some(CognitiveKind::Procedural),
+            "judgment" => return Some(CognitiveKind::Judgment),
             _ => {}
         }
     }

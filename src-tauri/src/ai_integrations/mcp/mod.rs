@@ -28,10 +28,14 @@ mod integration_tests;
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use tauri::Manager;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::ai_integrations::gateway::{AppStateGateway, GatewayCaps};
+use crate::ai_integrations::gateway::{
+    AppStateGateway, GatewayCaps, GatewayError, IngestSink, IngestUrlResponse,
+};
 use crate::AppState;
 
 use router::McpRouterState;
@@ -79,6 +83,48 @@ pub fn enable_mcp_pet_mode() {
 /// Whether the current process is running as the headless MCP server.
 pub fn is_mcp_pet_mode() -> bool {
     MCP_PET_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Capability profile granted to explicit MCP transports.
+///
+/// The gateway default stays read-only for embedders/tests, but MCP is a
+/// user-started integration surface: HTTP is bearer-token authenticated and
+/// stdio is a trusted parent-child process. Agents using MCP must be able to
+/// persist durable self-improve lessons through `brain_ingest_url`.
+pub fn transport_caps() -> GatewayCaps {
+    GatewayCaps::READ_WRITE
+}
+
+#[derive(Clone)]
+struct AppHandleIngestSink {
+    app: tauri::AppHandle,
+}
+
+#[async_trait]
+impl IngestSink for AppHandleIngestSink {
+    async fn start_ingest(
+        &self,
+        source: String,
+        tags: Option<String>,
+        importance: Option<i64>,
+    ) -> Result<IngestUrlResponse, GatewayError> {
+        let state = self.app.state::<AppState>();
+        let result = crate::commands::ingest::ingest_document(
+            source,
+            tags,
+            importance,
+            self.app.clone(),
+            state,
+        )
+        .await
+        .map_err(|error| GatewayError::Internal(format!("ingest_document: {error}")))?;
+
+        Ok(IngestUrlResponse {
+            task_id: result.task_id,
+            source: result.source,
+            source_type: result.source_type,
+        })
+    }
 }
 
 fn seed_loaded_from_state(state: &AppState) -> bool {
@@ -139,15 +185,20 @@ pub async fn start_server_with_activity(
     lan_enabled: bool,
     app: Option<tauri::AppHandle>,
 ) -> Result<McpServerHandle, String> {
+    let ingest_sink = app.as_ref().map(|app_handle| {
+        Arc::new(AppHandleIngestSink {
+            app: app_handle.clone(),
+        }) as Arc<dyn IngestSink>
+    });
     let activity = activity::McpActivityReporter::new(state.clone(), app);
     activity.startup(format!("Starting MCP brain server on port {port}."));
-    let gw = Arc::new(AppStateGateway::new(state.clone()))
-        as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
-    let caps = GatewayCaps {
-        brain_read: true,
-        brain_write: false,
-        code_read: true,
+    let gw = match ingest_sink {
+        Some(sink) => Arc::new(AppStateGateway::with_ingest(state.clone(), sink))
+            as Arc<dyn crate::ai_integrations::gateway::BrainGateway>,
+        None => Arc::new(AppStateGateway::new(state.clone()))
+            as Arc<dyn crate::ai_integrations::gateway::BrainGateway>,
     };
+    let caps = transport_caps();
 
     // Try the requested port first, then fallbacks.
     let mut last_err = String::new();
@@ -234,4 +285,17 @@ pub async fn start_server_with_activity(
         port: bound_port,
         token,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_transport_caps_allow_brain_writes() {
+        let caps = transport_caps();
+        assert!(caps.brain_read);
+        assert!(caps.brain_write);
+        assert!(caps.code_read);
+    }
 }

@@ -12,18 +12,6 @@ fn main() {
         return;
     }
 
-    // CLI flag: `terransoul --mcp-http` runs the headless MCP HTTP
-    // server in a container or background process. No GUI, no Tauri
-    // window — just axum on port 7423 with state in `mcp-data/`.
-    // Used by `npm run mcp` (Docker) for full isolation from dev/release.
-    if std::env::args().any(|a| a == "--mcp-http") {
-        if let Err(e) = terransoul_lib::run_http_server() {
-            eprintln!("[mcp-http] fatal: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-
     // CLI flag: `terransoul --mcp-setup` detects AI editor config
     // directories and writes MCP server entries for the headless runner.
     if std::env::args().any(|a| a == "--mcp-setup") {
@@ -43,6 +31,19 @@ fn main() {
         // SAFETY: set before any other thread spawns. We are still the
         // sole thread on `main`. The flag is read at Tauri setup time.
         unsafe { std::env::set_var("TERRANSOUL_MCP_APP_MODE", "1") };
+    }
+
+    // CLI flag: `terransoul --mcp-tray` starts the **full Tauri/Vue UI** in
+    // MCP mode with the main window initially hidden in the system tray.
+    // The tray menu exposes "Show UI" so users can reopen the complete app
+    // shell for brain config, MCP config, memory, and graph panels while
+    // keeping the MCP HTTP server alive for coding agents.
+    if std::env::args().any(|a| a == "--mcp-tray") {
+        // SAFETY: set before any other thread spawns.
+        unsafe {
+            std::env::set_var("TERRANSOUL_MCP_APP_MODE", "1");
+            std::env::set_var("TERRANSOUL_MCP_TRAY_MODE", "1");
+        }
     }
 
     terransoul_lib::run()

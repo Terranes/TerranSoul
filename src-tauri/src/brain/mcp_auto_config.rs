@@ -34,10 +34,19 @@ const EMBEDDING_MODEL: &str = "nomic-embed-text";
 /// This runs at startup in both `run_http_server()` and the Tauri MCP app mode.
 /// It's idempotent — once the config exists on disk, subsequent runs skip it.
 pub async fn auto_configure_mcp_brain(data_dir: &Path) {
-    // Skip if already configured
-    if brain_config::load(data_dir).is_some() {
-        eprintln!("[mcp-brain] brain already configured, skipping auto-config");
-        return;
+    // Skip if already configured with a proper provider (not free API)
+    if let Some(ref mode) = brain_config::load(data_dir) {
+        match mode {
+            BrainMode::FreeApi { .. } => {
+                eprintln!("[mcp-brain] existing config is free API — reconfiguring with recommended setup");
+                // Delete the stale free config so we don't fall back to it
+                let _ = brain_config::clear(data_dir);
+            }
+            _ => {
+                eprintln!("[mcp-brain] brain already configured, skipping auto-config");
+                return;
+            }
+        }
     }
 
     eprintln!("[mcp-brain] no brain config found — running auto-configuration…");
@@ -56,27 +65,43 @@ pub async fn auto_configure_mcp_brain(data_dir: &Path) {
         return;
     }
 
-    // Fallback: Pollinations free API (no key needed)
-    eprintln!("[mcp-brain] Ollama not available — falling back to Pollinations free API");
-    let mode = BrainMode::FreeApi {
-        provider_id: "pollinations".to_string(),
-        api_key: None,
-        model: None,
-    };
-    if let Err(e) = brain_config::save(data_dir, &mode) {
-        eprintln!("[mcp-brain] failed to save brain config: {e}");
-    } else {
-        eprintln!("[mcp-brain] ✓ configured Pollinations free API as fallback");
-    }
+    // No Ollama available — leave brain unconfigured so the UI prompts
+    // the user to set up an LLM provider. MCP mode should NOT silently
+    // fall back to a free API; the connecting coding agent IS the LLM.
+    eprintln!("[mcp-brain] Ollama not available — brain unconfigured, UI will prompt for setup");
+    eprintln!(
+        "[mcp-brain] hint: install Ollama (https://ollama.com) or configure a paid API in the UI"
+    );
 }
 
 /// Attempt Ollama-based configuration. Returns `Some(BrainMode)` on success.
+/// If Ollama is not installed, auto-installs it using the existing
+/// `install_ollama` feature (silent install on Windows/Linux).
 async fn try_configure_ollama(data_dir: &Path) -> Option<BrainMode> {
-    let status = ollama_lifecycle::detect_ollama().await;
+    let mut status = ollama_lifecycle::detect_ollama().await;
 
     if !status.installed {
-        eprintln!("[mcp-brain] Ollama not installed — skipping local mode");
-        return None;
+        eprintln!("[mcp-brain] Ollama not installed — auto-installing recommended setup…");
+        match ollama_lifecycle::install_ollama(|phase, pct| {
+            eprintln!("[mcp-brain] install: [{pct:>3}%] {phase}");
+        })
+        .await
+        {
+            Ok(msg) => {
+                eprintln!("[mcp-brain] ✓ {msg}");
+                // Re-detect after install
+                status = ollama_lifecycle::detect_ollama().await;
+                if !status.installed {
+                    eprintln!("[mcp-brain] Ollama still not found after install");
+                    return None;
+                }
+            }
+            Err(e) => {
+                eprintln!("[mcp-brain] auto-install failed: {e}");
+                eprintln!("[mcp-brain] hint: install manually from https://ollama.com");
+                return None;
+            }
+        }
     }
 
     // Start Ollama if it's installed but not running
@@ -167,13 +192,10 @@ fn pick_best_local_model(
         // We match if local tag starts with the recommendation tag
         let found = local_tags.iter().any(|t| {
             *t == rec.model_tag
-                || t.starts_with(&format!("{}:", rec.model_tag.split(':').next().unwrap_or("")))
-                    && t.contains(
-                        rec.model_tag
-                            .split(':')
-                            .nth(1)
-                            .unwrap_or(""),
-                    )
+                || t.starts_with(&format!(
+                    "{}:",
+                    rec.model_tag.split(':').next().unwrap_or("")
+                )) && t.contains(rec.model_tag.split(':').nth(1).unwrap_or(""))
         });
         if found {
             return Some(rec.model_tag.clone());

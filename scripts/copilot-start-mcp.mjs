@@ -7,8 +7,31 @@ const repoRoot = process.cwd()
 const port = Number.parseInt(process.env.TERRANSOUL_MCP_PORT ?? '7423', 10)
 const waitSeconds = Number.parseInt(process.argv.find((arg) => /^\d+$/.test(arg)) ?? '240', 10)
 const smoke = process.argv.includes('--smoke')
-const logPath = process.env.TERRANSOUL_MCP_LOG ?? '/tmp/terransoul-mcp-copilot.log'
+const maxLogBytes = 1024 * 1024
+const logPath = process.env.TERRANSOUL_MCP_LOG ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.log')
 const pidPath = process.env.TERRANSOUL_MCP_PID ?? '/tmp/terransoul-mcp-copilot.pid'
+
+function archivePath(filePath) {
+  return `${filePath}.001`
+}
+
+function rotateLogIfNeeded(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  const archive = archivePath(filePath)
+  const prefix = `${path.basename(filePath)}.`
+
+  for (const entry of fs.readdirSync(path.dirname(filePath), { withFileTypes: true })) {
+    if (!entry.isFile()) continue
+    const entryPath = path.join(path.dirname(filePath), entry.name)
+    if (entry.name !== path.basename(archive) && entry.name.startsWith(prefix)) {
+      fs.rmSync(entryPath, { force: true })
+    }
+  }
+
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).size < maxLogBytes) return
+  fs.rmSync(archive, { force: true })
+  fs.renameSync(filePath, archive)
+}
 
 async function get(url) {
   try {
@@ -41,16 +64,16 @@ for (const appPort of [7421, 7422]) {
 }
 
 if (await isHealthy(port)) {
-  console.log(`[copilot-mcp] headless MCP is already healthy on ${port}; reusing it.`)
+  console.log(`[copilot-mcp] MCP full UI runtime is already healthy on ${port}; reusing it.`)
   process.exit(0)
 }
 
-fs.mkdirSync(path.dirname(logPath), { recursive: true })
+rotateLogIfNeeded(logPath)
 const log = fs.openSync(logPath, 'a')
 
 if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
-  console.log(`[copilot-mcp] warming MCP Rust build before startup; log=${logPath}`)
-  const build = spawnSync('cargo', ['build', '--manifest-path', 'src-tauri/Cargo.toml'], {
+  console.log(`[copilot-mcp] warming MCP Rust build (target-mcp) before startup; log=${logPath}`)
+  const build = spawnSync('cargo', ['build', '--release', '--manifest-path', 'src-tauri/Cargo.toml', '--target-dir', 'target-mcp'], {
     cwd: repoRoot,
     env: process.env,
     stdio: ['ignore', log, log],
@@ -67,7 +90,8 @@ if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
   }
 }
 
-const child = spawn('npm', ['run', 'mcp'], {
+const mcpBinary = path.join(repoRoot, 'target-mcp', 'release', process.platform === 'win32' ? 'terransoul.exe' : 'terransoul')
+const child = spawn(mcpBinary, ['--mcp-tray'], {
   cwd: repoRoot,
   detached: true,
   env: { ...process.env, TERRANSOUL_MCP_PORT: String(port) },
@@ -75,7 +99,7 @@ const child = spawn('npm', ['run', 'mcp'], {
 })
 child.unref()
 fs.writeFileSync(pidPath, `${child.pid}\n`)
-console.log(`[copilot-mcp] started npm run mcp as pid ${child.pid}; log=${logPath}`)
+console.log(`[copilot-mcp] started MCP full UI runtime as pid ${child.pid}; log=${logPath}`)
 
 if (!(await waitForHealth(port, waitSeconds))) {
   const tail = fs.existsSync(logPath)
@@ -88,7 +112,7 @@ if (!(await waitForHealth(port, waitSeconds))) {
   process.exit(1)
 }
 
-console.log(`[copilot-mcp] headless MCP is healthy on ${port}`)
+console.log(`[copilot-mcp] MCP full UI runtime is healthy on ${port}`)
 for (const tokenPath of ['.vscode/.mcp-token', 'mcp-data/mcp-token.txt']) {
   if (fs.existsSync(tokenPath)) {
     console.log(`[copilot-mcp] token available at ${tokenPath}`)

@@ -228,8 +228,14 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
     )?;
 
     // Clear existing data for this repo.
-    conn.execute("DELETE FROM code_symbols WHERE repo_id = ?1", params![repo_id])?;
-    conn.execute("DELETE FROM code_edges WHERE repo_id = ?1", params![repo_id])?;
+    conn.execute(
+        "DELETE FROM code_symbols WHERE repo_id = ?1",
+        params![repo_id],
+    )?;
+    conn.execute(
+        "DELETE FROM code_edges WHERE repo_id = ?1",
+        params![repo_id],
+    )?;
 
     // Collect files.
     let files = collect_source_files(&repo_path);
@@ -262,10 +268,7 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
             }
         };
 
-        let is_rust = file_path
-            .extension()
-            .map(|e| e == "rs")
-            .unwrap_or(false);
+        let is_rust = file_path.extension().map(|e| e == "rs").unwrap_or(false);
 
         let parser = if is_rust {
             &mut rust_parser
@@ -276,7 +279,9 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
         let tree = match parser.parse(&source, None) {
             Some(t) => t,
             None => {
-                stats.errors.push(format!("{rel_path}: tree-sitter parse returned None"));
+                stats
+                    .errors
+                    .push(format!("{rel_path}: tree-sitter parse returned None"));
                 continue;
             }
         };
@@ -466,16 +471,15 @@ fn walk_rust_node(
         }
         "impl_item" => {
             // Extract the type name being implemented.
-            let impl_name = node
-                .child_by_field_name("type")
-                .and_then(|t| {
-                    // Could be a simple type_identifier or a generic_type.
-                    if t.kind() == "type_identifier" {
-                        Some(node_text(source, &t))
-                    } else {
-                        t.child_by_field_name("type").map(|inner| node_text(source, &inner))
-                    }
-                });
+            let impl_name = node.child_by_field_name("type").and_then(|t| {
+                // Could be a simple type_identifier or a generic_type.
+                if t.kind() == "type_identifier" {
+                    Some(node_text(source, &t))
+                } else {
+                    t.child_by_field_name("type")
+                        .map(|inner| node_text(source, &inner))
+                }
+            });
             if let Some(ref name) = impl_name {
                 symbols.push(Symbol {
                     name: format!("impl {name}"),
@@ -703,9 +707,7 @@ fn walk_ts_node(
                             let name = node_text(source, &name_node);
                             // Check if value is an arrow function.
                             if let Some(value) = decl.child_by_field_name("value") {
-                                if value.kind() == "arrow_function"
-                                    || value.kind() == "function"
-                                {
+                                if value.kind() == "arrow_function" || value.kind() == "function" {
                                     symbols.push(Symbol {
                                         name,
                                         kind: SymbolKind::Function,
@@ -726,7 +728,13 @@ fn walk_ts_node(
             for i in 0..node.named_child_count() {
                 if let Some(child) = node.named_child(i) {
                     if child.kind() == "import_clause" {
-                        extract_ts_import_names(source, child, file, &mut *edges, node.start_position().row as u32 + 1);
+                        extract_ts_import_names(
+                            source,
+                            child,
+                            file,
+                            &mut *edges,
+                            node.start_position().row as u32 + 1,
+                        );
                     }
                 }
             }

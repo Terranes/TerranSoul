@@ -1,7 +1,8 @@
-//! HNSW Approximate Nearest Neighbor index for fast vector search (Chunk 16.10).
+//! Vector nearest-neighbor index for memory search (Chunk 16.10).
 //!
-//! Wraps the [`usearch`] crate to provide O(log n) cosine-similarity
-//! lookups instead of the O(n) brute-force scan in `MemoryStore::vector_search`.
+//! Uses the native [`usearch`] HNSW backend when the `native-ann` feature is
+//! enabled. Default builds use a pure-Rust linear backend so Windows app/test
+//! binaries do not depend on the MSVC C++ runtime at process load time.
 //!
 //! The index lives next to the SQLite file as `vectors.usearch`.  On
 //! startup the store loads the index from disk; if the file is missing
@@ -13,10 +14,15 @@
 //! corrupt file, empty DB) `vector_search` silently falls back to
 //! the brute-force path.
 //!
-//! See `docs/brain-advanced-design.md` §16 Phase 4.
+//! See `docs/brain-advanced-design.md` section 16 Phase 4.
 
+use std::cell::Cell;
+#[cfg(not(feature = "native-ann"))]
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "native-ann")]
 use usearch::ffi::{IndexOptions, MetricKind, ScalarKind};
+#[cfg(feature = "native-ann")]
 use usearch::Index;
 
 /// File name for the persisted ANN index, stored alongside `memory.db`.
@@ -26,14 +32,17 @@ const INDEX_FILENAME: &str = "vectors.usearch";
 /// Keeps the on-disk copy reasonably fresh without flushing on every write.
 const SAVE_INTERVAL: usize = 50;
 
-/// Wrapper around a `usearch::Index` that tracks dimensions and persistence.
+/// Wrapper around the selected ANN backend that tracks dimensions and persistence.
 pub struct AnnIndex {
+    #[cfg(feature = "native-ann")]
     index: Index,
+    #[cfg(not(feature = "native-ann"))]
+    entries: RefCell<Vec<(i64, Vec<f32>)>>,
     path: Option<PathBuf>,
     dimensions: usize,
     /// Counter of unsaved mutations (add / remove).  When this reaches
     /// `SAVE_INTERVAL` the index is flushed to disk.
-    dirty: std::cell::Cell<usize>,
+    dirty: Cell<usize>,
 }
 
 /// Result of an ANN search: (memory_id, cosine_similarity).
@@ -42,19 +51,31 @@ pub type AnnMatch = (i64, f32);
 impl AnnIndex {
     /// Create a new in-memory ANN index with the given dimensionality.
     pub fn new(dimensions: usize) -> Result<Self, String> {
-        let options = IndexOptions {
-            dimensions,
-            metric: MetricKind::Cos,
-            quantization: ScalarKind::F32,
-            ..Default::default()
-        };
-        let index = Index::new(&options).map_err(|e| e.to_string())?;
-        Ok(Self {
-            index,
-            path: None,
-            dimensions,
-            dirty: std::cell::Cell::new(0),
-        })
+        #[cfg(feature = "native-ann")]
+        {
+            let options = IndexOptions {
+                dimensions,
+                metric: MetricKind::Cos,
+                quantization: ScalarKind::F32,
+                ..Default::default()
+            };
+            let index = Index::new(&options).map_err(|e| e.to_string())?;
+            Ok(Self {
+                index,
+                path: None,
+                dimensions,
+                dirty: Cell::new(0),
+            })
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            Ok(Self {
+                entries: RefCell::new(Vec::new()),
+                path: None,
+                dimensions,
+                dirty: Cell::new(0),
+            })
+        }
     }
 
     /// Create or load an ANN index backed by a file in `data_dir`.
@@ -64,39 +85,51 @@ impl AnnIndex {
     /// call [`rebuild`] to populate it from the database).
     pub fn open(data_dir: &Path, dimensions: usize) -> Result<Self, String> {
         let file = data_dir.join(INDEX_FILENAME);
-        let options = IndexOptions {
-            dimensions,
-            metric: MetricKind::Cos,
-            quantization: ScalarKind::F32,
-            ..Default::default()
-        };
-        let index = Index::new(&options).map_err(|e| e.to_string())?;
+        #[cfg(feature = "native-ann")]
+        {
+            let options = IndexOptions {
+                dimensions,
+                metric: MetricKind::Cos,
+                quantization: ScalarKind::F32,
+                ..Default::default()
+            };
+            let index = Index::new(&options).map_err(|e| e.to_string())?;
 
-        // Try loading the persisted index.
-        if file.exists() {
-            match index.load(file.to_string_lossy().as_ref()) {
-                Ok(()) if index.dimensions() == dimensions => {
-                    // Loaded successfully with matching dimensions.
-                }
-                _ => {
-                    // Corrupt or dimension mismatch — start fresh.
-                    let fresh = Index::new(&options).map_err(|e| e.to_string())?;
-                    return Ok(Self {
-                        index: fresh,
-                        path: Some(file),
-                        dimensions,
-                        dirty: std::cell::Cell::new(0),
-                    });
+            // Try loading the persisted index.
+            if file.exists() {
+                match index.load(file.to_string_lossy().as_ref()) {
+                    Ok(()) if index.dimensions() == dimensions => {
+                        // Loaded successfully with matching dimensions.
+                    }
+                    _ => {
+                        // Corrupt or dimension mismatch — start fresh.
+                        let fresh = Index::new(&options).map_err(|e| e.to_string())?;
+                        return Ok(Self {
+                            index: fresh,
+                            path: Some(file),
+                            dimensions,
+                            dirty: Cell::new(0),
+                        });
+                    }
                 }
             }
-        }
 
-        Ok(Self {
-            index,
-            path: Some(file),
-            dimensions,
-            dirty: std::cell::Cell::new(0),
-        })
+            Ok(Self {
+                index,
+                path: Some(file),
+                dimensions,
+                dirty: Cell::new(0),
+            })
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            Ok(Self {
+                entries: RefCell::new(Vec::new()),
+                path: Some(file),
+                dimensions,
+                dirty: Cell::new(0),
+            })
+        }
     }
 
     /// The dimensionality this index was created with.
@@ -106,7 +139,14 @@ impl AnnIndex {
 
     /// Number of vectors currently in the index.
     pub fn len(&self) -> usize {
-        self.index.size()
+        #[cfg(feature = "native-ann")]
+        {
+            self.index.size()
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            self.entries.borrow().len()
+        }
     }
 
     /// Whether the index is empty.
@@ -122,26 +162,47 @@ impl AnnIndex {
         if embedding.len() != self.dimensions {
             return Ok(()); // dimension mismatch — ignore silently
         }
-        // usearch allows duplicate keys by default (multi=false means
-        // latest-wins).  Remove first to ensure a clean replace.
-        if self.index.contains(id as u64) {
-            let _ = self.index.remove(id as u64);
+        #[cfg(feature = "native-ann")]
+        {
+            // usearch allows duplicate keys by default (multi=false means
+            // latest-wins).  Remove first to ensure a clean replace.
+            if self.index.contains(id as u64) {
+                let _ = self.index.remove(id as u64);
+            }
+            self.index
+                .reserve(self.index.size() + 1)
+                .map_err(|e| e.to_string())?;
+            self.index
+                .add(id as u64, embedding)
+                .map_err(|e| e.to_string())?;
         }
-        self.index
-            .reserve(self.index.size() + 1)
-            .map_err(|e| e.to_string())?;
-        self.index
-            .add(id as u64, embedding)
-            .map_err(|e| e.to_string())?;
+        #[cfg(not(feature = "native-ann"))]
+        {
+            let mut entries = self.entries.borrow_mut();
+            entries.retain(|(existing_id, _)| *existing_id != id);
+            entries.push((id, embedding.to_vec()));
+        }
         self.bump_dirty();
         Ok(())
     }
 
     /// Remove a vector by memory ID.  No-op if the ID is not in the index.
     pub fn remove(&self, id: i64) -> Result<(), String> {
-        if self.index.contains(id as u64) {
-            self.index.remove(id as u64).map_err(|e| e.to_string())?;
-            self.bump_dirty();
+        #[cfg(feature = "native-ann")]
+        {
+            if self.index.contains(id as u64) {
+                self.index.remove(id as u64).map_err(|e| e.to_string())?;
+                self.bump_dirty();
+            }
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            let mut entries = self.entries.borrow_mut();
+            let before = entries.len();
+            entries.retain(|(existing_id, _)| *existing_id != id);
+            if entries.len() != before {
+                self.bump_dirty();
+            }
         }
         Ok(())
     }
@@ -155,21 +216,44 @@ impl AnnIndex {
         if query.len() != self.dimensions || self.is_empty() {
             return Ok(vec![]);
         }
-        let matches = self.index.search(query, limit).map_err(|e| e.to_string())?;
-        Ok(matches
-            .keys
-            .iter()
-            .zip(matches.distances.iter())
-            .map(|(&k, &d)| (k as i64, 1.0 - d))
-            .collect())
+        #[cfg(feature = "native-ann")]
+        {
+            let matches = self.index.search(query, limit).map_err(|e| e.to_string())?;
+            Ok(matches
+                .keys
+                .iter()
+                .zip(matches.distances.iter())
+                .map(|(&k, &d)| (k as i64, 1.0 - d))
+                .collect())
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            let mut matches: Vec<AnnMatch> = self
+                .entries
+                .borrow()
+                .iter()
+                .map(|(id, embedding)| (*id, cosine_similarity(query, embedding)))
+                .collect();
+            matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            matches.truncate(limit);
+            Ok(matches)
+        }
     }
 
     /// Persist the index to disk (no-op for in-memory indices).
     pub fn save(&self) -> Result<(), String> {
-        if let Some(path) = &self.path {
-            self.index
-                .save(path.to_string_lossy().as_ref())
-                .map_err(|e| e.to_string())?;
+        #[cfg(feature = "native-ann")]
+        {
+            if let Some(path) = &self.path {
+                self.index
+                    .save(path.to_string_lossy().as_ref())
+                    .map_err(|e| e.to_string())?;
+                self.dirty.set(0);
+            }
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            let _ = &self.path;
             self.dirty.set(0);
         }
         Ok(())
@@ -183,21 +267,40 @@ impl AnnIndex {
         &self,
         entries: impl Iterator<Item = (i64, &'a [f32])>,
     ) -> Result<usize, String> {
-        // Reset the index.
-        self.index.reset().map_err(|e| e.to_string())?;
-        let mut count = 0usize;
-        for (id, emb) in entries {
-            if emb.len() != self.dimensions {
-                continue;
+        #[cfg(feature = "native-ann")]
+        {
+            // Reset the index.
+            self.index.reset().map_err(|e| e.to_string())?;
+            let mut count = 0usize;
+            for (id, emb) in entries {
+                if emb.len() != self.dimensions {
+                    continue;
+                }
+                self.index
+                    .reserve(self.index.size() + 1)
+                    .map_err(|e| e.to_string())?;
+                self.index.add(id as u64, emb).map_err(|e| e.to_string())?;
+                count += 1;
             }
-            self.index
-                .reserve(self.index.size() + 1)
-                .map_err(|e| e.to_string())?;
-            self.index.add(id as u64, emb).map_err(|e| e.to_string())?;
-            count += 1;
+            self.save()?;
+            Ok(count)
         }
-        self.save()?;
-        Ok(count)
+        #[cfg(not(feature = "native-ann"))]
+        {
+            let mut stored = self.entries.borrow_mut();
+            stored.clear();
+            let mut count = 0usize;
+            for (id, emb) in entries {
+                if emb.len() != self.dimensions {
+                    continue;
+                }
+                stored.push((id, emb.to_vec()));
+                count += 1;
+            }
+            drop(stored);
+            self.save()?;
+            Ok(count)
+        }
     }
 
     // ── Internal ───────────────────────────────────────────────────────
@@ -210,6 +313,26 @@ impl AnnIndex {
         } else {
             self.dirty.set(n);
         }
+    }
+}
+
+#[cfg(not(feature = "native-ann"))]
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a.sqrt() * norm_b.sqrt())
     }
 }
 

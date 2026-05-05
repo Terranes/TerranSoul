@@ -5,6 +5,9 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   CodingLlmConfig,
   CodingLlmRecommendation,
+  GateEvent,
+  GateMetricsSummary,
+  PromoteToChunkResult,
   SelfImproveMetrics,
   SelfImproveRun,
   SelfImproveSettings,
@@ -139,7 +142,19 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     working: [],
     backlog: [],
   });
+  /** Gate telemetry — per-gate aggregate stats (Chunk 34.2). */
+  const gateMetrics = ref<GateMetricsSummary>({
+    gates: {},
+    active_gate: null,
+    last_successful_gate: null,
+    last_session_id: null,
+  });
+  /** Recent gate events for timeline display. */
+  const gateHistory = ref<GateEvent[]>([]);
+  /** The gate currently being executed (live from Tauri event). */
+  const activeGate = ref<string | null>(null);
   let unlistenProgress: UnlistenFn | null = null;
+  let unlistenGate: UnlistenFn | null = null;
   let progressTranscriptQueue: Promise<void> = Promise.resolve();
 
   /**
@@ -359,8 +374,11 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
         loadRuns(),
         loadWorkboard(),
         loadGithubConfig(),
+        loadGateMetrics(),
+        loadGateHistory(),
       ]);
       await subscribeToProgress();
+      await subscribeToGateEvents();
     } finally {
       isLoading.value = false;
     }
@@ -392,6 +410,51 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
       if (board) workboard.value = board;
     } catch (e) {
       console.warn('[self-improve] workboard load failed:', e);
+    }
+  }
+
+  /**
+   * Promote a backlog item (failed run, research idea, deferred suggestion)
+   * to a scoped milestone chunk by appending a row to `rules/milestones.md`
+   * via the backend writer. Refreshes the workboard on success so the
+   * promoted item moves from the backlog source into the milestone lane.
+   *
+   * @param title Short milestone title (single line, no pipes — sanitised server-side)
+   * @param goal  One-line goal/description for the new chunk
+   * @param phaseId Optional explicit phase number; defaults to the latest existing phase
+   */
+  async function promoteToChunk(
+    title: string,
+    goal: string,
+    phaseId?: number,
+  ): Promise<PromoteToChunkResult> {
+    const result = await invoke<PromoteToChunkResult>('promote_to_milestone_chunk', {
+      title,
+      goal,
+      phaseId: phaseId ?? null,
+    });
+    logActivity('info', `Promoted to milestone ${result.chunk_id} — ${result.title}`);
+    await loadWorkboard();
+    return result;
+  }
+
+  /** Load per-gate aggregate metrics (Chunk 34.2). */
+  async function loadGateMetrics(): Promise<void> {
+    try {
+      const m = await invoke<GateMetricsSummary | null>('get_self_improve_gate_metrics');
+      if (m) gateMetrics.value = m;
+    } catch (e) {
+      console.warn('[self-improve] gate metrics load failed:', e);
+    }
+  }
+
+  /** Load recent gate event history. */
+  async function loadGateHistory(limit = 50): Promise<void> {
+    try {
+      const h = await invoke<GateEvent[] | null>('get_self_improve_gate_history', { limit });
+      if (Array.isArray(h)) gateHistory.value = h;
+    } catch (e) {
+      console.warn('[self-improve] gate history load failed:', e);
     }
   }
 
@@ -463,6 +526,32 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
       });
     } catch (e) {
       console.warn('[self-improve] event subscribe failed:', e);
+    }
+  }
+
+  /** Subscribe to live gate telemetry events (Chunk 34.2). */
+  async function subscribeToGateEvents(): Promise<void> {
+    if (unlistenGate) {
+      unlistenGate();
+      unlistenGate = null;
+    }
+    try {
+      unlistenGate = await listen<GateEvent>('self-improve-gate', (evt) => {
+        const g = evt.payload;
+        if (g.event_type === 'start') {
+          activeGate.value = g.gate;
+        } else {
+          // Gate ended — clear active if it was the same gate
+          if (activeGate.value === g.gate) activeGate.value = null;
+          // Prepend to history (newest first), bounded
+          gateHistory.value.unshift(g);
+          if (gateHistory.value.length > 200) gateHistory.value.length = 200;
+          // Refresh aggregate stats
+          void loadGateMetrics();
+        }
+      });
+    } catch (e) {
+      console.warn('[self-improve] gate event subscribe failed:', e);
     }
   }
 
@@ -964,7 +1053,14 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     loadMetrics,
     loadRuns,
     loadWorkboard,
+    promoteToChunk,
     clearRunLog,
+    // Gate telemetry (Chunk 34.2)
+    gateMetrics,
+    gateHistory,
+    activeGate,
+    loadGateMetrics,
+    loadGateHistory,
     loadGithubConfig,
     setGithubConfig,
     openPullRequest,

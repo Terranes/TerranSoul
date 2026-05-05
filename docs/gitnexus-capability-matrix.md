@@ -2,18 +2,22 @@
 
 > **Sources compared:**
 > 1. [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus)
->    v1.6.3 (May 2026), README + ARCHITECTURE.md.
+>    v1.6.3 (May 2026), public README/ARCHITECTURE.md plus DeepWiki pages
+>    for architecture, MCP tools, and Web UI behaviour.
 >    **License:** PolyForm Noncommercial 1.0.0.
 > 2. [cocoindex-io/cocoindex](https://github.com/cocoindex-io/cocoindex)
 >    v1.0.2 (May 2026), README + docs + examples/code_embedding.
 >    **License:** Apache 2.0.
 >
-> **Audit date:** 2026-05-04.
+> **Audit date:** 2026-05-04; clean-room parity pivot updated 2026-05-05.
 > **License note:** We do **not** copy any GitNexus source (PolyForm-NC
 > incompatible with MIT). CocoIndex is Apache 2.0 — compatible, but we
 > still design our own implementation informed by their public patterns.
-> We only study public capability surfaces and design license-clean,
-> local-first equivalents where they fit TerranSoul's scope.
+> We only study public capability surfaces, product behaviour, and generated
+> DeepWiki summaries, then design license-clean, local-first equivalents where
+> they fit TerranSoul's scope. TerranSoul must not install, vendor, bundle, or
+> default-spawn GitNexus packages, binaries, Docker images, prompts, generated
+> skills, or UI assets.
 
 ## Honest summary
 
@@ -42,10 +46,28 @@ boundary (both serve tools to Copilot/Codex/Claude Code). Catching
 up on the code-intelligence side is a real engineering effort —
 not a refactor.
 
-The chunks queued in `rules/milestones.md` (31.x series) are the
-honest, scoped path to closing the gap on the dimensions that
-matter for *TerranSoul as a coding companion* without trying to
-clone either project.
+The shipped 31.x work closed the first native gap: symbol indexing,
+call-graph resolution, clustering, process tracing, native MCP tools,
+and graph-backed rename. The new Phase 37 work is the honest path to
+full clean-room parity for *TerranSoul as a coding companion*: broader
+language coverage, richer resolution, incremental updates, resources,
+guided workflows, multi-repo awareness, and a dense code-graph workbench.
+
+## 2026-05-05 clean-room target
+
+GitNexus's strongest public lesson is **precomputed relational
+intelligence**: do expensive graph construction before the model asks a
+question, then return complete context in one tool call. TerranSoul should
+implement that natively on top of `coding/symbol_index.rs`,
+`coding/processes.rs`, SQLite, and MCP resources/prompts.
+
+The Web UI lesson is equally important. The useful product pattern is not a
+particular color palette or component implementation; it is the interaction
+loop: global graph canvas, file tree, grounded code-reference panel, chat
+citations that focus graph/code, visible tool-call cards, process diagrams,
+repo switcher, index status, and blast-radius highlights. TerranSoul should
+adapt that as a Vue/Pinia workbench inside the Brain/Coding surface using
+existing `--ts-*` tokens and neutral naming.
 
 ## Capability matrix
 
@@ -73,11 +95,11 @@ clone either project.
 | **PreToolUse / PostToolUse hooks** | Claude Code integration enriches tool calls + detects stale index after commits | Not documented | None | Total | Chunk 31.8 |
 | **Repo-specific generated skill files** | `.claude/skills/generated/` per detected community | `.claude/` + `skills/cocoindex/` for AI coding agent integration | None | Total | Optional (ties to clustering) |
 | **Wiki generation** | LLM-powered docs from the graph | Multi-codebase summarization example | None — but TerranSoul has Obsidian export and brain summaries | Partial — different shape | Chunk 31.9 |
-| **Web UI graph explorer** | React + Sigma.js + Graphology, WebGL graph rendering, in-browser AI chat | N/A — CLI/library/MCP, no web UI | Tauri Vue UI for the *companion*, no code-graph view | Total in coding-UX terms | Chunk 31.1 (already queued) |
+| **Web UI graph explorer / code workbench** | React + Sigma.js + Graphology, WebGL graph rendering, file tree, code-reference panel, AI chat, tool-call cards, citation-to-node focus, blast-radius highlights | N/A — CLI/library/MCP, no web UI | Tauri Vue UI for the *companion*, small CodeKnowledgePanel but no full code-graph workbench | Total in coding-UX terms | Phase 37.11 |
 | **Embeddings** | HF transformers.js (GPU/CPU/WebGPU) | sentence-transformers / OpenAI / any embedding provider | Ollama `nomic-embed-text` (768-dim) + cloud `/v1/embeddings` | Different vendor, similar coverage | None — TerranSoul's choice is fine |
 | **Privacy / locality** | All local, `.gitnexus/` in repo, no network | Configurable — can be fully local (local embedding + LanceDB) or cloud targets | All local, `mcp-data/` in repo, no network | Match | — |
 | **MCP transports** | stdio (Cursor/Claude Code/Codex/Windsurf/OpenCode) + HTTP for Web UI | MCP server via CocoIndex-code (Claude Code, Cursor, others) | stdio + HTTP, both | Match (after Chunk 30.7.5) | — |
-| **Zero-config setup** | `gitnexus setup` auto-detects editors and writes global MCP configs | `pip install cocoindex` + one Python file | Manual `.vscode/mcp.json` editing today | Partial | Chunk 31.10 |
+| **Zero-config setup** | `gitnexus setup` auto-detects editors and writes global MCP configs | `pip install cocoindex` + one Python file | `.vscode/mcp.json` plus `scripts/copilot-start-mcp.mjs`; no editor-wide setup writer yet | Partial | Phase 37.10 |
 | **`MCP resources`** | `gitnexus://repos`, `gitnexus://repo/{name}/context`, `/clusters`, `/processes`, `/schema` for instant context | Not documented separately | None — only tools, no MCP `resources` | Total | Chunk 31.6 |
 | **MCP prompts** | `detect_impact`, `generate_map` guided workflows | Not documented separately | None | Total | Chunk 31.6 |
 
@@ -109,9 +131,13 @@ clone either project.
   per-machine companion; cross-machine code-graph sync is an
   enterprise feature with a different threat model.
 - **Cloud SaaS / Kubernetes signed-image flow** — out of scope.
-- **Copying any GitNexus source.** PolyForm-NC is not compatible
-  with TerranSoul's MIT licensing. We design from the public API
-  surface only.
+- **Installing or default-spawning GitNexus.** PolyForm-NC is not compatible
+  with TerranSoul's MIT licensing goals. Do not add GitNexus to package
+  dependencies, Docker flows, setup scripts, MCP startup, or sidecar paths.
+  The sidecar bridge has been removed entirely.
+- **Copying any GitNexus source, prompts, generated skills, assets, or UI
+  implementation.** We design from public docs, public behaviour, and DeepWiki
+  summaries only.
 - **Copying CocoIndex source.** While Apache 2.0 is compatible,
   CocoIndex is a Python framework — we study its architecture
   patterns (incremental Δ, hash-memoization, lineage) and implement
@@ -119,21 +145,24 @@ clone either project.
 
 ## Next steps (queued)
 
-See `rules/milestones.md` for the chunk rows. The 31.x series is
+See `rules/milestones.md` for the active Phase 37 chunk rows. The rows are
 ordered so each chunk produces a usable increment:
 
 | Chunk | What it adds | Why it's first |
 |---|---|---|
-| 31.1 | MCP app mode + pet-mode runner | Immediate visibility; no code-graph dependency. |
-| 31.2 | 5 code-intelligence MCP tools delegating to GitNexus sidecar | ✅ Shipped — external agents can now reach `code_query`/`code_context`/`code_impact`/`code_detect_changes`/`code_graph_sync` via `tools/list` when `code_read` is granted. |
-| 31.3 | tree-sitter ingest + symbol table (Rust + TS first) | Foundation for all code-aware tools. |
-| 31.4 | Symbol/edge SQLite schema + migration | Storage layer. |
-| 31.5 | Cluster detection + entry-point scoring + processes | Enables `query` process-grouping. |
-| 31.6 | New MCP tools: `code_query`, `code_context`, `code_impact`, `code_detect_changes` + MCP `resources` + `prompts` | The Copilot-facing surface that closes the gap. |
-| 31.7 | `code_rename` multi-file tool | Highest-value editor action. |
-| 31.8 | Pre/post-tool-use hook plumbing for Claude Code | Stale-index detection, search enrichment. |
-| 31.9 | Wiki generation from the symbol graph | Reuses brain summarize pipeline. |
-| 31.10 | `terransoul mcp setup` auto-config writer | Zero-config DX matching GitNexus. |
+| 37.1 | Clean-room architecture spec + sidecar removal guardrails | Prevents accidental noncommercial dependency creep before implementation continues. |
+| 37.2 | Incremental repo registry + content-hash indexing | Makes native code intelligence fast enough for default MCP use. |
+| 37.3 | Multi-language parser expansion | Moves beyond Rust/TypeScript toward GitNexus-style language breadth. |
+| 37.4 | Import, heritage, receiver, and type-resolution upgrades | Improves graph confidence and cross-file correctness. |
+| 37.5 | Confidence-scored relation schema + provenance | Gives tools auditable blast-radius and rename confidence. |
+| 37.6 | Clusters, process traces, and process-grouped search | Strengthens the precomputed intelligence layer. |
+| 37.7 | Hybrid semantic code search | Adds BM25 + embeddings + RRF over code entities. |
+| 37.8 | Diff impact / pre-commit risk overlay | Replaces sidecar `detect_changes` natively. |
+| 37.9 | Graph-backed rename polish | Expands dry-run edit plans with confidence buckets and review UI. |
+| 37.10 | MCP resources/prompts + setup writer | Gives agents instant repo context and guided workflows. |
+| 37.11 | Native code-graph workbench UI | Adapts the graph/chat/code-reference UX pattern in Vue. |
+| 37.12 | Generated repo skills + code wiki | Produces durable, reviewable architectural context from the native graph. |
+| 37.13 | Multi-repo groups and contracts | Adds cross-repo/service awareness after single-repo parity is solid. |
 
 ## Credit
 

@@ -1,0 +1,388 @@
+//! Versioned seed-data migration runner for MCP brain databases.
+//!
+//! Instead of a monolithic `memory-seed.sql` that only runs on a fresh
+//! DB, this module tracks which seed migrations have been applied via a
+//! `seed_migrations` table and runs only the new ones on each startup.
+//!
+//! ## Directory layout
+//!
+//! ```text
+//! mcp-data/shared/migrations/
+//!   001_initial_seed.sql
+//!   002_obsidian_export_knowledge.sql
+//!   003_preflight_enforcement.sql
+//!   ...
+//! ```
+//!
+//! Each file is a plain SQL script. Filenames must start with a
+//! zero-padded 3-digit version number followed by `_`. The runner
+//! sorts by version number and applies them in order.
+//!
+//! ## Guarantees
+//!
+//! - **Idempotent**: each migration runs inside a transaction;
+//!   `INSERT OR IGNORE` / `CREATE TABLE IF NOT EXISTS` are recommended.
+//! - **Append-only**: never edit an already-shipped migration. Add a
+//!   new one instead. Old migrations are never re-run.
+//! - **Offline-safe**: no network calls. Pure SQLite operations.
+//! - **Backward-compatible**: the `seed_migrations` table is created
+//!   automatically if missing (bootstraps existing DBs that predate
+//!   this system).
+
+use rusqlite::Connection;
+use std::path::Path;
+
+/// Ensure the tracking table exists. Safe to call on every startup.
+pub fn ensure_migration_table(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS seed_migrations (
+            version     INTEGER PRIMARY KEY,
+            name        TEXT    NOT NULL,
+            applied_at  INTEGER NOT NULL,
+            checksum    TEXT    NOT NULL
+        );",
+    )
+    .map_err(|e| format!("create seed_migrations table: {e}"))
+}
+
+/// Return the highest version number that has been applied, or 0 if
+/// the table is empty (fresh DB or pre-migration DB).
+pub fn current_version(conn: &Connection) -> Result<u32, String> {
+    ensure_migration_table(conn)?;
+    let v: u32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM seed_migrations",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("query seed version: {e}"))?;
+    Ok(v)
+}
+
+/// A single parsed migration file.
+#[derive(Debug, Clone)]
+pub struct Migration {
+    pub version: u32,
+    pub name: String,
+    pub sql: String,
+    pub checksum: String,
+}
+
+/// Simple FNV-1a hash of the SQL content, hex-encoded. Good enough for
+/// tamper detection without pulling in a crypto crate.
+fn fnv1a_hex(data: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in data {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Parse a migration filename like `001_initial_seed.sql` into
+/// `(version=1, name="initial_seed")`.
+fn parse_filename(name: &str) -> Option<(u32, String)> {
+    let stem = name.strip_suffix(".sql")?;
+    let underscore = stem.find('_')?;
+    let version: u32 = stem[..underscore].parse().ok()?;
+    let label = stem[underscore + 1..].to_string();
+    Some((version, label))
+}
+
+/// Discover migration files from a directory on disk (the committed
+/// `mcp-data/shared/migrations/` folder). Returns them sorted by
+/// version number.
+pub fn discover_migrations(dir: &Path) -> Vec<Migration> {
+    let mut migrations = Vec::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return migrations,
+    };
+    for entry in entries.flatten() {
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if !fname.ends_with(".sql") {
+            continue;
+        }
+        if let Some((version, name)) = parse_filename(&fname) {
+            if let Ok(sql) = std::fs::read_to_string(entry.path()) {
+                let checksum = fnv1a_hex(sql.as_bytes());
+                migrations.push(Migration {
+                    version,
+                    name,
+                    sql,
+                    checksum,
+                });
+            }
+        }
+    }
+    migrations.sort_by_key(|m| m.version);
+    migrations
+}
+
+/// Compiled-in fallback migrations for when the `mcp-data/shared/migrations/`
+/// directory is not on disk (e.g. release builds, CI, fresh clones before
+/// the directory is created). Each tuple is `(version, name, sql)`.
+///
+/// Keep this list in sync with the files on disk. The runner prefers
+/// disk files when available so contributors can iterate without
+/// recompiling.
+pub fn compiled_migrations() -> Vec<Migration> {
+    let entries: &[(&str, &str)] = &[
+        (
+            "001_initial_seed",
+            include_str!("../../../mcp-data/shared/migrations/001_initial_seed.sql"),
+        ),
+        (
+            "002_brain_os_plugin_research",
+            include_str!("../../../mcp-data/shared/migrations/002_brain_os_plugin_research.sql"),
+        ),
+        (
+            "003_graphify_research",
+            include_str!("../../../mcp-data/shared/migrations/003_graphify_research.sql"),
+        ),
+        (
+            "004_mcp_transport_write_caps",
+            include_str!("../../../mcp-data/shared/migrations/004_mcp_transport_write_caps.sql"),
+        ),
+        (
+            "005_mcp_ingest_sink",
+            include_str!("../../../mcp-data/shared/migrations/005_mcp_ingest_sink.sql"),
+        ),
+        (
+            "006_mcp_stdio_ingest_sink",
+            include_str!("../../../mcp-data/shared/migrations/006_mcp_stdio_ingest_sink.sql"),
+        ),
+        (
+            "007_multi_agent_orchestration_research",
+            include_str!(
+                "../../../mcp-data/shared/migrations/007_multi_agent_orchestration_research.sql"
+            ),
+        ),
+        (
+            "008_coding_workflow_research",
+            include_str!("../../../mcp-data/shared/migrations/008_coding_workflow_research.sql"),
+        ),
+        (
+            "009_reflection_provenance",
+            include_str!("../../../mcp-data/shared/migrations/009_reflection_provenance.sql"),
+        ),
+        (
+            "010_gitnexus_clean_room_native_code_intelligence",
+            include_str!(
+                "../../../mcp-data/shared/migrations/010_gitnexus_clean_room_native_code_intelligence.sql"
+            ),
+        ),
+        (
+            "011_mcp_tray_ui_reopen",
+            include_str!("../../../mcp-data/shared/migrations/011_mcp_tray_ui_reopen.sql"),
+        ),
+        (
+            "012_lan_mcp_brain_sharing_tutorial",
+            include_str!(
+                "../../../mcp-data/shared/migrations/012_lan_mcp_brain_sharing_tutorial.sql"
+            ),
+        ),
+        (
+            "013_mcp_self_improve_rolling_logs",
+            include_str!(
+                "../../../mcp-data/shared/migrations/013_mcp_self_improve_rolling_logs.sql"
+            ),
+        ),
+    ];
+    entries
+        .iter()
+        .filter_map(|(name, sql)| {
+            let (version, label) = parse_filename(&format!("{name}.sql"))?;
+            let checksum = fnv1a_hex(sql.as_bytes());
+            Some(Migration {
+                version,
+                name: label,
+                sql: sql.to_string(),
+                checksum,
+            })
+        })
+        .collect()
+}
+
+/// Run all pending migrations against the given connection. Returns
+/// the number of migrations applied.
+///
+/// Each migration runs in its own transaction. If a migration fails,
+/// its transaction is rolled back and the error is returned — earlier
+/// migrations that succeeded remain committed.
+pub fn apply_pending(conn: &Connection, migrations: &[Migration]) -> Result<usize, String> {
+    ensure_migration_table(conn)?;
+    let current = current_version(conn)?;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let mut applied = 0usize;
+    for m in migrations {
+        if m.version <= current {
+            continue;
+        }
+        // Run in a savepoint so a single bad migration doesn't nuke
+        // everything. `execute_batch` doesn't support params, but
+        // seed SQL is static trusted content.
+        conn.execute_batch("SAVEPOINT seed_migration;")
+            .map_err(|e| format!("savepoint v{}: {e}", m.version))?;
+
+        match conn.execute_batch(&m.sql) {
+            Ok(()) => {
+                conn.execute(
+                    "INSERT OR REPLACE INTO seed_migrations (version, name, applied_at, checksum)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![m.version, m.name, now_ms, m.checksum],
+                )
+                .map_err(|e| format!("record migration v{}: {e}", m.version))?;
+                conn.execute_batch("RELEASE seed_migration;")
+                    .map_err(|e| format!("release v{}: {e}", m.version))?;
+                eprintln!(
+                    "[seed-migrations] applied v{:03}_{} ({})",
+                    m.version, m.name, m.checksum
+                );
+                applied += 1;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK TO seed_migration;");
+                let _ = conn.execute_batch("RELEASE seed_migration;");
+                return Err(format!(
+                    "migration v{:03}_{} failed: {e}",
+                    m.version, m.name
+                ));
+            }
+        }
+    }
+    Ok(applied)
+}
+
+/// Convenience: discover from disk (prefer) or compiled fallback, then
+/// apply all pending. Returns `(applied_count, current_version)`.
+pub fn run_all(conn: &Connection, shared_dir: &Path) -> Result<(usize, u32), String> {
+    let migrations_dir = shared_dir.join("migrations");
+    let mut migrations = discover_migrations(&migrations_dir);
+    if migrations.is_empty() {
+        migrations = compiled_migrations();
+    }
+    let applied = apply_pending(conn, &migrations)?;
+    let version = current_version(conn)?;
+    Ok((applied, version))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn mem_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        // Need the memories + memory_edges tables for the seed SQL
+        crate::memory::schema::create_canonical_schema(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn parse_filename_works() {
+        assert_eq!(
+            parse_filename("001_initial_seed.sql"),
+            Some((1, "initial_seed".to_string()))
+        );
+        assert_eq!(
+            parse_filename("042_fix_edges.sql"),
+            Some((42, "fix_edges".to_string()))
+        );
+        assert_eq!(parse_filename("not_a_migration.sql"), None);
+        assert_eq!(parse_filename("001_test.txt"), None);
+    }
+
+    #[test]
+    fn fnv1a_is_deterministic() {
+        let a = fnv1a_hex(b"hello world");
+        let b = fnv1a_hex(b"hello world");
+        assert_eq!(a, b);
+        assert_ne!(a, fnv1a_hex(b"hello world!"));
+    }
+
+    #[test]
+    fn fresh_db_has_version_zero() {
+        let conn = mem_conn();
+        assert_eq!(current_version(&conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn apply_increments_version() {
+        let conn = mem_conn();
+        let migrations = vec![
+            Migration {
+                version: 1,
+                name: "first".to_string(),
+                sql: "INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count) VALUES ('test1', 'test', 5, 'fact', 0, 'long', 1.0, 5);".to_string(),
+                checksum: "aaa".to_string(),
+            },
+            Migration {
+                version: 2,
+                name: "second".to_string(),
+                sql: "INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count) VALUES ('test2', 'test', 5, 'fact', 0, 'long', 1.0, 5);".to_string(),
+                checksum: "bbb".to_string(),
+            },
+        ];
+        let applied = apply_pending(&conn, &migrations).unwrap();
+        assert_eq!(applied, 2);
+        assert_eq!(current_version(&conn).unwrap(), 2);
+
+        // Re-run: nothing new
+        let applied2 = apply_pending(&conn, &migrations).unwrap();
+        assert_eq!(applied2, 0);
+    }
+
+    #[test]
+    fn bad_migration_rolls_back_but_keeps_earlier() {
+        let conn = mem_conn();
+        let migrations = vec![
+            Migration {
+                version: 1,
+                name: "good".to_string(),
+                sql: "INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count) VALUES ('good', 'test', 5, 'fact', 0, 'long', 1.0, 5);".to_string(),
+                checksum: "aaa".to_string(),
+            },
+            Migration {
+                version: 2,
+                name: "bad".to_string(),
+                sql: "INSERT INTO nonexistent_table VALUES (1);".to_string(),
+                checksum: "bbb".to_string(),
+            },
+        ];
+        let result = apply_pending(&conn, &migrations);
+        assert!(result.is_err());
+        // v1 committed, v2 rolled back
+        assert_eq!(current_version(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn compiled_migrations_parse() {
+        let compiled = compiled_migrations();
+        assert!(!compiled.is_empty(), "must have at least migration 001");
+        assert_eq!(compiled[0].version, 1);
+        assert_eq!(compiled[0].name, "initial_seed");
+    }
+
+    #[test]
+    fn all_compiled_migrations_apply_against_canonical_schema() {
+        // Smoke test: every migration shipped in the binary must execute
+        // cleanly against a fresh canonical schema. Catches SQL syntax
+        // errors, missing columns, and broken edge inserts at test time
+        // instead of at first-run on a user's machine.
+        let conn = mem_conn();
+        let migrations = compiled_migrations();
+        let applied = apply_pending(&conn, &migrations).expect("all migrations apply");
+        assert_eq!(applied, migrations.len());
+        assert_eq!(current_version(&conn).unwrap(), migrations.len() as u32);
+
+        // Re-running is a no-op.
+        let again = apply_pending(&conn, &migrations).unwrap();
+        assert_eq!(again, 0);
+    }
+}

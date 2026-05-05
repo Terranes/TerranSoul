@@ -6,8 +6,10 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri::webview::Color;
 use tauri::Emitter;
 use tauri::Manager;
+use tauri::WebviewWindow;
 use tokio::sync::Mutex as TokioMutex;
 
 pub mod agent;
@@ -51,48 +53,50 @@ use commands::{
     },
     brain::{
         check_lm_studio_status, check_ollama_status, classify_intent, clear_active_brain,
-        download_lm_studio_model, factory_reset_brain, get_active_brain, get_brain_mode,
-        get_brain_selection, get_embed_cache_status, get_lm_studio_download_status,
-        get_lm_studio_models, get_next_provider, get_ollama_models, get_system_info,
+        download_lm_studio_model, factory_reset_brain, get_active_brain, get_agent_routing,
+        get_brain_mode, get_brain_selection, get_embed_cache_status, get_failover_policy,
+        get_failover_summary, get_lm_studio_download_status, get_lm_studio_models,
+        get_next_provider, get_ollama_models, get_provider_policy, get_system_info,
         health_check_providers, list_free_providers, load_lm_studio_model, pull_ollama_model,
-        recommend_brain_models, reset_embed_cache, set_active_brain, set_brain_mode,
+        recommend_brain_models, remove_agent_route, remove_provider_task_override,
+        reset_embed_cache, resolve_provider_for_role, resolve_provider_for_task,
+        select_provider_with_constraints, set_active_brain, set_agent_route, set_brain_mode,
+        set_failover_policy, set_provider_policy, set_provider_task_override,
         unload_lm_studio_model,
     },
     character::load_vrm,
+    charisma::{
+        charisma_delete, charisma_list, charisma_promote, charisma_rate_turn,
+        charisma_record_usage, charisma_set_rating, charisma_summary,
+    },
     chat::{export_chat_log, get_conversation, send_message},
     coding::{
-        clear_self_improve_log, coding_session_clear_handoff, coding_session_list_handoffs,
-        coding_session_load_handoff, coding_session_save_handoff, code_call_graph,
-        code_compute_processes, code_generate_wiki, code_index_repo, code_list_clusters,
-        code_list_processes,
-        code_resolve_edges,
-        detect_self_improve_repo,
-        get_coding_llm_config, get_coding_workflow_config, get_github_config,
-        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
-        get_self_improve_status, get_self_improve_workboard, learn_from_user_message,
-        list_coding_llm_recommendations, list_local_coding_models, list_self_improve_worktrees, open_self_improve_pr,
-        preview_coding_workflow_context, pull_main_for_self_improve,
-        reset_coding_workflow_config, run_coding_task, set_coding_llm_config,
-        set_coding_workflow_config, set_github_config, set_self_improve_autostart,
-        set_self_improve_enabled, set_self_improve_worktree_dir, start_self_improve,
-        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
+        clear_self_improve_log, code_call_graph, code_compute_processes, code_generate_wiki,
+        code_index_repo, code_list_clusters, code_list_processes, code_resolve_edges,
+        coding_session_clear_handoff, coding_session_list_handoffs, coding_session_load_handoff,
+        coding_session_save_handoff, detect_self_improve_repo, get_coding_llm_config,
+        get_coding_workflow_config, get_github_config, get_self_improve_gate_history,
+        get_self_improve_gate_metrics, get_self_improve_metrics, get_self_improve_runs,
+        get_self_improve_settings, get_self_improve_status, get_self_improve_workboard,
+        learn_from_user_message, list_coding_llm_recommendations, list_local_coding_models,
+        list_self_improve_worktrees, open_self_improve_pr, preview_coding_workflow_context,
+        promote_to_milestone_chunk, pull_main_for_self_improve, reset_coding_workflow_config,
+        run_coding_task, set_coding_llm_config, set_coding_workflow_config, set_github_config,
+        set_self_improve_autostart, set_self_improve_enabled, set_self_improve_worktree_dir,
+        start_self_improve, stop_self_improve, suggest_self_improve_branch,
+        test_coding_llm_connection,
     },
     coding_sessions::{
         coding_session_append_message, coding_session_clear_chat, coding_session_fork,
-        coding_session_list, coding_session_load_chat, coding_session_purge,
-        coding_session_rename,
+        coding_session_list, coding_session_load_chat, coding_session_purge, coding_session_rename,
     },
-    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},    crag::crag_retrieve,
+    consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
+    crag::crag_retrieve,
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
         ensure_ollama_container, get_runtime_preference, set_runtime_preference,
         start_docker_desktop, stop_docker_desktop, wait_for_docker,
-    },
-    gitnexus::{
-        configure_gitnexus_sidecar, get_gitnexus_sidecar_config, gitnexus_context,
-        gitnexus_detect_changes, gitnexus_impact, gitnexus_list_mirrors, gitnexus_query,
-        gitnexus_sidecar_status, gitnexus_sync, gitnexus_unmirror,
     },
     github_auth::{github_poll_device_token, github_request_device_code},
     grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
@@ -104,6 +108,11 @@ use commands::{
     lan::{
         confirm_pairing, get_copilot_session_status, list_lan_addresses, list_paired_devices,
         revoke_device, start_pairing,
+    },
+    lan_share::{
+        lan_share_connect, lan_share_disconnect, lan_share_discover, lan_share_remote_health,
+        lan_share_search, lan_share_search_all, lan_share_start, lan_share_status, lan_share_stop,
+        lan_share_stop_discovery,
     },
     link::{
         apply_memory_deltas, connect_to_peer, disconnect_link, get_link_status, get_memory_deltas,
@@ -122,12 +131,13 @@ use commands::{
         get_auto_learn_policy, get_edge_stats, get_edges_for_memory, get_memories,
         get_memories_by_tier, get_memory_history, get_memory_stats, get_relevant_memories,
         get_schema_info, get_short_term_memory, graph_rag_detect_communities, graph_rag_search,
-        hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories,
-        list_memory_conflicts, list_memory_edges, list_relation_types, matryoshka_search_memories,
-        multi_hop_search_memories, obsidian_sync, obsidian_sync_start, obsidian_sync_stop,
-        promote_memory, rerank_search_memories, resolve_memory_conflict, scan_edge_conflicts,
-        search_memories, semantic_search_memories, set_auto_learn_policy, summarize_session,
-        temporal_query, update_memory,
+        hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories, judgment_add,
+        judgment_apply, judgment_list, list_memory_conflicts, list_memory_edges,
+        list_relation_types, matryoshka_search_memories, multi_hop_search_memories, obsidian_sync,
+        obsidian_sync_start, obsidian_sync_stop, promote_memory, reflect_on_session,
+        rerank_search_memories, resolve_memory_conflict, scan_edge_conflicts, search_memories,
+        semantic_search_memories, set_auto_learn_policy, summarize_session, temporal_query,
+        update_memory,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message, subscribe_agent_topic,
@@ -166,6 +176,12 @@ use commands::{
         get_app_settings, get_model_camera_positions, save_app_settings, save_model_camera_position,
     },
     streaming::{send_message_stream, send_message_stream_self_rag},
+    teachable_capabilities::{
+        teachable_capabilities_list, teachable_capabilities_promote,
+        teachable_capabilities_record_usage, teachable_capabilities_reset,
+        teachable_capabilities_set_config, teachable_capabilities_set_enabled,
+        teachable_capabilities_set_rating, teachable_capabilities_summary,
+    },
     translation::{detect_language, list_languages, translate_text},
     user_models::{
         delete_user_model, import_user_model, list_user_models, read_user_model_bytes,
@@ -180,26 +196,15 @@ use commands::{
     },
     vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
     window::{
-        close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build,
-        is_mcp_mode, open_panel_window, set_cursor_passthrough, set_pet_mode_bounds,
-        set_pet_window_size, set_window_mode, start_pet_cursor_poll, start_window_drag,
-        stop_pet_cursor_poll, toggle_window_mode,
+        close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build, is_mcp_mode,
+        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
+        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
+        toggle_window_mode,
     },
     workflow_plans::{
         workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
-        workflow_plan_delete, workflow_plan_list, workflow_plan_load,
-        workflow_plan_override_llm, workflow_plan_save, workflow_plan_update_step,
-        workflow_plan_validate,
-    },
-    charisma::{
-        charisma_delete, charisma_list, charisma_promote, charisma_rate_turn,
-        charisma_record_usage, charisma_set_rating, charisma_summary,
-    },
-    teachable_capabilities::{
-        teachable_capabilities_list, teachable_capabilities_promote,
-        teachable_capabilities_record_usage, teachable_capabilities_reset,
-        teachable_capabilities_set_config, teachable_capabilities_set_enabled,
-        teachable_capabilities_set_rating, teachable_capabilities_summary,
+        workflow_plan_delete, workflow_plan_list, workflow_plan_load, workflow_plan_override_llm,
+        workflow_plan_save, workflow_plan_update_step, workflow_plan_validate,
     },
 };
 use identity::{key_store::load_or_generate_identity, trusted_devices::load_trusted_devices};
@@ -244,6 +249,8 @@ pub struct AppStateInner {
     pub voice_config: Mutex<voice::VoiceConfig>,
     /// Provider rotation and rate-limit tracking for free API providers.
     pub provider_rotator: Mutex<brain::ProviderRotator>,
+    /// Failover policy (max retries, privacy, cooldown).
+    pub failover_policy: Mutex<brain::FailoverPolicy>,
     /// Background task manager with persistence for resume.
     pub task_manager: TokioMutex<tasks::manager::TaskManager>,
     /// Persistent application settings (model selection, camera state).
@@ -266,20 +273,14 @@ pub struct AppStateInner {
     /// briefed once and then operates on its own thread. See Chunk 23.2
     /// in `rules/milestones.md`.
     pub handoff_block: Mutex<String>,
-    /// Configuration for spawning the GitNexus sidecar (Chunk 2.1).
-    /// Defaults to `npx gitnexus mcp`. Mutable so the frontend can point at
-    /// a globally-installed binary (`gitnexus`) or supply a working dir.
-    pub gitnexus_config: TokioMutex<agent::gitnexus_sidecar::SidecarConfig>,
-    /// Lazily-spawned GitNexus sidecar handle. The first command invocation
-    /// spawns the child process and caches the bridge here; subsequent calls
-    /// reuse it. Dropped (and the child reaped) on `configure_gitnexus_sidecar`.
-    pub gitnexus_sidecar: TokioMutex<Option<Arc<agent::gitnexus_sidecar::GitNexusSidecar>>>,
     /// Running MCP server handle (Chunk 15.1). `None` when the server is
     /// stopped. Start/stop via `mcp_server_start` / `mcp_server_stop`.
     pub mcp_server: TokioMutex<Option<ai_integrations::mcp::McpServerHandle>>,
     /// Pairing manager for mTLS device registry (Chunk 24.2b). `None` when
     /// LAN mode is disabled. Initialized on first `lan_enabled = true`.
     pub pairing_manager: Mutex<Option<network::pairing::PairingManager>>,
+    /// LAN brain sharing state: UDP advertiser, browser, and remote connections.
+    pub lan_share: Mutex<network::lan_share::LanShareState>,
     /// Running gRPC Brain server handle (Chunk 24.3). `None` when stopped.
     pub grpc_server: TokioMutex<Option<commands::grpc::GrpcServerHandle>>,
     /// Plugin system host — manages plugin lifecycle, contributions, and activation.
@@ -298,6 +299,10 @@ pub struct AppStateInner {
     pub self_improve_engine: Arc<coding::engine::SelfImproveEngine>,
     /// Coding workflow configuration (context injection, target paths, etc.).
     pub coding_workflow_config: Mutex<coding::CodingWorkflowConfig>,
+    /// Unified provider policy registry (Chunk 35.1). Maps per-task
+    /// model/provider overrides; tasks without an override fall back to
+    /// the app-wide `brain_mode`.
+    pub provider_policy: Mutex<brain::ProviderPolicy>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -348,6 +353,7 @@ impl AppState {
             saved_window_size: Mutex::new(None),
             voice_config: Mutex::new(voice::config_store::load(data_dir)),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
+            failover_policy: Mutex::new(brain::FailoverPolicy::default()),
             task_manager: TokioMutex::new(tasks::manager::TaskManager::new(data_dir)),
             app_settings: Mutex::new(settings::config_store::load(data_dir)),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
@@ -362,10 +368,9 @@ impl AppState {
             ),
             persona_block: Mutex::new(String::new()),
             handoff_block: Mutex::new(String::new()),
-            gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
-            gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
             pairing_manager: Mutex::new(None),
+            lan_share: Mutex::new(network::lan_share::LanShareState::new()),
             grpc_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::with_builtin_plugins(data_dir),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
@@ -377,6 +382,7 @@ impl AppState {
             self_improve: Mutex::new(coding::load_self_improve(data_dir)),
             self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
             coding_workflow_config: Mutex::new(coding::load_coding_workflow_config(data_dir)),
+            provider_policy: Mutex::new(brain::ProviderPolicy::load(data_dir)),
         }))
     }
 
@@ -411,6 +417,7 @@ impl AppState {
             saved_window_size: Mutex::new(None),
             voice_config: Mutex::new(voice::VoiceConfig::default()),
             provider_rotator: Mutex::new(brain::ProviderRotator::new()),
+            failover_policy: Mutex::new(brain::FailoverPolicy::default()),
             task_manager: TokioMutex::new(tasks::manager::TaskManager::in_memory()),
             app_settings: Mutex::new(settings::AppSettings::default()),
             pet_cursor_active: Arc::new(AtomicBool::new(false)),
@@ -420,10 +427,9 @@ impl AppState {
             ),
             persona_block: Mutex::new(String::new()),
             handoff_block: Mutex::new(String::new()),
-            gitnexus_config: TokioMutex::new(agent::gitnexus_sidecar::SidecarConfig::default()),
-            gitnexus_sidecar: TokioMutex::new(None),
             mcp_server: TokioMutex::new(None),
             pairing_manager: Mutex::new(None),
+            lan_share: Mutex::new(network::lan_share::LanShareState::new()),
             grpc_server: TokioMutex::new(None),
             plugin_host: plugins::PluginHost::in_memory(),
             activity_tracker: memory::consolidation::ActivityTracker::new(),
@@ -435,6 +441,7 @@ impl AppState {
             self_improve: Mutex::new(coding::SelfImproveSettings::default()),
             self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
             coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
+            provider_policy: Mutex::new(brain::ProviderPolicy::default()),
         }))
     }
 }
@@ -490,7 +497,7 @@ pub fn run_stdio() -> std::io::Result<()> {
 
     if repo_local {
         // Pet-mode stdio launches honor the same release > dev > mcp
-        // priority as `--mcp-http`. If the app is already running, we
+        // priority as `--mcp-tray`. If the app is already running, we
         // emit a clear stderr message and exit cleanly so VS Code (or
         // any stdio MCP host) surfaces the reason instead of opening a
         // duplicate brain on a stale repo-local data dir.
@@ -517,7 +524,7 @@ pub fn run_stdio() -> std::io::Result<()> {
     runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
 }
 
-/// Default port used by the headless `--mcp-http` runtime.
+/// Default port used by the MCP tray runtime (`--mcp-tray`).
 ///
 /// Chosen so it does not collide with the in-app servers (release =
 /// `7421`, dev `cargo tauri dev` = `7422`). External agents (Copilot,
@@ -525,9 +532,9 @@ pub fn run_stdio() -> std::io::Result<()> {
 /// without conflicting with a running app.
 pub const HEADLESS_MCP_PORT: u16 = 7423;
 
-/// Resolve the data directory for the headless `--mcp-http` runtime.
+/// Resolve the data directory for the MCP tray runtime.
 ///
-/// The headless server is meant for repo-local agent sessions, so it
+/// The MCP tray server is meant for repo-local agent sessions, so it
 /// keeps state in `<cwd>/mcp-data/` by default — distinct from the
 /// per-OS app-data dir that the GUI/stdio modes use, so a
 /// `npm run mcp` session never touches the user's persistent companion
@@ -560,25 +567,27 @@ fn load_mcp_seed_text(data_dir: &std::path::Path, file_name: &str, fallback: &st
     std::fs::read_to_string(shared_path).unwrap_or_else(|_| fallback.to_string())
 }
 
-/// Apply seed data to a fresh `mcp-data/` directory.
+/// Apply seed data and pending migrations to the MCP data directory.
 ///
-/// On **first run** (no existing `memory.db`), this function:
-/// 1. Copies `brain_config.json` and `app_settings.json` from the committed
-///    `mcp-data/shared/` dataset (or compiled fallback) into `data_dir`.
-/// 2. Creates `memory.db` with the canonical schema and executes the
-///    seed SQL to pre-populate TerranSoul knowledge.
+/// On **first run** (no existing `memory.db`):
+/// 1. Copies `brain_config.json` and `app_settings.json` from the
+///    committed `mcp-data/shared/` dataset (or compiled fallback).
+/// 2. Creates `memory.db` with the canonical schema.
+/// 3. Runs all seed migrations from `mcp-data/shared/migrations/`.
 ///
-/// Returns `true` when the seed SQL was applied successfully, so callers can
-/// trigger first-run maintenance (embedding backfill, edge scans) exactly once.
+/// On **subsequent runs** (existing `memory.db`):
+/// 1. Ensures the `seed_migrations` tracking table exists.
+/// 2. Runs only NEW migrations that haven't been applied yet.
 ///
-/// If `memory.db` already exists, this function is a no-op and returns `false`.
+/// Returns `true` when at least one migration was applied (so callers
+/// can trigger first-run maintenance like embedding backfill).
 fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     let db_path = data_dir.join("memory.db");
-    if db_path.exists() {
-        return false; // Not first run — never overwrite existing data
-    }
+    let first_run = !db_path.exists();
 
-    eprintln!("[mcp-http] first run detected — applying seed data");
+    if first_run {
+        eprintln!("[mcp] first run detected — creating memory.db");
+    }
 
     // Write config files (only if missing)
     let brain_cfg_path = data_dir.join("brain_config.json");
@@ -589,7 +598,7 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
             include_str!("../../mcp-data/shared/brain_config.json"),
         );
         if let Err(e) = std::fs::write(&brain_cfg_path, seed_brain_cfg) {
-            eprintln!("[mcp-http] warning: failed to write seed brain_config.json: {e}");
+            eprintln!("[mcp] warning: failed to write seed brain_config.json: {e}");
         }
     }
 
@@ -601,62 +610,71 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
             include_str!("../../mcp-data/shared/app_settings.json"),
         );
         if let Err(e) = std::fs::write(&app_cfg_path, seed_app_cfg) {
-            eprintln!("[mcp-http] warning: failed to write seed app_settings.json: {e}");
+            eprintln!("[mcp] warning: failed to write seed app_settings.json: {e}");
         }
     }
 
-    // Create memory.db with schema + seed data
-    match rusqlite::Connection::open(&db_path) {
-        Ok(conn) => {
-            if let Err(e) = memory::schema::create_canonical_schema(&conn) {
-                eprintln!("[mcp-http] warning: failed to initialize schema: {e}");
-                return false;
-            }
-            let seed_sql = load_mcp_seed_text(
-                data_dir,
-                "memory-seed.sql",
-                include_str!("../../mcp-data/shared/memory-seed.sql"),
-            );
-            if let Err(e) = conn.execute_batch(&seed_sql) {
-                eprintln!("[mcp-http] warning: failed to apply memory-seed.sql: {e}");
-                false
-            } else {
-                eprintln!("[mcp-http] seed data applied successfully");
+    // Open (or create) memory.db
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[mcp] warning: failed to open memory.db: {e}");
+            return false;
+        }
+    };
+
+    // Ensure canonical schema exists (idempotent)
+    if let Err(e) = memory::schema::create_canonical_schema(&conn) {
+        eprintln!("[mcp] warning: failed to initialize schema: {e}");
+        return false;
+    }
+
+    // Run versioned seed migrations
+    let shared_dir = data_dir.join("shared");
+    match memory::seed_migrations::run_all(&conn, &shared_dir) {
+        Ok((applied, version)) => {
+            if applied > 0 {
+                eprintln!("[mcp] seed migrations: applied {applied} new, now at v{version:03}");
                 true
+            } else {
+                eprintln!("[mcp] seed migrations: up to date at v{version:03}");
+                false
             }
         }
         Err(e) => {
-            eprintln!("[mcp-http] warning: failed to open memory.db for seeding: {e}");
-            false
+            eprintln!("[mcp] warning: seed migration failed: {e}");
+            // On first run, this is fatal-ish. On subsequent runs,
+            // partial progress is still committed.
+            first_run
         }
     }
 }
 
 /// Backfill vectors for first-run MCP seed rows after the brain config has been
-/// loaded into [`AppState`]. This makes the SQLite + HNSW vector path active
-/// before the first MCP agent query whenever the configured brain exposes an
-/// embedding endpoint. Providers without embeddings simply leave rows queued
-/// for the deterministic fallback planned in Chunk 33.2.
+/// loaded into [`AppState`]. This makes the SQLite vector path active before the
+/// first MCP agent query whenever the configured brain exposes an embedding
+/// endpoint. Providers without embeddings can still use the deterministic
+/// fallback embedder in headless mode.
 async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
     let unembedded = {
         let store = match state.memory_store.lock() {
             Ok(store) => store,
             Err(e) => {
-                eprintln!("[mcp-http] mcp-seed-embedded failed to lock store: {e}");
+                eprintln!("[mcp] mcp-seed-embedded failed to lock store: {e}");
                 return 0;
             }
         };
         match store.unembedded_ids() {
             Ok(ids) => ids,
             Err(e) => {
-                eprintln!("[mcp-http] mcp-seed-embedded failed to list rows: {e}");
+                eprintln!("[mcp] mcp-seed-embedded failed to list rows: {e}");
                 return 0;
             }
         }
     };
 
     if unembedded.is_empty() {
-        eprintln!("[mcp-http] mcp-seed-embedded count=0 remaining=0");
+        eprintln!("[mcp] mcp-seed-embedded count=0 remaining=0");
         return 0;
     }
 
@@ -666,29 +684,31 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
     );
 
     if brain_mode.is_none() && active_brain.is_none() {
-        eprintln!(
-            "[mcp-http] mcp-seed-embedded skipped: no embedding-capable brain configured"
-        );
+        eprintln!("[mcp] mcp-seed-embedded skipped: no embedding-capable brain configured");
         return 0;
     }
 
     let mut count = 0usize;
     let mut offline_count = 0usize;
     for (id, content) in &unembedded {
-        let (embedding, used_offline) =
-            match brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref()).await
-            {
-                Some(embedding) => (Some(embedding), false),
-                None if ai_integrations::mcp::is_mcp_pet_mode() => {
-                    (memory::offline_embed::embed_text(content), true)
-                }
-                None => (None, false),
-            };
+        let (embedding, used_offline) = match brain::embed_for_mode(
+            content,
+            brain_mode.as_ref(),
+            active_brain.as_deref(),
+        )
+        .await
+        {
+            Some(embedding) => (Some(embedding), false),
+            None if ai_integrations::mcp::is_mcp_pet_mode() => {
+                (memory::offline_embed::embed_text(content), true)
+            }
+            None => (None, false),
+        };
         if let Some(embedding) = embedding {
             let store = match state.memory_store.lock() {
                 Ok(store) => store,
                 Err(e) => {
-                    eprintln!("[mcp-http] mcp-seed-embedded stopped: store lock failed: {e}");
+                    eprintln!("[mcp] mcp-seed-embedded stopped: store lock failed: {e}");
                     break;
                 }
             };
@@ -703,7 +723,7 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
 
     let remaining = unembedded.len().saturating_sub(count);
     eprintln!(
-        "[mcp-http] mcp-seed-embedded count={count} offline={offline_count} remaining={remaining}"
+        "[mcp] mcp-seed-embedded count={count} offline={offline_count} remaining={remaining}"
     );
     count
 }
@@ -836,7 +856,9 @@ pub fn run_mcp_setup() -> std::io::Result<()> {
 
     if results.is_empty() {
         eprintln!("[mcp-setup] no supported editor config directories found.");
-        eprintln!("[mcp-setup] checked: .vscode/, ~/.cursor/, ~/.codex/, ~/.claude/, ~/.config/opencode/");
+        eprintln!(
+            "[mcp-setup] checked: .vscode/, ~/.cursor/, ~/.codex/, ~/.claude/, ~/.config/opencode/"
+        );
         eprintln!("\n[mcp-setup] hint: run this from your project root, or create the config directories first.");
     } else {
         for result in &results {
@@ -855,125 +877,7 @@ pub fn run_mcp_setup() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Run TerranSoul as a headless MCP **HTTP** server.
-///
-/// This mode does **not** launch Tauri or the WebView; it only spins up
-/// the brain/memory/RAG/gitnexus surface needed to serve MCP tool calls
-/// to external AI coding agents over JSON-RPC on
-/// `http://127.0.0.1:<port>/mcp`.
-///
-/// On startup it prints the bound URL, the bearer token (also persisted
-/// to `<data_dir>/mcp-token.txt`), and blocks until Ctrl+C.
-///
-/// Triggered by `terransoul --mcp-http` from `main.rs`, which is the
-/// binary `npm run mcp` invokes.
-pub fn run_http_server() -> std::io::Result<()> {
-    // Priority: release > dev > mcp. If the user already has the app
-    // running with its MCP HTTP server bound, refuse to start so we
-    // never shadow live companion state with a stale headless brain.
-    if let Some(label) = detect_running_terransoul_mcp() {
-        let port = if label == "release" {
-            ai_integrations::mcp::DEFAULT_PORT
-        } else {
-            ai_integrations::mcp::DEFAULT_DEV_PORT
-        };
-        eprintln!(
-            "[mcp-http] TerranSoul {label} build is already serving MCP on \
-             127.0.0.1:{port} — refusing to start headless pet mode."
-        );
-        eprintln!(
-            "[mcp-http] Use the running app's MCP server instead, or stop \
-             the app and re-run `npm run mcp`."
-        );
-        return Ok(());
-    }
-
-    let data_dir = resolve_headless_mcp_data_dir();
-    let port = resolve_headless_mcp_port();
-
-    if let Err(e) = std::fs::create_dir_all(&data_dir) {
-        eprintln!(
-            "[mcp-http] failed to create data dir {}: {e}",
-            data_dir.display()
-        );
-        return Err(e);
-    }
-
-    // Apply seed data on first run (no existing memory.db)
-    let seeded_mcp_data = seed_mcp_data(&data_dir);
-
-    // Mark this process as MCP pet mode so the JSON-RPC initialize
-    // handshake and `/status` endpoint advertise `buildMode: "mcp"`.
-    ai_integrations::mcp::enable_mcp_pet_mode();
-
-    eprintln!("[mcp-http] data dir: {}", data_dir.display());
-
-    let state = AppState::new(&data_dir);
-    let token = match ai_integrations::mcp::auth::load_or_create(&data_dir) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("[mcp-http] failed to load/create token: {e}");
-            return Err(std::io::Error::other(e));
-        }
-    };
-
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-
-    runtime.block_on(async move {
-        // Auto-configure brain if not yet set up (Ollama → free API fallback)
-        brain::mcp_auto_config::auto_configure_mcp_brain(&data_dir).await;
-        brain::mcp_auto_config::apply_config_to_state(&state, &data_dir);
-        if seeded_mcp_data {
-            backfill_mcp_seed_embeddings(&state).await;
-        }
-        spawn_shared_maintenance(&state, "mcp-http");
-
-        match ai_integrations::mcp::start_server(state, port, token.clone(), false).await {
-            Ok(handle) => {
-                eprintln!(
-                    "[mcp-http] listening on http://127.0.0.1:{} (POST /mcp)",
-                    handle.port
-                );
-                eprintln!("[mcp-http] bearer token: {token}");
-                eprintln!(
-                    "[mcp-http] health check: GET http://127.0.0.1:{}/health (no auth)",
-                    handle.port
-                );
-
-                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                match write_mcp_token_file(&cwd, &token) {
-                    Ok(token_file) => {
-                        eprintln!("[mcp-http] token written to {}", token_file.display())
-                    }
-                    Err(e) => {
-                        eprintln!("[mcp-http] warning: failed to write .vscode/.mcp-token: {e}")
-                    }
-                }
-
-                eprintln!("[mcp-http] press Ctrl+C to stop");
-                if let Err(e) = tokio::signal::ctrl_c().await {
-                    eprintln!("[mcp-http] ctrl_c listener error: {e}");
-                }
-                eprintln!("[mcp-http] shutting down");
-                handle.stop();
-                let _ =
-                    tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
-                Ok(())
-            }
-            Err(e) => {
-                eprintln!("[mcp-http] failed to start: {e}");
-                Err(std::io::Error::other(e))
-            }
-        }
-    })
-}
-
-fn write_mcp_token_file(
-    workspace_root: &std::path::Path,
-    token: &str,
-) -> std::io::Result<PathBuf> {
+fn write_mcp_token_file(workspace_root: &std::path::Path, token: &str) -> std::io::Result<PathBuf> {
     let vscode_dir = workspace_root.join(".vscode");
     std::fs::create_dir_all(&vscode_dir)?;
     let token_file = vscode_dir.join(".mcp-token");
@@ -990,6 +894,7 @@ fn maintenance_config_from_settings(
         garbage_collect_cooldown_ms: cooldown_ms,
         promote_tier_cooldown_ms: cooldown_ms,
         edge_extract_cooldown_ms: cooldown_ms,
+        obsidian_export_cooldown_ms: cooldown_ms,
     }
 }
 
@@ -1008,6 +913,82 @@ fn spawn_shared_maintenance(state: &AppState, label: &str) {
         "[{label}] maintenance scheduler started; state={}",
         runtime.state_path().display()
     );
+}
+
+const MAIN_WINDOW_LABEL: &str = "main";
+
+fn env_flag_enabled(name: &str) -> bool {
+    std::env::var(name).map(|v| v == "1").unwrap_or(false)
+}
+
+fn should_hide_mcp_close(is_mcp_tray: bool, window_label: &str) -> bool {
+    is_mcp_tray && window_label == MAIN_WINDOW_LABEL
+}
+
+fn main_window_url() -> Result<tauri::WebviewUrl, String> {
+    if cfg!(debug_assertions) {
+        Ok(tauri::WebviewUrl::External(
+            "http://localhost:1420"
+                .parse()
+                .map_err(|e: url::ParseError| e.to_string())?,
+        ))
+    } else {
+        Ok(tauri::WebviewUrl::App("index.html".into()))
+    }
+}
+
+fn ensure_main_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        return Ok(window);
+    }
+
+    let window = tauri::WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, main_window_url()?)
+        .title("TerranSoul")
+        .inner_size(420.0, 700.0)
+        .resizable(true)
+        .decorations(true)
+        .transparent(true)
+        .background_color(Color(0, 0, 0, 0))
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        let _ = window.set_icon(icon);
+    }
+
+    Ok(window)
+}
+
+fn show_mcp_ui(app: &tauri::AppHandle) {
+    match ensure_main_window(app) {
+        Ok(window) => {
+            let _ =
+                commands::window::apply_window_mode(&window, commands::window::WindowMode::Window);
+            if let Some(state) = app.try_state::<AppState>() {
+                if let Ok(mut mode) = state.window_mode.lock() {
+                    *mode = commands::window::WindowMode::Window;
+                }
+            }
+            let _ = window.show();
+            let _ = window.set_skip_taskbar(false);
+            let _ = window.set_focus();
+        }
+        Err(e) => eprintln!("[mcp-app] failed to show MCP UI: {e}"),
+    }
+}
+
+fn toggle_mcp_ui(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            let _ = window.set_skip_taskbar(true);
+            return;
+        }
+    }
+
+    show_mcp_ui(app);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1123,6 +1104,11 @@ pub fn run() {
             graph_rag_search,
             // Temporal reasoning queries (Chunk 17.3)
             temporal_query,
+            // Judgment rules (Chunk 33B.1)
+            judgment_add,
+            judgment_list,
+            judgment_apply,
+            reflect_on_session,
             // Memory versioning (Chunk 16.12)
             get_memory_history,
             start_registry_server,
@@ -1177,7 +1163,20 @@ pub fn run() {
             roster_list_pending_workflows,
             health_check_providers,
             get_next_provider,
+            get_failover_summary,
+            get_failover_policy,
+            set_failover_policy,
+            select_provider_with_constraints,
             get_brain_selection,
+            get_provider_policy,
+            set_provider_policy,
+            set_provider_task_override,
+            remove_provider_task_override,
+            resolve_provider_for_task,
+            get_agent_routing,
+            set_agent_route,
+            remove_agent_route,
+            resolve_provider_for_role,
             list_asr_providers,
             list_tts_providers,
             get_voice_config,
@@ -1249,23 +1248,22 @@ pub fn run() {
             confirm_pairing,
             revoke_device,
             list_paired_devices,
+            // LAN brain sharing — knowledge exchange between TerranSoul instances
+            lan_share_start,
+            lan_share_stop,
+            lan_share_discover,
+            lan_share_stop_discovery,
+            lan_share_connect,
+            lan_share_disconnect,
+            lan_share_search,
+            lan_share_search_all,
+            lan_share_remote_health,
+            lan_share_status,
             import_user_model,
             list_user_models,
             delete_user_model,
             read_user_model_bytes,
             update_user_model,
-            // GitNexus sidecar — Chunk 2.1 (Phase 13 Tier 1)
-            configure_gitnexus_sidecar,
-            get_gitnexus_sidecar_config,
-            gitnexus_sidecar_status,
-            gitnexus_query,
-            gitnexus_context,
-            gitnexus_impact,
-            gitnexus_detect_changes,
-            // GitNexus KG mirror — Chunk 2.3 (Phase 13 Tier 3)
-            gitnexus_sync,
-            gitnexus_unmirror,
-            gitnexus_list_mirrors,
             // MCP server — Chunk 15.1 (Phase 15)
             mcp_server_start,
             mcp_server_stop,
@@ -1309,6 +1307,9 @@ pub fn run() {
             get_self_improve_metrics,
             get_self_improve_runs,
             clear_self_improve_log,
+            get_self_improve_gate_metrics,
+            get_self_improve_gate_history,
+            promote_to_milestone_chunk,
             test_coding_llm_connection,
             list_local_coding_models,
             get_coding_workflow_config,
@@ -1414,9 +1415,8 @@ pub fn run() {
             // never touches the user's companion data dir, and flip the
             // pet-mode flag so the MCP server / frontend report "mcp"
             // instead of "dev" / "release".
-            let mcp_app_mode = std::env::var("TERRANSOUL_MCP_APP_MODE")
-                .map(|v| v == "1")
-                .unwrap_or(false);
+            let mcp_app_mode = env_flag_enabled("TERRANSOUL_MCP_APP_MODE");
+            let mcp_tray_mode = env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE");
             let data_dir = if mcp_app_mode {
                 ai_integrations::mcp::enable_mcp_pet_mode();
                 let mcp_dir = std::env::var("TERRANSOUL_MCP_DATA_DIR")
@@ -1426,8 +1426,7 @@ pub fn run() {
                             .unwrap_or_else(|_| PathBuf::from("."))
                             .join("mcp-data")
                     });
-                std::fs::create_dir_all(&mcp_dir)
-                    .expect("failed to create MCP data directory");
+                std::fs::create_dir_all(&mcp_dir).expect("failed to create MCP data directory");
                 mcp_dir
             } else if cfg!(debug_assertions) {
                 // In dev builds, use a separate data directory so dev never
@@ -1447,14 +1446,24 @@ pub fn run() {
             let state = app.state::<AppState>();
             spawn_shared_maintenance(&state, if mcp_app_mode { "mcp-app" } else { "app" });
 
-            // Auto-start the MCP HTTP server on the headless port (7423)
-            // when running in MCP mode so external coding agents can talk
-            // to the live app without the user clicking through the
-            // Control Panel.
+            // Apply shared seed data (mcp-data/shared/) to ALL modes.
+            // The migration runner is idempotent: it only applies NEW
+            // migrations and uses compiled-in fallback when the on-disk
+            // shared/ directory is missing. This guarantees release,
+            // dev, and MCP-tray runs share the same baseline knowledge
+            // (rules, agent skills catalogue, reverse-engineering
+            // lessons) without ever touching the user's runtime data.
+            let shared_seeded = seed_mcp_data(&data_dir);
+
+            // Auto-start the MCP HTTP server on the coding-agent port (7423)
+            // when running in MCP full-UI mode so external agents can talk
+            // to the live app while the user can still open brain config,
+            // MCP config, memory, and graph panels from the tray UI.
             if mcp_app_mode {
                 let app_state_inner = state.inner().clone();
                 let mcp_data_dir = data_dir.clone();
                 let app_handle = app.handle().clone();
+
                 ai_integrations::mcp::activity::McpActivityReporter::new(
                     app_state_inner.clone(),
                     Some(app_handle.clone()),
@@ -1465,6 +1474,10 @@ pub fn run() {
                     brain::mcp_auto_config::auto_configure_mcp_brain(&mcp_data_dir).await;
                     brain::mcp_auto_config::apply_config_to_state(&app_state_inner, &mcp_data_dir);
 
+                    if shared_seeded {
+                        backfill_mcp_seed_embeddings(&app_state_inner).await;
+                    }
+
                     let token = match ai_integrations::mcp::auth::load_or_create(&mcp_data_dir) {
                         Ok(t) => t,
                         Err(e) => {
@@ -1472,6 +1485,13 @@ pub fn run() {
                             return;
                         }
                     };
+
+                    // Write .vscode/.mcp-token for editor/agent pickup
+                    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    if let Err(e) = write_mcp_token_file(&cwd, &token) {
+                        eprintln!("[mcp-app] warning: failed to write .vscode/.mcp-token: {e}");
+                    }
+
                     match ai_integrations::mcp::start_server_with_activity(
                         app_state_inner.clone(),
                         HEADLESS_MCP_PORT,
@@ -1494,6 +1514,14 @@ pub fn run() {
                         Err(e) => eprintln!("[mcp-app] failed to start MCP server: {e}"),
                     }
                 });
+            } else if shared_seeded {
+                // Dev / release modes: backfill embeddings for any new
+                // shared-seed rows in the background so RAG quality
+                // catches up without blocking startup.
+                let app_state_inner = state.inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    backfill_mcp_seed_embeddings(&app_state_inner).await;
+                });
             }
 
             let identity = load_or_generate_identity(&data_dir)
@@ -1506,82 +1534,145 @@ pub fn run() {
 
             *state.command_router.blocking_lock() = routing::CommandRouter::new(&device_id);
 
-            // System tray with Show/Hide + Window/Pet toggle + Quit
-            let show_hide = MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
-            let mode_toggle =
-                MenuItem::with_id(app, "mode_toggle", "Switch to Pet Mode", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
+            // System tray: MCP-tray mode gets a dedicated menu indicating
+            // the server is running; normal mode keeps the existing layout.
+            if mcp_tray_mode {
+                let status_label = MenuItem::with_id(
+                    app,
+                    "mcp_status",
+                    "MCP Server ● Running",
+                    false,
+                    None::<&str>,
+                )?;
+                let toggle_ui =
+                    MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&status_label, &toggle_ui, &quit])?;
 
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().unwrap())
-                .menu(&menu)
-                .tooltip("TerranSoul")
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show_hide" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
+                TrayIconBuilder::new()
+                    .icon(app.default_window_icon().cloned().unwrap())
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .tooltip("TerranSoul MCP Server")
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "mcp_toggle_ui" => {
+                            toggle_mcp_ui(app);
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            toggle_mcp_ui(tray.app_handle());
+                        }
+                    })
+                    .build(app)?;
+
+                // In MCP mode, start hidden but keep the full Vue UI loaded.
+                // The production build (dist/) is already bundled by vite build.
+                // The user can open the full UI from the tray "Show UI" menu
+                // to configure brain, view memory graph, etc.
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    let _ = window.set_skip_taskbar(true);
+                }
+            } else {
+                // Normal tray: Show/Hide + Window/Pet toggle + Quit
+                let show_hide =
+                    MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
+                let mode_toggle = MenuItem::with_id(
+                    app,
+                    "mode_toggle",
+                    "Switch to Pet Mode",
+                    true,
+                    None::<&str>,
+                )?;
+                let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
+
+                TrayIconBuilder::new()
+                    .icon(app.default_window_icon().cloned().unwrap())
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .tooltip("TerranSoul")
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show_hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "mode_toggle" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let state = app.state::<AppState>();
+                                let previous = { *state.window_mode.lock().unwrap() };
+                                let new_mode = match previous {
+                                    commands::window::WindowMode::Window => {
+                                        commands::window::WindowMode::Pet
+                                    }
+                                    commands::window::WindowMode::Pet => {
+                                        commands::window::WindowMode::Window
+                                    }
+                                };
+                                // Mirror the save/restore behaviour from the
+                                // commands so a tray-driven toggle also restores
+                                // the desktop window size correctly.
+                                if previous == commands::window::WindowMode::Window
+                                    && new_mode == commands::window::WindowMode::Pet
+                                {
+                                    if let Ok(size) = window.inner_size() {
+                                        *state.saved_window_size.lock().unwrap() =
+                                            Some((size.width, size.height));
+                                    }
+                                }
+                                let _ = commands::window::apply_window_mode(&window, new_mode);
+                                if previous == commands::window::WindowMode::Pet
+                                    && new_mode == commands::window::WindowMode::Window
+                                {
+                                    let (w, h) = state
+                                        .saved_window_size
+                                        .lock()
+                                        .ok()
+                                        .and_then(|s| *s)
+                                        .unwrap_or((420, 700));
+                                    let _ = window.set_size(tauri::PhysicalSize::new(w, h));
+                                }
+                                *state.window_mode.lock().unwrap() = new_mode;
+                                // Emit event so frontend can react
+                                let _ = window.emit("window-mode-changed", new_mode);
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            if let Some(window) = tray.app_handle().get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
                         }
-                    }
-                    "mode_toggle" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let state = app.state::<AppState>();
-                            let previous = { *state.window_mode.lock().unwrap() };
-                            let new_mode = match previous {
-                                commands::window::WindowMode::Window => {
-                                    commands::window::WindowMode::Pet
-                                }
-                                commands::window::WindowMode::Pet => {
-                                    commands::window::WindowMode::Window
-                                }
-                            };
-                            // Mirror the save/restore behaviour from the
-                            // commands so a tray-driven toggle also restores
-                            // the desktop window size correctly.
-                            if previous == commands::window::WindowMode::Window
-                                && new_mode == commands::window::WindowMode::Pet
-                            {
-                                if let Ok(size) = window.inner_size() {
-                                    *state.saved_window_size.lock().unwrap() =
-                                        Some((size.width, size.height));
-                                }
-                            }
-                            let _ = commands::window::apply_window_mode(&window, new_mode);
-                            if previous == commands::window::WindowMode::Pet
-                                && new_mode == commands::window::WindowMode::Window
-                            {
-                                let (w, h) = state
-                                    .saved_window_size
-                                    .lock()
-                                    .ok()
-                                    .and_then(|s| *s)
-                                    .unwrap_or((420, 700));
-                                let _ = window.set_size(tauri::PhysicalSize::new(w, h));
-                            }
-                            *state.window_mode.lock().unwrap() = new_mode;
-                            // Emit event so frontend can react
-                            let _ = window.emit("window-mode-changed", new_mode);
-                        }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
+            } // end else (normal tray)
 
             // Set the window icon so the taskbar / title bar shows the app icon
             // instead of the default WebView icon during development.
@@ -1589,13 +1680,63 @@ pub fn run() {
                 if let Some(icon) = app.default_window_icon().cloned() {
                     let _ = window.set_icon(icon);
                 }
+                // Only open DevTools in debug builds for the normal GUI mode,
+                // never for the MCP tray server (it has no meaningful page).
                 #[cfg(debug_assertions)]
-                window.open_devtools();
+                if !mcp_tray_mode {
+                    window.open_devtools();
+                }
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(|window, event| {
+            // In MCP-tray mode, intercept the close button to hide the
+            // window instead of destroying it. The user must right-click
+            // tray → Exit to actually quit.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if should_hide_mcp_close(
+                    env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE"),
+                    window.label(),
+                ) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    let _ = window.set_skip_taskbar(true);
+                }
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // In MCP-tray mode, prevent the app from exiting when all
+            // windows are hidden/closed. The tray icon keeps the process
+            // alive; only the "Exit" menu item calls app.exit(0).
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE") {
+                    api.prevent_exit();
+                }
+            }
+        });
+}
+
+#[cfg(test)]
+mod mcp_window_tests {
+    use super::should_hide_mcp_close;
+
+    #[test]
+    fn mcp_tray_close_hides_main_window() {
+        assert!(should_hide_mcp_close(true, "main"));
+    }
+
+    #[test]
+    fn mcp_tray_close_does_not_capture_panel_windows() {
+        assert!(!should_hide_mcp_close(true, "panel-brain"));
+        assert!(!should_hide_mcp_close(true, "panel-memory"));
+    }
+
+    #[test]
+    fn normal_mode_close_is_not_captured() {
+        assert!(!should_hide_mcp_close(false, "main"));
+    }
 }
 
 #[cfg(test)]

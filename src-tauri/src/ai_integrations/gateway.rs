@@ -565,7 +565,7 @@ impl BrainGateway for AppStateGateway {
             && req.rerank
             && model_opt.is_some()
         {
-            limit.max(20).min(50)
+            limit.clamp(20, 50)
         } else {
             limit
         };
@@ -1285,7 +1285,7 @@ mod tests {
         let lesson_id = memory_id_containing(&state, "LESSON: The MCP seed");
         let lessons_hub_id = memory_id_containing(
             &state,
-            "mcp-data/shared/lessons-learned.md captures durable",
+            "Durable gotchas, decisions, and lessons learned from past agent sessions",
         );
         let stack_anchor_id =
             memory_id_containing(&state, "STACK COVERAGE: the mcp-data seed exercises");

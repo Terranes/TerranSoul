@@ -367,7 +367,11 @@ pub async fn start_self_improve(app: AppHandle, state: State<'_, AppState>) -> R
     let worktree_dir = {
         let s = state.self_improve.lock().map_err(|e| e.to_string())?;
         let d = s.worktree_dir.clone();
-        if d.is_empty() { None } else { Some(d) }
+        if d.is_empty() {
+            None
+        } else {
+            Some(d)
+        }
     };
     coding::engine::start(app, engine, cfg, workflow_cfg, worktree_dir, repo_hint).await;
     Ok(())
@@ -431,6 +435,271 @@ pub async fn clear_self_improve_log(state: State<'_, AppState>) -> Result<Metric
     let log = MetricsLog::new(&state.data_dir);
     log.clear().map_err(|e| format!("clear log: {e}"))?;
     Ok(log.summary())
+}
+
+// ---------------------------------------------------------------------------
+// Gate telemetry (Phase 34 — Chunk 34.2)
+// ---------------------------------------------------------------------------
+
+/// Per-gate aggregate metrics: pass/fail rates, average duration, last
+/// error per gate. Computed from the gate event JSONL log, capped at the
+/// most recent [`coding::gate_telemetry::MAX_GATE_RECORDS`] end-events.
+#[tauri::command]
+pub async fn get_self_improve_gate_metrics(
+    state: State<'_, AppState>,
+) -> Result<coding::gate_telemetry::GateMetricsSummary, String> {
+    let log = coding::gate_telemetry::GateLog::new(&state.data_dir);
+    Ok(log.summary())
+}
+
+/// Most recent gate end-events (newest first). The UI displays these in
+/// the per-gate timing breakdown panel.
+#[tauri::command]
+pub async fn get_self_improve_gate_history(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<coding::gate_telemetry::GateEvent>, String> {
+    let log = coding::gate_telemetry::GateLog::new(&state.data_dir);
+    let n = limit
+        .unwrap_or(50)
+        .min(coding::gate_telemetry::MAX_GATE_RECORDS);
+    Ok(log.recent_ends(n))
+}
+
+// ---------------------------------------------------------------------------
+// Backlog promotion (Phase 34 — Chunk 34.3)
+// ---------------------------------------------------------------------------
+
+/// Result of promoting a backlog item to a milestone chunk.
+///
+/// Reports the new chunk's ID (e.g. `"34.4"`) plus the phase it was
+/// inserted into so the UI can show a confirmation toast and refresh
+/// the workboard without re-parsing markdown by hand.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PromoteToChunkResult {
+    pub chunk_id: String,
+    pub phase_id: u32,
+    pub title: String,
+}
+
+/// Promote a backlog item (failed run, research idea, deferred suggestion)
+/// to a scoped milestone chunk by safely appending a new row to
+/// `rules/milestones.md`.
+///
+/// Behaviour:
+/// - Auto-selects the next unused chunk ID in the target phase
+///   (e.g. if Phase 34 has `34.3`, the new row becomes `34.4`).
+/// - Defaults to the highest phase that already has a `## Phase N` header
+///   when no `phase_id` is supplied.
+/// - Refuses to write if the target phase has no markdown table yet —
+///   the caller must ensure the phase header + table skeleton exist.
+/// - Writes atomically via `std::fs::write` after a single string mutation.
+///
+/// Title and goal are sanitised (newlines / pipes stripped) so the
+/// markdown table stays valid.
+#[tauri::command]
+pub async fn promote_to_milestone_chunk(
+    title: String,
+    goal: String,
+    phase_id: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<PromoteToChunkResult, String> {
+    let title = sanitise_table_cell(&title);
+    let goal = sanitise_table_cell(&goal);
+    if title.is_empty() {
+        return Err("Title is required.".to_string());
+    }
+    if goal.is_empty() {
+        return Err("Goal is required.".to_string());
+    }
+
+    let repo = coding_repo::guess_repo_root(&state.data_dir);
+    let path = repo.join("rules/milestones.md");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    let target_phase = match phase_id {
+        Some(p) => p,
+        None => detect_latest_phase(&text)
+            .ok_or_else(|| "No phase headers found in milestones.md".to_string())?,
+    };
+
+    let next_id = next_chunk_id_in_phase(&text, target_phase);
+    let chunk_id = format!("{}.{}", target_phase, next_id);
+    let new_row = format!("| {} | not-started | {} | {} |", chunk_id, title, goal);
+
+    let updated = insert_row_in_phase_table(&text, target_phase, &new_row).ok_or_else(|| {
+        format!(
+            "Phase {} table not found in milestones.md — add the phase header + table skeleton first.",
+            target_phase
+        )
+    })?;
+
+    std::fs::write(&path, updated).map_err(|e| format!("Failed to write milestones.md: {}", e))?;
+
+    Ok(PromoteToChunkResult {
+        chunk_id,
+        phase_id: target_phase,
+        title,
+    })
+}
+
+fn sanitise_table_cell(s: &str) -> String {
+    s.replace(['\r', '\n'], " ")
+        .replace('|', "/")
+        .trim()
+        .to_string()
+}
+
+/// Find the largest `## Phase N` header in the document. Returns `None`
+/// when no phase headers exist.
+fn detect_latest_phase(text: &str) -> Option<u32> {
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            let rest = trimmed.strip_prefix("## Phase ")?;
+            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            num_str.parse::<u32>().ok()
+        })
+        .max()
+}
+
+/// Compute the next unused chunk number within a phase. Walks every
+/// `| N.M |` row inside the phase's table and returns `max(M) + 1`,
+/// defaulting to `1` if the table is empty.
+fn next_chunk_id_in_phase(text: &str, phase: u32) -> u32 {
+    let prefix = format!("{}.", phase);
+    let mut max_seen: u32 = 0;
+    let mut in_target_phase = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("## Phase ") {
+            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            in_target_phase = num_str.parse::<u32>().ok() == Some(phase);
+            continue;
+        }
+        if !in_target_phase {
+            continue;
+        }
+        let cells = markdown_table_cells(line);
+        if cells.len() < 2 {
+            continue;
+        }
+        let id = &cells[0];
+        if let Some(suffix) = id.strip_prefix(&prefix) {
+            if let Ok(n) = suffix.parse::<u32>() {
+                if n > max_seen {
+                    max_seen = n;
+                }
+            }
+        }
+    }
+    max_seen + 1
+}
+
+/// Insert `new_row` at the end of the markdown table under `## Phase N`.
+/// The table is delimited by the first non-table line (blank, `---`, or
+/// next heading) after the header row. Returns the updated document, or
+/// `None` if the phase header or its table cannot be found.
+fn insert_row_in_phase_table(text: &str, phase: u32, new_row: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().collect();
+
+    let phase_idx = lines.iter().position(|l| {
+        let trimmed = l.trim_start();
+        let Some(rest) = trimmed.strip_prefix("## Phase ") else {
+            return false;
+        };
+        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        num_str.parse::<u32>().ok() == Some(phase)
+    })?;
+
+    // Find the table header row (starts with `| ID `) after the phase heading.
+    let mut header_row_idx: Option<usize> = None;
+    for (i, line) in lines.iter().enumerate().skip(phase_idx + 1) {
+        let t = line.trim_start();
+        if t.starts_with("## ") {
+            // hit next phase before finding a table
+            return None;
+        }
+        if t.starts_with("| ID ") || t.starts_with("|ID ") {
+            header_row_idx = Some(i);
+            break;
+        }
+    }
+    let header_row_idx = header_row_idx?;
+
+    // Skip the separator row (|---|) and walk forward while still in the table.
+    let mut last_table_line = header_row_idx + 1; // separator
+    for (i, line) in lines.iter().enumerate().skip(header_row_idx + 2) {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('|') && trimmed.ends_with('|') {
+            last_table_line = i;
+        } else {
+            break;
+        }
+    }
+
+    // Rebuild the document with the new row inserted right after the
+    // last table row. Preserve original line endings as `\n`.
+    let mut out = String::with_capacity(text.len() + new_row.len() + 1);
+    for (i, line) in lines.iter().enumerate() {
+        out.push_str(line);
+        out.push('\n');
+        if i == last_table_line {
+            out.push_str(new_row);
+            out.push('\n');
+        }
+    }
+    // Preserve trailing newline state of the input.
+    if !text.ends_with('\n') && out.ends_with('\n') {
+        out.pop();
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod promote_tests {
+    use super::*;
+
+    const SAMPLE: &str = "# Milestones\n\n## Phase 34 — Foo\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n| 34.3 | not-started | Backlog promotion | Some goal |\n\n## Phase 35 — Bar\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n| 35.1 | not-started | Other | More |\n";
+
+    #[test]
+    fn detects_latest_phase() {
+        assert_eq!(detect_latest_phase(SAMPLE), Some(35));
+    }
+
+    #[test]
+    fn next_chunk_id_after_existing_row() {
+        assert_eq!(next_chunk_id_in_phase(SAMPLE, 34), 4);
+        assert_eq!(next_chunk_id_in_phase(SAMPLE, 35), 2);
+    }
+
+    #[test]
+    fn next_chunk_id_for_empty_phase_starts_at_one() {
+        let empty = "## Phase 36 — Empty\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n";
+        assert_eq!(next_chunk_id_in_phase(empty, 36), 1);
+    }
+
+    #[test]
+    fn inserts_row_at_end_of_phase_table() {
+        let new_row = "| 34.4 | not-started | New thing | Do it |";
+        let updated = insert_row_in_phase_table(SAMPLE, 34, new_row).expect("inserted");
+        assert!(updated.contains("| 34.3 | not-started | Backlog promotion | Some goal |\n| 34.4 | not-started | New thing | Do it |\n"));
+        // Phase 35 table is untouched and still present.
+        assert!(updated.contains("| 35.1 | not-started | Other | More |"));
+    }
+
+    #[test]
+    fn sanitise_strips_pipes_and_newlines() {
+        assert_eq!(sanitise_table_cell("a|b\nc"), "a/b c");
+    }
+
+    #[test]
+    fn missing_phase_returns_none() {
+        let new_row = "| 99.1 | not-started | x | y |";
+        assert!(insert_row_in_phase_table(SAMPLE, 99, new_row).is_none());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -891,7 +1160,9 @@ pub async fn list_self_improve_worktrees(
     state: State<'_, AppState>,
 ) -> Result<Vec<coding::worktree::WorktreeInfo>, String> {
     let repo = coding_repo::detect_repo(&state.data_dir);
-    let repo_root = repo.root.as_deref()
+    let repo_root = repo
+        .root
+        .as_deref()
         .ok_or_else(|| "No git repository detected".to_string())?;
     let repo_root = std::path::Path::new(repo_root);
     coding::worktree::list_worktrees(repo_root)
@@ -993,8 +1264,7 @@ pub async fn code_compute_processes(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            coding::processes::compute_processes(&data_dir, &repo, depth)
-                .map_err(|e| e.to_string())
+            coding::processes::compute_processes(&data_dir, &repo, depth).map_err(|e| e.to_string())
         }
     })
     .await
@@ -1016,7 +1286,9 @@ pub async fn code_list_clusters(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
             let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
             let repo_str = repo.to_string_lossy().to_string();
             let repo_id: i64 = conn
@@ -1048,7 +1320,9 @@ pub async fn code_list_processes(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
             let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
             let repo_str = repo.to_string_lossy().to_string();
             let repo_id: i64 = conn
@@ -1088,9 +1362,10 @@ pub async fn code_generate_wiki(
         let repo = repo.to_path_buf();
         let wiki_dir = wiki_dir.clone();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
-            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir)
-                .map_err(|e| e.to_string())
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
+            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir).map_err(|e| e.to_string())
         }
     })
     .await
@@ -1123,8 +1398,14 @@ pub async fn code_generate_wiki(
     tokio::task::spawn_blocking({
         let wiki_dir = wiki_dir.clone();
         move || {
-            coding::wiki::write_wiki_pages(&wiki_dir, &clusters, &all_syms_raw, &all_edges_raw, &summaries)
-                .map_err(|e| e.to_string())
+            coding::wiki::write_wiki_pages(
+                &wiki_dir,
+                &clusters,
+                &all_syms_raw,
+                &all_edges_raw,
+                &summaries,
+            )
+            .map_err(|e| e.to_string())
         }
     })
     .await

@@ -1,8 +1,8 @@
 //! MCP tool definitions and dispatch.
 //!
 //! Defines the brain tools exposed via MCP (matching the
-//! `BrainGateway` trait surface) plus code-intelligence tools that
-//! delegate to the GitNexus sidecar. Dispatches JSON-RPC `tools/call`
+//! `BrainGateway` trait surface) plus native code-intelligence tools
+//! backed by TerranSoul's code index. Dispatches JSON-RPC `tools/call`
 //! requests accordingly.
 
 use serde_json::{json, Value};
@@ -113,6 +113,14 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
                 "properties": {}
             }
         }),
+        json!({
+            "name": "brain_failover_status",
+            "description": "Provider failover status: healthy/rate-limited/unhealthy counts, selected provider, and recent failover events.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
     ];
 
     if caps.code_read {
@@ -124,8 +132,9 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
 
 /// Dispatch a `tools/call` request to the appropriate gateway method.
 /// Returns `Ok(json_string)` on success or `Err(message)` on failure.
-/// `app_state` is required for code-intelligence tools that need the
-/// GitNexus sidecar; pass `None` when running in stdio mode.
+/// `app_state` is required for native code-intelligence tools because they
+/// open the repo index under the app data directory; pass `None` when running
+/// in transports that should expose brain tools only.
 pub async fn dispatch(
     gw: &dyn BrainGateway,
     caps: &GatewayCaps,
@@ -242,6 +251,18 @@ pub async fn dispatch(
             .await
             .map(|h| serde_json::to_string(&h).unwrap_or_default())
             .map_err(|e| e.to_string()),
+
+        "brain_failover_status" => {
+            let Some(state) = app_state else {
+                return Err("failover status requires app state".to_string());
+            };
+            let rotator = state
+                .provider_rotator
+                .lock()
+                .map_err(|e| format!("lock rotator: {e}"))?;
+            let summary = rotator.failover_summary();
+            serde_json::to_string(&summary).map_err(|e| e.to_string())
+        }
 
         // ─── Code-intelligence tools (native symbol index) ────────────
         "code_query" | "code_context" | "code_impact" | "code_rename" => {
@@ -760,14 +781,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 8);
+        assert_eq!(defs.len(), 9);
     }
 
     #[test]
     fn definitions_has_12_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 12);
+        assert_eq!(defs.len(), 13);
     }
 
     #[test]
@@ -796,6 +817,7 @@ mod tests {
             "brain_suggest_context",
             "brain_ingest_url",
             "brain_health",
+            "brain_failover_status",
         ];
         assert_eq!(names, expected);
     }
@@ -804,7 +826,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[8..]
+        let code_names: Vec<&str> = defs[9..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();

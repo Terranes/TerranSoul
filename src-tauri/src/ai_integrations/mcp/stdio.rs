@@ -31,10 +31,13 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
-use crate::ai_integrations::gateway::{BrainGateway, GatewayCaps};
+use crate::ai_integrations::gateway::{
+    AppStateGateway, BrainGateway, GatewayCaps, GatewayError, IngestSink, IngestUrlResponse,
+};
 
 use super::router::{dispatch_method, JsonRpcRequest, JsonRpcResponse};
 
@@ -110,13 +113,45 @@ where
 /// [`AppState`] and run the stdio loop on the process's actual
 /// stdin/stdout. Used by `terransoul --mcp-stdio`.
 pub async fn run_with_state(state: crate::AppState) -> std::io::Result<()> {
-    let gw: Arc<dyn BrainGateway> =
-        Arc::new(crate::ai_integrations::gateway::AppStateGateway::new(state));
-    let caps = GatewayCaps::default();
+    let ingest_sink = Arc::new(StdioIngestSink {
+        state: state.clone(),
+    });
+    let gw: Arc<dyn BrainGateway> = Arc::new(AppStateGateway::with_ingest(state, ingest_sink));
+    let caps = super::transport_caps();
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     run_loop(gw, caps, stdin, stdout).await
+}
+
+#[derive(Clone)]
+struct StdioIngestSink {
+    state: crate::AppState,
+}
+
+#[async_trait]
+impl IngestSink for StdioIngestSink {
+    async fn start_ingest(
+        &self,
+        source: String,
+        tags: Option<String>,
+        importance: Option<i64>,
+    ) -> Result<IngestUrlResponse, GatewayError> {
+        let result = crate::commands::ingest::ingest_document_silent(
+            source,
+            tags,
+            importance,
+            self.state.clone(),
+        )
+        .await
+        .map_err(|error| GatewayError::Internal(format!("ingest_document_silent: {error}")))?;
+
+        Ok(IngestUrlResponse {
+            task_id: result.task_id,
+            source: result.source,
+            source_type: result.source_type,
+        })
+    }
 }
 
 #[cfg(test)]

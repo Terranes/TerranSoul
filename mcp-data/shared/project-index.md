@@ -154,7 +154,7 @@
 | `autostart.rs`, `client.rs`, `engine.rs`, `workflow.rs` | Self-improve engine + autostart |
 | `context_budget.rs`, `context_engineering.rs`, `prompting.rs` | Prompt assembly |
 | `conversation_learning.rs`, `session_chat.rs`, `task_queue.rs` | Session learning + queues |
-| `cost.rs`, `metrics.rs` | Cost + metrics |
+| `cost.rs`, `metrics.rs`, `gate_telemetry.rs`, `rolling_log.rs` | Cost, metrics, gate telemetry, and bounded runtime JSONL rotation |
 | `dag_runner.rs`, `multi_agent.rs`, `resolver.rs`, `reviewer.rs`, `processes.rs` | DAG orchestration + reviewers |
 | `github.rs`, `handoff.rs`, `handoff_store.rs`, `milestones.rs`, `promotion_plan.rs` | GitHub PR flow + handoff |
 | `repo.rs`, `rename.rs`, `symbol_index.rs`, `wiki.rs`, `test_runner.rs` | Repo helpers, symbol index, test runner |

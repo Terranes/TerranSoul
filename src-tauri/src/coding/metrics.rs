@@ -1,10 +1,8 @@
 //! Persistent observability for the self-improve engine.
 //!
-//! Records every planning attempt to an append-only JSONL log
-//! (`self_improve_runs.jsonl` in the app data dir). Designed for crash
-//! safety: each run is one line, written as a single `write_all` after
-//! `serde_json::to_string`, so a SIGKILL mid-write loses *at most* the
-//! current run rather than corrupting prior history.
+//! Records every planning attempt to a rolling JSONL log
+//! (`self_improve_runs.jsonl` in the app data dir). Each row is written as a
+//! single JSON line, and the runtime keeps only the current file plus `.001`.
 //!
 //! The engine drives this through three calls per cycle:
 //! 1. [`MetricsLog::record_start`] — emits a `running` entry with start time.
@@ -13,15 +11,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const LOG_FILE: &str = "self_improve_runs.jsonl";
 /// Hard cap on the number of run records kept in memory / returned to UI.
-/// The on-disk JSONL grows monotonically; readers truncate to the most
-/// recent N. Set high enough for forensics, low enough to bound RAM.
+/// The on-disk JSONL is capped separately by rolling log rotation.
 pub const MAX_RECENT_RUNS: usize = 500;
 
 /// One persisted run record. `outcome = "running"` means a plan started
@@ -197,27 +192,13 @@ impl MetricsLog {
         }
         let json = serde_json::to_string(rec)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)?;
-        f.write_all(json.as_bytes())?;
-        f.write_all(b"\n")?;
-        Ok(())
+        crate::coding::rolling_log::append_line(&self.path, &json)
     }
 
-    /// Read the most recent `limit` records (newest first). Bad lines are
-    /// skipped silently — partial-write tolerance.
+    /// Read the most recent `limit` records (newest first) from the current
+    /// file and its `.001` archive. Bad lines are skipped silently.
     pub fn recent(&self, limit: usize) -> Vec<RunRecord> {
-        let f = match std::fs::File::open(&self.path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-        let mut out: Vec<RunRecord> = BufReader::new(f)
-            .lines()
-            .map_while(|l| l.ok())
-            .filter_map(|l| serde_json::from_str::<RunRecord>(&l).ok())
-            .collect();
+        let mut out: Vec<RunRecord> = crate::coding::rolling_log::read_jsonl_pair(&self.path);
         // Newest first.
         out.reverse();
         if out.len() > limit {
@@ -236,11 +217,7 @@ impl MetricsLog {
     /// Wipe the log. Used by the UI's "Clear log" button. Returns ok even
     /// when the file was already absent.
     pub fn clear(&self) -> std::io::Result<()> {
-        match std::fs::remove_file(&self.path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e),
-        }
+        crate::coding::rolling_log::clear_pair(&self.path)
     }
 }
 
@@ -393,6 +370,8 @@ fn truncate_error(e: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::OpenOptions;
+    use std::io::Write;
     use tempfile::tempdir;
 
     fn rec(outcome: &str, chunk: &str, err: Option<&str>, dur: u64) -> RunRecord {

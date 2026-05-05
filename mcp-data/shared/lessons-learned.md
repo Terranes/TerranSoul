@@ -78,12 +78,12 @@
 ## MCP / agent integration
 
 - Three MCP profiles in `.vscode/mcp.json`: `terransoul-brain` (release,
-  7421), `terransoul-brain-dev` (dev, 7422), `terransoul-brain-mcp`
-  (headless, 7423). Coding agents should use the headless profile so they
-  do not collide with a running app's data.
+  7421), `terransoul-brain-dev` (dev, 7422), and `terransoul-brain-mcp`
+  (MCP tray/coding-agent runtime, 7423). Coding agents should use the MCP
+  profile unless a running release/dev app is already serving MCP.
 - Bearer token is regenerated when missing; it is written to both
   `mcp-data/mcp-token.txt` and `.vscode/.mcp-token`. Set
-  `TERRANSOUL_MCP_TOKEN_MCP` from the file for the headless profile.
+  `TERRANSOUL_MCP_TOKEN_MCP` from the file for the MCP profile.
 - Verify MCP with `GET /health` (no auth required) before calling `brain_health`.
 
 ## Self-improve
@@ -102,6 +102,10 @@
 - Self-improve sessions append durable knowledge to
   `mcp-data/shared/memory-seed.sql`, `project-index.md`, and this file
   whenever a learning generalizes beyond the current chunk.
+- MCP-mode self-improve runtime logs stay under `mcp-data/` and are bounded:
+  `self_improve_runs.jsonl`, `self_improve_gates.jsonl`, and
+  `self_improve_mcp.jsonl` keep only the current file plus `.001`, capped at
+  1 MiB per file. Durable lessons must still be mirrored into shared seed SQL.
 - Per the brain documentation sync rule, any change to brain surface
   (LLM providers, memory store, RAG pipeline, ingestion, embeddings,
   cognitive-kind classification, knowledge graph, decay/GC, brain-gating
@@ -185,7 +189,7 @@
   logger.
 - **Don't propose "store memories as `.md` / Obsidian as the source of
   truth"**. See `mcp-data/shared/memory-philosophy.md` — markdown is
-  for instructions; SQLite + HNSW + `memory_edges` is the source of
+  for instructions; SQLite + vector search + `memory_edges` is the source of
   truth; `obsidian_export.rs` is a one-way projection. This is a
   non-negotiable architectural rule absorbed from Jonathan Edwards'
   "Stop Calling It Memory" essay.

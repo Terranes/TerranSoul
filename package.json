@@ -16,9 +16,10 @@
     "tauri": "tauri",
     "tauri:ios:check": "node scripts/tauri-ios-check.mjs",
     "tauri:ios:init": "node scripts/tauri-ios-check.mjs --init",
-    "mcp": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-http",
+    "mcp": "npx vite build && cargo build --release --manifest-path src-tauri/Cargo.toml --target-dir target-mcp && target-mcp/release/terransoul --mcp-tray",
     "mcp:setup": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-setup",
-    "mcp:app": "npx vite build && cargo run --release --manifest-path src-tauri/Cargo.toml -- --mcp-app"
+    "mcp:app": "npx vite build && cargo build --release --manifest-path src-tauri/Cargo.toml --target-dir target-mcp && target-mcp/release/terransoul --mcp-app",
+    "mcp:obsidian": "node scripts/mcp-obsidian.mjs"
   },
   "dependencies": {
     "@bufbuild/connect": "^0.13.0",

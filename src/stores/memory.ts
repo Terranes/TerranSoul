@@ -428,6 +428,23 @@ export const useMemoryStore = defineStore('memory', () => {
     return await invoke('count_memory_conflicts');
   }
 
+  // ─── Judgment Rules (Chunk 33B.1) ─────────────────────────────────────
+
+  /** Add a new judgment rule. */
+  async function addJudgment(content: string, tags: string, importance: number): Promise<MemoryEntry> {
+    return await invoke('judgment_add', { content, tags, importance });
+  }
+
+  /** List all persisted judgment rules. */
+  async function listJudgments(): Promise<MemoryEntry[]> {
+    return await invoke('judgment_list');
+  }
+
+  /** Search judgment rules relevant to a query. */
+  async function applyJudgments(query: string, limit?: number): Promise<MemoryEntry[]> {
+    return await invoke('judgment_apply', { query, limit });
+  }
+
   return {
     memories,
     stats,
@@ -470,5 +487,9 @@ export const useMemoryStore = defineStore('memory', () => {
     resolveConflict,
     dismissConflict,
     countConflicts,
+    // Judgment rules (Chunk 33B.1)
+    addJudgment,
+    listJudgments,
+    applyJudgments,
   };
 });

@@ -21,6 +21,14 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 33B.2 — `/reflect` slash command for session reflection](#chunk-33b2--reflect-slash-command-for-session-reflection) | 2026-05-05 |
+| [Chunk 33B.1 — Persisted judgment-rules artefact](#chunk-33b1--persisted-judgment-rules-artefact) | 2026-05-05 |
+| [Chunk 35.4 — Provider observability dashboard](#chunk-354--provider-observability-dashboard) | 2026-05-05 |
+| [Chunk 35.3 — Multi-agent task routing policy](#chunk-353--multi-agent-task-routing-policy) | 2026-05-05 |
+| [Chunk 35.2 — Automatic provider failover](#chunk-352--automatic-provider-failover) | 2026-05-05 |
+| [Chunk 35.1 — Unified provider policy registry](#chunk-351--unified-provider-policy-registry) | 2026-05-05 |
+| [Chunk 34.3 — Backlog promotion controls](#chunk-343--backlog-promotion-controls) | 2026-05-05 |
+| [Chunk 34.2 — Coding workflow gate telemetry](#chunk-342--coding-workflow-gate-telemetry) | 2026-05-05 |
 | [Chunk 34.1 — Persisted self-improve workboard](#chunk-341--persisted-self-improve-workboard) | 2026-05-05 |
 | [Chunk 33.6 — Maintenance scheduler in headless MCP runner](#chunk-336--maintenance-scheduler-in-headless-mcp-runner) | 2026-05-05 |
 | [Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning](#chunk-335--reranker-default-on-for-rrf--relevance-threshold-pruning) | 2026-05-05 |
@@ -275,6 +283,289 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 33B.2 — `/reflect` slash command for session reflection
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** User-invocable wrapper around the existing session-memory absorption pipeline; writes a `session_reflection` memory with `derived_from` edges to the turns it summarises.
+
+**Architecture:**
+- New `memory/reflection.rs` helper persists extracted facts, filtered source-turn context rows, a Working-tier `session_reflection` summary, and `derived_from` edges from the reflection summary to each saved source turn.
+- New `reflect_on_session` Tauri command snapshots the current short-term conversation, runs segmented fact extraction for any configured brain mode, summarizes the session, persists the reflection report, best-effort embeds the summary, and enforces the configured memory cap.
+- Chat UI catches `/reflect` before plugin slash-command dispatch, adds the user command to the transcript, then displays a concise success/error assistant message with the saved fact count and provenance edge count.
+- Brain docs and README now list the reflection write path, the command surface, and the KG provenance behavior.
+
+**Files created:**
+- `src-tauri/src/memory/reflection.rs`
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — register reflection module
+- `src-tauri/src/commands/memory.rs` — add `reflect_on_session`
+- `src-tauri/src/lib.rs` — register Tauri command
+- `src/views/ChatView.vue` — built-in `/reflect` slash command
+- `docs/brain-advanced-design.md` — session reflection architecture + write-back loop docs
+- `README.md` — brain/memory component listings and command surface
+- `rules/milestones.md` — archive 33B.2 and advance Next Chunk
+- `mcp-data/shared/memory-seed.sql` — durable lesson for provenance-linked reflection writes
+- `mcp-data/shared/migrations/009_reflection_provenance.sql` — versioned seed migration for existing MCP DBs
+- `src-tauri/src/memory/seed_migrations.rs` — register migration 009 in compiled migrations
+
+**Tests:** `cargo test reflection` (2 passed), `cargo check` clean, `cargo check && cargo clippy -- -D warnings` clean, `npx vue-tsc --noEmit` clean, `npx vitest run` (129 files / 1669 tests passed)
+
+---
+
+## Chunk 33B.1 — Persisted judgment-rules artefact
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** New `cognitive_kind='judgment'` rows + Tauri commands `judgment_add` / `judgment_list` / `judgment_apply`; inject top-N matching judgments into `commands/chat.rs` system prompt.
+
+**Architecture:**
+- Added `Judgment` variant to `CognitiveKind` enum; detected via `judgment` tag prefix
+- New `memory/judgment.rs` module: `add_judgment()`, `list_judgments()`, `apply_judgments()`, `format_judgment_block()`
+- Tauri commands `judgment_add`, `judgment_list`, `judgment_apply` in commands/memory.rs
+- Chat system prompt injection: `retrieve_judgment_block()` produces a `[JUDGMENT RULES]` block injected after `[LONG-TERM MEMORY]` via modified `build_budgeted_prompt()`
+- Frontend: `useMemoryStore()` gains `addJudgment`, `listJudgments`, `applyJudgments` methods
+
+**Files created:**
+- `src-tauri/src/memory/judgment.rs`
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — register judgment module
+- `src-tauri/src/memory/cognitive_kind.rs` — add Judgment variant + tag recognition
+- `src-tauri/src/memory/query_intent.rs` — handle Judgment in match
+- `src-tauri/src/commands/memory.rs` — 3 new Tauri commands
+- `src-tauri/src/commands/chat.rs` — judgment injection in prompt builder
+- `src-tauri/src/lib.rs` — register commands
+- `src/stores/memory.ts` — frontend store methods
+
+**Tests:** 6 Rust tests (judgment module), all 2213 Rust tests pass (1 pre-existing failure unrelated), 1669 frontend tests pass, clippy + vue-tsc clean
+
+---
+
+## Chunk 35.4 — Provider observability dashboard
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Add a settings/workflow panel showing active provider, fallback history, rate-limit cooldowns, token-budget decisions, and per-task model usage for the whole app and MCP mode.
+
+**Architecture:**
+- Vue 3 component `ProviderObservabilityPanel.vue` using `<script setup lang="ts">` with scoped styles
+- Invokes Tauri commands: `get_failover_summary`, `get_failover_policy`, `set_failover_policy`, `resolve_provider_for_task`, `get_agent_routing`, `health_check_providers`
+- Sections: summary stats (healthy/rate-limited/unhealthy/active), failover policy controls, per-task model grid, agent routing overview, recent failover events list, all-exhausted alert
+- Uses `var(--ts-*)` design tokens throughout
+
+**Files created:**
+- `src/components/ProviderObservabilityPanel.vue`
+- `src/components/ProviderObservabilityPanel.test.ts`
+
+**Tests:** 7 Vitest tests — panel render, summary stats, per-task rows, failover events, all-exhausted alert, policy update interaction, refresh button
+
+**CI:** 1669 frontend tests pass, vue-tsc clean
+
+---
+
+## Chunk 35.3 — Multi-agent task routing policy
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Let coding workflows declare agent roles, preferred model classes, max token budgets, and fallback chains. Reuse the unified provider policy so all agents share rate-limit and quota state instead of retrying independently.
+
+**Architecture:**
+- `AgentRouteConfig { role, preferred_tier, preferred_provider, preferred_model, fallback_providers, max_tokens, enabled }` — per-role routing stored in `ProviderPolicy.agent_routing`.
+- `AgentTier { Fast, Balanced, Premium }` — maps to `AgentRole::recommended_llms()` tiers.
+- `role_to_task_kind(role)` — maps each AgentRole to its primary TaskKind for fallback resolution.
+- `resolve_for_agent_role(policy, role, brain_mode, provider_healthy)` — resolution cascade: agent route preferred → fallback chain → tier-only → task-kind → brain-mode.
+- `derive_provider_endpoint()` + `model_for_tier()` — helpers for endpoint/model derivation.
+- Tauri commands: `get_agent_routing`, `set_agent_route`, `remove_agent_route`, `resolve_provider_for_role`.
+- `resolve_provider_for_role` integrates with `ProviderRotator` health state so workflow steps respect rate-limit/health without re-checking independently.
+
+**Files modified:**
+- `src-tauri/src/brain/provider_policy.rs` — `AgentRouteConfig`, `AgentTier`, `ResolvedAgentProvider`, `role_to_task_kind()`, `resolve_for_agent_role()`, `derive_provider_endpoint()`, `model_for_tier()`, agent route methods on `ProviderPolicy`, 7 new tests (18 total)
+- `src-tauri/src/brain/mod.rs` — re-export new types
+- `src-tauri/src/commands/brain.rs` — 4 new Tauri commands
+- `src-tauri/src/lib.rs` — register commands
+- `src/types/index.ts` — `AgentRole`, `AgentTier`, `AgentRouteConfig`, `ResolvedAgentProvider` types
+- `src/stores/brain.ts` — `getAgentRouting`, `setAgentRoute`, `removeAgentRoute`, `resolveForRole` store methods
+
+**Tests:** 18 provider_policy tests pass, clippy clean, 1662 frontend tests pass.
+
+---
+
+## Chunk 35.2 — Automatic provider failover
+
+**Status:** Complete
+**Date:** 2026-05-05 (updated 2026-05-06)
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Extend `ProviderRotator` with structured retry/failover using `SelectionConstraints` — respecting rate limits, free-tier exhaustion, context-window overflow, token caps, and privacy (local-only) mode. Automatic retry loop in streaming, failover policy configuration, UI events for failover decisions.
+
+**Architecture:**
+- `select_provider(&mut self, constraints: &SelectionConstraints) -> Result<&FreeProvider, FailoverReason>` iterates sorted (fastest-first) candidates, applying health → rate-limit → privacy → token-cap → context-window gates in order.
+- `select_failover_chain(&mut self, constraints, policy) -> Vec<String>` returns ordered provider IDs to try, respecting `FailoverPolicy.max_attempts`.
+- `FailoverPolicy { max_attempts, respect_privacy, min_cooldown_secs }` — configurable via Tauri commands.
+- FreeApi streaming path now has automatic retry loop: tries each provider in the failover chain, marks rate-limited/unhealthy on failure, emits `provider-failover` event with `FailoverDecision` showing all attempts.
+- `record_rate_limit_with_cooldown()` enforces minimum cooldown period.
+- Each skipped provider records a `FailoverEvent` in a capped ring buffer (50 entries).
+- `provider_context_limit()` maps provider ids to conservative context window sizes.
+- New Tauri commands: `get_failover_summary`, `get_failover_policy`, `set_failover_policy`, `select_provider_with_constraints`.
+- Events: `provider-failover` (FailoverDecision), `providers-exhausted`.
+
+**Files modified:**
+- `src-tauri/src/brain/provider_rotator.rs` — `FailoverPolicy`, `FailoverDecision`, `FailoverAttempt`, `select_failover_chain()`, `record_rate_limit_with_cooldown()`, 12 new tests (41 total)
+- `src-tauri/src/brain/mod.rs` — re-export new types
+- `src-tauri/src/commands/brain.rs` — `get_failover_policy`, `set_failover_policy` commands
+- `src-tauri/src/commands/streaming.rs` — FreeApi retry loop with automatic failover, removed redundant `done:true` emission on error
+- `src-tauri/src/lib.rs` — `failover_policy: Mutex<FailoverPolicy>` in AppState, register new commands
+
+**Tests:** 41 provider_rotator tests pass, 2199 total Rust tests pass (1 pre-existing KG failure unrelated), 1662 frontend tests pass.
+
+**Tests:** 33 provider_rotator tests pass (8 new); 9 mcp::tools tests pass; 135 ai_integrations tests pass (1 pre-existing seed failure unrelated); 1662 Vitest frontend tests pass; clippy clean.
+
+---
+
+## Chunk 35.1 — Unified provider policy registry
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Add a single app-wide model/provider configuration registry used by chat, memory/RAG, MCP tools, and coding workflows. Include per-task defaults for chat, embeddings, rerank, summarise, code review, and long-context analysis.
+
+**Architecture:**
+- New Rust module `src-tauri/src/brain/provider_policy.rs` (320+ lines):
+  - `TaskKind` enum: Chat, Embeddings, Rerank, Summarise, CodeReview, LongContext
+  - `TaskOverride` struct: per-task provider_id / model / base_url / api_key / max_tokens / enabled
+  - `ProviderPolicy` struct: versioned registry with `HashMap<TaskKind, TaskOverride>`
+  - `resolve_for_task(policy, kind, brain_mode)` — resolution logic:
+    1. Active override → merge with brain_mode defaults for unfilled fields
+    2. No override → derive from `BrainMode` using task-appropriate model defaults
+  - `ResolvedProvider` — fully resolved (source, provider_id, model, base_url, api_key, max_tokens)
+  - Task-default model maps: `task_default_model_paid()`, `task_default_model_free()`, `task_default_model_ollama()`
+  - Persistence: `load(data_dir)` / `save(data_dir)` → `provider_policy.json`
+  - 10 unit tests: default policy, set/get, disabled filter, remove, resolution (fallback + override + partial merge + Ollama embeddings + paid embeddings), serde roundtrip
+- Registered in `brain/mod.rs` as public module + re-exports
+- `AppStateInner` gains `provider_policy: Mutex<brain::ProviderPolicy>` field
+- Initialized from disk in `AppState::new()`, default in `AppState::for_test()`
+- 5 new Tauri commands in `commands/brain.rs`:
+  - `get_provider_policy` — read current policy
+  - `set_provider_policy` — replace entire policy + persist
+  - `set_provider_task_override` — upsert one task override + persist
+  - `remove_provider_task_override` — delete one override + persist
+  - `resolve_provider_for_task` — preview what would be used (pure read)
+- All 5 commands registered in `lib.rs` invoke_handler
+- Frontend types in `src/types/index.ts`: TaskKind, TaskOverride, ProviderPolicy, ResolvedProvider
+- Brain store (`src/stores/brain.ts`):
+  - `providerPolicy` reactive ref
+  - `loadProviderPolicy()` — invoked during `initialise()` (non-critical parallel load)
+  - `setProviderPolicy(policy)`, `setTaskOverride(ovr)`, `removeTaskOverride(kind)`, `resolveForTask(kind)`
+  - All exposed in the store return
+
+**Files created:**
+- `src-tauri/src/brain/provider_policy.rs`
+
+**Files modified:**
+- `src-tauri/src/brain/mod.rs` — module + re-exports
+- `src-tauri/src/lib.rs` — AppState field, initialisation, command imports + registration
+- `src-tauri/src/commands/brain.rs` — 5 new Tauri commands
+- `src/types/index.ts` — 4 new TS interfaces
+- `src/stores/brain.ts` — policy state + 5 actions + initialise wiring
+
+**Tests:** 10 Rust unit tests in provider_policy.rs (compile-clean), 1647 frontend tests pass, `cargo check` + `cargo check --tests` clean, `vue-tsc --noEmit` clean.
+
+---
+
+## Chunk 34.3 — Backlog promotion controls
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 34 — Self-Improve Operations Dashboard & Coding Workflow UX
+
+**Goal:** Add safe UI controls for converting failed runs, research ideas, and deferred self-improve items into scoped milestone chunks without editing markdown by hand.
+
+**Architecture:**
+- New Rust Tauri command `promote_to_milestone_chunk(title, goal, phase_id?)` in `commands/coding.rs`:
+  - Sanitises title/goal cells (strips `\r`, `\n`, `|`)
+  - Auto-detects the latest `## Phase N` header when no `phase_id` is supplied
+  - Computes the next unused chunk number within the target phase by scanning all `| N.M |` rows
+  - Locates the phase's `| ID | Status | Title | Goal |` table, walks past the separator + existing rows, and inserts the new `not-started` row at the end of that table
+  - Returns `PromoteToChunkResult { chunk_id, phase_id, title }`
+  - Refuses to write when the target phase is missing or has no table skeleton
+- 6 unit tests covering: phase detection, next-id computation (with rows / empty table), in-place row insertion, table-cell sanitisation, missing-phase fallback.
+- Frontend `promoteToChunk(title, goal, phaseId?)` action in `stores/self-improve.ts`:
+  - Invokes the command, logs to the activity feed, refreshes the workboard so the promoted item moves into the milestone lane.
+- UI in `SelfImprovePanel.vue`:
+  - `↑ Promote` button on every backlog-lane item whose `source` is not `rules/milestones.md` (failed runs, etc.)
+  - `↑ Promote to milestone` button on every improvement chunk (bug-triage, research scouting, etc.)
+  - Browser-native `confirm()` dialog before any markdown write, then `alert()` on success/failure for visible feedback.
+  - Helper functions `isPromotable()` and `backlogItemGoal()` keep the template free of inline TS casts.
+- New TS interface `PromoteToChunkResult` in `src/types/index.ts`.
+- Scoped CSS for `.si-queue-row`, `.si-promote-btn`, `.si-improvement-actions` using existing `--ts-*` design tokens.
+
+**Files modified:**
+- `src-tauri/src/commands/coding.rs` — new command + helpers + 6 unit tests
+- `src-tauri/src/lib.rs` — register `promote_to_milestone_chunk` in import + invoke_handler
+- `src/types/index.ts` — `PromoteToChunkResult`
+- `src/stores/self-improve.ts` — `promoteToChunk()` action + import + return
+- `src/components/SelfImprovePanel.vue` — promote buttons + confirm flow + styles
+
+**Tests:** 6 Rust unit tests in `coding.rs::promote_tests` (compile-clean), 1647 frontend tests pass, `cargo check` clean, `vue-tsc --noEmit` clean. The two pre-existing `clippy::manual_clamp` warnings in unrelated files (`chat.rs:150`, `memory/store.rs:568`) are out of scope.
+
+---
+
+## Chunk 34.2 — Coding workflow gate telemetry
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 34 — Self-Improve Operations Dashboard & Coding Workflow UX
+
+**Goal:** Emit structured workflow-gate events for context load, plan, code, review, apply, test, stage, and archive so the panel can show the exact active gate and last successful gate per session.
+
+**Architecture:**
+- New Rust module `src-tauri/src/coding/gate_telemetry.rs`:
+  - `GateEvent` struct (ts, gate, session_id, chunk_id, event_type, result, duration_ms, error, meta)
+  - `GateResult` enum: Pass / Partial / Fail
+  - `GateLog` — append-only JSONL (`self_improve_gates.jsonl`) persisted per event
+  - `GateMetricsSummary` / `GateStats` — per-gate pass/fail rates, avg duration, last error
+  - `summarise_gates()` pure aggregation function
+  - 5 unit tests (serde round-trip, log read/write, summarise correctness)
+- Wired into the DAG execution in `engine.rs`:
+  - Each DAG node (plan/code/review/apply/test/stage) emits gate-start before execution and gate-end after
+  - Measures wall-clock `duration_ms` via `std::time::Instant`
+  - Emits Tauri event `"self-improve-gate"` for live frontend updates
+- Two new Tauri commands registered in `lib.rs` + `commands/coding.rs`:
+  - `get_self_improve_gate_metrics` — per-gate aggregate stats
+  - `get_self_improve_gate_history` — recent end-events (newest first)
+- Frontend types in `src/types/index.ts`: `GateEvent`, `GateResult`, `GateStats`, `GateMetricsSummary`
+- Store extensions in `src/stores/self-improve.ts`:
+  - `gateMetrics`, `gateHistory`, `activeGate` reactive state
+  - `loadGateMetrics()`, `loadGateHistory()` invoke wrappers
+  - `subscribeToGateEvents()` listener on `"self-improve-gate"` — updates activeGate on start, appends to history on end
+  - Exposed in store return for panel consumption
+
+**Files created:**
+- `src-tauri/src/coding/gate_telemetry.rs`
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — registered `gate_telemetry` module
+- `src-tauri/src/coding/engine.rs` — import gate_telemetry, create GateLog, pass through DAG, emit start/end around each node
+- `src-tauri/src/commands/coding.rs` — two new Tauri commands
+- `src-tauri/src/lib.rs` — register commands in import + invoke_handler
+- `src/types/index.ts` — gate telemetry TS interfaces
+- `src/stores/self-improve.ts` — gate state, loaders, event subscription
+
+**Tests:** 5 Rust unit tests in gate_telemetry.rs (serde, log I/O, summarise, pass-rate), 1647 frontend tests pass, cargo check --tests clean.
 
 ---
 

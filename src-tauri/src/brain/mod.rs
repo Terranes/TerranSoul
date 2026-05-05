@@ -14,6 +14,7 @@ pub mod model_recommender;
 pub mod ollama_agent;
 pub mod ollama_lifecycle;
 pub mod openai_client;
+pub mod provider_policy;
 pub mod provider_rotator;
 pub mod ram_budget;
 pub mod segmenter;
@@ -39,7 +40,14 @@ pub use ollama_agent::{
     OllamaStatus, PullProgress,
 };
 pub use openai_client::OpenAiClient;
-pub use provider_rotator::ProviderRotator;
+pub use provider_policy::{
+    resolve_for_agent_role, resolve_for_task, role_to_task_kind, AgentRouteConfig, AgentTier,
+    ProviderPolicy, ResolvedAgentProvider, ResolvedProvider, TaskKind, TaskOverride,
+};
+pub use provider_rotator::{
+    FailoverAttempt, FailoverDecision, FailoverPolicy, FailoverReason, FailoverSummary,
+    ProviderRotator, SelectionConstraints,
+};
 pub use selection::{
     AgentSelection, BrainSelection, EmbeddingSelection, MemorySelection, ProviderSelection,
     SearchMethod, SearchSelection, StorageSelection,

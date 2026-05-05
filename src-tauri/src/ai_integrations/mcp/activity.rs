@@ -5,6 +5,7 @@
 //! stored on `AppState` and, when a Tauri `AppHandle` is available, emitted
 //! as the `mcp-activity` frontend event.
 
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,7 @@ use crate::brain::BrainMode;
 use crate::AppState;
 
 pub const MCP_ACTIVITY_EVENT: &str = "mcp-activity";
+pub const MCP_SELF_IMPROVE_LOG_FILE: &str = "self_improve_mcp.jsonl";
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -193,6 +195,11 @@ impl McpActivityReporter {
         if let Ok(mut guard) = self.state.mcp_activity.lock() {
             *guard = snapshot.clone();
         }
+        if crate::ai_integrations::mcp::is_mcp_pet_mode() {
+            if let Err(error) = write_mcp_self_improve_log(&self.state.data_dir, &snapshot) {
+                eprintln!("[mcp-log] failed to write self-improve activity log: {error}");
+            }
+        }
         if let Some(app) = &self.app {
             let _ = app.emit(MCP_ACTIVITY_EVENT, snapshot.clone());
         }
@@ -228,6 +235,27 @@ impl McpActivityReporter {
             },
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpSelfImproveLogRecord<'a> {
+    record_type: &'static str,
+    snapshot: &'a McpActivitySnapshot,
+}
+
+fn write_mcp_self_improve_log(
+    data_dir: &Path,
+    snapshot: &McpActivitySnapshot,
+) -> std::io::Result<()> {
+    let path = data_dir.join(MCP_SELF_IMPROVE_LOG_FILE);
+    let record = McpSelfImproveLogRecord {
+        record_type: "mcp_activity",
+        snapshot,
+    };
+    let json = serde_json::to_string(&record)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    crate::coding::rolling_log::append_line(&path, &json)
 }
 
 pub fn describe_model(provider: &str, model: Option<&str>) -> String {

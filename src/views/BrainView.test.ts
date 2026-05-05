@@ -11,8 +11,12 @@ import BrainView from './BrainView.vue';
 import type { MemoryEntry } from '../types';
 
 const mockInvoke = vi.fn();
+const mockListen = vi.fn((..._args: unknown[]) => Promise.resolve(() => {}));
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (...args: unknown[]) => mockListen(...args),
 }));
 
 // Cytoscape needs some DOM APIs that JSDOM only partially provides — and it's
@@ -91,7 +95,7 @@ function makeInvokeMock(opts: {
         version: 2, selected_model_id: 'shinra', camera_azimuth: 0,
         camera_distance: 2.8, bgm_enabled: false, bgm_volume: 0.15,
         bgm_track_id: 'prelude', bgm_custom_tracks: [], auto_tag: false,
-        contextual_retrieval: false, late_chunking: false,
+        contextual_retrieval: false, late_chunking: false, lan_enabled: false,
       });
       default:
         // Other unrelated commands — return a reasonable default.
@@ -103,6 +107,7 @@ function makeInvokeMock(opts: {
 beforeEach(() => {
   setActivePinia(createPinia());
   mockInvoke.mockReset();
+  mockListen.mockClear();
 });
 
 describe('BrainView', () => {
@@ -119,8 +124,21 @@ describe('BrainView', () => {
     expect(w.find('[data-testid="bv-card-memory"]').exists()).toBe(true);
     expect(w.find('[data-testid="bv-cognitive-breakdown"]').exists()).toBe(true);
     expect(w.find('[data-testid="bv-rag-capability"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-lan-share-section"]').exists()).toBe(true);
     expect(w.find('[data-testid="brain-stat-sheet"]').exists()).toBe(true);
     expect(w.find('[data-testid="memory-graph-stub"]').exists()).toBe(true);
+  });
+
+  it('persists the LAN brain sharing opt-in toggle', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock());
+    const w = mount(BrainView);
+    await flushPromises();
+
+    await w.find('[data-testid="bv-lan-enabled-toggle"]').setValue(true);
+
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ lan_enabled: true }),
+    });
   });
 
   it('shows "No brain configured" when brainMode is null', async () => {

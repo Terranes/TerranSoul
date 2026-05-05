@@ -126,8 +126,8 @@ that the app uses.
 
 If Ollama is not installed or not reachable, provider-specific LLM calls
 degrade gracefully and the headless runner uses the deterministic
-in-process embedder for seed/query vectors. This keeps the SQLite + HNSW +
-RRF vector signal live with zero network while still reporting the selected
+in-process embedder for seed/query vectors. This keeps the SQLite + vector +
+RRF signal live with zero network while still reporting the selected
 provider honestly in `/status` — it does NOT silently switch providers and
 does NOT upload prompts anywhere.
 
@@ -156,9 +156,10 @@ project memory layer:
    librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
    pkg-config`.
 3. **During self-improve work**, ingest durable lessons back into the MCP
-    seed surface: update `mcp-data/shared/memory-seed.sql`,
-    `project-index.md`, `lessons-learned.md`, or this rules file when the
-   session discovers knowledge that future agents must retain. Do not
+    seed surface: update `mcp-data/shared/memory-seed.sql` when the
+   session discovers knowledge that future agents must retain. The
+   Obsidian vault at `mcp-data/wiki/` is auto-generated from the brain
+   by the maintenance scheduler — do not edit it by hand. Do not
    commit ignored runtime files (`memory.db*`, token, vector indexes,
    logs, locks, sessions, worktrees).
 4. **After completing a chunk**, archive it in
@@ -221,8 +222,8 @@ only Git-tracked part of `mcp-data/`:
 4. After brain config is applied, a first-run-only best-effort
    `mcp-seed-embedded` pass backfills vectors for seed rows. Provider
    embeddings are preferred; when unavailable, the deterministic offline
-   embedder hashes token features into 256-dimensional vectors so HNSW + RRF
-   still exercise a vector signal before the first agent query.
+   embedder hashes token features into 256-dimensional vectors so vector search
+   + RRF still exercise a retrieval signal before the first agent query.
 5. If `mcp-data/memory.db` already exists (from a previous session),
    nothing is overwritten — incremental knowledge stays intact.
 

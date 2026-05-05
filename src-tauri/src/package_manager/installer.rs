@@ -268,10 +268,9 @@ impl PackageInstaller {
         );
 
         // Built-in / sidecar agents have no binary the registry can deliver:
-        // built-ins are compiled into TerranSoul, and sidecars either ship in
-        // the Tauri bundle or are installed by the user (e.g. `npx gitnexus
-        // mcp` for Chunk 2.1's `gitnexus-sidecar`). Other install methods
-        // fetch the binary normally.
+        // built-ins are compiled into TerranSoul, and sidecars are explicit
+        // user-configured compatibility commands. Other install methods fetch
+        // the binary normally.
         let binary = if skip_binary {
             Vec::new()
         } else {
