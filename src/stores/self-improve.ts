@@ -8,6 +8,7 @@ import type {
   SelfImproveMetrics,
   SelfImproveRun,
   SelfImproveSettings,
+  SelfImproveWorkboard,
 } from '../types';
 
 /**
@@ -132,6 +133,12 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
   });
   /** Most-recent persisted run records (newest first). */
   const runs = ref<SelfImproveRun[]>([]);
+  const workboard = ref<SelfImproveWorkboard>({
+    generated_at_ms: 0,
+    finished: [],
+    working: [],
+    backlog: [],
+  });
   let unlistenProgress: UnlistenFn | null = null;
   let progressTranscriptQueue: Promise<void> = Promise.resolve();
 
@@ -350,6 +357,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
         loadStatus(),
         loadMetrics(),
         loadRuns(),
+        loadWorkboard(),
         loadGithubConfig(),
       ]);
       await subscribeToProgress();
@@ -375,6 +383,15 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
       if (Array.isArray(r)) runs.value = r;
     } catch (e) {
       console.warn('[self-improve] runs load failed:', e);
+    }
+  }
+
+  async function loadWorkboard(): Promise<void> {
+    try {
+      const board = await invoke<SelfImproveWorkboard | null>('get_self_improve_workboard');
+      if (board) workboard.value = board;
+    } catch (e) {
+      console.warn('[self-improve] workboard load failed:', e);
     }
   }
 
@@ -441,6 +458,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
         if (p.phase === 'complete' || (p.phase === 'plan' && p.level === 'error')) {
           void loadMetrics();
           void loadRuns();
+          void loadWorkboard();
         }
       });
     } catch (e) {
@@ -913,6 +931,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     reachability,
     metrics,
     runs,
+    workboard,
     phases: livePhases,
     completedCount,
     totalCount,
@@ -944,6 +963,7 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     setAutostart,
     loadMetrics,
     loadRuns,
+    loadWorkboard,
     clearRunLog,
     loadGithubConfig,
     setGithubConfig,

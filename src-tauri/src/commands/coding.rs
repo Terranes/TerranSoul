@@ -167,6 +167,24 @@ pub struct SelfImproveStatus {
     pub autostart_enabled: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelfImproveWorkboardItem {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+    pub status: String,
+    pub source: String,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct SelfImproveWorkboard {
+    pub generated_at_ms: u64,
+    pub finished: Vec<SelfImproveWorkboardItem>,
+    pub working: Vec<SelfImproveWorkboardItem>,
+    pub backlog: Vec<SelfImproveWorkboardItem>,
+}
+
 /// Read-only status snapshot. Cheap; safe to poll from the UI on focus.
 #[tauri::command]
 pub async fn get_self_improve_status(
@@ -188,6 +206,134 @@ pub async fn get_self_improve_status(
         has_coding_llm,
         autostart_enabled: autostart::is_enabled(),
     })
+}
+
+#[tauri::command]
+pub async fn get_self_improve_workboard(
+    state: State<'_, AppState>,
+) -> Result<SelfImproveWorkboard, String> {
+    let repo = coding_repo::guess_repo_root(&state.data_dir);
+    let generated_at_ms = now_secs().saturating_mul(1000);
+    let mut board = SelfImproveWorkboard {
+        generated_at_ms,
+        ..Default::default()
+    };
+
+    for item in parse_milestones(&repo.join("rules/milestones.md"), generated_at_ms) {
+        match item.status.as_str() {
+            "in-progress" => board.working.push(item),
+            _ => board.backlog.push(item),
+        }
+    }
+
+    let metrics = MetricsLog::new(&repo);
+    for run in metrics.recent(100) {
+        let item = SelfImproveWorkboardItem {
+            id: run.chunk_id.clone(),
+            title: if run.chunk_title.is_empty() {
+                run.chunk_id.clone()
+            } else {
+                run.chunk_title.clone()
+            },
+            detail: run
+                .error
+                .clone()
+                .unwrap_or_else(|| format!("{} via {} · {}", run.outcome, run.provider, run.model)),
+            status: run.outcome.clone(),
+            source: "self-improve-run-log".to_string(),
+            updated_at_ms: run.finished_at_ms,
+        };
+        match run.outcome.as_str() {
+            "running" => board.working.push(item),
+            "success" => board.finished.push(item),
+            "failure" => board.backlog.push(item),
+            _ => {}
+        }
+    }
+
+    board.finished.extend(parse_completion_log(
+        &repo.join("rules/completion-log.md"),
+        generated_at_ms,
+    ));
+
+    let path = state.data_dir.join("self_improve_workboard.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&board).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(board)
+}
+
+fn parse_milestones(path: &std::path::Path, generated_at_ms: u64) -> Vec<SelfImproveWorkboardItem> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let cells = markdown_table_cells(line);
+            if cells.len() < 4 || cells[0] == "ID" || cells[0].starts_with("---") {
+                return None;
+            }
+            Some(SelfImproveWorkboardItem {
+                id: cells[0].clone(),
+                status: cells[1].clone(),
+                title: cells[2].clone(),
+                detail: cells[3].clone(),
+                source: "rules/milestones.md".to_string(),
+                updated_at_ms: generated_at_ms,
+            })
+        })
+        .collect()
+}
+
+fn parse_completion_log(
+    path: &std::path::Path,
+    generated_at_ms: u64,
+) -> Vec<SelfImproveWorkboardItem> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let cells = markdown_table_cells(line);
+            if cells.len() < 2 || !cells[0].starts_with("[") {
+                return None;
+            }
+            let title = cells[0]
+                .trim_start_matches('[')
+                .split("](")
+                .next()
+                .unwrap_or(cells[0].as_str())
+                .to_string();
+            Some(SelfImproveWorkboardItem {
+                id: title
+                    .split('—')
+                    .next()
+                    .unwrap_or(title.as_str())
+                    .trim()
+                    .to_string(),
+                title,
+                detail: format!("Completed {}", cells[1]),
+                status: "completed".to_string(),
+                source: "rules/completion-log.md".to_string(),
+                updated_at_ms: generated_at_ms,
+            })
+        })
+        .take(20)
+        .collect()
+}
+
+fn markdown_table_cells(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') || !trimmed.ends_with('|') {
+        return Vec::new();
+    }
+    trimmed
+        .trim_matches('|')
+        .split('|')
+        .map(|cell| cell.trim().to_string())
+        .collect()
 }
 
 /// Start the autonomous self-improve loop. Idempotent — calling while
@@ -1018,5 +1164,38 @@ mod tests {
         }
         let loaded = state.coding_llm_config.lock().unwrap().clone();
         assert_eq!(loaded, Some(cfg));
+    }
+
+    #[test]
+    fn milestone_table_parser_extracts_workboard_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("milestones.md");
+        std::fs::write(
+            &path,
+            "| ID | Status | Title | Goal |\n|---|---|---|---|\n| 34.1 | not-started | Persisted workboard | Keep lanes durable. |\n",
+        )
+        .unwrap();
+
+        let rows = parse_milestones(&path, 42);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "34.1");
+        assert_eq!(rows[0].title, "Persisted workboard");
+        assert_eq!(rows[0].status, "not-started");
+    }
+
+    #[test]
+    fn completion_log_parser_extracts_finished_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("completion-log.md");
+        std::fs::write(
+            &path,
+            "| Entry | Date |\n|-------|------|\n| [Chunk 33.6 — Maintenance](#chunk-336) | 2026-05-05 |\n",
+        )
+        .unwrap();
+
+        let rows = parse_completion_log(&path, 42);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "Chunk 33.6");
+        assert_eq!(rows[0].status, "completed");
     }
 }

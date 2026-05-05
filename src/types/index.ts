@@ -476,6 +476,22 @@ export interface SelfImproveRun {
   cost_usd?: number | null;
 }
 
+export interface SelfImproveWorkboardItem {
+  id: string;
+  title: string;
+  detail: string;
+  status: string;
+  source: string;
+  updated_at_ms: number;
+}
+
+export interface SelfImproveWorkboard {
+  generated_at_ms: number;
+  finished: SelfImproveWorkboardItem[];
+  working: SelfImproveWorkboardItem[];
+  backlog: SelfImproveWorkboardItem[];
+}
+
 /**
  * Configurable context-loading rules for every coding workflow
  * (Chunk 25.16). Mirrors the `CodingWorkflowConfig` Rust struct.

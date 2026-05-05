@@ -766,10 +766,20 @@ const providerCostEntries = computed<[string, number][]>(() => {
     .sort((a, b) => b[1] - a[1]);
 });
 
-const finishedPhases = computed(() => store.phases.filter((p) => p.status === 'completed'));
-const workingPhases = computed(() => store.phases.filter((p) => p.status === 'in-progress'));
+const finishedPhases = computed(() =>
+  store.workboard.finished.length > 0
+    ? store.workboard.finished
+    : store.phases.filter((p) => p.status === 'completed'),
+);
+const workingPhases = computed(() =>
+  store.workboard.working.length > 0
+    ? store.workboard.working
+    : store.phases.filter((p) => p.status === 'in-progress'),
+);
 const backlogPhases = computed(() =>
-  store.phases.filter((p) => p.status === 'not-started' || p.status === 'blocked'),
+  store.workboard.backlog.length > 0
+    ? store.workboard.backlog
+    : store.phases.filter((p) => p.status === 'not-started' || p.status === 'blocked'),
 );
 const backlogPreview = computed(() => backlogPhases.value.slice(0, 4));
 const backlogCount = computed(() => backlogPhases.value.length + store.improvementChunks.length);

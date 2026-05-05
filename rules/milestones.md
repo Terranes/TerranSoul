@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 34.1 — Persisted self-improve workboard** (Phase 34). See the Phase 34 table below.
+**Chunk 34.2 — Coding workflow gate telemetry** (Phase 34). See the Phase 34 table below.
 
 ---
 
@@ -57,7 +57,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 34.1 | not-started | Persisted self-improve workboard | Promote the panel's finished / working / backlog lanes from derived frontend state into a persisted backend workboard sourced from `rules/milestones.md`, the run log, and completion-log archival state. |
 | 34.2 | not-started | Coding workflow gate telemetry | Emit structured workflow-gate events for context load, plan, edit, validate, archive, and PR so the panel can show the exact active gate and last successful gate per session. |
 | 34.3 | not-started | Backlog promotion controls | Add safe UI controls for converting failed runs, research ideas, and deferred self-improve items into scoped milestone chunks without editing markdown by hand. |
 

@@ -21,6 +21,7 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 34.1 — Persisted self-improve workboard](#chunk-341--persisted-self-improve-workboard) | 2026-05-05 |
 | [Chunk 33.6 — Maintenance scheduler in headless MCP runner](#chunk-336--maintenance-scheduler-in-headless-mcp-runner) | 2026-05-05 |
 | [Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning](#chunk-335--reranker-default-on-for-rrf--relevance-threshold-pruning) | 2026-05-05 |
 | [Chunk 33.4 — Auto-edge extraction on memory ingest](#chunk-334--auto-edge-extraction-on-memory-ingest) | 2026-05-05 |
@@ -274,6 +275,40 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 34.1 — Persisted self-improve workboard
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 34 — Self-Improve Operations Dashboard & Coding Workflow UX
+
+**Goal:** Promote the Self-Improve panel's Finished / Working on / Backlog lanes from derived frontend-only state into a persisted backend workboard sourced from active milestones, completion history, and the run log.
+
+**Architecture:**
+- Added `get_self_improve_workboard`, which parses `rules/milestones.md` for active backlog/working rows, reads recent self-improve run records for running/success/failure items, reads the completion-log table of contents for finished chunks, and persists the assembled snapshot as `self_improve_workboard.json` under the app data directory.
+- Added serializable workboard item/board types and pure Markdown table parsers with unit coverage.
+- Extended the Pinia self-improve store to load the backend workboard during initialisation and after terminal progress events.
+- Updated `SelfImprovePanel` to use persisted backend workboard lanes when present, while preserving the existing static roadmap fallback for browser/test mode.
+- Updated README and MCP shared data so future agents know the workboard source of truth.
+
+**Files modified:**
+- `src-tauri/src/commands/coding.rs`
+- `src-tauri/src/lib.rs`
+- `src/types/index.ts`
+- `src/stores/self-improve.ts`
+- `src/components/SelfImprovePanel.vue`
+- `README.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test commands::coding::tests::milestone_table_parser_extracts_workboard_rows` → 1 passed.
+- `cargo test commands::coding::tests::completion_log_parser_extracts_finished_rows` → 1 passed.
+- `npx vitest run src/components/SelfImprovePanel.test.ts` → 7 passed.
 
 ---
 

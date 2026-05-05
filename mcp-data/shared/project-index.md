@@ -130,7 +130,7 @@
 | `brain.rs`, `chat.rs`, `streaming.rs` | Chat + streaming pipeline |
 | `character.rs`, `emotion.rs`, `vision.rs` | Character + emotion + vision |
 | `charisma.rs`, `persona.rs` | Persona/charisma surface |
-| `coding.rs`, `coding_sessions.rs` | Self-improve coding workflow |
+| `coding.rs`, `coding_sessions.rs` | Self-improve coding workflow, persisted workboard, and session transcripts |
 | `consolidation.rs`, `crag.rs`, `gitnexus.rs`, `ingest.rs`, `memory.rs` | Memory operations |
 | `docker.rs`, `lan.rs`, `link.rs`, `routing.rs` | Networking, container, sync |
 | `github_auth.rs` | GitHub OAuth device flow for self-improve PRs |
