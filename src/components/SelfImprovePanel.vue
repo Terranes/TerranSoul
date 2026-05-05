@@ -62,6 +62,94 @@
       </p>
     </div>
 
+    <!-- Self-improve queue dashboard -->
+    <div
+      class="si-queue"
+      aria-label="Self-improve work tracker"
+    >
+      <article class="si-queue-lane si-queue-lane--done">
+        <header class="si-queue-head">
+          <span>Finished</span>
+          <strong>{{ finishedPhases.length }}</strong>
+        </header>
+        <ul class="si-queue-list">
+          <li
+            v-for="phase in finishedPhases.slice(0, 4)"
+            :key="phase.id"
+          >
+            ✓ {{ phase.title }}
+          </li>
+          <li
+            v-if="finishedPhases.length === 0"
+            class="si-queue-empty"
+          >
+            Nothing finished yet
+          </li>
+        </ul>
+      </article>
+      <article class="si-queue-lane si-queue-lane--active">
+        <header class="si-queue-head">
+          <span>Working on</span>
+          <strong>{{ workingPhases.length }}</strong>
+        </header>
+        <ul class="si-queue-list">
+          <li
+            v-for="phase in workingPhases"
+            :key="phase.id"
+          >
+            ◐ {{ phase.title }}
+          </li>
+          <li
+            v-if="workingPhases.length === 0"
+            class="si-queue-empty"
+          >
+            Waiting for the next chunk
+          </li>
+        </ul>
+      </article>
+      <article class="si-queue-lane si-queue-lane--backlog">
+        <header class="si-queue-head">
+          <span>Backlog</span>
+          <strong>{{ backlogCount }}</strong>
+        </header>
+        <ul class="si-queue-list">
+          <li
+            v-for="phase in backlogPreview"
+            :key="phase.id"
+          >
+            ○ {{ phase.title }}
+          </li>
+          <li
+            v-if="backlogPreview.length === 0"
+            class="si-queue-empty"
+          >
+            No queued phases
+          </li>
+        </ul>
+      </article>
+    </div>
+
+    <!-- Coding workflow UX -->
+    <div class="si-workflow">
+      <h3 class="si-section-h">
+        Coding workflow
+      </h3>
+      <ol class="si-workflow-list">
+        <li
+          v-for="step in workflowSteps"
+          :key="step.label"
+          class="si-workflow-step"
+          :class="{ 'si-workflow-step--active': step.active }"
+        >
+          <span class="si-workflow-index">{{ step.index }}</span>
+          <div>
+            <strong>{{ step.label }}</strong>
+            <p>{{ step.detail }}</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
     <!-- Phase roadmap -->
     <div class="si-roadmap">
       <h3 class="si-section-h">
@@ -678,6 +766,45 @@ const providerCostEntries = computed<[string, number][]>(() => {
     .sort((a, b) => b[1] - a[1]);
 });
 
+const finishedPhases = computed(() => store.phases.filter((p) => p.status === 'completed'));
+const workingPhases = computed(() => store.phases.filter((p) => p.status === 'in-progress'));
+const backlogPhases = computed(() =>
+  store.phases.filter((p) => p.status === 'not-started' || p.status === 'blocked'),
+);
+const backlogPreview = computed(() => backlogPhases.value.slice(0, 4));
+const backlogCount = computed(() => backlogPhases.value.length + store.improvementChunks.length);
+
+const workflowSteps = computed(() => [
+  {
+    index: 1,
+    label: 'Select chunk',
+    detail: store.nextPhase
+      ? `Next queue item: ${store.nextPhase.title}`
+      : 'All roadmap phases are complete.',
+    active: !store.running,
+  },
+  {
+    index: 2,
+    label: 'Plan with brain context',
+    detail: 'Load MCP/rules context, define validation gates, and keep durable lessons searchable.',
+    active: store.activePhase === 'plan',
+  },
+  {
+    index: 3,
+    label: 'Code in isolated workflow',
+    detail: store.running
+      ? `${store.activePhase ?? 'engine'} · ${store.liveMessage}`
+      : 'Use the configured Coding LLM, feature branch, and session transcript.',
+    active: store.running,
+  },
+  {
+    index: 4,
+    label: 'Validate, archive, and PR',
+    detail: 'Run checks, update milestones/completion log, and open or refresh the review PR.',
+    active: store.activePhase === 'complete',
+  },
+]);
+
 function phaseStatusIcon(status: SelfImprovePhase['status']): string {
   switch (status) {
     case 'completed': return '✓';
@@ -873,6 +1000,103 @@ async function onClearLog() {
 }
 .si-next-line { margin: 0; font-size: 0.8rem; color: var(--ts-text-muted, #94a3b8); }
 .si-next-done { color: #86efac; }
+
+/* Finished / working / backlog dashboard */
+.si-queue {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.si-queue-lane {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.si-queue-lane--done { border-color: rgba(34, 197, 94, 0.28); }
+.si-queue-lane--active { border-color: rgba(124, 111, 255, 0.38); }
+.si-queue-lane--backlog { border-color: rgba(251, 191, 36, 0.28); }
+.si-queue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ts-text-muted, #94a3b8);
+}
+.si-queue-head strong {
+  color: var(--ts-text-primary, #eaecf4);
+  font-size: 0.9rem;
+}
+.si-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.si-queue-list li {
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--ts-text-secondary, #cbd5e1);
+}
+.si-queue-empty {
+  color: var(--ts-text-muted, #94a3b8);
+  font-style: italic;
+}
+
+/* Coding workflow */
+.si-workflow {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(124, 111, 255, 0.06);
+  border: 1px solid rgba(124, 111, 255, 0.16);
+}
+.si-workflow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.si-workflow-step {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.si-workflow-step--active {
+  border-color: rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.07);
+}
+.si-workflow-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.si-workflow-step strong {
+  display: block;
+  font-size: 0.82rem;
+}
+.si-workflow-step p {
+  margin: 2px 0 0;
+  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
 
 /* Roadmap */
 .si-section-h {

@@ -2898,14 +2898,17 @@ query `brain_search` / `brain_suggest_context` for the active chunk before
 broad manual repo exploration. Copilot cloud sessions run
 `scripts/copilot-start-mcp.mjs` from `copilot-setup-steps.yml`, which reuses
 an existing TerranSoul MCP server or starts `npm run mcp` detached and waits
-for `/health`. First-run seeding immediately triggers a best-effort embedding
-backfill after `BrainConfig` is applied; provider embeddings are preferred, and
-the deterministic fallback embedder hashes token unigrams/bigrams into
-256-dimensional vectors when no provider embedding is available. Query-side
-MCP RRF/HyDE search uses the same fallback in headless mode, so SQLite + HNSW +
-RRF operate on the canonical `mcp-data/shared/` dataset out of the box even
-with zero network. Durable self-improve lessons belong in `mcp-data/shared/`
-or the rules/docs, not only in chat transcripts. The shared seed also carries
+for `/health`. If startup or app validation fails because platform packages are
+missing (for example `glib-2.0.pc` / `gio-2.0.pc` on Ubuntu), the agent must
+install the missing Tauri/MCP system dependencies and retry before declaring MCP
+blocked. First-run seeding immediately triggers a best-effort embedding backfill
+after `BrainConfig` is applied; provider embeddings are preferred, and the
+deterministic fallback embedder hashes token unigrams/bigrams into
+256-dimensional vectors when no provider embedding is available. Query-side MCP
+RRF/HyDE search uses the same fallback in headless mode, so SQLite + HNSW + RRF
+operate on the canonical `mcp-data/shared/` dataset out of the box even with
+zero network. Durable self-improve lessons belong in `mcp-data/shared/` or the
+rules/docs, not only in chat transcripts. The shared seed also carries
 high-priority rule-enforcement memories (milestone archival, backlog promotion,
 instruction sync, docs sync, credits/licensing, no-mock production code, LLM
 decision routing, and validation) so agents can retrieve operational rules from

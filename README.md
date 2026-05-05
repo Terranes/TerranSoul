@@ -376,15 +376,16 @@ TerranSoul has completed **18 phases of development** (Phases 0–14 + partial 1
 For coding agents, use the headless brain runner so it cannot collide with the desktop app or dev server:
 
 1. Copilot cloud sessions auto-start the headless MCP brain via `.github/workflows/copilot-setup-steps.yml` and `scripts/copilot-start-mcp.mjs`; local agents can start it manually with `npm run mcp`.
-2. Copy the generated bearer token from `.vscode/.mcp-token`. The runner also keeps its data-root copy at `mcp-data/mcp-token.txt`.
-3. Set VS Code's MCP env var for the headless profile, then restart VS Code or launch it from that shell:
+2. If MCP/app startup fails because `pkg-config` cannot find Linux Tauri libraries, install the missing system packages and retry before reporting a blocker. On Ubuntu the expected set is `libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev pkg-config`.
+3. Copy the generated bearer token from `.vscode/.mcp-token`. The runner also keeps its data-root copy at `mcp-data/mcp-token.txt`.
+4. Set VS Code's MCP env var for the headless profile, then restart VS Code or launch it from that shell:
 
   ```powershell
   $env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content .vscode/.mcp-token
   ```
 
-4. Verify the server is reachable with `GET http://127.0.0.1:7423/health`, then call the `brain_health` MCP tool on `terransoul-brain-mcp`.
-5. Mandatory for every coding-agent session: use `brain_search` / `brain_suggest_context` for the current chunk before broad manual repo exploration, and write durable self-improve lessons into `mcp-data/shared/` or the rules/docs so the next `npm run mcp` run inherits them.
+5. Verify the server is reachable with `GET http://127.0.0.1:7423/health`, then call the `brain_health` MCP tool on `terransoul-brain-mcp`.
+6. Mandatory for every coding-agent session: use `brain_search` / `brain_suggest_context` for the current chunk before broad manual repo exploration, and write durable self-improve lessons into `mcp-data/shared/` or the rules/docs so the next `npm run mcp` run inherits them.
 
 The checked-in `.vscode/mcp.json` already points `terransoul-brain-mcp` at `http://127.0.0.1:7423/mcp` and reads `TERRANSOUL_MCP_TOKEN_MCP` for bearer auth. Release and dev app profiles use ports `7421` and `7422` with their own token env vars.
 The default `mcp-data/shared/` seed includes high-priority rule memories for milestone hygiene, backlog promotion, instruction sync, docs sync, CREDITS, no-mock production code, LLM decision routing, and validation so agents retrieve these before editing.

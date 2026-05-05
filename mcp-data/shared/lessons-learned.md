@@ -14,6 +14,14 @@
   Linux**: `libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
   libjavascriptcoregtk-4.1-dev pkg-config libglib2.0-dev libssl-dev`. The
   Copilot cloud agent installs these in `.github/workflows/copilot-setup-steps.yml`.
+- **Install missing MCP/app dependencies before declaring a blocker**: if
+  `npm run mcp`, `npm run dev`, `cargo tauri dev`, or validation fails because
+  `pkg-config` cannot find Linux Tauri libraries (`glib-2.0.pc`, `gio-2.0.pc`,
+  WebKit/GTK, etc.), install the missing platform packages and retry before
+  reporting MCP/app startup as blocked. On Ubuntu cloud agents, the minimum set
+  is `libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+  libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
+  libjavascriptcoregtk-4.1-dev pkg-config`.
 - **MCP cold-build cost**: `npm run mcp` first compiles the full Rust crate
   (~3-5 min); subsequent runs are warm thanks to `src-tauri/target`. Wait
   on `GET /health` via `scripts/wait-for-service.mjs` before issuing tool calls.

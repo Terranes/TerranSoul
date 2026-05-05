@@ -31,6 +31,8 @@ VALUES
 -- Setup & Development
 ('CI gate command: npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test. Run after every chunk completion. On Linux, install Tauri WebKit/GTK system libraries before Rust checks.', 'ci,testing,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 40, 'development'),
 
+('MCP/app dependency bootstrap rule: if npm run mcp, npm run dev, cargo tauri dev, or validation fails because pkg-config cannot find Linux system libraries such as glib-2.0 or gio-2.0, install the missing Tauri/MCP packages with the platform package manager and retry before declaring the task blocked. Ubuntu minimum set: libglib2.0-dev, libgtk-3-dev, libwebkit2gtk-4.1-dev, libappindicator3-dev, librsvg2-dev, patchelf, libsoup-3.0-dev, libjavascriptcoregtk-4.1-dev, pkg-config.', 'mcp,setup,dependencies,tauri,linux,agent-rule', 5, 'procedure', 1746487655000, 'long', 1.0, 95, 'development'),
+
 ('Dev server: npm run dev starts Vite on :1420. Tauri dev: cargo tauri dev. Full build: cargo tauri build. The app window opens a webview to the Vite dev server.', 'development,setup,commands', 4, 'procedure', 1746316800000, 'long', 1.0, 35, 'development'),
 
 ('Coding standards: snake_case for Rust, camelCase for TypeScript. Never .unwrap() in library code — use ? + thiserror. Vue components use <script setup lang="ts"> with scoped styles. CSS uses var(--ts-*) design tokens. Tests required for all new functionality.', 'coding-standards,conventions', 5, 'fact', 1746316800000, 'long', 1.0, 45, 'development'),

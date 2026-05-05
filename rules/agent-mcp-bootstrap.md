@@ -143,13 +143,21 @@ project memory layer:
    (`7421`) or dev (`7422`) if the app is already serving MCP; otherwise
    use the headless `npm run mcp` profile on `7423`.
 2. **Before planning or implementing**, call at least one brain tool when
-   available (`brain_health`, then `brain_search` /
-   `brain_suggest_context` for the current chunk). If MCP is blocked by
-   missing tools, missing system packages, or user policy, record the
-   blocker in the progress/final report instead of silently skipping it.
+    available (`brain_health`, then `brain_search` /
+    `brain_suggest_context` for the current chunk). If MCP is blocked by
+    missing tools, missing system packages, or user policy, record the
+    blocker in the progress/final report instead of silently skipping it.
+   If the blocker is a missing dependency needed to run `npm run mcp`,
+   `npm run dev`, `cargo tauri dev`, or app validation, the agent MUST install
+   the missing dependency with the platform package manager when permissions
+   allow, then retry the command before declaring it blocked. On Ubuntu/Linux
+   cloud agents, the minimum Tauri/MCP build set is:
+   `libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev
+   librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+   pkg-config`.
 3. **During self-improve work**, ingest durable lessons back into the MCP
-   seed surface: update `mcp-data/shared/memory-seed.sql`,
-   `project-index.md`, `lessons-learned.md`, or this rules file when the
+    seed surface: update `mcp-data/shared/memory-seed.sql`,
+    `project-index.md`, `lessons-learned.md`, or this rules file when the
    session discovers knowledge that future agents must retain. Do not
    commit ignored runtime files (`memory.db*`, token, vector indexes,
    logs, locks, sessions, worktrees).
