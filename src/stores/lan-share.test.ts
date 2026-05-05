@@ -37,6 +37,8 @@ describe('lan-share store', () => {
         brain_name: 'HR Rules',
         port: 7421,
         token: 'abc-token-123',
+        auth_mode: 'token_required',
+        token_required: true,
         connected_brains: 0,
         connections: [],
       });
@@ -93,6 +95,7 @@ describe('lan-share store', () => {
           memory_count: 150,
           read_only: true,
           hostname: 'HR-PC',
+          token_required: true,
         },
       ];
       invokeMock.mockResolvedValue(brains);
@@ -124,18 +127,20 @@ describe('lan-share store', () => {
         host: '192.168.1.100',
         port: 7421,
         token: 'token-123',
+        token_required: true,
         brain_name: 'HR Rules',
         connected: true,
       };
       invokeMock.mockResolvedValue(conn);
 
       const store = useLanShareStore();
-      const result = await store.connect('192.168.1.100', 7421, 'token-123', 'HR Rules');
+      const result = await store.connect('192.168.1.100', 7421, 'token-123', true, 'HR Rules');
 
       expect(invokeMock).toHaveBeenCalledWith('lan_share_connect', {
         host: '192.168.1.100',
         port: 7421,
         token: 'token-123',
+        tokenRequired: true,
         brainName: 'HR Rules',
       });
       expect(result).toEqual(conn);
@@ -149,7 +154,7 @@ describe('lan-share store', () => {
       invokeMock.mockRejectedValue('Connection refused');
 
       const store = useLanShareStore();
-      const result = await store.connect('192.168.1.100', 7421, 'bad-token');
+      const result = await store.connect('192.168.1.100', 7421, 'bad-token', true);
 
       expect(result).toBeNull();
       expect(store.error).toBe('Connection refused');
@@ -163,8 +168,8 @@ describe('lan-share store', () => {
 
       const store = useLanShareStore();
       store.connections = [
-        { id: 'conn-1', host: '192.168.1.100', port: 7421, token: 't', brain_name: 'HR', connected: true },
-        { id: 'conn-2', host: '192.168.1.101', port: 7421, token: 't', brain_name: 'Legal', connected: true },
+        { id: 'conn-1', host: '192.168.1.100', port: 7421, token: 't', token_required: true, brain_name: 'HR', connected: true },
+        { id: 'conn-2', host: '192.168.1.101', port: 7421, token: 't', token_required: true, brain_name: 'Legal', connected: true },
       ];
 
       await store.disconnect('conn-1');
@@ -229,9 +234,11 @@ describe('lan-share store', () => {
         brain_name: null,
         port: 7421,
         token: 'fresh-token',
+        auth_mode: 'token_required',
+        token_required: true,
         connected_brains: 1,
         connections: [
-          { id: 'c1', host: '10.0.0.5', port: 7421, token: 'x', brain_name: 'Shared', connected: true },
+          { id: 'c1', host: '10.0.0.5', port: 7421, token: 'x', token_required: true, brain_name: 'Shared', connected: true },
         ],
       });
 
@@ -255,7 +262,7 @@ describe('lan-share store', () => {
     it('returns connected when has connections', () => {
       const store = useLanShareStore();
       store.connections = [
-        { id: 'c1', host: 'x', port: 1, token: 't', brain_name: 'B', connected: true },
+        { id: 'c1', host: 'x', port: 1, token: 't', token_required: true, brain_name: 'B', connected: true },
       ];
       expect(store.mode).toBe('connected');
     });

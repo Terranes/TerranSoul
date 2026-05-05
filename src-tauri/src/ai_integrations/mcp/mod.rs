@@ -172,8 +172,9 @@ pub async fn start_server(
     port: u16,
     token: String,
     lan_enabled: bool,
+    lan_public_read_only: bool,
 ) -> Result<McpServerHandle, String> {
-    start_server_with_activity(state, port, token, lan_enabled, None).await
+    start_server_with_activity(state, port, token, lan_enabled, lan_public_read_only, None).await
 }
 
 /// Start the MCP HTTP server and optionally emit live activity events to
@@ -183,6 +184,7 @@ pub async fn start_server_with_activity(
     port: u16,
     token: String,
     lan_enabled: bool,
+    lan_public_read_only: bool,
     app: Option<tauri::AppHandle>,
 ) -> Result<McpServerHandle, String> {
     let ingest_sink = app.as_ref().map(|app_handle| {
@@ -252,6 +254,7 @@ pub async fn start_server_with_activity(
         gw,
         caps,
         token: token.clone(),
+        lan_public_read_only,
         port: bound_port,
         seed_loaded,
         activity: Some(activity.clone()),

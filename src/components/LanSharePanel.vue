@@ -12,7 +12,34 @@
       <legend>Share Your Brain</legend>
       <p class="lan-share__desc">
         Share your brain's knowledge with other TerranSoul instances on the
-        same network. Others can search your memories using your token.
+        same network. Choose whether peers need your token or can use a
+        public read-only connection.
+      </p>
+
+      <div class="lan-share__auth-mode">
+        <span class="lan-share__label-text">Access mode</span>
+        <label class="lan-share__choice">
+          <input
+            :checked="hostAccessMode === 'token_required'"
+            type="radio"
+            name="lan-auth-mode"
+            @change="void updateLanAuthMode('token_required')"
+          >
+          <span>Token required</span>
+        </label>
+        <label class="lan-share__choice">
+          <input
+            :checked="hostAccessMode === 'public_read_only'"
+            type="radio"
+            name="lan-auth-mode"
+            @change="void updateLanAuthMode('public_read_only')"
+          >
+          <span>Public read-only</span>
+        </label>
+      </div>
+      <p class="lan-share__hint">
+        Changes apply to new MCP server starts. If the server is already running,
+        restart it from AI Coding Integrations before sharing again.
       </p>
 
       <template v-if="!store.hosting">
@@ -48,6 +75,10 @@
             <span class="lan-share__info-label">Port:</span>
             <span>{{ store.hostPort }}</span>
           </div>
+          <div class="lan-share__info-row">
+            <span class="lan-share__info-label">Access:</span>
+            <span>{{ store.hostAuthMode === 'public_read_only' ? 'Public read-only' : 'Token required' }}</span>
+          </div>
           <div v-if="store.hostToken" class="lan-share__info-row">
             <span class="lan-share__info-label">Token:</span>
             <code class="lan-share__token" @click="copyToken">
@@ -58,7 +89,9 @@
             </button>
           </div>
           <p class="lan-share__hint">
-            Share this token with colleagues so they can connect to your brain.
+            {{ store.hostAuthMode === 'public_read_only'
+              ? 'Anyone on your LAN can search this brain without a token. Only read-only MCP methods are exposed.'
+              : 'Share this token with colleagues so they can connect to your brain.' }}
           </p>
         </div>
         <button class="lan-share__btn lan-share__btn--danger" @click="handleStopHosting">
@@ -107,6 +140,7 @@
             <span>{{ brain.host }}:{{ brain.port }}</span>
             <span>{{ brain.memory_count }} memories</span>
             <span>{{ brain.provider }}</span>
+            <span>{{ brain.token_required ? 'Token required' : 'Public read-only' }}</span>
           </div>
           <button
             class="lan-share__btn lan-share__btn--small"
@@ -135,6 +169,13 @@
         </label>
       </div>
       <label class="lan-share__label">
+        Access Mode
+        <select v-model="manualAccessMode" class="lan-share__input">
+          <option value="token_required">Token required</option>
+          <option value="public_read_only">Public read-only</option>
+        </select>
+      </label>
+      <label v-if="manualAccessMode === 'token_required'" class="lan-share__label">
         Token
         <input v-model="connectToken" type="text" class="lan-share__input" placeholder="Bearer token from host" />
       </label>
@@ -225,8 +266,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useLanShareStore, type DiscoveredBrain, type TaggedRemoteResult } from '../stores/lan-share';
+import { useSettingsStore } from '../stores/settings';
 
 const store = useLanShareStore();
+const settingsStore = useSettingsStore();
 
 // Host mode
 const brainNameInput = ref('');
@@ -235,6 +278,9 @@ const brainNameInput = ref('');
 const connectHost = ref('');
 const connectPort = ref(7421);
 const connectToken = ref('');
+const manualAccessMode = ref<'token_required' | 'public_read_only'>(
+  settingsStore.settings.lan_auth_mode ?? 'token_required',
+);
 
 // Search
 const searchQuery = ref('');
@@ -247,9 +293,20 @@ const tokenDisplay = computed(() => {
   return `${t.slice(0, 6)}…${t.slice(-6)}`;
 });
 
-const canConnect = computed(
-  () => connectHost.value.trim() && connectPort.value > 0 && connectToken.value.trim(),
+const hostAccessMode = computed(
+  () => settingsStore.settings.lan_auth_mode ?? 'token_required',
 );
+
+const canConnect = computed(
+  () => connectHost.value.trim()
+    && connectPort.value > 0
+    && (manualAccessMode.value === 'public_read_only' || connectToken.value.trim()),
+);
+
+async function updateLanAuthMode(mode: 'token_required' | 'public_read_only') {
+  manualAccessMode.value = mode;
+  await settingsStore.saveSettings({ lan_auth_mode: mode });
+}
 
 async function handleStartHosting() {
   await store.startHosting(brainNameInput.value.trim());
@@ -264,22 +321,24 @@ async function handleDiscover() {
 }
 
 async function handleConnectDiscovered(brain: DiscoveredBrain) {
-  // For discovered brains, still need token — prompt user.
   connectHost.value = brain.host;
   connectPort.value = brain.port;
+  manualAccessMode.value = brain.token_required ? 'token_required' : 'public_read_only';
 }
 
 async function handleManualConnect() {
   await store.connect(
     connectHost.value.trim(),
     connectPort.value,
-    connectToken.value.trim(),
+    manualAccessMode.value === 'token_required' ? connectToken.value.trim() : null,
+    manualAccessMode.value === 'token_required',
   );
   // Clear form on success.
   if (!store.error) {
     connectHost.value = '';
     connectPort.value = 7421;
     connectToken.value = '';
+    manualAccessMode.value = hostAccessMode.value;
   }
 }
 
@@ -355,6 +414,26 @@ function copyToken() {
   font-size: 0.85rem;
   color: var(--ts-text-secondary);
   margin-bottom: 0.5rem;
+}
+
+.lan-share__label-text {
+  font-size: 0.85rem;
+  color: var(--ts-text-secondary);
+}
+
+.lan-share__auth-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.lan-share__choice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ts-text-primary);
+  font-size: 0.9rem;
 }
 
 .lan-share__label--small {

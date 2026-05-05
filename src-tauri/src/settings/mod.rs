@@ -182,6 +182,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub lan_enabled: bool,
 
+    /// LAN MCP authentication mode. `token_required` keeps the existing
+    /// bearer-token gate; `public_read_only` exposes a restricted read-only
+    /// LAN surface without requiring a token.
+    #[serde(default)]
+    pub lan_auth_mode: LanAuthMode,
+
     /// When `true` (default), a paired mobile shell may show local
     /// notifications for long-running remote work that completes or crosses
     /// the mobile threshold. Uses Tauri's local notification plugin only;
@@ -299,6 +305,19 @@ pub struct AppSettings {
     pub max_memory_mb: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LanAuthMode {
+    TokenRequired,
+    PublicReadOnly,
+}
+
+impl Default for LanAuthMode {
+    fn default() -> Self {
+        Self::TokenRequired
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -400,6 +419,7 @@ impl Default for AppSettings {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
@@ -568,6 +588,7 @@ mod tests {
             preferred_container_runtime: crate::container::RuntimePreference::Docker,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
+            lan_auth_mode: LanAuthMode::TokenRequired,
             auto_tag: false,
             contextual_retrieval: false,
             late_chunking: false,

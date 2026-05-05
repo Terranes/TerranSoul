@@ -342,9 +342,10 @@ The pact:
 TerranSoul can expose MCP retrieval to other TerranSoul instances on the same
 trusted LAN after explicit user opt-in. The host enables LAN brain sharing in
 the Brain view, starts or restarts the MCP server so it binds to LAN interfaces,
-names the shared brain, and shares the bearer token out-of-band. Peers discover host metadata over UDP `7424`, then
-authenticate to the host MCP HTTP endpoint for query-scoped `brain_search`
-results.
+names the shared brain, and chooses either `token required` or `public
+read-only`. Peers discover host metadata over UDP `7424`, then either
+authenticate to the host MCP HTTP endpoint with the shared bearer token or use
+the restricted public read-only MCP surface with no token.
 
 Use the illustrated tutorial for the end-to-end host/client flow:
 [LAN MCP sharing tutorial](lan-mcp-sharing-tutorial.md).
@@ -353,10 +354,13 @@ Important boundaries:
 
 - The bearer token is never included in discovery announcements.
 - Discovery and retrieval are separate: UDP `7424` finds peers; MCP HTTP carries
-  authenticated retrieval.
+  either authenticated retrieval or the restricted public read-only surface.
 - LAN mode is off by default and should stay off on public or untrusted Wi-Fi.
-- A connected peer can issue many searches, so token access should be treated as
-  read access to the shared knowledge surface.
+- `public_read_only` is intentionally limited to read-only brain MCP methods.
+  Write tools, code-intelligence tools, `/status`, and hook endpoints still
+  require the bearer token.
+- A connected peer can issue many searches, so both token access and public
+  mode should be treated as read access to the shared knowledge surface.
 
 ---
 

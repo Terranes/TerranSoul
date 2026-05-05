@@ -9,7 +9,15 @@ const waitSeconds = Number.parseInt(process.argv.find((arg) => /^\d+$/.test(arg)
 const smoke = process.argv.includes('--smoke')
 const maxLogBytes = 1024 * 1024
 const logPath = process.env.TERRANSOUL_MCP_LOG ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.log')
-const pidPath = process.env.TERRANSOUL_MCP_PID ?? '/tmp/terransoul-mcp-copilot.pid'
+const pidPath = process.env.TERRANSOUL_MCP_PID ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.pid')
+const mcpBinary = path.join(repoRoot, 'target-mcp', 'release', process.platform === 'win32' ? 'terransoul.exe' : 'terransoul')
+const sourceRootsForFreshness = [
+  path.join(repoRoot, 'src-tauri', 'Cargo.toml'),
+  path.join(repoRoot, 'src-tauri', 'Cargo.lock'),
+  path.join(repoRoot, 'src-tauri', 'build.rs'),
+  path.join(repoRoot, 'src-tauri', 'tauri.conf.json'),
+  path.join(repoRoot, 'src-tauri', 'src'),
+]
 
 function archivePath(filePath) {
   return `${filePath}.001`
@@ -56,6 +64,71 @@ async function waitForHealth(targetPort, seconds) {
   return false
 }
 
+async function waitForDown(targetPort, seconds) {
+  const deadline = Date.now() + seconds * 1000
+  while (Date.now() < deadline) {
+    if (!(await isHealthy(targetPort))) return true
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  return false
+}
+
+function newestMtimeMs(targetPath) {
+  if (!fs.existsSync(targetPath)) return 0
+  const stat = fs.statSync(targetPath)
+  if (stat.isFile()) return stat.mtimeMs
+  if (!stat.isDirectory()) return 0
+
+  let newest = stat.mtimeMs
+  for (const entry of fs.readdirSync(targetPath, { withFileTypes: true })) {
+    newest = Math.max(newest, newestMtimeMs(path.join(targetPath, entry.name)))
+  }
+  return newest
+}
+
+function isTargetMcpOutdated() {
+  if (!fs.existsSync(mcpBinary)) return true
+  const binaryMtime = fs.statSync(mcpBinary).mtimeMs
+  const newestSource = sourceRootsForFreshness.reduce(
+    (max, targetPath) => Math.max(max, newestMtimeMs(targetPath)),
+    0,
+  )
+  return newestSource > binaryMtime
+}
+
+function stopManagedMcpProcess() {
+  if (!fs.existsSync(pidPath)) {
+    return false
+  }
+
+  const pidRaw = fs.readFileSync(pidPath, 'utf8').trim()
+  const pid = Number.parseInt(pidRaw, 10)
+  if (!Number.isFinite(pid) || pid <= 0) {
+    fs.rmSync(pidPath, { force: true })
+    return false
+  }
+
+  let stopped = false
+  try {
+    if (process.platform === 'win32') {
+      process.kill(pid)
+      stopped = true
+    } else {
+      try {
+        process.kill(-pid, 'SIGTERM')
+      } catch {
+        process.kill(pid, 'SIGTERM')
+      }
+      stopped = true
+    }
+  } catch {
+    // Process may already be gone; clear stale pid file below.
+  }
+
+  fs.rmSync(pidPath, { force: true })
+  return stopped
+}
+
 for (const appPort of [7421, 7422]) {
   if (await isHealthy(appPort)) {
     console.log(`[copilot-mcp] TerranSoul app MCP is already healthy on ${appPort}; reusing it.`)
@@ -63,9 +136,23 @@ for (const appPort of [7421, 7422]) {
   }
 }
 
+const targetOutdated = process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1' && isTargetMcpOutdated()
+
 if (await isHealthy(port)) {
-  console.log(`[copilot-mcp] MCP full UI runtime is already healthy on ${port}; reusing it.`)
-  process.exit(0)
+  if (!targetOutdated) {
+    console.log(`[copilot-mcp] MCP full UI runtime is already healthy on ${port}; reusing it.`)
+    process.exit(0)
+  }
+
+  console.log('[copilot-mcp] detected stale target-mcp while MCP is running; terminating for rebuild/relaunch.')
+  if (!stopManagedMcpProcess()) {
+    console.error('[copilot-mcp] target-mcp is stale but no managed pid could be terminated; stop MCP manually and retry.')
+    process.exit(1)
+  }
+  if (!(await waitForDown(port, 20))) {
+    console.error('[copilot-mcp] target-mcp is stale and MCP did not shut down in time; stop it manually and retry.')
+    process.exit(1)
+  }
 }
 
 rotateLogIfNeeded(logPath)
@@ -90,7 +177,6 @@ if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
   }
 }
 
-const mcpBinary = path.join(repoRoot, 'target-mcp', 'release', process.platform === 'win32' ? 'terransoul.exe' : 'terransoul')
 const child = spawn(mcpBinary, ['--mcp-tray'], {
   cwd: repoRoot,
   detached: true,
@@ -121,7 +207,11 @@ for (const tokenPath of ['.vscode/.mcp-token', 'mcp-data/mcp-token.txt']) {
 
 if (smoke) {
   try {
-    process.kill(-child.pid, 'SIGTERM')
+    if (process.platform === 'win32') {
+      process.kill(child.pid)
+    } else {
+      process.kill(-child.pid, 'SIGTERM')
+    }
     console.log(`[copilot-mcp] smoke mode stopped MCP process group ${child.pid}`)
   } catch (error) {
     console.log(`[copilot-mcp] smoke mode could not stop MCP process group ${child.pid}: ${error.message}`)

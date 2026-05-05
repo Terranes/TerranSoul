@@ -224,6 +224,37 @@
       </p>
     </div>
 
+    <div
+      class="aiv-card aiv-card-accent"
+      data-testid="aiv-workbench-card"
+    >
+      <h4>Native code workbench</h4>
+      <p class="aiv-help-small">
+        TerranSoul keeps code intelligence clean-room and local-first. The target
+        UX is a dense coding cockpit: graph canvas, grounded citations, visible
+        tool activity, repo status, and blast-radius awareness inside the app.
+      </p>
+      <div class="aiv-workbench-grid">
+        <div class="aiv-workbench-item">
+          <strong>Graph-first navigation</strong>
+          <span>Browse structure before grepping files.</span>
+        </div>
+        <div class="aiv-workbench-item">
+          <strong>Grounded context</strong>
+          <span>Tool cards, code citations, and symbol context in one place.</span>
+        </div>
+        <div class="aiv-workbench-item">
+          <strong>Risk visibility</strong>
+          <span>Impact probes and rename planning before edits land.</span>
+        </div>
+      </div>
+      <p class="aiv-meta">
+        License boundary: public GitNexus behavior can inspire UX direction, but
+        TerranSoul ships only native Rust/Vue implementation and does not bundle
+        external GitNexus binaries or assets.
+      </p>
+    </div>
+
     <p
       v-if="store.error"
       class="aiv-error"
@@ -371,6 +402,12 @@ defineExpose({ clientKey });
   border-color: var(--ts-warning, #f0c040);
   background: var(--ts-warning-bg, rgba(240, 192, 64, 0.05));
 }
+.aiv-card-accent {
+  border-color: var(--ts-link, #6db3ff);
+  background:
+    linear-gradient(135deg, rgba(109, 179, 255, 0.12), rgba(109, 179, 255, 0.02)),
+    var(--ts-card-bg, #1a1a1a);
+}
 .aiv-row {
   display: flex;
   align-items: center;
@@ -483,5 +520,23 @@ defineExpose({ clientKey });
   margin: 0;
   font-size: 0.85rem;
   color: var(--ts-error, #f55);
+}
+.aiv-workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.aiv-workbench-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ts-card-border, #333);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.85rem;
+}
+.aiv-workbench-item span {
+  color: var(--ts-text-muted, #888);
 }
 </style>

@@ -560,20 +560,63 @@ fn resolve_headless_mcp_port() -> u16 {
         .unwrap_or(HEADLESS_MCP_PORT)
 }
 
-/// Load a shared MCP seed file from `<data_dir>/shared/`, falling back to the
-/// compiled-in repository default when the runtime shared dataset is absent.
-fn load_mcp_seed_text(data_dir: &std::path::Path, file_name: &str, fallback: &str) -> String {
-    let shared_path = data_dir.join("shared").join(file_name);
+/// Load a shared MCP seed file from a resolved shared seed directory,
+/// falling back to the compiled-in repository default when unavailable.
+fn load_mcp_seed_text(shared_dir: Option<&std::path::Path>, file_name: &str, fallback: &str) -> String {
+    let Some(dir) = shared_dir else {
+        return fallback.to_string();
+    };
+    let shared_path = dir.join(file_name);
     std::fs::read_to_string(shared_path).unwrap_or_else(|_| fallback.to_string())
+}
+
+/// Resolve where shared MCP seed data should be loaded from.
+///
+/// Priority:
+/// 1. `TERRANSOUL_MCP_SHARED_DIR` (when set)
+/// 2. `<data_dir>/shared` (runtime colocated seed)
+/// 3. `<cwd>/mcp-data/shared` (repo checkout during local dev/release runs)
+///
+/// Returns `None` when no on-disk shared directory exists; callers should then
+/// use compiled-in seed defaults.
+fn resolve_mcp_shared_seed_dir(data_dir: &std::path::Path) -> Option<PathBuf> {
+    if let Ok(explicit) = std::env::var("TERRANSOUL_MCP_SHARED_DIR") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            if path.is_dir() {
+                return Some(path);
+            }
+            eprintln!(
+                "[mcp] warning: TERRANSOUL_MCP_SHARED_DIR is set but not a directory: {}",
+                path.display()
+            );
+        }
+    }
+
+    let runtime_shared = data_dir.join("shared");
+    if runtime_shared.is_dir() {
+        return Some(runtime_shared);
+    }
+
+    let repo_shared = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("mcp-data")
+        .join("shared");
+    if repo_shared.is_dir() {
+        return Some(repo_shared);
+    }
+
+    None
 }
 
 /// Apply seed data and pending migrations to the MCP data directory.
 ///
 /// On **first run** (no existing `memory.db`):
 /// 1. Copies `brain_config.json` and `app_settings.json` from the
-///    committed `mcp-data/shared/` dataset (or compiled fallback).
+///    resolved shared dataset (or compiled fallback).
 /// 2. Creates `memory.db` with the canonical schema.
-/// 3. Runs all seed migrations from `mcp-data/shared/migrations/`.
+/// 3. Runs all seed migrations from the resolved `shared/migrations/`.
 ///
 /// On **subsequent runs** (existing `memory.db`):
 /// 1. Ensures the `seed_migrations` tracking table exists.
@@ -584,16 +627,22 @@ fn load_mcp_seed_text(data_dir: &std::path::Path, file_name: &str, fallback: &st
 fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     let db_path = data_dir.join("memory.db");
     let first_run = !db_path.exists();
+    let shared_dir = resolve_mcp_shared_seed_dir(data_dir);
 
     if first_run {
         eprintln!("[mcp] first run detected — creating memory.db");
+    }
+    if let Some(dir) = shared_dir.as_deref() {
+        eprintln!("[mcp] seed shared dir: {}", dir.display());
+    } else {
+        eprintln!("[mcp] seed shared dir: <compiled fallback>");
     }
 
     // Write config files (only if missing)
     let brain_cfg_path = data_dir.join("brain_config.json");
     if !brain_cfg_path.exists() {
         let seed_brain_cfg = load_mcp_seed_text(
-            data_dir,
+            shared_dir.as_deref(),
             "brain_config.json",
             include_str!("../../mcp-data/shared/brain_config.json"),
         );
@@ -605,7 +654,7 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     let app_cfg_path = data_dir.join("app_settings.json");
     if !app_cfg_path.exists() {
         let seed_app_cfg = load_mcp_seed_text(
-            data_dir,
+            shared_dir.as_deref(),
             "app_settings.json",
             include_str!("../../mcp-data/shared/app_settings.json"),
         );
@@ -630,8 +679,11 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     }
 
     // Run versioned seed migrations
-    let shared_dir = data_dir.join("shared");
-    match memory::seed_migrations::run_all(&conn, &shared_dir) {
+    let migration_shared_dir = shared_dir
+        .as_deref()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| data_dir.join("shared"));
+    match memory::seed_migrations::run_all(&conn, &migration_shared_dir) {
         Ok((applied, version)) => {
             if applied > 0 {
                 eprintln!("[mcp] seed migrations: applied {applied} new, now at v{version:03}");
@@ -1492,11 +1544,24 @@ pub fn run() {
                         eprintln!("[mcp-app] warning: failed to write .vscode/.mcp-token: {e}");
                     }
 
+                    let lan_public_read_only = app_state_inner
+                        .app_settings
+                        .lock()
+                        .ok()
+                        .is_some_and(|settings| {
+                            settings.lan_enabled
+                                && matches!(
+                                    settings.lan_auth_mode,
+                                    crate::settings::LanAuthMode::PublicReadOnly
+                                )
+                        });
+
                     match ai_integrations::mcp::start_server_with_activity(
                         app_state_inner.clone(),
                         HEADLESS_MCP_PORT,
                         token.clone(),
                         false,
+                        lan_public_read_only,
                         Some(app_handle),
                     )
                     .await
@@ -1741,7 +1806,18 @@ mod mcp_window_tests {
 
 #[cfg(test)]
 mod mcp_seed_tests {
-    use super::{load_mcp_seed_text, seed_mcp_data};
+    use super::{load_mcp_seed_text, resolve_mcp_shared_seed_dir, seed_mcp_data};
+
+    #[test]
+    fn resolve_shared_seed_prefers_runtime_shared() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let runtime_shared = tmp.path().join("shared");
+        std::fs::create_dir_all(&runtime_shared).expect("shared dir");
+
+        let resolved = resolve_mcp_shared_seed_dir(tmp.path()).expect("runtime shared");
+
+        assert_eq!(resolved, runtime_shared);
+    }
 
     #[test]
     fn load_mcp_seed_text_prefers_tracked_shared_file() {
@@ -1750,16 +1826,14 @@ mod mcp_seed_tests {
         std::fs::create_dir_all(&shared).expect("shared dir");
         std::fs::write(shared.join("memory-seed.sql"), "-- shared seed").expect("write seed");
 
-        let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
+        let loaded = load_mcp_seed_text(Some(&shared), "memory-seed.sql", "-- fallback seed");
 
         assert_eq!(loaded, "-- shared seed");
     }
 
     #[test]
     fn load_mcp_seed_text_falls_back_when_shared_file_missing() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-
-        let loaded = load_mcp_seed_text(tmp.path(), "memory-seed.sql", "-- fallback seed");
+        let loaded = load_mcp_seed_text(None, "memory-seed.sql", "-- fallback seed");
 
         assert_eq!(loaded, "-- fallback seed");
     }

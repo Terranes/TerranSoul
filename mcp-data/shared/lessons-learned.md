@@ -106,6 +106,14 @@
   `self_improve_runs.jsonl`, `self_improve_gates.jsonl`, and
   `self_improve_mcp.jsonl` keep only the current file plus `.001`, capped at
   1 MiB per file. Durable lessons must still be mirrored into shared seed SQL.
+- MCP startup on `7423` must enforce target freshness: when
+  `target-mcp/release/terransoul(.exe)` is older than `src-tauri` source/config,
+  do not reuse the running process. Required flow is terminate, rebuild,
+  relaunch, then `/health` check; if termination fails, report a blocker.
+- Shared seed bootstrap must resolve in this order across release/dev/MCP:
+  `TERRANSOUL_MCP_SHARED_DIR` -> `<data_dir>/shared` -> `<cwd>/mcp-data/shared`
+  -> compiled SQL fallback. This prevents dev/release drift when runtime data
+  directories do not contain a `shared/` folder but the repo dataset exists.
 - Per the brain documentation sync rule, any change to brain surface
   (LLM providers, memory store, RAG pipeline, ingestion, embeddings,
   cognitive-kind classification, knowledge graph, decay/GC, brain-gating
@@ -126,6 +134,10 @@
   `mcp-data/shared/memory-seed.sql`, `lessons-learned.md`, or
   `project-index.md` in the same PR. Runtime `memory.db` may be refreshed by
   MCP tools, but tracked shared files are the durable default dataset.
+- **MCP use must be visible**: after `brain_health` and the relevant
+  `brain_search` / `brain_suggest_context`, agents must show a short receipt
+  naming the health/provider result and query topic. Hidden tool calls alone do
+  not complete preflight.
 - **Markdown is not MCP memory**: rules/docs/lessons Markdown can describe
   knowledge for humans, but durable MCP knowledge must also be synced into
   `mcp-data/shared/memory-seed.sql` and connected with `memory_edges`.

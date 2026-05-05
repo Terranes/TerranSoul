@@ -85,6 +85,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -148,6 +149,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -196,6 +198,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,

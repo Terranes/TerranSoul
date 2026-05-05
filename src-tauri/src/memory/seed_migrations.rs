@@ -32,6 +32,8 @@
 use rusqlite::Connection;
 use std::path::Path;
 
+const INIT_SNAPSHOT_FILE: &str = "memory-seed.sql";
+
 /// Ensure the tracking table exists. Safe to call on every startup.
 pub fn ensure_migration_table(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -188,6 +190,36 @@ pub fn compiled_migrations() -> Vec<Migration> {
                 "../../../mcp-data/shared/migrations/013_mcp_self_improve_rolling_logs.sql"
             ),
         ),
+        (
+            "014_target_mcp_refresh_rule",
+            include_str!(
+                "../../../mcp-data/shared/migrations/014_target_mcp_refresh_rule.sql"
+            ),
+        ),
+        (
+            "015_visible_mcp_receipt_rule",
+            include_str!(
+                "../../../mcp-data/shared/migrations/015_visible_mcp_receipt_rule.sql"
+            ),
+        ),
+        (
+            "016_shared_seed_resolution_across_modes",
+            include_str!(
+                "../../../mcp-data/shared/migrations/016_shared_seed_resolution_across_modes.sql"
+            ),
+        ),
+        (
+            "017_init_snapshot_compaction_and_clean_room_gitnexus",
+            include_str!(
+                "../../../mcp-data/shared/migrations/017_init_snapshot_compaction_and_clean_room_gitnexus.sql"
+            ),
+        ),
+        (
+            "018_lan_public_read_only_mode",
+            include_str!(
+                "../../../mcp-data/shared/migrations/018_lan_public_read_only_mode.sql"
+            ),
+        ),
     ];
     entries
         .iter()
@@ -259,6 +291,73 @@ pub fn apply_pending(conn: &Connection, migrations: &[Migration]) -> Result<usiz
     Ok(applied)
 }
 
+fn load_init_snapshot_sql(shared_dir: &Path) -> String {
+    let disk = shared_dir.join(INIT_SNAPSHOT_FILE);
+    std::fs::read_to_string(disk)
+        .unwrap_or_else(|_| include_str!("../../../mcp-data/shared/memory-seed.sql").to_string())
+}
+
+fn init_snapshot_disabled() -> bool {
+    std::env::var("TERRANSOUL_MCP_DISABLE_INIT_SNAPSHOT")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Fresh database fast-path: apply the consolidated shared seed snapshot once,
+/// then mark shipped migrations as already applied so only future deltas run.
+///
+/// This preserves append-only migration history while avoiding replaying every
+/// historical migration script on first boot.
+fn apply_init_snapshot_if_fresh(
+    conn: &Connection,
+    shared_dir: &Path,
+    migrations: &[Migration],
+) -> Result<usize, String> {
+    if init_snapshot_disabled() || migrations.is_empty() {
+        return Ok(0);
+    }
+    if current_version(conn)? != 0 {
+        return Ok(0);
+    }
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let snapshot_sql = load_init_snapshot_sql(shared_dir);
+
+    conn.execute_batch("SAVEPOINT seed_init_snapshot;")
+        .map_err(|e| format!("savepoint init snapshot: {e}"))?;
+
+    match conn.execute_batch(&snapshot_sql) {
+        Ok(()) => {
+            for m in migrations {
+                conn.execute(
+                    "INSERT OR REPLACE INTO seed_migrations (version, name, applied_at, checksum)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![m.version, m.name, now_ms, m.checksum],
+                )
+                .map_err(|e| format!("record snapshot migration v{}: {e}", m.version))?;
+            }
+
+            conn.execute_batch("RELEASE seed_init_snapshot;")
+                .map_err(|e| format!("release init snapshot: {e}"))?;
+            eprintln!(
+                "[seed-migrations] init snapshot applied from {} (tracked through v{:03})",
+                shared_dir.join(INIT_SNAPSHOT_FILE).display(),
+                migrations.last().map(|m| m.version).unwrap_or(0)
+            );
+            Ok(migrations.len())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK TO seed_init_snapshot;");
+            let _ = conn.execute_batch("RELEASE seed_init_snapshot;");
+            Err(format!("init snapshot failed: {e}"))
+        }
+    }
+}
+
 /// Convenience: discover from disk (prefer) or compiled fallback, then
 /// apply all pending. Returns `(applied_count, current_version)`.
 pub fn run_all(conn: &Connection, shared_dir: &Path) -> Result<(usize, u32), String> {
@@ -267,7 +366,20 @@ pub fn run_all(conn: &Connection, shared_dir: &Path) -> Result<(usize, u32), Str
     if migrations.is_empty() {
         migrations = compiled_migrations();
     }
-    let applied = apply_pending(conn, &migrations)?;
+
+    let mut applied = 0usize;
+    if current_version(conn)? == 0 {
+        match apply_init_snapshot_if_fresh(conn, shared_dir, &migrations) {
+            Ok(n) => applied += n,
+            Err(e) => {
+                // Snapshot is an optimization path. Fall back to replaying
+                // numbered migrations to preserve boot reliability.
+                eprintln!("[seed-migrations] warning: {e}; falling back to numbered migrations");
+            }
+        }
+    }
+
+    applied += apply_pending(conn, &migrations)?;
     let version = current_version(conn)?;
     Ok((applied, version))
 }
@@ -383,6 +495,21 @@ mod tests {
 
         // Re-running is a no-op.
         let again = apply_pending(&conn, &migrations).unwrap();
+        assert_eq!(again, 0);
+    }
+
+    #[test]
+    fn init_snapshot_marks_all_migrations_on_fresh_db() {
+        let conn = mem_conn();
+        let migrations = compiled_migrations();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let marked = apply_init_snapshot_if_fresh(&conn, tmp.path(), &migrations).unwrap();
+        assert_eq!(marked, migrations.len());
+        assert_eq!(current_version(&conn).unwrap(), migrations.len() as u32);
+
+        // Re-running on non-fresh DB is a no-op.
+        let again = apply_init_snapshot_if_fresh(&conn, tmp.path(), &migrations).unwrap();
         assert_eq!(again, 0);
     }
 }

@@ -32,6 +32,8 @@ export interface AppSettings {
   mobile_notifications_enabled?: boolean;
   /** When true, MCP/gRPC brain servers may bind to LAN interfaces for local sharing. */
   lan_enabled?: boolean;
+  /** LAN auth mode: token-required or public read-only. */
+  lan_auth_mode?: 'token_required' | 'public_read_only';
   /** Minimum observed duration before mobile local notifications fire. */
   mobile_notification_threshold_ms?: number;
   /** Poll interval for the paired-mobile notification watcher. */
@@ -86,6 +88,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   contextual_retrieval: false,
   late_chunking: false,
   lan_enabled: false,
+  lan_auth_mode: 'token_required',
   mobile_notifications_enabled: true,
   mobile_notification_threshold_ms: 30_000,
   mobile_notification_poll_ms: 10_000,

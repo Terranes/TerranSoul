@@ -18,7 +18,11 @@ before planning, before implementing. Skipping this is a violation.**
    then proceed to step 2.
 4. **If MCP cannot start** (build failure, missing deps) — record the exact
    blocker in your progress report. Do NOT silently skip this step.
-5. **After completing work** — sync durable lessons into
+5. **Show the MCP receipt** — immediately after MCP preflight succeeds, send a
+   user-visible progress update naming the health result/provider and the
+   `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are
+   not enough; if the user cannot see the receipt, the preflight is incomplete.
+6. **After completing work** — sync durable lessons into
    `mcp-data/shared/memory-seed.sql`.
 
 > The workspace auto-starts MCP on folder open via a VS Code task

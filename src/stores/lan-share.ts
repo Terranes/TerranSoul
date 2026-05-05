@@ -10,13 +10,15 @@ export interface DiscoveredBrain {
   memory_count: number;
   read_only: boolean;
   hostname: string;
+  token_required: boolean;
 }
 
 export interface RemoteBrainConnection {
   id: string;
   host: string;
   port: number;
-  token: string;
+  token: string | null;
+  token_required: boolean;
   brain_name: string;
   connected: boolean;
 }
@@ -42,6 +44,8 @@ export interface LanShareStatus {
   brain_name: string | null;
   port: number | null;
   token: string | null;
+  auth_mode: 'token_required' | 'public_read_only';
+  token_required: boolean;
   connected_brains: number;
   connections: RemoteBrainConnection[];
 }
@@ -62,6 +66,7 @@ export const useLanShareStore = defineStore('lan-share', () => {
   const hostBrainName = ref('');
   const hostPort = ref<number | null>(null);
   const hostToken = ref<string | null>(null);
+  const hostAuthMode = ref<LanShareStatus['auth_mode']>('token_required');
   const discovering = ref(false);
   const discovered = ref<DiscoveredBrain[]>([]);
   const connections = ref<RemoteBrainConnection[]>([]);
@@ -89,9 +94,10 @@ export const useLanShareStore = defineStore('lan-share', () => {
         brainName,
       });
       hosting.value = true;
-      hostBrainName.value = brainName;
+      hostBrainName.value = status.brain_name ?? brainName;
       hostPort.value = status.port ?? null;
       hostToken.value = status.token ?? null;
+      hostAuthMode.value = status.auth_mode;
     } catch (e) {
       error.value = String(e);
       throw e;
@@ -109,6 +115,7 @@ export const useLanShareStore = defineStore('lan-share', () => {
       hostBrainName.value = '';
       hostPort.value = null;
       hostToken.value = null;
+      hostAuthMode.value = 'token_required';
     } catch (e) {
       error.value = String(e);
     }
@@ -146,7 +153,8 @@ export const useLanShareStore = defineStore('lan-share', () => {
   async function connect(
     host: string,
     port: number,
-    token: string,
+    token?: string | null,
+    tokenRequired?: boolean,
     brainName?: string,
   ): Promise<RemoteBrainConnection | null> {
     error.value = null;
@@ -155,7 +163,8 @@ export const useLanShareStore = defineStore('lan-share', () => {
       const conn = await invoke<RemoteBrainConnection>('lan_share_connect', {
         host,
         port,
-        token,
+        token: token ?? null,
+        tokenRequired: tokenRequired ?? Boolean(token?.trim()),
         brainName: brainName ?? null,
       });
       connections.value.push(conn);
@@ -236,6 +245,7 @@ export const useLanShareStore = defineStore('lan-share', () => {
       hosting.value = status.hosting;
       hostPort.value = status.port ?? null;
       hostToken.value = status.token ?? null;
+      hostAuthMode.value = status.auth_mode;
       connections.value = status.connections;
     } catch (e) {
       error.value = String(e);
@@ -248,6 +258,7 @@ export const useLanShareStore = defineStore('lan-share', () => {
     hostBrainName,
     hostPort,
     hostToken,
+    hostAuthMode,
     discovering,
     discovered,
     connections,

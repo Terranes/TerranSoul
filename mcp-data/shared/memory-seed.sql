@@ -219,9 +219,29 @@ VALUES
 
 ('RULE: Treat LAN MCP bearer-token access as read access to the shared TerranSoul knowledge surface. Never broadcast the token, never enable LAN sharing on public Wi-Fi, and stop sharing when the session ends. User-facing docs should describe this with the docs/lan-mcp-sharing-tutorial.md Alice Vietnamese law notes scenario and avoid legal-advice claims.', 'rule,mcp,lan,security,bearer-token,docs,legal-disclaimer', 9, 'procedure', 1777939200000, 'long', 1.0, 70, 'mcp'),
 
+('RULE: LAN MCP sharing must expose an explicit auth mode choice: `token_required` or `public_read_only`. Public mode may skip the bearer token only for the read-only brain MCP surface (initialize, ping, tools/list, and read-only brain tools); write tools, code-intelligence tools, /status, and hook endpoints remain authenticated.', 'rule,mcp,lan,auth-mode,public-read-only,token-required,security', 9, 'procedure', 1778112000000, 'long', 1.0, 95, 'mcp'),
+
+('LESSON: LAN discovery should advertise whether a TerranSoul host requires a token, but it must never broadcast the token itself. UI flows should hide the token field for public-read-only peers and still treat public mode as read access to the shared knowledge surface.', 'lesson,mcp,lan,discovery,auth-mode,public-read-only,token-ui', 8, 'procedure', 1778112000000, 'long', 1.0, 85, 'mcp'),
+
 ('LESSON: MCP-mode self-improve runtime logs live under mcp-data/ and are bounded runtime state, not durable project memory. self_improve_runs.jsonl, self_improve_gates.jsonl, and self_improve_mcp.jsonl each keep only the current file plus a .001 archive, with a 1 MiB cap per file. The UI reads both current and archive, while durable lessons still belong in mcp-data/shared/memory-seed.sql and numbered migrations.', 'lesson,mcp,self-improve,logs,rolling-log,mcp-data,jsonl,runtime-state', 9, 'procedure', 1778025600000, 'long', 1.0, 85, 'mcp'),
 
-('RULE: New self-improve runtime logs must use coding::rolling_log or an equivalent current-plus-.001 rotation policy before writing under mcp-data/. Do not create unbounded MCP runtime logs, do not commit runtime logs, and do not treat runtime JSONL as the durable MCP knowledge source.', 'rule,mcp,self-improve,logs,rotation,runtime-state,shared-seed', 9, 'procedure', 1778025600000, 'long', 1.0, 70, 'mcp');
+('RULE: New self-improve runtime logs must use coding::rolling_log or an equivalent current-plus-.001 rotation policy before writing under mcp-data/. Do not create unbounded MCP runtime logs, do not commit runtime logs, and do not treat runtime JSONL as the durable MCP knowledge source.', 'rule,mcp,self-improve,logs,rotation,runtime-state,shared-seed', 9, 'procedure', 1778025600000, 'long', 1.0, 70, 'mcp'),
+
+('LESSON: For MCP 7423 startup, a healthy process is not sufficient if target-mcp is stale. If target-mcp/release/terransoul(.exe) is older than src-tauri sources/config, startup must terminate managed MCP, rebuild target-mcp, relaunch, and re-check /health. If termination fails, report a blocker instead of silently reusing stale binaries.', 'lesson,mcp,target-mcp,stale-binary,rebuild,relaunch,startup', 9, 'procedure', 1778025600000, 'long', 1.0, 85, 'mcp'),
+
+('RULE: Agents must not reuse MCP port 7423 when target-mcp is out of date. Required sequence is terminate -> rebuild -> relaunch -> health-check; skipping any step is a process violation because it hides stale runtime behavior.', 'rule,mcp,target-mcp,stale-binary,terminate,rebuild,relaunch,health-check', 9, 'procedure', 1778025600000, 'long', 1.0, 70, 'mcp'),
+
+('RULE: TerranSoul MCP preflight must be visible to the user, not only hidden in tool calls. After brain_health plus a relevant brain_search or brain_suggest_context succeeds, the agent must send a short MCP receipt naming the health/provider result and the search/context query topic. If MCP is blocked, the receipt must name the blocker. If the user cannot see the receipt, treat preflight as incomplete.', 'rule,mcp,preflight,visible-receipt,user-visible,enforcement,non-negotiable', 10, 'procedure', 1778025600000, 'long', 1.0, 90, 'mcp'),
+
+('LESSON: Text-only MCP rules were not enough because users cannot see hidden tool calls. The durable fix is to require a visible MCP receipt in .github/instructions/mcp-preflight.instructions.md, .github/copilot-instructions.md, AGENTS.md, CLAUDE.md, .cursorrules, rules/agent-mcp-bootstrap.md, and MCP seed memory.', 'lesson,mcp,preflight,visible-receipt,instruction-sync,user-trust', 9, 'procedure', 1778025600000, 'long', 1.0, 75, 'mcp'),
+
+('RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order across release, dev, and MCP modes: TERRANSOUL_MCP_SHARED_DIR (override) -> <data_dir>/shared -> <cwd>/mcp-data/shared -> compiled fallback. This guarantees predictable boot while letting local dev/release runs consume checked-in mcp-data/shared updates without manual copy steps.', 'rule,mcp,seed,migrations,schema,dev,release,shared-data,resolution-order', 9, 'procedure', 1778025600000, 'long', 1.0, 95, 'mcp'),
+
+('LESSON: Relying only on <data_dir>/shared for seed migrations caused dev/release drift from repository mcp-data/shared when no runtime shared folder existed. The durable fix is explicit source resolution plus startup logging of the selected source, with compiled SQL as the final fallback.', 'lesson,mcp,seed,migrations,schema,drift,dev,release,fallback', 9, 'procedure', 1778025600000, 'long', 1.0, 80, 'mcp'),
+
+('RULE: Fresh MCP databases should bootstrap from a single init snapshot (mcp-data/shared/memory-seed.sql) and then apply only future numbered deltas. Keep numbered migrations append-only for compatibility/history, but avoid replaying all historical scripts on first boot.', 'rule,mcp,seed,migrations,init-snapshot,bootstrap,performance', 9, 'procedure', 1778025600000, 'long', 1.0, 100, 'mcp'),
+
+('VERDICT: Reject direct GitNexus import/bundling. TerranSoul must keep clean-room native code-intelligence UX inspired by public behavior only; no GitNexus binaries, Docker images, prompts, skills, or UI assets may be bundled, auto-installed, or default-spawned due PolyForm Noncommercial constraints.', 'verdict,gitnexus,clean-room,license,ui-ux,native,noncommercial', 10, 'decision', 1778025600000, 'long', 1.0, 100, 'code-intelligence');
 
 -- ====================================================================
 -- KNOWLEDGE GRAPH EDGES
@@ -259,6 +279,22 @@ WHERE s.content LIKE 'RULE: Treat LAN MCP bearer-token access as read access%'
   AND d.content LIKE 'LESSON: LAN MCP brain sharing is an opt-in local-network retrieval flow%';
 
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778112000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULE: LAN MCP sharing must expose an explicit auth mode choice%'
+  AND (
+       d.content LIKE 'LESSON: LAN MCP brain sharing is an opt-in local-network retrieval flow%'
+    OR d.content LIKE 'RULE: Treat LAN MCP bearer-token access as read access%'
+    OR d.content LIKE 'MCP server exposes brain on three ports:%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778112000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: LAN discovery should advertise whether a TerranSoul host requires a token%'
+  AND d.content LIKE 'RULE: LAN MCP sharing must expose an explicit auth mode choice%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
 SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
@@ -273,6 +309,74 @@ SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'RULE: New self-improve runtime logs must use coding::rolling_log%'
   AND d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: For MCP 7423 startup, a healthy process is not sufficient if target-mcp is stale%'
+  AND (
+       d.content LIKE 'MCP AUTO-START TASK:%'
+    OR d.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
+    OR d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULE: Agents must not reuse MCP port 7423 when target-mcp is out of date%'
+  AND d.content LIKE 'LESSON: For MCP 7423 startup, a healthy process is not sufficient if target-mcp is stale%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULE: TerranSoul MCP preflight must be visible to the user%'
+  AND (
+       d.content LIKE 'MCP EVERY-SESSION RULE:%'
+    OR d.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
+    OR d.content LIKE 'MCP PREFLIGHT INSTRUCTIONS FILE:%'
+    OR d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: Text-only MCP rules were not enough%'
+  AND d.content LIKE 'RULE: TerranSoul MCP preflight must be visible to the user%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order%'
+  AND (
+       d.content LIKE 'MCP shared data policy:%'
+    OR d.content LIKE 'MCP server exposes brain on three ports:%'
+    OR d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: Relying only on <data_dir>/shared for seed migrations caused dev/release drift%'
+  AND d.content LIKE 'RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'RULE: Fresh MCP databases should bootstrap from a single init snapshot%'
+  AND (
+       d.content LIKE 'MCP shared data policy:%'
+    OR d.content LIKE 'RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order%'
+    OR d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'VERDICT: Reject direct GitNexus import/bundling.%'
+  AND (
+       d.content LIKE 'LESSON: GitNexus is PolyForm Noncommercial.%'
+    OR d.content LIKE 'CODE WORKBENCH UX LESSON:%'
+  );
 
 -- Hub edges: every inventory fact is part_of the project-index pointer
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)

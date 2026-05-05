@@ -13,8 +13,8 @@
 //!
 //! ## Security model
 //! - Discovery only reveals existence/metadata (name, port, memory count)
-//! - Bearer token required to actually query the remote brain via HTTP MCP
-//! - Token shared out-of-band (displayed in UI, QR code, etc.)
+//! - Hosts may require a bearer token or explicitly allow public read-only access
+//! - Token mode shares credentials out-of-band (displayed in UI, QR code, etc.)
 //! - Read-only by default; host can optionally allow writes
 
 use std::collections::HashMap;
@@ -51,6 +51,8 @@ pub struct DiscoveredBrain {
     pub read_only: bool,
     /// Hostname of the advertising machine.
     pub hostname: String,
+    /// Whether a bearer token is required to connect.
+    pub token_required: bool,
 }
 
 /// UDP broadcast payload (JSON-serialized after the MAGIC header).
@@ -70,6 +72,8 @@ struct DiscoveryAnnouncement {
     pub read_only: bool,
     /// Machine hostname.
     pub hostname: String,
+    /// Whether bearer auth is required for querying.
+    pub token_required: bool,
 }
 
 /// A connection to a remote TerranSoul brain.
@@ -81,8 +85,10 @@ pub struct RemoteBrainConnection {
     pub host: String,
     /// Remote MCP port.
     pub port: u16,
-    /// Bearer token for authentication.
-    pub token: String,
+    /// Bearer token for authentication when required.
+    pub token: Option<String>,
+    /// Whether the remote host expects a bearer token.
+    pub token_required: bool,
     /// Display name of the remote brain.
     pub brain_name: String,
     /// Whether the connection is active.
@@ -125,6 +131,7 @@ impl LanShareAdvertiser {
         provider: &str,
         memory_count: u32,
         read_only: bool,
+        token_required: bool,
     ) -> Result<Self, String> {
         let hostname = std::env::var("COMPUTERNAME")
             .or_else(|_| std::env::var("HOSTNAME"))
@@ -138,6 +145,7 @@ impl LanShareAdvertiser {
             memory_count,
             read_only,
             hostname,
+            token_required,
         };
 
         let payload_json =
@@ -292,6 +300,7 @@ fn parse_discovery_packet(data: &[u8], addr: SocketAddr) -> Option<DiscoveredBra
         memory_count: announcement.memory_count,
         read_only: announcement.read_only,
         hostname: announcement.hostname,
+        token_required: announcement.token_required,
     })
 }
 
@@ -299,11 +308,11 @@ fn parse_discovery_packet(data: &[u8], addr: SocketAddr) -> Option<DiscoveredBra
 pub struct RemoteBrainClient {
     client: reqwest::Client,
     base_url: String,
-    token: String,
+    token: Option<String>,
 }
 
 impl RemoteBrainClient {
-    pub fn new(host: &str, port: u16, token: &str) -> Self {
+    pub fn new(host: &str, port: u16, token: Option<&str>) -> Self {
         Self {
             client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(5))
@@ -311,7 +320,18 @@ impl RemoteBrainClient {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             base_url: format!("http://{}:{}", host, port),
-            token: token.to_string(),
+            token: token.map(ToOwned::to_owned),
+        }
+    }
+
+    fn with_auth(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> reqwest::RequestBuilder {
+        if let Some(token) = self.token.as_deref() {
+            builder.header("Authorization", format!("Bearer {token}"))
+        } else {
+            builder
         }
     }
 
@@ -351,11 +371,12 @@ impl RemoteBrainClient {
         });
 
         let resp = self
-            .client
-            .post(format!("{}/mcp", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .json(&rpc_body)
+            .with_auth(
+                self.client
+                    .post(format!("{}/mcp", self.base_url))
+                    .header("Content-Type", "application/json")
+                    .json(&rpc_body),
+            )
             .send()
             .await
             .map_err(|e| format!("Remote search request failed: {e}"))?;
@@ -395,11 +416,12 @@ impl RemoteBrainClient {
         });
 
         let resp = self
-            .client
-            .post(format!("{}/mcp", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .json(&rpc_body)
+            .with_auth(
+                self.client
+                    .post(format!("{}/mcp", self.base_url))
+                    .header("Content-Type", "application/json")
+                    .json(&rpc_body),
+            )
             .send()
             .await
             .map_err(|e| format!("Remote get_entry request failed: {e}"))?;
@@ -447,11 +469,12 @@ impl RemoteBrainClient {
         });
 
         let resp = self
-            .client
-            .post(format!("{}/mcp", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .json(&rpc_body)
+            .with_auth(
+                self.client
+                    .post(format!("{}/mcp", self.base_url))
+                    .header("Content-Type", "application/json")
+                    .json(&rpc_body),
+            )
             .send()
             .await
             .map_err(|e| format!("Remote ingest request failed: {e}"))?;
@@ -509,6 +532,7 @@ mod tests {
             memory_count: 150,
             read_only: true,
             hostname: "HR-PC".to_string(),
+            token_required: true,
         };
         let json = serde_json::to_string(&brain).unwrap();
         assert!(json.contains("HR Company Rules"));
@@ -517,9 +541,9 @@ mod tests {
 
     #[test]
     fn remote_brain_client_builds_url() {
-        let client = RemoteBrainClient::new("192.168.1.100", 7421, "test-token");
+        let client = RemoteBrainClient::new("192.168.1.100", 7421, Some("test-token"));
         assert_eq!(client.base_url, "http://192.168.1.100:7421");
-        assert_eq!(client.token, "test-token");
+        assert_eq!(client.token.as_deref(), Some("test-token"));
     }
 
     #[test]
@@ -540,6 +564,7 @@ mod tests {
             memory_count: 42,
             read_only: true,
             hostname: "test-pc".to_string(),
+            token_required: true,
         };
         let json = serde_json::to_vec(&announcement).unwrap();
         let mut packet = Vec::new();
@@ -580,6 +605,7 @@ mod tests {
             memory_count: 0,
             read_only: true,
             hostname: "future-pc".to_string(),
+            token_required: false,
         };
         let json = serde_json::to_vec(&announcement).unwrap();
         let mut packet = Vec::new();

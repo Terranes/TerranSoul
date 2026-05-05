@@ -1,6 +1,7 @@
 {
   "auto_start_mcp": false,
   "lan_enabled": false,
+  "lan_auth_mode": "token_required",
   "relevance_threshold": 0.05,
   "contextual_retrieval": true,
   "late_chunking": false,

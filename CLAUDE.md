@@ -16,7 +16,8 @@
 2. If healthy → `brain_search` / `brain_suggest_context` with the current task before broad repo searches.
 3. If not healthy → run `node scripts/copilot-start-mcp.mjs`, wait, retry.
 4. If MCP cannot start → record the blocker. Do NOT silently skip.
-5. After work → sync lessons into `mcp-data/shared/memory-seed.sql`.
+5. After MCP succeeds → show a user-visible MCP receipt with health/provider and the `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are not enough.
+6. After work → sync lessons into `mcp-data/shared/memory-seed.sql`.
 
 ---
 

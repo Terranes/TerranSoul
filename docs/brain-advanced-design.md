@@ -2913,6 +2913,13 @@ instruction sync, docs sync, credits/licensing, no-mock production code, LLM
 decision routing, and validation) so agents can retrieve operational rules from
 MCP before editing instead of relying on a full manual scan of `rules/`.
 
+Migration/schema bootstrap source resolution is unified across release/dev/MCP
+app modes: create canonical schema first, then apply pending seed migrations
+from the first available source in this order: `TERRANSOUL_MCP_SHARED_DIR`,
+`<data_dir>/shared`, `<cwd>/mcp-data/shared`, then compiled-in SQL fallback.
+This keeps release builds deterministic while letting local dev/release runs
+consume the checked-in `mcp-data/shared/` dataset without repackaging.
+
 **Capability profile.** `GatewayCaps::default()` remains read-only for tests and
 future embedders, but explicit MCP transports use `mcp::transport_caps()` with
 `brain_read`, `brain_write`, and `code_read` enabled. HTTP MCP calls are still
@@ -2993,9 +3000,13 @@ instead of trying to spawn a third-party sidecar.
   `$APP_DATA/mcp-token.txt` with `0600` permissions on Unix.
 - **Loopback by default, LAN by explicit opt-in** — binds to `127.0.0.1` unless
   the user enables LAN brain sharing, which allows MCP/gRPC services to bind to
-  LAN interfaces and advertise discovery metadata on UDP `7424`. The bearer
-  token is never broadcast; peers authenticate over MCP HTTP after receiving the
-  token out-of-band. See the illustrated
+  LAN interfaces and advertise discovery metadata on UDP `7424`. LAN sharing now
+  has two explicit auth modes: `token_required` and `public_read_only`. In
+  token mode, the bearer token is never broadcast and peers authenticate over
+  MCP HTTP after receiving it out-of-band. In public mode, the host exposes only
+  the read-only brain MCP surface (`initialize`, `ping`, `tools/list`, and the
+  read-only brain tools) without a token; write tools, code-intelligence tools,
+  `/status`, and hook endpoints remain authenticated. See the illustrated
   [LAN MCP sharing tutorial](lan-mcp-sharing-tutorial.md).
 - **Transport-scoped write access** — the gateway default stays read-only, but
   authenticated HTTP MCP and trusted stdio MCP use `GatewayCaps::READ_WRITE` so

@@ -38,3 +38,11 @@ logs.
 
 This split lets the repository share useful MCP knowledge without leaking
 secrets or machine-local agent state.
+
+## Seed bootstrap model
+
+Fresh databases use a consolidated init snapshot from
+`mcp-data/shared/memory-seed.sql` first, then apply only future numbered
+delta migrations. Historical migration files remain append-only for
+compatibility and auditability, but first boot no longer needs to replay every
+historical script.

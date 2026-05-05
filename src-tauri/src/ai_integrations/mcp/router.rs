@@ -32,6 +32,7 @@ pub struct McpRouterState {
     pub gw: Arc<dyn BrainGateway>,
     pub caps: GatewayCaps,
     pub token: String,
+    pub lan_public_read_only: bool,
     pub port: u16,
     pub seed_loaded: bool,
     pub activity: Option<McpActivityReporter>,
@@ -243,8 +244,12 @@ async fn handle_request(
 
     let response_id = req.id.clone().unwrap_or(Value::Null);
 
-    // Bearer-token authentication. Enforce before notification dispatch too.
-    if !validate_auth(&headers, &state.token) {
+    let authed = validate_auth(&headers, &state.token);
+    let public_allowed = state.lan_public_read_only && is_public_read_only_request(&req);
+
+    // Bearer-token authentication. Public LAN mode may expose a restricted,
+    // read-only subset without the token.
+    if !authed && !public_allowed {
         let resp = JsonRpcResponse::err(response_id, -32000, "unauthorized".into());
         return (StatusCode::UNAUTHORIZED, Json(resp)).into_response();
     }
@@ -283,9 +288,15 @@ async fn handle_request(
         None
     };
 
+    let effective_caps = if authed {
+        state.caps
+    } else {
+        GatewayCaps::default()
+    };
+
     let resp = dispatch_method_with_state(
         state.gw.as_ref(),
-        &state.caps,
+        &effective_caps,
         &req.method,
         params,
         id,
@@ -432,6 +443,34 @@ fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {
         .is_some_and(|t| t == expected)
 }
 
+fn is_public_read_only_request(req: &JsonRpcRequest) -> bool {
+    match req.method.as_str() {
+        "initialize" | "ping" => true,
+        "tools/list" => true,
+        "tools/call" => req
+            .params
+            .as_ref()
+            .and_then(|params| params.get("name"))
+            .and_then(Value::as_str)
+            .is_some_and(is_public_tool_name),
+        _ => false,
+    }
+}
+
+fn is_public_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "brain_search"
+            | "brain_get_entry"
+            | "brain_list_recent"
+            | "brain_kg_neighbors"
+            | "brain_summarize"
+            | "brain_suggest_context"
+            | "brain_health"
+            | "brain_failover_status"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,6 +500,28 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Basic abc123".parse().unwrap());
         assert!(!validate_auth(&headers, "abc123"));
+    }
+
+    #[test]
+    fn public_read_only_request_allows_brain_search() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({ "name": "brain_search", "arguments": { "query": "hello" } })),
+        };
+        assert!(is_public_read_only_request(&req));
+    }
+
+    #[test]
+    fn public_read_only_request_denies_ingest() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({ "name": "brain_ingest_url", "arguments": { "url": "https://example.com" } })),
+        };
+        assert!(!is_public_read_only_request(&req));
     }
 
     #[test]

@@ -155,14 +155,19 @@ project memory layer:
    `libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev
    librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
    pkg-config`.
-3. **During self-improve work**, ingest durable lessons back into the MCP
+3. **Show a visible MCP receipt.** Immediately after preflight succeeds, send
+   a short user-visible progress update with the health/provider result and the
+   `brain_search` / `brain_suggest_context` topic used. Tool calls alone are
+   not enough; if the user cannot see the receipt, the MCP preflight is
+   incomplete.
+4. **During self-improve work**, ingest durable lessons back into the MCP
     seed surface: update `mcp-data/shared/memory-seed.sql` when the
    session discovers knowledge that future agents must retain. The
    Obsidian vault at `mcp-data/wiki/` is auto-generated from the brain
    by the maintenance scheduler — do not edit it by hand. Do not
    commit ignored runtime files (`memory.db*`, token, vector indexes,
    logs, locks, sessions, worktrees).
-4. **After completing a chunk**, archive it in
+5. **After completing a chunk**, archive it in
    `rules/completion-log.md`, remove it from `rules/milestones.md`, and
    if the chunk changed MCP/brain behaviour, update the shared seed/docs
    so the next `npm run mcp` session can recover the decision without
@@ -199,6 +204,22 @@ Every AI coding agent in this repo follows the same startup procedure:
    future MCP sessions. Never force-add ignored runtime files such as
    `mcp-token.txt`, `memory.db*`, indexes, logs, locks, sessions, or
    worktrees.
+
+### target-mcp freshness rule (mandatory)
+
+If `target-mcp/release/terransoul(.exe)` is older than MCP Rust sources or
+config (`src-tauri/src/**`, `src-tauri/Cargo*.toml`, `src-tauri/build.rs`,
+`src-tauri/tauri.conf.json`), agents must treat it as stale and must not reuse
+an already-healthy `7423` process.
+
+Required behavior:
+
+1. Terminate the managed MCP `7423` process.
+2. Rebuild `target-mcp`.
+3. Relaunch MCP and wait for `/health`.
+
+If termination fails, exit with a blocker message instead of silently
+continuing on stale binaries.
 
 ## 6. Seed data — pre-populated brain on first run
 

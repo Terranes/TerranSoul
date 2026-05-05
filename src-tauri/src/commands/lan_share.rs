@@ -24,6 +24,10 @@ pub struct LanShareStatus {
     pub port: Option<u16>,
     /// Bearer token for clients to connect (when hosting).
     pub token: Option<String>,
+    /// Selected LAN auth mode for the host.
+    pub auth_mode: String,
+    /// Whether remote clients must provide a token.
+    pub token_required: bool,
     /// Number of connected remote brains.
     pub connected_brains: u32,
     /// Connected remote brain info.
@@ -40,19 +44,27 @@ pub async fn lan_share_start(
     brain_name: String,
     state: State<'_, AppState>,
 ) -> Result<LanShareStatus, String> {
-    // Verify LAN mode is enabled.
-    {
+    let lan_auth_mode = {
         let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
         if !settings.lan_enabled {
             return Err("LAN mode not enabled — enable lan_enabled in settings first".to_string());
         }
-    }
+        settings.lan_auth_mode
+    };
+    let token_required = matches!(lan_auth_mode, crate::settings::LanAuthMode::TokenRequired);
 
     // Verify MCP server is running.
     let (port, token) = {
         let mcp_guard = state.mcp_server.lock().await;
         match mcp_guard.as_ref() {
-            Some(handle) => (handle.port, handle.token.clone()),
+            Some(handle) => (
+                handle.port,
+                if token_required {
+                    Some(handle.token.clone())
+                } else {
+                    None
+                },
+            ),
             None => {
                 return Err(
                     "MCP server must be running before sharing on LAN. Start it first.".to_string(),
@@ -92,8 +104,15 @@ pub async fn lan_share_start(
         .unwrap_or_else(|| "unknown".to_string());
 
     // Start UDP broadcast advertisement.
-    let advertiser =
-        LanShareAdvertiser::start(&brain_name, port, &provider, memory_count, true).await?;
+    let advertiser = LanShareAdvertiser::start(
+        &brain_name,
+        port,
+        &provider,
+        memory_count,
+        true,
+        token_required,
+    )
+    .await?;
 
     // Store in LAN share state.
     {
@@ -105,7 +124,13 @@ pub async fn lan_share_start(
         hosting: true,
         brain_name: Some(brain_name),
         port: Some(port),
-        token: Some(token),
+        token,
+        auth_mode: match lan_auth_mode {
+            crate::settings::LanAuthMode::TokenRequired => "token_required",
+            crate::settings::LanAuthMode::PublicReadOnly => "public_read_only",
+        }
+        .to_string(),
+        token_required,
         connected_brains: 0,
         connections: Vec::new(),
     })
@@ -172,12 +197,13 @@ pub async fn lan_share_stop_discovery(state: State<'_, AppState>) -> Result<(), 
 pub async fn lan_share_connect(
     host: String,
     port: u16,
-    token: String,
+    token: Option<String>,
+    token_required: Option<bool>,
     brain_name: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<RemoteBrainConnection, String> {
     // Validate connection by checking remote health.
-    let client = RemoteBrainClient::new(&host, port, &token);
+    let client = RemoteBrainClient::new(&host, port, token.as_deref());
     let health = client.health().await?;
 
     let display_name = brain_name.unwrap_or_else(|| {
@@ -192,7 +218,8 @@ pub async fn lan_share_connect(
         id: connection_id.clone(),
         host: host.clone(),
         port,
-        token: token.clone(),
+        token: token.clone().filter(|value| !value.trim().is_empty()),
+        token_required: token_required.unwrap_or_else(|| token.as_ref().is_some_and(|value| !value.trim().is_empty())),
         brain_name: display_name,
         connected: true,
     };
@@ -332,12 +359,29 @@ pub async fn lan_share_status(state: State<'_, AppState>) -> Result<LanShareStat
 
     let (port, token) = if hosting {
         let mcp_guard = state.mcp_server.lock().await;
+        let token_required = state
+            .app_settings
+            .lock()
+            .map_err(|e| e.to_string())?
+            .lan_auth_mode
+            == crate::settings::LanAuthMode::TokenRequired;
         let p = mcp_guard.as_ref().map(|h| h.port);
-        let t = mcp_guard.as_ref().map(|h| h.token.clone());
+        let t = if token_required {
+            mcp_guard.as_ref().map(|h| h.token.clone())
+        } else {
+            None
+        };
         (p, t)
     } else {
         (None, None)
     };
+
+    let lan_auth_mode = state
+        .app_settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .lan_auth_mode;
+    let token_required = lan_auth_mode == crate::settings::LanAuthMode::TokenRequired;
 
     let lan_share = state.lan_share.lock().map_err(|e| e.to_string())?;
     let connections: Vec<RemoteBrainConnection> =
@@ -348,6 +392,12 @@ pub async fn lan_share_status(state: State<'_, AppState>) -> Result<LanShareStat
         brain_name: None,
         port,
         token,
+        auth_mode: match lan_auth_mode {
+            crate::settings::LanAuthMode::TokenRequired => "token_required",
+            crate::settings::LanAuthMode::PublicReadOnly => "public_read_only",
+        }
+        .to_string(),
+        token_required,
         connected_brains: connections.len() as u32,
         connections,
     })
@@ -364,6 +414,8 @@ mod tests {
             brain_name: Some("HR Company Rules".to_string()),
             port: Some(7421),
             token: Some("test-token-123".to_string()),
+            auth_mode: "token_required".to_string(),
+            token_required: true,
             connected_brains: 2,
             connections: vec![],
         };

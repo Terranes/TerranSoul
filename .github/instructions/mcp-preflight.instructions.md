@@ -17,5 +17,17 @@ preflight check. This is not optional. Skipping it is a violation.
 4. If MCP still cannot start, state the exact blocker to the user.
    Do NOT silently proceed without MCP.
 
+## Visible MCP receipt — also mandatory
+
+After the MCP preflight succeeds, the agent MUST tell the user in a short
+progress update that MCP was used. The receipt must include:
+
+- `brain_health` status/provider (or exact HTTP health endpoint used).
+- The `brain_search` / `brain_suggest_context` query topic used.
+- A clear blocker if either call could not run.
+
+Do not bury MCP usage only in hidden tool calls or final summaries. If the
+user cannot see a receipt, treat the preflight as incomplete.
+
 After completing work, sync durable lessons into
 `mcp-data/shared/memory-seed.sql`.

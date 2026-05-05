@@ -157,6 +157,11 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
   let unlistenGate: UnlistenFn | null = null;
   let progressTranscriptQueue: Promise<void> = Promise.resolve();
 
+  function canSubscribeToTauriEvents(): boolean {
+    if (typeof window === 'undefined') return false;
+    return typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== 'undefined';
+  }
+
   /**
    * Static roadmap, mirrored from `rules/milestones.md` Phase 25.
    * Each phase exposes a `status` that reactive computeds may flip when
@@ -503,6 +508,9 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
       unlistenProgress();
       unlistenProgress = null;
     }
+    if (!canSubscribeToTauriEvents()) {
+      return;
+    }
     try {
       unlistenProgress = await listen<SelfImproveProgressEvent>('self-improve-progress', (evt) => {
         const p = evt.payload;
@@ -534,6 +542,9 @@ export const useSelfImproveStore = defineStore('self-improve', () => {
     if (unlistenGate) {
       unlistenGate();
       unlistenGate = null;
+    }
+    if (!canSubscribeToTauriEvents()) {
+      return;
     }
     try {
       unlistenGate = await listen<GateEvent>('self-improve-gate', (evt) => {
