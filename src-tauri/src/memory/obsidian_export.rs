@@ -4,12 +4,16 @@
 //! `<vault_dir>/TerranSoul/<id>-<slug>.md` with YAML frontmatter
 //! containing id, tags, importance, source_url, and created_at.
 //! Idempotent: file mtime drives the "should I rewrite?" decision.
+//!
+//! Optionally uses PARA layout (chunk 33B.9) to organise into
+//! Projects / Areas / Resources / Archive subfolders.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use super::store::MemoryEntry;
+use crate::settings::ObsidianLayout;
 
 /// Maximum slug length (bytes). Prevents absurdly long filenames.
 const MAX_SLUG_LEN: usize = 60;
@@ -139,14 +143,100 @@ pub struct ExportReport {
     pub output_dir: String,
 }
 
+/// PARA category for a memory entry (chunk 33B.9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParaCategory {
+    /// Active goal-oriented work (tag prefix `project:`)
+    Projects,
+    /// Ongoing responsibilities (tag prefix `personal:`)
+    Areas,
+    /// Reference material (tag prefixes `code:`, `domain:`, or semantic/procedural type)
+    Resources,
+    /// Low-importance or decayed content
+    Archive,
+}
+
+impl ParaCategory {
+    /// Subdirectory name for this category.
+    pub fn folder_name(self) -> &'static str {
+        match self {
+            Self::Projects => "Projects",
+            Self::Areas => "Areas",
+            Self::Resources => "Resources",
+            Self::Archive => "Archive",
+        }
+    }
+}
+
+/// Classify a memory entry into a PARA category based on its tags,
+/// type, importance, and decay score.
+///
+/// Priority order:
+/// 1. Low importance (< 2) or heavy decay (< 0.3) → Archive
+/// 2. Any tag starting with `project:` → Projects
+/// 3. Any tag starting with `personal:` → Areas
+/// 4. Any tag starting with `code:` or `domain:`, or memory_type is
+///    Fact/Procedural → Resources
+/// 5. Fallback → Resources
+pub fn classify_para(entry: &MemoryEntry) -> ParaCategory {
+    // Archive: decayed or unimportant
+    if entry.importance < 2 || entry.decay_score < 0.3 {
+        return ParaCategory::Archive;
+    }
+
+    let tags_lower = entry.tags.to_lowercase();
+    let tag_list: Vec<&str> = tags_lower.split(',').map(|t| t.trim()).collect();
+
+    // Projects: active goal-oriented
+    if tag_list.iter().any(|t| t.starts_with("project:")) {
+        return ParaCategory::Projects;
+    }
+
+    // Areas: personal/ongoing
+    if tag_list.iter().any(|t| t.starts_with("personal:")) {
+        return ParaCategory::Areas;
+    }
+
+    // Resources: reference material
+    if tag_list
+        .iter()
+        .any(|t| t.starts_with("code:") || t.starts_with("domain:"))
+    {
+        return ParaCategory::Resources;
+    }
+
+    // Default: Resources (reference is the safe bucket)
+    ParaCategory::Resources
+}
+
+/// Determine the output subdirectory for an entry based on layout.
+fn output_dir_for(base: &Path, entry: &MemoryEntry, layout: ObsidianLayout) -> PathBuf {
+    match layout {
+        ObsidianLayout::Flat => base.to_path_buf(),
+        ObsidianLayout::Para => {
+            let category = classify_para(entry);
+            base.join(category.folder_name())
+        }
+    }
+}
+
 /// Export all long-tier memories to a vault directory.
 ///
 /// Creates `<vault_dir>/TerranSoul/` if it doesn't exist. For each long-tier
 /// memory, writes `<id>-<slug>.md` with YAML frontmatter. Skips files whose
 /// mtime is >= the memory's `last_accessed` (or `created_at` if never accessed).
 pub fn export_to_vault(vault_dir: &Path, entries: &[MemoryEntry]) -> Result<ExportReport, String> {
-    let output_dir = vault_dir.join("TerranSoul");
-    fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
+    export_to_vault_with_layout(vault_dir, entries, ObsidianLayout::Flat)
+}
+
+/// Export all long-tier memories with an explicit layout choice.
+pub fn export_to_vault_with_layout(
+    vault_dir: &Path,
+    entries: &[MemoryEntry],
+    layout: ObsidianLayout,
+) -> Result<ExportReport, String> {
+    let base_dir = vault_dir.join("TerranSoul");
+    fs::create_dir_all(&base_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
 
     let long_entries: Vec<&MemoryEntry> = entries
         .iter()
@@ -157,8 +247,11 @@ pub fn export_to_vault(vault_dir: &Path, entries: &[MemoryEntry]) -> Result<Expo
     let mut skipped = 0usize;
 
     for entry in &long_entries {
+        let entry_dir = output_dir_for(&base_dir, entry, layout);
+        fs::create_dir_all(&entry_dir)
+            .map_err(|e| format!("Failed to create dir {}: {e}", entry_dir.display()))?;
         let fname = filename_for(entry);
-        let fpath = output_dir.join(&fname);
+        let fpath = entry_dir.join(&fname);
         let content = render_markdown(entry);
 
         // Decide whether to skip: if file exists and its mtime is newer than
@@ -193,7 +286,7 @@ pub fn export_to_vault(vault_dir: &Path, entries: &[MemoryEntry]) -> Result<Expo
         written,
         skipped,
         total,
-        output_dir: output_dir.to_string_lossy().to_string(),
+        output_dir: base_dir.to_string_lossy().to_string(),
     })
 }
 
@@ -359,5 +452,114 @@ mod tests {
         let report = export_to_vault(tmp.path(), &entries).unwrap();
         assert_eq!(report.total, 0);
         assert_eq!(report.written, 0);
+    }
+
+    // ── PARA layout tests (chunk 33B.9) ────────────────────────────
+
+    #[test]
+    fn classify_para_project_tag() {
+        let e = make_entry(1, "Sprint goal", "project:terransoul", MemoryTier::Long);
+        assert_eq!(classify_para(&e), ParaCategory::Projects);
+    }
+
+    #[test]
+    fn classify_para_personal_tag() {
+        let e = make_entry(
+            2,
+            "User likes coffee",
+            "personal:preferences",
+            MemoryTier::Long,
+        );
+        assert_eq!(classify_para(&e), ParaCategory::Areas);
+    }
+
+    #[test]
+    fn classify_para_code_tag() {
+        let e = make_entry(3, "Rust borrow checker", "code:rust", MemoryTier::Long);
+        assert_eq!(classify_para(&e), ParaCategory::Resources);
+    }
+
+    #[test]
+    fn classify_para_domain_tag() {
+        let e = make_entry(4, "ML embeddings", "domain:ml", MemoryTier::Long);
+        assert_eq!(classify_para(&e), ParaCategory::Resources);
+    }
+
+    #[test]
+    fn classify_para_no_tag_defaults_resources() {
+        let e = make_entry(5, "Some fact", "", MemoryTier::Long);
+        assert_eq!(classify_para(&e), ParaCategory::Resources);
+    }
+
+    #[test]
+    fn classify_para_low_importance_archive() {
+        let mut e = make_entry(6, "Old note", "project:done", MemoryTier::Long);
+        e.importance = 1;
+        assert_eq!(classify_para(&e), ParaCategory::Archive);
+    }
+
+    #[test]
+    fn classify_para_decayed_archive() {
+        let mut e = make_entry(7, "Faded fact", "project:active", MemoryTier::Long);
+        e.decay_score = 0.1;
+        assert_eq!(classify_para(&e), ParaCategory::Archive);
+    }
+
+    #[test]
+    fn classify_para_priority_project_over_personal() {
+        // Project tag wins when both are present
+        let e = make_entry(
+            8,
+            "Mixed",
+            "project:terransoul,personal:preferences",
+            MemoryTier::Long,
+        );
+        assert_eq!(classify_para(&e), ParaCategory::Projects);
+    }
+
+    #[test]
+    fn export_para_routes_to_subfolders() {
+        let tmp = TempDir::new().unwrap();
+        let entries = vec![
+            make_entry(1, "Project note", "project:alpha", MemoryTier::Long),
+            make_entry(2, "Area note", "personal:health", MemoryTier::Long),
+            make_entry(3, "Resource note", "code:rust", MemoryTier::Long),
+            {
+                let mut e = make_entry(4, "Archive note", "project:legacy", MemoryTier::Long);
+                e.importance = 1;
+                e
+            },
+        ];
+        let report =
+            export_to_vault_with_layout(tmp.path(), &entries, ObsidianLayout::Para).unwrap();
+        assert_eq!(report.total, 4);
+        assert_eq!(report.written, 4);
+
+        let base = tmp.path().join("TerranSoul");
+        assert!(base.join("Projects").join("1-project-note.md").exists());
+        assert!(base.join("Areas").join("2-area-note.md").exists());
+        assert!(base.join("Resources").join("3-resource-note.md").exists());
+        assert!(base.join("Archive").join("4-archive-note.md").exists());
+    }
+
+    #[test]
+    fn export_flat_layout_unchanged() {
+        let tmp = TempDir::new().unwrap();
+        let entries = vec![make_entry(
+            1,
+            "Project note",
+            "project:alpha",
+            MemoryTier::Long,
+        )];
+        let report =
+            export_to_vault_with_layout(tmp.path(), &entries, ObsidianLayout::Flat).unwrap();
+        assert_eq!(report.written, 1);
+        // Flat layout: file is in TerranSoul/, not TerranSoul/Projects/
+        assert!(tmp
+            .path()
+            .join("TerranSoul")
+            .join("1-project-note.md")
+            .exists());
+        assert!(!tmp.path().join("TerranSoul").join("Projects").exists());
     }
 }

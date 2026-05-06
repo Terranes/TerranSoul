@@ -183,4 +183,57 @@ describe('useSettingsStore', () => {
       settings: expect.objectContaining({ max_memory_mb: 12 }),
     });
   });
+
+  it('saveMaxLongTermEntries persists clamped entry cap', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveMaxLongTermEntries(500_000);
+    expect(store.settings.max_long_term_entries).toBe(500_000);
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ max_long_term_entries: 500_000 }),
+    });
+  });
+
+  it('saveMaxLongTermEntries clamps below minimum', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveMaxLongTermEntries(100);
+    expect(store.settings.max_long_term_entries).toBe(1_000);
+  });
+
+  it('saveRelevanceThreshold persists clamped threshold', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveRelevanceThreshold(0.45);
+    expect(store.settings.relevance_threshold).toBe(0.45);
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ relevance_threshold: 0.45 }),
+    });
+  });
+
+  it('saveRelevanceThreshold clamps above maximum', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveRelevanceThreshold(1.5);
+    expect(store.settings.relevance_threshold).toBe(1.0);
+  });
+
+  it('saveMaintenanceInterval persists clamped hours', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveMaintenanceInterval(48);
+    expect(store.settings.maintenance_interval_hours).toBe(48);
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ maintenance_interval_hours: 48 }),
+    });
+  });
+
+  it('saveMaintenanceInterval clamps to 1–168 range', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveMaintenanceInterval(0);
+    expect(store.settings.maintenance_interval_hours).toBe(1);
+    await store.saveMaintenanceInterval(200);
+    expect(store.settings.maintenance_interval_hours).toBe(168);
+  });
 });

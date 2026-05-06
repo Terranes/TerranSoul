@@ -127,6 +127,48 @@ impl IngestSink for AppHandleIngestSink {
     }
 }
 
+/// Headless ingest sink used by the standalone `npm run mcp` runner.
+///
+/// The desktop app composes [`AppHandleIngestSink`] which dispatches
+/// through the Tauri command surface so progress events reach the
+/// frontend. The headless runner has no AppHandle / WebView, so it
+/// dispatches directly to [`crate::commands::ingest::ingest_document_silent`]
+/// instead — same chunking + embedding + KG pipeline, no event emitter.
+///
+/// This is what lets `brain_ingest_url` (and the doc-corpus sync script)
+/// work against the headless MCP brain on `127.0.0.1:7423`. Without it,
+/// writes return `NotConfigured` and AI agents cannot keep the brain in
+/// sync with `rules/`, `docs/`, `tutorials/`, and `instructions/`.
+#[derive(Clone)]
+struct HeadlessIngestSink {
+    state: AppState,
+}
+
+#[async_trait]
+impl IngestSink for HeadlessIngestSink {
+    async fn start_ingest(
+        &self,
+        source: String,
+        tags: Option<String>,
+        importance: Option<i64>,
+    ) -> Result<IngestUrlResponse, GatewayError> {
+        let result = crate::commands::ingest::ingest_document_silent(
+            source,
+            tags,
+            importance,
+            self.state.clone(),
+        )
+        .await
+        .map_err(|error| GatewayError::Internal(format!("ingest_document_silent: {error}")))?;
+
+        Ok(IngestUrlResponse {
+            task_id: result.task_id,
+            source: result.source,
+            source_type: result.source_type,
+        })
+    }
+}
+
 fn seed_loaded_from_state(state: &AppState) -> bool {
     if !is_mcp_pet_mode() {
         return false;
@@ -187,19 +229,18 @@ pub async fn start_server_with_activity(
     lan_public_read_only: bool,
     app: Option<tauri::AppHandle>,
 ) -> Result<McpServerHandle, String> {
-    let ingest_sink = app.as_ref().map(|app_handle| {
-        Arc::new(AppHandleIngestSink {
+    let ingest_sink: Arc<dyn IngestSink> = match app.as_ref() {
+        Some(app_handle) => Arc::new(AppHandleIngestSink {
             app: app_handle.clone(),
-        }) as Arc<dyn IngestSink>
-    });
+        }),
+        None => Arc::new(HeadlessIngestSink {
+            state: state.clone(),
+        }),
+    };
     let activity = activity::McpActivityReporter::new(state.clone(), app);
     activity.startup(format!("Starting MCP brain server on port {port}."));
-    let gw = match ingest_sink {
-        Some(sink) => Arc::new(AppStateGateway::with_ingest(state.clone(), sink))
-            as Arc<dyn crate::ai_integrations::gateway::BrainGateway>,
-        None => Arc::new(AppStateGateway::new(state.clone()))
-            as Arc<dyn crate::ai_integrations::gateway::BrainGateway>,
-    };
+    let gw = Arc::new(AppStateGateway::with_ingest(state.clone(), ingest_sink))
+        as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
     let caps = transport_caps();
 
     // Try the requested port first, then fallbacks.

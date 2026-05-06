@@ -883,9 +883,7 @@ impl Serializable for Config {
             .collect();
 
         assert!(
-            resolved_impl
-                .iter()
-                .any(|(name, _)| name == "Serializable"),
+            resolved_impl.iter().any(|(name, _)| name == "Serializable"),
             "Expected resolved Implements edge for Serializable, got: {resolved_impl:?}"
         );
 

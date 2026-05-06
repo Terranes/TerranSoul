@@ -163,18 +163,28 @@ describe('BrainView', () => {
     expect(w.find('[data-testid="brain-avatar"]').classes()).toContain('mood-free');
   });
 
-  it('classifies memories into the three cognitive kinds', async () => {
+  it('classifies memories into the four cognitive kinds', async () => {
     mockInvoke.mockImplementation(makeInvokeMock({
       brainMode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+      memories: [
+        ...sampleMemories,
+        {
+          id: 4, content: 'Prefer minimal patches before broad refactors', tags: 'judgment', memory_type: 'fact',
+          tier: 'long', importance: 4, decay_score: 0.95, access_count: 2,
+          created_at: Date.now(), last_accessed: Date.now(), token_count: 8,
+          session_id: null, parent_id: null,
+        },
+      ],
     }));
     const w = mount(BrainView);
     await flushPromises();
 
     // Sample contains 1 preference (semantic), 1 episodic ("Yesterday…"),
-    // and 1 procedural (numbered "How to deploy").
+    // 1 procedural (numbered "How to deploy"), and 1 judgment tag.
     expect(w.find('[data-testid="bv-cog-episodic"]').text()).toContain('1');
     expect(w.find('[data-testid="bv-cog-semantic"]').text()).toContain('1');
     expect(w.find('[data-testid="bv-cog-procedural"]').text()).toContain('1');
+    expect(w.find('[data-testid="bv-cog-judgment"]').text()).toContain('1');
   });
 
   it('marks vector RAG signal off in cloud modes and on in local mode', async () => {

@@ -52,17 +52,17 @@ use commands::{
         setup_vscode_mcp_stdio,
     },
     brain::{
-        check_lm_studio_status, check_ollama_status, classify_intent, clear_active_brain,
-        download_lm_studio_model, factory_reset_brain, get_active_brain, get_agent_routing,
-        get_brain_mode, get_brain_selection, get_embed_cache_status, get_failover_policy,
-        get_failover_summary, get_lm_studio_download_status, get_lm_studio_models,
-        get_next_provider, get_ollama_models, get_provider_policy, get_system_info,
-        health_check_providers, list_free_providers, load_lm_studio_model, pull_ollama_model,
-        recommend_brain_models, remove_agent_route, remove_provider_task_override,
-        reset_embed_cache, resolve_provider_for_role, resolve_provider_for_task,
-        select_provider_with_constraints, set_active_brain, set_agent_route, set_brain_mode,
-        set_failover_policy, set_provider_policy, set_provider_task_override,
-        unload_lm_studio_model,
+        brain_eviction_log, check_lm_studio_status, check_ollama_status, classify_intent,
+        clear_active_brain, download_lm_studio_model, embedding_queue_status, factory_reset_brain,
+        get_active_brain, get_agent_routing, get_brain_mode, get_brain_selection,
+        get_embed_cache_status, get_failover_policy, get_failover_summary,
+        get_lm_studio_download_status, get_lm_studio_models, get_next_provider, get_ollama_models,
+        get_provider_policy, get_system_info, health_check_providers, list_free_providers,
+        load_lm_studio_model, pull_ollama_model, recommend_brain_models, remove_agent_route,
+        remove_provider_task_override, reset_embed_cache, resolve_provider_for_role,
+        resolve_provider_for_task, select_provider_with_constraints, set_active_brain,
+        set_agent_route, set_brain_mode, set_failover_policy, set_provider_policy,
+        set_provider_task_override, unload_lm_studio_model,
     },
     character::load_vrm,
     charisma::{
@@ -71,17 +71,21 @@ use commands::{
     },
     chat::{export_chat_log, get_conversation, send_message},
     coding::{
-        clear_self_improve_log, code_call_graph, code_compute_processes, code_generate_wiki,
-        code_index_repo, code_list_clusters, code_list_processes, code_resolve_edges,
-        coding_session_clear_handoff, coding_session_list_handoffs, coding_session_load_handoff,
-        coding_session_save_handoff, detect_self_improve_repo, get_coding_llm_config,
-        get_coding_workflow_config, get_github_config, get_self_improve_gate_history,
-        get_self_improve_gate_metrics, get_self_improve_metrics, get_self_improve_runs,
-        get_self_improve_settings, get_self_improve_status, get_self_improve_workboard,
-        learn_from_user_message, list_coding_llm_recommendations, list_local_coding_models,
-        list_self_improve_worktrees, open_self_improve_pr, preview_coding_workflow_context,
-        promote_to_milestone_chunk, pull_main_for_self_improve, reset_coding_workflow_config,
-        run_coding_task, set_coding_llm_config, set_coding_workflow_config, set_github_config,
+        clear_self_improve_log, code_add_repo_to_group, code_architecture_tours, code_call_graph,
+        code_compute_processes, code_create_group, code_cross_repo_query, code_delete_group,
+        code_diff_overlay, code_explain_graph, code_export_graph, code_extract_contracts,
+        code_generate_skills, code_generate_wiki, code_group_status, code_index_repo,
+        code_list_clusters, code_list_group_contracts, code_list_groups, code_list_processes,
+        code_remove_repo_from_group, code_resolve_edges, coding_session_clear_handoff,
+        coding_session_list_handoffs, coding_session_load_handoff, coding_session_save_handoff,
+        detect_self_improve_repo, get_coding_llm_config, get_coding_workflow_config,
+        get_github_config, get_self_improve_gate_history, get_self_improve_gate_metrics,
+        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
+        get_self_improve_status, get_self_improve_workboard, learn_from_user_message,
+        list_coding_llm_recommendations, list_local_coding_models, list_self_improve_worktrees,
+        open_self_improve_pr, preview_coding_workflow_context, promote_to_milestone_chunk,
+        pull_main_for_self_improve, reset_coding_workflow_config, run_coding_task,
+        set_coding_llm_config, set_coding_workflow_config, set_github_config,
         set_self_improve_autostart, set_self_improve_enabled, set_self_improve_worktree_dir,
         start_self_improve, stop_self_improve, suggest_self_improve_branch,
         test_coding_llm_connection,
@@ -125,12 +129,13 @@ use commands::{
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
-        close_memory_edge, count_memory_conflicts, delete_memory, delete_memory_edge,
-        dismiss_memory_conflict, enforce_memory_storage_limit, evaluate_auto_learn,
-        export_to_obsidian, extract_edges_via_brain, extract_memories_from_session, gc_memories,
-        get_auto_learn_policy, get_edge_stats, get_edges_for_memory, get_memories,
-        get_memories_by_tier, get_memory_history, get_memory_stats, get_relevant_memories,
-        get_schema_info, get_short_term_memory, graph_rag_detect_communities, graph_rag_search,
+        close_memory_edge, count_memory_conflicts, daily_brief_query, delete_memory,
+        delete_memory_edge, dismiss_memory_conflict, enforce_memory_storage_limit,
+        evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
+        extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
+        get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
+        get_memory_provenance, get_memory_stats, get_relevant_memories, get_schema_info,
+        get_short_term_memory, graph_rag_detect_communities, graph_rag_search,
         hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories, judgment_add,
         judgment_apply, judgment_list, list_memory_conflicts, list_memory_edges,
         list_relation_types, matryoshka_search_memories, multi_hop_search_memories, obsidian_sync,
@@ -195,6 +200,10 @@ use commands::{
         synthesize_tts, transcribe_audio,
     },
     vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
+    wiki::{
+        brain_wiki_audit, brain_wiki_digest_text, brain_wiki_revisit, brain_wiki_serendipity,
+        brain_wiki_spotlight,
+    },
     window::{
         close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build, is_mcp_mode,
         open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
@@ -303,6 +312,10 @@ pub struct AppStateInner {
     /// model/provider overrides; tasks without an override fall back to
     /// the app-wide `brain_mode`.
     pub provider_policy: Mutex<brain::ProviderPolicy>,
+    /// Concurrency limiter for ingest/embedding tasks (Chunk 38.1).
+    /// Prevents stampeding the embedding provider when many files are
+    /// ingested concurrently. Default: 4 concurrent ingest tasks.
+    pub ingest_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -383,6 +396,7 @@ impl AppState {
             self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
             coding_workflow_config: Mutex::new(coding::load_coding_workflow_config(data_dir)),
             provider_policy: Mutex::new(brain::ProviderPolicy::load(data_dir)),
+            ingest_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
         }))
     }
 
@@ -442,6 +456,7 @@ impl AppState {
             self_improve_engine: Arc::new(coding::engine::SelfImproveEngine::new()),
             coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
             provider_policy: Mutex::new(brain::ProviderPolicy::default()),
+            ingest_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
         }))
     }
 }
@@ -515,6 +530,14 @@ pub fn run_stdio() -> std::io::Result<()> {
 
     eprintln!("[mcp-stdio] data dir: {}", data_dir.display());
 
+    // Apply per-workspace data_root override from settings (chunk 33B.7).
+    // Skip when repo-local mode is active (explicit TERRANSOUL_MCP_DATA_DIR).
+    let data_dir = if repo_local {
+        data_dir
+    } else {
+        settings::config_store::resolve_effective_data_dir(&data_dir)
+    };
+
     let state = AppState::new(&data_dir);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -522,6 +545,72 @@ pub fn run_stdio() -> std::io::Result<()> {
         .build()?;
 
     runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
+}
+
+/// Run TerranSoul as a standalone maintenance scheduler daemon
+/// (Chunk 33B.10). Suitable for headless/server environments where
+/// no GUI or MCP server is needed — just the periodic brain
+/// maintenance loop (decay, GC, promote, edge-extract, obsidian-export).
+///
+/// Honors `TERRANSOUL_SCHEDULER_DATA_DIR` env var to point to the
+/// data directory (defaults to the platform app-data path). Runs
+/// until the process receives SIGTERM / Ctrl+C, then exits cleanly.
+///
+/// Tick interval defaults to 60 minutes (same as the embedded
+/// scheduler). Override with `TERRANSOUL_SCHEDULER_INTERVAL_SECS`.
+pub fn run_scheduler() -> std::io::Result<()> {
+    let data_dir = if let Ok(p) = std::env::var("TERRANSOUL_SCHEDULER_DATA_DIR") {
+        let trimmed = p.trim();
+        if trimmed.is_empty() {
+            resolve_data_dir_for_cli()
+        } else {
+            PathBuf::from(trimmed)
+        }
+    } else {
+        resolve_data_dir_for_cli()
+    };
+
+    // Apply data_root override from settings (same as GUI/stdio paths).
+    let data_dir = settings::config_store::resolve_effective_data_dir(&data_dir);
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    eprintln!("[scheduler] data dir: {}", data_dir.display());
+
+    let state = AppState::new(&data_dir);
+
+    let tick_secs: u64 = std::env::var("TERRANSOUL_SCHEDULER_INTERVAL_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(60 * 60);
+    let tick_interval = std::time::Duration::from_secs(tick_secs);
+    eprintln!("[scheduler] tick interval: {tick_secs}s");
+
+    let config = maintenance_config_from_settings(
+        &state.app_settings.lock().unwrap_or_else(|e| e.into_inner()),
+    );
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel_clone = cancel.clone();
+
+    // Spawn Ctrl+C handler
+    runtime.spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        cancel_clone.cancel();
+    });
+
+    runtime.block_on(brain::maintenance_runtime::run_foreground(
+        state,
+        config,
+        tick_interval,
+        cancel,
+    ));
+
+    eprintln!("[scheduler] shutdown complete");
+    Ok(())
 }
 
 /// Default port used by the MCP tray runtime (`--mcp-tray`).
@@ -562,7 +651,11 @@ fn resolve_headless_mcp_port() -> u16 {
 
 /// Load a shared MCP seed file from a resolved shared seed directory,
 /// falling back to the compiled-in repository default when unavailable.
-fn load_mcp_seed_text(shared_dir: Option<&std::path::Path>, file_name: &str, fallback: &str) -> String {
+fn load_mcp_seed_text(
+    shared_dir: Option<&std::path::Path>,
+    file_name: &str,
+    fallback: &str,
+) -> String {
     let Some(dir) = shared_dir else {
         return fallback.to_string();
     };
@@ -967,6 +1060,17 @@ fn spawn_shared_maintenance(state: &AppState, label: &str) {
     );
 }
 
+/// Spawn the self-healing embedding retry worker (Chunk 38.2).
+///
+/// Drains `pending_embeddings` every 10 s using the batch embedding
+/// endpoint. On boot, backfills the queue with any memories that
+/// already have NULL embeddings — this self-heals databases populated
+/// before this worker existed.
+fn spawn_embedding_queue_worker(state: &AppState, label: &str) {
+    let _handle = memory::embedding_queue::spawn_worker(state.clone());
+    eprintln!("[{label}] embedding-queue worker started; tick=10s, batch=32");
+}
+
 const MAIN_WINDOW_LABEL: &str = "main";
 
 fn env_flag_enabled(name: &str) -> bool {
@@ -994,7 +1098,7 @@ fn ensure_main_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
         return Ok(window);
     }
 
-    let window = tauri::WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, main_window_url()?)
+    let mut builder = tauri::WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, main_window_url()?)
         .title("TerranSoul")
         .inner_size(420.0, 700.0)
         .resizable(true)
@@ -1002,9 +1106,20 @@ fn ensure_main_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
         .transparent(true)
         .background_color(Color(0, 0, 0, 0))
         .always_on_top(false)
-        .skip_taskbar(false)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .skip_taskbar(false);
+
+    // Use a separate WebView2 user data directory in MCP tray mode so it
+    // does not conflict with a concurrently-running main app instance.
+    if env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE") {
+        let mcp_webview_dir = app
+            .path()
+            .app_data_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("EBWebView-mcp");
+        builder = builder.data_directory(mcp_webview_dir);
+    }
+
+    let window = builder.build().map_err(|e| e.to_string())?;
 
     if let Some(icon) = app.default_window_icon().cloned() {
         let _ = window.set_icon(icon);
@@ -1041,6 +1156,99 @@ fn toggle_mcp_ui(app: &tauri::AppHandle) {
     }
 
     show_mcp_ui(app);
+}
+
+/// Toggle the MCP HTTP server on/off from the tray menu.
+fn toggle_mcp_server(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app_handle.state::<AppState>();
+        let is_running = state.mcp_server.lock().await.is_some();
+
+        if is_running {
+            // Stop the server
+            let mut guard = state.mcp_server.lock().await;
+            if let Some(handle) = guard.take() {
+                handle.stop();
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle.task).await;
+            }
+            eprintln!("[mcp-tray] MCP server stopped via tray toggle");
+            update_mcp_tray_labels(&app_handle, false);
+        } else {
+            // Start the server
+            let data_dir = state.data_dir.clone();
+            let token = match ai_integrations::mcp::auth::load_or_create(&data_dir) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("[mcp-tray] failed to load/create token: {e}");
+                    return;
+                }
+            };
+            let lan_public_read_only = state.app_settings.lock().ok().is_some_and(|settings| {
+                settings.lan_enabled
+                    && matches!(
+                        settings.lan_auth_mode,
+                        crate::settings::LanAuthMode::PublicReadOnly
+                    )
+            });
+            match ai_integrations::mcp::start_server_with_activity(
+                state.inner().clone(),
+                HEADLESS_MCP_PORT,
+                token,
+                false,
+                lan_public_read_only,
+                None,
+            )
+            .await
+            {
+                Ok(handle) => {
+                    eprintln!("[mcp-tray] MCP server started on port {}", handle.port);
+                    *state.mcp_server.lock().await = Some(handle);
+                    update_mcp_tray_labels(&app_handle, true);
+                }
+                Err(e) => eprintln!("[mcp-tray] failed to start MCP server: {e}"),
+            }
+        }
+    });
+}
+
+/// Update the tray menu labels to reflect MCP server running state.
+fn update_mcp_tray_labels(app: &tauri::AppHandle, running: bool) {
+    let status_text = if running {
+        "MCP Server ● Running"
+    } else {
+        "MCP Server ○ Stopped"
+    };
+    let toggle_text = if running {
+        "Stop MCP Server"
+    } else {
+        "Start MCP Server"
+    };
+
+    let Ok(status_label) = MenuItem::with_id(app, "mcp_status", status_text, false, None::<&str>)
+    else {
+        return;
+    };
+    let Ok(toggle_server) =
+        MenuItem::with_id(app, "mcp_toggle_server", toggle_text, true, None::<&str>)
+    else {
+        return;
+    };
+    let Ok(toggle_ui) = MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)
+    else {
+        return;
+    };
+    let Ok(quit) = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>) else {
+        return;
+    };
+    let Ok(menu) = Menu::with_items(app, &[&status_label, &toggle_server, &toggle_ui, &quit])
+    else {
+        return;
+    };
+
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_menu(Some(menu));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1156,6 +1364,7 @@ pub fn run() {
             graph_rag_search,
             // Temporal reasoning queries (Chunk 17.3)
             temporal_query,
+            daily_brief_query,
             // Judgment rules (Chunk 33B.1)
             judgment_add,
             judgment_list,
@@ -1163,6 +1372,12 @@ pub fn run() {
             reflect_on_session,
             // Memory versioning (Chunk 16.12)
             get_memory_history,
+            get_memory_provenance,
+            brain_wiki_audit,
+            brain_wiki_digest_text,
+            brain_wiki_revisit,
+            brain_wiki_serendipity,
+            brain_wiki_spotlight,
             start_registry_server,
             stop_registry_server,
             get_registry_server_port,
@@ -1225,6 +1440,8 @@ pub fn run() {
             set_provider_task_override,
             remove_provider_task_override,
             resolve_provider_for_task,
+            embedding_queue_status,
+            brain_eviction_log,
             get_agent_routing,
             set_agent_route,
             remove_agent_route,
@@ -1376,6 +1593,20 @@ pub fn run() {
             code_list_clusters,
             code_list_processes,
             code_generate_wiki,
+            code_generate_skills,
+            code_export_graph,
+            code_explain_graph,
+            code_architecture_tours,
+            code_diff_overlay,
+            code_list_groups,
+            code_create_group,
+            code_delete_group,
+            code_add_repo_to_group,
+            code_remove_repo_from_group,
+            code_group_status,
+            code_extract_contracts,
+            code_list_group_contracts,
+            code_cross_repo_query,
             get_github_config,
             set_github_config,
             open_self_improve_pr,
@@ -1494,9 +1725,18 @@ pub fn run() {
                 base_data_dir
             };
 
+            // Apply per-workspace data_root override from settings (chunk 33B.7).
+            // MCP/tray modes skip the override — they already have explicit paths.
+            let data_dir = if mcp_app_mode || mcp_tray_mode {
+                data_dir
+            } else {
+                settings::config_store::resolve_effective_data_dir(&data_dir)
+            };
+
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
             spawn_shared_maintenance(&state, if mcp_app_mode { "mcp-app" } else { "app" });
+            spawn_embedding_queue_worker(&state, if mcp_app_mode { "mcp-app" } else { "app" });
 
             // Apply shared seed data (mcp-data/shared/) to ALL modes.
             // The migration runner is idempotent: it only applies NEW
@@ -1609,17 +1849,28 @@ pub fn run() {
                     false,
                     None::<&str>,
                 )?;
+                let toggle_server = MenuItem::with_id(
+                    app,
+                    "mcp_toggle_server",
+                    "Stop MCP Server",
+                    true,
+                    None::<&str>,
+                )?;
                 let toggle_ui =
                     MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)?;
                 let quit = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&status_label, &toggle_ui, &quit])?;
+                let menu =
+                    Menu::with_items(app, &[&status_label, &toggle_server, &toggle_ui, &quit])?;
 
-                TrayIconBuilder::new()
+                TrayIconBuilder::with_id("main")
                     .icon(app.default_window_icon().cloned().unwrap())
                     .menu(&menu)
                     .show_menu_on_left_click(false)
                     .tooltip("TerranSoul MCP Server")
                     .on_menu_event(|app, event| match event.id.as_ref() {
+                        "mcp_toggle_server" => {
+                            toggle_mcp_server(app);
+                        }
                         "mcp_toggle_ui" => {
                             toggle_mcp_ui(app);
                         }
@@ -1640,16 +1891,24 @@ pub fn run() {
                     })
                     .build(app)?;
 
-                // In MCP mode, start hidden but keep the full Vue UI loaded.
-                // The production build (dist/) is already bundled by vite build.
-                // The user can open the full UI from the tray "Show UI" menu
-                // to configure brain, view memory graph, etc.
+                // In MCP mode, destroy the auto-created main window. It will
+                // be recreated on demand (via `ensure_main_window`) with a
+                // separate WebView2 user-data folder when the user clicks
+                // "Show UI" from the tray. This avoids ERR_CONNECTION_REFUSED
+                // caused by two instances fighting over the same WebView2
+                // user-data directory.
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.hide();
-                    let _ = window.set_skip_taskbar(true);
+                    let _ = window.destroy();
                 }
             } else {
-                // Normal tray: Show/Hide + Window/Pet toggle + Quit
+                // Normal tray: mode label + Show/Hide + Window/Pet toggle + Quit
+                let title = if cfg!(debug_assertions) {
+                    "TerranSoul (Dev)".to_string()
+                } else {
+                    "TerranSoul".to_string()
+                };
+                let status_label =
+                    MenuItem::with_id(app, "app_status", &title, false, None::<&str>)?;
                 let show_hide =
                     MenuItem::with_id(app, "show_hide", "Show / Hide", true, None::<&str>)?;
                 let mode_toggle = MenuItem::with_id(
@@ -1660,13 +1919,14 @@ pub fn run() {
                     None::<&str>,
                 )?;
                 let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&show_hide, &mode_toggle, &quit])?;
+                let menu =
+                    Menu::with_items(app, &[&status_label, &show_hide, &mode_toggle, &quit])?;
 
                 TrayIconBuilder::new()
                     .icon(app.default_window_icon().cloned().unwrap())
                     .menu(&menu)
                     .show_menu_on_left_click(false)
-                    .tooltip("TerranSoul")
+                    .tooltip(&title)
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "show_hide" => {
                             if let Some(window) = app.get_webview_window("main") {

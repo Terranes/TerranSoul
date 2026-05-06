@@ -1,13 +1,13 @@
 /**
  * TS port of `src-tauri/src/memory/cognitive_kind.rs`.
  *
- * Pure-function classifier for the **episodic / semantic / procedural** axis
+ * Pure-function classifier for the **episodic / semantic / procedural / judgment** axis
  * documented in `docs/brain-advanced-design.md` § 3.5. Used in the frontend so
  * the Brain hub can display kind-breakdowns without an IPC roundtrip per
  * memory.
  *
  * Resolution order (must match the Rust implementation):
- *   1. Explicit cognitive tag (`episodic`, `semantic`, `procedural`, optionally
+ *   1. Explicit cognitive tag (`episodic`, `semantic`, `procedural`, `judgment`, optionally
  *      with `:detail` suffix). First recognised tag wins.
  *   2. Structural type defaults — `summary` → episodic, `preference` → semantic.
  *   3. Lightweight content heuristics — procedural verbs / numbered lists →
@@ -19,7 +19,7 @@
 
 import type { MemoryType } from '../types';
 
-export type CognitiveKind = 'episodic' | 'semantic' | 'procedural';
+export type CognitiveKind = 'episodic' | 'semantic' | 'procedural' | 'judgment';
 
 const PROCEDURAL_VERBS: readonly string[] = [
   'how to', 'how-to', 'step ', 'steps to', 'first,', 'next,', 'finally,',
@@ -65,6 +65,7 @@ function classifyFromTags(tags: string): CognitiveKind | null {
     if (head === 'episodic') return 'episodic';
     if (head === 'semantic') return 'semantic';
     if (head === 'procedural') return 'procedural';
+    if (head === 'judgment') return 'judgment';
   }
   return null;
 }
@@ -105,14 +106,15 @@ export interface CognitiveKindBreakdown {
   episodic: number;
   semantic: number;
   procedural: number;
+  judgment: number;
   total: number;
 }
 
-/** Compute the {episodic, semantic, procedural} histogram for a list of memories. */
+/** Compute the {episodic, semantic, procedural, judgment} histogram for a list of memories. */
 export function summariseCognitiveKinds(
   memories: ReadonlyArray<{ memory_type: MemoryType; tags: string; content: string }>,
 ): CognitiveKindBreakdown {
-  const out: CognitiveKindBreakdown = { episodic: 0, semantic: 0, procedural: 0, total: 0 };
+  const out: CognitiveKindBreakdown = { episodic: 0, semantic: 0, procedural: 0, judgment: 0, total: 0 };
   if (!memories) return out;
   for (const m of memories) {
     out[classifyCognitiveKind(m.memory_type, m.tags, m.content)]++;

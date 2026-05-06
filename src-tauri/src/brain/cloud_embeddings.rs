@@ -196,6 +196,161 @@ pub async fn embed_for_mode(
     }
 }
 
+/// Default batch size for embedding calls.
+const DEFAULT_EMBED_BATCH_SIZE: usize = 32;
+
+/// Generate embeddings for multiple texts in batches.
+///
+/// Uses the same provider routing as `embed_for_mode` but batches texts
+/// for providers that support array input (Ollama `/api/embed` with
+/// `input: [...]`, OpenAI `/v1/embeddings` with `input: [...]`).
+///
+/// Returns `Vec<Option<Vec<f32>>>` with one entry per input text.
+/// `None` entries indicate a failure for that specific text or the entire
+/// batch.
+pub async fn embed_batch_for_mode(
+    texts: &[&str],
+    brain_mode: Option<&BrainMode>,
+    active_brain: Option<&str>,
+    batch_size: Option<usize>,
+) -> Vec<Option<Vec<f32>>> {
+    if texts.is_empty() {
+        return vec![];
+    }
+
+    let bs = batch_size.unwrap_or(DEFAULT_EMBED_BATCH_SIZE);
+
+    match brain_mode {
+        Some(BrainMode::LocalOllama { model }) => {
+            super::OllamaAgent::embed_text_batch(texts, model, bs).await
+        }
+        Some(BrainMode::LocalLmStudio {
+            model,
+            base_url,
+            api_key,
+            embedding_model,
+        }) => {
+            let embed_model = embedding_model.as_deref().unwrap_or(model);
+            embed_batch_openai(texts, base_url, embed_model, api_key.as_deref(), bs).await
+        }
+        Some(BrainMode::PaidApi {
+            base_url,
+            api_key,
+            provider,
+            ..
+        }) => {
+            let embed_model = paid_provider_embed_model(provider);
+            embed_batch_openai(texts, base_url, embed_model, Some(api_key), bs).await
+        }
+        Some(BrainMode::FreeApi {
+            provider_id,
+            api_key,
+            ..
+        }) => {
+            let Some(embed_model) = free_provider_embed_model(provider_id) else {
+                return vec![None; texts.len()];
+            };
+            let Some(provider) = super::get_free_provider(provider_id) else {
+                return vec![None; texts.len()];
+            };
+            embed_batch_openai(
+                texts,
+                &provider.base_url,
+                embed_model,
+                api_key.as_deref(),
+                bs,
+            )
+            .await
+        }
+        None => {
+            if let Some(model) = active_brain {
+                super::OllamaAgent::embed_text_batch(texts, model, bs).await
+            } else {
+                vec![None; texts.len()]
+            }
+        }
+    }
+}
+
+/// Batch-embed via an OpenAI-compatible `/v1/embeddings` endpoint.
+/// The OpenAI API natively supports `input: ["text1", "text2", …]`.
+async fn embed_batch_openai(
+    texts: &[&str],
+    base_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+    batch_size: usize,
+) -> Vec<Option<Vec<f32>>> {
+    let cache_key = format!("{base_url}::{model}");
+    if is_cloud_unsupported(&cache_key).await {
+        return vec![None; texts.len()];
+    }
+
+    let client = match Client::builder().timeout(Duration::from_secs(60)).build() {
+        Ok(c) => c,
+        Err(_) => return vec![None; texts.len()],
+    };
+
+    let url = format!("{}/v1/embeddings", base_url.trim_end_matches('/'));
+    let mut results = Vec::with_capacity(texts.len());
+
+    for chunk in texts.chunks(batch_size) {
+        let non_empty: Vec<(usize, &str)> = chunk
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| !t.trim().is_empty())
+            .map(|(i, t)| (i, *t))
+            .collect();
+
+        if non_empty.is_empty() {
+            results.extend(std::iter::repeat_n(None, chunk.len()));
+            continue;
+        }
+
+        let batch_texts: Vec<&str> = non_empty.iter().map(|(_, t)| *t).collect();
+
+        let body = serde_json::json!({
+            "model": model,
+            "input": batch_texts,
+        });
+
+        let mut req = client.post(&url).json(&body);
+        if let Some(key) = api_key {
+            req = req.bearer_auth(key);
+        }
+
+        let resp = match req.send().await {
+            Ok(r) => r,
+            Err(_) => {
+                results.extend(std::iter::repeat_n(None, chunk.len()));
+                continue;
+            }
+        };
+
+        if !resp.status().is_success() {
+            mark_cloud_unsupported(&cache_key).await;
+            results.extend(std::iter::repeat_n(None, chunk.len()));
+            continue;
+        }
+
+        let parsed: Result<EmbeddingResponse, _> = resp.json().await;
+        let Ok(response) = parsed else {
+            results.extend(std::iter::repeat_n(None, chunk.len()));
+            continue;
+        };
+
+        let mut chunk_results = vec![None; chunk.len()];
+        for ((idx, _), obj) in non_empty.iter().zip(response.data) {
+            if !obj.embedding.is_empty() {
+                chunk_results[*idx] = Some(obj.embedding);
+            }
+        }
+        results.extend(chunk_results);
+    }
+
+    results
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -289,5 +444,51 @@ mod tests {
         assert!(is_cloud_unsupported(key).await);
         clear_cloud_embed_cache().await;
         assert!(!is_cloud_unsupported(key).await);
+    }
+
+    #[tokio::test]
+    async fn embed_batch_for_mode_none_returns_all_none() {
+        let texts = vec!["hello", "world"];
+        let results = embed_batch_for_mode(&texts, None, None, None).await;
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_none());
+        assert!(results[1].is_none());
+    }
+
+    #[tokio::test]
+    async fn embed_batch_for_mode_empty_input() {
+        let results = embed_batch_for_mode(&[], None, None, None).await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn embed_batch_for_mode_free_unsupported_provider_returns_none() {
+        let mode = BrainMode::FreeApi {
+            provider_id: "pollinations".to_string(),
+            api_key: None,
+            model: None,
+        };
+        let texts = vec!["a", "b", "c"];
+        let results = embed_batch_for_mode(&texts, Some(&mode), None, Some(2)).await;
+        assert_eq!(results.len(), 3);
+        for r in &results {
+            assert!(r.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn embed_batch_for_mode_paid_no_server_returns_none() {
+        let mode = BrainMode::PaidApi {
+            provider: "openai".to_string(),
+            api_key: "sk-test".to_string(),
+            model: "gpt-4o".to_string(),
+            base_url: "http://127.0.0.1:19999".to_string(),
+        };
+        let texts = vec!["hello", "world"];
+        let results = embed_batch_for_mode(&texts, Some(&mode), None, Some(1)).await;
+        assert_eq!(results.len(), 2);
+        for r in &results {
+            assert!(r.is_none());
+        }
     }
 }

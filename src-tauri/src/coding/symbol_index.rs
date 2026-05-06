@@ -124,6 +124,17 @@ impl EdgeKind {
             Self::Implements => "implements",
         }
     }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "imports" => Some(Self::Imports),
+            "calls" => Some(Self::Calls),
+            "re_exports" => Some(Self::ReExports),
+            "extends" => Some(Self::Extends),
+            "implements" => Some(Self::Implements),
+            _ => None,
+        }
+    }
 }
 
 /// A best-effort edge (import or call site).
@@ -245,6 +256,49 @@ fn init_schema(conn: &Connection) -> Result<(), IndexError> {
         CREATE INDEX IF NOT EXISTS idx_code_edges_file ON code_edges(from_file);
         CREATE INDEX IF NOT EXISTS idx_code_edges_target_sym ON code_edges(target_symbol_id);
         CREATE INDEX IF NOT EXISTS idx_code_edges_from_sym ON code_edges(from_symbol_id);
+
+        -- ── Multi-repo groups (chunk 37.13) ─────────────────────────────────
+        CREATE TABLE IF NOT EXISTS code_repo_groups (
+            id          INTEGER PRIMARY KEY,
+            label       TEXT NOT NULL UNIQUE,
+            description TEXT,
+            created_at  INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS code_repo_group_members (
+            id          INTEGER PRIMARY KEY,
+            group_id    INTEGER NOT NULL REFERENCES code_repo_groups(id) ON DELETE CASCADE,
+            repo_id     INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+            role        TEXT,
+            UNIQUE(group_id, repo_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_repo_group_members_group
+            ON code_repo_group_members(group_id);
+        CREATE INDEX IF NOT EXISTS idx_repo_group_members_repo
+            ON code_repo_group_members(repo_id);
+
+        -- Public API contracts extracted from a repo's symbol surface.
+        -- A "contract" is an exported/public symbol that other repos in
+        -- the same group may depend on. The signature_hash detects
+        -- breaking changes across re-indexing runs.
+        CREATE TABLE IF NOT EXISTS code_contracts (
+            id              INTEGER PRIMARY KEY,
+            repo_id         INTEGER NOT NULL REFERENCES code_repos(id) ON DELETE CASCADE,
+            symbol_id       INTEGER NOT NULL REFERENCES code_symbols(id) ON DELETE CASCADE,
+            name            TEXT NOT NULL,
+            kind            TEXT NOT NULL,
+            file            TEXT NOT NULL,
+            line            INTEGER NOT NULL,
+            signature_hash  TEXT NOT NULL,
+            extracted_at    INTEGER NOT NULL,
+            UNIQUE(repo_id, symbol_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_code_contracts_repo
+            ON code_contracts(repo_id);
+        CREATE INDEX IF NOT EXISTS idx_code_contracts_name
+            ON code_contracts(name);
         "#,
     )?;
     Ok(())
@@ -316,9 +370,8 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
     let mut existing_hashes: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     {
-        let mut stmt = conn.prepare(
-            "SELECT file, hash FROM code_file_hashes WHERE repo_id = ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT file, hash FROM code_file_hashes WHERE repo_id = ?1")?;
         let rows = stmt.query_map(params![repo_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -421,7 +474,9 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
                 let tree = match rust_parser.parse(&source, None) {
                     Some(t) => t,
                     None => {
-                        stats.errors.push(format!("{rel_path}: tree-sitter parse returned None"));
+                        stats
+                            .errors
+                            .push(format!("{rel_path}: tree-sitter parse returned None"));
                         continue;
                     }
                 };
@@ -431,7 +486,9 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
                 let tree = match ts_parser.parse(&source, None) {
                     Some(t) => t,
                     None => {
-                        stats.errors.push(format!("{rel_path}: tree-sitter parse returned None"));
+                        stats
+                            .errors
+                            .push(format!("{rel_path}: tree-sitter parse returned None"));
                         continue;
                     }
                 };
@@ -446,11 +503,18 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
                 let tree = match parser.parse(&source, None) {
                     Some(t) => t,
                     None => {
-                        stats.errors.push(format!("{rel_path}: tree-sitter parse returned None"));
+                        stats
+                            .errors
+                            .push(format!("{rel_path}: tree-sitter parse returned None"));
                         continue;
                     }
                 };
-                super::parser_registry::extract_symbols(extended_lang, &source, tree.root_node(), &rel_path)
+                super::parser_registry::extract_symbols(
+                    extended_lang,
+                    &source,
+                    tree.root_node(),
+                    &rel_path,
+                )
             }
             None => {
                 // Extension not recognized — skip.
@@ -692,7 +756,10 @@ fn walk_rust_node(
                 // If this is `impl Trait for Type`, emit an Implements edge.
                 if let Some(ref tr) = trait_name {
                     edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Implements, tr.clone(),
+                        file,
+                        &node,
+                        EdgeKind::Implements,
+                        tr.clone(),
                     ));
                 }
             }
@@ -767,11 +834,12 @@ fn walk_rust_node(
                 trimmed.ends_with("pub")
             };
             // Better: check if any sibling/child is a visibility modifier.
-            let is_pub = is_pub || (0..node.child_count()).any(|i| {
-                node.child(i)
-                    .map(|c| c.kind() == "visibility_modifier")
-                    .unwrap_or(false)
-            });
+            let is_pub = is_pub
+                || (0..node.child_count()).any(|i| {
+                    node.child(i)
+                        .map(|c| c.kind() == "visibility_modifier")
+                        .unwrap_or(false)
+                });
             if let Some(arg) = node.child_by_field_name("argument") {
                 let text = node_text(source, &arg);
                 // Extract last segment as the target name.
@@ -782,9 +850,7 @@ fn walk_rust_node(
                     } else {
                         EdgeKind::Imports
                     };
-                    edges.push(CodeEdge::from_node(
-                        file, &node, kind, target.to_string(),
-                    ));
+                    edges.push(CodeEdge::from_node(file, &node, kind, target.to_string()));
                 }
             }
         }
@@ -797,7 +863,10 @@ fn walk_rust_node(
                 let target = target.rsplit('.').next().unwrap_or(target);
                 if !target.is_empty() && target.len() < 100 {
                     edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Calls, target.to_string(),
+                        file,
+                        &node,
+                        EdgeKind::Calls,
+                        target.to_string(),
                     ));
                 }
             }
@@ -972,9 +1041,7 @@ fn walk_ts_node(
                             for j in 0..child.named_child_count() {
                                 if let Some(spec) = child.named_child(j) {
                                     if spec.kind() == "export_specifier" {
-                                        if let Some(name_node) =
-                                            spec.child_by_field_name("name")
-                                        {
+                                        if let Some(name_node) = spec.child_by_field_name("name") {
                                             let name = node_text(source, &name_node);
                                             if !name.is_empty() {
                                                 edges.push(CodeEdge::from_node(
@@ -999,7 +1066,10 @@ fn walk_ts_node(
                 let target = text.rsplit('.').next().unwrap_or(&text);
                 if !target.is_empty() && target.len() < 100 && !target.starts_with('(') {
                     edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Calls, target.to_string(),
+                        file,
+                        &node,
+                        EdgeKind::Calls,
+                        target.to_string(),
                     ));
                 }
             }
@@ -1058,7 +1128,12 @@ fn extract_ts_heritage(
                             match clause.kind() {
                                 "extends_clause" => {
                                     extract_heritage_names(
-                                        source, &clause, file, line, EdgeKind::Extends, edges,
+                                        source,
+                                        &clause,
+                                        file,
+                                        line,
+                                        EdgeKind::Extends,
+                                        edges,
                                     );
                                 }
                                 "implements_clause" => {
@@ -1078,14 +1153,10 @@ fn extract_ts_heritage(
                 }
                 // tree-sitter-typescript may put extends_clause directly as child.
                 "extends_clause" => {
-                    extract_heritage_names(
-                        source, &child, file, line, EdgeKind::Extends, edges,
-                    );
+                    extract_heritage_names(source, &child, file, line, EdgeKind::Extends, edges);
                 }
                 "implements_clause" => {
-                    extract_heritage_names(
-                        source, &child, file, line, EdgeKind::Implements, edges,
-                    );
+                    extract_heritage_names(source, &child, file, line, EdgeKind::Implements, edges);
                 }
                 _ => {}
             }
@@ -1107,9 +1178,9 @@ fn extract_heritage_names(
             // The child may be a type_identifier, generic_type, or member_expression.
             let name = match child.kind() {
                 "type_identifier" | "identifier" => Some(node_text(source, &child)),
-                "generic_type" => {
-                    child.child_by_field_name("name").map(|n| node_text(source, &n))
-                }
+                "generic_type" => child
+                    .child_by_field_name("name")
+                    .map(|n| node_text(source, &n)),
                 _ => {
                     // Fallback: try the text if it's short enough to be a type name.
                     let text = node_text(source, &child);
@@ -1276,9 +1347,8 @@ pub fn check_freshness(data_dir: &Path, repo_path: &Path) -> Result<IndexFreshne
     let mut existing_hashes: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
     {
-        let mut stmt = conn.prepare(
-            "SELECT file, hash FROM code_file_hashes WHERE repo_id = ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT file, hash FROM code_file_hashes WHERE repo_id = ?1")?;
         let rows = stmt.query_map(params![repo_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -1525,7 +1595,11 @@ export enum Status {
         assert_eq!(stats2.symbols_extracted, 0);
 
         // Modify one file.
-        std::fs::write(repo.join("lib.rs"), "pub fn alpha() {}\npub fn beta() {}\npub fn delta() {}").unwrap();
+        std::fs::write(
+            repo.join("lib.rs"),
+            "pub fn alpha() {}\npub fn beta() {}\npub fn delta() {}",
+        )
+        .unwrap();
 
         // Third run: only modified file re-parsed.
         let stats3 = index_repo(&data_dir, &repo).unwrap();
@@ -1643,7 +1717,9 @@ impl VrmRenderer {
 
         // Should have an Implements edge: VrmRenderer implements Renderer.
         let impl_edges: Vec<String> = conn
-            .prepare("SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 'implements'")
+            .prepare(
+                "SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 'implements'",
+            )
             .unwrap()
             .query_map(params![repo_id], |r| r.get(0))
             .unwrap()
@@ -1685,7 +1761,9 @@ mod inner {
 
         // `pub use` → ReExports edge.
         let reexport_edges: Vec<String> = conn
-            .prepare("SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 're_exports'")
+            .prepare(
+                "SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 're_exports'",
+            )
             .unwrap()
             .query_map(params![repo_id], |r| r.get(0))
             .unwrap()
@@ -1756,7 +1834,9 @@ class MyComponent extends BaseComponent implements Disposable {
         );
 
         let impl_edges: Vec<String> = conn
-            .prepare("SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 'implements'")
+            .prepare(
+                "SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 'implements'",
+            )
             .unwrap()
             .query_map(params![repo_id], |r| r.get(0))
             .unwrap()
@@ -1794,7 +1874,9 @@ import { internal } from './internal'
             .unwrap();
 
         let reexport_edges: Vec<String> = conn
-            .prepare("SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 're_exports'")
+            .prepare(
+                "SELECT target_name FROM code_edges WHERE repo_id = ?1 AND kind = 're_exports'",
+            )
             .unwrap()
             .query_map(params![repo_id], |r| r.get(0))
             .unwrap()

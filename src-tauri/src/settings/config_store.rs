@@ -1,10 +1,20 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::AppSettings;
 
 /// File name used to store application settings.
 const SETTINGS_FILE: &str = "app_settings.json";
+
+/// Resolve the effective data directory, applying the user's `data_root`
+/// override from settings when present.
+pub fn resolve_effective_data_dir(default_dir: &Path) -> PathBuf {
+    let settings = load(default_dir);
+    match settings.data_root.as_deref() {
+        Some(root) if !root.is_empty() => PathBuf::from(root),
+        _ => default_dir.to_path_buf(),
+    }
+}
 
 /// Load application settings from disk, applying env overrides.
 ///
@@ -103,6 +113,9 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -167,6 +180,9 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -216,6 +232,9 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         save(dir.path(), &s).unwrap();
 

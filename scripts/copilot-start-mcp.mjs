@@ -17,6 +17,7 @@ const sourceRootsForFreshness = [
   path.join(repoRoot, 'src-tauri', 'build.rs'),
   path.join(repoRoot, 'src-tauri', 'tauri.conf.json'),
   path.join(repoRoot, 'src-tauri', 'src'),
+  path.join(repoRoot, 'dist'),
 ]
 
 function archivePath(filePath) {
@@ -160,7 +161,7 @@ const log = fs.openSync(logPath, 'a')
 
 if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
   console.log(`[copilot-mcp] warming MCP Rust build (target-mcp) before startup; log=${logPath}`)
-  const build = spawnSync('cargo', ['build', '--release', '--manifest-path', 'src-tauri/Cargo.toml', '--target-dir', 'target-mcp'], {
+  const build = spawnSync('cargo', ['build', '--release', '--no-default-features', '--features', 'headless-mcp', '--manifest-path', 'src-tauri/Cargo.toml', '--target-dir', 'target-mcp'], {
     cwd: repoRoot,
     env: process.env,
     stdio: ['ignore', log, log],

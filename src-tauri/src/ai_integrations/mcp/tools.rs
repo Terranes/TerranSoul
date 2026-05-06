@@ -8,6 +8,10 @@
 use serde_json::{json, Value};
 
 use crate::ai_integrations::gateway::*;
+use crate::memory::wiki::{
+    append_and_review_queue, audit_report, ensure_source_dedup, god_nodes, surprising_connections,
+    AuditConfig,
+};
 use crate::AppState;
 
 /// Return the static list of MCP tool definitions (name, description,
@@ -119,6 +123,61 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {}
+            }
+        }),
+        json!({
+            "name": "brain_wiki_audit",
+            "description": "Knowledge Wiki audit over TerranSoul's memory graph: conflicts, orphans, stale entries, pending embeddings, and graph totals.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "Max ids returned per audit bucket (1-200, default 50)" },
+                    "stale_threshold": { "type": "number", "description": "Decay score below which unprotected low-importance memories are stale (0.0-1.0, default 0.20)" }
+                }
+            }
+        }),
+        json!({
+            "name": "brain_wiki_spotlight",
+            "description": "Knowledge Wiki spotlight: most-connected memories by live graph edge degree.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "Max memories to return (1-100, default 10)" }
+                }
+            }
+        }),
+        json!({
+            "name": "brain_wiki_serendipity",
+            "description": "Knowledge Wiki serendipity: high-confidence links that bridge distinct memory communities.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "Max cross-community links to return (1-100, default 10)" }
+                }
+            }
+        }),
+        json!({
+            "name": "brain_wiki_revisit",
+            "description": "Knowledge Wiki revisit queue: unprotected long/working memories ordered by review priority.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "Max review candidates to return (1-100, default 12)" }
+                }
+            }
+        }),
+        json!({
+            "name": "brain_wiki_digest_text",
+            "description": "Digest pasted text into TerranSoul's Knowledge Wiki with source-hash dedup. Requires write capability.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string", "description": "Text content to digest" },
+                    "source_url": { "type": "string", "description": "Optional source URL or resource identifier" },
+                    "tags": { "type": "string", "description": "Comma-separated tags (default: wiki:digest)" },
+                    "importance": { "type": "integer", "description": "Importance score 1-5 (default 3)" }
+                },
+                "required": ["content"]
             }
         }),
     ];
@@ -264,11 +323,125 @@ pub async fn dispatch(
             serde_json::to_string(&summary).map_err(|e| e.to_string())
         }
 
-        // ─── Code-intelligence tools (native symbol index) ────────────
-        "code_query" | "code_context" | "code_impact" | "code_rename" => {
-            dispatch_code_tool(caps, tool_name, args, app_state).await
-        }
+        "brain_wiki_audit"
+        | "brain_wiki_spotlight"
+        | "brain_wiki_serendipity"
+        | "brain_wiki_revisit"
+        | "brain_wiki_digest_text" => dispatch_brain_wiki_tool(caps, tool_name, args, app_state),
 
+        // ─── Code-intelligence tools (native symbol index) ────────────
+        "code_query"
+        | "code_context"
+        | "code_impact"
+        | "code_rename"
+        | "code_generate_skills"
+        | "code_list_groups"
+        | "code_create_group"
+        | "code_add_repo_to_group"
+        | "code_group_status"
+        | "code_extract_contracts"
+        | "code_list_group_contracts"
+        | "code_cross_repo_query" => dispatch_code_tool(caps, tool_name, args, app_state).await,
+
+        _ => Err(format!("unknown tool: {tool_name}")),
+    }
+}
+
+fn clamp_limit(args: &Value, default: usize, max: usize) -> usize {
+    args["limit"]
+        .as_u64()
+        .map(|n| n as usize)
+        .unwrap_or(default)
+        .clamp(1, max)
+}
+
+fn dispatch_brain_wiki_tool(
+    caps: &GatewayCaps,
+    tool_name: &str,
+    args: &Value,
+    app_state: Option<&AppState>,
+) -> Result<String, String> {
+    let state = app_state.ok_or_else(|| "brain wiki tools require app state".to_string())?;
+    let store = state
+        .memory_store
+        .lock()
+        .map_err(|error| format!("lock memory store: {error}"))?;
+
+    match tool_name {
+        "brain_wiki_audit" => {
+            if !caps.brain_read {
+                return Err(
+                    "permission denied: capability `brain_read` is not granted to this client"
+                        .into(),
+                );
+            }
+            let cfg = AuditConfig {
+                limit: clamp_limit(args, 50, 200),
+                stale_threshold: args["stale_threshold"]
+                    .as_f64()
+                    .unwrap_or(0.20)
+                    .clamp(0.0, 1.0),
+            };
+            let report = audit_report(&store, &cfg).map_err(|e| e.to_string())?;
+            serde_json::to_string(&report).map_err(|e| e.to_string())
+        }
+        "brain_wiki_spotlight" => {
+            if !caps.brain_read {
+                return Err(
+                    "permission denied: capability `brain_read` is not granted to this client"
+                        .into(),
+                );
+            }
+            let nodes = god_nodes(&store, clamp_limit(args, 10, 100)).map_err(|e| e.to_string())?;
+            serde_json::to_string(&nodes).map_err(|e| e.to_string())
+        }
+        "brain_wiki_serendipity" => {
+            if !caps.brain_read {
+                return Err(
+                    "permission denied: capability `brain_read` is not granted to this client"
+                        .into(),
+                );
+            }
+            let connections = surprising_connections(&store, clamp_limit(args, 10, 100))
+                .map_err(|e| e.to_string())?;
+            serde_json::to_string(&connections).map_err(|e| e.to_string())
+        }
+        "brain_wiki_revisit" => {
+            if !caps.brain_read {
+                return Err(
+                    "permission denied: capability `brain_read` is not granted to this client"
+                        .into(),
+                );
+            }
+            let queue = append_and_review_queue(&store, clamp_limit(args, 12, 100))
+                .map_err(|e| e.to_string())?;
+            serde_json::to_string(&queue).map_err(|e| e.to_string())
+        }
+        "brain_wiki_digest_text" => {
+            if !caps.brain_write {
+                return Err(
+                    "permission denied: capability `brain_write` is not granted to this client"
+                        .into(),
+                );
+            }
+            let content = args["content"]
+                .as_str()
+                .ok_or_else(|| "missing required param: content".to_string())?
+                .trim();
+            if content.is_empty() {
+                return Err("content cannot be empty".into());
+            }
+            let tags = args["tags"].as_str().unwrap_or("wiki:digest");
+            let result = ensure_source_dedup(
+                &store,
+                args["source_url"].as_str(),
+                content,
+                tags,
+                args["importance"].as_i64().unwrap_or(3),
+            )
+            .map_err(|e| e.to_string())?;
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
         _ => Err(format!("unknown tool: {tool_name}")),
     }
 }
@@ -332,6 +505,90 @@ fn code_tool_definitions() -> Vec<Value> {
                 "required": ["symbol", "new_name"]
             }
         }),
+        json!({
+            "name": "code_generate_skills",
+            "description": "Generate agent-compatible SKILL.md files from the code graph. Produces per-cluster and per-process skills with YAML frontmatter, symbol tables, and mermaid call graphs. Output is written to the specified directory.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": { "type": "string", "description": "Repository path (defaults to first indexed repo)" },
+                    "output_dir": { "type": "string", "description": "Output directory for generated skills (defaults to <repo>/.generated-skills)" }
+                }
+            }
+        }),
+        // ─── Multi-repo groups and contracts (chunk 37.13) ──────────────
+        json!({
+            "name": "code_list_groups",
+            "description": "List all repo groups with member counts.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": "code_create_group",
+            "description": "Create a new repo group with a unique label and optional description.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "label":       { "type": "string", "description": "Unique group label" },
+                    "description": { "type": "string", "description": "Optional description" }
+                },
+                "required": ["label"]
+            }
+        }),
+        json!({
+            "name": "code_add_repo_to_group",
+            "description": "Add an indexed repo to a group with an optional role tag (e.g., 'frontend', 'backend', 'shared'). Idempotent — re-adding updates the role.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "group_id": { "type": "integer" },
+                    "repo_id":  { "type": "integer", "description": "Indexed repo id (use code_query to discover)" },
+                    "role":     { "type": "string", "description": "Optional role tag" }
+                },
+                "required": ["group_id", "repo_id"]
+            }
+        }),
+        json!({
+            "name": "code_group_status",
+            "description": "Aggregated status for a group: members, symbol/contract counts, stalest indexed timestamp.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "group_id": { "type": "integer" } },
+                "required": ["group_id"]
+            }
+        }),
+        json!({
+            "name": "code_extract_contracts",
+            "description": "Extract public-API contracts from a repo's symbol surface. Captures top-level functions, structs, enums, traits, classes, interfaces, type aliases, and constants with stable signature hashes for change detection.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo":    { "type": "string",  "description": "Repository path (resolves to repo_id)" },
+                    "repo_id": { "type": "integer", "description": "Or pass an indexed repo id directly" }
+                }
+            }
+        }),
+        json!({
+            "name": "code_list_group_contracts",
+            "description": "List all extracted contracts for the repos in a group.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "group_id": { "type": "integer" } },
+                "required": ["group_id"]
+            }
+        }),
+        json!({
+            "name": "code_cross_repo_query",
+            "description": "Search for a symbol name across all repos in a group. Each match indicates which repo it lives in and whether it is part of that repo's contract surface.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "group_id": { "type": "integer" },
+                    "name":     { "type": "string", "description": "Substring to match (case-insensitive LIKE)" },
+                    "limit":    { "type": "integer", "description": "Max matches (1-1000, default 50)" }
+                },
+                "required": ["group_id", "name"]
+            }
+        }),
     ]
 }
 
@@ -354,6 +611,84 @@ async fn dispatch_code_tool(
     let data_dir = state.data_dir.clone();
     let conn = crate::coding::symbol_index::open_db(&data_dir)
         .map_err(|e| format!("code index not available: {e}"))?;
+
+    // ─── Group/contract tools — no repo_id resolution needed ────────────
+    match tool_name {
+        "code_list_groups" => {
+            let groups =
+                crate::coding::repo_groups::list_groups(&data_dir).map_err(|e| e.to_string())?;
+            return serde_json::to_string(&groups).map_err(|e| e.to_string());
+        }
+        "code_create_group" => {
+            let label = args["label"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: label".to_string())?;
+            let description = args["description"].as_str();
+            let group = crate::coding::repo_groups::create_group(&data_dir, label, description)
+                .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&group).map_err(|e| e.to_string());
+        }
+        "code_add_repo_to_group" => {
+            let group_id = args["group_id"]
+                .as_i64()
+                .ok_or_else(|| "missing required arg: group_id".to_string())?;
+            let repo_id = args["repo_id"]
+                .as_i64()
+                .ok_or_else(|| "missing required arg: repo_id".to_string())?;
+            let role = args["role"].as_str();
+            crate::coding::repo_groups::add_repo_to_group(&data_dir, group_id, repo_id, role)
+                .map_err(|e| e.to_string())?;
+            return Ok(serde_json::json!({ "ok": true }).to_string());
+        }
+        "code_group_status" => {
+            let group_id = args["group_id"]
+                .as_i64()
+                .ok_or_else(|| "missing required arg: group_id".to_string())?;
+            let status = crate::coding::repo_groups::group_status(&data_dir, group_id)
+                .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&status).map_err(|e| e.to_string());
+        }
+        "code_extract_contracts" => {
+            // Accept either an explicit repo_id or a `repo` path.
+            let repo_id = if let Some(rid) = args["repo_id"].as_i64() {
+                rid
+            } else if let Some(repo_path) = args["repo"].as_str() {
+                conn.query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_path],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_path}"))?
+            } else {
+                return Err("missing required arg: repo or repo_id".into());
+            };
+            let result = crate::coding::repo_groups::extract_contracts(&data_dir, repo_id)
+                .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&result).map_err(|e| e.to_string());
+        }
+        "code_list_group_contracts" => {
+            let group_id = args["group_id"]
+                .as_i64()
+                .ok_or_else(|| "missing required arg: group_id".to_string())?;
+            let contracts = crate::coding::repo_groups::list_group_contracts(&data_dir, group_id)
+                .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&contracts).map_err(|e| e.to_string());
+        }
+        "code_cross_repo_query" => {
+            let group_id = args["group_id"]
+                .as_i64()
+                .ok_or_else(|| "missing required arg: group_id".to_string())?;
+            let name = args["name"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: name".to_string())?;
+            let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+            let matches =
+                crate::coding::repo_groups::cross_repo_query(&data_dir, group_id, name, limit)
+                    .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&matches).map_err(|e| e.to_string());
+        }
+        _ => {}
+    }
 
     // Resolve the repo_id — use `repo` arg if provided, else first indexed repo.
     let repo_id: i64 = if let Some(repo_path) = args["repo"].as_str() {
@@ -607,6 +942,31 @@ async fn dispatch_code_tool(
                 symbol_name,
                 new_name,
                 dry_run,
+            )
+            .map_err(|e| e.to_string())?;
+
+            serde_json::to_string(&result).map_err(|e| e.to_string())
+        }
+
+        "code_generate_skills" => {
+            let repo_path: String = conn
+                .query_row(
+                    "SELECT path FROM code_repos WHERE id = ?1",
+                    rusqlite::params![repo_id],
+                    |r| r.get(0),
+                )
+                .map_err(|e| format!("cannot find repo path: {e}"))?;
+
+            let output_dir = if let Some(dir) = args["output_dir"].as_str() {
+                std::path::PathBuf::from(dir)
+            } else {
+                std::path::Path::new(&repo_path).join(".generated-skills")
+            };
+
+            let result = crate::coding::skills::generate_skills(
+                &data_dir,
+                std::path::Path::new(&repo_path),
+                &output_dir,
             )
             .map_err(|e| e.to_string())?;
 
@@ -873,8 +1233,7 @@ fn generate_editor_setup(state: &AppState) -> Value {
     };
 
     // Detect which port we're likely running on
-    let port = std::env::var("TERRANSOUL_MCP_PORT")
-        .unwrap_or_else(|_| "7421".to_string());
+    let port = std::env::var("TERRANSOUL_MCP_PORT").unwrap_or_else(|_| "7421".to_string());
 
     json!({
         "description": "VS Code MCP configuration for TerranSoul brain server",
@@ -908,15 +1267,14 @@ pub fn write_editor_setup(repo_path: &std::path::Path, state: &AppState) -> Resu
     let setup = generate_editor_setup(state);
 
     let vscode_dir = repo_path.join(".vscode");
-    std::fs::create_dir_all(&vscode_dir)
-        .map_err(|e| format!("cannot create .vscode/: {e}"))?;
+    std::fs::create_dir_all(&vscode_dir).map_err(|e| format!("cannot create .vscode/: {e}"))?;
 
     let mcp_path = vscode_dir.join("mcp.json");
 
     // Read existing config or start fresh
     let mut config: Value = if mcp_path.exists() {
-        let content = std::fs::read_to_string(&mcp_path)
-            .map_err(|e| format!("cannot read mcp.json: {e}"))?;
+        let content =
+            std::fs::read_to_string(&mcp_path).map_err(|e| format!("cannot read mcp.json: {e}"))?;
         serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
     } else {
         json!({})
@@ -954,8 +1312,7 @@ pub fn write_editor_setup(repo_path: &std::path::Path, state: &AppState) -> Resu
 
     let output = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("cannot serialize mcp.json: {e}"))?;
-    std::fs::write(&mcp_path, &output)
-        .map_err(|e| format!("cannot write mcp.json: {e}"))?;
+    std::fs::write(&mcp_path, &output).map_err(|e| format!("cannot write mcp.json: {e}"))?;
 
     Ok(format!("Written to {}", mcp_path.display()))
 }
@@ -1159,7 +1516,10 @@ pub fn get_prompt(name: &str, args: &Value, app_state: Option<&AppState>) -> Res
                 };
                 impacts_desc.push_str(&format!(
                     "- `{}` ({}) in {} — {risk_label} ({} affected)\n",
-                    impact.symbol.name, impact.symbol.kind, impact.symbol.file, impact.affected_count
+                    impact.symbol.name,
+                    impact.symbol.kind,
+                    impact.symbol.file,
+                    impact.affected_count
                 ));
             }
 
@@ -1206,7 +1566,9 @@ pub fn get_prompt(name: &str, args: &Value, app_state: Option<&AppState>) -> Res
 
             let target = clusters
                 .iter()
-                .find(|c| c.label.eq_ignore_ascii_case(cluster_label) || c.id.to_string() == cluster_label)
+                .find(|c| {
+                    c.label.eq_ignore_ascii_case(cluster_label) || c.id.to_string() == cluster_label
+                })
                 .ok_or_else(|| format!("cluster not found: {cluster_label}"))?;
 
             // Get symbols in this cluster via cluster_members join
@@ -1284,10 +1646,10 @@ mod tests {
     }
 
     #[test]
-    fn definitions_has_12_tools_with_code_read() {
+    fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 13);
+        assert_eq!(defs.len(), 21);
     }
 
     #[test]
@@ -1329,7 +1691,20 @@ mod tests {
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();
-        let expected = ["code_query", "code_context", "code_impact", "code_rename"];
+        let expected = [
+            "code_query",
+            "code_context",
+            "code_impact",
+            "code_rename",
+            "code_generate_skills",
+            "code_list_groups",
+            "code_create_group",
+            "code_add_repo_to_group",
+            "code_group_status",
+            "code_extract_contracts",
+            "code_list_group_contracts",
+            "code_cross_repo_query",
+        ];
         assert_eq!(code_names, expected);
     }
 
@@ -1374,6 +1749,14 @@ mod tests {
         let defs = prompt_definitions();
         assert_eq!(defs.len(), 4);
         let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["detect_impact", "generate_map", "guided_impact", "explore_cluster"]);
+        assert_eq!(
+            names,
+            [
+                "detect_impact",
+                "generate_map",
+                "guided_impact",
+                "explore_cluster"
+            ]
+        );
     }
 }

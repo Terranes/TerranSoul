@@ -81,3 +81,57 @@ export function parseSlashCommand(input: string): ParsedSlashCommand {
   }
   return { kind: 'unknown', arg, raw, command };
 }
+
+export type BrainWikiSlashCommandKind =
+  | 'digest'
+  | 'ponder'
+  | 'weave'
+  | 'spotlight'
+  | 'serendipity'
+  | 'revisit'
+  | 'trace'
+  | 'why';
+
+export interface ParsedBrainWikiSlashCommand {
+  kind: BrainWikiSlashCommandKind;
+  arg: string;
+  raw: string;
+}
+
+export const BRAIN_WIKI_HELP_TEXT = [
+  '/digest <text>       - store a deduplicated source note',
+  '/ponder              - audit contradictions, orphans, stale memories, and embedding gaps',
+  '/spotlight           - show the most-connected memories',
+  '/serendipity         - show high-confidence cross-topic links',
+  '/revisit             - show memories most ready for review',
+  '/weave <topic>       - planned: synthesize a protected wiki page',
+  '/trace <a> <b>       - planned: trace a memory path',
+  '/why <id>            - planned: explain provenance and rationale',
+].join('\n');
+
+const BRAIN_WIKI_COMMANDS = new Set<BrainWikiSlashCommandKind>([
+  'digest',
+  'ponder',
+  'weave',
+  'spotlight',
+  'serendipity',
+  'revisit',
+  'trace',
+  'why',
+]);
+
+export function parseBrainWikiSlashCommand(input: string): ParsedBrainWikiSlashCommand | null {
+  const raw = input.trim();
+  if (!raw.startsWith('/')) return null;
+  if (raw.length < 2 || raw[1] === '/') return null;
+
+  const body = raw.slice(1).trim();
+  if (!body) return null;
+
+  const firstSpace = body.search(/\s/);
+  const command = firstSpace === -1 ? body.toLowerCase() : body.slice(0, firstSpace).toLowerCase();
+  const arg = firstSpace === -1 ? '' : body.slice(firstSpace + 1).trim();
+
+  if (!BRAIN_WIKI_COMMANDS.has(command as BrainWikiSlashCommandKind)) return null;
+  return { kind: command as BrainWikiSlashCommandKind, arg, raw };
+}

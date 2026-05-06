@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "entries": {
+    ".github/instructions/mcp-preflight.instructions.md": {
+      "sha": "5524fbae5689da8e5f23b3d5d8693d4d0b8b84feeaea5969ed43dec792031134",
+      "importance": 5,
+      "tags": "instructions,agent"
+    },
+    "AGENTS.md": {
+      "sha": "2e89de31198a7e248be24ebedc82ca3f17d08845bff1a7629fd18b4fe7799837",
+      "importance": 5,
+      "tags": "agents,instructions"
+    },
+    "CLAUDE.md": {
+      "sha": "84b81848a55c6f894b69d431df8731a77b5c3fe67fdb26938733899caa0cc273",
+      "importance": 5,
+      "tags": "agents,instructions"
+    },
+    "CREDITS.md": {
+      "sha": "47d349b538c636e4a1a2272507a8463e41d42e1a3f043a49ffa3cef1432e18c4",
+      "importance": 3,
+      "tags": "credits,attribution"
+    },
+    "docs/AI-coding-integrations.md": {
+      "sha": "174657ce328171bbfb13579ced1460484089b4c7707f425b793a80e41f1bbae2",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/brain-advanced-design.md": {
+      "sha": "11fe162d8e12256a09df300c1216ed69658db3c74b63bd284773113715cecb68",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/coding-workflow-design.md": {
+      "sha": "e73586d258ff5f73c00179920cbfd4bad2670ab8175034e653f3452b404b9949",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/DESIGN.md": {
+      "sha": "08bb1f4cc2519a1399dcd668b1e1922961774678667c293b363962ff1475e25d",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/gitnexus-capability-matrix.md": {
+      "sha": "7f853d4250736bb26fe67b3b0039285893d18f1d7dea48a2f6bad9e27d9a81aa",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/licensing-audit.md": {
+      "sha": "55cfb05d4a31bf3705ed2101e176f6b08139d19a37b204b3aa7e03395b1c4a38",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/llm-animation-research.md": {
+      "sha": "dfa883de634bd9bf542d9ec1aeae54d2c8e3cfa8b808a7c7780906086738eb9b",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/momask-full-body-retarget-research.md": {
+      "sha": "9944cf28c4b5b2933b9338dc63d6bf8f48c2c14c178fad2da8bd9a3810d5391a",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/motion-model-inference-evaluation.md": {
+      "sha": "73532e0a524e74622137453b15de7dedeeefa516891d50b5768d0c70f8bb8855",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/multi-agent-orchestration-analysis-2026.md": {
+      "sha": "32442a763a51fdd9a541ce16890f79426fe0b443dba3de022bc203b1e7c7e595",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/native-code-intelligence-spec.md": {
+      "sha": "dce3fa7c7c1c14beea43366e136fe0c53210d2e4eb0e33b952ab45e588a3a8b1",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/neural-audio-to-face-evaluation.md": {
+      "sha": "8f2e3c1bb0eef8a9683a325783701ba5360ef631999d82420e7561e412a0ff2f",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/offline-motion-polish-research.md": {
+      "sha": "5416a6991d99280365dd0812f06d72978539290d3eba0bf414349511597eba2a",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/persona-design.md": {
+      "sha": "1aa728eba410bc47ccbbc94bf425dbd777c0203c63c7066097aa05eb9c98b760",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/persona-pack-schema.md": {
+      "sha": "ff1a6470c5975d69f4dbed5d0f34f6ae732ac6439ac3df928381eaed39052aac",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/plugin-development.md": {
+      "sha": "42fcf6a228eb573ee9bd64ee1b19c4fe570e0d328c3118e9826207f7a3ddbf6c",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "docs/teachable-capabilities.md": {
+      "sha": "0889262044eb9135ca2530fc212273beb550c1591a9e9a658eda6f85ace57b8f",
+      "importance": 4,
+      "tags": "docs,design"
+    },
+    "instructions/AGENT-ROSTER.md": {
+      "sha": "a27d320494cd8a45432d42228a4832b49aa4648643ac095447106a8bafa926e4",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md": {
+      "sha": "3ff8f2b283524be02a1bf4e32340a8e149f3514c2b642dfcbcc945ee1b992be2",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/DOCKER-CLEANUP.md": {
+      "sha": "dc3dc0b8e5e15b1c243f481a7d54e22ed165422cd13e09a044b0afaa10610cd7",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/EXTENDING.md": {
+      "sha": "d672e04b7a7235401d3c8adb0c97c1fb8a25329f26a6b0ec7adc7680258b0327",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/IMPORTING-MODELS.md": {
+      "sha": "78056daa9319cc4a08ec422be92ab54f70ce00df9780921d85fe469d3b7398a1",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/PLATFORM-SUPPORT.md": {
+      "sha": "aebc723defaab4ef59ed80cca09df48c93db2e6725b609ef21b93dfaa78ce7b0",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/README.md": {
+      "sha": "78c7570529b6a37e5f2a40f05498b75ef545153ad97d1a17933ef4219f923137",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/VRMA-ANIMATIONS.md": {
+      "sha": "883b05a5948b2d6f70e4863f1e8c03d3be7c60988f2037e2dc9e1b7a9327db06",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "instructions/WARNING-PREVENTION.md": {
+      "sha": "d7a933274a6e30aed8d87243bcabb0fb38ae7725780d72ac34f0632bed074e17",
+      "importance": 3,
+      "tags": "instructions,how-to"
+    },
+    "README.md": {
+      "sha": "4b1e9a5ee1adfeb58c735b7222dafe54ea50af4065cd092ca6d7f55ba7aabf8e",
+      "importance": 5,
+      "tags": "readme,overview"
+    },
+    "rules/agent-mcp-bootstrap.md": {
+      "sha": "4e7a99dbbcc063f7aaa2d2d71008d5d077b799307dac3838ac37cc52483f6493",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/architecture-rules.md": {
+      "sha": "fad18affc3bc51eb024bf9aa83c01e055123df3e231eec6034dddeb51610c457",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/backlog.md": {
+      "sha": "2585be5b44b2ea8ce84194597f77df8adb16234362e2ef1105bcf2dabf644e58",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/coding-standards.md": {
+      "sha": "f2acbb3ce1b02948a25de7580eb3763f038b5fc64659965a289bc75021bc1ab7",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/coding-workflow-reliability.md": {
+      "sha": "f414726a18d9d012cef76ac34454e09d2b2b8126e72a774637eea0b5264cdabd",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/completion-log.md": {
+      "sha": "3de270124c8aef81818c5e21a3c450f108adb460c7e2bec0e26f256f8d703e50",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/deep-analysis-rule.md": {
+      "sha": "a6da414c837a642ab6400e2aa1b066b78ce891a68446bedfb36cebac8a88d524",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/llm-decision-rules.md": {
+      "sha": "c285fdc4f3a16f043ba6b78d7e50074a93e3e05b32dcb8ec51c6f5d4b4e4145e",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/local-first-brain.md": {
+      "sha": "917bf6bf47e8c37484f20ccf245060493d61c741d450d4ee23d9be10fd5dbd2d",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/milestones.md": {
+      "sha": "79dbe5e142e17d8af93c83c1bb4b4fc18979201c6b79807e3ab95677864da0e8",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/prompting-rules.md": {
+      "sha": "5c08d9b68c3203b68fab85959b136f03967b14aa36808fc7fb6f9c650e50a2e1",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/quality-pillars.md": {
+      "sha": "4a58c192cb0e51a38e1d9a10243e86a6d35aec6f6b96d091e3d962a1205bf525",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/reality-filter.md": {
+      "sha": "5abb6401a0c8ef3a82d8317ea1f8f91cae0c88c46f3253842e36f6b79474aeec",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/research-reverse-engineering.md": {
+      "sha": "4a27d0770689c0242871c879429994f19fff8aa98d110c38f13dd99424ffa5c7",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/tutorial-template.md": {
+      "sha": "6f77d4a821c654592c4bec0ec11535bd367ea4f77d568278fffe13c5abe7b096",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "rules/ui-ux-standards.md": {
+      "sha": "449353326bb54c05769c48115dc59cc938effa6a57fd6d039a14eec037e1fef3",
+      "importance": 5,
+      "tags": "rules,governance"
+    },
+    "SECURITY.md": {
+      "sha": "e27dc3d6b3294aa020aa02d129d64c9363f0ccd46d2c4e51c2be217c230082bc",
+      "importance": 4,
+      "tags": "security,policy"
+    },
+    "tutorials/brain-rag-local-lm-tutorial.md": {
+      "sha": "42cb53ced3833471f5b668ff432df66ce829e2380eaab248ff8129e93b7e89e9",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/brain-rag-setup-tutorial.md": {
+      "sha": "7fa16b74b75a7fa59b45548cd5939fa5554cc4f5fd2ced15888482b3db3fd934",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/charisma-teaching-tutorial.md": {
+      "sha": "066d353b6e562f35673365cd1bfc0de0883770dff12b057f5e8aff142f6f2729",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/lan-mcp-sharing-tutorial.md": {
+      "sha": "3bfcf0917084716c125b7449887f1549957d3227db48ca0525e5a859044a2417",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/multi-agent-workflows-tutorial.md": {
+      "sha": "118c9b400b42d0f4f68c6c641e66554f507f5e7851469e8672097d431e22edb4",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/openclaw-plugin-tutorial.md": {
+      "sha": "c9673fe737fab136ec1763f74fe5551cc7495441099799da5928719f1a8c9dd9",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/self-improve-to-pr-tutorial.md": {
+      "sha": "01c072066afed4cb7765ac9c9ccedf1db66643a6c04faf4fd20e4cd0898d27ea",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    },
+    "tutorials/teaching-animations-expressions-persona-tutorial.md": {
+      "sha": "1ade3f0b6a519937b780960fa1577a1a6c7f79492d0ad62d141d2bb6392415dd",
+      "importance": 4,
+      "tags": "tutorial,user-guide"
+    }
+  }
+}

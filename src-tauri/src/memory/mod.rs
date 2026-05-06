@@ -1,4 +1,5 @@
 pub mod ann_index;
+pub mod audit;
 pub mod auto_learn;
 pub mod auto_tag;
 pub mod backend;
@@ -14,6 +15,8 @@ pub mod crag;
 pub mod crdt_sync;
 pub mod edge_conflict_scan;
 pub mod edges;
+pub mod embedding_queue;
+pub mod eviction;
 pub mod fusion;
 pub mod graph_rag;
 pub mod hyde;
@@ -33,6 +36,7 @@ pub mod store;
 pub mod tag_vocabulary;
 pub mod temporal;
 pub mod versioning;
+pub mod wiki;
 
 #[cfg(feature = "cassandra")]
 pub mod cassandra;

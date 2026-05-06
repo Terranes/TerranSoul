@@ -66,6 +66,23 @@ pub enum CodingCapability {
     Explain,
 }
 
+impl CodingCapability {
+    /// Required capability tags for tag-based agent selection (chunk 33B.6).
+    /// An agent must have **all** returned tags in its `capabilities` vec
+    /// to be eligible for this kind of work.
+    pub fn required_tags(self) -> &'static [&'static str] {
+        match self {
+            Self::Plan => &["code", "plan"],
+            Self::Implement => &["code", "implement"],
+            Self::Review => &["code", "review"],
+            Self::Fix => &["code", "fix"],
+            Self::Refactor => &["code", "refactor"],
+            Self::Test => &["code", "test"],
+            Self::Explain => &["code", "explain"],
+        }
+    }
+}
+
 /// Suggested output shape based on detected intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SuggestedShape {
@@ -447,5 +464,31 @@ mod tests {
         // Weak signals alone don't reach high
         let intent = detect_intent("the function and the module both have issues");
         assert!(intent.confidence < IntentConfidence::High);
+    }
+
+    #[test]
+    fn required_tags_all_start_with_code() {
+        let variants = [
+            CodingCapability::Plan,
+            CodingCapability::Implement,
+            CodingCapability::Review,
+            CodingCapability::Fix,
+            CodingCapability::Refactor,
+            CodingCapability::Test,
+            CodingCapability::Explain,
+        ];
+        for cap in variants {
+            let tags = cap.required_tags();
+            assert!(!tags.is_empty(), "{:?} has no tags", cap);
+            assert!(tags.contains(&"code"), "{:?} missing 'code' base tag", cap);
+        }
+    }
+
+    #[test]
+    fn required_tags_unique_per_capability() {
+        let plan = CodingCapability::Plan.required_tags();
+        let fix = CodingCapability::Fix.required_tags();
+        // The second tag should differ between plan and fix
+        assert_ne!(plan[1], fix[1]);
     }
 }

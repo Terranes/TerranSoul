@@ -24,6 +24,7 @@ import type {
   EdgeDirection,
   EdgeStats,
   MemoryEdge,
+  MemoryProvenance,
   MemoryEntry,
   MemoryStats,
   MemoryTier,
@@ -393,6 +394,16 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /** Get the joined provenance tree for a memory (chunk 33B.4). */
+  async function getMemoryProvenance(memoryId: number): Promise<MemoryProvenance | null> {
+    try {
+      return await invoke<MemoryProvenance>('get_memory_provenance', { memoryId });
+    } catch (e) {
+      error.value = String(e);
+      return null;
+    }
+  }
+
   /** Auto-adjust importance based on access patterns (chunk 17.4). */
   async function adjustImportance(
     hotThreshold?: number,
@@ -479,6 +490,7 @@ export const useMemoryStore = defineStore('memory', () => {
     multiHopSearch,
     exportToObsidian,
     getMemoryHistory,
+    getMemoryProvenance,
     adjustImportance,
     exportBrowserSyncPayload,
     importBrowserSyncPayload,

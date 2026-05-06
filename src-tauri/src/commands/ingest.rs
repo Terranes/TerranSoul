@@ -145,7 +145,12 @@ async fn start_ingest(
     let emitter_clone = emitter.clone();
     let state_clone = state.clone();
 
+    // Acquire a concurrency permit so at most N ingest tasks run their
+    // embedding phase simultaneously. This prevents stampeding Ollama when
+    // many files are ingested at once (e.g. doc-sync of 56 files).
+    let semaphore = state.ingest_semaphore.clone();
     tokio::spawn(async move {
+        let _permit = semaphore.acquire().await;
         let result = run_ingest_task(
             &task_id_clone,
             &source_clone,
@@ -594,27 +599,57 @@ async fn run_ingest_task(
             .filter(|(_, _, embedded)| !*embedded)
             .map(|(id, content, _)| (*id, content.clone()))
             .collect();
-        for (i, (entry_id, content)) in pending_embeddings.iter().enumerate() {
+
+        // Batch embed in groups of 32 (Ollama /api/embed + OpenAI both
+        // support array input). This is ≥10× faster than sequential
+        // single-text calls because it amortises TCP/TLS overhead and
+        // lets the model batch GPU work.
+        let texts: Vec<&str> = pending_embeddings.iter().map(|(_, c)| c.as_str()).collect();
+
+        let embeddings = crate::brain::embed_batch_for_mode(
+            &texts,
+            brain_mode.as_ref(),
+            active_brain.as_deref(),
+            None, // default batch_size = 32
+        )
+        .await;
+
+        let mut embedded_count = 0usize;
+        let mut failed_ids: Vec<i64> = Vec::new();
+        for (i, emb_opt) in embeddings.into_iter().enumerate() {
             if cancel_flag.load(Ordering::Relaxed) {
                 break;
             }
-            if let Some(emb) =
-                crate::brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref())
-                    .await
-            {
+            if let Some(emb) = emb_opt {
                 if let Ok(s) = state.memory_store.lock() {
-                    let _ = s.set_embedding(*entry_id, &emb);
+                    let _ = s.set_embedding(pending_embeddings[i].0, &emb);
+                    embedded_count += 1;
                 }
+            } else {
+                // Embedding failed — enqueue for retry by the
+                // self-healing background worker (Chunk 38.2).
+                failed_ids.push(pending_embeddings[i].0);
             }
-            let progress = (85 + ((i + 1) * 15 / pending_embeddings.len().max(1))) as u8;
-            emit_progress(
-                emitter,
-                task_id,
-                progress,
-                &format!("Embedded {}/{}", i + 1, pending_embeddings.len()),
-                i + 1,
-                pending_embeddings.len(),
-            );
+            // Emit progress every 32 items or on last item.
+            if (i + 1) % 32 == 0 || i + 1 == pending_embeddings.len() {
+                let progress = (85 + ((i + 1) * 15 / pending_embeddings.len().max(1))) as u8;
+                emit_progress(
+                    emitter,
+                    task_id,
+                    progress,
+                    &format!("Embedded {}/{}", embedded_count, pending_embeddings.len()),
+                    i + 1,
+                    pending_embeddings.len(),
+                );
+            }
+        }
+
+        // Enqueue all failed embeddings for retry. The background worker
+        // will pick them up on its next 10-s tick.
+        if !failed_ids.is_empty() {
+            if let Ok(s) = state.memory_store.lock() {
+                let _ = crate::memory::embedding_queue::enqueue_many(s.conn(), &failed_ids);
+            }
         }
     }
 

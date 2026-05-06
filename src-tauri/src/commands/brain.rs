@@ -164,24 +164,83 @@ pub async fn get_ollama_models(
 
 /// Pull an Ollama model from the registry (downloads it locally).
 /// Emits `ollama-pull-progress` events with live download percentage.
+/// Also emits `task-progress` so the universal TaskProgressBar displays it.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn pull_ollama_model(
     app: AppHandle,
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let client = &state.ollama_client;
+    use crate::tasks::manager::{TaskKind, TaskProgressEvent, TaskStatus};
 
-    let app_handle = app.clone();
-    brain::pull_model_with_progress(
+    let client = &state.ollama_client;
+    let task_id = format!("model-pull-{}", uuid::Uuid::new_v4());
+    let model_display = model_name.clone();
+
+    // Emit initial running event
+    let _ = app.emit(
+        "task-progress",
+        TaskProgressEvent {
+            id: task_id.clone(),
+            kind: TaskKind::ModelPull,
+            status: TaskStatus::Running,
+            progress: 0,
+            description: format!("Pulling {model_display}…"),
+            processed_items: 0,
+            total_items: 1,
+            error: None,
+        },
+    );
+
+    let app_pull = app.clone();
+    let app_task = app.clone();
+    let tid = task_id.clone();
+    let mdl = model_display.clone();
+
+    let result = brain::pull_model_with_progress(
         client,
         brain::ollama_agent::OLLAMA_BASE_URL,
         &model_name,
         move |progress| {
-            let _ = app_handle.emit("ollama-pull-progress", &progress);
+            let _ = app_pull.emit("ollama-pull-progress", &progress);
+            // Also emit task-progress with the overall percentage
+            let _ = app_task.emit(
+                "task-progress",
+                TaskProgressEvent {
+                    id: tid.clone(),
+                    kind: TaskKind::ModelPull,
+                    status: TaskStatus::Running,
+                    progress: progress.percent,
+                    description: format!("Pulling {mdl}… {}", progress.status),
+                    processed_items: 0,
+                    total_items: 1,
+                    error: None,
+                },
+            );
         },
     )
-    .await?;
+    .await;
+
+    // Emit completion or failure
+    let final_status = match &result {
+        Ok(_) => TaskStatus::Completed,
+        Err(_) => TaskStatus::Failed,
+    };
+    let _ = app.emit(
+        "task-progress",
+        TaskProgressEvent {
+            id: task_id,
+            kind: TaskKind::ModelPull,
+            status: final_status,
+            progress: if result.is_ok() { 100 } else { 0 },
+            description: format!("Pull {model_display}"),
+            processed_items: if result.is_ok() { 1 } else { 0 },
+            total_items: 1,
+            error: result.as_ref().err().cloned(),
+        },
+    );
+
+    result?;
 
     // Track the pulled model so factory reset can remove it.
     {
@@ -539,7 +598,7 @@ pub async fn get_brain_selection(
     let storage_snapshot = brain::StorageSelection {
         backend: "sqlite".to_string(),
         is_local: true,
-        schema_label: "V13 — canonical memory schema".to_string(),
+        schema_label: "V15 — canonical memory schema".to_string(),
     };
 
     // (5) Agents — read the orchestrator roster. The default routing
@@ -897,6 +956,25 @@ pub async fn resolve_provider_for_task(
     let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
     let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
     Ok(brain::resolve_for_task(&policy, kind, brain_mode.as_ref()))
+}
+
+/// Get the status of the self-healing embedding retry queue.
+#[tauri::command]
+pub async fn embedding_queue_status(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::embedding_queue::EmbeddingQueueStatus, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    crate::memory::embedding_queue::queue_status(store.conn()).map_err(|e| e.to_string())
+}
+
+/// Get the most recent eviction log entries (newest first).
+#[tauri::command]
+pub async fn brain_eviction_log(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::memory::eviction::EvictionReport>, String> {
+    let entries = crate::memory::eviction::read_eviction_log(&state.data_dir, limit.unwrap_or(20));
+    Ok(entries)
 }
 
 // ── Agent-Role Routing (Chunk 35.3) ─────────────────────────────────────────

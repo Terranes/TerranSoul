@@ -105,6 +105,9 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -158,6 +161,9 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

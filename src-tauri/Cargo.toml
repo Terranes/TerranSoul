@@ -8,6 +8,10 @@ license = "MIT"
 name = "terransoul_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "terransoul-scheduler"
+path = "src/bin/scheduler.rs"
+
 [build-dependencies]
 protoc-bin-vendored = "3.2.0"
 tauri-build = { version = "2", features = [] }
@@ -57,7 +61,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"], optional = t
 # winauth 0.0.4 → rand 0.7.3). We only need TDS 7.3 protocol; NTLM auth is not used.
 # GHSA advisory: rand 0.7.3 unsoundness (RUSTSEC-2021-0145) — fixed by removing winauth dep.
 tiberius = { version = "0.12", features = ["tds73"], default-features = false, optional = true }
-tokio-util = { version = "0.7", features = ["compat"], optional = true }
+tokio-util = { version = "0.7", features = ["compat"] }
 scylla = { version = "0.14", optional = true }
 # ── Security notes ──────────────────────────────────────────────────────────────────────────
 # glib 0.18.5 (GHSA-cf7g-cm7q-rq7q): VariantStrIter unsoundness fixed in glib 0.20.0.
@@ -87,12 +91,14 @@ tonic-web = "0.14.5"
 mdns-sd = { version = "0.19", optional = true }
 
 [features]
-default = []
+default = ["desktop"]
+desktop = ["native-ann"]
+headless-mcp = []
 wasm-sandbox = ["dep:wasmtime"]
 native-ann = ["dep:usearch"]
 lan-share-mdns = ["dep:mdns-sd"]
 postgres = ["dep:sqlx"]
-mssql = ["dep:tiberius", "dep:tokio-util"]
+mssql = ["dep:tiberius"]
 cassandra = ["dep:scylla", "dep:rand"]
 motion-research = []
 parser-python = ["dep:tree-sitter-python"]
@@ -100,6 +106,7 @@ parser-go = ["dep:tree-sitter-go"]
 parser-java = ["dep:tree-sitter-java"]
 parser-c = ["dep:tree-sitter-c", "dep:tree-sitter-cpp"]
 all-parsers = ["parser-python", "parser-go", "parser-java", "parser-c"]
+bench-million = ["native-ann"]
 
 [profile.dev.package.scrypt]
 opt-level = 3
@@ -107,7 +114,15 @@ opt-level = 3
 [dev-dependencies]
 tempfile = "3"
 wasm-encoder = "0.244.0"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.9"
+rand_xoshiro = "0.7"
 # Enables tauri::test::{mock_app, MockRuntime} for headless integration tests.
 # Resolver=2 (default for edition=2021) keeps this dev-only feature out of the
 # production binary.
 tauri = { version = "2", features = ["tray-icon", "test"] }
+
+[[bench]]
+name = "million_memory"
+harness = false
+required-features = ["native-ann"]

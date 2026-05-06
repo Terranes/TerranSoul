@@ -15,11 +15,21 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-use super::processes::{list_clusters, list_processes, Cluster, ExecutionProcess};
+use super::processes::{list_clusters, list_processes, Cluster, Process};
 use super::symbol_index::{open_db, IndexError};
-use super::wiki::{build_cluster_description, SymInfo};
 
 // ─── Public types ───────────────────────────────────────────────────────────
+
+/// Symbol info for skill rendering (includes top-level flag as export proxy).
+#[derive(Debug, Clone)]
+pub struct SkillSymbol {
+    pub name: String,
+    pub kind: String,
+    pub file: String,
+    pub line: u32,
+    /// True if the symbol has no parent (module-level = public API heuristic).
+    pub top_level: bool,
+}
 
 /// Result of generating skill files for a repo.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,8 +99,8 @@ pub fn generate_skills(
 
     // Generate cluster skills
     for cluster in &clusters {
-        let syms = load_cluster_symbols_for_skill(&conn, &cluster.symbol_ids)?;
-        let edges = load_cluster_edges_for_skill(&conn, &cluster.symbol_ids)?;
+        let syms = load_skill_symbols(&conn, &cluster.symbol_ids)?;
+        let edges = load_skill_edges(&conn, &cluster.symbol_ids)?;
         let skill = render_cluster_skill(&repo_label, cluster, &syms, &edges);
 
         let dir_name = sanitize_name(&cluster.label);
@@ -112,7 +122,7 @@ pub fn generate_skills(
 
     // Generate process skills (top 15 by step count)
     let mut sorted_processes = processes.clone();
-    sorted_processes.sort_by(|a, b| b.steps.len().cmp(&a.steps.len()));
+    sorted_processes.sort_by_key(|p| std::cmp::Reverse(p.steps.len()));
 
     for proc in sorted_processes.iter().take(15) {
         let skill = render_process_skill(&repo_label, proc);
@@ -141,7 +151,7 @@ pub fn generate_skills(
 fn render_cluster_skill(
     repo_label: &str,
     cluster: &Cluster,
-    syms: &[SymInfo],
+    syms: &[SkillSymbol],
     edges: &[(String, String)],
 ) -> String {
     let mut skill = String::new();
@@ -171,8 +181,8 @@ fn render_cluster_skill(
     skill.push_str("- When you need to understand the internal call structure\n");
     skill.push_str("- When modifying symbols that belong to this cluster\n\n");
 
-    // Key symbols (public API)
-    let exported: Vec<&SymInfo> = syms.iter().filter(|s| s.exported).collect();
+    // Key symbols (top-level = public API heuristic)
+    let exported: Vec<&SkillSymbol> = syms.iter().filter(|s| s.top_level).collect();
     if !exported.is_empty() {
         skill.push_str("## Public API\n\n");
         skill.push_str("| Symbol | Kind | File | Line |\n");
@@ -183,27 +193,37 @@ fn render_cluster_skill(
                 sym.name, sym.kind, sym.file, sym.line
             ));
         }
-        skill.push_str("\n");
+        skill.push('\n');
     }
 
     // Internal structure
-    let internal: Vec<&SymInfo> = syms.iter().filter(|s| !s.exported).collect();
+    let internal: Vec<&SkillSymbol> = syms.iter().filter(|s| !s.top_level).collect();
     if !internal.is_empty() {
-        skill.push_str(&format!("## Internal symbols ({} total)\n\n", internal.len()));
+        skill.push_str(&format!(
+            "## Internal symbols ({} total)\n\n",
+            internal.len()
+        ));
         for sym in internal.iter().take(20) {
-            skill.push_str(&format!("- `{}` ({}) — {}:{}\n", sym.name, sym.kind, sym.file, sym.line));
+            skill.push_str(&format!(
+                "- `{}` ({}) — {}:{}\n",
+                sym.name, sym.kind, sym.file, sym.line
+            ));
         }
         if internal.len() > 20 {
             skill.push_str(&format!("- ... and {} more\n", internal.len() - 20));
         }
-        skill.push_str("\n");
+        skill.push('\n');
     }
 
     // Call graph (mermaid)
     if !edges.is_empty() {
         skill.push_str("## Call Graph\n\n```mermaid\ngraph LR\n");
         for (from, to) in edges.iter().take(50) {
-            skill.push_str(&format!("    {} --> {}\n", mermaid_safe(from), mermaid_safe(to)));
+            skill.push_str(&format!(
+                "    {} --> {}\n",
+                mermaid_safe(from),
+                mermaid_safe(to)
+            ));
         }
         if edges.len() > 50 {
             skill.push_str(&format!("    %% ... and {} more edges\n", edges.len() - 50));
@@ -214,12 +234,15 @@ fn render_cluster_skill(
     skill
 }
 
-fn render_process_skill(repo_label: &str, proc: &ExecutionProcess) -> String {
+fn render_process_skill(repo_label: &str, proc: &Process) -> String {
     let mut skill = String::new();
 
     // YAML frontmatter
     skill.push_str("---\n");
-    skill.push_str(&format!("name: process-{}\n", sanitize_name(&proc.entry_point)));
+    skill.push_str(&format!(
+        "name: process-{}\n",
+        sanitize_name(&proc.entry_point)
+    ));
     skill.push_str(&format!(
         "description: \"Execution flow from '{}' ({} steps) in {}\"\n",
         proc.entry_point,
@@ -234,8 +257,11 @@ fn render_process_skill(repo_label: &str, proc: &ExecutionProcess) -> String {
         "Execution flow starting from `{}` in **{}**.\n\n",
         proc.entry_point, repo_label
     ));
-    skill.push_str(&format!("- **Entry file:** {}\n", proc.entry_file));
-    skill.push_str(&format!("- **Entry line:** {}\n", proc.entry_line));
+    // Derive entry file/line from the first step
+    if let Some(first) = proc.steps.first() {
+        skill.push_str(&format!("- **Entry file:** {}\n", first.file));
+        skill.push_str(&format!("- **Entry line:** {}\n", first.line));
+    }
     skill.push_str(&format!("- **Total steps:** {}\n\n", proc.steps.len()));
 
     // When to use
@@ -304,26 +330,16 @@ fn mermaid_safe(name: &str) -> String {
         .collect()
 }
 
-/// Simplified symbol info for skill rendering (includes exported flag).
-struct SymInfoForSkill {
-    pub name: String,
-    pub kind: String,
-    pub file: String,
-    pub line: u32,
-    pub exported: bool,
-}
-
-fn load_cluster_symbols_for_skill(
+fn load_skill_symbols(
     conn: &Connection,
     symbol_ids: &[i64],
-) -> Result<Vec<SymInfo>, IndexError> {
-    // Reuse SymInfo but we need exported flag — extend query
+) -> Result<Vec<SkillSymbol>, IndexError> {
     if symbol_ids.is_empty() {
         return Ok(Vec::new());
     }
     let placeholders: String = symbol_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
-        "SELECT id, name, kind, file, line, exported FROM code_symbols WHERE id IN ({placeholders})"
+        "SELECT name, kind, file, line, parent FROM code_symbols WHERE id IN ({placeholders})"
     );
     let mut stmt = conn.prepare(&sql)?;
     let params: Vec<&dyn rusqlite::types::ToSql> = symbol_ids
@@ -332,13 +348,13 @@ fn load_cluster_symbols_for_skill(
         .collect();
     let rows = stmt
         .query_map(params.as_slice(), |r| {
-            Ok(SymInfo {
-                id: r.get(0)?,
-                name: r.get(1)?,
-                kind: r.get(2)?,
-                file: r.get(3)?,
-                line: r.get(4)?,
-                exported: r.get::<_, bool>(5).unwrap_or(false),
+            let parent: Option<String> = r.get(4)?;
+            Ok(SkillSymbol {
+                name: r.get(0)?,
+                kind: r.get(1)?,
+                file: r.get(2)?,
+                line: r.get(3)?,
+                top_level: parent.is_none(),
             })
         })?
         .filter_map(|r| r.ok())
@@ -346,14 +362,13 @@ fn load_cluster_symbols_for_skill(
     Ok(rows)
 }
 
-fn load_cluster_edges_for_skill(
+fn load_skill_edges(
     conn: &Connection,
     symbol_ids: &[i64],
 ) -> Result<Vec<(String, String)>, IndexError> {
     if symbol_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let id_set: std::collections::HashSet<i64> = symbol_ids.iter().copied().collect();
     let placeholders: String = symbol_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
         "SELECT s1.name, s2.name FROM code_edges e \
@@ -372,11 +387,6 @@ fn load_cluster_edges_for_skill(
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })?
         .filter_map(|r| r.ok())
-        .filter(|(_, to_name)| {
-            // Only include edges where target is also in the cluster
-            // We check by name presence (approximation for skill readability)
-            !to_name.is_empty()
-        })
         .collect();
     Ok(edges)
 }
@@ -403,13 +413,12 @@ mod tests {
             symbol_ids: vec![],
             size: 3,
         };
-        let syms = vec![SymInfo {
-            id: 1,
+        let syms = vec![SkillSymbol {
             name: "main".to_string(),
             kind: "function".to_string(),
             file: "src/main.rs".to_string(),
             line: 1,
-            exported: true,
+            top_level: true,
         }];
         let edges = vec![("main".to_string(), "run".to_string())];
 
@@ -426,10 +435,10 @@ mod tests {
 
     #[test]
     fn render_process_skill_has_flow() {
-        let proc = ExecutionProcess {
+        let proc = Process {
+            id: 1,
             entry_point: "handle_request".to_string(),
-            entry_file: "src/server.rs".to_string(),
-            entry_line: 10,
+            entry_symbol_id: 1,
             steps: vec![
                 ProcessStep {
                     symbol_id: 1,
@@ -466,13 +475,12 @@ mod tests {
             symbol_ids: vec![],
             size: 1,
         };
-        let syms = vec![SymInfo {
-            id: 1,
+        let syms = vec![SkillSymbol {
             name: "helper".to_string(),
             kind: "function".to_string(),
             file: "src/lib.rs".to_string(),
             line: 5,
-            exported: false,
+            top_level: false,
         }];
 
         let skill = render_cluster_skill("repo", &cluster, &syms, &[]);

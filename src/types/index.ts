@@ -276,6 +276,44 @@ export interface MemoryEdge {
   confidence: number;
   source: EdgeSource;
   created_at: number;
+  valid_from?: number | null;
+  valid_to?: number | null;
+  edge_source?: string | null;
+}
+
+export interface MemoryVersion {
+  id: number;
+  memory_id: number;
+  version_num: number;
+  content: string;
+  tags: string;
+  importance: number;
+  memory_type: string;
+  created_at: number;
+}
+
+export interface MemoryAuditNeighbor {
+  id: number;
+  content: string;
+  tags: string;
+  importance: number;
+  memory_type: string;
+  tier: string;
+  created_at: number;
+}
+
+export interface MemoryAuditEdge {
+  edge: MemoryEdge;
+  direction: 'incoming' | 'outgoing';
+  neighbor: MemoryAuditNeighbor | null;
+}
+
+export interface MemoryProvenance {
+  entry: MemoryEntry;
+  versions: MemoryVersion[];
+  edges: MemoryAuditEdge[];
+  version_count: number;
+  edge_count: number;
 }
 
 export interface EdgeStats {

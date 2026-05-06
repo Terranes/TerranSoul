@@ -468,6 +468,10 @@ fn is_public_tool_name(name: &str) -> bool {
             | "brain_suggest_context"
             | "brain_health"
             | "brain_failover_status"
+            | "brain_wiki_audit"
+            | "brain_wiki_spotlight"
+            | "brain_wiki_serendipity"
+            | "brain_wiki_revisit"
     )
 }
 
@@ -514,12 +518,39 @@ mod tests {
     }
 
     #[test]
+    fn public_read_only_request_allows_brain_wiki_audit() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({ "name": "brain_wiki_audit", "arguments": { "limit": 10 } })),
+        };
+        assert!(is_public_read_only_request(&req));
+    }
+
+    #[test]
     fn public_read_only_request_denies_ingest() {
         let req = JsonRpcRequest {
             jsonrpc: "2.0".into(),
             id: Some(Value::from(1)),
             method: "tools/call".into(),
-            params: Some(json!({ "name": "brain_ingest_url", "arguments": { "url": "https://example.com" } })),
+            params: Some(
+                json!({ "name": "brain_ingest_url", "arguments": { "url": "https://example.com" } }),
+            ),
+        };
+        assert!(!is_public_read_only_request(&req));
+    }
+
+    #[test]
+    fn public_read_only_request_denies_brain_wiki_digest_text() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({
+                "name": "brain_wiki_digest_text",
+                "arguments": { "content": "private note" }
+            })),
         };
         assert!(!is_public_read_only_request(&req));
     }

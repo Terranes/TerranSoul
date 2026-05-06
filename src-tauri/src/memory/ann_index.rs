@@ -169,9 +169,14 @@ impl AnnIndex {
             if self.index.contains(id as u64) {
                 let _ = self.index.remove(id as u64);
             }
-            self.index
-                .reserve(self.index.size() + 1)
-                .map_err(|e| e.to_string())?;
+            // Grow capacity exponentially (doubling) instead of +1 per add,
+            // amortising O(n²) bulk inserts down to O(n).
+            let size = self.index.size();
+            let cap = self.index.capacity();
+            if size + 1 > cap {
+                let new_cap = (cap.max(16)).saturating_mul(2).max(size + 1);
+                self.index.reserve(new_cap).map_err(|e| e.to_string())?;
+            }
             self.index
                 .add(id as u64, embedding)
                 .map_err(|e| e.to_string())?;
@@ -183,6 +188,42 @@ impl AnnIndex {
             entries.push((id, embedding.to_vec()));
         }
         self.bump_dirty();
+        Ok(())
+    }
+
+    /// Pre-reserve capacity for at least `n` vectors. Useful for bulk
+    /// inserts (benchmarks, rebuilds) to avoid amortised allocation cost.
+    pub fn reserve_capacity(&self, n: usize) -> Result<(), String> {
+        #[cfg(feature = "native-ann")]
+        {
+            if self.index.capacity() < n {
+                self.index.reserve(n).map_err(|e| e.to_string())?;
+            }
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            self.entries.borrow_mut().reserve(n);
+        }
+        Ok(())
+    }
+
+    /// Pre-reserve capacity using the native backend's threaded reservation
+    /// path when available. This is primarily useful for large benchmark and
+    /// rebuild jobs where the full target size is known up front.
+    pub fn reserve_capacity_with_threads(&self, n: usize, threads: usize) -> Result<(), String> {
+        #[cfg(feature = "native-ann")]
+        {
+            if self.index.capacity() < n {
+                self.index
+                    .reserve_capacity_and_threads(n, threads.max(1))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        #[cfg(not(feature = "native-ann"))]
+        {
+            let _ = threads;
+            self.entries.borrow_mut().reserve(n);
+        }
         Ok(())
     }
 
@@ -457,5 +498,56 @@ mod tests {
         )
         .unwrap();
         assert_eq!(detect_dimensions(&conn), Some(4));
+    }
+
+    /// Parity test: with a deterministic seed, search results should
+    /// be identical regardless of backend (linear or HNSW). Since we
+    /// only compile one backend at a time, this test validates that
+    /// the active backend returns correct cosine-ranked results for
+    /// a known dataset (Chunk 38.3).
+    #[test]
+    fn ann_parity_deterministic_ranking() {
+        // Use a deterministic "xoshiro-like" seed to generate vectors.
+        let dim = 32;
+        let n = 100;
+        let idx = AnnIndex::new(dim).unwrap();
+
+        // Generate deterministic vectors: vec[i][j] = sin(i * j + 1)
+        let mut vectors: Vec<Vec<f32>> = Vec::with_capacity(n);
+        for i in 0..n {
+            let v: Vec<f32> = (0..dim).map(|j| ((i * j + 1) as f32 * 0.1).sin()).collect();
+            vectors.push(v);
+        }
+
+        for (i, v) in vectors.iter().enumerate() {
+            idx.add(i as i64 + 1, v).unwrap();
+        }
+
+        // Query with vectors[0]
+        let results = idx.search(&vectors[0], 10).unwrap();
+        assert_eq!(results.len(), 10, "should return k=10 results");
+        // First result must be the exact match (id=1 ~ vectors[0])
+        assert_eq!(results[0].0, 1);
+        assert!(results[0].1 > 0.99, "exact match sim={}", results[0].1);
+        // Results should be sorted descending by similarity.
+        for w in results.windows(2) {
+            assert!(
+                w[0].1 >= w[1].1 - 1e-6,
+                "results not sorted: {} >= {}",
+                w[0].1,
+                w[1].1
+            );
+        }
+
+        // Verify all returned IDs are valid (1..=100)
+        for (id, sim) in &results {
+            assert!(*id >= 1 && *id <= n as i64);
+            // Cosine similarity is theoretically in [-1, 1] but floating
+            // point arithmetic can slightly exceed that range.
+            assert!(
+                *sim >= -1.1 && *sim <= 1.1,
+                "similarity out of range: {sim}"
+            );
+        }
     }
 }

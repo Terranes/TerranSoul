@@ -219,7 +219,8 @@ pub async fn lan_share_connect(
         host: host.clone(),
         port,
         token: token.clone().filter(|value| !value.trim().is_empty()),
-        token_required: token_required.unwrap_or_else(|| token.as_ref().is_some_and(|value| !value.trim().is_empty())),
+        token_required: token_required
+            .unwrap_or_else(|| token.as_ref().is_some_and(|value| !value.trim().is_empty())),
         brain_name: display_name,
         connected: true,
     };

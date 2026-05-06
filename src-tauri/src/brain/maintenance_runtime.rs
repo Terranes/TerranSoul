@@ -235,10 +235,79 @@ pub fn spawn(
     runtime
 }
 
+/// Run the maintenance loop in the foreground until cancellation
+/// (Chunk 33B.10). Unlike [`spawn`] which uses `tauri::async_runtime`,
+/// this runs on the current tokio runtime — suitable for a standalone
+/// `terransoul-scheduler` binary in headless/server environments.
+///
+/// The `cancel` token is polled on each tick; when it resolves the
+/// loop exits cleanly.
+pub async fn run_foreground(
+    state_arc: crate::AppState,
+    config: MaintenanceConfig,
+    tick_interval: Duration,
+    cancel: tokio_util::sync::CancellationToken,
+) {
+    let runtime = MaintenanceRuntime::load(&state_arc.data_dir, config);
+    let mut ticker = tokio::time::interval(tick_interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                eprintln!("[scheduler] shutdown signal received — exiting cleanly");
+                break;
+            }
+            _ = ticker.tick() => {}
+        }
+
+        // Live settings check — same logic as the spawned variant.
+        let (enabled, cooldown_ms, idle_min_minutes) = {
+            let guard = state_arc.app_settings.lock().ok();
+            match guard {
+                Some(s) => (
+                    s.background_maintenance_enabled,
+                    s.maintenance_cooldown_ms(),
+                    s.maintenance_idle_minimum_minutes,
+                ),
+                None => (true, 23 * 60 * 60 * 1000, 0),
+            }
+        };
+        if !enabled {
+            continue;
+        }
+        if idle_min_minutes > 0 {
+            let idle_threshold_ms = (idle_min_minutes as i64).saturating_mul(60_000);
+            if !state_arc.activity_tracker.is_idle(idle_threshold_ms) {
+                continue;
+            }
+        }
+
+        let now = now_ms();
+        let live_config = MaintenanceConfig {
+            decay_cooldown_ms: cooldown_ms,
+            garbage_collect_cooldown_ms: cooldown_ms,
+            promote_tier_cooldown_ms: cooldown_ms,
+            edge_extract_cooldown_ms: cooldown_ms,
+            obsidian_export_cooldown_ms: cooldown_ms,
+        };
+        let due = runtime.jobs_due_with(&live_config, now).await;
+
+        for job in due {
+            let result = dispatch_job(job, &state_arc).await;
+            match &result {
+                Ok(msg) => eprintln!("[scheduler] {msg}"),
+                Err(e) => eprintln!("[scheduler] job {} failed: {e}", job.as_str()),
+            }
+            runtime.record_finished(job, now_ms()).await;
+        }
+    }
+}
+
 /// Run a single maintenance job. Returns `Ok(human_readable_summary)`
 /// or `Err(error_string)`. Outcomes are surfaced via stderr (logging
 /// pipeline TBD) and via the persisted timestamp.
-async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<String, String> {
+pub async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<String, String> {
     match job {
         MaintenanceJob::Decay => {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -257,9 +326,26 @@ async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<St
             let capped = store
                 .enforce_size_limit(max_bytes)
                 .map_err(|e| e.to_string())?;
+
+            // Capacity-based eviction (Chunk 38.4): enforce hard cap on long-tier entries.
+            let max_long = state
+                .app_settings
+                .lock()
+                .map(|s| s.max_long_term_entries)
+                .unwrap_or(crate::memory::eviction::DEFAULT_MAX_LONG_TERM);
+            let eviction = crate::memory::eviction::enforce_capacity(
+                store.conn(),
+                max_long,
+                crate::memory::eviction::DEFAULT_TARGET_RATIO,
+                &state.data_dir,
+            )
+            .map_err(|e| e.to_string())?;
+            let evicted = eviction.map(|r| r.dropped).unwrap_or(0) as usize;
+
             Ok(format!(
-                "garbage_collect: removed {} entries",
-                decayed + capped.deleted
+                "garbage_collect: removed {} entries (decay={decayed}, size_limit={}, eviction={evicted})",
+                decayed + capped.deleted + evicted,
+                capped.deleted
             ))
         }
         MaintenanceJob::PromoteTier => {
@@ -321,7 +407,14 @@ async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Result<St
             if entries.is_empty() {
                 return Ok("obsidian_export: skipped (no memories)".to_string());
             }
-            let report = crate::memory::obsidian_export::export_to_vault(&vault_dir, &entries)?;
+            let layout = state
+                .app_settings
+                .lock()
+                .map_err(|e| e.to_string())?
+                .obsidian_layout;
+            let report = crate::memory::obsidian_export::export_to_vault_with_layout(
+                &vault_dir, &entries, layout,
+            )?;
             Ok(format!(
                 "obsidian_export: wrote {}, skipped {}, total {} → {}",
                 report.written, report.skipped, report.total, report.output_dir

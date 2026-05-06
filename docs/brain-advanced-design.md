@@ -1,7 +1,7 @@
 # Brain & Memory — Advanced Architecture Design
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
-> Last updated: 2026-05-02
+> Last updated: 2026-05-07
 > **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
 
 ---
@@ -18,7 +18,7 @@
    - [Core Types](#core-types)
    - [Proposed Category Taxonomy](#proposed-category-taxonomy)
    - [Category × Tier Matrix](#category--tier-matrix)
-   - [Cognitive Memory Axes (Episodic / Semantic / Procedural)](#35-cognitive-memory-axes-episodic--semantic--procedural)
+    - [Cognitive Memory Axes (Episodic / Semantic / Procedural / Judgment)](#35-cognitive-memory-axes-episodic--semantic--procedural--judgment)
 4. [Hybrid RAG Pipeline](#hybrid-rag-pipeline)
    - [6-Signal Scoring Formula](#6-signal-scoring-formula)
    - [RAG Injection Flow](#rag-injection-flow)
@@ -56,6 +56,7 @@
 23. [Code-RAG Fusion in `rerank_search_memories` (Phase 13 Tier 2)](#code-rag-fusion-in-rerank_search_memories-phase-13-tier-2)
 24. [MCP Server — External AI Coding Assistant Integration (Phase 15)](#mcp-server--external-ai-coding-assistant-integration-phase-15)
 25. [Intent Classification](#25-intent-classification)
+26. [Knowledge Wiki Operations — Graphify + LLM Wiki Application](#26-knowledge-wiki-operations--graphify--llm-wiki-application)
 
 ---
 
@@ -251,7 +252,7 @@ TerranSoul's memory mirrors human cognition: **short-term** (seconds–minutes),
 │                    LONG-TERM MEMORY                              │
 │                                                                  │
 │  Storage:   SQLite, tier='long', vector-indexed                 │
-│  Capacity:  100,000+ entries (tested to <50ms search)           │
+│  Capacity:  1M target via native-ann HNSW + self-eviction       │
 │  Lifetime:  Permanent — subject to decay + GC                   │
 │  Purpose:   Knowledge base for RAG injection                    │
 │  Injected:  Top 5 via hybrid_search() into [LONG-TERM MEMORY]  │
@@ -400,32 +401,34 @@ Not all categories belong in all tiers:
 
 **Key insight**: Emotional memories should decay fast in long-term (you don't want "user was stressed on April 3rd" cluttering RAG forever), but personal identity ("user's name is Alex") should essentially never decay.
 
-**Implementation path**: The canonical V13 schema includes an optional `category` column, while structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) remain the primary portable categorisation layer.
+**Implementation path**: The canonical V15 schema includes optional `category` and `cognitive_kind` columns, plus the `protected` eviction guard; structured tag prefixes (`personal:name`, `rel:friend:sarah`, `domain:law:family`) remain the primary portable categorisation layer.
 
 > **As-built (2026-04-24).** Tag-prefix approach implemented:
 > - **Chunk 18.4** — `memory::tag_vocabulary` with `CURATED_PREFIXES` (`personal`, `domain`, `project`, `tool`, `code`, `external`, `session`, `quest`), `validate()` / `validate_csv()`, `LEGACY_ALLOW_LIST`.
 > - **Chunk 18.2** — `category_decay_multiplier()` per-prefix decay rates (personal 0.5×, session/quest 2×).
 > - **Chunk 18.1** — `memory::auto_tag` LLM auto-tagger: opt-in via `AppSettings.auto_tag`; dispatches to Ollama/FreeApi/PaidApi; merges ≤ 4 curated tags with user tags on `add_memory`.
 > - **Chunk 18.3** — `MemoryView.vue` tag-prefix filter chip row with per-prefix counts.
-> - **Chunk 18.5** (planned) — Obsidian vault export with tag metadata.
+> - **Chunk 18.5** — Obsidian vault export with tag metadata.
 
 ---
 
-## 3.5 Cognitive Memory Axes (Episodic / Semantic / Procedural)
+## 3.5 Cognitive Memory Axes (Episodic / Semantic / Procedural / Judgment)
 
 > **Status:** classifier landed at `src-tauri/src/memory/cognitive_kind.rs`
 > alongside ontology tag prefixes; **no extra schema change**.
 
 ### 3.5.1 The question
 
-Cognitive psychology splits long-term memory into three biologically distinct
-systems:
+Cognitive psychology splits long-term memory into distinct systems, with
+TerranSoul adding an explicit **judgment** kind for durable rules, heuristics,
+and operating decisions that should be auditable like other memory facts:
 
 | Cognitive kind | Description | Brain region | TerranSoul examples |
 |----------------|-------------|--------------|---------------------|
 | **Episodic** | Time- and place-anchored personal experiences. Each memory is a "scene" with a when/where. | Hippocampus | "On April 22nd Alex finished the rust refactor", "We met Sarah at the cafe yesterday" |
 | **Semantic** | Time-independent general knowledge and stable preferences. The "what" without the "when". | Neocortex | "Rust uses ownership for memory safety", "Alex prefers dark mode", "Mars has two moons" |
 | **Procedural** | How-to knowledge, motor skills, repeatable workflows. The "how". | Cerebellum / basal ganglia | "How to ship a release: bump → tag → push", "Morning routine: 6am alarm, run 5km, shower, breakfast" |
+| **Judgment** | Durable rules, heuristics, and operating decisions. The "why this choice" layer. | Prefrontal cortex | "Prefer focused patches before broad refactors", "Do not stop MCP during TerranSoul sessions" |
 
 These overlap with — but are **orthogonal to** — TerranSoul's existing
 `MemoryType` (`fact`/`preference`/`context`/`summary`) and `MemoryTier`
@@ -434,25 +437,18 @@ These overlap with — but are **orthogonal to** — TerranSoul's existing
 ```
                 STRUCTURAL TYPE × COGNITIVE KIND  (✓ = common, ◇ = possible, — = rare)
 
-                    episodic    semantic    procedural
-   fact             ◇  "Q3      ✓  "Mars   ◇  "rustup
-                       earnings    has two     installs
-                       were $X"    moons"      to ~/.cargo"
-   preference       —           ✓  "Dark     ◇  "Always
-                                   mode +      run cargop
-                                   serif"      fmt before
-                                               push"
-   context          ✓  "User    ◇  "User    ◇  "Use
-                       just         is on a     conventional
-                       unblocked    Mac"        commits in
-                       a build"                 this repo"
-   summary          ✓  "Today   —           ◇  "Recap of
-                       we                       Q1 release
-                       discussed                process"
-                       …"
+                      episodic    semantic    procedural   judgment
+          fact             ◇  event    ✓  general  ◇  how-to    ✓  decision
+                        record       truth       fact          rule
+          preference       —           ✓  stable   ◇  workflow   ✓  operating
+                                choice      preference     preference
+          context          ✓  current  ◇  current  ◇  repo       ✓  session
+                        event       state       workflow       heuristic
+          summary          ✓  session  —           ◇  process    ◇  decision
+                        recap                  recap          recap
 ```
 
-### 3.5.2 Do we **need** a third axis?
+### 3.5.2 Do we **need** a cognitive-kind axis?
 
 **Yes** — but a derived one, not a stored one. We need it for three concrete
 RAG-quality reasons:
@@ -486,7 +482,7 @@ Implemented as a pure function in
 ```
 fn classify(memory_type, tags, content) -> CognitiveKind:
     1. If `tags` contains an explicit cognitive tag
-       (`episodic` | `semantic` | `procedural`, optionally with
+      (`episodic` | `semantic` | `procedural` | `judgment`, optionally with
        `:detail` suffix), use it. — power-user override.
     2. Else apply structural-type defaults:
          Summary    → Episodic   (recaps a session)
@@ -500,13 +496,14 @@ fn classify(memory_type, tags, content) -> CognitiveKind:
          else → Semantic        (safe default)
 ```
 
-The classifier is exhaustively unit-tested (15 cases covering tag override,
-structural-type defaults, content heuristics, and edge cases). It is
+The classifier is exhaustively unit-tested in Rust and mirrored by 19 TS cases
+covering tag override, structural-type defaults, content heuristics, and edge
+cases. It is
 **deterministic and offline** — no LLM call. An optional LLM-based reclassifier
 can be added later for the long-tail; the heuristic currently resolves the
 ~85% of memories where the kind is obvious from surface features.
 
-### 3.5.4 How the three axes compose
+### 3.5.4 How the axes compose
 
 ```
             ┌──────────────────────┐
@@ -514,7 +511,7 @@ can be added later for the long-tail; the heuristic currently resolves the
             │ ──────────────────── │
             │ tier: short/working/long       (lifecycle)
             │ memory_type: fact/pref/...     (structural origin)
-            │ cognitive_kind: ep/sem/proc    (cognitive function)  ← derived
+            │ cognitive_kind: ep/sem/proc/judgment (cognitive function) ← derived
             │ category: personal/world/...   (subject taxonomy)    ← tag prefix
             │ tags: free-form + structured                         (filtering)
             │ embedding, importance, decay_score, …
@@ -535,6 +532,7 @@ Recommended decay multipliers (multiply the existing `decay_score` step):
 | Episodic    | 30–90 days       | × 1.5      | Time-anchored; old episodes stop being useful |
 | Semantic    | 365+ days        | × 0.5      | Stable knowledge; almost never wrong-by-staleness |
 | Procedural  | 180+ days        | × 0.7      | Slow decay; bump back up to 1.0 on each successful execution |
+| Judgment    | 365+ days        | × 0.6      | Durable rules and decisions; supersede explicitly rather than silently aging out |
 
 Implementation hook: extend `apply_memory_decay` to read
 `classify_cognitive_kind(...)` and apply the multiplier. The classifier is
@@ -655,11 +653,12 @@ final_score =
 │  │    short=0.3            │  Short-term rarely searched            │
 │  └─────────────────────────┘                                        │
 │                                                                     │
-│  PERFORMANCE: O(n) linear scan, pure arithmetic                     │
-│  • 100 entries:    <1ms                                             │
-│  • 10,000 entries:  2ms                                             │
-│  • 100,000 entries: 5ms                                             │
-│  • 1,000,000 entries: ~50ms                                         │
+│  PERFORMANCE NOTE                                                   │
+│  Weighted scoring is linear over the candidate set. Million-memory  │
+│  desktop retrieval uses the native-ann HNSW vector candidate stage; │
+│  linear vector scan is explicitly out of design at 1M entries.      │
+│  Chunk 38.5 writes measured reports to                              │
+│  src-tauri/target/bench-results/million_memory.json.                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1110,8 +1109,13 @@ CREATE INDEX idx_edges_type ON memory_edges(rel_type);
 | `MemoryStore::edge_stats() -> EdgeStats` | `edges.rs` |
 | `MemoryStore::traverse_from(id, max_hops, rel_filter)` | `edges.rs` |
 | `MemoryStore::hybrid_search_with_graph(query, emb, limit, hops)` | `edges.rs` |
+| `memory::audit::get_memory_provenance(store, id)` | `audit.rs` |
 | `OllamaAgent::propose_edges(memories_block) -> String` | `brain/ollama_agent.rs` |
 | `parse_llm_edges(text, known_ids)` | `edges.rs` |
+
+**Memory-audit provenance view (Chunk 33B.4):** `memory::audit` returns a single joined payload for one memory entry: the current `memories` row, all `memory_versions` snapshots, and incident `memory_edges` annotated as incoming/outgoing with compact neighboring-memory summaries. The Tauri command is `get_memory_provenance(memory_id)`, consumed by the Memory tab's Audit panel so the frontend renders provenance from one authoritative SQLite query path instead of stitching raw IDs client-side.
+
+**3-D memory KG visualizer (Chunk 33B.5):** `src/components/BrainGraphViewport.vue` renders `memories` + `memory_edges` with Three.js instanced memory nodes and a `d3-force-3d` layout. Node color comes from the shared TS/Rust cognitive-kind classifier (`src/utils/cognitive-kind.ts`, including `judgment`), edge color is a deterministic design-token-backed hash of `rel_type`, and the viewport shows both cognitive-kind and relation legends so users can inspect graph semantics at a glance.
 
 ### Graph Traversal for Multi-Hop RAG
 
@@ -1314,12 +1318,13 @@ For developers and advanced users:
 
 ## 8. SQLite Schema
 
-### Current Canonical Schema (V13)
+### Current Canonical Schema (V15)
 
 Chunk 19.1 collapsed the pre-release migration runner into a single canonical
 initializer at `src-tauri/src/memory/schema.rs`. Fresh SQLite databases are
-created directly at V13, and `schema_version` records one canonical row rather
-than a historical migration ledger.
+created directly at V15, and `schema_version` records one canonical row rather
+than a historical migration ledger. V14/V15 upgrade guards add
+`pending_embeddings` and `protected` for existing V13/V14 databases.
 
 ```sql
 CREATE TABLE schema_version (
@@ -1352,7 +1357,8 @@ CREATE TABLE memories (
     category      TEXT,                          -- Optional taxonomy category
     cognitive_kind TEXT,                         -- Optional ep/sem/proc or seed kind
     updated_at    INTEGER,                       -- CRDT LWW timestamp
-    origin_device TEXT                           -- CRDT tiebreaker device id
+    origin_device TEXT,                          -- CRDT tiebreaker device id
+    protected     INTEGER NOT NULL DEFAULT 0     -- Prevent capacity eviction
 );
 
 The feature-gated distributed backends (`postgres.rs`, `mssql.rs`,
@@ -1376,6 +1382,7 @@ CREATE INDEX idx_memories_decay      ON memories(decay_score);
   CREATE INDEX idx_memories_source_hash ON memories(source_hash);
 CREATE INDEX idx_memories_category ON memories(category);
   CREATE INDEX idx_memories_updated_at ON memories(updated_at);
+  CREATE INDEX idx_memories_eviction ON memories(tier, importance, decay_score);
 
 CREATE TABLE memory_edges (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1439,12 +1446,20 @@ CREATE INDEX idx_edges_type ON memory_edges(rel_type);
     timestamp   INTEGER NOT NULL
   );
   CREATE INDEX idx_sync_log_peer ON sync_log(peer_device);
+
+  CREATE TABLE pending_embeddings (
+    memory_id     INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    last_error    TEXT,
+    next_retry_at INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_pending_embeddings_next ON pending_embeddings(next_retry_at);
 -- PRAGMA foreign_keys=ON enforced at connection open.
 ```
 
   `edge_source` remains distinct from the `source` column: `source` records who
   asserted an edge (`user` / `llm` / `auto`), while `edge_source` records an
-  optional external import scope. TerranSoul no longer ships GitNexus sync or
+  optional external import scope. TerranSoul no longer ships third-party sidecar sync or
   sidecar commands; native code-intelligence graph data should use TerranSoul's
   own code-index tables and neutral provenance labels.
 
@@ -1922,8 +1937,8 @@ view rather than per-project deep-dives.
 | Storage | Custom Rust engine | SQLite BLOB column |
 | Distance function | Cosine / L2 / IP | Cosine only |
 | Metadata filtering | Built-in | SQL WHERE clauses on tags/importance |
-| Indexing | HNSW (approximate) | Pure-Rust linear scan by default; optional `native-ann` HNSW |
-| Scalability | Millions (ANN) | Millions (acceptable at <50ms) |
+| Indexing | HNSW (approximate) | Desktop default `native-ann` HNSW; headless/test fallback linear cosine |
+| Scalability | Millions (ANN) | 10k smoke measured; 1M HNSW threshold gate behind `bench-million` |
 | Deployment | Separate server or embedded | Fully embedded in app binary |
 
 **What TerranSoul borrows**: The philosophy of "embeddings in a single binary." ChromaDB proves that a Rust core + simple API can handle production workloads.
@@ -1960,7 +1975,7 @@ view rather than per-project deep-dives.
 | **Privacy** | Data may leave the machine | Everything stays local |
 | **Single binary** | Multiple processes to manage | One Tauri binary |
 | **Desktop UX** | Built for servers/APIs | Built for desktop companion |
-| **Performance** | Network overhead | In-process, <5ms search |
+| **Performance** | Network overhead | In-process HNSW candidate search for large desktop stores |
 | **Maintenance** | Version compatibility issues | Self-contained canonical schema |
 
 TerranSoul's approach: **take the best ideas** from these frameworks (Mem0's conflict detection, LlamaIndex's chunking, Chroma's Rust-native search, RAGFlow's access tracking, Cognee's entity extraction vision) and **implement them natively in Rust** as part of the Tauri binary.
@@ -2097,13 +2112,13 @@ PRAGMA integrity_check;
 
 ### Memory Count → Hardware Requirements
 
-| Memory Count | Embedding Storage | RAM Usage | Search Time | Recommended Hardware |
+| Memory Count | Raw Embedding Storage | Expected Index RAM | Search Posture | Recommended Hardware |
 |---|---|---|---|---|
-| 1,000 | 3 MB | ~50 MB | <1 ms | Any modern PC |
-| 10,000 | 30 MB | ~100 MB | ~2 ms | 8 GB RAM |
-| 100,000 | 300 MB | ~500 MB | ~5 ms | 16 GB RAM |
-| 1,000,000 | 3 GB | ~4 GB | ~50 ms | 32 GB RAM |
-| 10,000,000 | 30 GB | ~35 GB | ~500 ms | 64 GB RAM |
+| 1,000 | 3 MB | ~50 MB | Sub-ms in normal desktop/headless paths | Any modern PC |
+| 10,000 | 30 MB | ~100 MB | Chunk 38.5 smoke: HNSW p50 0.57 ms, p95 0.74 ms, p99 0.86 ms on Windows/i9-12900K | 8 GB RAM |
+| 100,000 | 300 MB | ~500 MB | HNSW expected; run `TS_BENCH_SCALES=100000 cargo bench --bench million_memory` for local evidence | 16 GB RAM |
+| 1,000,000 | 3 GB raw | ~4-5 GB HNSW | Full gated benchmark asserts HNSW p50 <= 30 ms, p95 <= 60 ms, p99 <= 100 ms; linear backend skipped | 32 GB RAM |
+| 10,000,000 | 30 GB raw | 35+ GB HNSW | Out of current single-node target; use sharding or external vector DB | 64+ GB RAM |
 
 ### Example: High-End Desktop (65 GB RAM, RTX 3080 Ti)
 
@@ -2117,20 +2132,24 @@ Capacity breakdown:
 ├── At 3 KB per embedding:
 │   49 GB / 3 KB = ~16 million entries
 │
-└── Practical limit: ~10 million entries
-    (leaves headroom for SQLite, OS cache, etc.)
+└── Raw-residency limit: ~10 million entries
+  (full query serving at that size needs future sharding or sidecar work)
 ```
 
 ### Scaling Beyond Linear Scan
 
-For datasets exceeding 1M entries where <50ms search is needed:
-- **HNSW index** (via `usearch` crate behind `native-ann`): Approximate Nearest Neighbor — O(log n) instead of O(n)
-- **Sharding**: Split memories across multiple SQLite files by date/topic
-- **External vector DB**: Connect to Qdrant/Milvus as a Tauri sidecar
+For large desktop stores, the target path is the `native-ann` HNSW index via
+`usearch` rather than an O(n) vector scan. Chunk 38.5 adds the reproducible
+`src-tauri/benches/million_memory.rs` harness:
+- Default smoke tier: 10k vectors, 1,000 queries, report JSON at `src-tauri/target/bench-results/million_memory.json`.
+- Full tier: `cargo bench --bench million_memory --features bench-million`, 1M vectors, 1,000 queries, linear backend skipped, HNSW thresholds p50 <= 30 ms / p95 <= 60 ms / p99 <= 100 ms.
+- Capacity tier: `enforce_capacity` seeds `cap * 1.05` long-tier rows and verifies the store prunes to `cap * 0.95` without deleting protected or high-importance rows.
+- Operator guide (commands, env knobs, JSON schema, troubleshooting) and a generalized recipe for adding new benchmarks: [docs/benchmarking.md](benchmarking.md).
 
-The default pure-cosine approach is intentionally simple, loader-stable for
-headless/test runs, and works for the vast majority of use cases. Enable
-`native-ann` only when a large local store needs persisted HNSW lookup.
+If a dataset pushes beyond a single desktop's RAM budget, the next options are
+date/topic sharding across SQLite files or an explicit external vector DB sidecar
+such as Qdrant/Milvus. That distributed path is outside the Phase 38 single-node
+million-memory target.
 
 ---
 
@@ -2141,7 +2160,7 @@ headless/test runs, and works for the vast majority of use cases. Enable
 | Metric | Current | Target |
 |--------|---------|--------|
 | Total memories | ~500 (brute-force LLM search) | 100,000+ (hybrid search) |
-| Search latency | <5ms (hybrid) | <10ms at 1M entries (ANN) |
+| Search latency | HNSW smoke p99 0.86 ms at 10k vectors | p99 <= 100 ms at 1M entries (gated by `bench-million`) |
 | Embedding model | nomic-embed-text (768-dim) | Same (good quality/size ratio) |
 | RAG quality | 60% (no embed) to 100% (Ollama) | 100% via cloud embed API |
 | Visualization | Cytoscape.js with typed graph edges (V5) | + Obsidian vault export |
@@ -2210,9 +2229,16 @@ headless/test runs, and works for the vast majority of use cases. Enable
 │  │     `memory::obsidian_export`) — Chunk 18.5                      │
 │  ├── ✓ Bidirectional Obsidian sync (`memory::obsidian_sync`,         │
 │  │     actual file-mtime `last_exported` after writes)              │
-│  └── ✓ Memory versioning (`memory::versioning`, V8 schema,         │
-│        `memory_versions` table, `get_memory_history` command)       │
-│        — Chunk 16.12                                                │
+│  ├── ✓ Memory versioning (`memory::versioning`, V8 schema,         │
+│  │     `memory_versions` table, `get_memory_history` command)       │
+│  │     — Chunk 16.12                                                │
+│  ├── ✓ Memory-audit provenance view (`memory::audit`,              │
+│  │     `get_memory_provenance`, Memory tab Audit panel joining       │
+│  │     current row + versions + KG edges + neighbor summaries)       │
+│  │     — Chunk 33B.4                                                │
+│  └── ✓ 3-D memory KG viewport (`BrainGraphViewport.vue`,            │
+│        Three.js instanced nodes + d3-force-3d layout; node color     │
+│        from cognitive_kind, edge color from rel_type) — Chunk 33B.5 │
 │                                                                     │
 │  PHASE 5 — Intelligence                                             │
 │  ├── ✓ Auto-promotion based on access patterns                     │
@@ -2503,7 +2529,7 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 | 10 | **Top-k for RAG injection** | Pure code + user threshold | Top 5 after hybrid scoring, filtered by `AppSettings.relevance_threshold` | `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | Empty block when nothing clears threshold |
 | 11 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
 | 12 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
-| 13 | **Cognitive kind** (episodic / semantic / procedural) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` | Defaults to `Semantic` |
+| 13 | **Cognitive kind** (episodic / semantic / procedural / judgment) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:* / judgment:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` + `src/utils/cognitive-kind.ts` | Defaults to `Semantic` |
 | 14 | **Knowledge-graph edge relation type** | **LLM** + normaliser | `extract_edges_via_brain` prompts LLM with the 17-type taxonomy; `edges::normalise_rel_type` snaps free-form types to canonical | `memory/edges.rs` | Free-form edges allowed (preserved as-is) |
 | 15 | **Storage backend** | User (compile-time + config) | Cargo features `postgres` / `mssql` / `cassandra`; runtime `StorageConfig` selects which `StorageBackend` impl is bound | `memory/backend.rs` + `lib.rs` startup | SQLite (always available, default) |
 | 16 | **Agent dispatch** | Caller / orchestrator | `AgentOrchestrator::dispatch(agent_id, msg)`; `agent_id="auto"` → `default_agent_id` ("stub") | `orchestrator/agent_orchestrator.rs:34` | Stub agent when no others registered |
@@ -2668,6 +2694,7 @@ Even with auto-learn on, the following commands are always available from the Me
 - `extract_memories_from_session` — force Step 4 now
 - `summarize_session` — collapse the whole session into one summary memory
 - `reflect_on_session` / `/reflect` — extract facts and save a provenance-linked `session_reflection` summary with `derived_from` edges to source turns
+- `get_memory_provenance` — inspect one memory's current row, edit history, and incident KG edges with neighboring memory summaries for audit/review
 - `add_memory` / `update_memory` / `delete_memory` — direct CRUD
 - `apply_memory_decay` — force decay tick
 - `gc_memories` — force garbage collection
@@ -3236,6 +3263,102 @@ tests that don't set up Pinia retain default-on behaviour.
 rehydration, corrupt-JSON recovery, sanitisation of non-boolean
 values, and `reset()`. `conversation.test.ts` adds three integration
 tests asserting that each toggle actually short-circuits its gate.
+
+---
+
+## 26. Knowledge Wiki Operations — Graphify + LLM Wiki Application
+
+> Source: `src-tauri/src/memory/wiki.rs`, `src-tauri/src/commands/wiki.rs`,
+> `src/utils/slash-commands.ts`, `src/components/WikiPanel.vue`, and
+> [docs/llm-wiki-pattern-application.md](llm-wiki-pattern-application.md).
+
+TerranSoul now applies two external research patterns as a native brain layer:
+
+- Graphify's knowledge-graph workflow: source fingerprints, confidence-rubric
+  edges, top-connected "god node" analysis, cross-community surprises, and
+  graph-validation tests.
+- Karpathy's LLM Wiki / append-and-review pattern: immutable raw sources,
+  compounding synthesized knowledge, lint/audit passes, and a review queue for
+  older notes that should be revisited.
+
+The important product decision: this is **chat/UI first, not CLI first**.
+Humans use `/digest`, `/ponder`, `/spotlight`, `/serendipity`, `/revisit`, and
+the BrainView Knowledge Wiki panel. Future MCP tools should expose the same
+operations for agents under neutral `brain_wiki_*` names, but they must call the
+same Rust functions so chat, UI, and MCP never drift apart.
+
+### 26.1 Schema reuse — no migration
+
+The Knowledge Wiki layer reuses the existing V15 schema:
+
+| Concept | Existing storage |
+|---|---|
+| Immutable source fingerprint | `memories.source_hash` with `idx_memories_source_hash` |
+| Raw source provenance | `memories.source_url` |
+| Wiki pages / compiled concepts | protected `MemoryType::Summary` rows with `category='wiki'` and `wiki:*` tags (planned `/weave`) |
+| Typed graph links | `memory_edges.rel_type`, `confidence`, `source`, `valid_from`, `valid_to`, `edge_source` |
+| Open contradictions | `memory_conflicts` |
+| Community structure | `memory_communities` from `memory/graph_rag.rs` |
+| Append-review priority | `last_accessed`, `created_at`, `importance`, `decay_score`, `protected` |
+
+This avoids a migration and keeps every existing retrieval path (hybrid search,
+RRF, HyDE, reranker, multi-hop KG traversal, Obsidian export, CRDT sync) aware
+of wiki-related rows automatically.
+
+### 26.2 Backend operations
+
+`memory/wiki.rs` is the canonical operation layer:
+
+| Function | Purpose |
+|---|---|
+| `fingerprint()` | SHA-256 source fingerprint for cache/dedup parity with graphify expectations |
+| `ensure_source_dedup()` | Insert pasted text only when its `source_hash` is new |
+| `confidence_label()` | Maps existing `EdgeSource + confidence` into `extracted`, `inferred_strong`, `inferred_weak`, or `ambiguous` |
+| `audit_report()` | One report over open conflicts, orphan long-term rows, stale review candidates, pending embeddings, total memories, and live edges |
+| `god_nodes()` | Top connected memories by live edge degree |
+| `surprising_connections()` | High-confidence edges that bridge distinct GraphRAG communities |
+| `append_and_review_queue()` | Karpathy-style review queue ordered by `gravity_score()` |
+
+`commands/wiki.rs` exposes these to Tauri as `brain_wiki_audit`,
+`brain_wiki_digest_text`, `brain_wiki_spotlight`, `brain_wiki_serendipity`, and
+`brain_wiki_revisit`. `/digest` also reuses the existing `ingest_document`
+command for URLs, file paths, and `crawl:` sources so document ingestion keeps
+the established chunking, source-guide, embedding, and auto-edge pipeline.
+
+### 26.3 Chat and UI surface
+
+`parseBrainWikiSlashCommand()` is separate from the self-improve session parser
+so `/clear`, `/resume`, and plugin slash commands keep their existing behavior.
+ChatView dispatches supported brain wiki commands before plugin slash dispatch:
+
+| Chat verb | Backend path |
+|---|---|
+| `/digest <text|url|file|crawl:...>` | `brain_wiki_digest_text` for pasted text; `ingest_document` for sources |
+| `/ponder` | `brain_wiki_audit` |
+| `/spotlight` | `brain_wiki_spotlight` |
+| `/serendipity` | `brain_wiki_serendipity` |
+| `/revisit` | `brain_wiki_revisit` |
+| `/weave`, `/trace`, `/why` | planned; chat replies with a clear planned-state message |
+
+`WikiPanel.vue` renders the same operations in BrainView tabs: Audit,
+Spotlight, Serendipity, and Revisit. This gives non-CLI users the graphify-like
+analysis surface directly inside TerranSoul.
+
+### 26.4 Tests and MCP surface
+
+Rust unit tests in `memory/wiki.rs` intentionally mirror graphify expectation
+classes rather than copying Python code: cache/dedup, incremental re-ingest,
+confidence rubric, validation/audit, god nodes, surprising connections, and
+append-review ordering. Frontend tests cover the chat parser and WikiPanel;
+MCP integration tests cover tool listing plus audit/digest behavior.
+
+The MCP server advertises neutral `brain_wiki_*` tools that delegate to the
+same Rust functions and respect existing `GatewayCaps` read/write policy:
+`brain_wiki_audit`, `brain_wiki_spotlight`, `brain_wiki_serendipity`, and
+`brain_wiki_revisit` require `brain_read` and are allowed in LAN public
+read-only mode; `brain_wiki_digest_text` requires `brain_write` because it
+persists a deduplicated memory row. This gives agents graphify-like graph/wiki
+power while humans keep using TerranSoul chat and BrainView instead of a CLI.
 
 ---
 

@@ -433,10 +433,10 @@ function riskClass(risk: string): string {
   margin-bottom: 0.5rem;
 }
 
-.cgw-risk--critical { color: #ff4444; font-weight: bold; }
-.cgw-risk--high { color: #ff8c00; }
-.cgw-risk--moderate { color: #ffd700; }
-.cgw-risk--low { color: #66bb6a; }
+.cgw-risk--critical { color: var(--ts-error); font-weight: bold; }
+  .cgw-risk--high { color: var(--ts-warning); }
+  .cgw-risk--moderate { color: var(--ts-warning); opacity: 0.85; }
+  .cgw-risk--low { color: var(--ts-success); }
 
 .cgw-impact-list li {
   display: flex;

@@ -35,6 +35,7 @@
   --ts-accent-blue-hover: #3b82f6;
   --ts-accent-violet: #a78bfa;
   --ts-accent-violet-hover: #8b5cf6;
+  --ts-accent-pink: #ec4899;
 
   /* ── Semantic Colors ── */
   --ts-success: #34d399;
@@ -66,6 +67,11 @@
   --ts-text-on-accent: #ffffff;
   --ts-text-bright: #e2e8f0;
   --ts-text-link: #8ec8f6;
+
+  /* ── Brain mode accents (free / paid / local providers) ── */
+  --ts-mode-free: #7be0b3;
+  --ts-mode-paid: #7cc8ff;
+  --ts-mode-local: #c8a4ff;
 
   /* ── Border ── */
   --ts-border: rgba(255, 255, 255, 0.10);
@@ -120,11 +126,20 @@
   --ts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --ts-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
   --ts-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.55);
+  --ts-shadow-glow: 0 0 20px rgba(124, 111, 255, 0.15), 0 0 60px rgba(124, 111, 255, 0.05);
+  --ts-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  /* ── Glass / Frosted surfaces ── */
+  --ts-glass-bg: rgba(15, 23, 42, 0.72);
+  --ts-glass-border: rgba(255, 255, 255, 0.08);
+  --ts-glass-blur: 20px;
+  --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
   /* ── Transitions ── */
   --ts-transition-fast: 0.15s ease;
   --ts-transition-normal: 0.2s ease;
   --ts-transition-slow: 0.3s ease;
+  --ts-transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* ── Z-Index Scale ── */
   --ts-z-base: 1;
@@ -157,6 +172,12 @@
   --ts-text-base: 0.9rem;
   --ts-text-lg: 1.1rem;
   --ts-text-xl: 1.35rem;
+
+  /* ── Gradients (composed from accent tokens — keep components token-only) ── */
+  --ts-gradient-accent: linear-gradient(135deg, var(--ts-accent-violet), var(--ts-accent));
+  --ts-gradient-accent-bar: linear-gradient(90deg, var(--ts-accent), var(--ts-accent-violet));
+  --ts-gradient-progress: linear-gradient(90deg, var(--ts-accent), var(--ts-success));
+  --ts-gradient-danger: linear-gradient(135deg, var(--ts-error), #b91c1c);
 }
 
 /* ═════════════════════════════════════════════════════════════════════════════
@@ -167,6 +188,12 @@
 /* ── Corporate (light) ────────────────────────────────────────────────────── */
 html[data-theme="corporate"] {
   --ts-font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Glass tokens for corporate light */
+  --ts-glass-bg: rgba(255, 255, 255, 0.82);
+  --ts-glass-border: rgba(0, 0, 0, 0.06);
+  --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --ts-shadow-glow: 0 0 20px rgba(91, 95, 199, 0.08), 0 0 60px rgba(91, 95, 199, 0.03);
 
   --ts-bg-base:     #f5f5f5;
   --ts-bg-surface:  #ffffff;
@@ -267,6 +294,12 @@ html[data-theme="corporate-dark"] {
   --ts-bg-card:     #252526;
   --ts-bg-panel:    #1e1e1e;
   --ts-bg-selected: rgba(0, 122, 204, 0.18);
+
+  /* Glass tokens for corporate dark */
+  --ts-glass-bg: rgba(30, 30, 30, 0.78);
+  --ts-glass-border: rgba(255, 255, 255, 0.06);
+  --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --ts-shadow-glow: 0 0 20px rgba(91, 155, 213, 0.12), 0 0 60px rgba(91, 155, 213, 0.04);
 
   --ts-accent:              #5b9bd5;
   --ts-accent-hover:        #3a86c8;

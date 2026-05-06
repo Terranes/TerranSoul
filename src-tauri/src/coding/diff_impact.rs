@@ -151,9 +151,15 @@ pub fn analyze_diff_impact(
     });
 
     let risk_summary = RiskSummary {
-        critical: impacts.iter().filter(|i| i.risk == RiskLevel::Critical).count(),
+        critical: impacts
+            .iter()
+            .filter(|i| i.risk == RiskLevel::Critical)
+            .count(),
         high: impacts.iter().filter(|i| i.risk == RiskLevel::High).count(),
-        moderate: impacts.iter().filter(|i| i.risk == RiskLevel::Moderate).count(),
+        moderate: impacts
+            .iter()
+            .filter(|i| i.risk == RiskLevel::Moderate)
+            .count(),
         low: impacts.iter().filter(|i| i.risk == RiskLevel::Low).count(),
     };
 
@@ -179,7 +185,9 @@ fn parse_diff_hunks(repo_path: &Path, diff_ref: &str) -> Result<Vec<DiffHunk>, I
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(IndexError::InvalidPath(format!("git diff failed: {stderr}")));
+        return Err(IndexError::InvalidPath(format!(
+            "git diff failed: {stderr}"
+        )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -453,13 +461,11 @@ index abc1234..def5678 100644
         .unwrap();
 
         // Hunk overlaps foo (10–20) and bar partially (line 25)
-        let hunks = vec![
-            DiffHunk {
-                file: "src/main.rs".into(),
-                start_line: 15,
-                end_line: 25,
-            },
-        ];
+        let hunks = vec![DiffHunk {
+            file: "src/main.rs".into(),
+            start_line: 15,
+            end_line: 25,
+        }];
 
         let changed = find_changed_symbols(&conn, 1, &hunks).unwrap();
         assert_eq!(changed.len(), 2);

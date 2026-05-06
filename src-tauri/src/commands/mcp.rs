@@ -53,7 +53,10 @@ pub async fn mcp_server_start(
         (
             settings.lan_enabled,
             settings.lan_enabled
-                && matches!(settings.lan_auth_mode, crate::settings::LanAuthMode::PublicReadOnly),
+                && matches!(
+                    settings.lan_auth_mode,
+                    crate::settings::LanAuthMode::PublicReadOnly
+                ),
         )
     };
     let handle = mcp::start_server_with_activity(

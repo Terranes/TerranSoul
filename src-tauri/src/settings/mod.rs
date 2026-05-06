@@ -303,6 +303,27 @@ pub struct AppSettings {
     /// in-memory working set returned by broad list calls. Default 10 MB.
     #[serde(default = "default_max_memory_mb")]
     pub max_memory_mb: f64,
+
+    /// Maximum number of long-term memory entries before capacity eviction
+    /// kicks in during maintenance. Default 1 000 000.
+    #[serde(default = "default_max_long_term_entries")]
+    pub max_long_term_entries: u64,
+
+    /// Optional override for data directory path (per-workspace root).
+    #[serde(default)]
+    pub data_root: Option<String>,
+
+    /// Layout style for Obsidian vault export.
+    #[serde(default)]
+    pub obsidian_layout: ObsidianLayout,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObsidianLayout {
+    #[default]
+    Flat,
+    Para,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -351,6 +372,10 @@ fn default_max_memory_gb() -> f64 {
 
 fn default_max_memory_mb() -> f64 {
     DEFAULT_MAX_MEMORY_MB
+}
+
+fn default_max_long_term_entries() -> u64 {
+    crate::memory::eviction::DEFAULT_MAX_LONG_TERM
 }
 
 fn default_mobile_notification_threshold_ms() -> u64 {
@@ -431,6 +456,9 @@ impl Default for AppSettings {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: ObsidianLayout::Flat,
         }
     }
 }
@@ -605,6 +633,9 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            obsidian_layout: ObsidianLayout::Flat,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

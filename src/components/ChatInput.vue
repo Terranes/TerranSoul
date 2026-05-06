@@ -145,28 +145,40 @@ async function handleDrop(e: DragEvent) {
   display: flex;
   align-items: center;
   flex: 1;
-  background: var(--ts-bg-input);
-  border: 1px solid var(--ts-border);
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--ts-radius-pill);
-  padding: 4px 4px 4px 8px;
-  transition: border-color var(--ts-transition-normal), box-shadow var(--ts-transition-normal), background var(--ts-transition-normal);
+  padding: 5px 6px 5px 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--ts-shadow-sm),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color var(--ts-transition-normal),
+              box-shadow var(--ts-transition-normal),
+              background var(--ts-transition-normal),
+              transform var(--ts-transition-normal);
 }
 
 .input-wrapper:focus-within {
   border-color: var(--ts-accent);
-  box-shadow: 0 0 0 3px var(--ts-accent-glow);
-  background: var(--ts-bg-hover);
+  box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.15),
+              0 4px 20px rgba(124, 111, 255, 0.12),
+              inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 42, 0.88);
+  transform: translateY(-1px);
 }
 
 .input-wrapper.drag-over {
   border-color: var(--ts-accent);
-  background: var(--ts-accent-glow);
-  box-shadow: 0 0 0 3px var(--ts-accent-glow);
+  background: rgba(124, 111, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.2),
+              0 4px 20px rgba(124, 111, 255, 0.15);
+  transform: scale(1.01);
 }
 
 .attach-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   border: none;
   background: transparent;
@@ -176,12 +188,15 @@ async function handleDrop(e: DragEvent) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: color var(--ts-transition-normal), background var(--ts-transition-normal);
+  transition: color var(--ts-transition-normal),
+              background var(--ts-transition-normal),
+              transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .attach-btn:hover:not(:disabled) {
   color: var(--ts-accent);
-  background: var(--ts-accent-glow);
+  background: rgba(124, 111, 255, 0.12);
+  transform: scale(1.1);
 }
 
 .attach-btn:disabled {
@@ -195,7 +210,7 @@ async function handleDrop(e: DragEvent) {
 
 .chat-input {
   flex: 1;
-  padding: 8px 4px;
+  padding: 9px 6px;
   border: none;
   background: transparent;
   color: var(--ts-text-primary);
@@ -218,21 +233,24 @@ async function handleDrop(e: DragEvent) {
   height: 36px;
   border-radius: 50%;
   border: none;
-  background: var(--ts-accent);
+  background: linear-gradient(135deg, var(--ts-accent), var(--ts-accent-violet));
   color: var(--ts-text-on-accent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background var(--ts-transition-normal), opacity var(--ts-transition-normal), transform var(--ts-transition-fast), box-shadow var(--ts-transition-fast);
-  box-shadow: 0 2px 8px var(--ts-accent-glow);
+  transition: background var(--ts-transition-normal),
+              opacity var(--ts-transition-normal),
+              transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow var(--ts-transition-normal);
+  box-shadow: 0 2px 12px rgba(124, 111, 255, 0.3);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: var(--ts-accent-hover);
-  transform: scale(1.06);
-  box-shadow: 0 4px 14px var(--ts-accent-glow);
+  background: linear-gradient(135deg, var(--ts-accent-hover), var(--ts-accent-violet-hover));
+  transform: scale(1.1);
+  box-shadow: 0 4px 20px rgba(124, 111, 255, 0.4);
 }
 
 .send-btn:active:not(:disabled) {

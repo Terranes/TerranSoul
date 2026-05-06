@@ -65,6 +65,22 @@ export interface AppSettings {
   max_memory_gb?: number;
   /** Maximum brain memory/RAG list cache in MB; storage still keeps the full corpus. */
   max_memory_mb?: number;
+  /** Hard cap on long-term memory entries before capacity-based eviction kicks in. Default 1,000,000. */
+  max_long_term_entries?: number;
+  /** Minimum hybrid-search score (0.0–1.0) for a memory to be injected into the RAG context. Default 0.30. */
+  relevance_threshold?: number;
+  /** Whether background maintenance jobs (decay, GC, promotion) are enabled. */
+  background_maintenance_enabled?: boolean;
+  /** Minimum hours between maintenance job runs. 1–168. Default 24. */
+  maintenance_interval_hours?: number;
+  /** Skip maintenance if user was active within this many minutes. Default 5. */
+  maintenance_idle_minimum_minutes?: number;
+  /** Whether to enable web search fallback (CRAG / DuckDuckGo). */
+  web_search_enabled?: boolean;
+  /** Per-workspace data root override — when set, runtime data (DB, HNSW, etc.) is stored here instead of the default platform path. */
+  data_root?: string;
+  /** Obsidian export folder layout: 'flat' (default) or 'para' (PARA method subfolders). */
+  obsidian_layout?: 'flat' | 'para';
 }
 
 const MIN_MAX_MEMORY_GB = 1;
@@ -74,6 +90,18 @@ const DEFAULT_MAX_MEMORY_GB = 10;
 const MIN_MAX_MEMORY_MB = 1;
 const MAX_MAX_MEMORY_MB = 1024;
 const DEFAULT_MAX_MEMORY_MB = 10;
+
+export const DEFAULT_MAX_LONG_TERM_ENTRIES = 1_000_000;
+export const MIN_MAX_LONG_TERM_ENTRIES = 1_000;
+export const MAX_MAX_LONG_TERM_ENTRIES = 10_000_000;
+
+export const DEFAULT_RELEVANCE_THRESHOLD = 0.30;
+export const MIN_RELEVANCE_THRESHOLD = 0.0;
+export const MAX_RELEVANCE_THRESHOLD = 1.0;
+
+export const DEFAULT_MAINTENANCE_INTERVAL_HOURS = 24;
+export const MIN_MAINTENANCE_INTERVAL_HOURS = 1;
+export const MAX_MAINTENANCE_INTERVAL_HOURS = 168;
 
 const DEFAULT_SETTINGS: AppSettings = {
   version: 2,
@@ -100,6 +128,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   last_update_check_date: '',
   max_memory_gb: DEFAULT_MAX_MEMORY_GB,
   max_memory_mb: DEFAULT_MAX_MEMORY_MB,
+  max_long_term_entries: DEFAULT_MAX_LONG_TERM_ENTRIES,
+  relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
+  background_maintenance_enabled: true,
+  maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+  maintenance_idle_minimum_minutes: 5,
+  web_search_enabled: false,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -171,6 +205,30 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ max_memory_mb: clamped });
   }
 
+  async function saveMaxLongTermEntries(entries: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_MAX_LONG_TERM_ENTRIES,
+      Math.max(MIN_MAX_LONG_TERM_ENTRIES, Number.isFinite(entries) ? Math.round(entries) : DEFAULT_MAX_LONG_TERM_ENTRIES),
+    );
+    await saveSettings({ max_long_term_entries: clamped });
+  }
+
+  async function saveRelevanceThreshold(threshold: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_RELEVANCE_THRESHOLD,
+      Math.max(MIN_RELEVANCE_THRESHOLD, Number.isFinite(threshold) ? threshold : DEFAULT_RELEVANCE_THRESHOLD),
+    );
+    await saveSettings({ relevance_threshold: Math.round(clamped * 100) / 100 });
+  }
+
+  async function saveMaintenanceInterval(hours: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_MAINTENANCE_INTERVAL_HOURS,
+      Math.max(MIN_MAINTENANCE_INTERVAL_HOURS, Number.isFinite(hours) ? Math.round(hours) : DEFAULT_MAINTENANCE_INTERVAL_HOURS),
+    );
+    await saveSettings({ maintenance_interval_hours: clamped });
+  }
+
   return {
     // state
     settings,
@@ -185,5 +243,8 @@ export const useSettingsStore = defineStore('settings', () => {
     setChatboxMode,
     saveMaxMemoryGb,
     saveMaxMemoryMb,
+    saveMaxLongTermEntries,
+    saveRelevanceThreshold,
+    saveMaintenanceInterval,
   };
 });

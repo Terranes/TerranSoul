@@ -69,7 +69,7 @@
 | File | Purpose |
 |---|---|
 | `mod.rs` | Module root; `StorageBackend` trait |
-| `schema.rs` | Canonical SQLite schema (V13) — `memories`, `memory_edges`, FTS5, etc. |
+| `schema.rs` | Canonical SQLite schema (V15) — `memories`, `memory_edges`, FTS5, `pending_embeddings`, protected eviction, etc. |
 | `store.rs` | Default SQLite memory store; `hybrid_search`, `hybrid_search_rrf`, ANN bridge |
 | `ann_index.rs` | HNSW ANN via `usearch` 2.x |
 | `auto_learn.rs`, `auto_tag.rs` | Automatic ingestion + tagging |
@@ -252,14 +252,14 @@
 |---|---|
 | `AI-coding-integrations.md` | How MCP/gRPC integrates with VS Code Copilot, Cursor, Codex, Claude Code |
 | `brain-advanced-design.md` | Brain architecture, schema, RAG pipeline, roadmap (kept in sync with code) |
-| `charisma-teaching-tutorial.md` | Charisma teaching workflow |
+| `tutorials/charisma-teaching-tutorial.md` | Charisma teaching workflow |
 | `coding-workflow-design.md` | Self-improve coding workflow |
 | `gitnexus-capability-matrix.md` | GitNexus tool capability matrix |
 | `licensing-audit.md` | Dependency license audit |
 | `llm-animation-research.md` | LLM-driven animation research |
 | `momask-full-body-retarget-research.md` | MoMask retarget research |
 | `motion-model-inference-evaluation.md` | MotionGPT/T2M-GPT eval |
-| `multi-agent-workflows-tutorial.md` | Multi-agent workflows |
+| `tutorials/multi-agent-workflows-tutorial.md` | Multi-agent workflows |
 | `neural-audio-to-face-evaluation.md` | Audio-to-face eval |
 | `offline-motion-polish-research.md` | Offline motion polish research |
 | `persona-design.md`, `persona-pack-schema.md` | Persona system + pack schema |

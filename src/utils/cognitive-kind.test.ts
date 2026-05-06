@@ -23,6 +23,10 @@ describe('classifyCognitiveKind', () => {
     expect(classifyCognitiveKind('context', 'procedural:release', 'bump tag push')).toBe('procedural');
   });
 
+  it('explicit judgment tag wins', () => {
+    expect(classifyCognitiveKind('fact', 'judgment:workflow', 'Always run tests before archiving')).toBe('judgment');
+  });
+
   it('tag prefix with detail is recognised', () => {
     expect(classifyCognitiveKind('fact', 'episodic:meeting', 'team sync notes')).toBe('episodic');
   });
@@ -83,7 +87,7 @@ describe('classifyCognitiveKind', () => {
 describe('summariseCognitiveKinds', () => {
   it('returns zero counts for empty input', () => {
     expect(summariseCognitiveKinds([])).toEqual({
-      episodic: 0, semantic: 0, procedural: 0, total: 0,
+      episodic: 0, semantic: 0, procedural: 0, judgment: 0, total: 0,
     });
   });
 
@@ -94,11 +98,13 @@ describe('summariseCognitiveKinds', () => {
       { memory_type: 'fact' as const, tags: '', content: 'How to deploy: 1. build 2. ship' },
       { memory_type: 'fact' as const, tags: '', content: 'Yesterday we shipped the release' },
       { memory_type: 'fact' as const, tags: '', content: 'Mars has two moons' },
+      { memory_type: 'fact' as const, tags: 'judgment', content: 'Prefer minimal patches' },
     ];
     const result = summariseCognitiveKinds(memories);
     expect(result.episodic).toBe(2); // summary + "Yesterday"
     expect(result.semantic).toBe(2); // preference + Mars
     expect(result.procedural).toBe(1); // numbered "How to deploy"
-    expect(result.total).toBe(5);
+    expect(result.judgment).toBe(1);
+    expect(result.total).toBe(6);
   });
 });

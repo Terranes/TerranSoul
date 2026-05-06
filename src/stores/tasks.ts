@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 export interface TaskInfo {
   id: string;
-  kind: 'ingest' | 'crawl' | 'quest' | 'extract' | 'custom';
+  kind: 'ingest' | 'crawl' | 'quest' | 'extract' | 'model_pull' | 'custom';
   status: 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   description: string;

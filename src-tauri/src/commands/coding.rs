@@ -1412,6 +1412,360 @@ pub async fn code_generate_wiki(
     .map_err(|e| format!("join error: {e}"))?
 }
 
+/// Generate agent skill files (SKILL.md) from the code graph.
+///
+/// Output goes to `<data_dir>/skills/` by default. Returns the list of
+/// generated skill files and their paths.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_generate_skills(
+    repo_path: String,
+    output_dir: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<coding::skills::SkillGenResult, String> {
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    let out = output_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("skills"));
+
+    tokio::task::spawn_blocking(move || {
+        let repo = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        coding::skills::generate_skills(&data_dir, &repo, &out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+// ─── Multi-repo groups and contracts (chunk 37.13) ───────────────────────
+
+/// List all repo groups.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_groups(
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::repo_groups::RepoGroup>, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::list_groups(&data_dir).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Create a new repo group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_create_group(
+    label: String,
+    description: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<coding::repo_groups::RepoGroup, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::create_group(&data_dir, &label, description.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Delete a repo group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_delete_group(group_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::delete_group(&data_dir, group_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Add a repo to a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_add_repo_to_group(
+    group_id: i64,
+    repo_id: i64,
+    role: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::add_repo_to_group(&data_dir, group_id, repo_id, role.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Remove a repo from a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_remove_repo_from_group(
+    group_id: i64,
+    repo_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::remove_repo_from_group(&data_dir, group_id, repo_id)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Aggregated status for a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_group_status(
+    group_id: i64,
+    state: State<'_, AppState>,
+) -> Result<coding::repo_groups::GroupStatus, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::group_status(&data_dir, group_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Extract public-API contracts for a repo.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_extract_contracts(
+    repo_id: i64,
+    state: State<'_, AppState>,
+) -> Result<coding::repo_groups::ContractExtractResult, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::extract_contracts(&data_dir, repo_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// List all contracts for a group's member repos.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_group_contracts(
+    group_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::repo_groups::ContractEntry>, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::list_group_contracts(&data_dir, group_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Search for a symbol name across all repos in a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_cross_repo_query(
+    group_id: i64,
+    name: String,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::repo_groups::CrossRepoMatch>, String> {
+    let data_dir = state.data_dir.clone();
+    let lim = limit.unwrap_or(50) as usize;
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::cross_repo_query(&data_dir, group_id, &name, lim)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Export the code graph for a repository as a JSON snapshot (Chunk 36B.1).
+///
+/// The snapshot includes all symbols and edges, suitable for committing
+/// to version control for architecture review.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_export_graph(
+    repo_path: String,
+    output_path: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<coding::graph_export::CodeGraphSnapshot, String> {
+    let data_dir = state.data_dir.clone();
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+        let canon = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        let canon_str = canon.to_string_lossy();
+        // Find the repo_id for this path
+        let repo_id: i64 = conn
+            .query_row(
+                "SELECT id FROM code_repos WHERE path = ?1",
+                rusqlite::params![canon_str.as_ref()],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("repository not indexed: {}", canon_str))?;
+        let out = match output_path {
+            Some(p) => std::path::PathBuf::from(p),
+            None => canon.join("code-graph.json"),
+        };
+        coding::graph_export::export_to_file(&conn, repo_id, &out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Generate a persona-adaptive explanation of a code symbol (Chunk 36B.2).
+///
+/// Loads the symbol's call graph (callers + callees) from the code index
+/// and asks the active brain to explain it for the requested audience.
+///
+/// `audience` accepts: `newcomer`, `maintainer`, `pm` / `project_manager`,
+/// or `power_user` / `expert`.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_explain_graph(
+    repo_path: String,
+    symbol_name: String,
+    audience: String,
+    state: State<'_, AppState>,
+) -> Result<coding::graph_explain::GraphExplanation, String> {
+    let audience_kind = coding::graph_explain::Audience::parse(&audience)
+        .ok_or_else(|| format!("unknown audience: {audience}"))?;
+
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+
+    // Phase 1: load the call graph (blocking SQLite work).
+    let data_dir = state.data_dir.clone();
+    let symbol_for_load = symbol_name.clone();
+    let call_graph = tokio::task::spawn_blocking(move || {
+        let canon = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+        let canon_str = canon.to_string_lossy().to_string();
+        let repo_id: i64 = conn
+            .query_row(
+                "SELECT id FROM code_repos WHERE path = ?1",
+                rusqlite::params![canon_str],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("repo not indexed: {canon_str}"))?;
+        coding::resolver::call_graph(&conn, repo_id, &symbol_for_load).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))??;
+
+    let symbol_kind = "symbol".to_string();
+    let file_path = call_graph
+        .symbol_file
+        .clone()
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let incoming: Vec<(String, String)> = call_graph
+        .incoming
+        .iter()
+        .map(|e| (e.symbol_name.clone(), e.kind.clone()))
+        .collect();
+    let outgoing: Vec<(String, String)> = call_graph
+        .outgoing
+        .iter()
+        .map(|e| (e.symbol_name.clone(), e.kind.clone()))
+        .collect();
+
+    let (system_prompt, user_prompt) = coding::graph_explain::explain_symbol_prompt(
+        audience_kind,
+        &symbol_name,
+        &symbol_kind,
+        &file_path,
+        &incoming,
+        &outgoing,
+    );
+
+    // Phase 2: ask the brain for the explanation (best-effort).
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let explanation = if let Some(mode) = &brain_mode {
+        crate::memory::brain_memory::complete_via_mode(
+            mode,
+            &system_prompt,
+            &user_prompt,
+            &state.provider_rotator,
+        )
+        .await
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+    } else {
+        String::new()
+    };
+
+    Ok(coding::graph_explain::GraphExplanation {
+        subject: symbol_name,
+        audience: audience_kind.label().to_string(),
+        explanation,
+        context_summary: user_prompt,
+    })
+}
+
+/// Build guided architecture tours for a repo (Chunk 36B.3).
+///
+/// Each indexed process becomes one tour, with steps converted into
+/// ordered, narrated stops. `max_stops` caps tour length (default 12).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_architecture_tours(
+    repo_path: String,
+    max_stops: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::graph_tours::ArchitectureTour>, String> {
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    let cap = max_stops.unwrap_or(12);
+    tokio::task::spawn_blocking(move || {
+        let canon = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+        let canon_str = canon.to_string_lossy().to_string();
+        let repo_id: i64 = conn
+            .query_row(
+                "SELECT id FROM code_repos WHERE path = ?1",
+                rusqlite::params![canon_str],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("repo not indexed: {canon_str}"))?;
+        coding::graph_tours::build_tours(&conn, repo_id, cap).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Build a diff impact overlay for the given git ref (Chunk 36B.4).
+///
+/// Combines `analyze_diff_impact` with per-file lookups of impacted
+/// processes, related docs (under `docs/` and `wiki/`), and related
+/// test files — designed as a pre-commit reviewer aid.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_diff_overlay(
+    repo_path: String,
+    diff_ref: String,
+    state: State<'_, AppState>,
+) -> Result<coding::diff_overlay::DiffOverlay, String> {
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::diff_overlay::build_overlay(&data_dir, &repo, &diff_ref).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

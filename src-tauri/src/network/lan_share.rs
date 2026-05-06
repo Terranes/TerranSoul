@@ -324,10 +324,7 @@ impl RemoteBrainClient {
         }
     }
 
-    fn with_auth(
-        &self,
-        builder: reqwest::RequestBuilder,
-    ) -> reqwest::RequestBuilder {
+    fn with_auth(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(token) = self.token.as_deref() {
             builder.header("Authorization", format!("Bearer {token}"))
         } else {

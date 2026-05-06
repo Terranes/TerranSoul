@@ -47,18 +47,7 @@
 > `rules/milestones.md` Phase 33 (or a successor) when the user says so.
 > Sequence is roughly highest → lowest leverage.
 
-| Chunk | Title | Goal |
-|---|---|---|
-| 33B.1 | Persisted judgment-rules artefact | New `cognitive_kind='judgment'` rows + Tauri commands `judgment_add` / `judgment_list` / `judgment_apply`; inject top-N matching judgments into `commands/chat.rs` system prompt. Adapts Claudia's `judgment.yaml`. |
-| 33B.2 | `/reflect` slash command for session reflection | User-invocable wrapper around the existing session-memory absorption pipeline (Chunks 30.2 + 30.6); writes a `session_reflection` memory with `derived_from` edges to the turns it summarises. Adapts Claudia's `/meditate`. |
-| 33B.3 | `quest_daily_brief` skill-tree quest | Once-per-day quest that runs `hybrid_search_rrf("overdue OR upcoming OR commitment", since=now-1d)` via `memory/temporal.rs` and surfaces results in the existing skill-tree UI. Adapts Claudia's `/morning-brief`. |
-| 33B.4 | Memory-audit provenance view | New brain-panel tab that joins `memories ⨝ memory_versions ⨝ memory_edges` and renders a provenance tree per entry. Adapts Claudia's `/memory-audit`. |
-| 33B.5 | `BrainGraphViewport.vue` 3-D KG visualiser | Three.js + d3-force-3d component consuming `memory_edges` + `memories`; node colour = `cognitive_kind`, edge colour = `rel_type`. Adapts Claudia's brain visualiser concept. |
-| 33B.6 | Agent-roster capability tags + tag-based routing | Extend `agents/roster.rs` with capability tags (`{code,web,memory,vision,…}`); `coding/coding_router.rs` selects by tag instead of name. Adapts Claudia's two-tier agent team architecture. |
-| 33B.7 | Per-workspace `data_root` setting | Allow `app_settings.json` to override the SQLite + HNSW + Obsidian-export root per workspace, so multiple projects can share one TerranSoul install without colliding state. |
-| 33B.8 | Stdio MCP transport adapter on top of `BrainGateway` | Add an alternate transport (alongside HTTP) that speaks JSON-RPC over stdio for editors that only support stdio MCP. Reuses the existing `BrainGateway` trait — no new business logic. |
-| 33B.9 | PARA opt-in template for `obsidian_export.rs` | Optional Project / Area / Resource / Archive folder layout for the one-way Obsidian export, behind a setting. Read-only projection only — vault is never the source of truth (`memory-philosophy.md` rule 1). |
-| 33B.10 | Standalone scheduler daemon for non-GUI runs | If Phase 33 chunk 33.6 lands, harden the maintenance scheduler into a dedicated `terransoul-scheduler` binary so power users can run brain maintenance on a server without the desktop app. |
+✅ Reconciled 2026-05-06 — chunks 33B.1–33B.10 are implemented and recorded in `rules/completion-log.md`; no additional 33B backlog rows remain.
 
 ---
 
@@ -69,12 +58,7 @@
 > no source, prompts, assets, or branding copied. Promote rows only when the user
 > explicitly asks for these ideas to move into `rules/milestones.md`.
 
-| Chunk | Title | Goal |
-|---|---|---|
-| 36B.1 | Committed code-graph snapshot | Add an optional, reviewable `code-graph.json` export generated from TerranSoul's existing `coding/symbol_index.rs` so teammates and agents can load code intelligence without re-indexing. Ignore local intermediates and keep runtime SQLite out of Git. |
-| 36B.2 | Persona-adaptive graph explanations | Reuse existing persona/settings state to vary graph explanations for newcomer, maintainer, PM, and power-user views without changing the underlying symbol graph. |
-| 36B.3 | Guided architecture tours | Generate ordered tours from `coding/processes.rs` and dependency edges so new contributors can learn TerranSoul in dependency order from the dashboard and MCP tools. |
-| 36B.4 | Diff impact overlay | Add a changed-file overlay that marks impacted symbols, processes, docs, and tests before commit, backed by the existing code index and workflow planner. |
+✅ Reconciled 2026-05-06 — chunks 36B.1–36B.4 are implemented and recorded in `rules/completion-log.md`; no active backlog rows remain for this phase.
 
 ---
 

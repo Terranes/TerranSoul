@@ -36,6 +36,7 @@ pub mod user_models;
 pub mod vision;
 pub mod voice;
 pub mod vscode;
+pub mod wiki;
 pub mod window;
 pub mod workflow_plans;
 

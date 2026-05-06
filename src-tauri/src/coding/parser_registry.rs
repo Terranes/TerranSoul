@@ -268,9 +268,7 @@ fn walk_python_node(
                         Some(node_text(source, &child).to_string())
                     };
                     if let Some(name) = target {
-                        edges.push(CodeEdge::from_node(
-                            file, &node, EdgeKind::Imports, name,
-                        ));
+                        edges.push(CodeEdge::from_node(file, &node, EdgeKind::Imports, name));
                     }
                 }
             }
@@ -280,9 +278,7 @@ fn walk_python_node(
                 let name = node_text(source, &func_node).to_string();
                 // Only track simple names, not complex expressions
                 if !name.contains('\n') && name.len() < 80 {
-                    edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Calls, name,
-                    ));
+                    edges.push(CodeEdge::from_node(file, &node, EdgeKind::Calls, name));
                 }
             }
         }
@@ -333,13 +329,12 @@ fn walk_go_node(
         "method_declaration" => {
             if let Some(name) = node_name_text(source, &node, "name") {
                 // Try to find receiver type
-                let receiver = find_child_by_field(&node, "receiver")
-                    .and_then(|r| {
-                        let mut cursor = r.walk();
-                        r.children(&mut cursor)
-                            .find(|c| c.kind() == "type_identifier")
-                            .map(|t| node_text(source, &t).to_string())
-                    });
+                let receiver = find_child_by_field(&node, "receiver").and_then(|r| {
+                    let mut cursor = r.walk();
+                    r.children(&mut cursor)
+                        .find(|c| c.kind() == "type_identifier")
+                        .map(|t| node_text(source, &t).to_string())
+                });
                 symbols.push(Symbol {
                     name,
                     kind: SymbolKind::Method,
@@ -382,11 +377,16 @@ fn walk_go_node(
                 if child.kind() == "import_spec" || child.kind() == "import_spec_list" {
                     let mut inner_cursor = child.walk();
                     for spec in child.children(&mut inner_cursor) {
-                        if spec.kind() == "import_spec" || spec.kind() == "interpreted_string_literal" {
+                        if spec.kind() == "import_spec"
+                            || spec.kind() == "interpreted_string_literal"
+                        {
                             let text = node_text(source, &spec).trim_matches('"').to_string();
                             if !text.is_empty() {
                                 edges.push(CodeEdge::from_node(
-                                    file, &spec, EdgeKind::Imports, text,
+                                    file,
+                                    &spec,
+                                    EdgeKind::Imports,
+                                    text,
                                 ));
                             }
                         }
@@ -395,9 +395,7 @@ fn walk_go_node(
                 if child.kind() == "interpreted_string_literal" {
                     let text = node_text(source, &child).trim_matches('"').to_string();
                     if !text.is_empty() {
-                        edges.push(CodeEdge::from_node(
-                            file, &child, EdgeKind::Imports, text,
-                        ));
+                        edges.push(CodeEdge::from_node(file, &child, EdgeKind::Imports, text));
                     }
                 }
             }
@@ -406,9 +404,7 @@ fn walk_go_node(
             if let Some(func_node) = find_child_by_field(&node, "function") {
                 let name = node_text(source, &func_node).to_string();
                 if !name.contains('\n') && name.len() < 80 {
-                    edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Calls, name,
-                    ));
+                    edges.push(CodeEdge::from_node(file, &node, EdgeKind::Calls, name));
                 }
             }
         }
@@ -530,18 +526,14 @@ fn walk_java_node(
             for child in node.children(&mut cursor) {
                 if child.kind() == "scoped_identifier" {
                     let text = node_text(source, &child).to_string();
-                    edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Imports, text,
-                    ));
+                    edges.push(CodeEdge::from_node(file, &node, EdgeKind::Imports, text));
                 }
             }
         }
         "method_invocation" => {
             if let Some(name_node) = find_child_by_field(&node, "name") {
                 let name = node_text(source, &name_node).to_string();
-                edges.push(CodeEdge::from_node(
-                    file, &node, EdgeKind::Calls, name,
-                ));
+                edges.push(CodeEdge::from_node(file, &node, EdgeKind::Calls, name));
             }
         }
         _ => {}
@@ -639,9 +631,7 @@ fn walk_c_node(
                     .trim_matches(|c| c == '"' || c == '<' || c == '>')
                     .to_string();
                 if !text.is_empty() {
-                    edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Imports, text,
-                    ));
+                    edges.push(CodeEdge::from_node(file, &node, EdgeKind::Imports, text));
                 }
             }
         }
@@ -649,9 +639,7 @@ fn walk_c_node(
             if let Some(func_node) = find_child_by_field(&node, "function") {
                 let name = node_text(source, &func_node).to_string();
                 if !name.contains('\n') && name.len() < 80 {
-                    edges.push(CodeEdge::from_node(
-                        file, &node, EdgeKind::Calls, name,
-                    ));
+                    edges.push(CodeEdge::from_node(file, &node, EdgeKind::Calls, name));
                 }
             }
         }
@@ -738,7 +726,9 @@ def main():
         assert!(names.contains(&"start"));
         assert!(names.contains(&"main"));
 
-        assert!(edges.iter().any(|e| e.kind == EdgeKind::Imports && e.target_name == "os"));
+        assert!(edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Imports && e.target_name == "os"));
     }
 
     #[cfg(feature = "parser-go")]
@@ -771,7 +761,9 @@ func main() {
         assert!(names.contains(&"Start"));
         assert!(names.contains(&"main"));
 
-        assert!(edges.iter().any(|e| e.kind == EdgeKind::Imports && e.target_name == "fmt"));
+        assert!(edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Imports && e.target_name == "fmt"));
     }
 
     #[cfg(feature = "parser-java")]
@@ -800,7 +792,9 @@ public class Server {
         assert!(names.contains(&"Server"));
         assert!(names.contains(&"start"));
 
-        assert!(edges.iter().any(|e| e.kind == EdgeKind::Imports && e.target_name.contains("java.util.List")));
+        assert!(edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Imports && e.target_name.contains("java.util.List")));
     }
 
     #[cfg(feature = "parser-c")]
@@ -837,8 +831,14 @@ int main() {
         assert!(names.contains(&"print_point"));
         assert!(names.contains(&"main"));
 
-        assert!(edges.iter().any(|e| e.kind == EdgeKind::Imports && e.target_name == "stdio.h"));
-        assert!(edges.iter().any(|e| e.kind == EdgeKind::Imports && e.target_name == "mylib.h"));
-        assert!(edges.iter().any(|e| e.kind == EdgeKind::Calls && e.target_name == "printf"));
+        assert!(edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Imports && e.target_name == "stdio.h"));
+        assert!(edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Imports && e.target_name == "mylib.h"));
+        assert!(edges
+            .iter()
+            .any(|e| e.kind == EdgeKind::Calls && e.target_name == "printf"));
     }
 }

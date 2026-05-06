@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_12_tools() {
+    async fn tools_list_returns_26_tools() {
         let (handle, url, token) = start_test_server().await;
 
         let (status, body) = rpc(
@@ -110,15 +110,19 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 26);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
         assert!(tools[0]["inputSchema"].is_object());
 
+        // Verify Knowledge Wiki tools are present before code tools.
+        assert_eq!(tools[9]["name"], "brain_wiki_audit");
+        assert_eq!(tools[13]["name"], "brain_wiki_digest_text");
+
         // Verify code tools are present.
-        assert_eq!(tools[9]["name"], "code_query");
-        assert_eq!(tools[12]["name"], "code_rename");
+        assert_eq!(tools[14]["name"], "code_query");
+        assert_eq!(tools[17]["name"], "code_rename");
 
         handle.stop();
     }
@@ -178,6 +182,74 @@ mod tests {
         // Empty brain returns empty array.
         let results: Vec<Value> = serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
         assert!(results.is_empty());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn tools_call_brain_wiki_audit_empty_brain() {
+        let (handle, url, token) = start_test_server().await;
+
+        let (status, body) = rpc(
+            &url,
+            &token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": {
+                    "name": "brain_wiki_audit",
+                    "arguments": { "limit": 5 }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let content = &body["result"]["content"][0];
+        assert_eq!(content["type"], "text");
+        let report: Value = serde_json::from_str(content["text"].as_str().unwrap()).unwrap();
+        assert_eq!(report["total_memories"], 0);
+        assert!(report["orphan_ids"].as_array().unwrap().is_empty());
+        assert!(report["stale_ids"].as_array().unwrap().is_empty());
+
+        handle.stop();
+    }
+
+    #[tokio::test]
+    async fn tools_call_brain_wiki_digest_text_dedups_content() {
+        let (handle, url, token) = start_test_server().await;
+
+        let request = |id| {
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/call",
+                "params": {
+                    "name": "brain_wiki_digest_text",
+                    "arguments": {
+                        "content": "MCP wiki digest integration test note.",
+                        "source_url": "mcp-test://wiki-digest",
+                        "tags": "test,wiki",
+                        "importance": 4
+                    }
+                }
+            })
+        };
+
+        let (first_status, first_body) = rpc(&url, &token, request(42)).await;
+        assert_eq!(first_status, 200);
+        let first_text = first_body["result"]["content"][0]["text"].as_str().unwrap();
+        let first_result: Value = serde_json::from_str(first_text).unwrap();
+        assert_eq!(first_result["kind"], "ingested");
+
+        let (second_status, second_body) = rpc(&url, &token, request(43)).await;
+        assert_eq!(second_status, 200);
+        let second_text = second_body["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap();
+        let second_result: Value = serde_json::from_str(second_text).unwrap();
+        assert_eq!(second_result["kind"], "skipped");
 
         handle.stop();
     }

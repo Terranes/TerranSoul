@@ -716,7 +716,14 @@ pub fn format_memories_for_extraction(entries: &[MemoryEntry]) -> String {
         .iter()
         .map(|e| {
             let snippet = if e.content.len() > 200 {
-                format!("{}…", &e.content[..200])
+                // Slice on a UTF-8 char boundary at-or-before byte 200 so
+                // multi-byte chars (e.g. em-dash `—` = 3 bytes) never
+                // panic the runtime. See MCP crash 2026-05-06.
+                let mut end = 200;
+                while end > 0 && !e.content.is_char_boundary(end) {
+                    end -= 1;
+                }
+                format!("{}…", &e.content[..end])
             } else {
                 e.content.clone()
             };

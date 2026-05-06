@@ -1458,7 +1458,12 @@ pub async fn export_to_obsidian(
     if !path.exists() {
         return Err(format!("Vault directory does not exist: {vault_dir}"));
     }
-    crate::memory::obsidian_export::export_to_vault(path, &entries)
+    let layout = state
+        .app_settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .obsidian_layout;
+    crate::memory::obsidian_export::export_to_vault_with_layout(path, &entries, layout)
 }
 
 // ── Bidirectional Obsidian sync (Chunk 17.7) ─────────────────────────
@@ -1600,6 +1605,88 @@ pub async fn temporal_query(
     })
 }
 
+// ── Daily brief quest (Chunk 33B.3) ──────────────────────────────────
+
+/// Result of the daily brief query.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DailyBriefResult {
+    /// Memories matching the brief search (time-filtered + RRF-ranked).
+    pub memories: Vec<crate::memory::MemoryEntry>,
+    /// The time window used (last 24 h from now).
+    pub time_range: crate::memory::temporal::TimeRange,
+    /// Number of total memories in the time range before RRF filtering.
+    pub total_in_range: usize,
+}
+
+/// Run the daily brief quest query: retrieves memories from the last 24 h
+/// that match "overdue OR upcoming OR commitment" via hybrid_search_rrf,
+/// scoped to the temporal window. Returns up to `limit` results ranked by
+/// relevance within the recent window.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn daily_brief_query(
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<DailyBriefResult, String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let range = crate::memory::temporal::TimeRange {
+        start_ms: now_ms - 86_400_000, // 24 hours ago
+        end_ms: now_ms,
+    };
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+    // Get all memories in the last 24 h.
+    let all = store.get_all().map_err(|e| e.to_string())?;
+    let recent: Vec<crate::memory::MemoryEntry> = all
+        .into_iter()
+        .filter(|m| m.created_at >= range.start_ms && m.created_at < range.end_ms)
+        .collect();
+
+    let total_in_range = recent.len();
+
+    if recent.is_empty() {
+        return Ok(DailyBriefResult {
+            memories: vec![],
+            time_range: range,
+            total_in_range: 0,
+        });
+    }
+
+    // Run hybrid_search_rrf for relevance ranking with the brief keywords.
+    let brief_query = "overdue OR upcoming OR commitment";
+    let lim = limit.unwrap_or(10).clamp(1, 50);
+
+    let ranked = store
+        .hybrid_search_rrf(brief_query, None, lim)
+        .map_err(|e| e.to_string())?;
+
+    // Intersect: only keep RRF results that are within the time range.
+    let in_range: Vec<crate::memory::MemoryEntry> = ranked
+        .into_iter()
+        .filter(|m| m.created_at >= range.start_ms && m.created_at < range.end_ms)
+        .collect();
+
+    // If no RRF results fall in range, return the most recent entries by recency.
+    let memories = if in_range.is_empty() {
+        let mut fallback = recent;
+        fallback.sort_by_key(|m| std::cmp::Reverse(m.created_at));
+        fallback.truncate(lim);
+        fallback
+    } else {
+        in_range
+    };
+
+    Ok(DailyBriefResult {
+        memories,
+        time_range: range,
+        total_in_range,
+    })
+}
+
 /// Get the full version history for a memory entry (chunk 16.12).
 ///
 /// Returns all previous snapshots ordered oldest-first. An empty list means
@@ -1611,6 +1698,19 @@ pub async fn get_memory_history(
 ) -> Result<Vec<crate::memory::versioning::MemoryVersion>, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     crate::memory::versioning::get_history(store.conn(), memory_id).map_err(|e| e.to_string())
+}
+
+/// Return the joined provenance tree for one memory entry (Chunk 33B.4).
+///
+/// Includes the current entry, version snapshots, and incident graph edges
+/// joined to compact neighboring memory summaries.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_memory_provenance(
+    memory_id: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::audit::MemoryProvenance, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    crate::memory::audit::get_memory_provenance(&store, memory_id).map_err(|e| e.to_string())
 }
 
 /// Delete **all** persisted data: memories, brain config, voice config,

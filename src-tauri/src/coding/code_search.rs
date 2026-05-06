@@ -61,9 +61,8 @@ pub fn load_embeddings(
     conn: &Connection,
     repo_id: i64,
 ) -> Result<Vec<(i64, Vec<f32>)>, IndexError> {
-    let mut stmt = conn.prepare(
-        "SELECT symbol_id, embedding FROM code_embeddings WHERE repo_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT symbol_id, embedding FROM code_embeddings WHERE repo_id = ?1")?;
     let rows = stmt.query_map(params![repo_id], |r| {
         let id: i64 = r.get(0)?;
         let blob: Vec<u8> = r.get(1)?;
@@ -103,9 +102,8 @@ fn text_rank(
     }
 
     // Load symbols with id for scoring.
-    let mut stmt = conn.prepare(
-        "SELECT id, name, kind, file, parent FROM code_symbols WHERE repo_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT id, name, kind, file, parent FROM code_symbols WHERE repo_id = ?1")?;
 
     struct Row {
         id: i64,
@@ -226,9 +224,7 @@ fn vector_rank(
 /// Rank symbols by graph importance: entry-point participation + edge density.
 fn graph_rank(conn: &Connection, repo_id: i64, limit: usize) -> Result<Vec<i64>, IndexError> {
     // Check if code_processes table exists (may not if processes haven't been computed yet).
-    let has_processes: bool = conn
-        .prepare("SELECT 1 FROM code_processes LIMIT 0")
-        .is_ok();
+    let has_processes: bool = conn.prepare("SELECT 1 FROM code_processes LIMIT 0").is_ok();
 
     let query = if has_processes {
         "SELECT s.id,
@@ -471,7 +467,10 @@ mod tests {
             .unwrap();
 
         let results = text_rank(&conn, repo_id, "http server", 10).unwrap();
-        assert!(!results.is_empty(), "Should find symbols matching 'http server'");
+        assert!(
+            !results.is_empty(),
+            "Should find symbols matching 'http server'"
+        );
 
         // run_http_server should rank highest (exact substring match on both terms).
         let sym = load_symbol_by_id(&conn, results[0]).unwrap().unwrap();
@@ -493,8 +492,7 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
         index_repo(&data_dir, &repo).unwrap();
 
-        let results =
-            hybrid_code_search(&data_dir, &repo, "create app", None, 10).unwrap();
+        let results = hybrid_code_search(&data_dir, &repo, "create app", None, 10).unwrap();
         assert!(!results.is_empty());
         assert_eq!(results[0].symbol.name, "create_app");
         assert!(results[0].signals.contains(&"text".to_string()));

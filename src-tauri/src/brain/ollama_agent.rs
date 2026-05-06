@@ -582,6 +582,111 @@ impl OllamaAgent {
         }
     }
 
+    /// Generate embeddings for a batch of texts via Ollama `/api/embed`.
+    ///
+    /// Ollama 0.4+ supports `"input": ["text1", "text2", …]` and returns
+    /// `"embeddings": [[…], […], …]`. This batches up to `batch_size` texts
+    /// in a single HTTP call, dramatically reducing round-trip overhead for
+    /// bulk ingest.
+    ///
+    /// Returns a `Vec<Option<Vec<f32>>>` where each element corresponds to
+    /// the input at the same index. `None` means the embedding failed for
+    /// that specific text (or the entire call failed, in which case all
+    /// entries are `None`).
+    pub async fn embed_text_batch(
+        texts: &[&str],
+        model_hint: &str,
+        batch_size: usize,
+    ) -> Vec<Option<Vec<f32>>> {
+        if texts.is_empty() {
+            return vec![];
+        }
+
+        let embed_model = resolve_embed_model(model_hint).await;
+
+        if is_known_unsupported(&embed_model).await {
+            return vec![None; texts.len()];
+        }
+
+        let client = match Client::builder().timeout(Duration::from_secs(60)).build() {
+            Ok(c) => c,
+            Err(_) => return vec![None; texts.len()],
+        };
+
+        let mut results = Vec::with_capacity(texts.len());
+
+        for chunk in texts.chunks(batch_size) {
+            // Filter out empty texts but track indices for reassembly.
+            let (indices, batch_texts): (Vec<usize>, Vec<&str>) = chunk
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| !t.trim().is_empty())
+                .map(|(i, t)| (i, *t))
+                .unzip();
+
+            if batch_texts.is_empty() {
+                results.extend(std::iter::repeat_n(None, chunk.len()));
+                continue;
+            }
+
+            let body = serde_json::json!({
+                "model": embed_model,
+                "input": batch_texts,
+            });
+
+            let resp = match client
+                .post(format!("{OLLAMA_BASE_URL}/api/embed"))
+                .json(&body)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(_) => {
+                    results.extend(std::iter::repeat_n(None, chunk.len()));
+                    continue;
+                }
+            };
+
+            if !resp.status().is_success() {
+                let status = resp.status().as_u16();
+                mark_unsupported(&embed_model, status).await;
+                results.extend(std::iter::repeat_n(None, chunk.len()));
+                continue;
+            }
+
+            let json: serde_json::Value = match resp.json().await {
+                Ok(v) => v,
+                Err(_) => {
+                    results.extend(std::iter::repeat_n(None, chunk.len()));
+                    continue;
+                }
+            };
+
+            let embeddings = json
+                .get("embeddings")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            // Re-assemble: put embeddings back at their original indices.
+            let mut chunk_results = vec![None; chunk.len()];
+            for (slot, emb_val) in indices.iter().zip(embeddings.iter()) {
+                if let Some(arr) = emb_val.as_array() {
+                    let vec: Vec<f32> = arr
+                        .iter()
+                        .filter_map(|v| v.as_f64().map(|f| f as f32))
+                        .collect();
+                    if !vec.is_empty() {
+                        chunk_results[*slot] = Some(vec);
+                    }
+                }
+            }
+            results.extend(chunk_results);
+        }
+
+        results
+    }
+
     /// Generate per-token embeddings for a whole document via Ollama.
     ///
     /// This is intentionally best-effort. If the selected model or Ollama
@@ -1503,6 +1608,26 @@ mod tests {
         // fallback (model_exists("nomic-embed-text") will fail too).
         let result = OllamaAgent::embed_text("hello", "definitely-not-installed:1b").await;
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn embed_text_batch_returns_none_per_item_when_unreachable() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        let texts = vec!["hello", "world", ""];
+        let results = OllamaAgent::embed_text_batch(&texts, "definitely-not-installed:1b", 2).await;
+        assert_eq!(results.len(), 3);
+        // All should be None since Ollama isn't running on default port
+        // for this model.
+        for r in &results {
+            assert!(r.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn embed_text_batch_handles_empty_input() {
+        let results = OllamaAgent::embed_text_batch(&[], "gemma3:4b", 32).await;
+        assert!(results.is_empty());
     }
 
     #[tokio::test]

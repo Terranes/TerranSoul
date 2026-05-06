@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 
 /// Canonical memory schema version reported by the app.
-pub const CANONICAL_SCHEMA_VERSION: i64 = 13;
+pub const CANONICAL_SCHEMA_VERSION: i64 = 15;
 
 const CANONICAL_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS memories (
     category      TEXT,
     cognitive_kind TEXT,
     updated_at    INTEGER,
-    origin_device TEXT
+    origin_device TEXT,
+    protected     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
@@ -50,6 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
 CREATE INDEX IF NOT EXISTS idx_memories_decay ON memories(decay_score DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
 CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at);
+CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, decay_score);
 
 CREATE TABLE IF NOT EXISTS memory_edges (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,12 +114,22 @@ CREATE TABLE IF NOT EXISTS sync_log (
     timestamp   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sync_log_peer ON sync_log(peer_device);
+
+CREATE TABLE IF NOT EXISTS pending_embeddings (
+    memory_id    INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT,
+    next_retry_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pending_embeddings_next ON pending_embeddings(next_retry_at);
 "#;
 
 /// Create the final memory schema directly and record its canonical version.
 pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch(CANONICAL_SCHEMA_SQL)?;
     ensure_memories_cognitive_kind(conn)?;
+    ensure_pending_embeddings(conn)?;
+    ensure_protected_column(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
 }
@@ -132,6 +144,39 @@ fn ensure_memories_cognitive_kind(conn: &Connection) -> SqlResult<()> {
         }
     }
     conn.execute_batch("ALTER TABLE memories ADD COLUMN cognitive_kind TEXT")
+}
+
+/// Ensure the `pending_embeddings` table exists (upgrade path from v13).
+fn ensure_pending_embeddings(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS pending_embeddings (
+            memory_id    INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            last_error   TEXT,
+            next_retry_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_pending_embeddings_next ON pending_embeddings(next_retry_at);",
+    )
+}
+
+/// Ensure the `protected` column exists on `memories` (upgrade path from v14).
+fn ensure_protected_column(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "protected" {
+            // Already exists — just ensure the eviction index.
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, decay_score);"
+            )?;
+            return Ok(());
+        }
+    }
+    conn.execute_batch(
+        "ALTER TABLE memories ADD COLUMN protected INTEGER NOT NULL DEFAULT 0;
+         CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, decay_score);"
+    )
 }
 
 /// Return the recorded canonical schema version, or 0 before initialization.
@@ -164,7 +209,7 @@ fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
                 last_accessed, access_count, embedding, source_url, source_hash,
                 expires_at, tier, decay_score, session_id, parent_id, token_count,
                 valid_to, obsidian_path, last_exported, category, cognitive_kind,
-                updated_at, origin_device
+                updated_at, origin_device, protected
           FROM memories LIMIT 0",
     )?;
     conn.prepare(
@@ -190,6 +235,10 @@ fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.prepare(
         "SELECT id, peer_device, direction, entry_count, timestamp
          FROM sync_log LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT memory_id, attempts, last_error, next_retry_at
+         FROM pending_embeddings LIMIT 0",
     )?;
     Ok(())
 }

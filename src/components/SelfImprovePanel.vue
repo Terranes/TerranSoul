@@ -1018,12 +1018,12 @@ async function onClearLog() {
 }
 .si-status-pill--off {
   background: rgba(148, 163, 184, 0.15);
-  color: #cbd5e1;
+  color: var(--ts-text-bright);
   border-color: rgba(148, 163, 184, 0.3);
 }
 .si-status-pill--on {
-  background: rgba(34, 197, 94, 0.18);
-  color: #86efac;
+  background: var(--ts-success-bg);
+  color: var(--ts-success);
   border-color: rgba(34, 197, 94, 0.45);
   animation: si-pulse 2.4s ease-in-out infinite;
 }
@@ -1053,7 +1053,7 @@ async function onClearLog() {
 .si-progress-percent {
   font-weight: 700;
   font-size: 1rem;
-  background: linear-gradient(135deg, #a78bfa, #7c6fff);
+  background: var(--ts-gradient-accent);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1067,7 +1067,7 @@ async function onClearLog() {
 }
 .si-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #7c6fff, #a78bfa, #ec4899);
+  background: linear-gradient(90deg, var(--ts-accent), var(--ts-accent-violet), var(--ts-accent-pink));
   background-size: 200% 100%;
   border-radius: 999px;
   transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
@@ -1078,7 +1078,7 @@ async function onClearLog() {
   100% { background-position: 200% 0; }
 }
 .si-next-line { margin: 0; font-size: 0.8rem; color: var(--ts-text-muted, #94a3b8); }
-.si-next-done { color: #86efac; }
+.si-next-done { color: var(--ts-success); }
 
 /* Finished / working / backlog dashboard */
 .si-queue {
@@ -1261,9 +1261,9 @@ async function onClearLog() {
   text-align: center;
   align-self: center;
 }
-.si-phase--completed .si-phase-icon { color: #86efac; }
+.si-phase--completed .si-phase-icon { color: var(--ts-success); }
 .si-phase--in-progress .si-phase-icon {
-  color: #c4b5fd;
+  color: var(--ts-accent-violet);
   animation: si-spin 2s linear infinite;
   display: inline-block;
 }
@@ -1271,11 +1271,11 @@ async function onClearLog() {
   from { transform: rotate(0); }
   to   { transform: rotate(360deg); }
 }
-.si-phase--blocked .si-phase-icon { color: #fca5a5; }
+.si-phase--blocked .si-phase-icon { color: var(--ts-error); }
 
 .si-phase-title { font-size: 0.88rem; font-weight: 600; }
 .si-phase-desc { font-size: 0.78rem; color: var(--ts-text-muted, #94a3b8); margin-top: 2px; line-height: 1.4; }
-.si-phase-blocked { font-size: 0.74rem; color: #fca5a5; margin-top: 4px; }
+.si-phase-blocked { font-size: 0.74rem; color: var(--ts-error); margin-top: 4px; }
 
 /* Improvement chunks */
 .si-improvement {
@@ -1359,10 +1359,10 @@ async function onClearLog() {
   border-left: 3px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.02);
 }
-.si-activity-item--success { border-left-color: #34d399; }
-.si-activity-item--warn    { border-left-color: #fbbf24; }
-.si-activity-item--error   { border-left-color: #f87171; }
-.si-activity-item--info    { border-left-color: #60a5fa; }
+.si-activity-item--success { border-left-color: var(--ts-success); }
+.si-activity-item--warn    { border-left-color: var(--ts-warning); }
+.si-activity-item--error   { border-left-color: var(--ts-error); }
+.si-activity-item--info    { border-left-color: var(--ts-accent-blue); }
 .si-activity-time {
   color: var(--ts-text-muted, #94a3b8);
   font-variant-numeric: tabular-nums;
@@ -1390,14 +1390,14 @@ async function onClearLog() {
 .si-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .si-btn-primary {
-  background: linear-gradient(135deg, #7c6fff, #a78bfa);
+  background: var(--ts-gradient-accent);
   color: white;
-  box-shadow: 0 4px 14px rgba(124, 111, 255, 0.35);
+  box-shadow: 0 4px 14px var(--ts-accent-glow);
 }
 .si-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124, 111, 255, 0.5); }
 
 .si-btn-danger {
-  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  background: var(--ts-gradient-danger);
   color: white;
 }
 .si-btn-danger:hover { transform: translateY(-1px); }
@@ -1429,16 +1429,16 @@ async function onClearLog() {
   flex-shrink: 0;
 }
 .si-live-dot--on {
-  background: #5eead4;
-  box-shadow: 0 0 8px #5eead4;
+  background: var(--ts-success);
+  box-shadow: 0 0 8px var(--ts-success);
   animation: si-pulse 1.4s ease-in-out infinite;
 }
 @keyframes si-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.si-live-phase { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.72rem; color: #5eead4; }
+.si-live-phase { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.72rem; color: var(--ts-success); }
 .si-live-msg { flex: 1; color: var(--ts-text-muted, #94a3b8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .si-live-pct { font-variant-numeric: tabular-nums; font-weight: 600; }
 .si-live-track { height: 4px; background: rgba(255, 255, 255, 0.08); border-radius: 2px; overflow: hidden; }
-.si-live-fill { height: 100%; background: linear-gradient(90deg, #7c6fff, #5eead4); transition: width 0.3s ease; }
+.si-live-fill { height: 100%; background: var(--ts-gradient-progress); transition: width 0.3s ease; }
 
 /* Autostart toggle */
 .si-autostart {
@@ -1451,7 +1451,7 @@ async function onClearLog() {
   user-select: none;
   margin-left: auto;
 }
-.si-autostart input[type="checkbox"] { accent-color: #7c6fff; cursor: pointer; }
+.si-autostart input[type="checkbox"] { accent-color: var(--ts-accent); cursor: pointer; }
 
 /* Observability section */
 .si-obs { display: flex; flex-direction: column; gap: 10px; }
@@ -1482,9 +1482,9 @@ async function onClearLog() {
   margin-top: 2px;
 }
 .si-stat--ok { border-color: rgba(94, 234, 212, 0.3); }
-.si-stat--ok .si-stat-num { color: #5eead4; }
+.si-stat--ok .si-stat-num { color: var(--ts-success); }
 .si-stat--err { border-color: rgba(252, 165, 165, 0.3); }
-.si-stat--err .si-stat-num { color: #fca5a5; }
+.si-stat--err .si-stat-num { color: var(--ts-error); }
 
 /* Cost telemetry (Chunk 28.5) */
 .si-cost-row {
@@ -1512,7 +1512,7 @@ async function onClearLog() {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
-  color: #c7b9ff;
+  color: var(--ts-accent-violet);
 }
 .si-cost-sub {
   font-size: 0.7rem;
@@ -1539,7 +1539,7 @@ async function onClearLog() {
   color: var(--ts-text-muted, #94a3b8);
 }
 .si-run-cost {
-  color: #c7b9ff;
+  color: var(--ts-accent-violet);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1555,13 +1555,13 @@ async function onClearLog() {
 }
 .si-obs-error-tag {
   font-weight: 700;
-  color: #fca5a5;
+  color: var(--ts-error);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 0.68rem;
   flex-shrink: 0;
 }
-.si-obs-error-chunk { font-family: monospace; color: #fca5a5; flex-shrink: 0; }
+.si-obs-error-chunk { font-family: monospace; color: var(--ts-error); flex-shrink: 0; }
 .si-obs-error-msg {
   color: var(--ts-text-muted, #94a3b8);
   overflow: hidden;
@@ -1614,11 +1614,11 @@ async function onClearLog() {
 }
 .si-run:last-child { border-bottom: none; }
 .si-run-icon { font-weight: 700; text-align: center; }
-.si-run--success .si-run-icon { color: #5eead4; }
-.si-run--failure .si-run-icon { color: #fca5a5; }
-.si-run--running .si-run-icon { color: #fcd34d; }
+.si-run--success .si-run-icon { color: var(--ts-success); }
+.si-run--failure .si-run-icon { color: var(--ts-error); }
+.si-run--running .si-run-icon { color: var(--ts-warning); }
 .si-run-time { color: var(--ts-text-muted, #94a3b8); font-variant-numeric: tabular-nums; font-size: 0.72rem; }
-.si-run-chunk { font-family: monospace; color: #c4b5fd; }
+.si-run-chunk { font-family: monospace; color: var(--ts-accent-violet); }
 .si-run-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .si-run-meta { color: var(--ts-text-muted, #94a3b8); font-size: 0.7rem; white-space: nowrap; }
 .si-run-meta code {
@@ -1715,12 +1715,12 @@ async function onClearLog() {
   border-radius: 4px;
 }
 .si-github-result--ok {
-  background: rgba(34, 197, 94, 0.12);
-  color: #4ade80;
+  background: var(--ts-success-bg);
+  color: var(--ts-success);
 }
 .si-github-result--warn {
-  background: rgba(234, 179, 8, 0.12);
-  color: #fbbf24;
+  background: var(--ts-warning-bg);
+  color: var(--ts-warning);
 }
 .si-github-result a { color: inherit; text-decoration: underline; }
 </style>

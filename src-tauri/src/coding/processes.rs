@@ -68,7 +68,7 @@ pub struct ProcessStats {
 
 // ─── Schema extension ───────────────────────────────────────────────────────
 
-fn ensure_process_tables(conn: &Connection) -> Result<(), IndexError> {
+pub(crate) fn ensure_process_tables(conn: &Connection) -> Result<(), IndexError> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS code_clusters (

@@ -133,3 +133,111 @@ describe('filterByTagPrefix', () => {
     expect(result.map((m) => m.id)).not.toContain(4);
   });
 });
+
+// ── Audit tab (chunk 33B.4) ──────────────────────────────────────────────
+//
+// Pure-function tests mirroring `auditCandidates` and `truncate` in
+// MemoryView.vue. These verify that selecting a memory for the
+// provenance view returns the expected filtered + sorted candidate list.
+
+function auditCandidates(memories: MemoryEntry[], search: string): MemoryEntry[] {
+  const q = search.trim().toLowerCase();
+  const list =
+    q.length === 0
+      ? memories
+      : memories.filter(
+          (m) =>
+            m.content.toLowerCase().includes(q) ||
+            (m.tags ?? '').toLowerCase().includes(q),
+        );
+  return [...list].sort((a, b) => b.created_at - a.created_at).slice(0, 200);
+}
+
+function truncate(text: string, max: number): string {
+  if (!text) return '';
+  return text.length <= max ? text : text.slice(0, max - 1) + '…';
+}
+
+function makeAuditEntry(
+  id: number,
+  content: string,
+  tags: string,
+  createdAt: number,
+): MemoryEntry {
+  return {
+    id,
+    content,
+    tags,
+    memory_type: 'fact',
+    tier: 'long',
+    importance: 3,
+    decay_score: 1.0,
+    access_count: 1,
+    created_at: createdAt,
+    last_accessed: createdAt,
+    token_count: 5,
+    session_id: null,
+    parent_id: null,
+  };
+}
+
+describe('auditCandidates (chunk 33B.4)', () => {
+  const memories: MemoryEntry[] = [
+    makeAuditEntry(1, 'User likes coffee in the morning', 'personal:beverage', 1000),
+    makeAuditEntry(2, 'Project TerranSoul uses Rust + Vue', 'code:rust,project:ts', 3000),
+    makeAuditEntry(3, 'Cook County family law deadline', 'domain:law', 2000),
+    makeAuditEntry(4, 'Plain note', '', 4000),
+  ];
+
+  it('returns all memories sorted newest-first when search is empty', () => {
+    const result = auditCandidates(memories, '');
+    expect(result.map((m) => m.id)).toEqual([4, 2, 3, 1]);
+  });
+
+  it('filters by content substring (case-insensitive)', () => {
+    const result = auditCandidates(memories, 'rust');
+    expect(result.map((m) => m.id)).toEqual([2]);
+  });
+
+  it('filters by tag substring', () => {
+    const result = auditCandidates(memories, 'domain:law');
+    expect(result.map((m) => m.id)).toEqual([3]);
+  });
+
+  it('returns empty when no match', () => {
+    const result = auditCandidates(memories, 'nonexistent-token-xyz');
+    expect(result).toHaveLength(0);
+  });
+
+  it('caps result list at 200 entries', () => {
+    const big: MemoryEntry[] = Array.from({ length: 250 }, (_, i) =>
+      makeAuditEntry(i + 1, `entry ${i}`, '', i),
+    );
+    const result = auditCandidates(big, '');
+    expect(result).toHaveLength(200);
+  });
+
+  it('does not mutate the input array', () => {
+    const before = memories.map((m) => m.id);
+    auditCandidates(memories, '');
+    expect(memories.map((m) => m.id)).toEqual(before);
+  });
+});
+
+describe('truncate', () => {
+  it('returns empty string for falsy input', () => {
+    expect(truncate('', 10)).toBe('');
+  });
+
+  it('returns input unchanged when within limit', () => {
+    expect(truncate('hi', 10)).toBe('hi');
+  });
+
+  it('truncates with ellipsis when over limit', () => {
+    expect(truncate('hello world', 6)).toBe('hello…');
+  });
+
+  it('handles boundary exactly at max', () => {
+    expect(truncate('abcde', 5)).toBe('abcde');
+  });
+});

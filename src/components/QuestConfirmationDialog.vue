@@ -183,7 +183,7 @@ defineEmits<{
   font-size: 1.3rem;
   font-weight: 700;
   color: var(--ts-text-primary, #eaecf4);
-  background: linear-gradient(135deg, #eaecf4, #a78bfa);
+  background: linear-gradient(135deg, var(--ts-text-primary), var(--ts-accent-violet));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -214,7 +214,7 @@ defineEmits<{
 
 .qcd-close:hover {
   background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  color: var(--ts-error);
 }
 
 /* Content */
@@ -298,7 +298,7 @@ defineEmits<{
   padding: 4px 10px;
   border-radius: var(--ts-radius-pill, 999px);
   background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 165, 0, 0.1) 100%);
-  color: #ffd700;
+  color: var(--ts-warning);
   border: 1px solid rgba(255, 215, 0, 0.25);
   font-weight: 500;
 }
@@ -322,7 +322,7 @@ defineEmits<{
 .qcd-ai-text strong {
   display: block;
   font-size: 0.85rem;
-  color: #60a5fa;
+  color: var(--ts-accent-blue);
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -377,7 +377,7 @@ defineEmits<{
 }
 
 .qcd-btn-primary:hover {
-  background: linear-gradient(135deg, #8b7aff 0%, #b891ff 100%);
+  background: var(--ts-gradient-accent);
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(124, 111, 255, 0.4);
 }

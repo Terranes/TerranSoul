@@ -223,6 +223,16 @@ mod tests {
     }
 
     #[test]
+    fn explicit_judgment_tag_wins() {
+        let k = classify(
+            &MemoryType::Fact,
+            "judgment:workflow",
+            "Always run tests before archiving",
+        );
+        assert_eq!(k, CognitiveKind::Judgment);
+    }
+
+    #[test]
     fn tag_prefix_with_detail_is_recognised() {
         let k = classify(&MemoryType::Fact, "episodic:meeting", "team sync notes");
         assert_eq!(k, CognitiveKind::Episodic);
@@ -301,6 +311,7 @@ mod tests {
         assert_eq!(CognitiveKind::Episodic.as_str(), "episodic");
         assert_eq!(CognitiveKind::Semantic.as_str(), "semantic");
         assert_eq!(CognitiveKind::Procedural.as_str(), "procedural");
+        assert_eq!(CognitiveKind::Judgment.as_str(), "judgment");
     }
 
     #[test]
