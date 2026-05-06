@@ -22,7 +22,7 @@ VALUES
 ('Vector support: Ollama nomic-embed-text (768-dim) locally, or cloud embedding API (/v1/embeddings) for paid/free modes. Default builds use a pure-Rust linear cosine AnnIndex for loader-stable CI/headless MCP; the native-ann feature enables persisted usearch HNSW vectors.usearch for large local stores.', 'brain,embeddings,vector,ann,native-ann', 4, 'fact', 1746316800000, 'long', 1.0, 55, 'brain'),
 
 -- MCP Server
-('MCP server exposes brain on three ports: 7421 (release app), 7422 (dev app), 7423 (headless npm run mcp). All wired into .vscode/mcp.json. Bearer-token auth required. Tools: brain_search, brain_get_entry, brain_list_recent, brain_kg_neighbors, brain_summarize, brain_suggest_context, brain_ingest_url, brain_health, code_query, code_context, code_impact, code_rename.', 'mcp,server,tools,setup', 5, 'fact', 1746316800000, 'long', 1.0, 70, 'mcp'),
+('MCP server exposes brain on three ports: 7421 (release app), 7422 (dev app), 7423 (headless npm run mcp). All wired into .vscode/mcp.json. Bearer-token auth required. Tools: brain_search, brain_get_entry, brain_list_recent, brain_kg_neighbors, query-backed brain_summarize, brain_suggest_context, brain_ingest_url, brain_health, brain_failover_status, code_query, code_context, code_impact, code_rename.', 'mcp,server,tools,setup', 5, 'fact', 1746316800000, 'long', 1.0, 80, 'mcp'),
 
 ('MCP shared data policy: mcp-data/shared is committed and reviewable; runtime files such as mcp-token.txt, memory.db, SQLite WAL/SHM files, vector indexes, logs, locks, sessions, and worktrees are ignored. Contributors and self-improve runs may update mcp-data/shared/memory-seed.sql with durable project knowledge.', 'mcp,data,gitignore,shared-seed', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'mcp'),
 
@@ -1187,7 +1187,7 @@ VALUES (
 
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'MCP TOKEN BENCHMARK (2026-05-06): docs/mcp-token-usage-benchmark.md is the honest per-session measurement of TerranSoul MCP context savings. Methodology: for each brain_search / brain_get_entry call, record bytes returned vs bytes of the closest source-of-truth file the agent would otherwise grep. Aggregate from the session that wrote the folder->KG tutorial: ~12.5KB returned over 5 brain_search + 1 brain_get_entry calls vs ~360KB of underlying seed.sql + brain-advanced-design.md = ~29x aggregate reduction for in-scope queries. Per-query range: 30x (broad search) to ~100x (targeted lookup / get_entry). Caveats: (a) TerranSoul code is NOT auto-ingested into the brain, so code-discovery questions still fell back to grep_search / search_subagent and consumed ~80KB in one sub-agent call, dropping session-wide saving to ~3-5x; (b) bytes/4 token estimate ±25%; (c) single-machine single-session result. Honest range: 11x (worst MCP-only query) to ~100x (best). Reject any claim of a fixed externally-published number like 71.5x in TerranSoul docs — measure per session.',
+  'MCP TOKEN BENCHMARK (2026-05-06): docs/mcp-token-usage-benchmark.md is the honest per-session measurement of TerranSoul MCP context savings. Methodology: for each brain_search / brain_get_entry call, record bytes returned vs bytes of the closest source-of-truth file the agent would otherwise grep. Aggregate from the tracked subset that wrote the folder->KG tutorial: ~12.5KB returned over 5 brain_search + 1 brain_get_entry calls vs ~360KB of underlying seed.sql + brain-advanced-design.md = ~29x aggregate reduction for in-scope queries. Per-query range: 30x (broad search) to ~100x (targeted lookup / get_entry). Caveats: (a) TerranSoul code is NOT auto-ingested into the brain, so code-discovery questions still fell back to grep_search / search_subagent and consumed ~80KB in one sub-agent call, dropping session-wide saving to ~3-5x; (b) bytes/4 token estimate ±25%; (c) single-machine single-session result. Honest range in tracked rows: 30x (broad MCP query) to ~100x (best). Reject any claim of a fixed externally-published number like 71.5x in TerranSoul docs — measure per session.',
   'benchmark,mcp,token-usage,context,savings,methodology,terransoul',
   9, 'fact', 1746489600000, 'long', 1.0, 'docs', 'semantic'
 );
@@ -1203,3 +1203,70 @@ SELECT s.id, d.id, 'measures', 1.0, 'seed', 1746489600000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'MCP TOKEN BENCHMARK (2026-05-06):%'
   AND d.content LIKE 'TUTORIAL FOLDER->KG (2026-05-06):%';
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MCP ERROR FIX RULE (2026-05-06): if any TerranSoul MCP call returns an error, agents must not silently fall back to grep or continue with stale context. Classify the error as (1) bad tool arguments/contract mismatch, (2) unhealthy or stale MCP server/binary, or (3) missing/stale durable knowledge. Then fix the MCP tool schema/adapter/gateway and add a regression test, restart/rebuild MCP via node scripts/copilot-start-mcp.mjs when health/staleness is the cause, or update mcp-data/shared/memory-seed.sql plus a numbered migration for knowledge drift. Always report the original error, root cause, fix, and any remaining blocker. The brain_summarize query error was fixed by adding query-backed summarization to the MCP tool contract.',
+  'mcp,error-handling,server-health,tool-contract,regression-test,seed-migration,non-negotiable',
+  10, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MCP HEALTH RESPONSE EXPLANATION (2026-05-06): brain_health plus GET /health and GET /status keep backward-compatible rag_quality_pct and memory_total fields, but now also return rag_quality, memory, and descriptions objects. rag_quality_pct means embedded_long_memory_count / long_memory_count * 100, not an overall intelligence score. A 12% value means only about 12% of long-term memories currently have vector embeddings; keyword/RRF and graph lookup still work, but semantic vector recall is partial until pending embedding backfill completes. Use the nested raw counts and description strings when displaying health JSON to humans.',
+  'mcp,health,rag-quality,embedding-coverage,json,docs,non-negotiable',
+  10, 'fact', 1746489600000, 'long', 1.0, 'mcp', 'semantic'
+);
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MILLION-KNOWLEDGE CRUD AUDIT (2026-05-06): TerranSoul memory store today already has SQLite WAL + foreign_keys, V15 schema with eviction-friendly indexes, usearch HNSW with brute-force fallback, capacity eviction with scored single-statement DELETE, embedding retry queue with exponential backoff, memory_versions snapshots, contradiction detection, semantic chunker, late-chunking pooling helper, contextual retrieval prefix, Criterion 10k smoke / 1M full bench, ingest semaphore. Confirmed bottlenecks for 1M+ optimal CRUD: (1) per-row INSERT loop in commands/ingest.rs and add_memory_inner, (2) PRAGMAs cache_size / mmap_size / temp_store / page_size / journal_size_limit / wal_autocheckpoint left at defaults, (3) inconsistent prepare_cached, (4) get_all() / get_with_embeddings() called on every hybrid_search and relevant_for which loads ~3 GB at 1M x 768d, (5) MemoryStore::update never invalidates embedding nor removes the row from HNSW when content changes, (6) HNSW SAVE_INTERVAL=50 causes ~20k full saves during 1M bulk insert, (7) single global ANN regresses to brute-force on dimension drift, (8) no add_many / update_many / delete_many APIs, (9) FTS5 + KG indexes need verification at 1M rows.',
+  'audit,memory-store,million-scale,bottlenecks,phase-41,non-negotiable',
+  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 41 PLAN (2026-05-06) — Million-Knowledge CRUD: 15 ordered chunks across 6 sub-phases. A. Foundations: 41.1 SQLite write-path tuning + FTS5 verification (cache_size=-65536, mmap_size=256 MiB, temp_store=MEMORY, busy_timeout=5000, journal_size_limit=64 MiB, wal_autocheckpoint=1000, page_size=8192 on fresh DBs); 41.2 per-op latency histograms surfaced via brain_health; 41.3 extend million_memory bench with bulk_insert/bulk_update_reembed/bulk_delete/mixed_crud_workload at 10k/100k/1M. B. Bulk CRUD: 41.4 transactional add_many/update_many/delete_many with prepare_cached and batched FTS/ANN sync; 41.5 cursor reads to remove get_all() from hybrid_search/hybrid_search_rrf/relevant_for/find_duplicate. C. Embeddings: 41.6 re-embed on content update + ANN tombstone + enqueue; 41.7 embedding worker concurrency + rate limiting + pause-on-429 + graceful shutdown; 41.8 V16 schema multi-model embeddings with memory_embeddings side table and AnnRegistry keyed by (model_id, dim). D. ANN: 41.9 usearch i8 quantization (optional b1) with recall budget; 41.10 memory-mapped HNSW + debounced async flush replacing SAVE_INTERVAL=50; 41.11 ANN compaction / tombstone GC tied to maintenance scheduler. E. Indexes/KG: 41.12 partial indexes idx_memories_long_embedded WHERE tier=long AND embedding IS NOT NULL, idx_memories_active WHERE valid_to IS NULL, idx_pending_due, idx_memories_session_recent, plus PRAGMA optimize on open and periodic ANALYZE; 41.13 bounded KG traversal + LRU cache for brain_kg_neighbors with edge-event invalidation. F. Sharding/snapshots: 41.14 optional time-bucketed shards via ATTACH DATABASE; 41.15 online VACUUM INTO + ANN save + manifest snapshot/restore. Each chunk must keep the Full CI Gate green and extend benches/million_memory.rs where relevant. State of the art consulted through May 2026: HNSW (Malkov 2018), DiskANN/SPANN (Microsoft 2019, 2021), Matryoshka embeddings (Kusupati 2022), int8/binary quantization (Cohere 2024), late chunking (Günther 2024), Contextual Retrieval (Anthropic 2024), RRF fusion (Cormack 2009).',
+  'plan,phase-41,million-scale,chunks,ann,sqlite,embedding,sharding,non-negotiable',
+  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'procedural'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT plan.id, audit.id, 'derived_from', 1.0, 'seed', 1746489600000, 'seed'
+FROM memories plan
+CROSS JOIN memories audit
+WHERE plan.content LIKE 'PHASE 41 PLAN (2026-05-06)%'
+  AND audit.content LIKE 'MILLION-KNOWLEDGE CRUD AUDIT (2026-05-06)%';
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'DB STRATEGY VERDICT (2026-05-06): SQLite is NOT a bottleneck for TerranSoul as the local engine, even at 1M+ memories and on offline mobile. After Phase 41 tuning, the companion is CPU/embedding-bound long before SQLite-bound. SQLite IS the wrong shape for "hive" multi-user federation and distributed jobs. Final posture is two-layer storage: (1) Local layer on every device (desktop + iOS + Android) keeps tuned SQLite + WAL as authoritative source of truth; pure-Rust ANN fallback ships on mobile because usearch C++ build is fragile there; (2) Sync layer between a single user own devices promotes memories + KG edges to CRDTs (LWW for memory rows, 2P-Set/OR-Set for edges) replicated as op-logs over the existing QUIC/WS LinkManager — no server required; (3) Hive layer is opt-in: a reference Tonic gRPC relay backed by Postgres + pgvector accepts Ed25519-signed knowledge bundles, runs a job queue, and federates only when configured. The local app never depends on the hive. Reject standalone vector services (Qdrant/Milvus/Pinecone) for the local app per existing decision (brain-advanced-design.md row 18). Keep usearch HNSW locally; pgvector HNSW on the hive layer. Existing alt backends (postgres.rs/mssql.rs/cassandra.rs) currently lack RRF / FTS5 / KG / contextual-retrieval parity; bringing Postgres to parity is a hive prerequisite. Memory store rows already carry updated_at + origin_device columns but no merge function — wire that.',
+  'verdict,database,sqlite,postgres,hive,mobile,crdt,federation,phase-42,non-negotiable',
+  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 42 PLAN (2026-05-06) — DB strategy for offline mobile + future hive: 12 ordered chunks across 4 sub-phases, lands AFTER Phase 41. A. Mobile-safe local engine: 42.1 mobile feature gates + pure-Rust ANN fallback for iOS/Android (usearch desktop-only); 42.2 mobile SQLite/WAL hardening + integration tests on aarch64-apple-ios and aarch64-linux-android. B. Memory CRDT (own-device sync): 42.3 memory rows as LWW CRDT with vector-clock conflict markers (HLC + origin_device, loser archived to memory_versions, conflicts surfaced in BrainView); 42.4 KG edges as 2P-Set/OR-Set CRDT with valid_to as tombstone and scheduled compaction; 42.5 op-log replication over LinkManager (QUIC primary + WS fallback) using existing mdns-sd discovery, pairwise sync only. C. Distributed backend parity (hive prerequisite): 42.6 Postgres backend gains tsvector GIN FTS, RRF in single SQL CTE, recursive-CTE KG traversal, contextual retrieval; make hybrid_search_rrf non-default; 42.7 pgvector HNSW vector(768) parity + benchmark mirroring million_memory.rs in Docker CI; 42.8 backend test matrix runs SQLite + Postgres on every memory PR, MSSQL/Cassandra weekly. D. Hive layer (opt-in federation + jobs): 42.9 hive protocol spec in docs/hive-protocol.md with BUNDLE/OP/JOB messages and Ed25519-signed bundles using identity/ device keys; 42.10 reference relay server in crates/hive-relay/ (new workspace member) — Tonic gRPC + Postgres + pgvector, MIT, self-hostable, docker-compose ready; 42.11 job queue + capability gates reusing src-tauri/src/orchestrator/, workers pull jobs and return BUNDLEs; 42.12 privacy/consent/per-memory ACL with share_scope enum (private/paired/hive), default per cognitive_kind, redaction tests proving private rows never appear in outbound bundles. Each chunk keeps Full CI Gate green; brain-advanced-design.md + README updated for any brain-surface change per existing rule.',
+  'plan,phase-42,database,mobile,crdt,hive,federation,postgres,pgvector,job-distribution,non-negotiable',
+  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'procedural'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT plan.id, verdict.id, 'derived_from', 1.0, 'seed', 1746489600000, 'seed'
+FROM memories plan
+CROSS JOIN memories verdict
+WHERE plan.content LIKE 'PHASE 42 PLAN (2026-05-06)%'
+  AND verdict.content LIKE 'DB STRATEGY VERDICT (2026-05-06)%';
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 41 RESULT (2026-05-07): chunks 41.1 (SQLite PRAGMA tuning) and 41.4 (transactional add_many) shipped together. Measured on commodity dev hardware via cargo bench --bench million_memory: 10k smoke write 0.04s @ 244,657 rows/s, read 0.01s @ 939,956 rows/s. 1M full (TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1) write 6.37s @ 157,031 rows/s, read 1.84s @ 544,704 rows/s. The Phase 41 headline target of 1M write under 60s and 1M read under 5s is met by ~10x and ~3x respectively, on top of 41.1 + 41.4 alone. Remaining Phase 41 chunks (41.2 metrics, 41.3 update/delete bench, 41.5 cursor reads, 41.6 re-embed on update, 41.7 worker concurrency, 41.8 multi-model embeddings, 41.9-41.11 ANN scaling, 41.12-41.13 indexes/KG, 41.14-41.15 sharding/snapshot) remain valuable for production hardening but are no longer blocking the headline throughput goal. Implementation notes: add_many uses prepare_cached + single transaction, returns Vec<i64> of assigned ids, takes &mut self. PRAGMAs applied: journal_mode=WAL, synchronous=NORMAL, foreign_keys=ON, cache_size=-65536, mmap_size=268435456, temp_store=MEMORY, busy_timeout=5000, wal_autocheckpoint=1000, journal_size_limit=67108864. FTS5 verification deferred — schema.rs does not declare an FTS5 virtual table today.',
+  'phase-41,result,bench,million,sqlite,add_many,pragma,measured,non-negotiable',
+  10, 'fact', 1746576000000, 'long', 1.0, 'memory', 'episodic'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT result.id, plan.id, 'fulfills', 1.0, 'seed', 1746576000000, 'seed'
+FROM memories result
+CROSS JOIN memories plan
+WHERE result.content LIKE 'PHASE 41 RESULT (2026-05-07)%'
+  AND plan.content LIKE 'PHASE 41 PLAN (2026-05-06)%';

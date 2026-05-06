@@ -18,7 +18,8 @@
 3. If not healthy → run `node scripts/copilot-start-mcp.mjs`, wait, retry.
 4. If MCP cannot start → record the blocker. Do NOT silently skip.
 5. After MCP succeeds → show a user-visible MCP receipt with health/provider and the `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are not enough.
-6. After work → sync lessons into `mcp-data/shared/memory-seed.sql`.
+6. If an MCP call errors → do not silently fall back. Classify the error as bad tool arguments/contract mismatch, unhealthy or stale server, or missing durable knowledge; fix the MCP schema/adapter/gateway, restart/rebuild the server, or update `mcp-data/shared/` plus a numbered seed migration as appropriate. Add a regression test for code changes and report the root cause/fix.
+7. After work → sync lessons into `mcp-data/shared/memory-seed.sql`.
 
 ---
 

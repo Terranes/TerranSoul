@@ -167,16 +167,16 @@ Status strings to look for:
 ### 2.5 Latest measured smoke (reference baseline)
 
 Windows 11 Pro · 12th Gen Intel(R) Core(TM) i9-12900K · 24 logical CPUs · 63.7 GiB RAM
-(2026-05-07, 10k vectors, 1,000 queries, top-10):
+(2026-05-06, 10k vectors, 1,000 queries, top-10):
 
 | Metric | Value | Threshold |
 | --- | --- | --- |
-| HNSW p50 | 0.57 ms | <= 30 ms |
-| HNSW p95 | 0.74 ms | <= 60 ms |
-| HNSW p99 | 0.86 ms | <= 100 ms |
-| HNSW max | 1.03 ms | informational |
-| Build | 11.39 s · 877 vectors/s | informational |
-| Capacity 10,500 -> 9,500 | 0.26 s | <= 30 s |
+| HNSW p50 | 0.55 ms | <= 30 ms |
+| HNSW p95 | 0.73 ms | <= 60 ms |
+| HNSW p99 | 0.89 ms | <= 100 ms |
+| HNSW max | 1.11 ms | informational |
+| Build | 11.28 s · 886 vectors/s | informational |
+| Capacity 10,500 -> 9,500 | 0.25 s | <= 30 s |
 
 These are smoke-tier numbers; the **HNSW p99 <= 100 ms hard gate**
 applies to the **full 1M tier**, which must be re-run on a development

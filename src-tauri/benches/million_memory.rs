@@ -23,6 +23,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::System;
 use terransoul_lib::memory::eviction::{enforce_capacity, DEFAULT_TARGET_RATIO};
 use terransoul_lib::memory::schema::create_canonical_schema;
+use terransoul_lib::memory::store::{MemoryStore, NewMemory};
 
 /// Dimensionality matching TerranSoul's default nomic-embed-text.
 const DIM: usize = 768;
@@ -99,6 +100,27 @@ struct CapacityReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct CrudReport {
+    scale: usize,
+    status: String,
+    batch_size: usize,
+    write_seconds: Option<f64>,
+    write_rows_per_second: Option<f64>,
+    write_target_seconds: f64,
+    read_all_seconds: Option<f64>,
+    read_all_rows_per_second: Option<f64>,
+    read_target_seconds: f64,
+    update_seconds: Option<f64>,
+    update_rows_per_second: Option<f64>,
+    mixed_op_count: Option<usize>,
+    mixed_seconds: Option<f64>,
+    mixed_ops_per_second: Option<f64>,
+    delete_seconds: Option<f64>,
+    delete_rows_per_second: Option<f64>,
+    failure: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct BenchReport {
     generated_at_unix_ms: u128,
     command: String,
@@ -106,6 +128,7 @@ struct BenchReport {
     hnsw: Vec<HnswReport>,
     linear_backend: Vec<LinearBackendReport>,
     capacity: Vec<CapacityReport>,
+    crud: Vec<CrudReport>,
 }
 
 fn fill_vector(rng: &mut Xoshiro256PlusPlus, out: &mut [f32]) {
@@ -580,6 +603,267 @@ fn write_report(report: &BenchReport) -> Result<(), String> {
     Ok(())
 }
 
+/// SQLite CRUD throughput benchmark (Phase 41).
+///
+/// Measures real `MemoryStore::add_many` (transactional, prepare_cached)
+/// followed by `MemoryStore::get_all` on a freshly-built corpus of `scale`
+/// rows. Targets: 1M write < 60 s, 1M read < 5 s.
+fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
+    let write_target = if scale >= ONE_MILLION { 60.0 } else { 6.0 };
+    let read_target = if scale >= ONE_MILLION { 5.0 } else { 1.0 };
+    // 10k rows per transaction keeps WAL fsync amortised without holding
+    // an unbounded amount of inserted data in memory.
+    let batch_size = 10_000usize.min(scale.max(1));
+
+    let mut report = CrudReport {
+        scale,
+        status: String::from("started"),
+        batch_size,
+        write_seconds: None,
+        write_rows_per_second: None,
+        write_target_seconds: write_target,
+        read_all_seconds: None,
+        read_all_rows_per_second: None,
+        read_target_seconds: read_target,
+        update_seconds: None,
+        update_rows_per_second: None,
+        mixed_op_count: None,
+        mixed_seconds: None,
+        mixed_ops_per_second: None,
+        delete_seconds: None,
+        delete_rows_per_second: None,
+        failure: None,
+    };
+
+    system.refresh_memory();
+    let dir = match tempfile::tempdir() {
+        Ok(dir) => dir,
+        Err(error) => {
+            report.status = String::from("failed_tempdir");
+            report.failure = Some(error.to_string());
+            return report;
+        }
+    };
+
+    let mut store = MemoryStore::new(dir.path());
+
+    eprintln!("[bench] crud scale={scale}: bulk inserting in batches of {batch_size}...");
+    let start = Instant::now();
+    let mut written = 0usize;
+    while written < scale {
+        let take = batch_size.min(scale - written);
+        let mut batch = Vec::with_capacity(take);
+        for offset in 0..take {
+            let i = written + offset;
+            batch.push(NewMemory {
+                content: format!(
+                    "bench memory {i} - a representative chunk of plausible text to stress \
+                     the SQLite write path with realistic row sizes"
+                ),
+                tags: format!("bench,scale={scale},batch"),
+                importance: ((i % 5) + 1) as i64,
+                ..Default::default()
+            });
+        }
+        if let Err(error) = store.add_many(batch) {
+            report.status = String::from("failed_add_many");
+            report.failure = Some(format!("written={written}: {error}"));
+            return report;
+        }
+        written += take;
+        if written.is_multiple_of(100_000) {
+            eprintln!("[bench] crud scale={scale}: inserted {written} rows...");
+        }
+    }
+    let write_elapsed = start.elapsed().as_secs_f64();
+    let write_rps = scale as f64 / write_elapsed.max(f64::EPSILON);
+    report.write_seconds = Some(write_elapsed);
+    report.write_rows_per_second = Some(write_rps);
+    eprintln!(
+        "[bench] crud scale={scale}: write {write_elapsed:.2}s ({write_rps:.0} rows/s, target <{write_target:.0}s)"
+    );
+
+    if write_elapsed > write_target {
+        report.status = String::from("failed_write_threshold");
+        report.failure = Some(format!(
+            "write {write_elapsed:.2}s exceeds target {write_target:.0}s"
+        ));
+        // Fall through: still measure read so we get the diagnostic.
+    }
+
+    // Read benchmark \u2014 full table scan via get_all().
+    eprintln!("[bench] crud scale={scale}: full read via get_all()...");
+    let start = Instant::now();
+    let entries = match store.get_all() {
+        Ok(entries) => entries,
+        Err(error) => {
+            report.status = String::from("failed_get_all");
+            report.failure = Some(error.to_string());
+            return report;
+        }
+    };
+    let read_elapsed = start.elapsed().as_secs_f64();
+    let read_rps = entries.len() as f64 / read_elapsed.max(f64::EPSILON);
+    report.read_all_seconds = Some(read_elapsed);
+    report.read_all_rows_per_second = Some(read_rps);
+    eprintln!(
+        "[bench] crud scale={scale}: read {} rows in {read_elapsed:.2}s ({read_rps:.0} rows/s, target <{read_target:.0}s)",
+        entries.len()
+    );
+    if entries.len() != scale {
+        report.status = String::from("failed_read_count");
+        report.failure = Some(format!(
+            "read {} rows but expected {scale}",
+            entries.len()
+        ));
+        return report;
+    }
+    if read_elapsed > read_target {
+        if report.failure.is_none() {
+            report.status = String::from("failed_read_threshold");
+            report.failure = Some(format!(
+                "read {read_elapsed:.2}s exceeds target {read_target:.0}s"
+            ));
+        }
+        return report;
+    }
+
+    // Collect ids for the update/delete sections. Rows from add_many on a
+    // fresh DB get sequential rowids 1..=scale.
+    let ids: Vec<i64> = (1..=scale as i64).collect();
+
+    // ── bulk_update ────────────────────────────────────────────────────
+    eprintln!("[bench] crud scale={scale}: bulk_update via update_content_many in batches of {batch_size}...");
+    let start = Instant::now();
+    let mut updated = 0usize;
+    while updated < scale {
+        let take = batch_size.min(scale - updated);
+        let mut batch: Vec<(i64, String)> = Vec::with_capacity(take);
+        for offset in 0..take {
+            let id = ids[updated + offset];
+            batch.push((
+                id,
+                format!(
+                    "bench memory {id} updated - revised content body to exercise the \
+                     UPDATE hot path with realistic row sizes"
+                ),
+            ));
+        }
+        if let Err(error) = store.update_content_many(&batch) {
+            report.status = String::from("failed_update_many");
+            report.failure = Some(format!("updated={updated}: {error}"));
+            return report;
+        }
+        updated += take;
+    }
+    let update_elapsed = start.elapsed().as_secs_f64();
+    let update_rps = scale as f64 / update_elapsed.max(f64::EPSILON);
+    report.update_seconds = Some(update_elapsed);
+    report.update_rows_per_second = Some(update_rps);
+    eprintln!(
+        "[bench] crud scale={scale}: update {update_elapsed:.2}s ({update_rps:.0} rows/s)"
+    );
+
+    // ── mixed_crud_workload (80/10/10 insert/update/delete) ───────────
+    // Sized at min(scale, 100k) so the smoke tier stays well under 90s
+    // while the 1M tier still measures contention behaviour.
+    let mixed_total = scale.min(100_000);
+    let mixed_inserts = mixed_total * 80 / 100;
+    let mixed_updates = mixed_total * 10 / 100;
+    let mixed_deletes = mixed_total - mixed_inserts - mixed_updates;
+    eprintln!(
+        "[bench] crud scale={scale}: mixed_crud {mixed_total} ops (80/10/10 = {mixed_inserts}/{mixed_updates}/{mixed_deletes})..."
+    );
+    let start = Instant::now();
+    // Inserts via add_many in 1k batches.
+    let mut inserted_ids: Vec<i64> = Vec::with_capacity(mixed_inserts);
+    let insert_batch = 1_000usize.min(mixed_inserts.max(1));
+    let mut done = 0usize;
+    while done < mixed_inserts {
+        let take = insert_batch.min(mixed_inserts - done);
+        let mut batch = Vec::with_capacity(take);
+        for offset in 0..take {
+            batch.push(NewMemory {
+                content: format!("mixed insert {}", done + offset),
+                tags: String::from("bench,mixed"),
+                importance: 3,
+                ..Default::default()
+            });
+        }
+        match store.add_many(batch) {
+            Ok(new_ids) => inserted_ids.extend(new_ids),
+            Err(error) => {
+                report.status = String::from("failed_mixed_insert");
+                report.failure = Some(error.to_string());
+                return report;
+            }
+        }
+        done += take;
+    }
+    // Updates over the existing corpus (deterministic stride).
+    if mixed_updates > 0 {
+        let stride = (scale / mixed_updates).max(1);
+        let mut upd_batch: Vec<(i64, String)> = Vec::with_capacity(mixed_updates);
+        for n in 0..mixed_updates {
+            let idx = ((n * stride) % scale) as i64 + 1;
+            upd_batch.push((idx, format!("mixed update {n}")));
+        }
+        if let Err(error) = store.update_content_many(&upd_batch) {
+            report.status = String::from("failed_mixed_update");
+            report.failure = Some(error.to_string());
+            return report;
+        }
+    }
+    // Deletes the freshly inserted rows so the corpus size returns to `scale`.
+    if mixed_deletes > 0 {
+        let to_delete: Vec<i64> = inserted_ids.iter().take(mixed_deletes).copied().collect();
+        if let Err(error) = store.delete_many(&to_delete) {
+            report.status = String::from("failed_mixed_delete");
+            report.failure = Some(error.to_string());
+            return report;
+        }
+    }
+    let mixed_elapsed = start.elapsed().as_secs_f64();
+    let mixed_ops = mixed_inserts + mixed_updates + mixed_deletes;
+    let mixed_rps = mixed_ops as f64 / mixed_elapsed.max(f64::EPSILON);
+    report.mixed_op_count = Some(mixed_ops);
+    report.mixed_seconds = Some(mixed_elapsed);
+    report.mixed_ops_per_second = Some(mixed_rps);
+    eprintln!(
+        "[bench] crud scale={scale}: mixed_crud {mixed_ops} ops in {mixed_elapsed:.2}s ({mixed_rps:.0} ops/s)"
+    );
+
+    // ── bulk_delete ────────────────────────────────────────────────────
+    eprintln!("[bench] crud scale={scale}: bulk_delete via delete_many in batches of {batch_size}...");
+    let start = Instant::now();
+    let mut deleted = 0usize;
+    while deleted < scale {
+        let take = batch_size.min(scale - deleted);
+        let slice = &ids[deleted..deleted + take];
+        if let Err(error) = store.delete_many(slice) {
+            report.status = String::from("failed_delete_many");
+            report.failure = Some(format!("deleted={deleted}: {error}"));
+            return report;
+        }
+        deleted += take;
+    }
+    let delete_elapsed = start.elapsed().as_secs_f64();
+    let delete_rps = scale as f64 / delete_elapsed.max(f64::EPSILON);
+    report.delete_seconds = Some(delete_elapsed);
+    report.delete_rows_per_second = Some(delete_rps);
+    eprintln!(
+        "[bench] crud scale={scale}: delete {delete_elapsed:.2}s ({delete_rps:.0} rows/s)"
+    );
+
+    if report.failure.is_some() {
+        // Write threshold failure already recorded.
+        return report;
+    }
+
+    report.status = String::from("completed");
+    report
+}
+
 fn main() {
     let command = env::args().collect::<Vec<_>>().join(" ");
     let mut system = System::new_all();
@@ -595,19 +879,29 @@ fn main() {
         hnsw: Vec::new(),
         linear_backend: Vec::new(),
         capacity: Vec::new(),
+        crud: Vec::new(),
     };
 
     let mut failed = false;
+    let crud_only = env::var("TS_BENCH_CRUD_ONLY").ok().as_deref() == Some("1");
     for scale in parse_scales() {
         report.linear_backend.push(linear_backend_report(scale));
 
-        let hnsw_report = run_hnsw_scale(scale, &mut system, &mut criterion);
-        failed |= hnsw_report.status.starts_with("failed");
-        report.hnsw.push(hnsw_report);
+        if !crud_only {
+            let hnsw_report = run_hnsw_scale(scale, &mut system, &mut criterion);
+            failed |= hnsw_report.status.starts_with("failed");
+            report.hnsw.push(hnsw_report);
 
-        let capacity_report = run_capacity_benchmark(scale);
-        failed |= capacity_report.status.starts_with("failed");
-        report.capacity.push(capacity_report);
+            let capacity_report = run_capacity_benchmark(scale);
+            failed |= capacity_report.status.starts_with("failed");
+            report.capacity.push(capacity_report);
+        } else {
+            eprintln!("[bench] TS_BENCH_CRUD_ONLY=1 set; skipping HNSW and capacity for scale={scale}");
+        }
+
+        let crud_report = run_crud_benchmark(scale, &mut system);
+        failed |= crud_report.status.starts_with("failed");
+        report.crud.push(crud_report);
 
         write_report(&report).expect("write benchmark report");
     }

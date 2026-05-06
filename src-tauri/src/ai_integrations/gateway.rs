@@ -264,12 +264,21 @@ pub struct KgNeighborhood {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummarizeRequest {
-    /// Either `text` or `memory_ids` must be supplied. When both are
-    /// present, the resolved memory contents are appended to `text`.
+    /// Either `text`, `memory_ids`, or `query` must be supplied. When
+    /// more than one is present, resolved memory/search contents are
+    /// appended to `text`.
     #[serde(default)]
     pub text: Option<String>,
     #[serde(default)]
     pub memory_ids: Option<Vec<i64>>,
+    /// Optional search query. When supplied, the gateway first runs the
+    /// normal RRF memory search and summarizes the resulting hits.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Top-k memories to resolve when `query` is supplied. Bounded
+    /// `1..=20`; defaults to 5.
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -345,10 +354,46 @@ pub struct HealthResponse {
     /// `"none"` when no brain is configured).
     pub brain_provider: String,
     pub brain_model: Option<String>,
-    /// 0–100 — copy of [`crate::brain::BrainSelection::rag_quality_pct`].
+    /// 0-100 embedding coverage for long-term memories.
     pub rag_quality_pct: u8,
     /// Cumulative memory count across all tiers.
     pub memory_total: i64,
+    /// Human-readable interpretation and raw counts for `rag_quality_pct`.
+    pub rag_quality: RagQualityHealth,
+    /// Memory tier totals that explain `memory_total`.
+    pub memory: MemoryHealth,
+    /// Field-level descriptions for clients rendering raw JSON.
+    pub descriptions: HealthDescriptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RagQualityHealth {
+    pub label: String,
+    pub description: String,
+    pub formula: String,
+    pub embedded_long_memory_count: i64,
+    pub long_memory_count: i64,
+    pub pending_embedding_count: u64,
+    pub failing_embedding_count: u64,
+    pub next_embedding_retry_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MemoryHealth {
+    pub total: i64,
+    pub short_count: i64,
+    pub working_count: i64,
+    pub long_count: i64,
+    pub embedded_total: i64,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HealthDescriptions {
+    pub brain_provider: String,
+    pub brain_model: String,
+    pub rag_quality_pct: String,
+    pub memory_total: String,
 }
 
 // ─── Pluggable ingest sink ──────────────────────────────────────────────────
@@ -756,6 +801,7 @@ impl BrainGateway for AppStateGateway {
         // Resolve memory ids first (drops the lock before .await).
         let ids = req.memory_ids.clone().unwrap_or_default();
         let mut resolved = Vec::with_capacity(ids.len());
+        let mut seen_ids = Vec::with_capacity(ids.len());
         if !ids.is_empty() {
             let store = self
                 .state
@@ -764,8 +810,39 @@ impl BrainGateway for AppStateGateway {
                 .map_err(GatewayError::from_lock)?;
             for id in &ids {
                 if let Ok(entry) = store.get_by_id(*id) {
+                    if seen_ids.contains(id) {
+                        continue;
+                    }
+                    seen_ids.push(*id);
                     resolved.push(entry.content);
                 }
+            }
+        }
+
+        if let Some(query) = req
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+        {
+            let hits = self
+                .search(
+                    caps,
+                    SearchRequest {
+                        query: query.to_string(),
+                        limit: Some(req.limit.unwrap_or(5).clamp(1, 20)),
+                        mode: SearchMode::Rrf,
+                        rerank: default_search_rerank(),
+                        rerank_threshold: default_search_rerank_threshold(),
+                    },
+                )
+                .await?;
+            for hit in hits {
+                if seen_ids.contains(&hit.id) {
+                    continue;
+                }
+                seen_ids.push(hit.id);
+                resolved.push(hit.content);
             }
         }
         let resolved_count = resolved.len();
@@ -780,7 +857,7 @@ impl BrainGateway for AppStateGateway {
         }
         if input.trim().is_empty() {
             return Err(GatewayError::InvalidArgument(
-                "either `text` or `memory_ids` must yield non-empty content".into(),
+                "either `text`, `memory_ids`, or `query` must yield non-empty content".into(),
             ));
         }
 
@@ -854,6 +931,8 @@ impl BrainGateway for AppStateGateway {
                 SummarizeRequest {
                     text: Some(req.query.clone()),
                     memory_ids: Some(hits.iter().map(|h| h.id).collect()),
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -909,7 +988,7 @@ impl BrainGateway for AppStateGateway {
             (None, None) => "none",
         };
 
-        let (memory_total, rag_quality_pct) = {
+        let (stats, embedded_long_count, queue_status) = {
             let store = self
                 .state
                 .memory_store
@@ -918,18 +997,62 @@ impl BrainGateway for AppStateGateway {
             let stats = store
                 .stats()
                 .map_err(|e| GatewayError::Storage(e.to_string()))?;
-            // RAG quality heuristic: ratio of embedded long-tier memories
-            // to long-tier total — matches what BrainSelection surfaces
-            // to the UI but cheaper (no hardware probe). 100 % when
-            // there are no long-tier memories yet (no negative signal).
-            let pct = if stats.long > 0 {
-                ((stats.embedded as f64 / stats.long as f64) * 100.0)
-                    .round()
-                    .clamp(0.0, 100.0) as u8
-            } else {
-                100
-            };
-            (stats.total, pct)
+            let embedded_long_count = store
+                .embedded_long_count()
+                .map_err(|e| GatewayError::Storage(e.to_string()))?;
+            let queue_status = crate::memory::embedding_queue::queue_status(store.conn())
+                .unwrap_or(crate::memory::embedding_queue::EmbeddingQueueStatus {
+                    pending: 0,
+                    failing: 0,
+                    next_retry_at: None,
+                });
+            (stats, embedded_long_count, queue_status)
+        };
+
+        let rag_quality_pct = if stats.long > 0 {
+            ((embedded_long_count as f64 / stats.long as f64) * 100.0)
+                .round()
+                .clamp(0.0, 100.0) as u8
+        } else {
+            100
+        };
+
+        let rag_quality = RagQualityHealth {
+            label: rag_quality_label(rag_quality_pct, stats.long).to_string(),
+            description: rag_quality_description(
+                rag_quality_pct,
+                embedded_long_count,
+                stats.long,
+                queue_status.pending,
+            ),
+            formula: "embedded_long_memory_count / long_memory_count * 100".into(),
+            embedded_long_memory_count: embedded_long_count,
+            long_memory_count: stats.long,
+            pending_embedding_count: queue_status.pending,
+            failing_embedding_count: queue_status.failing,
+            next_embedding_retry_at: queue_status.next_retry_at,
+        };
+
+        let memory = MemoryHealth {
+            total: stats.total,
+            short_count: stats.short,
+            working_count: stats.working,
+            long_count: stats.long,
+            embedded_total: stats.embedded,
+            description: memory_health_description(
+                stats.total,
+                stats.short,
+                stats.working,
+                stats.long,
+                stats.embedded,
+            ),
+        };
+
+        let descriptions = HealthDescriptions {
+            brain_provider: "Active LLM or embedding backend used by brain tools.".into(),
+            brain_model: "Selected model id when the provider reports one; null means no model id is active.".into(),
+            rag_quality_pct: "RAG means retrieval-augmented generation. This percentage is long-term memory vector coverage: embedded_long_memory_count / long_memory_count * 100. Higher means semantic/vector recall can use more memories.".into(),
+            memory_total: "All memories stored across short, working, and long tiers.".into(),
         };
 
         Ok(HealthResponse {
@@ -937,12 +1060,65 @@ impl BrainGateway for AppStateGateway {
             brain_provider: provider.to_string(),
             brain_model: model_opt,
             rag_quality_pct,
-            memory_total,
+            memory_total: stats.total,
+            rag_quality,
+            memory,
+            descriptions,
         })
     }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+fn rag_quality_label(pct: u8, long_memory_count: i64) -> &'static str {
+    if long_memory_count == 0 {
+        return "no_long_term_memories";
+    }
+    match pct {
+        90..=100 => "ready",
+        70..=89 => "mostly_ready",
+        40..=69 => "partial_vector_coverage",
+        1..=39 => "low_vector_coverage",
+        _ => "no_vector_coverage",
+    }
+}
+
+fn rag_quality_description(
+    pct: u8,
+    embedded_long_count: i64,
+    long_memory_count: i64,
+    pending_embedding_count: u64,
+) -> String {
+    if long_memory_count == 0 {
+        return "No long-term memories exist yet, so RAG quality is neutral rather than bad. Add or ingest memories to make this signal meaningful.".into();
+    }
+
+    let mut description = format!(
+        "{pct}% means {embedded_long_count} of {long_memory_count} long-term memories currently have vector embeddings. Keyword search and graph lookup still work, but semantic RAG recall is limited until more memories are embedded."
+    );
+    if pending_embedding_count > 0 {
+        description.push_str(&format!(
+            " {pending_embedding_count} embedding jobs are queued for retry/backfill."
+        ));
+    } else if pct < 100 {
+        description.push_str(
+            " No embedding jobs are currently queued, so configure or restart the embedding provider/worker if this stays low.",
+        );
+    }
+    description
+}
+
+fn memory_health_description(
+    total: i64,
+    short: i64,
+    working: i64,
+    long: i64,
+    embedded: i64,
+) -> String {
+    format!(
+        "{total} memories total: {short} short, {working} working, {long} long. {embedded} memories across all tiers have vector embeddings."
+    )
+}
 
 fn require_read(caps: &GatewayCaps) -> Result<(), GatewayError> {
     if caps.brain_read {
@@ -1331,7 +1507,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_requires_text_or_memory_ids() {
+    async fn summarize_requires_text_memory_ids_or_query() {
         let gw = AppStateGateway::new(seed_state());
         let err = gw
             .summarize(
@@ -1339,6 +1515,8 @@ mod tests {
                 SummarizeRequest {
                     text: None,
                     memory_ids: None,
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -1363,6 +1541,8 @@ mod tests {
                 SummarizeRequest {
                     text: None,
                     memory_ids: Some(ids.clone()),
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -1370,6 +1550,27 @@ mod tests {
         assert_eq!(resp.resolved_count, ids.len());
         // No brain configured ⇒ summary is None. Test asserts the
         // graceful-degradation contract — never an error in this path.
+        assert!(resp.summary.is_none());
+    }
+
+    #[tokio::test]
+    async fn summarize_query_resolves_search_hits() {
+        let gw = AppStateGateway::new(seed_state());
+        let resp = gw
+            .summarize(
+                &GatewayCaps::default(),
+                SummarizeRequest {
+                    text: None,
+                    memory_ids: None,
+                    query: Some("rust ownership".into()),
+                    limit: Some(3),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(resp.resolved_count >= 1);
+        // No brain configured in seed_state(), so this verifies the
+        // search-backed resolution path without requiring Ollama.
         assert!(resp.summary.is_none());
     }
 
@@ -1442,6 +1643,16 @@ mod tests {
         // documented behaviour: it tells the editor "you've got memories
         // but they aren't searchable by vector yet — configure a brain."
         assert_eq!(h.rag_quality_pct, 0);
+        assert_eq!(h.rag_quality.label, "no_vector_coverage");
+        assert_eq!(h.rag_quality.embedded_long_memory_count, 0);
+        assert_eq!(h.rag_quality.long_memory_count, 2);
+        assert!(h.rag_quality.description.contains("0% means 0 of 2"));
+        assert_eq!(h.memory.total, 2);
+        assert_eq!(h.memory.long_count, 2);
+        assert!(h
+            .descriptions
+            .rag_quality_pct
+            .contains("retrieval-augmented generation"));
     }
 
     #[test]

@@ -17,6 +17,24 @@ preflight check. This is not optional. Skipping it is a violation.
 4. If MCP still cannot start, state the exact blocker to the user.
    Do NOT silently proceed without MCP.
 
+## MCP tool/server error rule
+
+If any MCP call returns an error, do not ignore it or quietly switch to
+non-MCP context. Classify it immediately:
+
+- **Bad tool arguments / contract mismatch** — fix the MCP tool schema,
+   argument adapter, or gateway behavior so the natural agent call either
+   works or returns a clearer repair instruction. Add a regression test.
+- **Unhealthy / stale server** — rerun `brain_health`; if needed run
+   `node scripts/copilot-start-mcp.mjs`, wait for health, and retry. If the
+   server is stale, rebuild/relaunch per `rules/agent-mcp-bootstrap.md`.
+- **Missing durable knowledge** — add or refresh the relevant row in
+   `mcp-data/shared/memory-seed.sql` and, when needed for existing DBs, add
+   a numbered migration under `mcp-data/shared/migrations/`.
+
+The agent must visibly report the MCP error, root cause, fix, and any
+remaining blocker. A successful non-MCP fallback is not a complete fix.
+
 ## Visible MCP receipt — also mandatory
 
 After the MCP preflight succeeds, the agent MUST tell the user in a short

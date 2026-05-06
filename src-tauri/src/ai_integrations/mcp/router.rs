@@ -350,6 +350,9 @@ async fn handle_health(State(state): State<McpRouterState>) -> Response {
             "brain_model": h.brain_model,
             "rag_quality_pct": h.rag_quality_pct,
             "memory_total": h.memory_total,
+            "rag_quality": h.rag_quality,
+            "memory": h.memory,
+            "descriptions": h.descriptions,
         }),
         Err(_) => json!({
             "status": "ok",
@@ -390,6 +393,9 @@ async fn handle_status(State(state): State<McpRouterState>, headers: HeaderMap) 
             "brain_model": h.brain_model,
             "rag_quality_pct": h.rag_quality_pct,
             "memory_total": h.memory_total,
+            "rag_quality": h.rag_quality,
+            "memory": h.memory,
+            "descriptions": h.descriptions,
         }),
         Err(e) => json!({ "error": e.to_string() }),
     };

@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 41.4 — Transactional `add_many` bulk insert API](#chunk-414--transactional-add_many-bulk-insert-api) | 2026-05-07 |
+| [Chunk 41.1 — SQLite write-path PRAGMA tuning](#chunk-411--sqlite-write-path-pragma-tuning) | 2026-05-07 |
 | [Chunk 38.5 — Million-memory benchmark](#chunk-385--million-memory-benchmark) | 2026-05-07 |
 | [Chunk 38.4 — Capacity-based self-eviction](#chunk-384--capacity-based-self-eviction) | 2026-05-07 |
 | [Chunk 38.3 — Native-ANN default for desktop](#chunk-383--native-ann-default-for-desktop) | 2026-05-07 |
@@ -313,6 +315,38 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 41.4 — Transactional `add_many` bulk insert API
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Provide a transactional bulk insert API on `MemoryStore` so ingest pipelines that turn one document into thousands of chunks no longer pay per-row WAL fsync cost. Phase 41's headline target was 1M write < 60 s; the existing per-row `add()` topped out at ~600 rows/s (≈28 minutes for 1M).
+
+**Files created/modified:**
+- `src-tauri/src/memory/store.rs` — added `MemoryStore::add_many(&mut self, Vec<NewMemory>) -> SqlResult<Vec<i64>>` using `prepare_cached` inside a single `transaction()`; returns the assigned row ids in input order. Skips the per-row `get_by_id` round-trip — callers that need the full `MemoryEntry` can call `get_by_id` afterwards.
+- `src-tauri/benches/million_memory.rs` — added `CrudReport` struct, `run_crud_benchmark()` (10k batch size, real `MemoryStore::add_many` + `get_all` round-trip), and a `TS_BENCH_CRUD_ONLY=1` env switch to skip the long HNSW build when iterating on the SQLite path.
+
+**Validation:** `cargo bench --bench million_memory --target-dir ../target-copilot-bench` (smoke 10k) and `TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1 cargo bench --bench million_memory` (1M).
+- 10k smoke: write 0.04 s @ 244 657 rows/s; read 0.01 s @ 939 956 rows/s.
+- **1M full: write 6.37 s @ 157 031 rows/s, read 1.84 s @ 544 704 rows/s.** Targets 1M-write < 60 s and 1M-read < 5 s passed by ~10× and ~3×.
+- `cargo test --lib memory::` (471 tests) green; `cargo clippy --lib -- -D warnings` clean.
+
+---
+
+## Chunk 41.1 — SQLite write-path PRAGMA tuning
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Apply the May 2026 audit's recommended SQLite PRAGMAs at every `MemoryStore::new` so the on-disk store does not carry stock SQLite defaults into million-row workloads.
+
+**Files created/modified:**
+- `src-tauri/src/memory/store.rs` — `MemoryStore::new` now sets `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `cache_size=-65536` (64 MiB), `mmap_size=268435456` (256 MiB), `temp_store=MEMORY`, `busy_timeout=5000`, `wal_autocheckpoint=1000`, `journal_size_limit=67108864`. `MemoryStore::in_memory` matches the cache/temp policy so tests stay representative.
+
+**Validation:** Same bench run as 41.4 (PRAGMAs are required for the 1M throughput numbers to hold). 471 memory tests green. FTS5 verification stays a follow-up — current `schema.rs` does not declare an FTS5 virtual table, so there is nothing to verify yet.
 
 ---
 

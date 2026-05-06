@@ -73,12 +73,14 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
         }),
         json!({
             "name": "brain_summarize",
-            "description": "LLM-summarize text or memory ids using TerranSoul's active brain.",
+            "description": "LLM-summarize direct text, memory ids, or a search query using TerranSoul's active brain. If you have a topic rather than ids, pass query instead of guessing memory_ids.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "text": { "type": "string", "description": "Text to summarize" },
-                    "memory_ids": { "type": "string", "description": "Comma-separated memory entry ids to summarize" }
+                    "memory_ids": { "type": "string", "description": "Comma-separated memory entry ids to summarize" },
+                    "query": { "type": "string", "description": "Search query; top matching memories are resolved and summarized" },
+                    "limit": { "type": "integer", "description": "Top-k memories when query is supplied (1-20, default 5)" }
                 }
             }
         }),
@@ -111,7 +113,7 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
         }),
         json!({
             "name": "brain_health",
-            "description": "TerranSoul brain status: version, active provider, model, RAG quality percentage, memory count.",
+            "description": "TerranSoul brain status: version, active provider, model, RAG quality, memory count, and descriptions explaining what the numbers mean.",
             "inputSchema": {
                 "type": "object",
                 "properties": {}
@@ -270,6 +272,8 @@ pub async fn dispatch(
             let req = SummarizeRequest {
                 text: args["text"].as_str().map(String::from),
                 memory_ids: ids,
+                query: args["query"].as_str().map(String::from),
+                limit: args["limit"].as_u64().map(|n| n as usize),
             };
             gw.summarize(caps, req)
                 .await

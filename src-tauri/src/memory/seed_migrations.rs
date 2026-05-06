@@ -129,10 +129,22 @@ pub fn discover_migrations(dir: &Path) -> Vec<Migration> {
 /// disk files when available so contributors can iterate without
 /// recompiling.
 pub fn compiled_migrations() -> Vec<Migration> {
-    let entries: &[(&str, &str)] = &[(
-        "001_initial_seed",
-        include_str!("../../../mcp-data/shared/migrations/001_initial_seed.sql"),
-    )];
+    let entries: &[(&str, &str)] = &[
+        (
+            "001_initial_seed",
+            include_str!("../../../mcp-data/shared/migrations/001_initial_seed.sql"),
+        ),
+        (
+            "002_refresh_seed_facts",
+            include_str!("../../../mcp-data/shared/migrations/002_refresh_seed_facts.sql"),
+        ),
+        (
+            "003_health_response_descriptions",
+            include_str!(
+                "../../../mcp-data/shared/migrations/003_health_response_descriptions.sql"
+            ),
+        ),
+    ];
     entries
         .iter()
         .filter_map(|(name, sql)| {

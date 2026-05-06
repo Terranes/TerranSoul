@@ -42,3 +42,4 @@ test-output.txt
 *.tmp
 .scratch/
 /tmp-agent/
+/target-copilot-bench

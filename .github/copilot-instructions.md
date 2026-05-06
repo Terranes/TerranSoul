@@ -22,7 +22,14 @@ before planning, before implementing. Skipping this is a violation.**
    user-visible progress update naming the health result/provider and the
    `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are
    not enough; if the user cannot see the receipt, the preflight is incomplete.
-6. **After completing work** — sync durable lessons into
+6. **Fix MCP errors at the source** — if any MCP call returns an error, do not
+   silently fall back to grep or continue with stale context. Classify the
+   failure as bad tool arguments/contract mismatch, unhealthy or stale server,
+   or missing durable knowledge; then fix the MCP schema/adapter/gateway,
+   restart/rebuild the server, or update `mcp-data/shared/` plus a numbered
+   seed migration as appropriate. Add a regression test when code changes are
+   involved, and visibly report the root cause and fix.
+7. **After completing work** — sync durable lessons into
    `mcp-data/shared/memory-seed.sql`.
 
 > The workspace auto-starts MCP on folder open via a VS Code task

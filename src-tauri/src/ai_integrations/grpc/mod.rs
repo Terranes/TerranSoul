@@ -212,6 +212,8 @@ impl Brain for BrainGrpcService {
                 GatewaySummarizeRequest {
                     text: req.text,
                     memory_ids: (!req.memory_ids.is_empty()).then_some(req.memory_ids),
+                    query: None,
+                    limit: None,
                 },
             )
             .await

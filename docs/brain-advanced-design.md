@@ -2144,6 +2144,7 @@ For large desktop stores, the target path is the `native-ann` HNSW index via
 - Default smoke tier: 10k vectors, 1,000 queries, report JSON at `src-tauri/target/bench-results/million_memory.json`.
 - Full tier: `cargo bench --bench million_memory --features bench-million`, 1M vectors, 1,000 queries, linear backend skipped, HNSW thresholds p50 <= 30 ms / p95 <= 60 ms / p99 <= 100 ms.
 - Capacity tier: `enforce_capacity` seeds `cap * 1.05` long-tier rows and verifies the store prunes to `cap * 0.95` without deleting protected or high-importance rows.
+- **CRUD tier (Phase 41):** the same harness now exercises real SQLite CRUD via `MemoryStore::add_many` (transactional, `prepare_cached`) and `MemoryStore::get_all`. The 2026-05-07 1M run with `TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1` measured **write 6.37 s @ 157 031 rows/s** and **read 1.84 s @ 544 704 rows/s**, beating the 60 s / 5 s targets by ~10× and ~3×. The `TS_BENCH_CRUD_ONLY=1` switch skips HNSW + capacity sections so iteration on the SQLite path is fast.
 - Operator guide (commands, env knobs, JSON schema, troubleshooting) and a generalized recipe for adding new benchmarks: [docs/benchmarking.md](benchmarking.md).
 
 If a dataset pushes beyond a single desktop's RAM budget, the next options are
@@ -2337,7 +2338,7 @@ console.log(`Embedded ${count} new entries`);
 
 // Check database schema info
 const info = await invoke('get_schema_info');
-// { schema_version: 13, total_memories: 15247, embedded_count: 15200, ... }
+// { schema_version: 15, total_memories: 15247, embedded_count: 15200, ... }
 ```
 
 ### "What's the difference between search and semantic search?"
@@ -3002,10 +3003,11 @@ axum task receives `AppState` directly.
 | `brain_get_entry` | `get_entry()` | Fetch a single memory by id |
 | `brain_list_recent` | `list_recent()` | List the most recently created/touched memories |
 | `brain_kg_neighbors` | `kg_neighbors()` | Knowledge-graph neighbours of a memory (typed edges) |
-| `brain_summarize` | `summarize()` | LLM summary of a passage |
+| `brain_summarize` | `summarize()` | LLM summary of direct text, memory ids, or a search query |
 | `brain_suggest_context` | `suggest_context()` | Suggest relevant memories for an editor cursor / file |
 | `brain_ingest_url` | `ingest_url()` | Crawl + chunk + embed a URL into the memory store; writable through explicit MCP transport caps plus HTTP `AppHandleIngestSink` or stdio `StdioIngestSink` |
-| `brain_health` | `health()` | Provider status + model info |
+| `brain_health` | `health()` | Provider status, model info, memory totals, and self-describing RAG quality details (`rag_quality_pct` = embedded long-term memories / long-term memories * 100) |
+| `brain_failover_status` | `failover_status()` | Provider failover telemetry |
 
 **Code-intelligence tools (visible when `caps.code_read = true`):**
 

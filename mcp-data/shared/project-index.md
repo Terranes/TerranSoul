@@ -332,6 +332,7 @@ On Linux, install Tauri system deps before Rust checks:
 - Ports: `7421` (release app), `7422` (dev app), `7423` (headless `npm run mcp`).
 - Bearer-token auth (token written to `mcp-data/mcp-token.txt` and `.vscode/.mcp-token`).
 - Endpoints: `GET /health`, `GET /status`, `POST /mcp` (JSON-RPC 2.0).
-- Tools: `brain_health`, `brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `code_query`, `code_context`, `code_impact`, `code_rename`, GitNexus tools.
+- Health JSON is self-describing: `rag_quality_pct` means embedded long-term memories divided by long-term memories, and responses include `rag_quality`, `memory`, and `descriptions` objects with raw counts and plain-English explanations.
+- Tools: `brain_health`, `brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, query-backed `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_failover_status`, `code_query`, `code_context`, `code_impact`, `code_rename`.
 - Seed: on first run with no `memory.db`, applies `mcp-data/shared/memory-seed.sql`.
 - Configs: `mcp-data/shared/brain_config.json` and `mcp-data/shared/app_settings.json` are copied to the runtime root if missing.
