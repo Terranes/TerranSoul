@@ -305,17 +305,12 @@ pub struct AppSettings {
     pub max_memory_mb: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LanAuthMode {
+    #[default]
     TokenRequired,
     PublicReadOnly,
-}
-
-impl Default for LanAuthMode {
-    fn default() -> Self {
-        Self::TokenRequired
-    }
 }
 
 fn default_true() -> bool {

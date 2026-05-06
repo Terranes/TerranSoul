@@ -37,6 +37,7 @@ pub mod handoff_store;
 pub mod metrics;
 pub mod milestones;
 pub mod multi_agent;
+pub mod parser_registry;
 pub mod processes;
 pub mod promotion_plan;
 pub mod prompting;

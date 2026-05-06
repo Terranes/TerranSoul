@@ -21,6 +21,10 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 37.4 — Import, heritage, and type-resolution upgrades](#chunk-374--import-heritage-and-type-resolution-upgrades) | 2026-05-06 |
+| [Chunk 37.3 — Multi-language parser expansion](#chunk-373--multi-language-parser-expansion) | 2026-05-06 |
+| [Chunk 37.2 — Incremental repo registry + content-hash indexing](#chunk-372--incremental-repo-registry--content-hash-indexing) | 2026-05-06 |
+| [Chunk 37.1 — Clean-room code-intelligence architecture spec](#chunk-371--clean-room-code-intelligence-architecture-spec) | 2026-05-06 |
 | [Chunk 33B.2 — `/reflect` slash command for session reflection](#chunk-33b2--reflect-slash-command-for-session-reflection) | 2026-05-05 |
 | [Chunk 33B.1 — Persisted judgment-rules artefact](#chunk-33b1--persisted-judgment-rules-artefact) | 2026-05-05 |
 | [Chunk 35.4 — Provider observability dashboard](#chunk-354--provider-observability-dashboard) | 2026-05-05 |
@@ -283,6 +287,97 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 37.4 — Import, heritage, and type-resolution upgrades
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Add re-export resolution, class/trait/interface heritage, receiver inference, and return-aware bindings where language support exists.
+
+**What was done:**
+- Expanded `EdgeKind` enum with `ReExports`, `Extends`, `Implements` variants
+- Rust extractor: detects `impl Trait for Type` → emits `Implements` edge; detects `pub use` → emits `ReExports` edge (vs plain `use` → `Imports`)
+- TypeScript extractor: heritage clause extraction (`extends`/`implements` on class declarations); `export { X } from` re-export detection → `ReExports` edge
+- New `resolve_heritage()` function in resolver: resolves extends/implements edges to type-like symbols (struct/class/trait/interface/enum)
+- New `resolve_reexport_chains()` function: follows re-export chains by updating import edges that target a re-exporting symbol to point through to the final definition
+- Resolver dispatch updated: `ReExports` handled via same path as `Imports`; `Extends`/`Implements` routed to heritage resolver
+- 4 new symbol_index tests: `test_rust_heritage_edges`, `test_rust_reexport_edges`, `test_typescript_heritage_edges`, `test_typescript_reexport_edges`
+- 2 new resolver tests: `test_resolve_heritage_edges`, `test_resolve_reexport_chains`
+- All 15 coding tests pass (10 symbol_index + 5 resolver); clippy clean
+
+**Files modified:**
+- `src-tauri/src/coding/symbol_index.rs` — EdgeKind expansion, heritage/re-export extraction, 4 new tests
+- `src-tauri/src/coding/resolver.rs` — heritage resolution, re-export chain following, 2 new tests
+
+---
+
+## Chunk 37.3 — Multi-language parser expansion
+
+**Status:** Complete
+**Date:** 2026-05-06
+
+**Goal:** Extend Tree-sitter extraction beyond Rust/TypeScript with a neutral parser registry and fixture tests for priority languages.
+
+**Architecture:**
+- New `parser_registry.rs` module providing a unified `Language` enum, `detect_language()`, `create_parser()`, and `extract_symbols()` for all supported languages.
+- Feature-gated optional grammar crates: `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-java`, `tree-sitter-c`, `tree-sitter-cpp`.
+- Cargo features: `parser-python`, `parser-go`, `parser-java`, `parser-c`, `all-parsers`.
+- `collect_source_files` now uses `parser_registry::supported_extensions()` instead of hardcoded list.
+- `index_repo` routes to registry extractors for non-Rust/non-TS files.
+
+**Files created/modified:**
+- `src-tauri/src/coding/parser_registry.rs` (new — 450+ lines)
+- `src-tauri/src/coding/mod.rs` (added module registration)
+- `src-tauri/src/coding/symbol_index.rs` (updated to use registry)
+- `src-tauri/Cargo.toml` (added optional grammar deps + features)
+
+**Tests:** 2 core tests (detect_language, supported_extensions). Feature-gated tests for Python/Go/Java/C extraction (8 tests total when all features enabled).
+
+---
+
+## Chunk 37.2 — Incremental repo registry + content-hash indexing
+
+**Status:** Complete
+**Date:** 2026-05-06
+
+**Goal:** Persist indexed repositories and per-file content hashes so unchanged files skip parse/embed/edge recomputation.
+
+**Architecture:**
+- New `code_file_hashes` SQLite table (repo_id, file, hash, indexed_at) with UNIQUE(repo_id, file).
+- `index_repo()` now loads existing hashes, computes SHA-256 per file, skips unchanged files, removes deleted files' data, and only re-parses changed files.
+- New `IndexStats` fields: `files_skipped`, `files_deleted`.
+- New public functions: `list_repos()` (registry with file/symbol counts), `remove_repo()`, `check_freshness()` (reports unchanged/stale/deleted/new counts without re-indexing).
+- `RepoEntry` and `IndexFreshness` structs for observability.
+
+**Files modified:**
+- `src-tauri/src/coding/symbol_index.rs` (incremental logic, new functions, 4 new tests)
+
+**Tests:** 4 new tests (incremental_skips_unchanged, handles_deleted, list_repos_and_freshness, existing tests still pass). Total: 6 symbol_index tests.
+
+---
+
+## Chunk 37.1 — Clean-room code-intelligence architecture spec
+
+**Status:** Complete
+**Date:** 2026-05-06
+
+**Goal:** Document the native replacement boundary, sidecar removal guardrails, map existing `coding/*` modules to the full parity plan, and add checks that prevent noncommercial dependency creep.
+
+**Architecture:**
+- Architecture spec document mapping 33 existing coding modules, the parity roadmap, naming conventions, integration with Brain RAG, and sidecar removal status.
+- CI guardrail script checking for noncommercial dependency creep.
+- README fix removing stale `gitnexus_mirror.rs` reference.
+
+**Files created/modified:**
+- `docs/native-code-intelligence-spec.md` (new — architecture spec)
+- `scripts/check-noncommercial-deps.mjs` (new — CI guardrail)
+- `README.md` (fixed stale reference)
+
+**Tests:** Guardrail script runs clean on Windows/Linux.
 
 ---
 

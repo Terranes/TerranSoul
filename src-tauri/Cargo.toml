@@ -74,6 +74,11 @@ serde_yaml = "0.9"
 tree-sitter = "0.24"
 tree-sitter-rust = "0.23"
 tree-sitter-typescript = "0.23"
+tree-sitter-python = { version = "0.23", optional = true }
+tree-sitter-go = { version = "0.23", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-c = { version = "0.23", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
 petgraph = "0.7"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }
 tonic-prost = "0.14.5"
@@ -90,6 +95,11 @@ postgres = ["dep:sqlx"]
 mssql = ["dep:tiberius", "dep:tokio-util"]
 cassandra = ["dep:scylla", "dep:rand"]
 motion-research = []
+parser-python = ["dep:tree-sitter-python"]
+parser-go = ["dep:tree-sitter-go"]
+parser-java = ["dep:tree-sitter-java"]
+parser-c = ["dep:tree-sitter-c", "dep:tree-sitter-cpp"]
+all-parsers = ["parser-python", "parser-go", "parser-java", "parser-c"]
 
 [profile.dev.package.scrypt]
 opt-level = 3

@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 37.1 — Clean-room code-intelligence architecture spec** (Phase 37). See the Phase 37 table below.
+**Chunk 37.5 — Confidence-scored relation provenance** (Phase 37). See the Phase 37 table below.
 
 ---
 
@@ -47,10 +47,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 37.1 | not-started | Clean-room code-intelligence architecture spec | Document the native replacement boundary, sidecar removal guardrails, map existing `coding/*` modules to the full parity plan, and add checks that prevent noncommercial dependency creep. |
-| 37.2 | not-started | Incremental repo registry + content-hash indexing | Persist indexed repositories and per-file content hashes so unchanged files skip parse/embed/edge recomputation. |
-| 37.3 | not-started | Multi-language parser expansion | Extend Tree-sitter extraction beyond Rust/TypeScript with a neutral parser registry and fixture tests for priority languages. |
-| 37.4 | not-started | Import, heritage, and type-resolution upgrades | Add re-export resolution, class/trait/interface heritage, receiver inference, and return-aware bindings where language support exists. |
 | 37.5 | not-started | Confidence-scored relation provenance | Expand code edges with relation confidence, source span, resolver tier, and provenance for auditable context/impact/rename results. |
 | 37.6 | not-started | Process-grouped code search | Improve functional clustering, entry-point scoring, and execution-flow traces so `code_query` can return process-ranked results. |
 | 37.7 | not-started | Hybrid semantic code search | Add BM25 + embedding + RRF retrieval over code symbols/processes using TerranSoul's existing embedding providers and fallback embedder. |

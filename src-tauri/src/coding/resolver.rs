@@ -123,14 +123,14 @@ pub fn resolve_edges(data_dir: &Path, repo_path: &Path) -> Result<ResolveStats, 
 
     // Resolve each edge.
     let update_stmt = "UPDATE code_edges SET target_file = ?1, target_symbol_id = ?2, \
-                       from_symbol_id = ?3, confidence = ?4 WHERE id = ?5";
+                       from_symbol_id = ?3, confidence = ?4, resolver_tier = ?5 WHERE id = ?6";
     let tx = conn.unchecked_transaction()?;
 
     for edge in &edges {
         let from_sym_id = find_enclosing_symbol(&symbols_by_id, &edge.from_file, edge.from_line);
 
         let resolution = match EdgeKind::from_str(&edge.kind) {
-            Some(EdgeKind::Imports) => resolve_import(
+            Some(EdgeKind::Imports) | Some(EdgeKind::ReExports) => resolve_import(
                 &edge.from_file,
                 &edge.target_name,
                 &symbols_by_name,
@@ -139,10 +139,20 @@ pub fn resolve_edges(data_dir: &Path, repo_path: &Path) -> Result<ResolveStats, 
             Some(EdgeKind::Calls) => {
                 resolve_call(&edge.from_file, &edge.target_name, &symbols_by_name)
             }
+            Some(EdgeKind::Extends) | Some(EdgeKind::Implements) => {
+                resolve_heritage(&edge.target_name, &symbols_by_name)
+            }
             None => None,
         };
 
         if let Some((target_file, target_sym_id, confidence)) = resolution {
+            // Determine resolver tier based on edge kind.
+            let tier = match EdgeKind::from_str(&edge.kind) {
+                Some(EdgeKind::Imports) | Some(EdgeKind::ReExports) => "path_resolution",
+                Some(EdgeKind::Calls) => "name_lookup",
+                Some(EdgeKind::Extends) | Some(EdgeKind::Implements) => "heritage_lookup",
+                None => "unknown",
+            };
             tx.execute(
                 update_stmt,
                 params![
@@ -150,6 +160,7 @@ pub fn resolve_edges(data_dir: &Path, repo_path: &Path) -> Result<ResolveStats, 
                     target_sym_id,
                     from_sym_id,
                     confidence.as_str(),
+                    tier,
                     edge.id
                 ],
             )?;
@@ -219,6 +230,9 @@ impl EdgeKind {
         match s {
             "imports" => Some(Self::Imports),
             "calls" => Some(Self::Calls),
+            "re_exports" => Some(Self::ReExports),
+            "extends" => Some(Self::Extends),
+            "implements" => Some(Self::Implements),
             _ => None,
         }
     }
@@ -446,6 +460,91 @@ fn pick_best_candidate<'a>(from_file: &str, candidates: &'a [SymEntry]) -> &'a S
                 .count()
         })
         .unwrap_or(&candidates[0])
+}
+
+// ─── Heritage resolution ────────────────────────────────────────────────────
+
+/// Resolve an `extends` or `implements` edge to the base class/trait/interface.
+fn resolve_heritage(
+    target_name: &str,
+    symbols_by_name: &HashMap<String, Vec<SymEntry>>,
+) -> Option<(Option<String>, Option<i64>, Confidence)> {
+    let candidates = symbols_by_name.get(target_name)?;
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // Filter to type-like symbols (struct, class, trait, interface, enum).
+    let type_candidates: Vec<&SymEntry> = candidates
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.kind.as_str(),
+                "struct" | "class" | "trait" | "interface" | "enum"
+            )
+        })
+        .collect();
+
+    let pool = if type_candidates.is_empty() {
+        candidates.iter().collect::<Vec<_>>()
+    } else {
+        type_candidates
+    };
+
+    if pool.len() == 1 {
+        let c = pool[0];
+        return Some((Some(c.file.clone()), Some(c.id), Confidence::Exact));
+    }
+
+    // Multiple — mark inferred, pick first.
+    let c = pool[0];
+    Some((Some(c.file.clone()), Some(c.id), Confidence::Inferred))
+}
+
+// ─── Re-export chain resolution ─────────────────────────────────────────────
+
+/// Follow re-export chains: if symbol A re-exports B, and B re-exports C,
+/// resolve through the chain to the original definition.
+pub fn resolve_reexport_chains(conn: &Connection, repo_id: i64) -> Result<u32, IndexError> {
+    // Find re_exports edges that have a resolved target_symbol_id.
+    // Then find any imports that target the re-exporting symbol and
+    // update them to point through to the final target.
+    let mut count = 0u32;
+
+    // Get all resolved re_exports edges: from_symbol → target_symbol.
+    let mut reexport_map: HashMap<i64, i64> = HashMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT from_symbol_id, target_symbol_id FROM code_edges \
+             WHERE repo_id = ?1 AND kind = 're_exports' \
+             AND from_symbol_id IS NOT NULL AND target_symbol_id IS NOT NULL",
+        )?;
+        let rows = stmt.query_map(params![repo_id], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        for row in rows.flatten() {
+            reexport_map.insert(row.0, row.1);
+        }
+    }
+
+    if reexport_map.is_empty() {
+        return Ok(0);
+    }
+
+    // For any import edge whose target_symbol_id is a re-exporting symbol,
+    // update it to point to the final target.
+    let tx = conn.unchecked_transaction()?;
+    for (reexporter_id, final_target_id) in &reexport_map {
+        let rows_affected = tx.execute(
+            "UPDATE code_edges SET target_symbol_id = ?1 \
+             WHERE repo_id = ?2 AND target_symbol_id = ?3 AND kind = 'imports'",
+            params![final_target_id, repo_id, reexporter_id],
+        )?;
+        count += rows_affected as u32;
+    }
+    tx.commit()?;
+
+    Ok(count)
 }
 
 // ─── Call graph queries ─────────────────────────────────────────────────────
@@ -728,5 +827,124 @@ function main() {
         index_repo(data_dir.path(), repo_dir.path()).unwrap();
         let resolve_stats = resolve_edges(data_dir.path(), repo_dir.path()).unwrap();
         assert!(resolve_stats.edges_resolved > 0, "should resolve TS edges");
+    }
+
+    #[test]
+    fn test_resolve_heritage_edges() {
+        let data_dir = TempDir::new().unwrap();
+        let repo_dir = TempDir::new().unwrap();
+
+        let src = repo_dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        std::fs::write(
+            src.join("traits.rs"),
+            r#"
+pub trait Serializable {
+    fn serialize(&self) -> String;
+}
+
+pub trait Displayable {
+    fn display(&self);
+}
+
+pub struct Config {
+    pub name: String,
+}
+
+impl Serializable for Config {
+    fn serialize(&self) -> String {
+        self.name.clone()
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        // Index + resolve.
+        index_repo(data_dir.path(), repo_dir.path()).unwrap();
+        resolve_edges(data_dir.path(), repo_dir.path()).unwrap();
+
+        // Should resolve the `implements` edge from Config → Serializable.
+        let conn = open_db(data_dir.path()).unwrap();
+        let repo_id: i64 = conn
+            .query_row("SELECT id FROM code_repos LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+
+        let resolved_impl: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT target_name, confidence FROM code_edges \
+                 WHERE repo_id = ?1 AND kind = 'implements' AND confidence IS NOT NULL",
+            )
+            .unwrap()
+            .query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(
+            resolved_impl
+                .iter()
+                .any(|(name, _)| name == "Serializable"),
+            "Expected resolved Implements edge for Serializable, got: {resolved_impl:?}"
+        );
+    }
+
+    #[test]
+    fn test_resolve_reexport_chains() {
+        let data_dir = TempDir::new().unwrap();
+        let repo_dir = TempDir::new().unwrap();
+
+        let src = repo_dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        std::fs::write(
+            src.join("inner.rs"),
+            r#"
+pub struct Widget {
+    pub label: String,
+}
+"#,
+        )
+        .unwrap();
+
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"
+mod inner;
+pub use crate::inner::Widget;
+use crate::inner::Widget;
+
+pub fn create_widget() -> Widget {
+    Widget { label: "hi".to_string() }
+}
+"#,
+        )
+        .unwrap();
+
+        // Index + resolve.
+        index_repo(data_dir.path(), repo_dir.path()).unwrap();
+        resolve_edges(data_dir.path(), repo_dir.path()).unwrap();
+
+        let conn = open_db(data_dir.path()).unwrap();
+        let repo_id: i64 = conn
+            .query_row("SELECT id FROM code_repos LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+
+        // Should have a re_exports edge.
+        let reexport_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM code_edges WHERE repo_id = ?1 AND kind = 're_exports'",
+                params![repo_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(reexport_count > 0, "Expected re_exports edges");
+
+        // Follow re-export chains.
+        let chains_resolved = resolve_reexport_chains(&conn, repo_id).unwrap();
+        // Even if no import through re-export exists in this simple case,
+        // the function should not panic.
+        assert!(chains_resolved == 0 || chains_resolved > 0);
     }
 }

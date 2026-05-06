@@ -32,6 +32,8 @@ describe('self-improve store', () => {
     mockInvoke.mockReset();
     mockListen.mockReset();
     mockListen.mockResolvedValue(() => {});
+    // Simulate Tauri runtime so canSubscribeToTauriEvents() returns true
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   });
 
   it('starts disabled with no config and zero progress beyond static foundation', () => {
