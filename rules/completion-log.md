@@ -21,6 +21,11 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 37.9 — Graph-backed rename review](#chunk-379--graph-backed-rename-review) | 2026-05-06 |
+| [Chunk 37.8 — Native diff impact analysis](#chunk-378--native-diff-impact-analysis) | 2026-05-06 |
+| [Chunk 37.7 — Hybrid semantic code search](#chunk-377--hybrid-semantic-code-search) | 2026-05-06 |
+| [Chunk 37.6 — Process-grouped code search](#chunk-376--process-grouped-code-search) | 2026-05-06 |
+| [Chunk 37.5 — Confidence-scored relation provenance](#chunk-375--confidence-scored-relation-provenance) | 2026-05-06 |
 | [Chunk 37.4 — Import, heritage, and type-resolution upgrades](#chunk-374--import-heritage-and-type-resolution-upgrades) | 2026-05-06 |
 | [Chunk 37.3 — Multi-language parser expansion](#chunk-373--multi-language-parser-expansion) | 2026-05-06 |
 | [Chunk 37.2 — Incremental repo registry + content-hash indexing](#chunk-372--incremental-repo-registry--content-hash-indexing) | 2026-05-06 |
@@ -287,6 +292,127 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 37.9 — Graph-backed rename review
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Expand `code_rename` with heritage/re-export edge awareness, confidence scoring, file-grouped review payloads, and focused tests.
+
+**Architecture:**
+- Three confidence tiers: graph (1.0) for definitions/calls/imports, heritage (0.8) for extends/implements/re-exports, text (0.4) for grep matches
+- Heritage edges: extends/implements relationships propagate rename to subclasses/implementors
+- Re-export edges: re-export chains referencing the symbol are included at medium confidence
+- Review payload: `by_file` groups edits per file; `summary` counts graph/heritage/text edits
+- Edits sorted by confidence descending for review UX
+- MCP `code_rename` schema updated with enhanced description
+
+**Files modified:**
+- `src-tauri/src/coding/rename.rs` — added `confidence_score`, `FileEditGroup`, `RenameSummary`, heritage/re-export phases, `build_file_groups()`
+
+**Tests:** 7 total (4 existing updated + 3 new: rename_review_payload_structure, rename_heritage_edges_included, build_file_groups_correct)
+
+---
+
+## Chunk 37.8 — Native diff impact analysis
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Map git diffs to changed symbols and affected processes through native code indexing; surface risk buckets for pre-commit review.
+
+**Architecture:**
+- Pipeline: git diff → parse hunks → intersect with symbol line ranges → BFS callers → risk classify
+- Risk levels: critical (20+ affected or API with 10+), high (10+ or depth≥4), moderate (3+ or depth≥2), low (otherwise)
+- `DiffImpactReport` with `risk_summary`, per-symbol impacts, and affected dependency chains
+- MCP `code_impact` tool enhanced with `diff` parameter (accepts git ref/range) alongside existing `symbol` mode
+- Reuses existing `resolver::call_graph()` for BFS traversal
+
+**Files created:**
+- `src-tauri/src/coding/diff_impact.rs` — `analyze_diff_impact()`, `parse_unified_diff()`, `find_changed_symbols()`, `bfs_affected()`, `classify_risk()`
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod diff_impact`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — `code_impact` schema/handler now accepts `diff` param
+
+**Tests:** 6 (parse_unified_diff_basic, parse_hunk_header_single_line, parse_hunk_header_deletion_only, classify_risk_levels, find_changed_symbols_overlap, bfs_affected_empty_graph)
+
+---
+
+## Chunk 37.7 — Hybrid semantic code search
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Add BM25 + embedding + RRF retrieval over code symbols/processes using TerranSoul's existing embedding providers and fallback embedder.
+
+**Architecture:**
+- Three retrieval signals: BM25-like text scoring (name/parent/file), cosine vector similarity (stored embeddings), graph importance (entry-point + process participation)
+- RRF fusion via existing `memory::fusion::reciprocal_rank_fuse()` (k=60)
+- `code_embeddings` table: symbol_id (PK), repo_id, embedding BLOB, model TEXT
+- `code_query` MCP tool enhanced with `query` param for free-text hybrid search
+
+**Files created:**
+- `src-tauri/src/coding/code_search.rs` — hybrid_code_search, text_rank, vector_rank, graph_rank, embedding storage/loading
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod code_search`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — `code_query` now accepts `query` param, returns `{ results, mode: "hybrid_rrf" }`
+
+**Tests:** 4 (test_text_rank_scores, test_vector_rank_cosine, test_rrf_fusion_basic, test_ensure_embedding_table)
+
+---
+
+## Chunk 37.6 — Process-grouped code search
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Improve functional clustering, entry-point scoring, and execution-flow traces so `code_query` can return process-ranked results.
+
+**What was done:**
+- Enhanced `code_query` MCP tool to return `{ symbols, processes }` JSON with related execution processes for each symbol match
+- Added `include_processes` parameter (default true) to allow callers to opt out
+- Updated tool schema description to reflect process-grouped output
+- Expanded `build_call_graph` in `processes.rs` to include `implements`/`extends` edges for better clustering affinity
+- Improved entry-point scoring: added bonus for exported/uppercase-starting Go-style functions
+- All 348 coding tests + 87 MCP tests pass; clippy clean
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — process-grouped `code_query` response, schema update
+- `src-tauri/src/coding/processes.rs` — heritage edges in graph, improved entry-point scoring
+
+---
+
+## Chunk 37.5 — Confidence-scored relation provenance
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Expand code edges with relation confidence, source span, resolver tier, and provenance for auditable context/impact/rename results.
+
+**What was done:**
+- Added `from_col`, `end_line`, `end_col`, `resolver_tier`, `provenance` columns to `code_edges` schema
+- Added `migrate_schema()` function for backwards-compatible ALTER TABLE on existing databases
+- Created `CodeEdge::from_node()` constructor that captures full tree-sitter span (row, col, end_row, end_col)
+- Converted all 16 `CodeEdge { ... }` literals (7 in symbol_index.rs, 9 in parser_registry.rs) to use `from_node()`
+- Updated edge INSERT to write span columns
+- Updated resolver's UPDATE statement to write `resolver_tier` with values: `path_resolution`, `name_lookup`, `heritage_lookup`
+- 2 new resolver tests: `test_edge_span_columns_populated`, expanded `test_resolve_heritage_edges` to check `resolver_tier`
+- All 349 coding tests pass; clippy clean
+
+**Files modified:**
+- `src-tauri/src/coding/symbol_index.rs` — schema expansion, migration, `CodeEdge::from_node()`, INSERT update
+- `src-tauri/src/coding/parser_registry.rs` — all edge literals converted to `from_node()`
+- `src-tauri/src/coding/resolver.rs` — resolver_tier in UPDATE, 2 new tests
 
 ---
 

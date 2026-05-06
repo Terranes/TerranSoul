@@ -345,10 +345,11 @@ fn build_call_graph(conn: &Connection, repo_id: i64) -> Result<CallGraphData, In
         );
     }
 
-    // Load resolved CALLS edges.
+    // Load resolved CALLS + heritage edges for graph construction.
+    // Calls for flow tracing; heritage (implements/extends) for clustering affinity.
     let mut edge_stmt = conn.prepare(
         "SELECT from_symbol_id, target_symbol_id FROM code_edges
-         WHERE repo_id = ?1 AND kind = 'calls'
+         WHERE repo_id = ?1 AND kind IN ('calls', 'implements', 'extends')
          AND from_symbol_id IS NOT NULL AND target_symbol_id IS NOT NULL",
     )?;
     let edges: Vec<(i64, i64)> = edge_stmt
@@ -545,6 +546,12 @@ fn score_entry_points(
         // Function (not method) bonus.
         if info.kind == "function" {
             score += 5.0;
+        }
+
+        // Exported/public heuristic: names starting with uppercase (Go)
+        // or lacking a leading underscore are more likely entry points.
+        if info.name.starts_with(|c: char| c.is_uppercase()) && info.kind == "function" {
+            score += 10.0;
         }
 
         // Threshold: only include if score > 30.

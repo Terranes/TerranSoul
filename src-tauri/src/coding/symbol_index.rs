@@ -1015,12 +1015,13 @@ fn walk_ts_node(
     }
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn extract_ts_import_names(
     source: &str,
     node: tree_sitter::Node,
     file: &str,
     edges: &mut Vec<CodeEdge>,
-    _line: u32,
+    line: u32,
 ) {
     // Recurse looking for import_specifier nodes.
     if node.kind() == "import_specifier" || node.kind() == "identifier" {

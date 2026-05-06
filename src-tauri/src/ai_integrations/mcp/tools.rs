@@ -280,14 +280,16 @@ fn code_tool_definitions() -> Vec<Value> {
     vec![
         json!({
             "name": "code_query",
-            "description": "Search the code symbol index by name or file. Returns symbols with file/line, kind, and parent context. Process-grouped when clusters exist.",
+            "description": "Search the code symbol index. Supports free-text hybrid search (BM25 + graph RRF), exact symbol name lookup, or file listing. Returns symbols with scores and related processes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "symbol": { "type": "string", "description": "Symbol name to search for (exact or prefix match)" },
-                    "file": { "type": "string", "description": "File path to list symbols in (alternative to symbol search)" },
+                    "query": { "type": "string", "description": "Free-text search query (hybrid BM25 + graph RRF fusion)" },
+                    "symbol": { "type": "string", "description": "Symbol name for exact match lookup" },
+                    "file": { "type": "string", "description": "File path to list symbols in" },
                     "repo": { "type": "string", "description": "Repository path filter (defaults to first indexed repo)" },
-                    "limit": { "type": "integer", "description": "Max results (default: 20)" }
+                    "limit": { "type": "integer", "description": "Max results (default: 20)" },
+                    "include_processes": { "type": "boolean", "description": "Include related execution processes in results (default: true)" }
                 }
             }
         }),
@@ -305,20 +307,20 @@ fn code_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "code_impact",
-            "description": "Compute the blast-radius of changing a symbol: BFS along incoming call edges, grouped by depth. Shows which functions/files would be affected.",
+            "description": "Compute blast-radius of changing a symbol or analyze a git diff. With 'symbol': BFS along incoming call edges grouped by depth. With 'diff': map changed lines to symbols and surface risk buckets (critical/high/moderate/low).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "symbol": { "type": "string", "description": "Symbol name to analyze impact for" },
+                    "symbol": { "type": "string", "description": "Symbol name to analyze impact for (omit if using diff mode)" },
+                    "diff": { "type": "string", "description": "Git diff ref/range (e.g. 'HEAD~1', 'main..feature') — analyzes all changed symbols" },
                     "depth": { "type": "integer", "description": "Max BFS depth (default: 5)" },
                     "repo": { "type": "string", "description": "Repository path filter (defaults to first indexed repo)" }
-                },
-                "required": ["symbol"]
+                }
             }
         }),
         json!({
             "name": "code_rename",
-            "description": "Rename a symbol across the codebase. Returns an edit plan with graph-resolved (high confidence) and text-search (lower confidence) edits. Use dry_run=true to preview without applying.",
+            "description": "Rename a symbol across the codebase. Returns an edit plan with graph-resolved (high confidence), heritage (medium), and text-search (lower) edits. Includes file-grouped review payload and summary statistics. Use dry_run=true to preview without applying.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -374,6 +376,19 @@ async fn dispatch_code_tool(
         "code_query" => {
             let limit = args["limit"].as_u64().unwrap_or(20) as usize;
 
+            // Free-text hybrid search (BM25 + vector + graph RRF).
+            if let Some(query_text) = args["query"].as_str() {
+                let search_results = crate::coding::code_search::hybrid_code_search_by_repo(
+                    &conn, repo_id, query_text, None, limit,
+                )
+                .map_err(|e| e.to_string())?;
+                let response = serde_json::json!({
+                    "results": search_results,
+                    "mode": "hybrid_rrf",
+                });
+                return serde_json::to_string(&response).map_err(|e| e.to_string());
+            }
+
             let results = if let Some(symbol_name) = args["symbol"].as_str() {
                 crate::coding::symbol_index::query_symbols_by_name(&conn, repo_id, symbol_name)
                     .map_err(|e| e.to_string())?
@@ -381,11 +396,43 @@ async fn dispatch_code_tool(
                 crate::coding::symbol_index::query_symbols_in_file(&conn, repo_id, file_path)
                     .map_err(|e| e.to_string())?
             } else {
-                return Err("provide either `symbol` or `file` parameter".into());
+                return Err("provide `query`, `symbol`, or `file` parameter".into());
             };
 
             let truncated: Vec<_> = results.into_iter().take(limit).collect();
-            serde_json::to_string(&truncated).map_err(|e| e.to_string())
+
+            // Enrich with process context if clusters exist.
+            let process_context = if args["include_processes"].as_bool().unwrap_or(true) {
+                let processes =
+                    crate::coding::processes::list_processes(&conn, repo_id).unwrap_or_default();
+                if processes.is_empty() {
+                    None
+                } else {
+                    // Find processes containing any of the returned symbols.
+                    let sym_names: Vec<&str> = truncated.iter().map(|s| s.name.as_str()).collect();
+                    let relevant: Vec<_> = processes
+                        .into_iter()
+                        .filter(|p| {
+                            sym_names.contains(&p.entry_point.as_str())
+                                || p.steps.iter().any(|s| sym_names.contains(&s.name.as_str()))
+                        })
+                        .take(5)
+                        .collect();
+                    if relevant.is_empty() {
+                        None
+                    } else {
+                        Some(relevant)
+                    }
+                }
+            } else {
+                None
+            };
+
+            let response = serde_json::json!({
+                "symbols": truncated,
+                "processes": process_context,
+            });
+            serde_json::to_string(&response).map_err(|e| e.to_string())
         }
 
         "code_context" => {
@@ -437,9 +484,33 @@ async fn dispatch_code_tool(
         }
 
         "code_impact" => {
+            let max_depth = args["depth"].as_u64().unwrap_or(5) as u32;
+
+            // Diff mode: analyze all changed symbols from a git ref/range
+            if let Some(diff_ref) = args["diff"].as_str() {
+                let repo_path: String = conn
+                    .query_row(
+                        "SELECT path FROM code_repos WHERE id = ?1",
+                        rusqlite::params![repo_id],
+                        |r| r.get(0),
+                    )
+                    .map_err(|e| format!("cannot find repo path: {e}"))?;
+
+                let report = crate::coding::diff_impact::analyze_diff_impact(
+                    &data_dir,
+                    std::path::Path::new(&repo_path),
+                    diff_ref,
+                    max_depth,
+                )
+                .map_err(|e| e.to_string())?;
+
+                return serde_json::to_string(&report).map_err(|e| e.to_string());
+            }
+
+            // Symbol mode: BFS callers for a single symbol
             let symbol_name = args["symbol"]
                 .as_str()
-                .ok_or_else(|| "missing required param: symbol".to_string())?;
+                .ok_or_else(|| "missing required param: symbol or diff".to_string())?;
             let max_depth = args["depth"].as_u64().unwrap_or(5) as u32;
 
             // Get the call graph (incoming edges = direct callers)

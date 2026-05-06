@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 37.5 — Confidence-scored relation provenance** (Phase 37). See the Phase 37 table below.
+**Chunk 37.10 — MCP resources, prompts, and setup writer** (Phase 37). See the Phase 37 table below.
 
 ---
 
@@ -47,11 +47,6 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 37.5 | not-started | Confidence-scored relation provenance | Expand code edges with relation confidence, source span, resolver tier, and provenance for auditable context/impact/rename results. |
-| 37.6 | not-started | Process-grouped code search | Improve functional clustering, entry-point scoring, and execution-flow traces so `code_query` can return process-ranked results. |
-| 37.7 | not-started | Hybrid semantic code search | Add BM25 + embedding + RRF retrieval over code symbols/processes using TerranSoul's existing embedding providers and fallback embedder. |
-| 37.8 | not-started | Native diff impact analysis | Map git diffs to changed symbols and affected processes through native code indexing; surface risk buckets for pre-commit review. |
-| 37.9 | not-started | Graph-backed rename review | Expand `code_rename` with graph-confirmed edits, lower-confidence text matches, dry-run review payloads, and focused tests. |
 | 37.10 | not-started | MCP resources, prompts, and setup writer | Expose `terransoul://repos`, repo context, clusters, processes, schema/resources, guided impact/map prompts, and a local setup writer for editors. |
 | 37.11 | not-started | Native code-graph workbench UI | Build a dense Vue workbench with graph canvas, file tree, code references, chat/tool-call visibility, citation-to-node focus, process diagrams, repo switcher, status bar, and blast-radius highlights. |
 | 37.12 | not-started | Generated repo skills + code wiki | Generate reviewable neutral skill/context docs and wiki pages from the native graph using TerranSoul's summarization pipeline. |

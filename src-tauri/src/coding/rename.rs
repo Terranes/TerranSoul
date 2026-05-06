@@ -1,11 +1,14 @@
-//! Code rename tool (Chunk 31.7).
+//! Code rename tool (Chunk 31.7, enhanced Chunk 37.9).
 //!
 //! Produces an edit plan for renaming a symbol across a codebase:
 //! 1. **Graph-resolved edits** — symbol definitions + call edges from the index (high confidence)
-//! 2. **Text-search edits** — grep-style word-boundary matches in source files (lower confidence)
+//! 2. **Heritage edits** — extends/implements edges propagating the rename (medium confidence)
+//! 3. **Re-export edits** — re-export chains referencing the symbol (medium confidence)
+//! 4. **Text-search edits** — grep-style word-boundary matches in source files (lower confidence)
 //!
 //! The tool supports `dry_run` mode (returns the plan without applying) and
-//! `apply` mode (writes edits to disk).
+//! `apply` mode (writes edits to disk). The review payload groups edits by file
+//! and includes summary statistics.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -24,9 +27,11 @@ pub struct RenameEdit {
     pub line: u32,
     pub old_text: String,
     pub new_text: String,
-    /// "graph" (high confidence from symbol index) or "text" (lower confidence from grep)
+    /// "graph" (high confidence), "heritage" (medium), or "text" (lower confidence)
     pub confidence: String,
-    /// What kind of reference: "definition", "call", "import", or "text_match"
+    /// Numeric confidence score: 1.0 (graph), 0.8 (heritage/re-export), 0.4 (text match)
+    pub confidence_score: f64,
+    /// What kind of reference: "definition", "call", "import", "heritage", "re_export", or "text_match"
     pub kind: String,
 }
 
@@ -38,6 +43,26 @@ pub struct RenameResult {
     pub edits: Vec<RenameEdit>,
     pub applied: bool,
     pub files_affected: usize,
+    /// Edits grouped by file for review UX.
+    pub by_file: Vec<FileEditGroup>,
+    /// Summary statistics.
+    pub summary: RenameSummary,
+}
+
+/// Edits grouped by file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEditGroup {
+    pub file: String,
+    pub edits: Vec<RenameEdit>,
+}
+
+/// Summary statistics for a rename review.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameSummary {
+    pub graph_edits: usize,
+    pub heritage_edits: usize,
+    pub text_edits: usize,
+    pub total_edits: usize,
 }
 
 // ─── Rename logic ───────────────────────────────────────────────────────────
@@ -67,7 +92,7 @@ pub fn rename_symbol(
 
     let mut edits = Vec::new();
 
-    // ─── Phase 1: Graph-resolved edits (high confidence) ────────────────
+    // ─── Phase 1: Graph-resolved edits (high confidence = 1.0) ──────────
 
     // Find symbol definitions
     let mut def_stmt =
@@ -86,6 +111,7 @@ pub fn rename_symbol(
             old_text: symbol_name.to_string(),
             new_text: new_name.to_string(),
             confidence: "graph".into(),
+            confidence_score: 1.0,
             kind: "definition".into(),
         });
     }
@@ -107,18 +133,77 @@ pub fn rename_symbol(
         .collect();
 
     for (file, line, kind) in &call_sites {
-        let edit_kind = if kind == "imports" { "import" } else { "call" };
+        let (edit_kind, score) = match kind.as_str() {
+            "imports" => ("import", 1.0),
+            "calls" => ("call", 1.0),
+            "extends" | "implements" => ("heritage", 0.8),
+            "re_exports" => ("re_export", 0.8),
+            _ => ("call", 1.0),
+        };
+        let conf = if score >= 1.0 { "graph" } else { "heritage" };
         edits.push(RenameEdit {
             file: file.clone(),
             line: *line,
             old_text: symbol_name.to_string(),
             new_text: new_name.to_string(),
-            confidence: "graph".into(),
+            confidence: conf.into(),
+            confidence_score: score,
             kind: edit_kind.to_string(),
         });
     }
 
-    // ─── Phase 2: Text-search edits (lower confidence) ──────────────────
+    // ─── Phase 1b: Heritage edges (medium confidence = 0.8) ─────────────
+
+    // Find symbols that extend/implement the target (heritage edges with target_name)
+    let mut heritage_stmt = conn.prepare(
+        "SELECT from_file, from_line FROM code_edges \
+         WHERE repo_id = ?1 AND target_name = ?2 AND kind IN ('extends', 'implements')",
+    )?;
+    let heritage_sites: Vec<(String, u32)> = heritage_stmt
+        .query_map(params![repo_id, symbol_name], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for (file, line) in &heritage_sites {
+        edits.push(RenameEdit {
+            file: file.clone(),
+            line: *line,
+            old_text: symbol_name.to_string(),
+            new_text: new_name.to_string(),
+            confidence: "heritage".into(),
+            confidence_score: 0.8,
+            kind: "heritage".into(),
+        });
+    }
+
+    // ─── Phase 1c: Re-export edges (medium confidence = 0.8) ────────────
+
+    let mut reexport_stmt = conn.prepare(
+        "SELECT from_file, from_line FROM code_edges \
+         WHERE repo_id = ?1 AND target_name = ?2 AND kind = 're_exports'",
+    )?;
+    let reexport_sites: Vec<(String, u32)> = reexport_stmt
+        .query_map(params![repo_id, symbol_name], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for (file, line) in &reexport_sites {
+        edits.push(RenameEdit {
+            file: file.clone(),
+            line: *line,
+            old_text: symbol_name.to_string(),
+            new_text: new_name.to_string(),
+            confidence: "heritage".into(),
+            confidence_score: 0.8,
+            kind: "re_export".into(),
+        });
+    }
+
+    // ─── Phase 2: Text-search edits (lower confidence = 0.4) ────────────
 
     // Scan source files for word-boundary occurrences not already covered by graph
     let graph_locations: HashSet<(String, u32)> =
@@ -131,6 +216,7 @@ pub fn rename_symbol(
         old_text: symbol_name.to_string(),
         new_text: new_name.to_string(),
         confidence: "text".into(),
+        confidence_score: 0.4,
         kind: "text_match".into(),
     }));
 
@@ -138,11 +224,30 @@ pub fn rename_symbol(
     let mut seen = HashSet::new();
     edits.retain(|e| seen.insert((e.file.clone(), e.line)));
 
+    // Sort by confidence descending, then file/line
+    edits.sort_by(|a, b| {
+        b.confidence_score
+            .partial_cmp(&a.confidence_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.cmp(&b.line))
+    });
+
     let files_affected = edits
         .iter()
         .map(|e| e.file.as_str())
         .collect::<HashSet<_>>()
         .len();
+
+    // Build file-grouped review payload
+    let by_file = build_file_groups(&edits);
+
+    let summary = RenameSummary {
+        graph_edits: edits.iter().filter(|e| e.confidence == "graph").count(),
+        heritage_edits: edits.iter().filter(|e| e.confidence == "heritage").count(),
+        text_edits: edits.iter().filter(|e| e.confidence == "text").count(),
+        total_edits: edits.len(),
+    };
 
     // ─── Phase 3: Apply edits if not dry_run ────────────────────────────
 
@@ -156,7 +261,29 @@ pub fn rename_symbol(
         edits,
         applied: !dry_run,
         files_affected,
+        by_file,
+        summary,
     })
+}
+
+/// Group edits by file for review UX.
+fn build_file_groups(edits: &[RenameEdit]) -> Vec<FileEditGroup> {
+    let mut map: std::collections::HashMap<&str, Vec<RenameEdit>> =
+        std::collections::HashMap::new();
+    for edit in edits {
+        map.entry(edit.file.as_str())
+            .or_default()
+            .push(edit.clone());
+    }
+    let mut groups: Vec<FileEditGroup> = map
+        .into_iter()
+        .map(|(file, edits)| FileEditGroup {
+            file: file.to_string(),
+            edits,
+        })
+        .collect();
+    groups.sort_by(|a, b| a.file.cmp(&b.file));
+    groups
 }
 
 /// Scan source files for word-boundary occurrences of `symbol_name`
@@ -426,5 +553,123 @@ mod tests {
         assert!(!content.contains("old_name"));
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn rename_review_payload_structure() {
+        let tmp = std::env::temp_dir().join("ts_rename_review_test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("src")).unwrap();
+
+        std::fs::write(
+            tmp.join("src/lib.rs"),
+            "pub fn my_func() {}\nfn caller() { my_func(); }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join("src/other.rs"),
+            "use crate::my_func;\nfn other() { my_func(); }\n",
+        )
+        .unwrap();
+
+        let data_dir = tmp.join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::coding::symbol_index::index_repo(&data_dir, &tmp).unwrap();
+
+        let result = rename_symbol(&data_dir, &tmp, "my_func", "renamed_func", true).unwrap();
+
+        // Review payload should be structured
+        assert!(!result.by_file.is_empty());
+        assert!(result.summary.total_edits > 0);
+        assert_eq!(result.summary.total_edits, result.edits.len());
+
+        // Graph edits should have confidence_score 1.0
+        for edit in result.edits.iter().filter(|e| e.confidence == "graph") {
+            assert_eq!(edit.confidence_score, 1.0);
+        }
+
+        // Text edits should have confidence_score 0.4
+        for edit in result.edits.iter().filter(|e| e.confidence == "text") {
+            assert_eq!(edit.confidence_score, 0.4);
+        }
+
+        // Edits should be sorted by confidence (highest first)
+        let scores: Vec<f64> = result.edits.iter().map(|e| e.confidence_score).collect();
+        for w in scores.windows(2) {
+            assert!(w[0] >= w[1], "Edits not sorted by confidence descending");
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn rename_heritage_edges_included() {
+        let tmp = std::env::temp_dir().join("ts_rename_heritage_test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("src")).unwrap();
+
+        // TypeScript with extends/implements
+        std::fs::write(
+            tmp.join("src/base.ts"),
+            "export interface Animal {\n  name: string;\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.join("src/dog.ts"),
+            "import { Animal } from './base';\nexport class Dog implements Animal {\n  name = 'Rex';\n}\n",
+        )
+        .unwrap();
+
+        let data_dir = tmp.join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        crate::coding::symbol_index::index_repo(&data_dir, &tmp).unwrap();
+
+        let result = rename_symbol(&data_dir, &tmp, "Animal", "Creature", true).unwrap();
+
+        // Should find at least the definition + edges referencing "Animal"
+        assert!(!result.edits.is_empty());
+        assert!(result.summary.total_edits >= 1);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn build_file_groups_correct() {
+        let edits = vec![
+            RenameEdit {
+                file: "b.rs".into(),
+                line: 5,
+                old_text: "x".into(),
+                new_text: "y".into(),
+                confidence: "graph".into(),
+                confidence_score: 1.0,
+                kind: "definition".into(),
+            },
+            RenameEdit {
+                file: "a.rs".into(),
+                line: 1,
+                old_text: "x".into(),
+                new_text: "y".into(),
+                confidence: "text".into(),
+                confidence_score: 0.4,
+                kind: "text_match".into(),
+            },
+            RenameEdit {
+                file: "b.rs".into(),
+                line: 10,
+                old_text: "x".into(),
+                new_text: "y".into(),
+                confidence: "graph".into(),
+                confidence_score: 1.0,
+                kind: "call".into(),
+            },
+        ];
+
+        let groups = build_file_groups(&edits);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].file, "a.rs");
+        assert_eq!(groups[0].edits.len(), 1);
+        assert_eq!(groups[1].file, "b.rs");
+        assert_eq!(groups[1].edits.len(), 2);
     }
 }
