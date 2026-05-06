@@ -888,6 +888,57 @@ impl Serializable for Config {
                 .any(|(name, _)| name == "Serializable"),
             "Expected resolved Implements edge for Serializable, got: {resolved_impl:?}"
         );
+
+        // Verify resolver_tier is populated.
+        let tiers: Vec<String> = conn
+            .prepare(
+                "SELECT resolver_tier FROM code_edges \
+                 WHERE repo_id = ?1 AND resolver_tier IS NOT NULL",
+            )
+            .unwrap()
+            .query_map(params![repo_id], |r| r.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            !tiers.is_empty(),
+            "Expected at least one edge with resolver_tier set"
+        );
+        assert!(
+            tiers.iter().any(|t| t == "heritage_lookup"),
+            "Expected heritage_lookup tier, got: {tiers:?}"
+        );
+    }
+
+    #[test]
+    fn test_edge_span_columns_populated() {
+        let data_dir = TempDir::new().unwrap();
+        let repo_dir = TempDir::new().unwrap();
+
+        let src = repo_dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("main.rs"),
+            "use std::collections::HashMap;\nfn main() { HashMap::new(); }\n",
+        )
+        .unwrap();
+
+        index_repo(data_dir.path(), repo_dir.path()).unwrap();
+
+        let conn = open_db(data_dir.path()).unwrap();
+        let repo_id: i64 = conn
+            .query_row("SELECT id FROM code_repos LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+
+        // Verify from_col is populated for edges.
+        let has_col: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM code_edges WHERE repo_id = ?1 AND from_col IS NOT NULL",
+                params![repo_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(has_col, "Expected from_col to be populated on edges");
     }
 
     #[test]
@@ -941,10 +992,7 @@ pub fn create_widget() -> Widget {
             .unwrap();
         assert!(reexport_count > 0, "Expected re_exports edges");
 
-        // Follow re-export chains.
-        let chains_resolved = resolve_reexport_chains(&conn, repo_id).unwrap();
-        // Even if no import through re-export exists in this simple case,
-        // the function should not panic.
-        assert!(chains_resolved == 0 || chains_resolved > 0);
+        // Follow re-export chains — just verify it doesn't panic.
+        let _chains_resolved = resolve_reexport_chains(&conn, repo_id).unwrap();
     }
 }
