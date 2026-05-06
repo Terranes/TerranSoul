@@ -641,6 +641,24 @@ pub fn resource_definitions(app_state: Option<&AppState>) -> Vec<Value> {
             "description": "Entry-point to call-chain execution flows for the default repo.",
             "mimeType": "application/json"
         }),
+        json!({
+            "uri": "terransoul://schema",
+            "name": "Code Index Schema",
+            "description": "Summary of indexed symbol kinds, edge kinds, and counts for the default repo.",
+            "mimeType": "application/json"
+        }),
+        json!({
+            "uri": "terransoul://context",
+            "name": "Repo Context (LLM-ready)",
+            "description": "Full repository context pack: top clusters, key entry points, file tree summary. Suitable for injecting into an LLM system prompt.",
+            "mimeType": "text/plain"
+        }),
+        json!({
+            "uri": "terransoul://setup",
+            "name": "Editor Setup Config",
+            "description": "Ready-to-use VS Code MCP configuration JSON for connecting to this TerranSoul instance.",
+            "mimeType": "application/json"
+        }),
     ]
 }
 
@@ -700,8 +718,246 @@ pub fn read_resource(uri: &str, app_state: Option<&AppState>) -> Result<Value, S
             serde_json::to_value(&processes).map_err(|e| e.to_string())
         }
 
+        "terransoul://schema" => {
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos ORDER BY indexed_at DESC LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(|_| "no repos indexed".to_string())?;
+
+            // Aggregate symbol kinds
+            let mut kind_stmt = conn
+                .prepare(
+                    "SELECT kind, COUNT(*) FROM code_symbols WHERE repo_id = ?1 GROUP BY kind ORDER BY COUNT(*) DESC",
+                )
+                .map_err(|e| e.to_string())?;
+            let symbol_kinds: Vec<Value> = kind_stmt
+                .query_map(rusqlite::params![repo_id], |row| {
+                    Ok(json!({
+                        "kind": row.get::<_, String>(0)?,
+                        "count": row.get::<_, i64>(1)?
+                    }))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            // Aggregate edge kinds
+            let mut edge_stmt = conn
+                .prepare(
+                    "SELECT kind, COUNT(*) FROM code_edges WHERE repo_id = ?1 GROUP BY kind ORDER BY COUNT(*) DESC",
+                )
+                .map_err(|e| e.to_string())?;
+            let edge_kinds: Vec<Value> = edge_stmt
+                .query_map(rusqlite::params![repo_id], |row| {
+                    Ok(json!({
+                        "kind": row.get::<_, String>(0)?,
+                        "count": row.get::<_, i64>(1)?
+                    }))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let total_symbols: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM code_symbols WHERE repo_id = ?1",
+                    rusqlite::params![repo_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+
+            let total_edges: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM code_edges WHERE repo_id = ?1",
+                    rusqlite::params![repo_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+
+            Ok(json!({
+                "repo_id": repo_id,
+                "total_symbols": total_symbols,
+                "total_edges": total_edges,
+                "symbol_kinds": symbol_kinds,
+                "edge_kinds": edge_kinds
+            }))
+        }
+
+        "terransoul://context" => {
+            let repo_id: i64 = conn
+                .query_row(
+                    "SELECT id FROM code_repos ORDER BY indexed_at DESC LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(|_| "no repos indexed".to_string())?;
+
+            let repo_label: String = conn
+                .query_row(
+                    "SELECT label FROM code_repos WHERE id = ?1",
+                    rusqlite::params![repo_id],
+                    |r| r.get(0),
+                )
+                .unwrap_or_else(|_| "unknown".to_string());
+
+            let clusters =
+                crate::coding::processes::list_clusters(&conn, repo_id).unwrap_or_default();
+            let processes =
+                crate::coding::processes::list_processes(&conn, repo_id).unwrap_or_default();
+
+            // Build LLM-ready context text
+            let mut ctx = format!("# Repository: {repo_label}\n\n");
+
+            ctx.push_str("## Functional Clusters\n");
+            for c in &clusters {
+                ctx.push_str(&format!("- **{}** ({} symbols)\n", c.label, c.size));
+            }
+
+            ctx.push_str("\n## Key Execution Flows\n");
+            for p in processes.iter().take(15) {
+                let steps: Vec<&str> = p.steps.iter().take(6).map(|s| s.name.as_str()).collect();
+                ctx.push_str(&format!("- `{}` → {}\n", p.entry_point, steps.join(" → ")));
+            }
+
+            // Top exported symbols
+            let mut export_stmt = conn
+                .prepare(
+                    "SELECT name, kind, file FROM code_symbols \
+                     WHERE repo_id = ?1 AND exported = 1 \
+                     ORDER BY name LIMIT 30",
+                )
+                .map_err(|e| e.to_string())?;
+            let exports: Vec<(String, String, String)> = export_stmt
+                .query_map(rusqlite::params![repo_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            if !exports.is_empty() {
+                ctx.push_str("\n## Public API (exported symbols)\n");
+                for (name, kind, file) in &exports {
+                    ctx.push_str(&format!("- `{name}` ({kind}) in {file}\n"));
+                }
+            }
+
+            Ok(json!({ "context": ctx }))
+        }
+
+        "terransoul://setup" => {
+            let setup = generate_editor_setup(state);
+            Ok(setup)
+        }
+
         _ => Err(format!("unknown resource URI: {uri}")),
     }
+}
+
+// ─── Editor Setup Writer ────────────────────────────────────────────────────
+
+/// Generate VS Code MCP configuration for this TerranSoul instance.
+fn generate_editor_setup(state: &AppState) -> Value {
+    let token_path = state.data_dir.join("mcp-token.txt");
+    let token_hint = if token_path.exists() {
+        "token file exists — use content as bearer token"
+    } else {
+        "token file not found — MCP may not be running"
+    };
+
+    // Detect which port we're likely running on
+    let port = std::env::var("TERRANSOUL_MCP_PORT")
+        .unwrap_or_else(|_| "7421".to_string());
+
+    json!({
+        "description": "VS Code MCP configuration for TerranSoul brain server",
+        "instructions": "Copy the 'servers' object below into your .vscode/mcp.json file.",
+        "token_path": token_path.to_string_lossy(),
+        "token_hint": token_hint,
+        "servers": {
+            "terransoul-brain": {
+                "type": "http",
+                "url": format!("http://127.0.0.1:{port}/mcp"),
+                "headers": {
+                    "Authorization": "Bearer ${input:terransoul-token}"
+                }
+            }
+        },
+        "inputs": [
+            {
+                "id": "terransoul-token",
+                "type": "promptString",
+                "description": "TerranSoul MCP bearer token",
+                "password": true
+            }
+        ],
+        "write_path": ".vscode/mcp.json"
+    })
+}
+
+/// Write the editor setup config to the specified repo path.
+/// Called by the `code_setup_writer` tool if invoked.
+pub fn write_editor_setup(repo_path: &std::path::Path, state: &AppState) -> Result<String, String> {
+    let setup = generate_editor_setup(state);
+
+    let vscode_dir = repo_path.join(".vscode");
+    std::fs::create_dir_all(&vscode_dir)
+        .map_err(|e| format!("cannot create .vscode/: {e}"))?;
+
+    let mcp_path = vscode_dir.join("mcp.json");
+
+    // Read existing config or start fresh
+    let mut config: Value = if mcp_path.exists() {
+        let content = std::fs::read_to_string(&mcp_path)
+            .map_err(|e| format!("cannot read mcp.json: {e}"))?;
+        serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
+    } else {
+        json!({})
+    };
+
+    // Merge our server entry
+    let servers = config
+        .as_object_mut()
+        .ok_or_else(|| "mcp.json root is not an object".to_string())?
+        .entry("servers")
+        .or_insert_with(|| json!({}));
+
+    if let Some(servers_obj) = servers.as_object_mut() {
+        servers_obj.insert(
+            "terransoul-brain".to_string(),
+            setup["servers"]["terransoul-brain"].clone(),
+        );
+    }
+
+    // Merge inputs
+    let inputs = config
+        .as_object_mut()
+        .unwrap()
+        .entry("inputs")
+        .or_insert_with(|| json!([]));
+
+    if let Some(inputs_arr) = inputs.as_array_mut() {
+        let has_token_input = inputs_arr
+            .iter()
+            .any(|i| i["id"].as_str() == Some("terransoul-token"));
+        if !has_token_input {
+            inputs_arr.push(setup["inputs"][0].clone());
+        }
+    }
+
+    let output = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("cannot serialize mcp.json: {e}"))?;
+    std::fs::write(&mcp_path, &output)
+        .map_err(|e| format!("cannot write mcp.json: {e}"))?;
+
+    Ok(format!("Written to {}", mcp_path.display()))
 }
 
 // ─── MCP Prompts ────────────────────────────────────────────────────────────
@@ -727,6 +983,38 @@ pub fn prompt_definitions() -> Vec<Value> {
                 {
                     "name": "repo",
                     "description": "Repository path (optional, defaults to most recently indexed)",
+                    "required": false
+                }
+            ]
+        }),
+        json!({
+            "name": "guided_impact",
+            "description": "Analyze a git diff for risk: maps changed lines to symbols, classifies by blast-radius, and suggests review priorities.",
+            "arguments": [
+                {
+                    "name": "diff_ref",
+                    "description": "Git ref or range (e.g. 'HEAD~1', 'main..feature'). Defaults to 'HEAD~1'.",
+                    "required": false
+                },
+                {
+                    "name": "repo",
+                    "description": "Repository path (optional)",
+                    "required": false
+                }
+            ]
+        }),
+        json!({
+            "name": "explore_cluster",
+            "description": "Deep-dive into a specific functional cluster: its symbols, internal edges, public API, and connected clusters.",
+            "arguments": [
+                {
+                    "name": "cluster",
+                    "description": "Cluster label or ID to explore",
+                    "required": true
+                },
+                {
+                    "name": "repo",
+                    "description": "Repository path (optional)",
                     "required": false
                 }
             ]
@@ -841,6 +1129,146 @@ pub fn get_prompt(name: &str, args: &Value, app_state: Option<&AppState>) -> Res
             }))
         }
 
+        "guided_impact" => {
+            let diff_ref = args["diff_ref"].as_str().unwrap_or("HEAD~1");
+
+            // Get repo path for git operations
+            let repo_path: String = conn
+                .query_row(
+                    "SELECT path FROM code_repos WHERE id = ?1",
+                    rusqlite::params![repo_id],
+                    |r| r.get(0),
+                )
+                .map_err(|e| format!("cannot find repo path: {e}"))?;
+
+            let report = crate::coding::diff_impact::analyze_diff_impact(
+                data_dir,
+                std::path::Path::new(&repo_path),
+                diff_ref,
+                5,
+            )
+            .map_err(|e| e.to_string())?;
+
+            let mut impacts_desc = String::new();
+            for impact in &report.impacts {
+                let risk_label = match impact.risk {
+                    crate::coding::diff_impact::RiskLevel::Critical => "🔴 CRITICAL",
+                    crate::coding::diff_impact::RiskLevel::High => "🟠 HIGH",
+                    crate::coding::diff_impact::RiskLevel::Moderate => "🟡 MODERATE",
+                    crate::coding::diff_impact::RiskLevel::Low => "🟢 LOW",
+                };
+                impacts_desc.push_str(&format!(
+                    "- `{}` ({}) in {} — {risk_label} ({} affected)\n",
+                    impact.symbol.name, impact.symbol.kind, impact.symbol.file, impact.affected_count
+                ));
+            }
+
+            let prompt_text = format!(
+                "Review the impact of the latest code changes (diff ref: `{diff_ref}`).\n\n\
+                 ## Summary\n\
+                 - Files changed: {}\n\
+                 - Symbols directly modified: {}\n\
+                 - Total transitively affected: {}\n\n\
+                 ## Risk Breakdown\n\
+                 - Critical: {}\n\
+                 - High: {}\n\
+                 - Moderate: {}\n\
+                 - Low: {}\n\n\
+                 ## Changed Symbols (by risk):\n{impacts_desc}\n\
+                 Please provide:\n\
+                 1. Which changes carry the most risk and why\n\
+                 2. Recommended review order (highest risk first)\n\
+                 3. Suggested test coverage for the affected paths\n\
+                 4. Any potential breaking changes for downstream consumers",
+                report.files_changed,
+                report.symbols_changed,
+                report.total_affected,
+                report.risk_summary.critical,
+                report.risk_summary.high,
+                report.risk_summary.moderate,
+                report.risk_summary.low,
+            );
+
+            Ok(json!({
+                "messages": [
+                    { "role": "user", "content": { "type": "text", "text": prompt_text } }
+                ]
+            }))
+        }
+
+        "explore_cluster" => {
+            let cluster_label = args["cluster"]
+                .as_str()
+                .ok_or_else(|| "missing required argument: cluster".to_string())?;
+
+            let clusters =
+                crate::coding::processes::list_clusters(&conn, repo_id).unwrap_or_default();
+
+            let target = clusters
+                .iter()
+                .find(|c| c.label.eq_ignore_ascii_case(cluster_label) || c.id.to_string() == cluster_label)
+                .ok_or_else(|| format!("cluster not found: {cluster_label}"))?;
+
+            // Get symbols in this cluster via cluster_members join
+            let mut sym_stmt = conn
+                .prepare(
+                    "SELECT s.name, s.kind, s.file, s.line, s.exported \
+                     FROM code_symbols s \
+                     JOIN code_cluster_members m ON m.symbol_id = s.id AND m.repo_id = s.repo_id \
+                     WHERE s.repo_id = ?1 AND m.cluster_id = ?2 \
+                     ORDER BY s.file, s.line",
+                )
+                .map_err(|e| e.to_string())?;
+            let symbols: Vec<(String, String, String, u32, bool)> = sym_stmt
+                .query_map(rusqlite::params![repo_id, target.id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, u32>(3)?,
+                        row.get::<_, bool>(4)?,
+                    ))
+                })
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let public_api: Vec<_> = symbols.iter().filter(|s| s.4).collect();
+            let internal: Vec<_> = symbols.iter().filter(|s| !s.4).collect();
+
+            let mut prompt_text = format!(
+                "Explore the **{}** cluster ({} symbols total).\n\n",
+                target.label, target.size
+            );
+
+            prompt_text.push_str("## Public API (exported):\n");
+            for (name, kind, file, line, _) in &public_api {
+                prompt_text.push_str(&format!("- `{name}` ({kind}) — {file}:{line}\n"));
+            }
+
+            prompt_text.push_str(&format!("\n## Internal ({} symbols):\n", internal.len()));
+            for (name, kind, file, line, _) in internal.iter().take(20) {
+                prompt_text.push_str(&format!("- `{name}` ({kind}) — {file}:{line}\n"));
+            }
+            if internal.len() > 20 {
+                prompt_text.push_str(&format!("  ... and {} more\n", internal.len() - 20));
+            }
+
+            prompt_text.push_str(
+                "\nPlease analyze:\n\
+                 1. What is this cluster's single responsibility?\n\
+                 2. Is the public API surface appropriate (too wide/narrow)?\n\
+                 3. Are there any symbols that seem misplaced (should belong elsewhere)?\n\
+                 4. What are the key data flows within this cluster?",
+            );
+
+            Ok(json!({
+                "messages": [
+                    { "role": "user", "content": { "type": "text", "text": prompt_text } }
+                ]
+            }))
+        }
+
         _ => Err(format!("unknown prompt: {name}")),
     }
 }
@@ -924,25 +1352,28 @@ mod tests {
     }
 
     #[test]
-    fn resource_definitions_has_3_entries() {
+    fn resource_definitions_has_6_entries() {
         let defs = resource_definitions(None);
-        assert_eq!(defs.len(), 3);
+        assert_eq!(defs.len(), 6);
         let uris: Vec<&str> = defs.iter().map(|d| d["uri"].as_str().unwrap()).collect();
         assert_eq!(
             uris,
             [
                 "terransoul://repos",
                 "terransoul://clusters",
-                "terransoul://processes"
+                "terransoul://processes",
+                "terransoul://schema",
+                "terransoul://context",
+                "terransoul://setup",
             ]
         );
     }
 
     #[test]
-    fn prompt_definitions_has_2_entries() {
+    fn prompt_definitions_has_4_entries() {
         let defs = prompt_definitions();
-        assert_eq!(defs.len(), 2);
+        assert_eq!(defs.len(), 4);
         let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-        assert_eq!(names, ["detect_impact", "generate_map"]);
+        assert_eq!(names, ["detect_impact", "generate_map", "guided_impact", "explore_cluster"]);
     }
 }

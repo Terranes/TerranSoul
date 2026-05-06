@@ -33,7 +33,7 @@
 
 ## Next Chunk
 
-**Chunk 37.10 — MCP resources, prompts, and setup writer** (Phase 37). See the Phase 37 table below.
+**Chunk 37.12 — Generated repo skills + code wiki** (Phase 37). See the Phase 37 table below.
 
 ---
 
@@ -47,8 +47,8 @@
 
 | ID | Status | Title | Goal |
 |---|---|---|---|
-| 37.10 | not-started | MCP resources, prompts, and setup writer | Expose `terransoul://repos`, repo context, clusters, processes, schema/resources, guided impact/map prompts, and a local setup writer for editors. |
-| 37.11 | not-started | Native code-graph workbench UI | Build a dense Vue workbench with graph canvas, file tree, code references, chat/tool-call visibility, citation-to-node focus, process diagrams, repo switcher, status bar, and blast-radius highlights. |
+| 37.12 | not-started | Generated repo skills + code wiki | Generate reviewable neutral skill/context docs and wiki pages from the native graph using TerranSoul's summarization pipeline. |
+| 37.13 | not-started | Multi-repo groups and contracts | Add cross-repo grouping, contract extraction, group status, and cross-service query surfaces after single-repo parity is stable. |
 | 37.12 | not-started | Generated repo skills + code wiki | Generate reviewable neutral skill/context docs and wiki pages from the native graph using TerranSoul's summarization pipeline. |
 | 37.13 | not-started | Multi-repo groups and contracts | Add cross-repo grouping, contract extraction, group status, and cross-service query surfaces after single-repo parity is stable. |
 

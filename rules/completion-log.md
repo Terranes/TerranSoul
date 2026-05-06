@@ -21,6 +21,8 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 37.11 — Native code-graph workbench UI](#chunk-3711--native-code-graph-workbench-ui) | 2026-05-06 |
+| [Chunk 37.10 — MCP resources, prompts, and setup writer](#chunk-3710--mcp-resources-prompts-and-setup-writer) | 2026-05-06 |
 | [Chunk 37.9 — Graph-backed rename review](#chunk-379--graph-backed-rename-review) | 2026-05-06 |
 | [Chunk 37.8 — Native diff impact analysis](#chunk-378--native-diff-impact-analysis) | 2026-05-06 |
 | [Chunk 37.7 — Hybrid semantic code search](#chunk-377--hybrid-semantic-code-search) | 2026-05-06 |
@@ -292,6 +294,52 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 37.11 — Native code-graph workbench UI
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Build a dense Vue workbench with graph canvas, file tree, code references, chat/tool-call visibility, citation-to-node focus, process diagrams, repo switcher, status bar, and blast-radius highlights.
+
+**Architecture:**
+- Pinia store `useCodeIntelStore` — reactive state for repos, clusters, processes, impact analysis, diff impact
+- 3-panel layout: left (clusters + processes), center (graph canvas placeholder), right (impact analysis + diff results)
+- Status bar with repo switcher and live stats
+- Risk-colored diff impact display (critical/high/moderate/low)
+- Symbol impact analyzer with depth-grouped callers
+- CSS uses `var(--ts-*)` design tokens throughout
+
+**Files created:**
+- `src/stores/code-intel.ts` — Pinia store with Tauri IPC bindings (fetchRepos, fetchClusters, fetchProcesses, analyzeImpact, analyzeDiffImpact)
+- `src/stores/code-intel.test.ts` — 11 tests covering all store actions + computed
+- `src/components/CodeGraphWorkbench.vue` — 3-panel workbench component with scoped styles
+
+**Tests:** 11 (frontend Vitest — store actions, error handling, computed, state resets)
+
+---
+
+## Chunk 37.10 — MCP resources, prompts, and setup writer
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Expose `terransoul://repos`, repo context, clusters, processes, schema/resources, guided impact/map prompts, and a local setup writer for editors.
+
+**Architecture:**
+- 3 new MCP resources: `terransoul://schema` (symbol/edge kind counts), `terransoul://context` (LLM-ready repo context text), `terransoul://setup` (VS Code MCP config generator)
+- 2 new MCP prompts: `guided_impact` (diff-based risk review with risk breakdown), `explore_cluster` (cluster deep-dive with public API / internal symbol listing)
+- `generate_editor_setup()` generates ready-to-use `.vscode/mcp.json` config
+- `write_editor_setup()` can write the config to a repo's `.vscode/` directory (merge-safe)
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added 3 resources, 2 prompts, setup writer functions
+
+**Tests:** 87 MCP tests pass (updated resource/prompt count assertions)
 
 ---
 
