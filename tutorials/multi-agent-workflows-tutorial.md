@@ -12,7 +12,7 @@ scheduling recurring runs, and a worked self-improve example triggered
 from a chat suggestion.
 
 For the 2026-05 backend/system/UI research plan behind the next runtime layer,
-see [multi-agent-orchestration-analysis-2026.md](multi-agent-orchestration-analysis-2026.md).
+see [multi-agent-orchestration-analysis-2026.md](../docs/multi-agent-orchestration-analysis-2026.md).
 The current production surface is the YAML plan + DAG execution model described
 here; the next step is live sub-agent lineage, bounded swarm joins, richer
 queue recovery, and an operations workbench UI.
@@ -361,13 +361,13 @@ run, and observe its own workflows with zero UI involvement.
 
 ## See also
 
-- [docs/coding-workflow-design.md](coding-workflow-design.md) — full
+- [docs/coding-workflow-design.md](../docs/coding-workflow-design.md) — full
   design context, including DAG runner internals (§3.9).
-- [docs/multi-agent-orchestration-analysis-2026.md](multi-agent-orchestration-analysis-2026.md)
+- [docs/multi-agent-orchestration-analysis-2026.md](../docs/multi-agent-orchestration-analysis-2026.md)
   — 2026-05 research synthesis and adoption plan for live orchestration.
 - [rules/architecture-rules.md](../rules/architecture-rules.md) — how
   this fits with the orchestrator and brain.
-- [docs/AI-coding-integrations.md](AI-coding-integrations.md) — using
+- [docs/AI-coding-integrations.md](../docs/AI-coding-integrations.md) — using
   workflow plans with external coding assistants via MCP.
 - `src-tauri/src/coding/multi_agent.rs` — Rust source of truth (data
   model + scheduling).

@@ -7,7 +7,7 @@
  * auto-install → brain configured → attach documents → ingestion → memory →
  * RAG-grounded answers → multilingual RAG → skill tree → final state.
  *
- * Screenshots are captured at each stage for BRAIN-COMPLEX-EXAMPLE-LOCAL-LM.md.
+ * Screenshots are captured at each stage for tutorials/brain-rag-local-lm-tutorial.md.
  *
  * Sections:
  *  01. Fresh launch

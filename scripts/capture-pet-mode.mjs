@@ -1,5 +1,5 @@
 /**
- * capture-pet-mode.mjs — Capture pet mode screenshot for BRAIN-COMPLEX-EXAMPLE.md
+ * capture-pet-mode.mjs — Capture pet mode screenshot for tutorials/brain-rag-setup-tutorial.md
  *
  * Usage: node scripts/capture-pet-mode.mjs
  * Requires: dev server running on localhost:1420

@@ -2,8 +2,8 @@
 
 > **TerranSoul v0.1** · Last updated: 2026-04-27
 >
-> Free Cloud version: [`BRAIN-COMPLEX-EXAMPLE.md`](BRAIN-COMPLEX-EXAMPLE.md) ·
-> Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
+> Free Cloud version: [`brain-rag-setup-tutorial.md`](brain-rag-setup-tutorial.md) ·
+> Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
 > Architecture doc: [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)
 
 End-to-end walkthrough: Alice wants to learn Vietnamese law using her

@@ -49,8 +49,6 @@
 |---|---|---|---|
 | 37.12 | not-started | Generated repo skills + code wiki | Generate reviewable neutral skill/context docs and wiki pages from the native graph using TerranSoul's summarization pipeline. |
 | 37.13 | not-started | Multi-repo groups and contracts | Add cross-repo grouping, contract extraction, group status, and cross-service query surfaces after single-repo parity is stable. |
-| 37.12 | not-started | Generated repo skills + code wiki | Generate reviewable neutral skill/context docs and wiki pages from the native graph using TerranSoul's summarization pipeline. |
-| 37.13 | not-started | Multi-repo groups and contracts | Add cross-repo grouping, contract extraction, group status, and cross-service query surfaces after single-repo parity is stable. |
 
 ---
 

@@ -1189,7 +1189,7 @@ fn openclaw_manifest() -> PluginManifest {
         },
         system_requirements: None,
         api_version: 1,
-        homepage: Some("instructions/OPENCLAW-EXAMPLE.md".into()),
+        homepage: Some("tutorials/openclaw-plugin-tutorial.md".into()),
         license: Some("MIT".into()),
         author: Some("TerranSoul / OpenClaw Community".into()),
         icon: Some("🧰".into()),

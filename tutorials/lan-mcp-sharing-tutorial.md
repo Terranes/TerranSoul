@@ -52,8 +52,9 @@ example, she stores notes such as:
   social insurance.
 
 She can use the normal Memory/Brain ingestion flow, chat-based teach flow, or an
-approved MCP `brain_ingest_url` call. Keep source URLs and tags clear, for
-example:
+approved MCP `brain_ingest_url` call. For the full brain setup walkthrough, see
+[brain-rag-setup-tutorial.md](brain-rag-setup-tutorial.md). Keep source URLs and
+tags clear, for example:
 
 ```text
 tags: vietnamese-law,labor,alice-notes

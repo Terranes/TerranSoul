@@ -1300,7 +1300,7 @@ Code: [`src-tauri/src/persona/charisma.rs`](../src-tauri/src/persona/charisma.rs
 [`src-tauri/src/commands/charisma.rs`](../src-tauri/src/commands/charisma.rs),
 [`src/stores/charisma.ts`](../src/stores/charisma.ts),
 [`src/components/CharismaPanel.vue`](../src/components/CharismaPanel.vue).
-End-user tutorial: [`docs/charisma-teaching-tutorial.md`](charisma-teaching-tutorial.md).
+End-user tutorial: [`tutorials/charisma-teaching-tutorial.md`](../tutorials/charisma-teaching-tutorial.md).
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **TerranSoul v0.1** · Last updated: 2026-04-26
 >
-> Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
+> Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
 > Architecture doc: [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)
 
 End-to-end walkthrough: Alice wants to learn Vietnamese law using her

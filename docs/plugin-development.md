@@ -553,7 +553,7 @@ Best practice for real OpenClaw deployments:
 - Offer a memory-save action for useful tool results and include source/tool
   provenance.
 
-See [`instructions/OPENCLAW-EXAMPLE.md`](../instructions/OPENCLAW-EXAMPLE.md)
+See [`tutorials/openclaw-plugin-tutorial.md`](../tutorials/openclaw-plugin-tutorial.md)
 for the detailed usage and future chunk plan.
 
 ### Code Analyzer

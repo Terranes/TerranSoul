@@ -348,7 +348,7 @@ authenticate to the host MCP HTTP endpoint with the shared bearer token or use
 the restricted public read-only MCP surface with no token.
 
 Use the illustrated tutorial for the end-to-end host/client flow:
-[LAN MCP sharing tutorial](lan-mcp-sharing-tutorial.md).
+[LAN MCP sharing tutorial](../tutorials/lan-mcp-sharing-tutorial.md).
 
 Important boundaries:
 

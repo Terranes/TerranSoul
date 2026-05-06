@@ -439,7 +439,7 @@ These overlap with — but are **orthogonal to** — TerranSoul's existing
                        earnings    has two     installs
                        were $X"    moons"      to ~/.cargo"
    preference       —           ✓  "Dark     ◇  "Always
-                                   mode +      run cargo
+                                   mode +      run cargop
                                    serif"      fmt before
                                                push"
    context          ✓  "User    ◇  "User    ◇  "Use
@@ -3007,7 +3007,7 @@ instead of trying to spawn a third-party sidecar.
   the read-only brain MCP surface (`initialize`, `ping`, `tools/list`, and the
   read-only brain tools) without a token; write tools, code-intelligence tools,
   `/status`, and hook endpoints remain authenticated. See the illustrated
-  [LAN MCP sharing tutorial](lan-mcp-sharing-tutorial.md).
+  [LAN MCP sharing tutorial](../tutorials/lan-mcp-sharing-tutorial.md).
 - **Transport-scoped write access** — the gateway default stays read-only, but
   authenticated HTTP MCP and trusted stdio MCP use `GatewayCaps::READ_WRITE` so
   `brain_ingest_url` can persist approved agent knowledge.
@@ -3060,7 +3060,7 @@ and bearer token. Discovery uses UDP `7424`; retrieval uses authenticated MCP
 HTTP search calls on the host MCP port.
 
 The intended UX is documented with the Alice Vietnamese law notes scenario in
-[docs/lan-mcp-sharing-tutorial.md](lan-mcp-sharing-tutorial.md). That tutorial
+[tutorials/lan-mcp-sharing-tutorial.md](../tutorials/lan-mcp-sharing-tutorial.md). That tutorial
 is the user-facing source for firewall notes, token handling, and remote search
 expectations.
 
@@ -3242,8 +3242,8 @@ tests asserting that each toggle actually short-circuits its gate.
 ## Related Documents
 
 - [AI-coding-integrations.md](../docs/AI-coding-integrations.md) — Full MCP / gRPC / A2A integration design
-- [BRAIN-COMPLEX-EXAMPLE.md](../instructions/BRAIN-COMPLEX-EXAMPLE.md) — Quest-guided setup walkthrough (Free API, with screenshots)
-- [BRAIN-COMPLEX-EXAMPLE-LOCAL-LM.md](../instructions/BRAIN-COMPLEX-EXAMPLE-LOCAL-LM.md) — Local LM Studio variant walkthrough (with screenshots)
+- [brain-rag-setup-tutorial.md](../tutorials/brain-rag-setup-tutorial.md) — Quest-guided setup walkthrough (Free API, with screenshots)
+- [brain-rag-local-lm-tutorial.md](../tutorials/brain-rag-local-lm-tutorial.md) — Local LM Studio variant walkthrough (with screenshots)
 - [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) — Technical reference (schema, RAG pipeline, comparisons)
 - [architecture-rules.md](../rules/architecture-rules.md) — Project architecture constraints
 - [coding-standards.md](../rules/coding-standards.md) — Code style and library policy

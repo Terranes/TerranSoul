@@ -20,7 +20,7 @@
 //!    the VRM character's expression reflects the bridge's outcome — exactly
 //!    like any first-party agent.
 //!
-//! See `instructions/OPENCLAW-EXAMPLE.md` for the end-to-end walkthrough.
+//! See `tutorials/openclaw-plugin-tutorial.md` for the end-to-end walkthrough.
 
 use async_trait::async_trait;
 use std::collections::HashSet;

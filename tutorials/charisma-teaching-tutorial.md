@@ -372,13 +372,13 @@ file, atomic write, schema-versioned).
 
 ## 10. See also
 
-- [docs/persona-design.md](persona-design.md) — full persona system
+- [docs/persona-design.md](../docs/persona-design.md) — full persona system
   design (§ 2 traits, § 5 camera consent, § 8 learned artefacts).
-- [docs/persona-pack-schema.md](persona-pack-schema.md) — pack
+- [docs/persona-pack-schema.md](../docs/persona-pack-schema.md) — pack
   envelope format for sharing taught artefacts across machines.
-- [docs/multi-agent-workflows-tutorial.md](multi-agent-workflows-tutorial.md)
+- [tutorials/multi-agent-workflows-tutorial.md](multi-agent-workflows-tutorial.md)
   — the workflow runner that promotion plans use.
-- [docs/coding-workflow-design.md](coding-workflow-design.md) §3.10 —
+- [docs/coding-workflow-design.md](../docs/coding-workflow-design.md) §3.10 —
   Charisma promotion as a workflow class.
 - `rules/architecture-rules.md` — the brain documentation sync rule
   this chunk respects (Charisma does not touch RAG / cognitive-kind

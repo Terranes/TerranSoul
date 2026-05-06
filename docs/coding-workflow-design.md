@@ -429,7 +429,7 @@ Planners avoid repeated mistakes via RAG.
 the brain MCP server on `127.0.0.1:7421`, so external coding assistants
 (Claude Code, Aider) can build and observe workflows programmatically.
 
-See [multi-agent-workflows-tutorial.md](multi-agent-workflows-tutorial.md)
+See [multi-agent-workflows-tutorial.md](../tutorials/multi-agent-workflows-tutorial.md)
 for end-to-end usage including a self-improve worked example.
 
 ### 3.10 2026 multi-agent orchestration research
