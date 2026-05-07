@@ -18,7 +18,7 @@ pub const MAX_DEPTH: u8 = 3;
 pub const MAX_FAN_OUT: usize = 50;
 
 /// Default LRU cache capacity (number of unique traversal results cached).
-pub const DEFAULT_CACHE_CAPACITY: usize = 256;
+pub const DEFAULT_CACHE_CAPACITY: usize = 64;
 
 /// Cache key for a KG traversal result.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

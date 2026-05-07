@@ -12,10 +12,29 @@
  *
  * The file content becomes the prompt injected into the LLM conversation.
  * First line starting with `#` is used as the description (optional).
+ *
+ * ## Mode gating
+ *
+ * Commands can specify a `mode` in YAML frontmatter to restrict when
+ * they appear in the command picker:
+ *
+ * ```yaml
+ * ---
+ * mode: coding
+ * ---
+ * ```
+ *
+ * Supported modes:
+ * - `all` (default) — always visible
+ * - `coding` — only visible when coding workflow / self-improve is active
+ * - `companion` — only visible in normal companion chat mode
  */
 
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+
+/** Mode restriction for prompt commands. */
+export type PromptMode = 'all' | 'coding' | 'companion';
 
 export interface PromptCommand {
   /** Slash command name (without `/`). Derived from filename. */
@@ -26,11 +45,25 @@ export interface PromptCommand {
   content: string;
   /** Source file path (for display/debugging). */
   source: string;
+  /** Mode restriction — controls when this command appears. */
+  mode: PromptMode;
 }
 
 export const usePromptCommandsStore = defineStore('prompt-commands', () => {
   const commands = ref<PromptCommand[]>([]);
   const loaded = ref(false);
+  /** Whether coding workflow mode is currently active. */
+  const codingModeActive = ref(false);
+
+  /** Commands filtered by the current app mode. */
+  const activeCommands = computed<PromptCommand[]>(() => {
+    return commands.value.filter((c) => {
+      if (c.mode === 'all') return true;
+      if (c.mode === 'coding') return codingModeActive.value;
+      if (c.mode === 'companion') return !codingModeActive.value;
+      return true;
+    });
+  });
 
   /** Load prompt commands from all known directories. */
   async function loadCommands() {
@@ -38,7 +71,7 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
 
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const promptFiles = await invoke<Array<{ name: string; content: string; path: string }>>(
+      const promptFiles = await invoke<Array<{ name: string; content: string; path: string; mode: PromptMode }>>(
         'list_prompt_commands',
       );
       for (const file of promptFiles) {
@@ -49,7 +82,16 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
           description,
           content: file.content,
           source: file.path,
+          mode: file.mode ?? 'all',
         });
+      }
+
+      // Sync coding mode state from self-improve settings.
+      try {
+        const settings = await invoke<{ enabled: boolean } | null>('get_self_improve_settings');
+        codingModeActive.value = settings?.enabled ?? false;
+      } catch {
+        // Command unavailable — keep current state.
       }
     } catch {
       // Tauri not available or command not registered — ignore.
@@ -59,26 +101,31 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
     loaded.value = true;
   }
 
-  /** Check if a slash command name matches a prompt command. */
-  function hasCommand(name: string): boolean {
-    return commands.value.some((c) => c.name === name);
+  /** Update coding mode state (call when self-improve or coding workflow toggles). */
+  function setCodingMode(active: boolean) {
+    codingModeActive.value = active;
   }
 
-  /** Get the prompt content for a given command name. */
+  /** Check if a slash command name matches an active prompt command. */
+  function hasCommand(name: string): boolean {
+    return activeCommands.value.some((c) => c.name === name);
+  }
+
+  /** Get the prompt content for a given command name (only if active). */
   function getPrompt(name: string): string | null {
-    const cmd = commands.value.find((c) => c.name === name);
+    const cmd = activeCommands.value.find((c) => c.name === name);
     return cmd?.content ?? null;
   }
 
-  /** Get all available command names (for autocomplete/help). */
+  /** Get all available command names for the current mode (for autocomplete/help). */
   function availableNames(): string[] {
-    return commands.value.map((c) => c.name);
+    return activeCommands.value.map((c) => c.name);
   }
 
   /** Save (create or update) a prompt command. */
   async function saveCommand(name: string, content: string): Promise<void> {
     const { invoke } = await import('@tauri-apps/api/core');
-    const file = await invoke<{ name: string; content: string; path: string }>(
+    const file = await invoke<{ name: string; content: string; path: string; mode: PromptMode }>(
       'save_prompt_command',
       { name, content },
     );
@@ -89,6 +136,7 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
       description,
       content: file.content,
       source: file.path,
+      mode: file.mode ?? 'all',
     };
     if (idx >= 0) {
       commands.value[idx] = entry;
@@ -107,8 +155,11 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
 
   return {
     commands,
+    activeCommands,
+    codingModeActive,
     loaded,
     loadCommands,
+    setCodingMode,
     hasCommand,
     getPrompt,
     availableNames,

@@ -257,6 +257,7 @@ pub async fn start_server_full(
             state: state.clone(),
         }),
     };
+    let tauri_app_handle = app.clone();
     let activity = activity::McpActivityReporter::new(state.clone(), app);
     activity.startup(format!("Starting MCP brain server on port {port}."));
     let gw = Arc::new(AppStateGateway::with_ingest(state.clone(), ingest_sink))
@@ -322,6 +323,8 @@ pub async fn start_server_full(
         app_state: Some(state),
         staleness_tracker: Arc::new(tokio::sync::Mutex::new(hooks::IndexStalenessTracker::new())),
         compliance: compliance_gate::new_compliance_state(),
+        shutdown_tx: Some(shutdown_tx.clone()),
+        tauri_app_handle,
     };
     let app = router::build(router_state);
 

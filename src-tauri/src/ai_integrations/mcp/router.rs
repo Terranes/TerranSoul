@@ -16,7 +16,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 use crate::ai_integrations::gateway::*;
 use crate::AppState;
@@ -43,6 +43,10 @@ pub struct McpRouterState {
     pub staleness_tracker: Arc<Mutex<IndexStalenessTracker>>,
     /// Per-session compliance tracking — enforces MCP preflight + milestone hygiene.
     pub compliance: ComplianceState,
+    /// Shutdown sender — when set, allows `POST /shutdown` to gracefully stop the server.
+    pub shutdown_tx: Option<watch::Sender<bool>>,
+    /// Tauri app handle for graceful process exit (tray icon cleanup).
+    pub tauri_app_handle: Option<tauri::AppHandle>,
 }
 
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
@@ -226,6 +230,7 @@ pub fn build(state: McpRouterState) -> Router {
         .route("/hooks/pre_tool", post(handle_pre_tool_hook))
         .route("/hooks/post_tool", post(handle_post_tool_hook))
         .route("/status", get(handle_status))
+        .route("/shutdown", post(handle_shutdown))
         .with_state(state)
 }
 
@@ -495,6 +500,44 @@ async fn handle_post_tool_hook(
     let mut tracker = state.staleness_tracker.lock().await;
     let resp = super::hooks::handle_post_tool_use(&req, &mut tracker, state.app_state.as_ref());
     (StatusCode::OK, Json(json!(resp))).into_response()
+}
+
+// ─── Shutdown endpoint (auth required) ──────────────────────────────────────
+
+/// `POST /shutdown` — bearer-authenticated graceful shutdown.
+///
+/// Signals the MCP server to stop, allowing Tauri to clean up resources
+/// (including the system tray icon) before the process exits. Used by
+/// the app (dev/release) to kill the headless MCP service cleanly when
+/// it starts up.
+async fn handle_shutdown(State(state): State<McpRouterState>, headers: HeaderMap) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    if let Some(ref tx) = state.shutdown_tx {
+        let _ = tx.send(true);
+        eprintln!("[mcp] graceful shutdown requested via POST /shutdown");
+
+        // If we have access to the Tauri app handle, exit the process
+        // cleanly so the tray icon is removed by the OS.
+        if let Some(ref handle) = state.tauri_app_handle {
+            let handle = handle.clone();
+            // Spawn so the HTTP response can be sent before exit.
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                handle.exit(0);
+            });
+        } else {
+            // No Tauri handle — force process exit after response is sent.
+            tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                std::process::exit(0);
+            });
+        }
+    }
+
+    (StatusCode::OK, Json(json!({"status": "shutting_down"}))).into_response()
 }
 
 /// Validate the `Authorization: Bearer <token>` header.

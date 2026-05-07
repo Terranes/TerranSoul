@@ -3,6 +3,22 @@
 //!
 //! Scans multiple directories for `.md` files and returns their names
 //! and content so the frontend can register them as slash commands.
+//!
+//! ## Mode gating
+//!
+//! Commands can specify a `mode` in YAML frontmatter to restrict when
+//! they appear in the command picker:
+//!
+//! ```yaml
+//! ---
+//! mode: coding
+//! ---
+//! ```
+//!
+//! Supported modes:
+//! - `all` (default) — always visible
+//! - `coding` — only visible when coding workflow / self-improve is active
+//! - `companion` — only visible when in normal companion chat mode
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -10,11 +26,70 @@ use tauri::State;
 
 use crate::AppState;
 
+/// Mode restriction for a prompt command.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptMode {
+    /// Always available (default when no frontmatter is specified).
+    #[default]
+    All,
+    /// Only available when coding workflow / self-improve is active.
+    Coding,
+    /// Only available in normal companion chat mode.
+    Companion,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptFile {
     pub name: String,
     pub content: String,
     pub path: String,
+    /// Mode restriction parsed from YAML frontmatter.
+    pub mode: PromptMode,
+}
+
+/// Parse YAML frontmatter from a prompt file's content.
+///
+/// Expects the standard `---` delimited block at the top of the file.
+/// Returns the extracted `PromptMode` and the content body (after the
+/// closing `---`).
+fn parse_frontmatter(content: &str) -> (PromptMode, String) {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return (PromptMode::All, content.to_string());
+    }
+
+    // Find the closing `---` (skip the first line).
+    let after_open = &trimmed[3..];
+    let rest = after_open.trim_start_matches(['\r', '\n']);
+    if let Some(close_idx) = rest.find("\n---") {
+        let frontmatter_block = &rest[..close_idx];
+        let body_start = close_idx + 4; // "\n---"
+        let body = rest[body_start..].trim_start_matches(['\r', '\n']);
+
+        // Parse the `mode:` field from frontmatter.
+        let mode = parse_mode_from_frontmatter(frontmatter_block);
+        (mode, body.to_string())
+    } else {
+        // No closing delimiter — treat entire content as body.
+        (PromptMode::All, content.to_string())
+    }
+}
+
+/// Extract the `mode` value from raw frontmatter text.
+fn parse_mode_from_frontmatter(frontmatter: &str) -> PromptMode {
+    for line in frontmatter.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("mode:") {
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            return match value.to_lowercase().as_str() {
+                "coding" => PromptMode::Coding,
+                "companion" => PromptMode::Companion,
+                _ => PromptMode::All,
+            };
+        }
+    }
+    PromptMode::All
 }
 
 /// Scan a directory for `.md` files and collect them as prompt commands.
@@ -47,10 +122,12 @@ fn scan_prompt_dir(dir: &Path) -> Vec<PromptFile> {
             continue;
         }
         if let Ok(content) = std::fs::read_to_string(&path) {
+            let (mode, body) = parse_frontmatter(&content);
             results.push(PromptFile {
                 name,
-                content,
+                content: body,
                 path: path.display().to_string(),
+                mode,
             });
         }
     }
@@ -117,10 +194,12 @@ pub async fn save_prompt_command(
     let path = dir.join(format!("{name}.md"));
     std::fs::write(&path, &content)
         .map_err(|e| format!("Failed to write prompt file: {e}"))?;
+    let (mode, body) = parse_frontmatter(&content);
     Ok(PromptFile {
         name,
-        content,
+        content: body,
         path: path.display().to_string(),
+        mode,
     })
 }
 
@@ -237,5 +316,60 @@ mod tests {
         assert!(validate_prompt_name("path/traversal").is_err());
         assert!(validate_prompt_name("../escape").is_err());
         assert!(validate_prompt_name(&"a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn parse_frontmatter_extracts_coding_mode() {
+        let content = "---\nmode: coding\n---\n# Setup\nDo setup things.";
+        let (mode, body) = parse_frontmatter(content);
+        assert_eq!(mode, PromptMode::Coding);
+        assert!(body.starts_with("# Setup"));
+    }
+
+    #[test]
+    fn parse_frontmatter_extracts_companion_mode() {
+        let content = "---\nmode: companion\n---\nHello world.";
+        let (mode, body) = parse_frontmatter(content);
+        assert_eq!(mode, PromptMode::Companion);
+        assert_eq!(body, "Hello world.");
+    }
+
+    #[test]
+    fn parse_frontmatter_defaults_to_all_when_missing() {
+        let content = "# No frontmatter\nJust a prompt.";
+        let (mode, body) = parse_frontmatter(content);
+        assert_eq!(mode, PromptMode::All);
+        assert_eq!(body, content);
+    }
+
+    #[test]
+    fn parse_frontmatter_defaults_to_all_when_no_mode_field() {
+        let content = "---\ntitle: My Prompt\n---\nBody here.";
+        let (mode, body) = parse_frontmatter(content);
+        assert_eq!(mode, PromptMode::All);
+        assert_eq!(body, "Body here.");
+    }
+
+    #[test]
+    fn scan_prompt_dir_parses_mode_from_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        fs::write(
+            dir.join("coding-cmd.md"),
+            "---\nmode: coding\n---\n# Coding\nDo coding.",
+        )
+        .unwrap();
+        fs::write(dir.join("general.md"), "# General\nAlways available.").unwrap();
+
+        let results = scan_prompt_dir(dir);
+        assert_eq!(results.len(), 2);
+
+        let coding = results.iter().find(|f| f.name == "coding-cmd").unwrap();
+        assert_eq!(coding.mode, PromptMode::Coding);
+        assert!(coding.content.starts_with("# Coding"));
+
+        let general = results.iter().find(|f| f.name == "general").unwrap();
+        assert_eq!(general.mode, PromptMode::All);
     }
 }

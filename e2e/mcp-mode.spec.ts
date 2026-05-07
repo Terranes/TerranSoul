@@ -14,7 +14,6 @@ import {
   collectConsoleErrors,
   assertNoCrashErrors,
   waitForAppReady,
-  TIMEOUTS,
 } from './helpers';
 
 /**
@@ -38,7 +37,6 @@ async function enableMcpMode(page: import('@playwright/test').Page) {
 
 test.describe('MCP Mode UI', () => {
   test.beforeEach(async ({ page }) => {
-    const errors = collectConsoleErrors(page);
     await page.goto('/');
     await waitForAppReady(page);
     await enableMcpMode(page);

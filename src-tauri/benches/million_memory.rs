@@ -1,6 +1,6 @@
 //! Million-memory retrieval and capacity benchmark (Chunk 38.5).
 //!
-//! Smoke run (10k vectors, CI-friendly):
+//! Smoke run (100 vectors, CI-friendly):
 //! `cargo bench --bench million_memory`
 //!
 //! Full run (1M vectors, local/nightly):
@@ -28,7 +28,7 @@ use terransoul_lib::memory::store::{MemoryStore, NewMemory};
 /// Dimensionality matching TerranSoul's default nomic-embed-text.
 const DIM: usize = 768;
 
-const DEFAULT_SMOKE_SCALE: usize = 10_000;
+const DEFAULT_SMOKE_SCALE: usize = 100;
 const ONE_MILLION: usize = 1_000_000;
 const QUERY_COUNT: usize = 1_000;
 const TOP_K: usize = 10;

@@ -19,7 +19,7 @@ use std::time::Instant;
 // ---------------------------------------------------------------------------
 
 /// Default cache capacity (number of unique queries cached).
-pub const DEFAULT_CAPACITY: usize = 128;
+pub const DEFAULT_CAPACITY: usize = 64;
 
 /// Default TTL in milliseconds (30 seconds).
 pub const DEFAULT_TTL_MS: u64 = 30_000;

@@ -116,7 +116,7 @@ const filteredSuggestions = computed(() => {
   const text = inputText.value.slice(1).toLowerCase();
   const allCommands = [
     ...builtInCommands,
-    ...promptCommandsStore.commands.map((c) => ({ name: c.name, description: c.description })),
+    ...promptCommandsStore.activeCommands.map((c) => ({ name: c.name, description: c.description })),
   ];
   if (!text) return allCommands;
   return allCommands.filter((c) => c.name.toLowerCase().startsWith(text));

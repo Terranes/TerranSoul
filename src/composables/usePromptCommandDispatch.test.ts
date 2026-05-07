@@ -26,6 +26,7 @@ describe('usePromptCommandDispatch', () => {
         description: 'A test command',
         content: '# Test\nDo the thing with {{input}}',
         source: '/fake/path/test-cmd.md',
+        mode: 'all',
       },
     ];
 
@@ -45,6 +46,7 @@ describe('usePromptCommandDispatch', () => {
         description: 'Daily prompt',
         content: 'Today is {{date}}',
         source: '/fake/daily.md',
+        mode: 'all',
       },
     ];
 
@@ -63,6 +65,7 @@ describe('usePromptCommandDispatch', () => {
         description: 'Reflect on session',
         content: 'Reflect on the conversation. Input: {{input}}',
         source: '/fake/reflect.md',
+        mode: 'all',
       },
     ];
 
@@ -76,8 +79,8 @@ describe('usePromptCommandDispatch', () => {
   it('getAvailableCommands returns loaded commands', () => {
     const store = usePromptCommandsStore();
     store.commands = [
-      { name: 'alpha', description: 'First', content: '', source: '' },
-      { name: 'beta', description: 'Second', content: '', source: '' },
+      { name: 'alpha', description: 'First', content: '', source: '', mode: 'all' as const },
+      { name: 'beta', description: 'Second', content: '', source: '', mode: 'all' as const },
     ];
 
     const { getAvailableCommands } = usePromptCommandDispatch();

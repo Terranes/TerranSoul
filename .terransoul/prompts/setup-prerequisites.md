@@ -1,3 +1,6 @@
+---
+mode: coding
+---
 # Setup Prerequisites
 
 Check and install all prerequisites needed for TerranSoul development on my current OS.

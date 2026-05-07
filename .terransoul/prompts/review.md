@@ -1,3 +1,6 @@
+---
+mode: coding
+---
 # Review Code
 
 Review the following code for:

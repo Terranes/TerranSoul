@@ -52,9 +52,9 @@ export function usePromptCommandDispatch() {
     return { handled: true, name, prompt: processed };
   }
 
-  /** Get all available prompt command names for autocomplete. */
+  /** Get all available prompt command names for autocomplete (mode-filtered). */
   function getAvailableCommands(): Array<{ name: string; description: string }> {
-    return store.commands.map((c: PromptCommand) => ({
+    return store.activeCommands.map((c: PromptCommand) => ({
       name: c.name,
       description: c.description,
     }));

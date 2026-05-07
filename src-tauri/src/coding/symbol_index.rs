@@ -202,6 +202,9 @@ fn init_schema(conn: &Connection) -> Result<(), IndexError> {
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous  = NORMAL;
         PRAGMA foreign_keys = ON;
+        PRAGMA cache_size   = -8192;
+        PRAGMA mmap_size    = 33554432;
+        PRAGMA busy_timeout = 5000;
 
         CREATE TABLE IF NOT EXISTS code_repos (
             id          INTEGER PRIMARY KEY,

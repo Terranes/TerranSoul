@@ -1,6 +1,7 @@
 //! Platform-adaptive SQLite PRAGMA selection.
 //!
-//! On desktop, we use aggressive WAL tuning (64 MiB cache, 256 MiB mmap).
+//! On desktop, we use moderate WAL tuning (16 MiB cache, 64 MiB mmap)
+//! that keeps most of the index/cache on disk to avoid overloading RAM.
 //! On mobile (iOS/Android) we reduce resource usage and handle platform
 //! quirks:
 //! - **iOS**: WAL mode can leave orphan `-wal`/`-shm` files when the app
@@ -17,17 +18,20 @@
 pub fn production_pragmas() -> &'static str {
     #[cfg(not(feature = "mobile"))]
     {
-        // Desktop: aggressive tuning for million-memory CRUD.
+        // Desktop: moderate tuning — keeps most data on disk via WAL +
+        // mmap, pinning only a 16 MiB page cache in RAM. The mmap window
+        // (64 MiB) lets the OS page in hot data on demand without
+        // reserving hundreds of MiB of resident memory.
         concat!(
             "PRAGMA journal_mode=WAL;\n",
             "PRAGMA synchronous=NORMAL;\n",
             "PRAGMA foreign_keys=ON;\n",
-            "PRAGMA cache_size=-65536;\n", // 64 MiB
-            "PRAGMA mmap_size=268435456;\n", // 256 MiB
+            "PRAGMA cache_size=-16384;\n", // 16 MiB
+            "PRAGMA mmap_size=67108864;\n", // 64 MiB
             "PRAGMA temp_store=MEMORY;\n",
             "PRAGMA busy_timeout=5000;\n",
             "PRAGMA wal_autocheckpoint=1000;\n",
-            "PRAGMA journal_size_limit=67108864;", // 64 MiB
+            "PRAGMA journal_size_limit=16777216;", // 16 MiB
         )
     }
 
@@ -70,7 +74,7 @@ pub fn test_pragmas() -> &'static str {
     concat!(
         "PRAGMA foreign_keys=ON;\n",
         "PRAGMA temp_store=MEMORY;\n",
-        "PRAGMA cache_size=-65536;",
+        "PRAGMA cache_size=-8192;", // 8 MiB — enough for tests
     )
 }
 
@@ -107,12 +111,12 @@ mod tests {
 
     #[test]
     #[cfg(not(feature = "mobile"))]
-    fn desktop_pragmas_have_full_cache() {
+    fn desktop_pragmas_have_moderate_cache() {
         let p = production_pragmas();
-        // 64 MiB = -65536 pages
-        assert!(p.contains("cache_size=-65536"));
-        // 256 MiB mmap
-        assert!(p.contains("mmap_size=268435456"));
+        // 16 MiB = -16384 pages
+        assert!(p.contains("cache_size=-16384"));
+        // 64 MiB mmap
+        assert!(p.contains("mmap_size=67108864"));
         // Standard checkpoint
         assert!(p.contains("wal_autocheckpoint=1000"));
     }

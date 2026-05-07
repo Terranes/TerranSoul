@@ -1119,37 +1119,121 @@ fn spawn_ann_flush_task(state: &AppState) {
     });
 }
 
+/// Check whether a process with the given PID is still running.
+fn is_process_alive(pid: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output();
+        match output {
+            Ok(out) => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                stdout.contains(&pid.to_string())
+            }
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+}
+
 /// Kill any running headless MCP service (port 7423) when the app starts
 /// in dev or release mode. The headless runner writes its PID to
 /// `mcp-data/self_improve_mcp_process.pid`; we read and kill that process.
-/// Also attempts a health-check-based kill via the PID file as a fallback.
+///
+/// First attempts a graceful `POST /shutdown` so the Tauri tray process
+/// can clean up its system tray icon. Falls back to force-kill if the
+/// graceful request fails or times out.
 fn kill_headless_mcp_if_running() {
-    // Try reading the PID file from the repo-local mcp-data/ directory.
-    let pid_path = std::env::current_dir()
-        .unwrap_or_default()
-        .join("mcp-data")
-        .join("self_improve_mcp_process.pid");
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let mcp_data = cwd.join("mcp-data");
+    let pid_path = mcp_data.join("self_improve_mcp_process.pid");
 
-    if let Ok(contents) = std::fs::read_to_string(&pid_path) {
-        if let Ok(pid) = contents.trim().parse::<u32>() {
-            // Kill the process.
-            #[cfg(target_os = "windows")]
-            {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/F"])
-                    .output();
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
-            }
-            // Remove the stale PID file.
-            let _ = std::fs::remove_file(&pid_path);
-            eprintln!("[app] killed headless MCP service (pid {pid})");
-        }
+    // Read PID early — we need it for the fallback.
+    let pid = std::fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|s| s.trim().parse::<u32>().ok());
+
+    if pid.is_none() {
+        // No PID file → nothing to kill.
+        return;
     }
+    let pid = pid.unwrap();
+
+    // Try graceful shutdown via HTTP first.
+    let token = std::fs::read_to_string(mcp_data.join("mcp-token.txt"))
+        .or_else(|_| std::fs::read_to_string(cwd.join(".vscode").join(".mcp-token")))
+        .ok()
+        .map(|s| s.trim().to_string());
+
+    let graceful_ok = if let Some(token) = token {
+        // Blocking HTTP request — we are in sync Tauri setup, not async.
+        let port = std::env::var("TERRANSOUL_MCP_PORT")
+            .ok()
+            .and_then(|s| s.trim().parse::<u16>().ok())
+            .unwrap_or(HEADLESS_MCP_PORT);
+
+        let url = format!("http://127.0.0.1:{port}/shutdown");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .build();
+
+        if let Ok(client) = client {
+            let resp = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {token}"))
+                .send();
+
+            if resp.is_ok_and(|r| r.status().is_success()) {
+                // Wait up to 3 seconds for the process to exit.
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                loop {
+                    if !is_process_alive(pid) {
+                        break;
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                !is_process_alive(pid)
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    if graceful_ok {
+        let _ = std::fs::remove_file(&pid_path);
+        eprintln!("[app] gracefully stopped headless MCP service (pid {pid})");
+        return;
+    }
+
+    // Fallback: force-kill the process.
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .output();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output();
+    }
+    let _ = std::fs::remove_file(&pid_path);
+    eprintln!("[app] force-killed headless MCP service (pid {pid})");
 }
 
 const MAIN_WINDOW_LABEL: &str = "main";

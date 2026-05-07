@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue([]),
 }));
 
-function mountPanel(preload?: Array<{ name: string; description: string; content: string; source: string }>) {
+function mountPanel(preload?: Array<{ name: string; description: string; content: string; source: string; mode: 'all' | 'coding' | 'companion' }>) {
   const pinia = createPinia();
   setActivePinia(pinia);
   if (preload) {
@@ -36,8 +36,8 @@ describe('PromptCommandsPanel', () => {
 
   it('displays loaded commands', () => {
     const wrapper = mountPanel([
-      { name: 'hello', description: 'Hello World', content: '# Hello\nWorld', source: '/test/hello.md' },
-      { name: 'review', description: 'Code Review', content: '# Review\nCheck it', source: '/test/review.md' },
+      { name: 'hello', description: 'Hello World', content: '# Hello\nWorld', source: '/test/hello.md', mode: 'all' },
+      { name: 'review', description: 'Code Review', content: '# Review\nCheck it', source: '/test/review.md', mode: 'all' },
     ]);
 
     expect(wrapper.find('[data-testid="pcp-item-hello"]').exists()).toBe(true);
@@ -55,7 +55,7 @@ describe('PromptCommandsPanel', () => {
 
   it('opens editor when edit button is clicked', async () => {
     const wrapper = mountPanel([
-      { name: 'test-cmd', description: 'Test', content: '# Test\nContent', source: '/test.md' },
+      { name: 'test-cmd', description: 'Test', content: '# Test\nContent', source: '/test.md', mode: 'all' },
     ]);
 
     await wrapper.find('[data-testid="pcp-edit-test-cmd"]').trigger('click');
@@ -64,7 +64,7 @@ describe('PromptCommandsPanel', () => {
 
   it('shows delete confirmation when delete is clicked', async () => {
     const wrapper = mountPanel([
-      { name: 'doomed', description: 'To be deleted', content: 'bye', source: '/doomed.md' },
+      { name: 'doomed', description: 'To be deleted', content: 'bye', source: '/doomed.md', mode: 'all' },
     ]);
 
     await wrapper.find('[data-testid="pcp-delete-doomed"]').trigger('click');
