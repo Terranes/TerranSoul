@@ -3059,6 +3059,11 @@ mod tests {
 
     #[test]
     fn hybrid_search_rrf_uses_vector_when_embedding_provided() {
+        // Clear the process-wide search cache to prevent stale hits from
+        // other tests (each test uses its own in-memory store, but the
+        // cache key only encodes query/mode/limit, not the store instance).
+        SEARCH_CACHE.clear();
+
         let store = MemoryStore::in_memory();
         let a = store.add(new_memory("alpha content")).unwrap();
         let b = store.add(new_memory("beta content")).unwrap();

@@ -215,17 +215,45 @@ impl Drop for PidGuard {
 /// Best-effort process liveness check.
 #[cfg(windows)]
 fn is_pid_alive(pid: u32) -> bool {
-    // Use tasklist to check if the PID exists. This avoids a dependency
-    // on windows-sys.
-    std::process::Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-        .output()
-        .map(|o| {
-            let out = String::from_utf8_lossy(&o.stdout);
-            // tasklist prints the process line if it exists, or "INFO: No tasks"
-            !out.contains("No tasks") && out.contains(&pid.to_string())
-        })
-        .unwrap_or(false)
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+
+    // Spawn tasklist and read its output with a timeout to avoid the known
+    // Windows hang where `tasklist /FI` blocks indefinitely.
+    let mut child = match Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    // Wait up to 5 seconds. If tasklist hangs longer, assume alive
+    // (safe default: prevents PID-file stomping).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => break,
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    // Timed out — assume the PID is alive (safe default).
+                    return true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(_) => return false,
+        }
+    }
+
+    let mut out = String::new();
+    if let Some(mut stdout) = child.stdout.take() {
+        let _ = stdout.read_to_string(&mut out);
+    }
+    !out.contains("No tasks") && out.contains(&pid.to_string())
 }
 
 #[cfg(not(windows))]
@@ -418,7 +446,13 @@ mod tests {
 
     #[test]
     fn pid_guard_acquire_and_release() {
-        let dir = std::env::temp_dir().join("ambient_test_pid");
+        // Use a unique temp directory to avoid interference from parallel tests
+        // or leftover state from previous runs.
+        let dir = std::env::temp_dir().join(format!(
+            "ambient_test_pid_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
         let _ = fs::create_dir_all(&dir);
         {
             let guard = PidGuard::acquire(&dir);
