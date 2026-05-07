@@ -78,6 +78,53 @@ pub fn test_pragmas() -> &'static str {
     )
 }
 
+/// Build a production PRAGMA string with user-configurable cache and mmap sizes.
+///
+/// `cache_mb`: SQLite page cache in MiB (written as negative PRAGMA cache_size in KiB pages).
+/// `mmap_mb`: mmap window in MiB (written as byte count).
+///
+/// Other WAL/sync/timeout settings use the static platform defaults.
+/// Takes effect on next DB open (i.e. app restart).
+pub fn production_pragmas_custom(cache_mb: u32, mmap_mb: u32) -> String {
+    let cache_pages = (cache_mb as i64) * 1024; // 1 KiB pages, negative = KiB
+    let mmap_bytes = (mmap_mb as u64) * 1024 * 1024;
+    #[cfg(not(feature = "mobile"))]
+    {
+        format!(
+            "PRAGMA journal_mode=WAL;\n\
+             PRAGMA synchronous=NORMAL;\n\
+             PRAGMA foreign_keys=ON;\n\
+             PRAGMA cache_size=-{cache_pages};\n\
+             PRAGMA mmap_size={mmap_bytes};\n\
+             PRAGMA temp_store=MEMORY;\n\
+             PRAGMA busy_timeout=5000;\n\
+             PRAGMA wal_autocheckpoint=1000;\n\
+             PRAGMA journal_size_limit=16777216;"
+        )
+    }
+    #[cfg(feature = "mobile")]
+    {
+        let _ = cache_pages;
+        let _ = mmap_bytes;
+        // Mobile always uses the static conservative defaults.
+        mobile_pragmas().to_string()
+    }
+}
+
+/// Build pragmas for code_index.sqlite with user-configurable sizes.
+pub fn code_index_pragmas_custom(cache_mb: u32, mmap_mb: u32) -> String {
+    let cache_pages = (cache_mb as i64) * 1024;
+    let mmap_bytes = (mmap_mb as u64) * 1024 * 1024;
+    format!(
+        "PRAGMA journal_mode = WAL;\n\
+         PRAGMA synchronous  = NORMAL;\n\
+         PRAGMA foreign_keys = ON;\n\
+         PRAGMA cache_size   = -{cache_pages};\n\
+         PRAGMA mmap_size    = {mmap_bytes};\n\
+         PRAGMA busy_timeout = 5000;"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

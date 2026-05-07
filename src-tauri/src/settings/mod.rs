@@ -327,6 +327,28 @@ pub struct AppSettings {
     /// Layout style for Obsidian vault export.
     #[serde(default)]
     pub obsidian_layout: ObsidianLayout,
+
+    /// SQLite page-cache size for memory.db (MiB). Default 16.
+    /// Larger = more RAM usage, faster repeated queries.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_sqlite_cache_mb")]
+    pub sqlite_cache_mb: u32,
+
+    /// SQLite mmap window for memory.db (MiB). Default 64.
+    /// OS pages in data on-demand; larger window helps sequential scans.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_sqlite_mmap_mb")]
+    pub sqlite_mmap_mb: u32,
+
+    /// SQLite page-cache size for code_index.sqlite (MiB). Default 8.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_code_index_cache_mb")]
+    pub code_index_cache_mb: u32,
+
+    /// SQLite mmap window for code_index.sqlite (MiB). Default 32.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_code_index_mmap_mb")]
+    pub code_index_mmap_mb: u32,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -373,8 +395,44 @@ pub const DEFAULT_MAX_MEMORY_MB: f64 = 10.0;
 pub const MIN_MAX_MEMORY_MB: f64 = 1.0;
 pub const MAX_MAX_MEMORY_MB: f64 = 1024.0;
 
+/// Default SQLite cache size for memory.db (MiB).
+pub const DEFAULT_SQLITE_CACHE_MB: u32 = 16;
+pub const MIN_SQLITE_CACHE_MB: u32 = 2;
+pub const MAX_SQLITE_CACHE_MB: u32 = 512;
+
+/// Default SQLite mmap window for memory.db (MiB).
+pub const DEFAULT_SQLITE_MMAP_MB: u32 = 64;
+pub const MIN_SQLITE_MMAP_MB: u32 = 0;
+pub const MAX_SQLITE_MMAP_MB: u32 = 2048;
+
+/// Default SQLite cache size for code_index.sqlite (MiB).
+pub const DEFAULT_CODE_INDEX_CACHE_MB: u32 = 8;
+pub const MIN_CODE_INDEX_CACHE_MB: u32 = 2;
+pub const MAX_CODE_INDEX_CACHE_MB: u32 = 256;
+
+/// Default SQLite mmap window for code_index.sqlite (MiB).
+pub const DEFAULT_CODE_INDEX_MMAP_MB: u32 = 32;
+pub const MIN_CODE_INDEX_MMAP_MB: u32 = 0;
+pub const MAX_CODE_INDEX_MMAP_MB: u32 = 1024;
+
 fn default_maintenance_interval_hours() -> u32 {
     DEFAULT_MAINTENANCE_INTERVAL_HOURS
+}
+
+fn default_sqlite_cache_mb() -> u32 {
+    DEFAULT_SQLITE_CACHE_MB
+}
+
+fn default_sqlite_mmap_mb() -> u32 {
+    DEFAULT_SQLITE_MMAP_MB
+}
+
+fn default_code_index_cache_mb() -> u32 {
+    DEFAULT_CODE_INDEX_CACHE_MB
+}
+
+fn default_code_index_mmap_mb() -> u32 {
+    DEFAULT_CODE_INDEX_MMAP_MB
 }
 
 fn default_max_memory_gb() -> f64 {
@@ -471,6 +529,10 @@ impl Default for AppSettings {
             data_root: None,
             hive_url: None,
             obsidian_layout: ObsidianLayout::Flat,
+            sqlite_cache_mb: DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
         }
     }
 }
@@ -649,6 +711,10 @@ mod tests {
             data_root: None,
             hive_url: None,
             obsidian_layout: ObsidianLayout::Flat,
+            sqlite_cache_mb: DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

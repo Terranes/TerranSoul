@@ -83,6 +83,14 @@ export interface AppSettings {
   hive_url?: string;
   /** Obsidian export folder layout: 'flat' (default) or 'para' (PARA method subfolders). */
   obsidian_layout?: 'flat' | 'para';
+  /** SQLite page-cache for memory.db (MiB). Default 16. Takes effect on restart. */
+  sqlite_cache_mb?: number;
+  /** SQLite mmap window for memory.db (MiB). Default 64. Takes effect on restart. */
+  sqlite_mmap_mb?: number;
+  /** SQLite page-cache for code_index.sqlite (MiB). Default 8. Takes effect on restart. */
+  code_index_cache_mb?: number;
+  /** SQLite mmap window for code_index.sqlite (MiB). Default 32. Takes effect on restart. */
+  code_index_mmap_mb?: number;
 }
 
 const MIN_MAX_MEMORY_GB = 1;
@@ -92,6 +100,22 @@ const DEFAULT_MAX_MEMORY_GB = 10;
 const MIN_MAX_MEMORY_MB = 1;
 const MAX_MAX_MEMORY_MB = 1024;
 const DEFAULT_MAX_MEMORY_MB = 10;
+
+export const DEFAULT_SQLITE_CACHE_MB = 16;
+export const MIN_SQLITE_CACHE_MB = 2;
+export const MAX_SQLITE_CACHE_MB = 512;
+
+export const DEFAULT_SQLITE_MMAP_MB = 64;
+export const MIN_SQLITE_MMAP_MB = 0;
+export const MAX_SQLITE_MMAP_MB = 2048;
+
+export const DEFAULT_CODE_INDEX_CACHE_MB = 8;
+export const MIN_CODE_INDEX_CACHE_MB = 2;
+export const MAX_CODE_INDEX_CACHE_MB = 256;
+
+export const DEFAULT_CODE_INDEX_MMAP_MB = 32;
+export const MIN_CODE_INDEX_MMAP_MB = 0;
+export const MAX_CODE_INDEX_MMAP_MB = 1024;
 
 export const DEFAULT_MAX_LONG_TERM_ENTRIES = 1_000_000;
 export const MIN_MAX_LONG_TERM_ENTRIES = 1_000;
@@ -136,6 +160,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   maintenance_interval_hours: DEFAULT_MAINTENANCE_INTERVAL_HOURS,
   maintenance_idle_minimum_minutes: 5,
   web_search_enabled: false,
+  sqlite_cache_mb: DEFAULT_SQLITE_CACHE_MB,
+  sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
+  code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
+  code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -231,6 +259,38 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ maintenance_interval_hours: clamped });
   }
 
+  async function saveSqliteCacheMb(mb: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_SQLITE_CACHE_MB,
+      Math.max(MIN_SQLITE_CACHE_MB, Number.isFinite(mb) ? Math.round(mb) : DEFAULT_SQLITE_CACHE_MB),
+    );
+    await saveSettings({ sqlite_cache_mb: clamped });
+  }
+
+  async function saveSqliteMmapMb(mb: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_SQLITE_MMAP_MB,
+      Math.max(MIN_SQLITE_MMAP_MB, Number.isFinite(mb) ? Math.round(mb) : DEFAULT_SQLITE_MMAP_MB),
+    );
+    await saveSettings({ sqlite_mmap_mb: clamped });
+  }
+
+  async function saveCodeIndexCacheMb(mb: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_CODE_INDEX_CACHE_MB,
+      Math.max(MIN_CODE_INDEX_CACHE_MB, Number.isFinite(mb) ? Math.round(mb) : DEFAULT_CODE_INDEX_CACHE_MB),
+    );
+    await saveSettings({ code_index_cache_mb: clamped });
+  }
+
+  async function saveCodeIndexMmapMb(mb: number): Promise<void> {
+    const clamped = Math.min(
+      MAX_CODE_INDEX_MMAP_MB,
+      Math.max(MIN_CODE_INDEX_MMAP_MB, Number.isFinite(mb) ? Math.round(mb) : DEFAULT_CODE_INDEX_MMAP_MB),
+    );
+    await saveSettings({ code_index_mmap_mb: clamped });
+  }
+
   return {
     // state
     settings,
@@ -248,5 +308,9 @@ export const useSettingsStore = defineStore('settings', () => {
     saveMaxLongTermEntries,
     saveRelevanceThreshold,
     saveMaintenanceInterval,
+    saveSqliteCacheMb,
+    saveSqliteMmapMb,
+    saveCodeIndexCacheMb,
+    saveCodeIndexMmapMb,
   };
 });

@@ -188,8 +188,24 @@ pub struct IndexStats {
 
 /// Open (or create) the code-index SQLite database.
 pub fn open_db(data_dir: &Path) -> Result<Connection, IndexError> {
+    open_db_with_config(data_dir, None, None)
+}
+
+/// Open with user-configurable cache/mmap sizes (from AppSettings).
+pub fn open_db_with_config(
+    data_dir: &Path,
+    cache_mb: Option<u32>,
+    mmap_mb: Option<u32>,
+) -> Result<Connection, IndexError> {
     let db_path = data_dir.join("code_index.sqlite");
     let conn = Connection::open(db_path)?;
+    if cache_mb.is_some() || mmap_mb.is_some() {
+        let pragmas = crate::memory::platform::code_index_pragmas_custom(
+            cache_mb.unwrap_or(crate::settings::DEFAULT_CODE_INDEX_CACHE_MB),
+            mmap_mb.unwrap_or(crate::settings::DEFAULT_CODE_INDEX_MMAP_MB),
+        );
+        conn.execute_batch(&pragmas)?;
+    }
     init_schema(&conn)?;
     migrate_schema(&conn)?;
     super::branch_overlay::ensure_overlay_schema(&conn)?;

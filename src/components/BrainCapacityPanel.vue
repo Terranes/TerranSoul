@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useSettingsStore, DEFAULT_MAX_LONG_TERM_ENTRIES, DEFAULT_RELEVANCE_THRESHOLD, DEFAULT_MAINTENANCE_INTERVAL_HOURS } from '../stores/settings';
+import {
+  useSettingsStore,
+  DEFAULT_MAX_LONG_TERM_ENTRIES,
+  DEFAULT_RELEVANCE_THRESHOLD,
+  DEFAULT_MAINTENANCE_INTERVAL_HOURS,
+  DEFAULT_SQLITE_CACHE_MB,
+  DEFAULT_SQLITE_MMAP_MB,
+  DEFAULT_CODE_INDEX_CACHE_MB,
+  DEFAULT_CODE_INDEX_MMAP_MB,
+} from '../stores/settings';
 import { useMemoryStore } from '../stores/memory';
 
 const appSettings = useSettingsStore();
@@ -19,6 +28,13 @@ const backgroundMaintenance = computed(() => appSettings.settings?.background_ma
 const maintenanceInterval = computed(() => appSettings.settings?.maintenance_interval_hours ?? DEFAULT_MAINTENANCE_INTERVAL_HOURS);
 const maintenanceIdle = computed(() => appSettings.settings?.maintenance_idle_minimum_minutes ?? 5);
 const dataRoot = computed(() => appSettings.settings?.data_root ?? '');
+
+// ── SQLite tuning computeds ──────────────────────────────────────────────────
+
+const sqliteCacheMb = computed(() => appSettings.settings?.sqlite_cache_mb ?? DEFAULT_SQLITE_CACHE_MB);
+const sqliteMmapMb = computed(() => appSettings.settings?.sqlite_mmap_mb ?? DEFAULT_SQLITE_MMAP_MB);
+const codeIndexCacheMb = computed(() => appSettings.settings?.code_index_cache_mb ?? DEFAULT_CODE_INDEX_CACHE_MB);
+const codeIndexMmapMb = computed(() => appSettings.settings?.code_index_mmap_mb ?? DEFAULT_CODE_INDEX_MMAP_MB);
 
 // ── Memory stats ─────────────────────────────────────────────────────────────
 
@@ -101,6 +117,26 @@ function onMaintenanceIdleChange(e: Event) {
 function onDataRootChange(e: Event) {
   const val = (e.target as HTMLInputElement).value.trim();
   appSettings.saveSettings({ data_root: val || undefined });
+}
+
+function onSqliteCacheMbChange(e: Event) {
+  const val = Number((e.target as HTMLInputElement).value);
+  appSettings.saveSqliteCacheMb(val);
+}
+
+function onSqliteMmapMbChange(e: Event) {
+  const val = Number((e.target as HTMLInputElement).value);
+  appSettings.saveSqliteMmapMb(val);
+}
+
+function onCodeIndexCacheMbChange(e: Event) {
+  const val = Number((e.target as HTMLInputElement).value);
+  appSettings.saveCodeIndexCacheMb(val);
+}
+
+function onCodeIndexMmapMbChange(e: Event) {
+  const val = Number((e.target as HTMLInputElement).value);
+  appSettings.saveCodeIndexMmapMb(val);
 }
 </script>
 
@@ -254,6 +290,83 @@ function onDataRootChange(e: Event) {
           @change="onDataRootChange"
         >
       </div>
+    </section>
+
+    <!-- ── Database Tuning (SQLite) ────────────────────────────────────────── -->
+    <section class="bcp-section">
+      <h4 class="bcp-section-title">
+        Database Tuning
+      </h4>
+      <p class="bcp-desc">
+        SQLite page-cache and mmap sizes control how much RAM the database engine uses.
+        Larger values speed up queries but consume more memory.
+        <strong>Changes take effect on next app restart.</strong>
+      </p>
+
+      <h5 class="bcp-subsection-title">
+        Memory DB (memory.db)
+      </h5>
+      <div class="bcp-field">
+        <label class="bcp-label">Page cache (MiB)</label>
+        <input
+          type="number"
+          :min="2"
+          :max="512"
+          :value="sqliteCacheMb"
+          class="bcp-input bcp-input--sm"
+          data-testid="bcp-sqlite-cache-mb"
+          @change="onSqliteCacheMbChange"
+        >
+        <span class="bcp-value">MiB</span>
+      </div>
+      <div class="bcp-field">
+        <label class="bcp-label">Mmap window (MiB)</label>
+        <input
+          type="number"
+          :min="0"
+          :max="2048"
+          :value="sqliteMmapMb"
+          class="bcp-input bcp-input--sm"
+          data-testid="bcp-sqlite-mmap-mb"
+          @change="onSqliteMmapMbChange"
+        >
+        <span class="bcp-value">MiB</span>
+      </div>
+
+      <h5 class="bcp-subsection-title">
+        Code Index (code_index.sqlite)
+      </h5>
+      <div class="bcp-field">
+        <label class="bcp-label">Page cache (MiB)</label>
+        <input
+          type="number"
+          :min="2"
+          :max="256"
+          :value="codeIndexCacheMb"
+          class="bcp-input bcp-input--sm"
+          data-testid="bcp-code-index-cache-mb"
+          @change="onCodeIndexCacheMbChange"
+        >
+        <span class="bcp-value">MiB</span>
+      </div>
+      <div class="bcp-field">
+        <label class="bcp-label">Mmap window (MiB)</label>
+        <input
+          type="number"
+          :min="0"
+          :max="1024"
+          :value="codeIndexMmapMb"
+          class="bcp-input bcp-input--sm"
+          data-testid="bcp-code-index-mmap-mb"
+          @change="onCodeIndexMmapMbChange"
+        >
+        <span class="bcp-value">MiB</span>
+      </div>
+
+      <p class="bcp-hint">
+        Page cache = hot pages kept in RAM. Mmap = OS-managed virtual memory window (0 = disabled).
+        Defaults: memory.db 16/64 MiB, code index 8/32 MiB.
+      </p>
     </section>
 
     <!-- ── RAG Pipeline Tuning ─────────────────────────────────────────────── -->
@@ -427,6 +540,13 @@ function onDataRootChange(e: Event) {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--ts-text, #f0f0f0);
+}
+
+.bcp-subsection-title {
+  margin: 6px 0 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ts-text-muted, #ccc);
 }
 
 .bcp-desc {

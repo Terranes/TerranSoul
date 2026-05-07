@@ -247,6 +247,12 @@ impl MemoryStore {
     /// Enables WAL mode for crash durability and creates an auto-backup.
     /// Creates the canonical memory schema.
     pub fn new(data_dir: &Path) -> Self {
+        Self::new_with_config(data_dir, None, None)
+    }
+
+    /// Open with user-configurable cache/mmap sizes (from AppSettings).
+    /// Pass `None` for either to use the platform default.
+    pub fn new_with_config(data_dir: &Path, cache_mb: Option<u32>, mmap_mb: Option<u32>) -> Self {
         auto_backup(data_dir);
         let conn = Connection::open(data_dir.join("memory.db")).unwrap_or_else(|_| {
             Connection::open_in_memory()
@@ -257,7 +263,15 @@ impl MemoryStore {
         // foreign_keys=ON is required for ON DELETE CASCADE on memory_edges (V5).
         // Platform-adaptive: desktop gets aggressive cache/mmap; mobile
         // reduces resource usage and tightens WAL autocheckpoint (42.2).
-        let _ = conn.execute_batch(super::platform::production_pragmas());
+        if cache_mb.is_some() || mmap_mb.is_some() {
+            let pragmas = super::platform::production_pragmas_custom(
+                cache_mb.unwrap_or(crate::settings::DEFAULT_SQLITE_CACHE_MB),
+                mmap_mb.unwrap_or(crate::settings::DEFAULT_SQLITE_MMAP_MB),
+            );
+            let _ = conn.execute_batch(&pragmas);
+        } else {
+            let _ = conn.execute_batch(super::platform::production_pragmas());
+        }
         schema::create_canonical_schema(&conn).expect("memory schema initialization failed");
         // Phase 41.12R — let SQLite analyse table statistics on open.
         let _ = conn.execute_batch("PRAGMA optimize;");
