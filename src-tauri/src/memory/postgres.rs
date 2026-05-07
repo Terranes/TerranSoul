@@ -1227,7 +1227,7 @@ mod tests {
             .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/terransoul_test".into())
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires PostgreSQL"]
     async fn connect_and_migrate() {
         let backend = PostgresBackend::connect(&test_pool_url(), Some(2), false)
@@ -1237,7 +1237,7 @@ mod tests {
         assert!(version >= 8, "expected at least V8, got {version}");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires PostgreSQL"]
     async fn add_and_search_fts() {
         let backend = PostgresBackend::connect(&test_pool_url(), Some(2), false)
@@ -1263,7 +1263,7 @@ mod tests {
         assert_eq!(results[0].id, entry.id);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires PostgreSQL"]
     async fn hybrid_search_rrf_returns_results() {
         let backend = PostgresBackend::connect(&test_pool_url(), Some(2), false)
@@ -1300,7 +1300,7 @@ mod tests {
         assert!(results[0].content.contains("Rust"));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires PostgreSQL"]
     async fn edge_crud_and_traverse() {
         let backend = PostgresBackend::connect(&test_pool_url(), Some(2), false)
@@ -1381,7 +1381,7 @@ mod tests {
         assert_eq!(backend.edge_count().unwrap(), 2);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires PostgreSQL"]
     async fn add_with_context_prefix() {
         let backend = PostgresBackend::connect(&test_pool_url(), Some(2), false)
@@ -1410,7 +1410,7 @@ mod tests {
         assert!(entry.content.contains("The fox is clever."));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "requires PostgreSQL with pgvector"]
     async fn vector_search_native_pgvector() {
         let backend = PostgresBackend::connect(&test_pool_url(), Some(2), false)

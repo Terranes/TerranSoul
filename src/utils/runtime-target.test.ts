@@ -32,4 +32,23 @@ describe('runtime target detection', () => {
 
     expect(shouldUseRemoteConversation({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' })).toBe(true);
   });
+
+  it('does not enable remote conversation on iOS without a paired host', () => {
+    // iOS Safari on Vercel/static deployment has no Tauri backend and no LAN
+    // host saved — the app must fall through to browser/cloud-LLM mode so the
+    // user is prompted to configure a provider instead of being stranded with
+    // a stale "Remote Desktop" badge that points nowhere.
+    expect(
+      shouldUseRemoteConversation({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' }),
+    ).toBe(false);
+    expect(shouldUseRemoteConversation({ platform: 'MacIntel', maxTouchPoints: 5 })).toBe(false);
+  });
+
+  it('still enables remote conversation on iOS once a LAN host is paired', () => {
+    saveBrowserLanHost(parseBrowserLanEndpoint('https://desktop.local:7422'));
+
+    expect(
+      shouldUseRemoteConversation({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' }),
+    ).toBe(true);
+  });
 });

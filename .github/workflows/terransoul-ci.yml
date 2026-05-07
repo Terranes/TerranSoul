@@ -150,7 +150,12 @@ jobs:
         working-directory: src-tauri
         env:
           TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/terransoul_test
-        run: cargo test --features postgres -- --include-ignored memory::postgres
+        # Serialize postgres tests with --test-threads=1: they share a single
+        # database, so concurrent migration runs race on `CREATE TABLE/INDEX
+        # IF NOT EXISTS` (PostgreSQL surfaces these as "duplicate key value
+        # violates unique constraint pg_class_relname_nsp_index" instead of
+        # treating them as idempotent under concurrency).
+        run: cargo test --features postgres -- --include-ignored --test-threads=1 memory::postgres
 
   # ── Playwright E2E (starts as soon as frontend passes) ───────────────────
   # Optional: hits real free LLM APIs and is inherently flaky.
