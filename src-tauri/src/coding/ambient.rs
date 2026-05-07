@@ -259,7 +259,8 @@ fn is_pid_alive(pid: u32) -> bool {
 #[cfg(not(windows))]
 fn is_pid_alive(pid: u32) -> bool {
     // signal 0 checks existence without actually signalling.
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    // Use /proc on Linux to avoid a libc dependency.
+    std::path::Path::new(&format!("/proc/{pid}")).exists()
 }
 
 // ---------------------------------------------------------------------------

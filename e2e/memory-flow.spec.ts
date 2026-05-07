@@ -48,9 +48,9 @@ test('memory: UI rendering and interaction flow', async ({ page }) => {
   // Header with title
   await expect(mv.locator('.mv-header h2')).toContainText('Memory');
 
-  // Three tabs: List, Graph, Session
+  // Four tabs: List, Graph, Session, Audit
   const tabBtns = mv.locator('.mv-tab');
-  await expect(tabBtns).toHaveCount(3);
+  await expect(tabBtns).toHaveCount(4);
 
   // List panel active by default
   await expect(mv.locator('.mv-list-panel')).toBeVisible();

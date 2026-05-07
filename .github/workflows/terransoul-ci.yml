@@ -153,9 +153,11 @@ jobs:
         run: cargo test --features postgres -- --include-ignored memory::postgres
 
   # ── Playwright E2E (starts as soon as frontend passes) ───────────────────
+  # Optional: hits real free LLM APIs and is inherently flaky.
   playwright-e2e:
     runs-on: ubuntu-latest
     needs: frontend
+    continue-on-error: true
     permissions:
       contents: read
 
